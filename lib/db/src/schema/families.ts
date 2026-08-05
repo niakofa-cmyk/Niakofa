@@ -59,6 +59,9 @@ export const familyMembersTable = pgTable("family_members", {
   // from deceased ancestors (eligible by default unless a curator declines).
   // Default true is privacy-safe: existing rows require an explicit grant.
   is_living:     boolean("is_living").notNull().default(true),
+  // Birth/death years for timeline and character profile (added in migration 0105)
+  birth_year:    integer("birth_year"),
+  death_year:    integer("death_year"),
   created_at:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   // Added in migration 0095. Bumped explicitly by application code (no DB
   // trigger, matching this codebase's convention elsewhere) whenever a

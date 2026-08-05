@@ -20,24 +20,12 @@ import { Router } from "express";
 import {
   db,
   familyMembersTable,
-  familyMemoriesTable,
-  familyMemoryPeopleTable,
-  familyStoriesTable,
-  familyPlacesTable,
-  familyEventsTable,
-  familyInterviewsTable,
-  familyTreeRelationsTable,
-  familyKnowledgeVersionsTable,
   legacyGameMasterNarrationsTable,
-  legacyWorldEvolutionLogTable,
-  legacyChaptersTable,
-  legacyCharacterEvolutionTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray, sql, asc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
-import { getConsentedMemberIds } from "../lib/legacy-consent";
 import { legacyAI } from "../lib/legacy-ai-gateway";
 import { generateRichCharacterProfile } from "../lib/legacy-character-profile";
 import { createHash } from "crypto";
@@ -130,7 +118,7 @@ router.get(
             id: cached.id,
             type: cached.narration_type,
             content: cached.content,
-            modelProvenance: cached.model_provenance,
+            modelProvenance: cached.model_used,
             createdAt: cached.created_at,
           },
         });
@@ -138,27 +126,23 @@ router.get(
 
       // Generate new narration
       let content: string;
-      let modelProvenance: string;
-      try {
-        const aiResponse = await legacyAI.generate(userPrompt, {
-          maxTokens: 300,
-          temperature: 0.7,
-        });
-        content = aiResponse;
-        modelProvenance = legacyAI.lastModel ?? "unknown";
-      } catch {
-        content = "The ancestors' voices echo softly through time...";
-        modelProvenance = "fallback";
-      }
+      let modelUsed: string;
+      const aiResponse = await legacyAI.generate({
+        system: "You are Nia, the AI Game Master for the Niakofa Legacy RPG. Generate vivid, emotionally resonant narration grounded in real family history. Never fabricate specific facts.",
+        userPrompt,
+        maxTokens: 300,
+      });
+      content = aiResponse.content || "The ancestors' voices echo softly through time...";
+      modelUsed = aiResponse.model;
 
       const [narration] = await db
         .insert(legacyGameMasterNarrationsTable)
         .values({
           family_id: familyId,
-          narration_type: type,
+          narration_type: type as "scene_intro" | "dialogue" | "quest_prompt" | "chapter_summary" | "historical_context" | "ancestor_introduction",
           prompt_hash: promptHash,
           content,
-          model_provenance: modelProvenance,
+          model_used: modelUsed,
         })
         .returning();
 
@@ -167,7 +151,7 @@ router.get(
           id: narration.id,
           type: narration.narration_type,
           content: narration.content,
-          modelProvenance: narration.model_provenance,
+          modelProvenance: narration.model_used,
           createdAt: narration.created_at,
         },
       });
@@ -206,7 +190,7 @@ router.get(
           id: n.id,
           type: n.narration_type,
           content: n.content,
-          modelProvenance: n.model_provenance,
+          modelProvenance: n.model_used,
           createdAt: n.created_at,
         })),
       });

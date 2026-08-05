@@ -28,15 +28,11 @@ import {
   familyStoriesTable,
   familyEventsTable,
   familyPlacesTable,
-  familyTreeRelationsTable,
   familyMemoryPeopleTable,
-  familyMemoryAssetsTable,
   legacyWorldsTable,
   legacyChaptersTable,
-  legacyAiDirectorMissionsTable,
-  legacyWorldEvolutionLogTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
@@ -168,7 +164,7 @@ router.get(
         return res.json({ quests: [], message: "Add family members to unlock interview quests" });
       }
 
-      const [members, memories, interviews, stories, events, places] = await Promise.all([
+      const [members, memories, interviews, stories, _events, places] = await Promise.all([
         db.select().from(familyMembersTable).where(
           and(eq(familyMembersTable.family_id, familyId), eq(familyMembersTable.status, "active")),
         ),
@@ -201,6 +197,7 @@ router.get(
         const template = QUEST_TEMPLATES.find((t) => t.type === "elder_interview")!;
         quests.push({
           ...template,
+          questType: template.type,
           targetMemberId: member.id,
           targetMemberName: member.display_name,
           urgency: "high",
@@ -224,6 +221,7 @@ router.get(
           const template = QUEST_TEMPLATES.find((t) => t.type === "missing_ancestor")!;
           quests.push({
             ...template,
+            questType: template.type,
             title: `Discover ${member.display_name}'s Story`,
             targetMemberId: member.id,
             targetMemberName: member.display_name,
@@ -234,12 +232,12 @@ router.get(
 
       if (places.length === 0) {
         const template = QUEST_TEMPLATES.find((t) => t.type === "family_origin")!;
-        quests.push({ ...template, targetMemberId: null, targetMemberName: null, urgency: "medium" });
+        quests.push({ ...template, questType: template.type, targetMemberId: null, targetMemberName: null, urgency: "medium" });
       }
 
       if (memories.length > stories.length && stories.length < 5) {
         const template = QUEST_TEMPLATES.find((t) => t.type === "tradition_keeper")!;
-        quests.push({ ...template, targetMemberId: null, targetMemberName: null, urgency: "low" });
+        quests.push({ ...template, questType: template.type, targetMemberId: null, targetMemberName: null, urgency: "low" });
       }
 
       const urgencyOrder = { high: 0, medium: 1, low: 2 };
@@ -359,8 +357,12 @@ Return as JSON:
       };
 
       try {
-        const aiResponse = await legacyAI.generate(extractionPrompt, { maxTokens: 1200, temperature: 0.3 });
-        extraction = JSON.parse(aiResponse);
+        const aiResponse = await legacyAI.generate({
+          system: "You are Nia, the AI guardian of a family's legacy. Extract structured facts from interview transcripts. Always return valid JSON only.",
+          userPrompt: extractionPrompt,
+          maxTokens: 1200,
+        });
+        extraction = JSON.parse(aiResponse.content);
       } catch {
         extraction = {
           people: [], places: [], events: [], traditions: [],
@@ -416,8 +418,8 @@ Return as JSON:
         await db.insert(familyStoriesTable).values({
           family_id: interview.family_id,
           about_member_id: interview.subject_member_id,
-          title: `Interview: ${interview.title}`,
-          content: extraction.summary,
+          title: `Interview: ${interview.title ?? "Legacy Interview"}`,
+          body: extraction.summary,
           category: "oral_history",
         });
         worldChanges.push("New story preserved in vault");

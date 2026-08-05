@@ -199,6 +199,7 @@ export async function analyzeVaultGapsEnhanced(familyId: number): Promise<VaultG
       rewardDescription: "Timeline enrichment",
     });
   }
+  }
 
   if (members.length >= 3 && relations.length < members.length) {
     gaps.push({

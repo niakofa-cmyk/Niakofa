@@ -23,23 +23,13 @@ import { Router } from "express";
 import {
   db,
   familyMembersTable,
-  familyMemoriesTable,
-  familyInterviewsTable,
-  familyStoriesTable,
-  familyEventsTable,
-  familyPlacesTable,
-  familyTreeRelationsTable,
-  familyMemoryPeopleTable,
   legacyAiDirectorMissionsTable,
-  legacyMemoryMysteriesTable,
-  familyKnowledgeVersionsTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
-import { getConsentedMemberIds } from "../lib/legacy-consent";
-import { analyzeVaultGapsEnhanced, type VaultGap } from "../lib/legacy-ai-director-enhanced";
+import { analyzeVaultGapsEnhanced } from "../lib/legacy-ai-director-enhanced";
 
 const router = Router();
 
@@ -173,7 +163,7 @@ router.post(
             family_id: familyId,
             title: gap.suggestedMission,
             description: gap.description,
-            mission_type: gap.missionType,
+            mission_type: gap.missionType as "record_interview" | "identify_photo" | "add_ancestor" | "tag_location" | "add_event" | "upload_document" | "reconnect_relative" | "complete_chapter" | "preserve_tradition",
             reward_xp: gap.rewardXp,
             reward_description: gap.rewardDescription,
             status: "active",

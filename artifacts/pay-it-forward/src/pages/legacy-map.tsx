@@ -448,6 +448,18 @@ export default function LegacyMapPage() {
   // their first landmark without needing to navigate elsewhere.  The map is
   // never empty; it always gives the user something to do.
 
+  // Guard: data is null until the first fetch completes. The loading spinner
+  // above covers the initial fetch, but TypeScript still needs to see the null
+  // check here because data can be null even when isLoading is false (e.g.
+  // empty successful response before state is set).
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#1A0F08]">
+        <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#1A0F08] flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-amber-900/30">

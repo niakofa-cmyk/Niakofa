@@ -20,9 +20,8 @@ import {
   familyPlacesTable,
   familyTreeRelationsTable,
   familyInterviewsTable,
-  legacyCharacterEvolutionTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { logger } from "./logger";
 import { legacyAI } from "./legacy-ai-gateway";
 import { getConsentedMemberIds } from "./legacy-consent";
@@ -242,8 +241,12 @@ Never fabricate specific facts — use "unknown" where you have no basis.`;
   };
 
   try {
-    const aiResponse = await legacyAI.generate(profilePrompt, { maxTokens: 800, temperature: 0.4 });
-    deepAttributes = JSON.parse(aiResponse);
+    const aiResponse = await legacyAI.generate({
+      system: "You are Nia, the AI guardian of a family legacy. Generate rich character profiles in valid JSON only.",
+      userPrompt: profilePrompt,
+      maxTokens: 800,
+    });
+    deepAttributes = JSON.parse(aiResponse.content);
   } catch (err) {
     logger.warn({ err, memberId }, "legacy-character-profile: AI generation failed, using fallback");
     deepAttributes = {
@@ -279,11 +282,11 @@ Never fabricate specific facts — use "unknown" where you have no basis.`;
     relation: member.relation_note ?? null, isLiving: member.is_living ?? true,
     birthYear, deathYear, stats, ...deepAttributes, legacyScore,
     events: events.map((e) => ({ id: e.id, title: e.title, description: e.description,
-      eventDate: e.event_date ? new Date(e.event_date).toISOString() : null, category: e.category })),
-    stories: stories.map((s) => ({ id: s.id, title: s.title, excerpt: s.content?.slice(0, 200) ?? "", category: s.category })),
+      eventDate: e.event_date ? new Date(e.event_date).toISOString() : null, category: e.category ?? "other" })),
+    stories: stories.map((s) => ({ id: s.id, title: s.title, excerpt: s.body?.slice(0, 200) ?? "", category: s.category })),
     memories: memories.map((m) => ({ id: m.id, title: m.title, description: m.description,
       memoryDate: m.memory_date ? new Date(m.memory_date).toISOString() : null, locationLabel: m.location_label })),
-    interviews: interviews.map((i) => ({ id: i.id, title: i.title, status: i.status })),
+    interviews: interviews.map((i) => ({ id: i.id, title: i.title ?? `Interview #${i.id}`, status: i.status as string })),
     places: places.map((p) => ({ id: p.id, label: p.label, placeType: p.place_type, country: p.country })),
     relationships, lineage: { parents, children, siblings },
   };

@@ -112,7 +112,13 @@ Keep it intimate, warm, and grounded in the actual decisions. Do not invent even
 
       let journalText: string;
       try {
-        journalText = await legacyAI.generate(prompt, { maxTokens: 500, temperature: 0.7 });
+        const aiResult = await legacyAI.generate({
+          system: "You are Nia, the compassionate AI guardian who writes journal entries for family legacy journeys.",
+          userPrompt: prompt,
+          maxTokens: 500,
+        });
+        journalText = aiResult.content || "";
+        if (!journalText) throw new Error("empty");
       } catch {
         journalText = `Today, I walked through ${chapter?.title ?? "a chapter of our family story"}. ` +
           `I made ${decisions.length} choices along the way. ` +
@@ -126,7 +132,7 @@ Keep it intimate, warm, and grounded in the actual decisions. Do not invent even
         .values({
           family_id: session.family_id,
           title: `Journal — ${chapter?.title ?? "Legacy Session"} — ${new Date().toLocaleDateString()}`,
-          content: journalText,
+          body: journalText,
           category: "journal",
           about_member_id: session.ancestor_member_id,
         })
@@ -139,7 +145,7 @@ Keep it intimate, warm, and grounded in the actual decisions. Do not invent even
 
       return res.json({
         generated: true,
-        journalEntry: { id: story.id, title: story.title, content: journalText, createdAt: story.created_at },
+        journalEntry: { id: story.id, title: story.title, content: journalText, createdAt: story.created_at as Date },
         statsSummary: totalStatChanges, decisionsCount: decisions.length,
       });
     } catch (err) {
@@ -169,7 +175,7 @@ router.get(
         .orderBy(desc(familyStoriesTable.created_at)).limit(50);
 
       return res.json({
-        entries: entries.map((e) => ({ id: e.id, title: e.title, content: e.content,
+        entries: entries.map((e) => ({ id: e.id, title: e.title, content: e.body,
           createdAt: e.created_at, aboutMemberId: e.about_member_id })),
       });
     } catch (err) {

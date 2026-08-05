@@ -456,8 +456,8 @@ export default function LegacyInterviewQuestPage() {
     );
   }
 
-  // ── Recording ──
-  if (phase === "recording" && activeQuest) {
+  // ── Recording / Submitting ──
+  if ((phase === "recording" || phase === "submitting") && activeQuest) {
     return (
       <div className="min-h-[100dvh] bg-[#1A1008] text-stone-100 flex flex-col">
         <div className="sticky top-0 z-20 bg-[#1A1008]/95 backdrop-blur border-b border-amber-900/30 px-4 py-3 flex items-center gap-3">

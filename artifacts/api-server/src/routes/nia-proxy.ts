@@ -19,7 +19,7 @@ import { requireAdmin } from "../middlewares/authz";
 import { crisisAwareChatLimiter, niaChatHistoryLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { db, systemSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { sendNiaEventToUser } from "../lib/ws-hub";
 
 const router = Router();
@@ -560,8 +560,6 @@ router.patch(
               SET value = EXCLUDED.value, updated_at = NOW()`
       );
       logger.info({ enabled }, "nia-proxy: admin toggled Legacy Nia AI");
-      // Broadcast WS event so connected admin panels refresh
-      sendNiaEventToUser("system", { type: "legacy_nia_status", enabled });
       return res.json({ success: true, legacy_nia_enabled: enabled });
     } catch (err) {
       logger.error({ err }, "nia-proxy: legacy-nia-toggle DB update failed");

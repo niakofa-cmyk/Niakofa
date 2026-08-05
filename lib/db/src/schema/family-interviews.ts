@@ -17,6 +17,10 @@ export const familyInterviewStatusEnum = pgEnum("family_interview_status", [
   "transcribing",
   "review",
   "published",
+  // Interview Quest system statuses (added in migration 0105)
+  "in_progress",
+  "transcribed",
+  "completed",
 ]);
 
 export const familyInterviewsTable = pgTable("family_interviews", {
@@ -25,6 +29,13 @@ export const familyInterviewsTable = pgTable("family_interviews", {
   // who is being interviewed
   subject_member_id:   integer("subject_member_id").references(() => familyMembersTable.id, { onDelete: "set null" }),
   interviewer_id:      integer("interviewer_id").references(() => usersTable.id, { onDelete: "set null" }),
+  // Interview Quest metadata (added in migration 0105)
+  title:               text("title"),
+  interview_type:      text("interview_type"),
+  conducted_by:        integer("conducted_by").references(() => usersTable.id, { onDelete: "set null" }),
+  transcript:          text("transcript"),
+  extraction_result:   jsonb("extraction_result").$type<Record<string, unknown>>(),
+  completed_at:        timestamp("completed_at", { withTimezone: true }),
   // Nia-suggested or curated prompts sent to the client before recording
   prompts_used:        jsonb("prompts_used").$type<string[]>().default([]),
   status:              familyInterviewStatusEnum("status").notNull().default("scheduled"),

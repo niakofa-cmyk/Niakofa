@@ -98,7 +98,6 @@ const COUNTRY_CENTROIDS: Record<string, [number, number]> = {
   // North Africa
   egypt:              [26.8206,  30.8025],
   sudan:              [12.8628,  30.2176],
-  ethiopia:           [9.1450,   40.4897],
   morocco:            [31.7917,  -7.0926],
   algeria:            [28.0339,   1.6596],
   tunisia:            [33.8869,   9.5375],
