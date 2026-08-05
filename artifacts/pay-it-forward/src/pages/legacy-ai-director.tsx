@@ -19,7 +19,7 @@ import {
   ArrowLeft, Loader2, Sparkles, Target, Gift, CheckCircle2,
   SkipForward, RefreshCw, AlertCircle, Zap, Mic, Camera,
   MapPin, Users, Calendar, FileText, BookOpen, Heart,
-  Compass, Search, ChevronRight,
+  Compass, Search, Footprints,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
