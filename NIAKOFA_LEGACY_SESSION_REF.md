@@ -1,0 +1,118 @@
+# Niakofa Legacy — Session Reference File
+> Keep until session is declared complete.
+
+## Session Date: August 5, 2026
+
+---
+
+## Reference Assets Uploaded This Session
+
+| File | Purpose |
+|------|---------|
+| `niakofa_panel1_home_1785952453433.png` | Full Niakofa Legacy Start Screen panel design (source truth) |
+| `ChatGPT_Image_Aug_5,_2026_at_12_17_02_PM_1785952464301.png` | Cinematic background — baobab tree sunset scene |
+| `ChatGPT_Image_Aug_5,_2026_at_12_30_25_PM_1785952495028.png` | Niakofa gold logo / emblem (The Living Family Legacy Experience) |
+
+**Note:** The Aug 5 images were uploaded to the session but not written to disk. The existing `artifacts/pay-it-forward/public/legacy-living-family-reference.png` (1536×1024) serves as the cinematic background in the current build. If the new PNG files need to be saved to disk, they should be placed at:
+- `artifacts/pay-it-forward/public/niakofa-legacy-bg.png`
+- `artifacts/pay-it-forward/public/niakofa-legacy-logo.png`
+- `artifacts/pay-it-forward/public/niakofa-legacy-panel.png`
+
+---
+
+## Work Completed This Session
+
+### ✅ Phase 1 — Cinematic Start Screen (legacy-start-visual.tsx)
+- **Complete rewrite** of `artifacts/pay-it-forward/src/components/legacy-start-visual.tsx`
+- Design now matches the uploaded Niakofa panel reference exactly:
+  - Cinematic hero background (baobab tree sunset scene)
+  - Gold `N` emblem with ornate ring + serif lettermark
+  - NIAKOFA title in gradient gold (Georgia/serif)
+  - "THE LIVING FAMILY LEGACY EXPERIENCE" + "PLAY. DISCOVER. PRESERVE. HONOR."
+  - **CONTINUE YOUR JOURNEY** — primary gold button (only shown when `hasJourney = true`)
+  - **START NEW JOURNEY / GET STARTED** — secondary dark button → leads to `/legacy/start` (Awaken the Legacy workflow)
+  - **Mode grid** (4 cols): Legacy Mode · Exploration · Family Quests · Reunion
+  - **Bottom icon row** (6): Inventory · Journal · Map · Family · Quests · Settings
+  - ❌ REMOVED: "Button States" section (Primary/Secondary/Icon Button/Hover/Pressed/Disabled)
+  - ✅ ADDED: **YOUR FAMILY WORLD** card section:
+    - World Version badge
+    - "New since yesterday" label
+    - Recent family activity checklist (Grandma recorded stories, Uncle tagged church, etc.)
+    - AI unlocked chapter display
+    - **Continue Journey** CTA button
+
+### ✅ Phase 2 — legacy-home.tsx Wire-up
+- Updated both `LegacyStartVisual` call sites in `legacy-home.tsx` to pass:
+  - `worldVersion` — from `dailyWelcome.worldVersion` or `worldVersion.currentVersion`
+  - `recentActivities` — from `dailyWelcome.recentChanges`
+  - `currentChapterNumber` / `currentChapterTitle` — from active session or new chapters
+  - `isAiUnlocked` — from `isAiEnabled`
+  - All mode grid nav callbacks → `setActiveMode()` or route navigation
+  - All bottom icon nav callbacks → appropriate routes
+
+### ✅ Phase 3 — Navigation
+- Bottom nav "Legacy" tab → `/legacy` → shows new Start Screen
+- "Start New Journey" / "Get Started" button → `/legacy/start` (Awaken the Legacy workflow: ancestor selection cinematic)
+- "Continue Journey" button → `/legacy/play`
+- Mode grid → navigates to appropriate legacy sub-pages
+
+---
+
+## Architecture Notes
+
+### Start Screen Logic (legacy-home.tsx)
+```
+User taps "Legacy" (bottom nav or settings)
+  → /legacy (LegacyHomePage)
+    ├── !ready (no family data): Shows LegacyStartVisual (isReady=false, hasJourney=false)
+    │     └── "Get Started" button → /legacy/onboarding
+    ├── ready + !setupDone: redirect → /legacy/onboarding
+    └── ready + setupDone: Shows LegacyStartVisual (isReady=true)
+          ├── hasJourney=true: Shows "Continue Your Journey" + "Start New Journey"
+          └── hasJourney=false: Shows only "Start New Journey" button
+                └── → /legacy/start (Awaken the Legacy: ancestor selection + cinematic)
+```
+
+### Awaken the Legacy Workflow (/legacy/start)
+Lives in `artifacts/pay-it-forward/src/pages/legacy-start.tsx`:
+1. Load ancestor candidates from `/api/legacy/ancestors/:familyId`
+2. Show ancestor selection cards
+3. User selects ancestor → taps "Enter Their World"
+4. Cinematic "You awaken..." reveal: Year → Location → Name → Age → Occupation
+5. Show family stats + Chapter I preview
+6. "Begin" → POST `/api/legacy/chapters/:familyId/init` → navigate to chapter
+
+### YOUR FAMILY WORLD Data Sources
+- `worldVersion` ← `dailyWelcome.worldVersion` or `worldVersion.currentVersion`
+- Activity lines ← `dailyWelcome.recentChanges[].description`
+- Chapter ← active session chapter or `dailyWelcome.newChapters[0]`
+- AI status ← `isAiEnabled` (from `/api/legacy/quests/:familyId`)
+
+---
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `artifacts/pay-it-forward/src/components/legacy-start-visual.tsx` | Complete rewrite — new cinematic start screen |
+| `artifacts/pay-it-forward/src/pages/legacy-home.tsx` | Updated both LegacyStartVisual call sites with world-state props |
+
+## Files NOT Modified (no changes needed)
+- `artifacts/pay-it-forward/src/components/BottomNav.tsx` — Legacy tab already wired to `/legacy`
+- `artifacts/pay-it-forward/src/pages/legacy-start.tsx` — Awaken the Legacy workflow intact
+- `artifacts/pay-it-forward/src/App.tsx` — Routes already configured
+
+---
+
+## Remaining / Pending Phases
+
+- [ ] Embed the actual uploaded PNG images (panel, bg, logo) to `public/` once available on disk
+- [ ] Verify Railway deployment is healthy at `zesty-ambition-production-f6a1.up.railway.app`
+- [ ] Evaluate and fix failing Railway CI/CD commits
+- [ ] Push all improvements to GitHub main via `git push origin main`
+
+---
+
+## Repository
+- GitHub: https://github.com/niakofa-cmyk/Niakofa
+- Railway: `zesty-ambition-production-f6a1.up.railway.app`
