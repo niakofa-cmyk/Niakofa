@@ -73,6 +73,8 @@ export default function LegacyCoreLoop({
 
   if (changes.length === 0 || dismissed) return null;
 
+  const allVisible = visibleStage >= changes.length;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 animate-[fadeIn_0.3s_ease-out]">
       <div className="max-w-sm w-full bg-gradient-to-b from-[#1a1308] to-[#0a0604] border border-amber-700/30 rounded-2xl p-6 shadow-2xl">
@@ -90,10 +92,10 @@ export default function LegacyCoreLoop({
           {changes.map((change, i) => {
             const stage = LOOP_STAGES.find((s) => s.key === change.type) ?? LOOP_STAGES[0];
             const Icon = stage.icon;
-            const isVisible = i < visibleStage;
+            const isVisible = visibleStage > i;
             return (
               <div key={i} className={`flex items-start gap-3 transition-all duration-500 ${isVisible ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"}`}>
-                <div className={`w-8 h-8 rounded-lg ${stage.bgColor} flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div className={`w-8 h-8 rounded-lg ${stage.bgColor} flex items-center justify-center flex-shrink-0 mt-0.5`}>
                   <Icon className={`w-4 h-4 ${stage.color}`} />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -109,19 +111,20 @@ export default function LegacyCoreLoop({
         <div className="flex items-center justify-center gap-1 mb-5">
           {LOOP_STAGES.map((stage, i) => {
             const Icon = stage.icon;
-            const isActive = i < visibleStage;
+            const isActive = visibleStage > i;
+            const showArrow = i !== LOOP_STAGES.length - 1;
             return (
               <div key={stage.key} className="flex items-center">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 ${isActive ? `${stage.bgColor} border border-amber-500/30` : "bg-stone-900 border border-stone-800"}`}>
                   <Icon className={`w-3 h-3 ${isActive ? stage.color : "text-stone-700"}`} />
                 </div>
-                {i < LOOP_STAGES.length - 1 && <ChevronRight className={`w-3 h-3 ${isActive ? "text-amber-600" : "text-stone-800"}`} />}
+                {showArrow && <ChevronRight className={`w-3 h-3 ${isActive ? "text-amber-600" : "text-stone-800"}`} />}
               </div>
             );
           })}
         </div>
 
-        {visibleStage >= changes.length && (
+        {allVisible && (
           <button onClick={handleDismiss} className="w-full bg-amber-500 text-amber-950 font-black text-sm uppercase tracking-widest py-3.5 rounded-xl active:opacity-80 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 animate-[fadeIn_0.4s_ease-out]">
             Continue Your Journey
             <ChevronRight className="w-4 h-4" />
