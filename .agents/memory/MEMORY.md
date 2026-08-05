@@ -1,3 +1,4 @@
 - [Niakofa Legacy Mode](niakofa-legacy-mode.md) — 5th bottom-nav tab (/legacy); AI quest engine via Anthropic Haiku + 24h Family Reservoir cache; es locale needs all nav keys; legacyRouter must be in router.use() chain not just imported.
 - [Niakofa Legacy recovery checks](niakofa-legacy-recovery-checks.md) — run-migrations.mjs RECOVERY_CHECKs cover 0018-0021, 0093-0104; each new migration era needs a corresponding check or Phase 5 routes 500 silently on Railway.
 - [Legacy Geocoding + Audio](niakofa-legacy-geocoding-audio.md) — places get coords via Nominatim+centroid fallback; audio assets resolve to presigned URLs and play in RPG scenes; both wired Aug 2026.
+- [Repository validation setup](niakofa-validation-setup.md) — keep one active flat ESLint config and exclude nested historical snapshots from repository-wide checks.
