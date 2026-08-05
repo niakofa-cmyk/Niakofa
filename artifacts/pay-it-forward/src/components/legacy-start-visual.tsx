@@ -16,10 +16,8 @@
  */
 
 import {
-  BookHeart,
   Compass,
   Users,
-  HandshakeIcon,
   Package,
   BookOpen,
   Map,
