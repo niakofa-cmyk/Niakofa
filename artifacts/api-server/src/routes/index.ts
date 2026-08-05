@@ -53,6 +53,8 @@ import legacyCharacterEvolutionRouter from "./legacy-character-evolution";
 import legacyReunionRouter from "./legacy-reunion";
 import legacyFamilyQuestsRouter from "./legacy-family-quests";
 import legacyCoopRouter from "./legacy-coop";
+import legacyInterviewQuestRouter from "./legacy-interview-quest";
+import legacyAutoJournalRouter from "./legacy-auto-journal";
 
 const router: IRouter = Router();
 
@@ -110,5 +112,7 @@ router.use(legacyCharacterEvolutionRouter);
 router.use(legacyReunionRouter);
 router.use(legacyFamilyQuestsRouter);
 router.use(legacyCoopRouter);
+router.use(legacyInterviewQuestRouter);
+router.use(legacyAutoJournalRouter);
 
 export default router;
