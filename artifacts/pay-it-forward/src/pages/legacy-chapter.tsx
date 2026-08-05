@@ -20,6 +20,7 @@ import {
   Footprints,
 } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
+import LegacyCoreLoop, { buildWorldChanges, type WorldChange } from "@/components/legacy-core-loop";
 
 // Ambient background gradient shifts based on the day-cycle position.
 // Morning → warm amber, midday → bright gold, evening → deep amber, night → dark with stars.
@@ -167,6 +168,9 @@ export default function LegacyChapterPlay() {
   const [completionNarrationLoading, setCompletionNarrationLoading] = useState(false);
   const [nextChapterId, setNextChapterId] = useState<number | null>(null);
   const [journalSaved, setJournalSaved] = useState(false);
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [worldChanges, setWorldChanges] = useState<WorldChange[]>([]);
+  const [showCoreLoop, setShowCoreLoop] = useState(false);
   const [mysteryQuestState, setMysteryQuestState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -231,6 +235,7 @@ export default function LegacyChapterPlay() {
           const sessRes = await fetch(`/api/legacy/sessions/active/${data.familyId}?chapterId=${chapterId}`, { headers: authHeaders() });
           if (sessRes.ok) {
             const sessData = await sessRes.json();
+            if (sessData?.session?.id) setSessionId(sessData.session.id);
             const sessStats = sessData?.session?.session_state?.stats;
             if (sessStats && typeof sessStats === "object") {
               setSessionStats({
@@ -475,10 +480,33 @@ export default function LegacyChapterPlay() {
 
         setChapterCompleted(true);
 
-        // The journal is auto-built from session decisions (GET /journal),
-        // so every choice the player made during this chapter is already
-        // persisted. We just flag it so the completion screen can confirm
-        // to the player that their journey was recorded.
+        // Auto-generate a narrative journal entry from the player's decisions
+        if (sessionId) {
+          try {
+            const journalRes = await fetch(`/api/legacy/journal/${sessionId}/auto-generate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...authHeaders() },
+            });
+            if (journalRes.ok) {
+              const journalData = await journalRes.json();
+              if (journalData?.generated) {
+                setJournalSaved(true);
+              }
+            }
+          } catch {
+            // Non-fatal — journal is also built from session decisions via GET /journal
+          }
+        }
+
+        // Show the core loop overlay: Memory→AI→World Changes→Player Notices→New Gameplay→New Memory
+        const changes = buildWorldChanges("chapter_complete", {
+          summary: completionNarration ?? undefined,
+          newChapterUnlocked: !!nextChapterId,
+        });
+        setWorldChanges(changes);
+        setShowCoreLoop(true);
+
+        // Also flag journal saved as fallback (GET /journal builds it from decisions)
         setJournalSaved(true);
 
         // Fetch AI-generated chapter summary narration for the completion screen
@@ -1224,6 +1252,14 @@ export default function LegacyChapterPlay() {
           <MapIcon className="w-3.5 h-3.5" /> Map
         </button>
       </div>
+
+      {/* Core Loop Overlay — makes Memory→AI→World Changes→Player Notices→New Gameplay→New Memory visible */}
+      {showCoreLoop && worldChanges.length > 0 && (
+        <LegacyCoreLoop
+          changes={worldChanges}
+          onComplete={() => setShowCoreLoop(false)}
+        />
+      )}
     </div>
   );
 }
