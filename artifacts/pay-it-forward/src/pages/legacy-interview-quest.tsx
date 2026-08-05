@@ -1,0 +1,680 @@
+/**
+ * Legacy Interview Quest — Microphone as Gameplay
+ * Route: /legacy/interview-quest
+ *
+ * Transforms the microphone from a utility into a core gameplay mechanic.
+ * Players embark on structured interview quests:
+ *
+ *   Interview Quest → AI Transcribes → Extracts Facts → Updates Timeline
+ *     → Updates Family Tree → Creates Dialogue → Unlocks Chapter
+ *     → Expands Map → Generates Achievement
+ *
+ * This page:
+ * 1. Lists available interview quests from GET /api/legacy/interview-quests/:familyId
+ * 2. Lets the player start a quest (POST /start)
+ * 3. Records audio via MediaRecorder
+ * 4. Submits the recording (POST /submit)
+ * 5. Shows AI extraction results (GET /result)
+ * 6. Completes the quest and triggers world regeneration (POST /complete)
+ */
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "wouter";
+import {
+  ArrowLeft, Loader2, Mic, MicOff, Square, Play, Pause,
+  CheckCircle2, Sparkles, ChevronRight, AlertCircle,
+  Users, MapPin, Calendar, BookOpen, Trophy, Brain,
+  Clock, Volume2, X, RefreshCw, Zap,
+} from "lucide-react";
+import { useAppContext } from "@/lib/AppContext";
+import { authHeaders } from "@/lib/auth";
+import { toast } from "sonner";
+
+interface InterviewQuest {
+  questType: string;
+  title: string;
+  description: string;
+  suggestedQuestions: string[];
+  rewardXp: number;
+  worldChanges: string[];
+  unlocks: string[];
+  targetMemberId: number | null;
+  targetMemberName: string | null;
+  urgency: "high" | "medium" | "low";
+}
+
+interface QuestResult {
+  transcript: string;
+  extractedFacts: Array<{ fact: string; type: string; confidence: number }>;
+  newPlaces: string[];
+  newEvents: Array<{ title: string; date: string | null }>;
+  newPeople: string[];
+  dialogueSnippet: string;
+  chapterUnlocked: boolean;
+  achievementGenerated: string | null;
+}
+
+type Phase = "browsing" | "recording" | "submitting" | "result" | "complete";
+
+export default function LegacyInterviewQuestPage() {
+  const { currentUser } = useAppContext();
+  const [, navigate] = useLocation();
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [familyId, setFamilyId] = useState<number | null>(null);
+  const [quests, setQuests] = useState<InterviewQuest[]>([]);
+  const [activeQuest, setActiveQuest] = useState<InterviewQuest | null>(null);
+  const [phase, setPhase] = useState<Phase>("browsing");
+  const [questId, setQuestId] = useState<number | null>(null);
+
+  // Recording state
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Result state
+  const [result, setResult] = useState<QuestResult | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Load family and quests
+  useEffect(() => {
+    if (!currentUser) return;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const famRes = await fetch("/api/family/mine", { headers: authHeaders() });
+        if (!famRes.ok) throw new Error("Failed to load family");
+        const famData = await famRes.json() as { families?: { id: number }[] };
+        if (!famData.families?.length) throw new Error("No family found");
+        const fid = famData.families[0].id;
+        setFamilyId(fid);
+
+        const questsRes = await fetch(`/api/legacy/interview-quests/${fid}`, { headers: authHeaders() });
+        if (!questsRes.ok) throw new Error("Failed to load interview quests");
+        const questsData = await questsRes.json() as { quests: InterviewQuest[] };
+        setQuests(questsData.quests ?? []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [currentUser]);
+
+  // Start recording
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordingTime(0);
+      timerRef.current = setInterval(() => {
+        setRecordingTime((t) => t + 1);
+      }, 1000);
+    } catch {
+      toast.error("Couldn't access microphone. Check permissions and try again.");
+    }
+  }, []);
+
+  // Stop recording
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  }, [isRecording]);
+
+  // Submit recording
+  const submitRecording = useCallback(async () => {
+    if (!audioBlob || !familyId || !activeQuest) return;
+    setPhase("submitting");
+    setSubmitError(null);
+
+    try {
+      // Start the quest first
+      const startRes = await fetch(`/api/legacy/interview-quests/${familyId}/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          questType: activeQuest.questType,
+          targetMemberId: activeQuest.targetMemberId,
+          title: activeQuest.title,
+        }),
+      });
+      if (!startRes.ok) throw new Error("Failed to start quest");
+      const startData = await startRes.json() as { quest: { id: number } };
+      setQuestId(startData.quest.id);
+
+      // Submit audio as form data
+      const formData = new FormData();
+      formData.append("audio", audioBlob, "interview.webm");
+
+      const submitRes = await fetch(`/api/legacy/interview-quests/${startData.quest.id}/submit`, {
+        method: "POST",
+        headers: { ...authHeaders() },
+        body: formData,
+      });
+      if (!submitRes.ok) throw new Error("Failed to submit recording");
+      const submitData = await submitRes.json() as { transcript: string };
+
+      // Get results
+      const resultRes = await fetch(`/api/legacy/interview-quests/${startData.quest.id}/result`, {
+        headers: authHeaders(),
+      });
+      if (!resultRes.ok) throw new Error("Failed to get results");
+      const resultData = await resultRes.json() as { result: QuestResult };
+      setResult(resultData.result);
+      setPhase("result");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to submit");
+      setPhase("recording");
+    }
+  }, [audioBlob, familyId, activeQuest]);
+
+  // Complete quest
+  const completeQuest = useCallback(async () => {
+    if (!questId) return;
+    try {
+      await fetch(`/api/legacy/interview-quests/${questId}/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+      });
+      setPhase("complete");
+    } catch {
+      setPhase("complete");
+    }
+  }, [questId]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, [isRecording]);
+
+  // Format time
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
+  // ── Loading ──
+  if (loading) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[#1A1008]">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+      </div>
+    );
+  }
+
+  // ── Error ──
+  if (error) {
+    return (
+      <div className="min-h-[100dvh] bg-[#1A1008] text-amber-100">
+        <div className="sticky top-0 z-20 bg-[#1A1008]/95 backdrop-blur border-b border-amber-900/30 px-4 py-3 flex items-center gap-3">
+          <button onClick={() => navigate("/legacy")} className="text-amber-500 active:opacity-70">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-sm font-black text-amber-300 uppercase tracking-widest">Interview Quests</h1>
+        </div>
+        <div className="px-6 py-8 text-center">
+          <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-4" />
+          <p className="text-sm text-amber-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Complete ──
+  if (phase === "complete") {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[#1A1008] px-6">
+        <div className="text-center max-w-sm">
+          <div className="w-16 h-16 rounded-full bg-amber-400/10 border border-amber-400/30 flex items-center justify-center mx-auto mb-5">
+            <CheckCircle2 className="w-8 h-8 text-amber-400" />
+          </div>
+          <h2 className="text-xl font-black text-stone-100 mb-2">Quest Complete!</h2>
+          <p className="text-sm text-stone-400 mb-6">
+            Your interview has been preserved. The world has regenerated with new memories, dialogue, and stories.
+          </p>
+          {result && (
+            <div className="bg-amber-400/5 border border-amber-400/20 rounded-xl p-4 mb-6 text-left">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">World Regenerated</span>
+              </div>
+              <div className="space-y-2">
+                {result.newPlaces.length > 0 && (
+                  <p className="text-xs text-stone-400 flex items-center gap-2">
+                    <MapPin className="w-3 h-3 text-amber-500" /> New place: {result.newPlaces[0]}
+                  </p>
+                )}
+                {result.newEvents.length > 0 && (
+                  <p className="text-xs text-stone-400 flex items-center gap-2">
+                    <Calendar className="w-3 h-3 text-amber-500" /> Timeline event: {result.newEvents[0].title}
+                  </p>
+                )}
+                {result.dialogueSnippet && (
+                  <p className="text-xs text-stone-400 flex items-center gap-2">
+                    <BookOpen className="w-3 h-3 text-amber-500" /> New dialogue unlocked
+                  </p>
+                )}
+                {result.chapterUnlocked && (
+                  <p className="text-xs text-stone-400 flex items-center gap-2">
+                    <Sparkles className="w-3 h-3 text-amber-500" /> New chapter unlocked
+                  </p>
+                )}
+                {result.achievementGenerated && (
+                  <p className="text-xs text-stone-400 flex items-center gap-2">
+                    <Trophy className="w-3 h-3 text-amber-500" /> Achievement: {result.achievementGenerated}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => navigate("/legacy")}
+              className="bg-amber-500 text-stone-900 font-bold rounded-xl px-6 py-3 text-sm"
+            >
+              Return to Legacy Hub
+            </button>
+            <button
+              onClick={() => {
+                setPhase("browsing");
+                setActiveQuest(null);
+                setResult(null);
+                setAudioBlob(null);
+                setAudioUrl(null);
+                setQuestId(null);
+              }}
+              className="text-amber-400 font-medium rounded-xl px-6 py-3 text-sm border border-amber-700/30"
+            >
+              Start Another Interview
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Result ──
+  if (phase === "result" && result) {
+    return (
+      <div className="min-h-[100dvh] bg-[#1A1008] text-stone-100 pb-8">
+        <div className="sticky top-0 z-20 bg-[#1A1008]/95 backdrop-blur border-b border-amber-900/30 px-4 py-3 flex items-center gap-3">
+          <button onClick={() => navigate("/legacy")} className="text-amber-500 active:opacity-70">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-sm font-black text-amber-300 uppercase tracking-widest">Interview Results</h1>
+        </div>
+
+        <div className="px-4 pt-6 pb-4">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-600/30 flex items-center justify-center mx-auto mb-3">
+            <Brain className="w-8 h-8 text-amber-500" />
+          </div>
+          <h2 className="text-lg font-black text-amber-200 text-center mb-1">AI Extraction Complete</h2>
+          <p className="text-xs text-amber-600 text-center mb-6">Nia has analyzed your interview</p>
+        </div>
+
+        {/* Transcript */}
+        {result.transcript && (
+          <div className="px-4 mb-6">
+            <h3 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <Volume2 className="w-3.5 h-3.5" /> Transcript
+            </h3>
+            <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
+              <p className="text-sm text-stone-300 leading-relaxed italic">"{result.transcript.slice(0, 500)}..."</p>
+            </div>
+          </div>
+        )}
+
+        {/* Extracted Facts */}
+        {result.extractedFacts.length > 0 && (
+          <div className="px-4 mb-6">
+            <h3 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5" /> Extracted Facts
+            </h3>
+            <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-2">
+              {result.extractedFacts.map((fact, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                    fact.confidence > 0.8 ? "bg-emerald-400" : fact.confidence > 0.5 ? "bg-amber-400" : "bg-stone-500"
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-stone-300">{fact.fact}</p>
+                    <p className="text-[10px] text-stone-500 mt-0.5 uppercase">{fact.type} · {Math.round(fact.confidence * 100)}% confidence</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* World Changes */}
+        <div className="px-4 mb-6">
+          <h3 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5" /> World Changes
+          </h3>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-3">
+            {result.newPlaces.length > 0 && (
+              <div className="flex items-center gap-3">
+                <MapPin className="w-4 h-4 text-amber-400" />
+                <div>
+                  <p className="text-xs font-bold text-amber-300">New Places</p>
+                  <p className="text-[10px] text-stone-400">{result.newPlaces.join(", ")}</p>
+                </div>
+              </div>
+            )}
+            {result.newEvents.length > 0 && (
+              <div className="flex items-center gap-3">
+                <Calendar className="w-4 h-4 text-amber-400" />
+                <div>
+                  <p className="text-xs font-bold text-amber-300">Timeline Events</p>
+                  <p className="text-[10px] text-stone-400">{result.newEvents.map((e) => e.title).join(", ")}</p>
+                </div>
+              </div>
+            )}
+            {result.newPeople.length > 0 && (
+              <div className="flex items-center gap-3">
+                <Users className="w-4 h-4 text-amber-400" />
+                <div>
+                  <p className="text-xs font-bold text-amber-300">People Identified</p>
+                  <p className="text-[10px] text-stone-400">{result.newPeople.join(", ")}</p>
+                </div>
+              </div>
+            )}
+            {result.dialogueSnippet && (
+              <div className="flex items-center gap-3">
+                <BookOpen className="w-4 h-4 text-amber-400" />
+                <div>
+                  <p className="text-xs font-bold text-amber-300">New Dialogue</p>
+                  <p className="text-[10px] text-stone-400 italic">"{result.dialogueSnippet.slice(0, 80)}..."</p>
+                </div>
+              </div>
+            )}
+            {result.chapterUnlocked && (
+              <div className="flex items-center gap-3">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <div>
+                  <p className="text-xs font-bold text-purple-300">Chapter Unlocked</p>
+                  <p className="text-[10px] text-stone-400">A new chapter is now available</p>
+                </div>
+              </div>
+            )}
+            {result.achievementGenerated && (
+              <div className="flex items-center gap-3">
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <div>
+                  <p className="text-xs font-bold text-amber-300">Achievement</p>
+                  <p className="text-[10px] text-stone-400">{result.achievementGenerated}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Complete button */}
+        <div className="px-4">
+          <button
+            onClick={completeQuest}
+            className="w-full bg-amber-500 text-stone-900 font-black text-sm uppercase tracking-widest py-3.5 rounded-xl active:opacity-80 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20"
+          >
+            Complete Quest & Regenerate World
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Recording ──
+  if (phase === "recording" && activeQuest) {
+    return (
+      <div className="min-h-[100dvh] bg-[#1A1008] text-stone-100 flex flex-col">
+        <div className="sticky top-0 z-20 bg-[#1A1008]/95 backdrop-blur border-b border-amber-900/30 px-4 py-3 flex items-center gap-3">
+          <button
+            onClick={() => {
+              stopRecording();
+              setPhase("browsing");
+              setActiveQuest(null);
+              setAudioBlob(null);
+              setAudioUrl(null);
+            }}
+            className="text-amber-500 active:opacity-70"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-sm font-black text-amber-300 uppercase tracking-widest">{activeQuest.title}</h1>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-6">
+          {/* Suggested questions */}
+          <div className="mb-6">
+            <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <BookOpen className="w-3.5 h-3.5" /> Suggested Questions
+            </h2>
+            <div className="space-y-2">
+              {activeQuest.suggestedQuestions.map((q, i) => (
+                <div key={i} className="bg-[#2A1A0F] border border-amber-900/30 rounded-xl p-3">
+                  <p className="text-sm text-amber-200">{q}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Recording indicator */}
+          {isRecording && (
+            <div className="flex flex-col items-center gap-3 mb-6">
+              <div className="w-20 h-20 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center animate-pulse">
+                <Mic className="w-8 h-8 text-red-400" />
+              </div>
+              <p className="text-2xl font-black text-red-400 tabular-nums">{formatTime(recordingTime)}</p>
+              <p className="text-xs text-stone-500 uppercase tracking-wider">Recording...</p>
+            </div>
+          )}
+
+          {/* Recording controls */}
+          {!isRecording && !audioBlob && (
+            <div className="flex flex-col items-center gap-4 mb-6">
+              <button
+                onClick={startRecording}
+                className="w-20 h-20 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center active:scale-95 transition-transform"
+              >
+                <Mic className="w-8 h-8 text-amber-400" />
+              </button>
+              <p className="text-xs text-stone-500 uppercase tracking-wider">Tap to start recording</p>
+            </div>
+          )}
+
+          {/* Stop button */}
+          {isRecording && (
+            <div className="flex justify-center mb-6">
+              <button
+                onClick={stopRecording}
+                className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center active:scale-95 transition-transform"
+              >
+                <Square className="w-6 h-6 text-red-400" />
+              </button>
+            </div>
+          )}
+
+          {/* Playback */}
+          {audioBlob && audioUrl && (
+            <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 mb-6">
+              <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3">Recording Ready</h3>
+              <audio
+                ref={audioPlaybackRef}
+                src={audioUrl}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onEnded={() => setPlaying(false)}
+                className="hidden"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const el = audioPlaybackRef.current;
+                    if (!el) return;
+                    if (playing) { el.pause(); } else { el.play().catch(() => {}); }
+                  }}
+                  className="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center active:scale-95"
+                >
+                  {playing ? <Pause className="w-5 h-5 text-amber-400" /> : <Play className="w-5 h-5 text-amber-400 ml-0.5" />}
+                </button>
+                <div className="flex-1">
+                  <p className="text-xs text-stone-400">Your recording</p>
+                  <p className="text-[10px] text-stone-500">{(audioBlob.size / 1024).toFixed(0)} KB</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setAudioBlob(null);
+                    setAudioUrl(null);
+                  }}
+                  className="text-stone-500 hover:text-red-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Submit error */}
+          {submitError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4">
+              <p className="text-xs text-red-400">{submitError}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Submit button */}
+        {audioBlob && (
+          <div className="px-4 py-3 border-t border-stone-800/50">
+            <button
+              onClick={submitRecording}
+              disabled={phase === "submitting"}
+              className="w-full bg-amber-500 text-stone-900 font-black text-sm uppercase tracking-widest py-3.5 rounded-xl active:opacity-80 flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {phase === "submitting" ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing with AI...</>
+              ) : (
+                <>Submit Interview <ChevronRight className="w-4 h-4" /></>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Browsing (default) ──
+  return (
+    <div className="min-h-[100dvh] bg-[#1A1008] text-stone-100 pb-8">
+      <div className="sticky top-0 z-20 bg-[#1A1008]/95 backdrop-blur border-b border-amber-900/30 px-4 py-3 flex items-center gap-3">
+        <button onClick={() => navigate("/legacy")} className="text-amber-500 active:opacity-70">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="text-sm font-black text-amber-300 uppercase tracking-widest">Interview Quests</h1>
+      </div>
+
+      {/* Hero */}
+      <div className="px-4 pt-6 pb-4 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-600/30 flex items-center justify-center mx-auto mb-3">
+          <Mic className="w-8 h-8 text-amber-500" />
+        </div>
+        <h2 className="text-lg font-black text-amber-200 mb-1">Interview Quests</h2>
+        <p className="text-xs text-amber-600 leading-relaxed max-w-xs mx-auto">
+          The microphone is your most powerful tool. Each interview regenerates your family's world —
+          new dialogue, chapters, places, and memories.
+        </p>
+      </div>
+
+      {/* Quest list */}
+      {quests.length === 0 ? (
+        <div className="px-6 py-8 text-center">
+          <Users className="w-10 h-10 text-amber-700 mx-auto mb-4" />
+          <p className="text-sm text-amber-600 mb-2">No interview quests available yet.</p>
+          <p className="text-xs text-stone-500">Add family members to unlock interview quests.</p>
+        </div>
+      ) : (
+        <div className="px-4 space-y-3">
+          {quests.map((quest, idx) => {
+            const urgencyColor =
+              quest.urgency === "high" ? "border-red-500/30 bg-red-500/5" :
+              quest.urgency === "medium" ? "border-amber-500/30 bg-amber-500/5" :
+              "border-stone-700/50 bg-stone-800/30";
+            return (
+              <button
+                key={idx}
+                onClick={() => {
+                  setActiveQuest(quest);
+                  setPhase("recording");
+                  setAudioBlob(null);
+                  setAudioUrl(null);
+                  setResult(null);
+                  setSubmitError(null);
+                }}
+                className={`w-full text-left border ${urgencyColor} rounded-2xl p-4 active:scale-[0.98] transition-transform group`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        quest.urgency === "high" ? "bg-red-500/20 text-red-400" :
+                        quest.urgency === "medium" ? "bg-amber-500/20 text-amber-400" :
+                        "bg-stone-600/20 text-stone-400"
+                      }`}>{quest.urgency} priority</span>
+                      <span className="text-[10px] text-amber-500 font-bold">+{quest.rewardXp} XP</span>
+                    </div>
+                    <h3 className="text-sm font-black text-amber-200">{quest.title}</h3>
+                    {quest.targetMemberName && (
+                      <p className="text-[10px] text-amber-600 mt-0.5">with {quest.targetMemberName}</p>
+                    )}
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 transition-colors flex-shrink-0 mt-1" />
+                </div>
+                <p className="text-xs text-stone-400 leading-relaxed mb-3">{quest.description}</p>
+                {/* Unlocks */}
+                <div className="flex flex-wrap gap-1.5">
+                  {quest.unlocks.slice(0, 3).map((unlock, i) => (
+                    <span key={i} className="text-[9px] text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-full px-2 py-0.5">
+                      {unlock}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
