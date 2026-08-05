@@ -12,6 +12,7 @@ import { useLocation } from "wouter";
 import {
   ArrowLeft, Loader2, Users, Camera, BookOpen, Mic, MapPin,
   Calendar, GitBranch, Sparkles, TrendingUp, Heart, Cake, Plane, Flower, Plus,
+  ChevronRight,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -229,6 +230,39 @@ export default function LegacyWorldEvolutionPage() {
             </div>
           );
         })()}
+
+        {/* AI World Regeneration — Contribution Guide */}
+        <div className="bg-stone-800/40 border border-amber-800/30 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">How Contributions Regenerate Your World</h2>
+          </div>
+          <p className="text-xs text-stone-400 mb-3 leading-relaxed">
+            Every contribution to your Family Vault automatically changes the game world. Here's what each unlocks:
+          </p>
+          <div className="space-y-2.5">
+            {[
+              { contribution: "New Ancestor",  icon: Users,    color: "text-rose-400",    unlocks: "Character, quests, timeline, new chapters" },
+              { contribution: "Oral Story",    icon: Mic,      color: "text-amber-400",   unlocks: "Dialogue, journal entries, side quests" },
+              { contribution: "Photo",         icon: Camera,   color: "text-sky-400",     unlocks: "Collectibles, memories, NPC knowledge" },
+              { contribution: "Landmark",      icon: MapPin,   color: "text-teal-400",    unlocks: "Map expansion, exploration, travel quests" },
+              { contribution: "Letter / Doc",  icon: BookOpen, color: "text-purple-400",  unlocks: "Historical context, mysteries, collectibles" },
+              { contribution: "Family Recipe", icon: Heart,    color: "text-orange-400",  unlocks: "Cultural traditions, cooking quests, achievements" },
+              { contribution: "New Relative",  icon: Users,    color: "text-emerald-400", unlocks: "Co-op content, reunion events, shared missions" },
+            ].map(({ contribution, icon: Icon, color, unlocks }, i) => (
+              <div key={i} className="flex items-start gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-stone-700/60 flex items-center justify-center flex-shrink-0">
+                  <Icon className={`w-3.5 h-3.5 ${color}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-stone-200">{contribution}</p>
+                  <p className="text-xs text-stone-500 leading-relaxed">{unlocks}</p>
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-stone-600 flex-shrink-0 mt-1" />
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Emotional Calendar */}
         {calendar.length > 0 && (

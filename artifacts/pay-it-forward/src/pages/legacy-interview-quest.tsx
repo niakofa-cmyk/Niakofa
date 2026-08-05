@@ -24,7 +24,7 @@ import {
   ArrowLeft, Loader2, Mic, MicOff, Square, Play, Pause,
   CheckCircle2, Sparkles, ChevronRight, AlertCircle,
   Users, MapPin, Calendar, BookOpen, Trophy, Brain,
-  Clock, Volume2, X, RefreshCw, Zap,
+  Clock, Volume2, X, RefreshCw, Zap, Video,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -615,6 +615,50 @@ export default function LegacyInterviewQuestPage() {
           The microphone is your most powerful tool. Each interview regenerates your family's world —
           new dialogue, chapters, places, and memories.
         </p>
+      </div>
+
+      {/* ── Live Video Interview — Legacy Quest ── */}
+      <div className="px-4 mb-4">
+        <div className="relative overflow-hidden rounded-2xl border border-rose-700/30 bg-gradient-to-br from-rose-950/40 to-[#1A1008]">
+          <div className="absolute inset-0 bg-gradient-to-br from-rose-900/10 to-transparent pointer-events-none" />
+          <div className="relative p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center flex-shrink-0">
+                <Video className="w-5 h-5 text-rose-400" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-black text-amber-100">Live Video Interview</p>
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400">Legacy Quest</span>
+                </div>
+                <p className="text-xs text-amber-600 mt-0.5">Interview a relative face-to-face — the highest-value Legacy quest.</p>
+              </div>
+            </div>
+            <p className="text-xs text-stone-400 leading-relaxed mb-3">
+              Conduct a live video interview with an elder or relative. AI listens in real time,
+              extracts stories, places, and people — then regenerates dialogue, unlocks new chapters,
+              and expands your family's world map. Something no other family platform does.
+            </p>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {["New Character", "New Memories", "New Storyline", "Map Expansion", "+250 XP"].map((tag, i) => (
+                <span key={i} className="text-[9px] text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-full px-2 py-0.5">{tag}</span>
+              ))}
+            </div>
+            <div className="bg-rose-950/30 border border-rose-800/30 rounded-xl px-3 py-2.5 flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
+              <p className="text-xs text-rose-500 italic">
+                Live video interviews are coming soon. For now, record an audio interview below — it uses the same AI pipeline.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Divider ── */}
+      <div className="px-4 mb-3 flex items-center gap-3">
+        <div className="flex-1 h-px bg-amber-900/30" />
+        <p className="text-[10px] text-amber-800 uppercase tracking-widest font-bold">Audio Interview Quests</p>
+        <div className="flex-1 h-px bg-amber-900/30" />
       </div>
 
       {/* Quest list */}

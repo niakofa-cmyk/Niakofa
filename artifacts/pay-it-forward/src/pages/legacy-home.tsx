@@ -2238,59 +2238,80 @@ export default function LegacyHomePage() {
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Progress Dashboard</h2>
-                <button onClick={() => navigate("/diaspora/timeline")} className="text-xs text-amber-600 flex items-center gap-1">
-                  View Timeline <ChevronRight className="w-3 h-3" />
+                <button onClick={() => navigate("/legacy/world-evolution")} className="text-xs text-amber-600 flex items-center gap-1">
+                  View History <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
               <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4">
-                <div className="relative h-32 mb-4">
-                  <div className="absolute inset-0 rounded-xl overflow-hidden bg-gradient-to-b from-amber-900/20 to-amber-950/40">
-                    <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-amber-900/30 to-transparent" />
-                    <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-                      {(() => {
-                        const now = Date.now();
-                        const days = Array.from({ length: 7 }, (_, i) => {
-                          const dayStart = new Date(now - (6 - i) * 86400000);
-                          dayStart.setHours(0, 0, 0, 0);
-                          const dayEnd = dayStart.getTime() + 86400000;
-                          return memories.filter((m) => {
-                            const ts = new Date(m.created_at ?? Date.now()).getTime();
-                            return ts >= dayStart.getTime() && ts < dayEnd;
-                          }).length;
-                        });
-                        const maxVal = Math.max(...days, 1);
-                        return days.map((h, i) => (
-                          <div key={i} className="w-4 rounded-sm bg-amber-800/40 transition-all duration-300" style={{ height: (h / maxVal) * 24 + 4 }} />
-                        ));
-                      })()}
-                    </div>
+                {/* Circular SVG progress ring */}
+                <div className="flex items-center gap-5 mb-4">
+                  <div className="flex-shrink-0">
+                    {(() => {
+                      const r = 40;
+                      const circ = 2 * Math.PI * r;
+                      const filled = (progress / 100) * circ;
+                      return (
+                        <svg width="100" height="100" viewBox="0 0 100 100">
+                          {/* Track */}
+                          <circle
+                            cx="50" cy="50" r={r}
+                            fill="none"
+                            stroke="#3A2A0A"
+                            strokeWidth="10"
+                          />
+                          {/* Progress arc */}
+                          <circle
+                            cx="50" cy="50" r={r}
+                            fill="none"
+                            stroke="url(#legacyGrad)"
+                            strokeWidth="10"
+                            strokeLinecap="round"
+                            strokeDasharray={`${filled} ${circ}`}
+                            transform="rotate(-90 50 50)"
+                            style={{ transition: "stroke-dasharray 1s ease-out" }}
+                          />
+                          <defs>
+                            <linearGradient id="legacyGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stopColor="#b45309" />
+                              <stop offset="100%" stopColor="#f59e0b" />
+                            </linearGradient>
+                          </defs>
+                          {/* Centre text */}
+                          <text x="50" y="46" textAnchor="middle" fill="#fbbf24" fontSize="17" fontWeight="900" fontFamily="system-ui">{progress}%</text>
+                          <text x="50" y="59" textAnchor="middle" fill="#92400e" fontSize="7" fontWeight="700" fontFamily="system-ui" letterSpacing="1">LEGACY</text>
+                        </svg>
+                      );
+                    })()}
                   </div>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <p className="text-4xl font-black text-amber-400">{progress}%</p>
-                      <p className="text-xs text-amber-600 uppercase tracking-widest">Legacy Complete</p>
-                    </div>
+                  <div className="flex-1 space-y-2">
+                    {[
+                      { label: "Stories Recorded",  value: memories.length,                                                                              color: "text-amber-400"  },
+                      { label: "Records Added",      value: members.length + interviewCount,                                                              color: "text-rose-400"   },
+                      { label: "Landmarks Tagged",   value: completeness?.dimensions.find(d => d.key === "places")?.count ?? 0,                          color: "text-teal-400"   },
+                      { label: "Quests Completed",   value: Array.from(completedQuestIds).length,                                                        color: "text-emerald-400"},
+                    ].map(({ label, value, color }, i) => (
+                      <div key={i} className="flex items-center justify-between">
+                        <span className="text-xs text-amber-700">{label}</span>
+                        <span className={`text-sm font-black ${color}`}>{value}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { label: "Stories",   value: memories.length,       icon: BookHeart },
-                    { label: "Relatives", value: members.length,        icon: Users     },
-                    { label: "Families",  value: families.length,       icon: Shield    },
-                    { label: "Quests",    value: displayQuests.length,  icon: Target    },
-                  ].map(({ label, value, icon: Icon }, i) => (
-                    <div key={i} className="text-center bg-[#3A2A1A] rounded-xl p-2">
-                      <Icon className="w-4 h-4 text-amber-600 mx-auto mb-1" />
-                      <p className="text-sm font-black text-amber-300">{value}</p>
-                      <p className="text-xs text-amber-800">{label}</p>
-                    </div>
-                  ))}
-                </div>
+                {/* World version badge */}
+                {worldVersion && worldVersion.currentVersion > 0 && (
+                  <div className="flex items-center gap-2 mb-3 bg-amber-900/20 border border-amber-800/30 rounded-xl px-3 py-2">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                    <p className="text-xs text-amber-400">
+                      World version <span className="font-black">v{worldVersion.currentVersion}</span>
+                      {" — "}your vault has regenerated the game world {worldVersion.currentVersion} {worldVersion.currentVersion === 1 ? "time" : "times"}.
+                    </p>
+                  </div>
+                )}
                 <button
-                  onClick={() => navigate("/diaspora/timeline")}
-                  className="mt-3 w-full bg-amber-900/30 border border-amber-800/30 text-amber-500 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70"
+                  onClick={() => navigate("/legacy/world-evolution")}
+                  className="w-full bg-amber-900/30 border border-amber-800/30 text-amber-500 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
                 >
-                  View Full Progress
+                  <TrendingUp className="w-3.5 h-3.5" /> View Full Progress
                 </button>
               </div>
             </div>

@@ -23,6 +23,21 @@ Every family contribution (audio recording, ancestor added, place pinned) automa
 
 ---
 
+## The Core Loop (Aug 2026 Design Document)
+
+> "Right now, Legacy still appears to behave like: Feature → Feature → Feature → Feature.
+> Instead it needs to become: Memory → AI → World Changes → Player Notices → New Gameplay → New Memory.
+> That loop should drive every play session."
+
+**Wired Status:**
+- ✅ `logWorldEvolution()` called on every vault mutation (member, memory, story, interview, place, event, relation)
+- ✅ `bumpKnowledgeVersionIfChanged()` called after every evolution log entry
+- ✅ Cache busted on every vault write so AI sees fresh data immediately
+- ✅ `LegacyCoreLoop` component shows the loop steps to the player after chapter completion
+- ✅ Auto-journal generated after every play session
+
+---
+
 ## Chapter 0 — "Awaken the Legacy"
 
 First-run experience. Route: `/legacy/onboarding`
@@ -37,6 +52,22 @@ After all 3: `POST /api/legacy/chapters/:familyId/init` → navigate to `/legacy
 
 **Detection:** `localStorage.getItem("legacy:setupDone") === "1"` — set on completion
 **Entry guard:** `legacy-home.tsx` line ~882: redirects to `/legacy/onboarding` if not done
+
+---
+
+## AI World Regeneration — Contribution → Gameplay Changes Table
+
+| Contribution | Gameplay Changes |
+|---|---|
+| New ancestor | Character, quests, timeline, chapters unlocked |
+| Oral story (interview) | Dialogue, journal, side quests regenerated |
+| Photo | Collectibles, memories, relationships updated |
+| Landmark (place) | Map expansion, exploration quests unlocked |
+| Letter / document | Historical context, mysteries, collectibles |
+| Family recipe | Cultural traditions, cooking quests, achievements |
+| New relative (family member) | Co-op content, reunion events, shared missions |
+
+All of the above are wired via `logWorldEvolution()` in `artifacts/api-server/src/lib/legacy-world-evolution.ts`.
 
 ---
 
@@ -60,12 +91,11 @@ After all 3: `POST /api/legacy/chapters/:familyId/init` → navigate to `/legacy
 | `/legacy/world-evolution` | legacy-world-evolution.tsx | World version history |
 | `/legacy/challenges` | legacy-challenges.tsx | Family challenges (co-op) |
 | `/legacy/seasonal-events` | legacy-seasonal-events.tsx | Seasonal / emotional calendar events |
+| `/legacy/interview-quest` | legacy-interview-quest.tsx | Microphone as gameplay |
 
 ---
 
 ## Continue Journey — Full Flow
-
-The `/legacy/play` page (`legacy-play.tsx`) routes the player into the living RPG scene:
 
 ```
 /legacy/play
@@ -91,200 +121,156 @@ The `/legacy/play` page (`legacy-play.tsx`) routes the player into the living RP
     └── → /legacy/onboarding                  ← Chapter 0
 ```
 
-**Legacy Home hero button** (line 1060):
-```tsx
-onClick={() => navigate(`/legacy/chapter/${activeSession.currentChapterId}`)}
-```
-When `activeSession` exists, Continue Journey goes directly to the live chapter.
-When no active session, it goes to `/legacy/start` for ancestor selection → then chapter.
-
 ---
 
-## API Backend Routes (api-server)
+## Feature Inventory — Backend Routes
 
-All routes registered in `artifacts/api-server/src/routes/index.ts`.
-
-### Nia AI Routes
-- `GET  /api/nia/voice/profiles` — List voice profiles with ElevenLabs availability
-- `POST /api/nia/voice/transcribe` — Audio → text (Whisper STT via OpenAI)
-- `POST /api/nia/voice/speak` — Text → audio (TTS via ElevenLabs or OpenAI nova)
-
-### Legacy Engine Routes
-- `GET  /api/legacy/chapters/:familyId` — List chapters for a family
-- `POST /api/legacy/chapters/:familyId/init` — Initialize world + generate chapter seeds from vault data
-- `PATCH /api/legacy/chapters/:chapterId/status` — Transition chapter status (locked→unlocked→in_progress→completed)
-- `GET  /api/legacy/chapters/:chapterId/scenes` — Load scenes for a chapter
-- `GET  /api/legacy/completeness/:familyId` — Readiness score + missing data suggestions
-- `GET  /api/legacy/ancestors/:familyId` — Best ancestor candidates for gameplay
-- `POST /api/legacy/map/:familyId/places` — Pin a new family landmark
-- `GET  /api/legacy/game-master/:familyId/today` — Today's journey / emotional calendar
-- `GET  /api/legacy/game-master/:familyId/daily-welcome` — Daily world changes
-- `GET  /api/legacy/game-master/:familyId/narration` — Scene/chapter AI narration
-- `GET  /api/legacy/sessions/active/:familyId` — Active play session (Continue Journey)
-- `POST /api/legacy/sessions` — Create new play session
-- `POST /api/legacy/sessions/progress` — Save scene progress + choice
-- `POST /api/legacy/reservoir/:familyId/invalidate` — Force world cache invalidation
-
----
-
-## Audio Recording — End-to-End Flow
-
-### Legacy Onboarding (legacy-onboarding.tsx — Quest 2)
-1. `MediaRecorder` captures real audio (getUserMedia)
-2. Chunks collected into `audioChunksRef`
-3. On stop: Blob → base64 → POST `/api/family/:id/memories` (create memory)
-4. POST `/api/family/:id/memories/:id/assets/upload-direct` (base64 audio asset)
-5. POST `/api/nia/voice/transcribe` (Whisper STT → transcript)
-6. PATCH memory description with transcript text
-7. POST `/api/legacy/reservoir/:familyId/invalidate` (world regeneration trigger)
-8. World version increments; new quests/dialogue generated on next play
-
-### Legacy Home (legacy-home.tsx)
-- Same flow; separate MediaRecorder + upload logic in `startRealRecording()`
-
----
-
-## Legacy Chapter Scene Engine
-
-Route: `/legacy/chapter/:chapterId` (legacy-chapter.tsx)
-
-### Session Stats (RPG character stats — affect dialogue & quests)
-| Stat | Color | Effect |
+| Route File | Purpose | Status |
 |---|---|---|
-| Knowledge | Sky blue | Unlocks historical clues |
-| Relationships | Rose | Changes NPC responses + available quests |
-| Cultural Wisdom | Amber | Unlocks traditions, languages, cultural content |
-| Courage | Orange | Allows difficult historical challenges |
-| Reputation | Cyan | Community NPC dialogue changes |
-| Legacy | Amber | Cumulative family history built |
-| Faith | Violet | Spiritual/community dialogue paths |
-
-### Scene Types
-- `narration` — Standard prose text + continue/reflect choices
-- `dialogue` — **NPC portrait + speech bubble** layout + Listen/Ask/Reflect choices
-- `reflection` — Record a memory / continue / sit with moment
-- `context` — Historical context tags + continue
-
-### Day-Cycle Progression
-```
-Morning → Dialogue → Choice → Travel → Discovery → Quest → Evening → Journal → Autosave
-```
-
-### Scene Footer Actions
-- **Journal** → `/legacy/journal` (auto-written from session)
-- **Scene progress dots** — visual progress through the day
-- **Map** → `/legacy/map/:familyId`
-
-### Completion Flow
-1. All scenes done → `PATCH /api/legacy/chapters/:id/status` `{ status: "completed" }`
-2. Backend unlocks next chapter; returns `nextChapterId`
-3. World evolution log entry created
-4. Completion screen with AI narrator message (Nia), session stats, and "Continue to Next Chapter"
+| legacy.ts | Family reservoir + AI quest generation (cached) | ✅ |
+| legacy-completeness.ts | Vault readiness scoring | ✅ |
+| legacy-chapters.ts | Chapter state machine (locked→unlocked→in_progress→completed) | ✅ |
+| legacy-game-master.ts | AI narration + rich character profiles | ✅ |
+| legacy-ai-director.ts | AI-driven mission generation from vault gap analysis | ✅ |
+| legacy-world-evolution.ts | World change log GET/POST | ✅ |
+| legacy-interview-quest.ts | Interview quest (microphone as gameplay) | ✅ |
+| legacy-auto-journal.ts | Auto-generated journal entries after sessions | ✅ |
+| legacy-achievements.ts | Achievement tracking | ✅ |
+| legacy-map.ts | Family map + GPS check-in + place add | ✅ |
+| legacy-challenges.ts | Family challenges (co-op) | ✅ |
+| legacy-seasonal-events.ts | Seasonal events | ✅ |
+| legacy-memory-mysteries.ts | Mystery quest system | ✅ |
+| legacy-character-evolution.ts | Character evolution tracking | ✅ |
+| legacy-reunion.ts | Reunion events + leaderboard | ✅ |
+| legacy-family-quests.ts | Cooperative family quests | ✅ |
+| legacy-coop.ts | Live co-op readiness (WebSocket presence) | ✅ |
 
 ---
 
-## World Regeneration Rules
+## Feature Inventory — Backend Libs
 
-| Contribution | Automatically Regenerates |
+| Lib File | Purpose |
 |---|---|
-| Oral Story / Audio | Dialogue, journal entries, side quests |
-| New Ancestor | Character roster, chapters, relationship graph |
-| Family Photo | Collectibles, locations, memories, NPC knowledge |
-| Landmark | Exploration map, travel quests |
-| Recipe | Cooking quests, cultural traditions, achievements |
-| New Family Member | Co-op activities, shared missions, reunion events |
-
-**Trigger:** `POST /api/legacy/reservoir/:familyId/invalidate` bumps `family_knowledge_versions` version.
-The next quest generation call finds a changed fingerprint → regenerates all content.
+| legacy-ai-gateway.ts | AI model gateway |
+| legacy-ai-director-enhanced.ts | Vault gap analysis |
+| legacy-character-profile.ts | Rich AI-generated character profiles |
+| legacy-consent.ts | Consent management |
+| legacy-knowledge-version.ts | Knowledge versioning + world regeneration |
+| legacy-world-evolution.ts | Evolution logging (wired to all vault mutations) |
+| historical-context.ts | Historical context generation |
 
 ---
 
-## First-Run Detection
+## Feature Inventory — Frontend Pages
 
-`legacy:setupDone` localStorage key:
-- Not set → redirect to `/legacy/onboarding` (Chapter 0: Awaken the Legacy)
-- Set to `"1"` → show normal Legacy Home experience
-- `legacy-onboarding.tsx` sets this key at completion
-
----
-
-## Railway Deployment
-
-**Production URL:** `https://zesty-ambition-production-f6a1.up.railway.app`
-
-**Healthcheck:** `GET /api/healthz` → 200 OK when DB is connected
-
-**Database:** PostGIS at `reseau.proxy.rlwy.net:46078` (use PostGIS, NOT plain PostgreSQL)
-
-**Key env vars required:**
-- `DATABASE_URL` — PostGIS connection string
-- `OPENAI_API_KEY` — Whisper STT + OpenAI TTS fallback
-- `ANTHROPIC_API_KEY` — Claude AI for quest/dialogue generation
-- `SESSION_SECRET` — Express session signing
-- `ELEVENLABS_API_KEY` — (optional) ElevenLabs TTS regional voices
-
-**Nia AI routes verified working on Railway:**
-- `GET /api/nia/voice/profiles` → 200 ✅
-- `POST /api/nia/voice/transcribe` → 200 ✅ (requires OPENAI_API_KEY)
-
-**Recent deploy fixes (all merged to main):**
-- `fix(build)`: GIT_COMMIT baked at Railway build time (resolves `unknown` commit hash)
-- `fix(migrations)`: RECOVERY_CHECKs for Phase 5 tables (0093–0103) — idempotent migrations
-- `fix(migrations)`: Legacy engine migration chain fixed for fresh PostgreSQL installs
+| Page | Route | Purpose | Status |
+|---|---|---|---|
+| legacy-home.tsx | /legacy | Hub with Progress Dashboard, chapters, quests | ✅ |
+| legacy-onboarding.tsx | /legacy/onboarding | Chapter 0: Awaken the Legacy | ✅ |
+| legacy-chapter.tsx | /legacy/chapter/:id | Interactive scene viewer with choices | ✅ |
+| legacy-play.tsx | /legacy/play | Continue Journey router | ✅ |
+| legacy-character.tsx | /legacy/character/:id | Rich character biography with AI traits | ✅ |
+| legacy-journal.tsx | /legacy/journal | Auto-journal reader | ✅ |
+| legacy-map.tsx | /legacy/map | World map with GPS check-in | ✅ |
+| legacy-achievements.tsx | /legacy/achievements | Achievement gallery | ✅ |
+| legacy-ai-director.tsx | /legacy/ai-director | AI Director missions | ✅ |
+| legacy-world-evolution.tsx | /legacy/world-evolution | World evolution log | ✅ |
+| legacy-interview-quest.tsx | /legacy/interview-quest | Microphone as gameplay | ✅ |
+| legacy-start.tsx | /legacy/start | Ancestor selection | ✅ |
+| legacy-challenges.tsx | /legacy/challenges | Challenge list | ✅ |
+| legacy-seasonal-events.tsx | /legacy/seasonal-events | Seasonal events | ✅ |
+| legacy-memory-mysteries.tsx | /legacy/mysteries | Memory mystery quests | ✅ |
+| legacy-character-evolution.tsx | /legacy/characters | All characters / family lineage | ✅ |
 
 ---
 
-## Reference Images
+## Character System
 
-Stored in `docs/legacy-mode-design/reference-images/`:
-- `game-modes-characters-oral-recording.png` — Game modes, characters, oral recording UI
-- `legacy-dashboard-full.png` — Full Legacy Mode dashboard layout reference
-- `12-screen-overview.png` — Complete 12-screen Legacy Mode overview
+Every ancestor contains (or can contain via AI generation):
+- Personality traits (archetype, description, trait list)
+- Skills (occupation, known skills, craft level)
+- Beliefs (spiritual, values, speech style)
+- Memories (life events, stories, places)
+- Historical knowledge (from vault + historical context API)
+- Emotional profile
+- Reputation score
+- Legacy score
 
----
-
-## Implementation Status
-
-### ✅ Complete
-- Chapter 0 onboarding (Quest 1: Add ancestor, Quest 2: Record audio (real MediaRecorder + Nia STT), Quest 3: Pin place)
-- `legacy-chapter.tsx` — Full RPG scene engine (narration, dialogue, reflection, context scene types)
-- Session stats (7 RPG stats: knowledge, relationships, culturalWisdom, courage, reputation, legacy, faith)
-- Autosave after each scene choice
-- AI narrator (Nia Game Master) per scene + chapter completion narration
-- Mystery Quest creation from dialogue choices
-- Memory recording from reflection choices (writes to Family Vault)
-- World regeneration indicator on chapter completion
-- `/legacy/play` → `legacy-play.tsx` — proper Continue Journey router (finds active chapter, enters RPG directly)
-- `legacy-start.tsx` — cinematic ancestor selection with "You awaken…" reveal sequence
-- Session restore (resume scene progress after browser close)
-- Daily welcome / world evolution (Phase 5)
-- Emotional calendar (family birthdays, anniversaries, migration dates)
-- Co-op readiness (live family members online check)
-- Reunion challenges
-- Seasonal events
-
-### ✅ Completed Aug 4, 2026
-- **Geocoding for family places** — `artifacts/api-server/src/lib/geocode.ts` (Nominatim OSM + country centroid fallback for ~80 diaspora-relevant countries). Geocodes on save (non-blocking) + backfill endpoint `POST /api/legacy/map/:familyId/places/geocode-missing`. Frontend auto-triggers backfill on load when `placesWithoutCoordinates > 0`; shows "Locating places…" spinner.
-- **Audio playback in RPG scenes** — `legacy-chapters.ts` now fetches audio assets from `family_memory_assets` and resolves presigned URLs; `legacy-chapter.tsx` shows a Play/Pause button with waveform animation for memory scenes with real recordings. Audio pauses automatically on scene navigation.
-
-### 🔄 In Progress / Needs Verification
-- Chapter 5+ generation (AI-generated from deeper vault data)
-- Live video interview as a first-class Legacy quest (Phase 4)
-
-### 📋 Future Phases
-- AR real-world landmark visit mechanic
-- Synchronous multiplayer "play the same ancestor session together"
-- GPS-based location discovery
-- Character skill tree (Historian, Explorer, Story Keeper, Photographer, etc.)
-- Living AI Director — daily autonomous quest generation
+Wired via `legacy-character-profile.ts` → called from `legacy-game-master.ts` → displayed in `legacy-character.tsx`.
 
 ---
 
-## Reference Images (Aug 4, 2026)
+## Interview Quest Pipeline
 
-Stored in `docs/legacy-mode-design/reference-images/`:
-- `legacy-12-screen-overview-aug3.png` — 12-screen onboarding + gameplay overview (Chapter 0, legacy start, RPG scene, co-op, world map, Sunday dinner)
-- `legacy-full-dashboard-aug3.png` — Full Legacy Mode dashboard: character card, family vault, RPG scene, dynamic world map, co-op quests, achievements, live video, journal, timeline
-- `legacy-game-modes-overview-aug2.png` — Game modes (Legacy/Exploration/Family Quests/Reunion), characters (Ama Serwaa, Kofi Mensah, Abena Mensah, Nana Kwame), inventory, oral story recording, settings, progress dashboard, multiplayer reunion
+```
+Interview Quest → Record Audio (MediaRecorder)
+    → POST /api/legacy/interview-quests/:questId/submit
+        → AI Transcribes (Nia Whisper STT)
+        → AI Extracts Facts (people, places, events, emotional themes)
+        → Saves to vault (family_memories, family_places, family_events, family_stories)
+        → logWorldEvolution(familyId, "interview_added")
+    → POST /api/legacy/interview-quests/:questId/complete
+        → syncAchievements()
+        → World regeneration triggered
+        → Chapter unlock checked
+    → GET /api/legacy/interview-quests/:questId/result
+        → Show extracted facts, new places, dialogue snippet
+```
 
-_Last updated: 2026-08-04 — geocoding pipeline, audio playback in RPG scenes, new reference images added_
+---
+
+## Known Gaps & Future Work
+
+| Gap | Priority | Notes |
+|---|---|---|
+| Live Video Interview | High | Needs WebRTC/video infra. UI stub added (Aug 2026). |
+| SMS/offline onboarding | Low | Architecture planned, not implemented |
+| Email/SMS notifications | Low | Stored but only push delivered |
+| Civic Portal Stripe wiring | Low | Separate from Legacy Mode |
+| Helper Reliability Scoring | Low | Schema exists, no scoring logic |
+
+---
+
+## Reference Images (Aug 2026)
+
+All reference images live in `docs/legacy-mode-design/reference-images/`:
+
+| File | Contents |
+|---|---|
+| `legacy-ui-reference-aug1-fullscreen.png` | Full UI dashboard — game modes, live gameplay, world map, in-game characters, family vault, oral recording, settings, progress dashboard, multiplayer panel |
+| `legacy-ui-reference-aug1-rpg-session.png` | RPG gameplay session — the living world map, character progression panel, skills, dynamic chapters, actual game session scene, living map, journey progress, timeline of legacy |
+| `legacy-ui-reference-aug3-onboarding-detail.png` | Detailed onboarding screens — Chapter 0 Awaken the Legacy, legacy start screen, live RPG story scene, dynamic world map, chapter select, family vault, character progression, co-op family quest, achievements, live video interview, journal, timeline, legacy continues |
+| `legacy-ui-reference-aug3-screens-grid.png` | 12-screen grid — onboarding (Ch.0), legacy start, onboarding quests 1/2/3, world regeneration, dynamic chapters, live RPG gameplay, character progression, co-op family quest, living world map, legacy continues |
+| `legacy-full-dashboard-aug3.png` | Full dashboard view |
+| `legacy-12-screen-overview-aug3.png` | Earlier 12-screen overview |
+
+---
+
+## Session Notes
+
+### Aug 2026 Session
+
+**Design document added:** "Biggest missing piece — right now Legacy still appears to behave like Feature→Feature→Feature instead of Memory→AI→World Changes→Player Notices→New Gameplay→New Memory."
+
+**Key decisions made:**
+1. Progress Dashboard upgraded to circular SVG ring (matching reference images)
+2. Progress Dashboard "View Full Progress" now routes to `/legacy/world-evolution` (was `/diaspora/timeline`)
+3. Live Video Interview stub added to interview-quest page
+4. Reference images (Aug 1 + Aug 3, 2026) committed to `docs/legacy-mode-design/reference-images/`
+5. All vault mutation paths confirmed wired to `logWorldEvolution()`
+
+**Confirmed wired (vault → world regen):**
+- `POST /family/:id/members` → `logWorldEvolution(familyId, "member_added")`
+- `POST /family/:id/memories` → `logWorldEvolution(familyId, "memory_added")`
+- `POST /family/:id/memories/:id/assets` (upload-direct) → `logWorldEvolution(familyId, "memory_added")`
+- `POST /family/:id/interviews` → `logWorldEvolution(familyId, "interview_added")`
+- `POST /family/:id/stories` → `logWorldEvolution(familyId, "story_added")`
+- `POST /legacy/map/:id/places` → `logWorldEvolution(familyId, "place_added")`
+- `POST /diaspora/family-events` → `logWorldEvolution(familyId, "event_added")`
+- `POST /diaspora/family-relations` → `logWorldEvolution(familyId, "relation_added")`
+- Interview quest complete → `logWorldEvolution(familyId, "interview_added")`
+- Chapter complete → `logWorldEvolution(familyId, "world_regenerated")`
+
+**Emotional pacing rhythm (from design document):**
+> "The experience should alternate between: discovery, conversation, exploration, reflection, contribution."
+> This rhythm keeps the experience engaging without overwhelming the player.
