@@ -26,15 +26,16 @@ import {
   BookHeart, Scroll, Trophy, Map, Users, Mic,
   Star, Play, CheckCircle2, Clock, Loader2,
   ChevronRight, Plus, Globe2, Heart,
-  Camera, FileText, Crown, Flame,
-  Sparkles, Shield, Zap, Target,
+  Camera, FileText, Crown,
+  Sparkles, Zap, Target,
   Volume2, BookOpen, Lock,
   RefreshCw, ChevronLeft, Calendar, TrendingUp,
-  Search, X, MapPin,
+  Search, X,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { LegacyStartVisual } from "@/components/legacy-start-visual";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -282,70 +283,6 @@ function AchievementBadge({
   );
 }
 
-// ─── Setup check sequence (first-time experience) ─────────────────────────────
-
-function SetupCheck({ state, onComplete }: { state: LegacyState; onComplete: () => void }) {
-  const [step, setStep] = useState(0);
-  const checks = [
-    { label: "Checking Family Tree...",   done: state.members.length > 0,   detail: `${state.members.length} relatives` },
-    { label: "Checking Stories...",        done: state.memories.length > 0,  detail: `${state.memories.length} stories` },
-    { label: "Checking Photos...",         done: state.memories.some(m => m.source === "upload"), detail: `${state.memories.filter(m => m.source === "upload").length} memories` },
-    { label: "Checking Audio...",          done: state.interviewCount > 0,   detail: `${state.interviewCount} interviews` },
-    { label: "Checking Timeline...",       done: state.memories.some(m => m.memory_date), detail: "Ready" },
-  ];
-
-  useEffect(() => {
-    if (step < checks.length) {
-      const t = setTimeout(() => setStep(s => s + 1), 600);
-      return () => clearTimeout(t);
-    }
-    const t2 = setTimeout(onComplete, 800);
-    return () => clearTimeout(t2);
-  }, [step]);
-
-  return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "#1A0F08" }}>
-      <div className="max-w-sm w-full">
-        <div className="text-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4">
-            <BookHeart className="w-7 h-7 text-amber-400" />
-          </div>
-          <h1 className="text-lg font-black text-amber-100 uppercase tracking-widest">Building Your Family World</h1>
-          <p className="text-xs text-amber-700 mt-1">Analyzing your family data…</p>
-        </div>
-        <div className="space-y-2.5">
-          {checks.map((c, i) => {
-            const visible = i <= step;
-            const current = i === step;
-            return (
-              <div
-                key={i}
-                className={`flex items-center gap-3 p-3 rounded-xl border transition-all duration-300 ${
-                  !visible ? "opacity-0" :
-                  c.done ? "bg-amber-900/20 border-amber-700/30" :
-                  current ? "bg-[#2A1A0F] border-amber-800/40" : "bg-[#2A1A0F] border-amber-900/20 opacity-50"
-                }`}
-              >
-                <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
-                  {c.done && visible
-                    ? <CheckCircle2 className="w-5 h-5 text-amber-400" />
-                    : current
-                      ? <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                      : <div className="w-2 h-2 rounded-full bg-amber-900" />}
-                </div>
-                <p className={`text-xs flex-1 ${c.done ? "text-amber-200" : "text-amber-700"}`}>{c.label}</p>
-                {c.done && visible && (
-                  <span className="text-xs text-amber-500 font-bold">{c.detail}</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function LegacyHomePage() {
@@ -361,13 +298,9 @@ export default function LegacyHomePage() {
   const [recording,     setRecording]     = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [promptIdx,     setPromptIdx]     = useState(0);
-  const [setupDone,     setSetupDone]     = useState(() => {
+  const [setupDone] = useState(() => {
     try { return localStorage.getItem("legacy:setupDone") === "1"; } catch { return false; }
   });
-  const persistSetupDone = useCallback((v: boolean) => {
-    setSetupDone(v);
-    try { localStorage.setItem("legacy:setupDone", v ? "1" : "0"); } catch {}
-  }, []);
 
   // Real audio recording state
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -898,6 +831,17 @@ export default function LegacyHomePage() {
 
     return (
       <div className="min-h-screen bg-[#1A0F08] pb-28">
+        <div className="mx-auto max-w-5xl px-0 pt-0 sm:px-4 sm:pt-5">
+          <LegacyStartVisual
+            familyName={families[0]?.name}
+            memberCount={members.length}
+            memoryCount={memories.length}
+            isReady={false}
+            hasJourney={false}
+            onContinue={() => navigate("/legacy/play")}
+            onStartBuilding={() => navigate("/legacy/onboarding")}
+          />
+        </div>
         <div className="bg-gradient-to-b from-[#0A0604] to-[#1A0F08] px-4 pt-8 pb-6 text-center">
           <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-8 h-8 text-amber-500" />
@@ -1003,6 +947,17 @@ export default function LegacyHomePage() {
         <div className="max-w-lg mx-auto">
 
           {/* ── Continue Journey Hero — the dominant first thing the player sees ── */}
+          <div className="px-4 pt-5">
+            <LegacyStartVisual
+              familyName={families[0]?.name}
+              memberCount={members.length}
+              memoryCount={memories.length}
+              isReady
+              hasJourney={Boolean(activeSession?.currentChapterId || todaysJourney)}
+              onContinue={() => navigate("/legacy/play")}
+              onStartBuilding={() => navigate("/legacy/start")}
+            />
+          </div>
           <div className="px-4 py-5" style={{ background: "linear-gradient(to bottom, #0A0604, #1A0F08)" }}>
             <div
               className="rounded-2xl shadow-xl overflow-hidden relative"
@@ -1652,7 +1607,7 @@ export default function LegacyHomePage() {
               </div>
               <div className="overflow-x-auto pb-2">
                 <div className="flex gap-3 min-w-max px-1">
-                  {chapters.map((ch, i) => {
+                  {chapters.map((ch) => {
                     const unlocked = ch.status !== "locked";
                     return (
                       <button
