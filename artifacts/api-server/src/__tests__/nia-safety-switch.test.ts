@@ -35,6 +35,11 @@ jest.unstable_mockModule("@workspace/db", () => ({
 
 jest.unstable_mockModule("drizzle-orm", () => ({
   eq: jest.fn(),
+  sql: Object.assign(jest.fn().mockReturnValue({}), {
+    join: jest.fn().mockReturnValue({}),
+    raw: jest.fn().mockReturnValue({}),
+    empty: jest.fn().mockReturnValue({}),
+  }),
 }));
 
 jest.unstable_mockModule("../middlewares/auth.js", () => ({

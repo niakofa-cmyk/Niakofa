@@ -82,6 +82,45 @@ const MISSION_LABELS: Record<string, string> = {
   preserve_tradition: "Preserve Tradition",
 };
 
+// Emotional depth classification — drives badge color and atmospheric tone
+const MISSION_DEPTH: Record<string, { label: string; color: string; dot: string }> = {
+  record_interview:    { label: "Deep",       color: "text-rose-400",    dot: "bg-rose-500" },
+  add_ancestor:        { label: "Deep",       color: "text-rose-400",    dot: "bg-rose-500" },
+  reconnect_relative:  { label: "Deep",       color: "text-rose-400",    dot: "bg-rose-500" },
+  identify_photo:      { label: "Reflective", color: "text-amber-400",   dot: "bg-amber-500" },
+  add_event:           { label: "Reflective", color: "text-amber-400",   dot: "bg-amber-500" },
+  upload_document:     { label: "Reflective", color: "text-amber-400",   dot: "bg-amber-500" },
+  tag_location:        { label: "Light",      color: "text-teal-400",    dot: "bg-teal-500" },
+  complete_chapter:    { label: "Light",      color: "text-teal-400",    dot: "bg-teal-500" },
+  preserve_tradition:  { label: "Light",      color: "text-teal-400",    dot: "bg-teal-500" },
+};
+
+// Where a mission leads the player — maps type → URL path in the app
+const MISSION_ACTION_PATHS: Record<string, string> = {
+  record_interview:   "/legacy/interview-quest",
+  identify_photo:     "/diaspora/family",
+  add_ancestor:       "/diaspora/family",
+  tag_location:       "/legacy/map",
+  add_event:          "/diaspora/family",
+  upload_document:    "/diaspora/family",
+  reconnect_relative: "/diaspora/family",
+  complete_chapter:   "/legacy/play",
+  preserve_tradition: "/legacy/interview-quest",
+};
+
+// Border accent color per mission type for card differentiation
+const MISSION_BORDER: Record<string, string> = {
+  record_interview:   "border-l-rose-600",
+  add_ancestor:       "border-l-rose-600",
+  reconnect_relative: "border-l-rose-600",
+  identify_photo:     "border-l-amber-600",
+  add_event:          "border-l-amber-600",
+  upload_document:    "border-l-amber-600",
+  tag_location:       "border-l-teal-600",
+  complete_chapter:   "border-l-teal-600",
+  preserve_tradition: "border-l-teal-600",
+};
+
 export default function LegacyAiDirectorPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
@@ -295,22 +334,51 @@ export default function LegacyAiDirectorPage() {
       )}
       {!todayLoading && todayJourney?.journey && (
         <div className="px-4 mt-4">
-          <div className="bg-gradient-to-br from-amber-900/20 to-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4">
+          {/* Today's Journey — cinematic ancestor focus card */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-amber-950/60 via-[#2A1A0F] to-stone-950 border border-amber-700/40 rounded-2xl p-5 shadow-xl">
+            {/* Decorative glow dot */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-600/5 rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none" />
             <div className="flex items-center gap-2 mb-3">
-              <Compass className="w-4 h-4 text-amber-400" />
-              <h3 className="text-xs font-black text-amber-400 uppercase tracking-widest">Today's Journey</h3>
+              <Compass className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <h3 className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Today's Journey</h3>
             </div>
-            <p className="text-sm text-amber-200 italic leading-relaxed mb-3">{todayJourney.journey.narration}</p>
-            <div className="flex gap-3 text-[10px] text-amber-700">
-              <span>{todayJourney.journey.storyCount} stories</span>
-              <span>{todayJourney.journey.eventCount} events</span>
-              <span>{todayJourney.journey.placeCount} places</span>
+            {/* Ancestor name as bold headline */}
+            <p className="text-base font-black text-amber-100 leading-tight mb-1">
+              {todayJourney.journey.ancestor.name}
+            </p>
+            {todayJourney.journey.ancestor.role && (
+              <p className="text-[10px] text-amber-600 uppercase tracking-wider mb-3">
+                {todayJourney.journey.ancestor.role}
+                {todayJourney.journey.ancestor.birthYear
+                  ? ` · b. ${todayJourney.journey.ancestor.birthYear}`
+                  : ""}
+              </p>
+            )}
+            {/* Narration as poetic pull-quote */}
+            <div className="border-l-2 border-amber-700/50 pl-3 mb-4">
+              <p className="text-sm text-amber-200/90 italic leading-relaxed">
+                "{todayJourney.journey.narration}"
+              </p>
+            </div>
+            {/* Vault depth indicators */}
+            <div className="flex gap-3 mb-4">
+              {[
+                { label: "Stories", val: todayJourney.journey.storyCount },
+                { label: "Events",  val: todayJourney.journey.eventCount },
+                { label: "Places",  val: todayJourney.journey.placeCount },
+              ].map(({ label, val }) => (
+                <div key={label} className="flex-1 bg-amber-900/20 rounded-lg py-1.5 px-2 text-center">
+                  <p className="text-sm font-black text-amber-300">{val}</p>
+                  <p className="text-[9px] text-amber-700">{label}</p>
+                </div>
+              ))}
             </div>
             <button
               onClick={() => navigate(`/legacy/character/${todayJourney.journey!.ancestor.memberId}`)}
-              className="mt-3 text-xs text-amber-400 font-semibold flex items-center gap-1 hover:text-amber-300 transition-colors"
+              className="w-full bg-amber-500/15 border border-amber-600/30 text-amber-300 font-bold text-xs uppercase tracking-widest py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-2"
             >
-              Walk as {todayJourney.journey.ancestor.name} <ChevronRight className="w-3 h-3" />
+              <Footprints className="w-3.5 h-3.5" />
+              Walk as {todayJourney.journey.ancestor.name.split(" ")[0]}
             </button>
           </div>
         </div>
@@ -378,26 +446,39 @@ export default function LegacyAiDirectorPage() {
           <div className="space-y-3">
             {missions.map((mission) => {
               const Icon = MISSION_ICONS[mission.mission_type] ?? Target;
+              const depth = MISSION_DEPTH[mission.mission_type] ?? { label: "Light", color: "text-teal-400", dot: "bg-teal-500" };
+              const borderAccent = MISSION_BORDER[mission.mission_type] ?? "border-l-amber-600";
+              const actionPath = MISSION_ACTION_PATHS[mission.mission_type] ?? "/legacy";
               return (
                 <div
                   key={mission.id}
-                  className="bg-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4 shadow-lg"
+                  className={`bg-[#2A1A0F] border border-amber-700/30 border-l-4 ${borderAccent} rounded-2xl p-4 shadow-lg`}
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
                       <Icon className="w-5 h-5 text-amber-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">
                           {MISSION_LABELS[mission.mission_type] ?? mission.mission_type}
                         </span>
-                        <span className="text-[10px] text-amber-600 bg-amber-900/30 px-1.5 py-0.5 rounded-full">
+                        {/* Emotional depth badge */}
+                        <span className={`flex items-center gap-1 text-[10px] font-bold ${depth.color}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${depth.dot}`} />
+                          {depth.label}
+                        </span>
+                        <span className="text-[10px] text-amber-600 bg-amber-900/30 px-1.5 py-0.5 rounded-full ml-auto">
                           +{mission.reward_xp} XP
                         </span>
                       </div>
                       <p className="text-sm font-bold text-amber-200 leading-tight">{mission.title}</p>
                       <p className="text-xs text-amber-600 mt-1 leading-relaxed">{mission.description}</p>
+                      {mission.gap_description && mission.gap_description !== mission.description && (
+                        <p className="text-[10px] text-amber-700/70 mt-1 italic leading-relaxed border-l-2 border-amber-900/40 pl-2">
+                          Gap: {mission.gap_description}
+                        </p>
+                      )}
                       {mission.reward_description && (
                         <p className="text-xs text-emerald-400/70 mt-2 flex items-center gap-1">
                           <Gift className="w-3 h-3" /> {mission.reward_description}
@@ -405,12 +486,19 @@ export default function LegacyAiDirectorPage() {
                       )}
                       <div className="flex gap-2 mt-3">
                         <button
+                          onClick={() => navigate(actionPath)}
+                          className="flex-1 bg-amber-500/20 border border-amber-600/40 text-amber-300 font-bold text-xs uppercase tracking-wide py-2 rounded-lg active:opacity-80 flex items-center justify-center gap-1"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          Start
+                        </button>
+                        <button
                           onClick={() => completeMission(mission.id)}
                           disabled={completing === mission.id}
                           className="flex-1 bg-amber-500 text-amber-950 font-bold text-xs uppercase tracking-wide py-2 rounded-lg active:opacity-80 disabled:opacity-40 flex items-center justify-center gap-1"
                         >
                           {completing === mission.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                          Complete
+                          Done
                         </button>
                         <button
                           onClick={() => skipMission(mission.id)}
