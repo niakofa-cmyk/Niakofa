@@ -12,6 +12,8 @@
  *  - Achievements section
  *  - Relationships panel with member names
  *  - Health/Faith/Wisdom/Reputation stat bars matching design reference
+ *  - AI-generated personality traits, archetype, speech style, emotional profile,
+ *    beliefs, legacy score
  */
 
 import { useState, useEffect } from "react";
@@ -43,6 +45,50 @@ interface CharacterBio {
     legacy: number;
     faith: number;
   };
+  personality?: {
+    traits: string[];
+    archetype: string;
+    description: string;
+  };
+  skills?: {
+    occupation: string | null;
+    knownSkills: string[];
+    craftLevel: number;
+  };
+  beliefs?: {
+    spiritual: string | null;
+    values: string[];
+    lifePhilosophy: string | null;
+  };
+  speechStyle?: {
+    tone: string;
+    vocabulary: string;
+    sampleLine: string;
+  };
+  emotionalProfile?: {
+    dominantEmotion: string;
+    emotionalRange: string[];
+    triggers: string[];
+  };
+  historicalKnowledge?: {
+    era: string | null;
+    keyEvents: string[];
+    culturalContext: string | null;
+  };
+  reputation?: {
+    communityStanding: string;
+    knownFor: string[];
+  };
+  legacyScore?: {
+    total: number;
+    breakdown: {
+      storiesPreserved: number;
+      memoriesRecorded: number;
+      interviewCompleted: boolean;
+      descendantsCount: number;
+      placesConnected: number;
+    };
+  };
   events: Array<{ id: number; title: string; description: string | null; eventDate: string | null; category: string }>;
   stories: Array<{ id: number; title: string; excerpt: string; category: string | null }>;
   memories: Array<{ id: number; title: string | null; description: string | null; memoryDate: string | null; locationLabel: string | null }>;
@@ -57,98 +103,29 @@ interface CharacterBio {
   };
 }
 
-const STAT_CONFIG = [
-  { key: "knowledge" as const,      label: "Knowledge",       icon: Brain,      color: "bg-sky-500",    text: "text-sky-400" },
-  { key: "relationships" as const,  label: "Relationships",   icon: Heart,      color: "bg-rose-500",   text: "text-rose-400" },
-  { key: "culturalWisdom" as const, label: "Cultural Wisdom", icon: Globe2,     color: "bg-amber-500",   text: "text-amber-400" },
-  { key: "courage" as const,        label: "Courage",          icon: Zap,        color: "bg-emerald-500", text: "text-emerald-400" },
-  { key: "reputation" as const,     label: "Reputation",       icon: Star,       color: "bg-purple-500",  text: "text-purple-400" },
-  { key: "legacy" as const,        label: "Legacy",            icon: Crown,      color: "bg-teal-500",    text: "text-teal-400" },
-  { key: "faith" as const,          label: "Faith",            icon: Shield,     color: "bg-pink-500",    text: "text-pink-400" },
-];
-
-const SKILL_TREE = [
-  { key: "leadership",     label: "Leadership",     icon: Crown,         color: "text-amber-400",   bg: "bg-amber-500/10",    border: "border-amber-500/30" },
-  { key: "negotiation",    label: "Negotiation",    icon: MessageCircle,  color: "text-sky-400",     bg: "bg-sky-500/10",      border: "border-sky-500/30" },
-  { key: "education",      label: "Education",      icon: GraduationCap,  color: "text-emerald-400", bg: "bg-emerald-500/10",  border: "border-emerald-500/30" },
-  { key: "survival",       label: "Survival",       icon: Compass,        color: "text-orange-400",  bg: "bg-orange-500/10",   border: "border-orange-500/30" },
-  { key: "craftsmanship",  label: "Craftsmanship",  icon: Hammer,         color: "text-rose-400",    bg: "bg-rose-500/10",     border: "border-rose-500/30" },
-  { key: "storytelling",   label: "Storytelling",   icon: BookOpen,       color: "text-purple-400",  bg: "bg-purple-500/10",   border: "border-purple-500/30" },
-];
-
-const ACHIEVEMENT_ICONS: Record<string, typeof Trophy> = {
-  story_keeper: BookOpen,
-  roots_explorer: Compass,
-  family_connector: Users,
-  legacy_builder: Crown,
+const STAT_CONFIG: Record<string, { label: string; icon: typeof Brain; color: string }> = {
+  knowledge: { label: "Knowledge", icon: Brain, color: "text-sky-400" },
+  relationships: { label: "Relationships", icon: Heart, color: "text-rose-400" },
+  culturalWisdom: { label: "Cultural Wisdom", icon: Globe2, color: "text-amber-400" },
+  courage: { label: "Courage", icon: Shield, color: "text-orange-400" },
+  reputation: { label: "Reputation", icon: Star, color: "text-emerald-400" },
+  legacy: { label: "Legacy", icon: Crown, color: "text-purple-400" },
+  faith: { label: "Faith", icon: Sparkles, color: "text-teal-400" },
 };
 
-const CATEGORY_ICONS: Record<string, typeof Calendar> = {
-  birth: Calendar,
-  death: Heart,
-  migration: Globe2,
-  marriage: Heart,
-  education: BookOpen,
-  other: Star,
+const SKILL_CONFIG: Record<string, { label: string; icon: typeof Hammer; stat: string }> = {
+  leadership: { label: "Leadership", icon: Crown, stat: "reputation" },
+  negotiation: { label: "Negotiation", icon: MessageCircle, stat: "relationships" },
+  education: { label: "Education", icon: GraduationCap, stat: "knowledge" },
+  survival: { label: "Survival", icon: Compass, stat: "courage" },
+  craftsmanship: { label: "Craftsmanship", icon: Hammer, stat: "culturalWisdom" },
+  storytelling: { label: "Storytelling", icon: BookOpen, stat: "legacy" },
 };
-
-function StatBar({ label, value, icon: Icon, color, text }: { label: string; value: number; icon: typeof Brain; color: string; text: string }) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] text-amber-600 flex items-center gap-1">
-          <Icon className={`w-3 h-3 ${text}`} />
-          {label}
-        </span>
-        <span className="text-[10px] font-bold text-amber-400">{value}</span>
-      </div>
-      <div className="h-2 bg-[#3A2A1A] rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${Math.min(100, value)}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function SkillNode({ skill, level }: { skill: typeof SKILL_TREE[number]; level: number }) {
-  const Icon = skill.icon;
-  const isUnlocked = level > 0;
-  return (
-    <div className={`relative flex flex-col items-center gap-1.5 p-3 rounded-xl border ${isUnlocked ? `${skill.bg} ${skill.border}` : "bg-[#2A1A0F] border-amber-900/20 opacity-50"}`}>
-      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isUnlocked ? skill.bg : "bg-[#3A2A1A]"}`}>
-        <Icon className={`w-5 h-5 ${isUnlocked ? skill.color : "text-amber-800"}`} />
-      </div>
-      <span className={`text-[10px] font-bold ${isUnlocked ? skill.color : "text-amber-800"}`}>{skill.label}</span>
-      {isUnlocked && (
-        <div className="flex gap-0.5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < level ? skill.color.replace("text", "bg") : "bg-amber-900/40"}`} />
-          ))}
-        </div>
-      )}
-      {!isUnlocked && <Lock className="w-3 h-3 text-amber-800" />}
-    </div>
-  );
-}
-
-function LineageNode({ name, birthYear, onClick }: { name: string; birthYear: number | null; onClick?: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center gap-1 group"
-    >
-      <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-600/30 flex items-center justify-center group-active:scale-95 transition-transform">
-        <Users className="w-5 h-5 text-amber-500" />
-      </div>
-      <span className="text-[10px] font-bold text-amber-300 text-center max-w-[80px] truncate">{name}</span>
-      {birthYear && <span className="text-[9px] text-amber-700">{birthYear}</span>}
-    </button>
-  );
-}
 
 export default function LegacyCharacterPage() {
+  const { currentUser } = useAppContext();
   const params = useParams<{ memberId: string }>();
   const [, navigate] = useLocation();
-  const { currentUser } = useAppContext();
   const [character, setCharacter] = useState<CharacterBio | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -206,14 +183,13 @@ export default function LegacyCharacterPage() {
     );
   }
 
-  // Derive skill levels from stats — each skill maps to a stat
   const skillLevels: Record<string, number> = {
-    leadership:    Math.floor(character.stats.reputation / 20),
-    negotiation:   Math.floor(character.stats.relationships / 20),
-    education:     Math.floor(character.stats.knowledge / 20),
-    survival:      Math.floor(character.stats.courage / 20),
+    leadership: Math.floor(character.stats.reputation / 20),
+    negotiation: Math.floor(character.stats.relationships / 20),
+    education: Math.floor(character.stats.knowledge / 20),
+    survival: Math.floor(character.stats.courage / 20),
     craftsmanship: Math.floor(character.stats.culturalWisdom / 20),
-    storytelling:  Math.floor(character.stats.legacy / 20),
+    storytelling: Math.floor(character.stats.legacy / 20),
   };
 
   return (
@@ -228,203 +204,208 @@ export default function LegacyCharacterPage() {
       {/* Hero Header */}
       <div className="px-4 pt-6 pb-4 text-center">
         <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-600/30 flex items-center justify-center mx-auto mb-3">
-          <Crown className="w-8 h-8 text-amber-400" />
+          <Users className="w-10 h-10 text-amber-500" />
         </div>
-        <p className="text-xl font-black text-amber-200">{character.name}</p>
-        {character.role && <p className="text-xs text-amber-500 capitalize mt-1">{character.role}</p>}
-        {character.relation && <p className="text-xs text-amber-600 mt-0.5">{character.relation}</p>}
-        {character.birthYear && (
-          <p className="text-xs text-amber-700 mt-1">
-            {character.birthYear}{character.deathYear ? ` - ${character.deathYear}` : character.isLiving ? " - Present" : ""}
-          </p>
-        )}
+        <h2 className="text-xl font-black text-amber-200">{character.name}</h2>
+        <p className="text-xs text-amber-600 mt-0.5">
+          {character.role}
+          {character.relation ? ` · ${character.relation}` : ""}
+        </p>
+        <div className="flex items-center justify-center gap-2 mt-2 text-[10px] text-amber-700">
+          {character.birthYear && <span>{character.birthYear}</span>}
+          {character.birthYear && character.deathYear && <span>—</span>}
+          {character.deathYear && <span>{character.deathYear}</span>}
+          {!character.birthYear && !character.deathYear && <span>Dates unknown</span>}
+          {character.isLiving && !character.deathYear && <span>· Living</span>}
+        </div>
       </div>
+
+      {/* Personality & Archetype */}
+      {character.personality && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5" />
+            Personality
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
+            <p className="text-sm font-black text-amber-300 mb-2">{character.personality.archetype}</p>
+            <p className="text-xs text-amber-600 leading-relaxed mb-3">{character.personality.description}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {character.personality.traits.map((trait) => (
+                <span key={trait} className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-1">
+                  {trait}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Speech Style */}
+      {character.speechStyle && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <MessageCircle className="w-3.5 h-3.5" />
+            Speech Style
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
+            <div className="space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-[10px] text-amber-700 uppercase tracking-wider mt-0.5">Tone</span>
+                <p className="text-xs text-amber-300 flex-1">{character.speechStyle.tone}</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-[10px] text-amber-700 uppercase tracking-wider mt-0.5">Voice</span>
+                <p className="text-xs text-amber-300 flex-1">{character.speechStyle.vocabulary}</p>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-amber-900/20">
+              <p className="text-[10px] text-amber-700 uppercase tracking-wider mb-1">Sample Line</p>
+              <p className="text-sm text-amber-200 italic leading-relaxed">"{character.speechStyle.sampleLine}"</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Emotional Profile */}
+      {character.emotionalProfile && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Heart className="w-3.5 h-3.5" />
+            Emotional Profile
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
+            <p className="text-sm font-bold text-amber-300 mb-2">{character.emotionalProfile.dominantEmotion}</p>
+            {character.emotionalProfile.emotionalRange.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {character.emotionalProfile.emotionalRange.map((emo) => (
+                  <span key={emo} className="text-[10px] text-amber-500 bg-amber-900/20 rounded-full px-2 py-0.5">{emo}</span>
+                ))}
+              </div>
+            )}
+            {character.emotionalProfile.triggers.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-amber-900/20">
+                <p className="text-[10px] text-amber-700 uppercase tracking-wider mb-1">Triggers</p>
+                <div className="flex flex-wrap gap-1">
+                  {character.emotionalProfile.triggers.map((trigger) => (
+                    <span key={trigger} className="text-[10px] text-amber-600 bg-amber-950/30 rounded px-1.5 py-0.5">{trigger}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Beliefs & Values */}
+      {character.beliefs && (character.beliefs.values.length > 0 || character.beliefs.spiritual || character.beliefs.lifePhilosophy) && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Shield className="w-3.5 h-3.5" />
+            Beliefs & Values
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
+            {character.beliefs.spiritual && (
+              <p className="text-xs text-amber-300 mb-2"><span className="text-amber-700">Faith:</span> {character.beliefs.spiritual}</p>
+            )}
+            {character.beliefs.lifePhilosophy && (
+              <p className="text-xs text-amber-400 italic mb-2">"{character.beliefs.lifePhilosophy}"</p>
+            )}
+            {character.beliefs.values.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {character.beliefs.values.map((value) => (
+                  <span key={value} className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1">{value}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Legacy Score */}
+      {character.legacyScore && character.legacyScore.total > 0 && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Crown className="w-3.5 h-3.5" />
+            Legacy Score
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-amber-600">Total Legacy</span>
+              <span className="text-2xl font-black text-amber-300">{character.legacyScore.total}</span>
+            </div>
+            <div className="h-2 bg-[#3A2A1A] rounded-full overflow-hidden mb-3">
+              <div className="h-full bg-gradient-to-r from-amber-600 to-amber-400 rounded-full" style={{ width: `${Math.min(100, character.legacyScore.total)}%` }} />
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[10px]">
+              <div className="text-amber-600">Stories: <span className="text-amber-400 font-bold">{character.legacyScore.breakdown.storiesPreserved}</span></div>
+              <div className="text-amber-600">Memories: <span className="text-amber-400 font-bold">{character.legacyScore.breakdown.memoriesRecorded}</span></div>
+              <div className="text-amber-600">Interviews: <span className="text-amber-400 font-bold">{character.legacyScore.breakdown.interviewCompleted ? "Yes" : "No"}</span></div>
+              <div className="text-amber-600">Descendants: <span className="text-amber-400 font-bold">{character.legacyScore.breakdown.descendantsCount}</span></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Character Stats */}
       <div className="px-4 mb-6">
         <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-          <TrendingUp className="w-3.5 h-3.5" />
+          <Zap className="w-3.5 h-3.5" />
           Character Stats
         </h2>
         <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-3">
-          {STAT_CONFIG.map((stat) => (
-            <StatBar
-              key={stat.key}
-              label={stat.label}
-              value={character.stats[stat.key]}
-              icon={stat.icon}
-              color={stat.color}
-              text={stat.text}
-            />
-          ))}
+          {Object.entries(STAT_CONFIG).map(([key, config]) => {
+            const value = character.stats[key as keyof typeof character.stats];
+            const Icon = config.icon;
+            return (
+              <div key={key}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="flex items-center gap-1.5 text-xs text-amber-500">
+                    <Icon className={`w-3.5 h-3.5 ${config.color}`} />
+                    {config.label}
+                  </span>
+                  <span className={`text-xs font-bold ${config.color}`}>{value}</span>
+                </div>
+                <div className="h-1.5 bg-[#3A2A1A] rounded-full overflow-hidden">
+                  <div className={`h-full ${config.color.replace("text-", "bg-")} rounded-full transition-all duration-500`} style={{ width: `${Math.min(100, value)}%` }} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Skills Tree */}
       <div className="px-4 mb-6">
         <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5" />
+          <Award className="w-3.5 h-3.5" />
           Skills Tree
         </h2>
-        <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
-          <div className="grid grid-cols-3 gap-3">
-            {SKILL_TREE.map((skill) => (
-              <SkillNode key={skill.key} skill={skill} level={skillLevels[skill.key] ?? 0} />
-            ))}
-          </div>
-          <p className="text-[10px] text-amber-700 mt-3 text-center">
-            Skills grow as you preserve more stories and memories about this ancestor.
-          </p>
+        <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-2">
+          {Object.entries(SKILL_CONFIG).map(([key, config]) => {
+            const level = skillLevels[key] ?? 0;
+            const Icon = config.icon;
+            return (
+              <div key={key} className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-600/20 flex items-center justify-center flex-shrink-0">
+                  <Icon className="w-4 h-4 text-amber-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-amber-400">{config.label}</span>
+                    <span className="text-[10px] text-amber-700">Lv {level}</span>
+                  </div>
+                  <div className="flex gap-0.5 mt-0.5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className={`h-1 flex-1 rounded-full ${i < level ? "bg-amber-500" : "bg-stone-800"}`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
-
-      {/* Family Lineage Tree */}
-      {character.lineage && (character.lineage.parents.length > 0 || character.lineage.children.length > 0 || character.lineage.siblings.length > 0) && (
-        <div className="px-4 mb-6">
-          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <TreePine className="w-3.5 h-3.5" />
-            Family Lineage
-          </h2>
-          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
-            {/* Parents */}
-            {character.lineage.parents.length > 0 && (
-              <div className="mb-4">
-                <p className="text-[10px] text-amber-700 uppercase tracking-wider mb-2">Parents</p>
-                <div className="flex justify-center gap-4">
-                  {character.lineage.parents.map((parent) => (
-                    <LineageNode
-                      key={parent.memberId}
-                      name={parent.name}
-                      birthYear={parent.birthYear}
-                      onClick={() => navigate(`/legacy/character/${parent.memberId}`)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Connection lines */}
-            {character.lineage.parents.length > 0 && (
-              <div className="flex justify-center mb-2">
-                <div className="w-px h-6 bg-gradient-to-b from-amber-600/40 to-amber-700/20" />
-              </div>
-            )}
-
-            {/* Self */}
-            <div className="flex justify-center mb-2">
-              <div className="flex flex-col items-center gap-1">
-                <div className="w-14 h-14 rounded-full bg-amber-500/20 border-2 border-amber-400/50 flex items-center justify-center">
-                  <Crown className="w-6 h-6 text-amber-300" />
-                </div>
-                <span className="text-xs font-black text-amber-200">{character.name}</span>
-              </div>
-            </div>
-
-            {/* Connection lines to children */}
-            {character.lineage.children.length > 0 && (
-              <div className="flex justify-center mb-2">
-                <div className="w-px h-6 bg-gradient-to-b from-amber-700/20 to-amber-600/40" />
-              </div>
-            )}
-
-            {/* Children */}
-            {character.lineage.children.length > 0 && (
-              <div className="mb-2">
-                <p className="text-[10px] text-amber-700 uppercase tracking-wider mb-2">Children</p>
-                <div className="flex justify-center gap-3 flex-wrap">
-                  {character.lineage.children.map((child) => (
-                    <LineageNode
-                      key={child.memberId}
-                      name={child.name}
-                      birthYear={child.birthYear}
-                      onClick={() => navigate(`/legacy/character/${child.memberId}`)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Siblings */}
-            {character.lineage.siblings.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-amber-900/20">
-                <p className="text-[10px] text-amber-700 uppercase tracking-wider mb-2">Siblings</p>
-                <div className="flex justify-center gap-3 flex-wrap">
-                  {character.lineage.siblings.map((sib) => (
-                    <LineageNode
-                      key={sib.memberId}
-                      name={sib.name}
-                      birthYear={sib.birthYear}
-                      onClick={() => navigate(`/legacy/character/${sib.memberId}`)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Achievements */}
-      {character.achievements && character.achievements.length > 0 && (
-        <div className="px-4 mb-6">
-          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <Award className="w-3.5 h-3.5" />
-            Achievements
-          </h2>
-          <div className="grid grid-cols-2 gap-2">
-            {character.achievements.map((ach) => {
-              const Icon = ACHIEVEMENT_ICONS[ach.key] ?? Trophy;
-              return (
-                <div
-                  key={ach.key}
-                  className={`rounded-xl p-3 border ${ach.unlocked ? "bg-amber-500/10 border-amber-500/30" : "bg-[#2A1A0F] border-amber-900/20 opacity-60"}`}
-                >
-                  <Icon className={`w-5 h-5 mb-1.5 ${ach.unlocked ? "text-amber-400" : "text-amber-800"}`} />
-                  <p className={`text-xs font-bold ${ach.unlocked ? "text-amber-200" : "text-amber-700"}`}>{ach.title}</p>
-                  {!ach.unlocked && (
-                    <div className="mt-1.5">
-                      <div className="h-1 bg-amber-950/50 rounded-full overflow-hidden">
-                        <div className="h-full bg-amber-600 rounded-full" style={{ width: `${(ach.progress / ach.goal) * 100}%` }} />
-                      </div>
-                      <p className="text-[9px] text-amber-700 mt-0.5">{ach.progress}/{ach.goal}</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Relationships */}
-      {character.relationships.length > 0 && (
-        <div className="px-4 mb-6">
-          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <Heart className="w-3.5 h-3.5" />
-            Relationships
-          </h2>
-          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-2">
-            {character.relationships.map((rel) => (
-              <button
-                key={rel.id}
-                onClick={() => navigate(`/legacy/character/${rel.toMemberId}`)}
-                className="w-full flex items-center gap-3 bg-amber-900/20 rounded-xl px-3 py-2 active:scale-[0.98] transition-transform"
-              >
-                <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-600/20 flex items-center justify-center flex-shrink-0">
-                  <Users className="w-3.5 h-3.5 text-amber-500" />
-                </div>
-                <div className="flex-1 text-left min-w-0">
-                  <p className="text-xs font-bold text-amber-200 truncate">
-                    {rel.toMemberName ?? `Member #${rel.toMemberId}`}
-                  </p>
-                  <p className="text-[10px] text-amber-600 capitalize">{rel.relationType}</p>
-                </div>
-                <ArrowLeft className="w-3 h-3 text-amber-700 rotate-180" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Life Events */}
       {character.events.length > 0 && (
@@ -433,28 +414,17 @@ export default function LegacyCharacterPage() {
             <Calendar className="w-3.5 h-3.5" />
             Life Events
           </h2>
-          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
-            <div className="relative pl-5">
-              <div className="absolute left-1.5 top-1 bottom-1 w-0.5 bg-gradient-to-b from-amber-600/40 via-amber-700/30 to-amber-900/20" />
-              {character.events.map((event) => {
-                const Icon = CATEGORY_ICONS[event.category] ?? Star;
-                return (
-                  <div key={event.id} className="relative flex items-start gap-3 pb-4">
-                    <div className="absolute -left-[14px] w-3 h-3 rounded-full bg-amber-500 border-2 border-amber-300 flex-shrink-0 mt-0.5" />
-                    <Icon className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-amber-200">{event.title}</p>
-                      {event.eventDate && (
-                        <p className="text-xs text-amber-600 mt-0.5">
-                          {new Date(event.eventDate).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
-                        </p>
-                      )}
-                      {event.description && <p className="text-xs text-amber-700 mt-1 leading-relaxed">{event.description}</p>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-3">
+            {character.events.map((event) => (
+              <div key={event.id} className="flex items-start gap-3">
+                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-amber-300">{event.title}</p>
+                  {event.description && <p className="text-[10px] text-amber-600 mt-0.5">{event.description}</p>}
+                  {event.eventDate && <p className="text-[10px] text-amber-700 mt-0.5">{new Date(event.eventDate).toLocaleDateString()}</p>}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -466,14 +436,11 @@ export default function LegacyCharacterPage() {
             <BookOpen className="w-3.5 h-3.5" />
             Stories
           </h2>
-          <div className="space-y-2">
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-3">
             {character.stories.map((story) => (
-              <div key={story.id} className="bg-[#2A1A0F] border border-amber-900/30 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <BookOpen className="w-3.5 h-3.5 text-amber-500" />
-                  <p className="text-sm font-bold text-amber-200">{story.title}</p>
-                </div>
-                <p className="text-xs text-amber-600 leading-relaxed line-clamp-3">{story.excerpt}</p>
+              <div key={story.id} className="border-b border-amber-900/20 last:border-0 pb-3 last:pb-0">
+                <p className="text-xs font-bold text-amber-300">{story.title}</p>
+                <p className="text-[10px] text-amber-600 mt-1 leading-relaxed">{story.excerpt}</p>
               </div>
             ))}
           </div>
@@ -484,45 +451,22 @@ export default function LegacyCharacterPage() {
       {character.memories.length > 0 && (
         <div className="px-4 mb-6">
           <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <Star className="w-3.5 h-3.5" />
+            <Heart className="w-3.5 h-3.5" />
             Memories
           </h2>
-          <div className="space-y-2">
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-3">
             {character.memories.map((memory) => (
-              <div key={memory.id} className="bg-[#2A1A0F] border border-amber-900/30 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Star className="w-3.5 h-3.5 text-amber-500" />
-                  <p className="text-sm font-bold text-amber-200">{memory.title ?? "Memory"}</p>
-                </div>
-                {memory.description && <p className="text-xs text-amber-600 leading-relaxed line-clamp-2">{memory.description}</p>}
-                <div className="flex items-center gap-3 mt-1">
-                  {memory.memoryDate && (
-                    <span className="text-xs text-amber-700">{new Date(memory.memoryDate).toLocaleDateString("en-US", { year: "numeric", month: "short" })}</span>
-                  )}
+              <div key={memory.id} className="flex items-start gap-3">
+                <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-amber-300">{memory.title ?? "Untitled Memory"}</p>
+                  {memory.description && <p className="text-[10px] text-amber-600 mt-0.5">{memory.description}</p>}
                   {memory.locationLabel && (
-                    <span className="text-xs text-amber-700 flex items-center gap-1"><MapPin className="w-3 h-3" /> {memory.locationLabel}</span>
+                    <p className="text-[10px] text-amber-700 mt-0.5 flex items-center gap-1">
+                      <MapPin className="w-2.5 h-2.5" /> {memory.locationLabel}
+                    </p>
                   )}
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Places */}
-      {character.places.length > 0 && (
-        <div className="px-4 mb-6">
-          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <MapPin className="w-3.5 h-3.5" />
-            Places
-          </h2>
-          <div className="grid grid-cols-2 gap-2">
-            {character.places.map((place) => (
-              <div key={place.id} className="bg-[#2A1A0F] border border-amber-900/30 rounded-xl p-3">
-                <MapPin className="w-4 h-4 text-amber-500 mb-1" />
-                <p className="text-sm font-bold text-amber-200">{place.label}</p>
-                {place.placeType && <p className="text-xs text-amber-600 capitalize">{place.placeType}</p>}
-                {place.country && <p className="text-xs text-amber-700">{place.country}</p>}
               </div>
             ))}
           </div>
@@ -536,13 +480,146 @@ export default function LegacyCharacterPage() {
             <Mic className="w-3.5 h-3.5" />
             Interviews
           </h2>
-          <div className="space-y-2">
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-2">
             {character.interviews.map((interview) => (
-              <div key={interview.id} className="bg-[#2A1A0F] border border-amber-900/30 rounded-xl p-3 flex items-center gap-3">
-                <Mic className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              <div key={interview.id} className="flex items-center justify-between">
+                <span className="text-xs text-amber-400">{interview.title}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                  interview.status === "completed" ? "bg-emerald-500/20 text-emerald-400" :
+                  interview.status === "transcribed" ? "bg-sky-500/20 text-sky-400" :
+                  "bg-amber-500/20 text-amber-400"
+                }`}>
+                  {interview.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Places */}
+      {character.places.length > 0 && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Globe2 className="w-3.5 h-3.5" />
+            Places
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-2">
+            {character.places.map((place) => (
+              <div key={place.id} className="flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-amber-600" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-amber-200">{interview.title}</p>
-                  <p className="text-xs text-amber-600 capitalize">{interview.status}</p>
+                  <p className="text-xs text-amber-300">{place.label}</p>
+                  {place.country && <p className="text-[10px] text-amber-700">{place.country}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Relationships */}
+      {character.relationships.length > 0 && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Users className="w-3.5 h-3.5" />
+            Relationships
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-2">
+            {character.relationships.map((rel) => (
+              <div key={rel.id} className="flex items-center justify-between">
+                <span className="text-xs text-amber-400">
+                  {rel.toMemberName ?? `Member #${rel.toMemberId}`}
+                </span>
+                <span className="text-[10px] text-amber-700 capitalize">{rel.relationType}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Lineage Tree */}
+      {character.lineage && (character.lineage.parents.length > 0 || character.lineage.children.length > 0 || character.lineage.siblings.length > 0) && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <TreePine className="w-3.5 h-3.5" />
+            Family Lineage
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-4">
+            {character.lineage.parents.length > 0 && (
+              <div>
+                <p className="text-[10px] text-amber-700 uppercase tracking-wider mb-2">Parents</p>
+                <div className="space-y-1">
+                  {character.lineage.parents.map((parent) => (
+                    <button
+                      key={parent.memberId}
+                      onClick={() => navigate(`/legacy/character/${parent.memberId}`)}
+                      className="block text-xs text-amber-400 hover:text-amber-300 active:opacity-70"
+                    >
+                      {parent.name}{parent.birthYear ? ` (${parent.birthYear})` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {character.lineage.siblings.length > 0 && (
+              <div>
+                <p className="text-[10px] text-amber-700 uppercase tracking-wider mb-2">Siblings</p>
+                <div className="space-y-1">
+                  {character.lineage.siblings.map((sib) => (
+                    <button
+                      key={sib.memberId}
+                      onClick={() => navigate(`/legacy/character/${sib.memberId}`)}
+                      className="block text-xs text-amber-400 hover:text-amber-300 active:opacity-70"
+                    >
+                      {sib.name}{sib.birthYear ? ` (${sib.birthYear})` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {character.lineage.children.length > 0 && (
+              <div>
+                <p className="text-[10px] text-amber-700 uppercase tracking-wider mb-2">Children</p>
+                <div className="space-y-1">
+                  {character.lineage.children.map((child) => (
+                    <button
+                      key={child.memberId}
+                      onClick={() => navigate(`/legacy/character/${child.memberId}`)}
+                      className="block text-xs text-amber-400 hover:text-amber-300 active:opacity-70"
+                    >
+                      {child.name}{child.birthYear ? ` (${child.birthYear})` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Achievements */}
+      {character.achievements && character.achievements.length > 0 && (
+        <div className="px-4 mb-6">
+          <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Trophy className="w-3.5 h-3.5" />
+            Achievements
+          </h2>
+          <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-2">
+            {character.achievements.map((ach) => (
+              <div key={ach.key} className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  ach.unlocked ? "bg-amber-500/20 border border-amber-500/30" : "bg-stone-900 border border-stone-800"
+                }`}>
+                  {ach.unlocked ? <Trophy className="w-4 h-4 text-amber-400" /> : <Lock className="w-4 h-4 text-stone-600" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-bold ${ach.unlocked ? "text-amber-300" : "text-stone-500"}`}>{ach.title}</p>
+                  <div className="flex gap-0.5 mt-0.5">
+                    {Array.from({ length: Math.max(1, ach.goal) }).map((_, i) => (
+                      <div key={i} className={`h-1 flex-1 rounded-full ${i < ach.progress ? "bg-amber-500" : "bg-stone-800"}`} />
+                    ))}
+                  </div>
                 </div>
               </div>
             ))}
