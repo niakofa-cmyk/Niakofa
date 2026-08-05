@@ -107,9 +107,18 @@ Lives in `artifacts/pay-it-forward/src/pages/legacy-start.tsx`:
 ## Remaining / Pending Phases
 
 - [ ] Embed the actual uploaded PNG images (panel, bg, logo) to `public/` once available on disk
-- [ ] Verify Railway deployment is healthy at `zesty-ambition-production-f6a1.up.railway.app`
+      → Target paths: `artifacts/pay-it-forward/public/niakofa-legacy-bg.png`, `niakofa-legacy-logo.png`, `niakofa-legacy-panel.png`
+      → Component ref: `legacy-start-visual.tsx` hero `<img src="/legacy-living-family-reference.png" />`
+- [ ] Verify Railway deployment healthy at `zesty-ambition-production-f6a1.up.railway.app`
 - [ ] Evaluate and fix failing Railway CI/CD commits
-- [ ] Push all improvements to GitHub main via `git push origin main`
+
+## Completed This Session (both sessions)
+
+- ✅ Built api-client-react dist (resolves 30+ downstream TS errors)
+- ✅ Removed unused HandshakeIcon import in legacy-start-visual.tsx
+- ✅ 0 TypeScript errors confirmed via `pnpm tsc --noEmit`
+- ✅ Git: local main == origin/main (1907040b)
+- ✅ Push confirmed: `008a6c6f..1907040b  main -> main`
 
 ---
 
