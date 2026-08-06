@@ -43,3 +43,8 @@ jobs:
           # without making optional AI availability a deployment gate.
           curl --silent --show-error --max-time 10 "${PRODUCTION_URL}/api/health" \
             | jq -e '(.status == "ok" or .status == "degraded") and .service == "api-server" and (.nia_service.status == "ok" or .nia_service.status == "unavailable")'
+
+      - name: Verify public Legacy demo asset graph
+        run: |
+          set -euo pipefail
+          PRODUCTION_URL="${PRODUCTION_URL}" node scripts/src/verify-legacy-demo-deployment.mjs

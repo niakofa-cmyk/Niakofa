@@ -13,7 +13,8 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --workspace-concurrency=1 --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "boundary-check": "node scripts/src/check-app-ai-boundary.js",
-    "release-validate": "node scripts/src/release-validate.js"
+    "release-validate": "node scripts/src/release-validate.js",
+    "verify:legacy-demo": "node scripts/src/verify-legacy-demo-deployment.mjs"
   },
   "private": true,
   "devDependencies": {

@@ -30,38 +30,19 @@ import {
   UtensilsCrossed,
   Zap,
 } from "lucide-react";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type DemoPhase =
-  | "prologue"
-  | "chapter1"
-  | "chapter2"
-  | "chapter3"
-  | "chapter4"
-  | "chapter5"
-  | "chapter6"
-  | "world-regen"
-  | "coop-quest"
-  | "finale";
-
-interface DemoState {
-  phase: DemoPhase;
-  placedArtifacts: string[];
-  traits: Record<string, number>;
-  completedQuests: string[];
-  worldVersion: number;
-}
-
-const STORAGE_KEY = "niakofa:demo:v2";
-
-const DEFAULT_STATE: DemoState = {
-  phase: "prologue",
-  placedArtifacts: [],
-  traits: { Leadership: 40, Wisdom: 35, Courage: 30, Compassion: 40 },
-  completedQuests: [],
-  worldVersion: 1,
-};
+import {
+  advanceDemo,
+  chooseDemoTrait,
+  completeDemoQuest,
+  DEFAULT_DEMO_STATE,
+  DEMO_PHASE_ORDER,
+  placeDemoArtifact,
+  readDemoState,
+  resetDemo,
+  writeDemoState,
+  type DemoPhase,
+  type DemoState,
+} from "@/lib/legacy-demo-state";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -174,26 +155,6 @@ const COOP_TASKS = [
   { id: "location-tag", label: "Tag an ancestral location on the map", icon: MapPin },
   { id: "reconnect", label: "Reconnect a branch of the Family Tree", icon: Users },
 ];
-
-// ─── localStorage helpers ─────────────────────────────────────────────────────
-
-function loadState(): DemoState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_STATE };
-    return { ...DEFAULT_STATE, ...(JSON.parse(raw) as Partial<DemoState>) };
-  } catch {
-    return { ...DEFAULT_STATE };
-  }
-}
-
-function saveState(s: DemoState) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  } catch {
-    // demo is still fully usable without storage
-  }
-}
 
 // ─── Gold button ──────────────────────────────────────────────────────────────
 
@@ -332,7 +293,6 @@ function ChapterScreen({
 
       <p className="text-sm text-amber-200/85 leading-relaxed">{chapter.description}</p>
 
-      {/* Trait panel */}
       <div className="rounded-xl border border-amber-900/40 bg-[#21140b] p-3 space-y-2">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-700 mb-2">Kwame Mensah · Traits</p>
         {Object.entries(traits)
@@ -342,7 +302,6 @@ function ChapterScreen({
           ))}
       </div>
 
-      {/* Choices */}
       {chapter.choices && chosen === null && (
         <div className="space-y-2">
           <p className="text-xs font-black uppercase tracking-widest text-amber-700">Choose your path</p>
@@ -564,7 +523,6 @@ function FinaleScreen({ traits, worldVersion, onRestart, onPlay }: {
         </p>
       </div>
 
-      {/* Final trait summary */}
       <div className="w-full max-w-xs rounded-xl border border-amber-800/40 bg-[#21140b] p-4 space-y-2 text-left">
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700 mb-3">Kwame Mensah · Final Traits</p>
         {Object.entries(traits).map(([k, v]) => (
@@ -586,65 +544,42 @@ function FinaleScreen({ traits, worldVersion, onRestart, onPlay }: {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const PHASE_ORDER: DemoPhase[] = [
-  "prologue",
-  "chapter1",
-  "chapter2",
-  "chapter3",
-  "chapter4",
-  "chapter5",
-  "chapter6",
-  "world-regen",
-  "coop-quest",
-  "finale",
-];
-
 export default function LegacyDemoPage() {
-  const [state, setState] = useState<DemoState>(DEFAULT_STATE);
+  const [state, setState] = useState<DemoState>(DEFAULT_DEMO_STATE);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setState(loadState());
+    setState(readDemoState(localStorage));
     setLoaded(true);
   }, []);
 
   const update = useCallback((patch: Partial<DemoState>) => {
     setState(prev => {
       const next = { ...prev, ...patch };
-      saveState(next);
+      writeDemoState(localStorage, next);
       return next;
     });
   }, []);
 
   const advance = useCallback(() => {
     setState(prev => {
-      const idx = PHASE_ORDER.indexOf(prev.phase);
-      const next: DemoState = {
-        ...prev,
-        phase: PHASE_ORDER[Math.min(idx + 1, PHASE_ORDER.length - 1)],
-        worldVersion: prev.phase === "world-regen" ? prev.worldVersion + 1 : prev.worldVersion,
-      };
-      saveState(next);
+      const next = advanceDemo(prev);
+      writeDemoState(localStorage, next);
       return next;
     });
   }, []);
 
   const handleChoice = useCallback((trait: string, value: number) => {
     setState(prev => {
-      const idx = PHASE_ORDER.indexOf(prev.phase);
-      const next: DemoState = {
-        ...prev,
-        traits: { ...prev.traits, [trait]: (prev.traits[trait] ?? 0) + value },
-        phase: PHASE_ORDER[Math.min(idx + 1, PHASE_ORDER.length - 1)],
-      };
-      saveState(next);
+      const next = chooseDemoTrait(prev, trait, value);
+      writeDemoState(localStorage, next);
       return next;
     });
   }, []);
 
   const handleReset = useCallback(() => {
-    const fresh = { ...DEFAULT_STATE };
-    saveState(fresh);
+    const fresh = resetDemo();
+    writeDemoState(localStorage, fresh);
     setState(fresh);
   }, []);
 
@@ -670,7 +605,6 @@ export default function LegacyDemoPage() {
       className="min-h-dvh w-full"
       style={{ background: "linear-gradient(to bottom, #0A0604 0%, #1A0F08 100%)" }}
     >
-      {/* ── Header ── */}
       <div
         className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
         style={{ background: "rgba(10,6,4,0.95)", borderBottom: "1px solid rgba(180,120,40,0.2)", backdropFilter: "blur(8px)" }}
@@ -679,8 +613,8 @@ export default function LegacyDemoPage() {
           <button
             type="button"
             onClick={() => {
-              const idx = PHASE_ORDER.indexOf(state.phase);
-              if (idx > 0) update({ phase: PHASE_ORDER[idx - 1] });
+              const idx = DEMO_PHASE_ORDER.indexOf(state.phase);
+              if (idx > 0) update({ phase: DEMO_PHASE_ORDER[idx - 1] });
             }}
             className="w-8 h-8 rounded-lg bg-amber-900/30 flex items-center justify-center text-amber-500 active:opacity-70 shrink-0"
           >
@@ -691,9 +625,8 @@ export default function LegacyDemoPage() {
           <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-400">Niakofa Legacy · Demo</p>
           <p className="text-[10px] text-amber-700">House of Mensah · World v{state.worldVersion}</p>
         </div>
-        {/* Progress dots */}
         <div className="flex items-center gap-1">
-          {PHASE_ORDER.map(p => (
+          {DEMO_PHASE_ORDER.map(p => (
             <div
               key={p}
               className="w-1.5 h-1.5 rounded-full transition-all"
@@ -701,7 +634,7 @@ export default function LegacyDemoPage() {
                 background:
                   p === state.phase
                     ? "#f5c842"
-                    : PHASE_ORDER.indexOf(p) < PHASE_ORDER.indexOf(state.phase)
+                    : DEMO_PHASE_ORDER.indexOf(p) < DEMO_PHASE_ORDER.indexOf(state.phase)
                     ? "rgba(214,158,46,0.5)"
                     : "rgba(214,158,46,0.15)",
               }}
@@ -718,7 +651,6 @@ export default function LegacyDemoPage() {
         </button>
       </div>
 
-      {/* ── Phase content ── */}
       <div className="max-w-lg mx-auto pb-12">
         {state.phase === "prologue" && (
           <PrologueScreen onBegin={advance} />
@@ -735,7 +667,11 @@ export default function LegacyDemoPage() {
         {state.phase === "world-regen" && (
           <WorldRegenScreen
             placedArtifacts={state.placedArtifacts}
-            onPlace={id => update({ placedArtifacts: [...state.placedArtifacts.filter(x => x !== id), id] })}
+            onPlace={id => setState(prev => {
+              const next = placeDemoArtifact(prev, id);
+              writeDemoState(localStorage, next);
+              return next;
+            })}
             onContinue={advance}
           />
         )}
@@ -743,7 +679,11 @@ export default function LegacyDemoPage() {
         {state.phase === "coop-quest" && (
           <CoopQuestScreen
             completedQuests={state.completedQuests}
-            onComplete={id => update({ completedQuests: [...state.completedQuests.filter(x => x !== id), id] })}
+            onComplete={id => setState(prev => {
+              const next = completeDemoQuest(prev, id);
+              writeDemoState(localStorage, next);
+              return next;
+            })}
             onContinue={advance}
           />
         )}
@@ -758,7 +698,6 @@ export default function LegacyDemoPage() {
         )}
       </div>
 
-      {/* ── Systems legend ── */}
       {state.phase !== "prologue" && state.phase !== "finale" && (
         <div
           className="fixed bottom-0 left-0 right-0 px-4 py-3"
