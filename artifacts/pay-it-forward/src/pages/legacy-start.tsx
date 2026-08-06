@@ -107,6 +107,25 @@ export default function LegacyStartPage() {
       if (compRes.ok) {
         setCompleteness(await compRes.json() as CompletenessResponse);
       }
+
+      // Parse seasonal events independently — do not gate on versionRes success
+      const upcomingEvents: { title: string; eventType: string; triggerDate: string | null }[] = [];
+      if (seasonalEventsRes?.ok) {
+        const seasonalData = await seasonalEventsRes.json() as {
+          events?: { title: string; event_type: string; trigger_date: string | null }[];
+        };
+        upcomingEvents.push(
+          ...(seasonalData.events ?? [])
+            .filter((event) => event.trigger_date)
+            .slice(0, 5)
+            .map((event) => ({
+              title: event.title,
+              eventType: event.event_type,
+              triggerDate: event.trigger_date,
+            })),
+        );
+      }
+
       if (versionRes?.ok) {
         const versionData = await versionRes.json() as {
           currentVersion?: number;
@@ -117,22 +136,6 @@ export default function LegacyStartPage() {
           recentChanges.reduce((total, change) => (
             pattern.test(change.changeType) ? total + 1 : total
           ), 0);
-        const upcomingEvents: { title: string; eventType: string; triggerDate: string | null }[] = [];
-        if (seasonalEventsRes?.ok) {
-          const seasonalData = await seasonalEventsRes.json() as {
-            events?: { title: string; event_type: string; trigger_date: string | null }[];
-          };
-          upcomingEvents.push(
-            ...(seasonalData.events ?? [])
-              .filter((event) => event.trigger_date)
-              .slice(0, 5)
-              .map((event) => ({
-                title: event.title,
-                eventType: event.event_type,
-                triggerDate: event.trigger_date,
-              })),
-          );
-        }
         setWelcomeData({
           hasChanges: recentChanges.length > 0,
           worldVersion: versionData.currentVersion ?? 0,
@@ -142,13 +145,24 @@ export default function LegacyStartPage() {
           newChapters: [],
           upcomingEvents,
         });
+      } else if (upcomingEvents.length > 0) {
+        // Version summary unavailable but we still have seasonal events — show them
+        setWelcomeData({
+          hasChanges: false,
+          worldVersion: 0,
+          newMemoryCount: 0,
+          newMemberCount: 0,
+          recentChanges: [],
+          newChapters: [],
+          upcomingEvents,
+        });
       }
     } catch {
       toast.error("Failed to load ancestor data");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -165,6 +179,16 @@ export default function LegacyStartPage() {
     }
     return () => timers.forEach(clearTimeout);
   }, [cinematicPhase]);
+
+  // Cleanup ref so deferred navigations don't fire after unmount
+  const navTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    return () => { navTimersRef.current.forEach(clearTimeout); navTimersRef.current = []; };
+  }, []);
+  const safeNav = (path: string, delayMs: number) => {
+    const id = setTimeout(() => navigate(path), delayMs);
+    navTimersRef.current.push(id);
+  };
 
   const handleBegin = useCallback(async () => {
     if (!familyId || !selectedId) return;
@@ -192,16 +216,17 @@ export default function LegacyStartPage() {
       const firstChapter = data.chapters.find(c => c.status === "unlocked") ?? data.chapters[0];
 
       if (firstChapter) {
+        // Mark chapter as in-progress
         await fetch(`/api/legacy/chapters/${firstChapter.id}/status`, {
           method: "PATCH",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
           body: JSON.stringify({ status: "in_progress" }),
-        });
+        }).catch(() => { /* non-fatal */ });
 
         // Create a play session so the chapter page can restore stats and
         // save progress from the very first scene, not just when the first
         // choice is made.
-        await fetch(`/api/legacy/sessions`, {
+        const sessionRes = await fetch(`/api/legacy/sessions`, {
           method: "POST",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -210,14 +235,25 @@ export default function LegacyStartPage() {
             ancestorMemberId: selectedId,
             chapterId: firstChapter.id,
           }),
-        }).catch(() => { /* non-fatal — session will be created on first progress save */ });
+        }).catch(() => null);
+
+        if (!sessionRes?.ok) {
+          // Non-fatal: warn the player but still navigate to the chapter.
+          // legacy-play will fall back to chapter-based routing, and the chapter
+          // page will create a fresh session on the first progress save.
+          toast.warning("Journey started — your progress will sync on your first action.", {
+            duration: 5000,
+          });
+          // Store chapter ID so /legacy/play can recover without an active session
+          try {
+            localStorage.setItem("legacy:lastChapterId", String(firstChapter.id));
+          } catch { /* ignore */ }
+        }
 
         // Hold the cinematic transition for 2.5s before navigating
-        setTimeout(() => {
-          navigate(`/legacy/chapter/${firstChapter.id}`);
-        }, 2500);
+        safeNav(`/legacy/chapter/${firstChapter.id}`, 2500);
       } else {
-        setTimeout(() => navigate("/legacy"), 2000);
+        safeNav("/legacy", 2000);
       }
     } catch {
       toast.error("Failed to start journey");

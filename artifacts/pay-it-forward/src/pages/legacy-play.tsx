@@ -84,23 +84,8 @@ export default function LegacyPlayPage() {
 
       setMessage("Finding your chapter…");
 
-      // Step 2: Check for a specific sessionId in the URL
-      if (params.sessionId) {
-        // Try to load the chapter for the specified session
-        try {
-          const sessRes = await fetch(`/api/legacy/sessions/active/${familyId}`, { headers: authHeaders() });
-          if (sessRes.ok) {
-            const sessData = await sessRes.json() as { session: Session | null };
-            if (sessData.session?.current_chapter_id) {
-              setMessage("Resuming journey…");
-              safeNavigate(`/legacy/chapter/${sessData.session!.current_chapter_id}`, 800);
-              return;
-            }
-          }
-        } catch { /* fall through */ }
-      }
-
-      // Step 3: Check for active session
+      // Step 2: Check for active session (single fetch, used by both the
+      // URL-sessionId path and the general resume path)
       const sessRes = await fetch(`/api/legacy/sessions/active/${familyId}`, { headers: authHeaders() });
       if (sessRes.ok) {
         const sessData = await sessRes.json() as { session: Session | null };
@@ -113,13 +98,16 @@ export default function LegacyPlayPage() {
 
       setMessage("Searching for your chapters…");
 
-      // Step 4: Check existing chapters for in_progress or unlocked
-      // We need the world to exist first — try fetching chapters via completeness check
-      const compRes = await fetch(`/api/legacy/completeness/${familyId}`, { headers: authHeaders() });
+      // Step 3: No active session — check chapters directly.
+      // This is the recovery path when a session record was not created
+      // (e.g. the POST /api/legacy/sessions call failed on the start screen).
+      // We also check for a last-known chapter stored by the start screen.
+      const [compRes, chapRes] = await Promise.all([
+        fetch(`/api/legacy/completeness/${familyId}`, { headers: authHeaders() }),
+        fetch(`/api/legacy/chapters/${familyId}`, { headers: authHeaders() }).catch(() => null),
+      ]);
       const compData = compRes.ok ? await compRes.json() as { chapterUnlockReady?: boolean } : null;
 
-      // Try to get existing chapters (GET /api/legacy/chapters/:familyId)
-      const chapRes = await fetch(`/api/legacy/chapters/${familyId}`, { headers: authHeaders() }).catch(() => null);
       if (chapRes && chapRes.ok) {
         const chapData = await chapRes.json() as { chapters?: Chapter[] };
         const chapters = chapData.chapters ?? [];
@@ -131,6 +119,8 @@ export default function LegacyPlayPage() {
         if (active) {
           setMessage("Opening chapter…");
           safeNavigate(`/legacy/chapter/${active.id}`, 600);
+          // Clear the fallback key now that we found the chapter
+          try { localStorage.removeItem("legacy:lastChapterId"); } catch { /* ignore */ }
           return;
         }
 
@@ -140,6 +130,16 @@ export default function LegacyPlayPage() {
           safeNavigate("/legacy/start", 600);
           return;
         }
+      }
+
+      // Fallback: check localStorage for a last-known chapter from a failed session save
+      const lastChapterId = (() => {
+        try { return localStorage.getItem("legacy:lastChapterId"); } catch { return null; }
+      })();
+      if (lastChapterId) {
+        setMessage("Resuming your chapter…");
+        safeNavigate(`/legacy/chapter/${lastChapterId}`, 600);
+        return;
       }
 
       // Step 5: No chapters yet — check readiness
