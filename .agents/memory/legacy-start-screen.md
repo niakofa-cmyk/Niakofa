@@ -28,3 +28,16 @@ description: Architecture of the Niakofa Legacy cinematic start screen and how i
 - Activity lines ← `dailyWelcome.recentChanges[].description`
 - Chapter ← active session chapter or `dailyWelcome.newChapters[0]`
 - AI status ← `isAiEnabled` from `/api/legacy/quests/:familyId`
+
+## Session-save failure recovery (Aug 2026)
+`handleBegin` in `legacy-start.tsx` now:
+1. If POST `/api/legacy/sessions` fails → shows a `toast.warning` (non-fatal) and writes `legacy:lastChapterId` to localStorage
+2. Still navigates to the chapter — player is never stuck on the start screen
+`legacy-play.tsx` checks `legacy:lastChapterId` as a final fallback before routing to onboarding
+The key is cleared from localStorage once the chapters API finds the chapter normally.
+
+## Seasonal events data source (fix)
+`seasonalEventsRes` is now parsed **independently** of `versionRes`. If world version-summary fails, seasonal events still populate `upcomingEvents`. If versionRes also fails but events exist, `welcomeData` is still set (hasChanges=false, worldVersion=0, but upcomingEvents populated).
+
+## loadData dependency
+`useCallback([currentUser])` — `currentUser` must be in the dep array or loadData is a stale closure on auth change.
