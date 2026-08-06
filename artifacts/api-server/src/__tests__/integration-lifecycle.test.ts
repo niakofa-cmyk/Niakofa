@@ -551,6 +551,30 @@ describe("Health Endpoint", () => {
     expect(res.body.status).toBe("degraded");
     expect(res.body.db).toBe("disconnected");
   });
+
+  it("keeps the external /health compatibility probe bounded and reports Nia health", async () => {
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "ok", service: "nia" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    try {
+      const res = await request(app).get("/api/health");
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("ok");
+      expect(res.body.service).toBe("api-server");
+      expect(res.body.nia_service.status).toBe("ok");
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://localhost:3001/health",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
 
 // ── Pagination Tests ──────────────────────────────────────────────────────────

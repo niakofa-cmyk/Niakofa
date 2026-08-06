@@ -67,8 +67,29 @@ function bucketRegion(lat: number, lng: number): string {
 // ── Module-level constants ────────────────────────────────────────────────────
 const PROCESS_STARTED_AT = new Date().toISOString();
 const GIT_COMMIT = process.env["GIT_COMMIT"] ?? "unknown";
+const NIA_HEALTH_TIMEOUT_MS = 2_000;
 
 const router: IRouter = Router();
+
+async function checkNiaService(): Promise<{ status: "ok" | "unavailable"; httpStatus?: number }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), NIA_HEALTH_TIMEOUT_MS);
+
+  try {
+    const niaUrl = (process.env["NIA_SERVICE_URL"] ?? "http://localhost:3001").replace(/\/$/, "");
+    const response = await fetch(`${niaUrl}/health`, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    });
+    return response.ok
+      ? { status: "ok", httpStatus: response.status }
+      : { status: "unavailable", httpStatus: response.status };
+  } catch {
+    return { status: "unavailable" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 // ── GET /healthz — Railway deploy probe ──────────────────────────────────────
 // Railway calls this to decide whether the container is ready for traffic.
@@ -102,6 +123,21 @@ router.get("/healthz", async (_req, res) => {
       mapbox_circuit_breaker: navCb,
     });
   }
+});
+
+// ── GET /health — compatibility probe for external deploy monitors ────────────
+// The Nia service has historically exposed /health, while the public API's
+// canonical Railway probe is /healthz. Keep this endpoint bounded so a missing
+// or crashed co-located Nia process cannot leave external monitors hanging.
+router.get("/health", async (_req, res) => {
+  const nia = await checkNiaService();
+  res.status(nia.status === "ok" ? 200 : 503).json({
+    status: nia.status === "ok" ? "ok" : "degraded",
+    service: "api-server",
+    nia_service: nia,
+    commit: GIT_COMMIT,
+    started_at: PROCESS_STARTED_AT,
+  });
 });
 
 // ── GET /version — build metadata for ops tooling ────────────────────────────

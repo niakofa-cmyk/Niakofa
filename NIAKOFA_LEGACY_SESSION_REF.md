@@ -109,8 +109,9 @@ Lives in `artifacts/pay-it-forward/src/pages/legacy-start.tsx`:
 - [ ] Embed the actual uploaded PNG images (panel, bg, logo) to `public/` once available on disk
       → Target paths: `artifacts/pay-it-forward/public/niakofa-legacy-bg.png`, `niakofa-legacy-logo.png`, `niakofa-legacy-panel.png`
       → Component ref: `legacy-start-visual.tsx` hero `<img src="/legacy-living-family-reference.png" />`
-- [ ] Verify Railway deployment healthy at `zesty-ambition-production-f6a1.up.railway.app`
-- [ ] Evaluate and fix failing Railway CI/CD commits
+- [x] Evaluate failing Railway CI/CD commits — earlier failures were followed by green corrective commits; current GitHub `main` CI and deploy-verification runs are green through `de16670`.
+- [x] Verify current Railway service before push — `/api/healthz` is 200 with a connected database; `/api/status` is 200 and reports optional Nia/Map degradation without blocking the deploy probe.
+- [ ] Verify the new `/api/health` compatibility probe after Railway auto-deploys the pushed commit.
 
 ## Completed This Session (both sessions)
 
@@ -119,6 +120,9 @@ Lives in `artifacts/pay-it-forward/src/pages/legacy-start.tsx`:
 - ✅ 0 TypeScript errors confirmed via `pnpm tsc --noEmit`
 - ✅ Git: local main == origin/main (1907040b)
 - ✅ Push confirmed: `008a6c6f..1907040b  main -> main`
+- ✅ August 6, 2026 local verification: fresh dependency install, 0 TypeScript errors, 446 frontend tests passing, 242 API tests passing, release validation passing, production build passing, and both Replit artifact workflows running.
+- ✅ Added bounded `/api/health` compatibility probe for external Nia/deployment monitors, with regression coverage.
+- ✅ Updated GitHub deploy verification to use the Railway production URL, fail loudly on health regressions, and retry during rollout.
 
 ---
 

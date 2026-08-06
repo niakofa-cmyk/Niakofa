@@ -1,1 +1,2 @@
 - [Legacy Start Screen](legacy-start-screen.md) — cinematic panel replaced old two-column card; Button States removed; YOUR FAMILY WORLD section added with world-version + activity data
+- [Railway health probes](railway-health-probes.md) — keep `/api/healthz` readiness and bounded `/api/health` Nia compatibility checks aligned
