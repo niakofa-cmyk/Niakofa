@@ -9,7 +9,7 @@
  * Progress is stored in localStorage so the demo can be resumed or reset.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -17,8 +17,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   Clapperboard,
+  Clock,
   HeartHandshake,
   Landmark,
+  Loader2,
   MapPin,
   Medal,
   Mic,
@@ -39,6 +41,7 @@ import {
   placeDemoArtifact,
   readDemoState,
   resetDemo,
+  startDemoQuest,
   writeDemoState,
   type DemoPhase,
   type DemoState,
@@ -162,16 +165,19 @@ function GoldButton({
   onClick,
   children,
   secondary = false,
+  disabled = false,
 }: {
   onClick: () => void;
   children: React.ReactNode;
   secondary?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 px-5 font-black text-sm uppercase tracking-[0.18em] transition-all active:scale-[0.98]"
+      disabled={disabled}
+      className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 px-5 font-black text-sm uppercase tracking-[0.18em] transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
       style={
         secondary
           ? {
@@ -218,7 +224,7 @@ function TraitBar({ label, value }: { label: string; value: number }) {
 
 function PrologueScreen({ onBegin }: { onBegin: () => void }) {
   return (
-    <div className="flex flex-col items-center px-6 py-10 text-center space-y-6">
+    <div className="flex flex-col items-center px-6 py-10 text-center space-y-6 animate-[fadeIn_0.6s_ease-out]">
       <div className="w-20 h-20 rounded-full border-2 border-amber-500/60 flex items-center justify-center"
         style={{ background: "radial-gradient(circle, rgba(214,158,46,0.15) 0%, rgba(10,6,4,0.95) 70%)" }}>
         <span className="text-3xl">🌳</span>
@@ -276,7 +282,7 @@ function ChapterScreen({
   };
 
   return (
-    <div className="px-4 py-6 space-y-5">
+    <div className="px-4 py-6 space-y-5 animate-[fadeIn_0.5s_ease-out]">
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
           <BookOpen className="w-4 h-4 text-amber-400" />
@@ -310,7 +316,7 @@ function ChapterScreen({
               key={i}
               type="button"
               onClick={() => handleChoice(i)}
-              className="w-full text-left rounded-xl border border-amber-800/40 bg-[#21140b] p-3 flex items-center gap-3 active:scale-[0.98] transition-all hover:border-amber-600/50"
+              className="w-full text-left rounded-xl border border-amber-800/40 bg-[#21140b] p-3 flex items-center gap-3 active:scale-[0.98] transition-all hover:border-amber-600/50 hover:bg-amber-950/30"
             >
               <ArrowRight className="w-4 h-4 text-amber-600 shrink-0" />
               <span className="text-sm text-amber-200">{c.label}</span>
@@ -320,7 +326,7 @@ function ChapterScreen({
       )}
 
       {chosen !== null && (
-        <div className="rounded-xl border border-amber-400/30 bg-amber-400/8 p-4">
+        <div className="rounded-xl border border-amber-400/30 bg-amber-400/8 p-4 animate-[fadeIn_0.3s_ease-out]">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle2 className="w-4 h-4 text-amber-400" />
             <p className="text-xs font-black uppercase tracking-wide text-amber-400">Choice made</p>
@@ -337,16 +343,40 @@ function ChapterScreen({
   );
 }
 
-function WorldRegenScreen({ placedArtifacts, onPlace, onContinue }: {
-  placedArtifacts: string[];
+// ─── World Regeneration ───────────────────────────────────────────────────────
+
+function WorldRegenScreen({ state, onPlace, onContinue }: {
+  state: DemoState;
   onPlace: (id: string) => void;
   onContinue: () => void;
 }) {
-  const placed = new Set(placedArtifacts);
+  const placed = new Set(state.placedArtifacts);
   const allPlaced = ARTIFACTS.every(a => placed.has(a.id));
+  const [showRegen, setShowRegen] = useState(false);
+  const placedCountRef = useRef(0);
+
+  useEffect(() => {
+    if (allPlaced && placedCountRef.current !== ARTIFACTS.length) {
+      placedCountRef.current = ARTIFACTS.length;
+      setShowRegen(true);
+      const timer = setTimeout(() => setShowRegen(false), 3000);
+      return () => clearTimeout(timer);
+    }
+    if (!allPlaced) {
+      placedCountRef.current = state.placedArtifacts.length;
+    }
+  }, [allPlaced, state.placedArtifacts.length]);
+
+  const changeIcons: Record<string, typeof TreePine> = {
+    ancestor: TreePine,
+    migration: MapPin,
+    chapter: BookOpen,
+    dialogue: Mic,
+    location: Landmark,
+  };
 
   return (
-    <div className="px-4 py-6 space-y-5">
+    <div className="px-4 py-6 space-y-5 animate-[fadeIn_0.5s_ease-out]">
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
           <Sparkles className="w-4 h-4 text-amber-400" />
@@ -364,6 +394,47 @@ function WorldRegenScreen({ placedArtifacts, onPlace, onContinue }: {
         place each artifact from the Family Vault into the House of Mensah.
       </p>
 
+      {/* World changes feed */}
+      {state.worldChanges.length > 0 && (
+        <div className="rounded-xl border border-amber-700/40 bg-[#1a0d07] p-3 space-y-2">
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-600 mb-1">
+            World Changes · {state.worldChanges.length} detected
+          </p>
+          {state.worldChanges.map((change, i) => {
+            const Icon = changeIcons[change.changeType] ?? Sparkles;
+            return (
+              <div
+                key={change.id}
+                className="flex items-center gap-2.5 animate-[fadeIn_0.4s_ease-out]"
+                style={{ animationDelay: `${i * 100}ms`, animationFillMode: "backwards" }}
+              >
+                <span className="w-6 h-6 rounded-md bg-amber-500/15 border border-amber-500/25 flex items-center justify-center shrink-0">
+                  <Icon className="w-3 h-3 text-amber-400" />
+                </span>
+                <span className="text-[11px] text-amber-300/90 leading-tight">{change.description}</span>
+                <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0 ml-auto" />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Regeneration animation overlay */}
+      {showRegen && (
+        <div className="rounded-xl border border-amber-400/50 bg-gradient-to-r from-amber-950/60 to-amber-900/40 p-4 animate-[fadeIn_0.3s_ease-out]">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-amber-300">Regenerating World…</p>
+              <p className="text-[10px] text-amber-500 mt-0.5">World Version {state.worldVersion} → {state.worldVersion + 1}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Artifact placement */}
       <div className="space-y-2">
         {ARTIFACTS.map(a => {
           const Icon = a.icon;
@@ -374,10 +445,14 @@ function WorldRegenScreen({ placedArtifacts, onPlace, onContinue }: {
               type="button"
               onClick={() => !isPlaced && onPlace(a.id)}
               className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all active:scale-[0.98] ${
-                isPlaced ? "border-amber-400/50 bg-amber-400/10" : "border-amber-900/40 bg-[#21140b] hover:border-amber-600/50"
+                isPlaced
+                  ? "border-amber-400/50 bg-amber-400/10"
+                  : "border-amber-900/40 bg-[#21140b] hover:border-amber-600/50 hover:bg-amber-950/30"
               }`}
             >
-              <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isPlaced ? "bg-amber-400/20 text-amber-300" : "bg-amber-950/60 text-amber-600"}`}>
+              <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-all ${
+                isPlaced ? "bg-amber-400/20 text-amber-300 scale-100" : "bg-amber-950/60 text-amber-600"
+              }`}>
                 {isPlaced ? <CheckCircle2 className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
               </span>
               <span className="flex-1 min-w-0">
@@ -392,17 +467,17 @@ function WorldRegenScreen({ placedArtifacts, onPlace, onContinue }: {
         })}
       </div>
 
-      {allPlaced ? (
-        <div className="rounded-xl border border-amber-400/30 bg-amber-400/8 p-4 space-y-2">
+      {allPlaced && !showRegen && (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-400/8 p-4 space-y-3 animate-[fadeIn_0.5s_ease-out]">
           <p className="text-xs font-black uppercase tracking-wide text-amber-400 flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5" /> World Regenerated
+            <Zap className="w-3.5 h-3.5" /> World Regenerated · v{state.worldVersion + 1}
           </p>
           <ul className="space-y-1 text-[11px] text-amber-300/80">
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-amber-400" /> A forgotten ancestor appeared in the Family Tree</li>
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-amber-400" /> A migration route was revealed on the map</li>
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-amber-400" /> Chapter 7 unlocked — "Rising Again"</li>
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-amber-400" /> New dialogue available from Uncle Kofi</li>
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-amber-400" /> Old family business location appeared on the map</li>
+            {state.worldChanges.map(change => (
+              <li key={change.id} className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3 h-3 text-amber-400 shrink-0" /> {change.description}
+              </li>
+            ))}
           </ul>
           <div className="mt-3">
             <GoldButton onClick={onContinue}>
@@ -410,25 +485,31 @@ function WorldRegenScreen({ placedArtifacts, onPlace, onContinue }: {
             </GoldButton>
           </div>
         </div>
-      ) : (
+      )}
+
+      {!allPlaced && (
         <p className="text-center text-[11px] text-amber-700">
-          Place all {ARTIFACTS.length} artifacts to trigger World Regeneration
+          Place all {ARTIFACTS.length} artifacts to trigger World Regeneration ({state.placedArtifacts.length}/{ARTIFACTS.length})
         </p>
       )}
     </div>
   );
 }
 
-function CoopQuestScreen({ completedQuests, onComplete, onContinue }: {
-  completedQuests: string[];
+// ─── Co-op Quest ──────────────────────────────────────────────────────────────
+
+function CoopQuestScreen({ state, onStart, onComplete, onContinue }: {
+  state: DemoState;
+  onStart: (id: string) => void;
   onComplete: (id: string) => void;
   onContinue: () => void;
 }) {
-  const completed = new Set(completedQuests);
+  const completed = new Set(state.completedQuests);
   const allDone = COOP_TASKS.every(t => completed.has(t.id));
+  const inProgress = state.coopTasks.filter(t => t.status === "in-progress");
 
   return (
-    <div className="px-4 py-6 space-y-5">
+    <div className="px-4 py-6 space-y-5 animate-[fadeIn_0.5s_ease-out]">
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
           <HeartHandshake className="w-4 h-4 text-rose-400" />
@@ -441,68 +522,147 @@ function CoopQuestScreen({ completedQuests, onComplete, onContinue }: {
         </div>
       </div>
 
+      {/* Quest briefing */}
       <div className="rounded-xl border border-amber-800/40 bg-[#1a0d07] p-3">
         <p className="text-xs font-bold text-amber-300 mb-1">Live Family Quest</p>
         <p className="text-[11px] text-amber-500 leading-relaxed">
           We need the whole family to help identify everyone in this photo from 1942.
-          Find people who were at the school or church mind.
+          Find people who were at the school or church. Each task is assigned to a family member.
         </p>
         <div className="mt-2 flex items-center gap-2 text-[10px]">
-          <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">You</span>
-          <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-bold">Akua</span>
-          <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-bold">Kojo</span>
-          <span className="bg-amber-900/40 text-amber-700 px-2 py-0.5 rounded-full font-bold">Ama</span>
+          {["You", "Akua", "Kojo", "Ama"].map(name => {
+            const task = state.coopTasks.find(t => t.assignedTo === name);
+            const color = task?.status === "completed"
+              ? "bg-emerald-500/20 text-emerald-400"
+              : task?.status === "in-progress"
+              ? "bg-amber-500/20 text-amber-400"
+              : "bg-amber-900/40 text-amber-700";
+            return (
+              <span key={name} className={`${color} px-2 py-0.5 rounded-full font-bold transition-all`}>
+                {name}
+              </span>
+            );
+          })}
         </div>
       </div>
 
+      {/* Legacy points */}
+      {state.legacyPoints > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-700/30 bg-amber-950/30 px-4 py-2.5">
+          <span className="text-[10px] font-black uppercase tracking-wide text-amber-600">Legacy Points</span>
+          <span className="text-lg font-black text-amber-400 tabular-nums">{state.legacyPoints}</span>
+        </div>
+      )}
+
+      {/* Progress bar */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-1.5 rounded-full bg-amber-950/60 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${(state.completedQuests.length / COOP_TASKS.length) * 100}%`,
+              background: "linear-gradient(90deg, #e8862e, #f5c842)",
+            }}
+          />
+        </div>
+        <span className="text-[10px] font-bold text-amber-500 tabular-nums shrink-0">
+          {state.completedQuests.length}/{COOP_TASKS.length}
+        </span>
+      </div>
+
+      {/* Task list */}
       <div className="space-y-2">
         {COOP_TASKS.map(task => {
           const Icon = task.icon;
+          const taskState = state.coopTasks.find(t => t.questId === task.id);
           const done = completed.has(task.id);
+          const started = taskState?.status === "in-progress";
           return (
-            <button
+            <div
               key={task.id}
-              type="button"
-              onClick={() => !done && onComplete(task.id)}
-              className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all active:scale-[0.98] ${
-                done ? "border-emerald-500/40 bg-emerald-500/8" : "border-amber-900/40 bg-[#21140b] hover:border-amber-600/50"
+              className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
+                done
+                  ? "border-emerald-500/40 bg-emerald-500/8"
+                  : started
+                  ? "border-amber-500/50 bg-amber-500/8"
+                  : "border-amber-900/40 bg-[#21140b]"
               }`}
             >
-              <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${done ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-950/60 text-amber-600"}`}>
-                {done ? <CheckCircle2 className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+              <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all ${
+                done ? "bg-emerald-500/20 text-emerald-300" : started ? "bg-amber-500/20 text-amber-300" : "bg-amber-950/60 text-amber-600"
+              }`}>
+                {done ? <CheckCircle2 className="w-4 h-4" /> : started ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
               </span>
-              <span className="flex-1 text-sm text-amber-200">{task.label}</span>
-              <span className={`text-[10px] font-bold uppercase ${done ? "text-emerald-400" : "text-amber-700"}`}>
-                {done ? "Done" : "Start"}
-              </span>
-            </button>
+              <div className="flex-1 min-w-0">
+                <span className={`block text-sm ${done ? "text-emerald-300" : "text-amber-200"}`}>{task.label}</span>
+                <span className="flex items-center gap-1 mt-0.5">
+                  <span className={`text-[9px] font-bold uppercase ${done ? "text-emerald-500" : "text-amber-700"}`}>
+                    {taskState?.assignedTo}
+                  </span>
+                  {done && taskState?.completedAt && (
+                    <span className="flex items-center gap-0.5 text-[9px] text-amber-800">
+                      <Clock className="w-2.5 h-2.5" /> done
+                    </span>
+                  )}
+                </span>
+              </div>
+              {!done && !started && (
+                <button
+                  type="button"
+                  onClick={() => onStart(task.id)}
+                  className="text-[10px] font-bold uppercase text-amber-600 px-3 py-1.5 rounded-lg bg-amber-900/30 hover:bg-amber-900/50 transition-all active:scale-95 shrink-0"
+                >
+                  Start
+                </button>
+              )}
+              {!done && started && (
+                <button
+                  type="button"
+                  onClick={() => onComplete(task.id)}
+                  className="text-[10px] font-bold uppercase text-amber-300 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 transition-all active:scale-95 shrink-0"
+                >
+                  Complete
+                </button>
+              )}
+              {done && (
+                <span className="text-[10px] font-bold uppercase text-emerald-400 shrink-0">Done</span>
+              )}
+            </div>
           );
         })}
       </div>
 
+      {/* Completion reward */}
       {allDone && (
-        <div className="space-y-3">
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/8 p-3 text-[11px] text-emerald-300">
+        <div className="space-y-3 animate-[fadeIn_0.5s_ease-out]">
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/8 p-4 text-[11px] text-emerald-300">
             <p className="font-black uppercase tracking-wide mb-1">Quest complete!</p>
-            <p>+500 Legacy Points · New Chapter Seed unlocked · Rare Document found</p>
+            <p>+{state.legacyPoints} Legacy Points · New Chapter Seed unlocked · Rare Document found</p>
           </div>
           <GoldButton onClick={onContinue}>
             <TreePine className="w-4 h-4" /> Return to Sunday Dinner
           </GoldButton>
         </div>
       )}
+
+      {!allDone && inProgress.length === 0 && (
+        <p className="text-center text-[11px] text-amber-700">
+          Tap "Start" to assign a task to a family member
+        </p>
+      )}
     </div>
   );
 }
 
-function FinaleScreen({ traits, worldVersion, onRestart, onPlay }: {
-  traits: Record<string, number>;
-  worldVersion: number;
+// ─── Finale ───────────────────────────────────────────────────────────────────
+
+function FinaleScreen({ state, onRestart, onPlay }: {
+  state: DemoState;
   onRestart: () => void;
   onPlay: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center px-6 py-10 text-center space-y-6">
+    <div className="flex flex-col items-center px-6 py-10 text-center space-y-6 animate-[fadeIn_0.6s_ease-out]">
       <div className="w-24 h-24 rounded-full border-2 border-amber-400/60 flex items-center justify-center"
         style={{ background: "radial-gradient(circle, rgba(214,158,46,0.2) 0%, rgba(10,6,4,0.95) 70%)" }}>
         <span className="text-4xl">🏆</span>
@@ -516,18 +676,42 @@ function FinaleScreen({ traits, worldVersion, onRestart, onPlay }: {
         <p className="text-sm text-amber-300/85 leading-relaxed max-w-sm mx-auto">
           The family gathers around the grandmother's Sunday dinner table. Children laugh.
           The old photographs are matched with names. Stories once forgotten have been preserved.
-          The Family Vault has grown. World Version {worldVersion} is live.
+          The Family Vault has grown. World Version {state.worldVersion} is live.
         </p>
         <p className="mt-4 text-sm font-bold text-amber-200 max-w-sm mx-auto italic">
           "Every generation inherits a story. Every generation decides what will be remembered."
         </p>
       </div>
 
-      <div className="w-full max-w-xs rounded-xl border border-amber-800/40 bg-[#21140b] p-4 space-y-2 text-left">
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700 mb-3">Kwame Mensah · Final Traits</p>
-        {Object.entries(traits).map(([k, v]) => (
-          <TraitBar key={k} label={k} value={Math.min(v, 100)} />
-        ))}
+      {/* Stats summary */}
+      <div className="w-full max-w-xs rounded-xl border border-amber-800/40 bg-[#21140b] p-4 space-y-3 text-left">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700 mb-2">Journey Summary</p>
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-amber-600">World Version</span>
+          <span className="font-bold text-amber-400">v{state.worldVersion}</span>
+        </div>
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-amber-600">Artifacts Placed</span>
+          <span className="font-bold text-amber-400">{state.placedArtifacts.length}/4</span>
+        </div>
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-amber-600">Co-op Tasks Done</span>
+          <span className="font-bold text-amber-400">{state.completedQuests.length}/4</span>
+        </div>
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-amber-600">Legacy Points</span>
+          <span className="font-bold text-amber-400">{state.legacyPoints}</span>
+        </div>
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-amber-600">World Changes</span>
+          <span className="font-bold text-amber-400">{state.worldChanges.length}</span>
+        </div>
+        <div className="pt-2 border-t border-amber-900/40">
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700 mb-2">Kwame Mensah · Final Traits</p>
+          {Object.entries(state.traits).map(([k, v]) => (
+            <TraitBar key={k} label={k} value={Math.min(v, 100)} />
+          ))}
+        </div>
       </div>
 
       <div className="w-full max-w-xs space-y-3">
@@ -572,6 +756,30 @@ export default function LegacyDemoPage() {
   const handleChoice = useCallback((trait: string, value: number) => {
     setState(prev => {
       const next = chooseDemoTrait(prev, trait, value);
+      writeDemoState(localStorage, next);
+      return next;
+    });
+  }, []);
+
+  const handlePlace = useCallback((id: string) => {
+    setState(prev => {
+      const next = placeDemoArtifact(prev, id);
+      writeDemoState(localStorage, next);
+      return next;
+    });
+  }, []);
+
+  const handleStartQuest = useCallback((id: string) => {
+    setState(prev => {
+      const next = startDemoQuest(prev, id);
+      writeDemoState(localStorage, next);
+      return next;
+    });
+  }, []);
+
+  const handleCompleteQuest = useCallback((id: string) => {
+    setState(prev => {
+      const next = completeDemoQuest(prev, id);
       writeDemoState(localStorage, next);
       return next;
     });
@@ -666,32 +874,24 @@ export default function LegacyDemoPage() {
 
         {state.phase === "world-regen" && (
           <WorldRegenScreen
-            placedArtifacts={state.placedArtifacts}
-            onPlace={id => setState(prev => {
-              const next = placeDemoArtifact(prev, id);
-              writeDemoState(localStorage, next);
-              return next;
-            })}
+            state={state}
+            onPlace={handlePlace}
             onContinue={advance}
           />
         )}
 
         {state.phase === "coop-quest" && (
           <CoopQuestScreen
-            completedQuests={state.completedQuests}
-            onComplete={id => setState(prev => {
-              const next = completeDemoQuest(prev, id);
-              writeDemoState(localStorage, next);
-              return next;
-            })}
+            state={state}
+            onStart={handleStartQuest}
+            onComplete={handleCompleteQuest}
             onContinue={advance}
           />
         )}
 
         {state.phase === "finale" && (
           <FinaleScreen
-            traits={state.traits}
-            worldVersion={state.worldVersion}
+            state={state}
             onRestart={handleReset}
             onPlay={handlePlayFull}
           />
