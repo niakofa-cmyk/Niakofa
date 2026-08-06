@@ -27,6 +27,7 @@ import {
   Play,
   Sparkles,
   ChevronRight,
+  Clapperboard,
 } from "lucide-react";
 
 // ─── Mode icons ───────────────────────────────────────────────────────────────
@@ -140,6 +141,8 @@ interface LegacyStartVisualProps {
   hasJourney: boolean;
   onContinue: () => void;
   onStartBuilding: () => void;
+  /** Optional: navigate to the public end-to-end demo */
+  onDemo?: () => void;
   // World-state (shown in YOUR FAMILY WORLD card)
   worldVersion?: number | null;
   recentActivities?: string[];
@@ -170,6 +173,7 @@ export function LegacyStartVisual({
   hasJourney,
   onContinue,
   onStartBuilding,
+  onDemo,
   worldVersion,
   recentActivities = [],
   currentChapterNumber,
@@ -304,6 +308,25 @@ export function LegacyStartVisual({
             {isReady ? "Start New Journey" : "Get Started"}
           </span>
         </button>
+
+        {/* PLAY DEMO — amber outline button, always visible */}
+        {onDemo && (
+          <button
+            type="button"
+            onClick={onDemo}
+            className="w-full flex items-center justify-center gap-2.5 rounded-2xl py-3 px-5 transition-all active:scale-[0.98]"
+            style={{
+              background: "transparent",
+              border: "1px solid rgba(214,158,46,0.45)",
+              boxShadow: "0 0 12px rgba(214,158,46,0.08)",
+            }}
+          >
+            <Clapperboard className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <span className="text-xs font-black uppercase tracking-[0.2em] text-amber-500/90">
+              Play Demo · House of Mensah
+            </span>
+          </button>
+        )}
       </div>
 
       {/* ── Mode selector grid ──────────────────────────────────────────────── */}

@@ -1091,6 +1091,7 @@ export default function LegacyHomePage() {
               hasJourney={Boolean(activeSession?.currentChapterId || todaysJourney)}
               onContinue={() => navigate("/legacy/play")}
               onStartBuilding={() => navigate("/legacy/start")}
+              onDemo={() => navigate("/legacy/demo")}
               worldVersion={dailyWelcome?.worldVersion ?? worldVersion?.currentVersion ?? null}
               recentActivities={[
                 ...(dailyWelcome?.recentChanges ?? []).slice(0, 2).map(c => c.description ?? c.changeType.replace(/_/g, " ")),

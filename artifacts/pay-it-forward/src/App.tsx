@@ -73,6 +73,7 @@ const LegacyCharacterEvolutionPage = lazy(() => import("@/pages/legacy-character
 const LegacyOnboardingPage      = lazy(() => import("@/pages/legacy-onboarding"));
 const LegacyPlayPage            = lazy(() => import("@/pages/legacy-play"));
 const LegacyInterviewQuestPage = lazy(() => import("@/pages/legacy-interview-quest"));
+const LegacyDemoPage           = lazy(() => import("@/pages/legacy-demo"));
 
 function PageFallback() {
   return (
@@ -337,6 +338,14 @@ function AppContent() {
     return (
       <Suspense fallback={<PageFallback />}>
         <BirdTestPage />
+      </Suspense>
+    );
+  }
+  // Public demo — no auth required
+  if (pathname === "/legacy/demo") {
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <LegacyDemoPage />
       </Suspense>
     );
   }
