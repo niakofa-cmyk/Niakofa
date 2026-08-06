@@ -92,10 +92,11 @@ export default function LegacyStartPage() {
       const fid = famData.families[0].id;
       setFamilyId(fid);
 
-      const [ancRes, compRes, welcomeRes] = await Promise.all([
+      const [ancRes, compRes, versionRes, seasonalEventsRes] = await Promise.all([
         fetch(`/api/legacy/ancestors/${fid}`, { headers: authHeaders() }),
         fetch(`/api/legacy/completeness/${fid}`, { headers: authHeaders() }),
-        fetch(`/api/legacy/game-master/${fid}/daily-welcome`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/world-evolution/${fid}/version-summary`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/seasonal-events/${fid}`, { headers: authHeaders() }).catch(() => null),
       ]);
 
       if (ancRes.ok) {
@@ -106,8 +107,41 @@ export default function LegacyStartPage() {
       if (compRes.ok) {
         setCompleteness(await compRes.json() as CompletenessResponse);
       }
-      if (welcomeRes && welcomeRes.ok) {
-        setWelcomeData(await welcomeRes.json());
+      if (versionRes?.ok) {
+        const versionData = await versionRes.json() as {
+          currentVersion?: number;
+          recentChanges?: { changeType: string; description: string | null; createdAt: string }[];
+        };
+        const recentChanges = versionData.recentChanges ?? [];
+        const countChanges = (pattern: RegExp) =>
+          recentChanges.reduce((total, change) => (
+            pattern.test(change.changeType) ? total + 1 : total
+          ), 0);
+        const upcomingEvents: { title: string; eventType: string; triggerDate: string | null }[] = [];
+        if (seasonalEventsRes?.ok) {
+          const seasonalData = await seasonalEventsRes.json() as {
+            events?: { title: string; event_type: string; trigger_date: string | null }[];
+          };
+          upcomingEvents.push(
+            ...(seasonalData.events ?? [])
+              .filter((event) => event.trigger_date)
+              .slice(0, 5)
+              .map((event) => ({
+                title: event.title,
+                eventType: event.event_type,
+                triggerDate: event.trigger_date,
+              })),
+          );
+        }
+        setWelcomeData({
+          hasChanges: recentChanges.length > 0,
+          worldVersion: versionData.currentVersion ?? 0,
+          newMemoryCount: countChanges(/memory|story|interview/i),
+          newMemberCount: countChanges(/member|relation|character|ancestor/i),
+          recentChanges,
+          newChapters: [],
+          upcomingEvents,
+        });
       }
     } catch {
       toast.error("Failed to load ancestor data");

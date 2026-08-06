@@ -456,6 +456,9 @@ export default function LegacyHomePage() {
 
   const loadLegacyEngine = useCallback(async (familyId: number) => {
     let hadError = false;
+    let loadedAncestor: AncestorCandidate | null = null;
+    let loadedChapters: LegacyChapter[] = [];
+    let loadedSession: { id: number; currentChapterId: number | null; ancestorMemberId: number | null } | null = null;
     try {
       // Batch 1: core data (completeness, ancestors, chapters, map)
       const [compRes, ancestorRes, chaptersRes, mapRes] = await Promise.all([
@@ -471,12 +474,14 @@ export default function LegacyHomePage() {
       } else { hadError = true; }
       if (ancestorRes.ok) {
         const data = await ancestorRes.json() as { ancestors: AncestorCandidate[] };
-        setAncestorCandidate(data.ancestors?.[0] ?? null);
+        loadedAncestor = data.ancestors?.[0] ?? null;
+        setAncestorCandidate(loadedAncestor);
       } else { hadError = true; }
       if (chaptersRes.ok) {
         const data = await chaptersRes.json() as { chapters: LegacyChapter[] };
-        setChapters(data.chapters ?? []);
-        const firstUnlocked = (data.chapters ?? []).find(c => c.status === "unlocked" || c.status === "in_progress");
+        loadedChapters = data.chapters ?? [];
+        setChapters(loadedChapters);
+        const firstUnlocked = loadedChapters.find(c => c.status === "unlocked" || c.status === "in_progress");
         if (firstUnlocked) setActiveChapterId(firstUnlocked.id);
       } else { hadError = true; }
       if (mapRes.ok) {
@@ -486,15 +491,23 @@ export default function LegacyHomePage() {
 
       // Batch 2: all remaining Phase 5 data in parallel
       setJourneyLoading(true);
+      let derivedDailyWelcome: {
+        hasChanges: boolean;
+        worldVersion: number;
+        newMemoryCount: number;
+        newMemberCount: number;
+        newPlaceCount: number;
+        newCharacterCount: number;
+        recentChanges: Array<{ changeType: string; description: string; createdAt: string }>;
+        newChapters: Array<{ id: number; title: string; chapterNumber: number }>;
+        upcomingEvents: Array<{ id: number; title: string; eventDate: string; category: string }>;
+      } | null = null;
       const [
-        journeyRes, versionRes, welcomeRes, calendarRes,
-        reunionRes, questsRes, missionsRes, mysteriesRes, challengesRes, achRes,
-        sessionRes, coopRes,
+        versionRes, seasonalEventsRes, reunionRes, questsRes, missionsRes,
+        mysteriesRes, challengesRes, achRes, sessionRes, coopRes,
       ] = await Promise.all([
-        fetch(`/api/legacy/game-master/${familyId}/today`, { headers: authHeaders() }).catch(() => null),
         fetch(`/api/legacy/world-evolution/${familyId}/version-summary`, { headers: authHeaders() }).catch(() => null),
-        fetch(`/api/legacy/game-master/${familyId}/daily-welcome`, { headers: authHeaders() }).catch(() => null),
-        fetch(`/api/legacy/game-master/${familyId}/emotional-calendar`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/seasonal-events/${familyId}`, { headers: authHeaders() }).catch(() => null),
         fetch(`/api/legacy/reunion/${familyId}`, { headers: authHeaders() }).catch(() => null),
         !familyQuestsLoadedRef.current
           ? fetch(`/api/legacy/family-quests/${familyId}`, { headers: authHeaders() }).catch(() => null)
@@ -509,20 +522,139 @@ export default function LegacyHomePage() {
 
       if (familyQuestsLoadedRef.current === false) familyQuestsLoadedRef.current = true;
 
-      if (journeyRes?.ok) { const jd = await journeyRes.json(); if (jd.journey) setTodaysJourney(jd.journey); }
       if (sessionRes?.ok) {
         const sd = await sessionRes.json();
         if (sd?.session?.id) {
-          setActiveSession({
+          loadedSession = {
             id: sd.session.id,
             currentChapterId: sd.session.current_chapter_id ?? null,
             ancestorMemberId: sd.session.ancestor_member_id ?? null,
-          });
+          };
+          setActiveSession(loadedSession);
         }
       }
-      if (versionRes?.ok) { setWorldVersion(await versionRes.json()); }
-      if (welcomeRes?.ok) { setDailyWelcome(await welcomeRes.json()); }
-      if (calendarRes?.ok) { const cd = await calendarRes.json(); setEmotionalCalendar(cd.calendar ?? []); }
+      if (versionRes?.ok) {
+        const versionData = await versionRes.json() as {
+          currentVersion?: number;
+          versionCreatedAt?: string | null;
+          totalChanges?: number;
+          recentChanges?: Array<{
+            id: number;
+            changeType: string;
+            description: string | null;
+            affectedCount: number;
+            createdAt: string;
+            newVersion: number | null;
+          }>;
+        };
+        const recentChanges = (versionData.recentChanges ?? []).map((change) => ({
+          ...change,
+          description: change.description ?? change.changeType.replace(/_/g, " "),
+        }));
+        setWorldVersion({
+          currentVersion: versionData.currentVersion ?? 0,
+          versionCreatedAt: versionData.versionCreatedAt ?? null,
+          totalChanges: versionData.totalChanges ?? 0,
+          recentChanges,
+        });
+
+        const countChanges = (pattern: RegExp) =>
+          recentChanges.reduce((total, change) => (
+            pattern.test(change.changeType) ? total + Math.max(1, change.affectedCount) : total
+          ), 0);
+        derivedDailyWelcome = {
+          hasChanges: recentChanges.length > 0,
+          worldVersion: versionData.currentVersion ?? 0,
+          newMemoryCount: countChanges(/memory|story|interview/i),
+          newMemberCount: countChanges(/member|relation|character/i),
+          newPlaceCount: countChanges(/place|location|landmark/i),
+          newCharacterCount: countChanges(/character|ancestor/i),
+          recentChanges: recentChanges.map(({ changeType, description, createdAt }) => ({
+            changeType,
+            description,
+            createdAt,
+          })),
+          newChapters: loadedChapters
+            .filter((chapter) => chapter.status !== "locked")
+            .slice(0, 3)
+            .map((chapter) => ({
+              id: chapter.id,
+              title: chapter.title,
+              chapterNumber: chapter.chapter_number,
+            })),
+          upcomingEvents: [],
+        };
+      }
+      if (seasonalEventsRes?.ok) {
+        const seasonalData = await seasonalEventsRes.json() as {
+          events?: Array<{
+            id: number;
+            event_type: string;
+            title: string;
+            description: string | null;
+            trigger_date: string | null;
+            target_member_id: number | null;
+          }>;
+        };
+        const today = new Date();
+        const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+        const calendar = (seasonalData.events ?? [])
+          .filter((event) => event.trigger_date)
+          .map((event) => {
+            const eventDate = new Date(`${event.trigger_date}T00:00:00Z`);
+            const daysUntil = Math.round((eventDate.getTime() - todayStart.getTime()) / 86_400_000);
+            return {
+              id: event.id,
+              type: event.event_type,
+              title: event.title,
+              description: event.description,
+              date: event.trigger_date,
+              memberName: null,
+              isToday: daysUntil === 0,
+              isUpcoming: daysUntil >= 0,
+              daysUntil,
+              yearsAgo: null,
+            };
+          })
+          .sort((a, b) => Math.abs(a.daysUntil) - Math.abs(b.daysUntil));
+        setEmotionalCalendar(calendar);
+        if (derivedDailyWelcome) {
+          derivedDailyWelcome = {
+            ...derivedDailyWelcome,
+          upcomingEvents: calendar
+            .filter((event) => event.isUpcoming)
+            .slice(0, 5)
+            .map((event) => ({
+              id: event.id,
+              title: event.title,
+              eventDate: event.date ?? "",
+              category: event.type,
+            })),
+          };
+        }
+      }
+      if (derivedDailyWelcome) setDailyWelcome(derivedDailyWelcome);
+      if (loadedAncestor) {
+        const activeChapter = loadedChapters.find((chapter) => chapter.id === loadedSession?.currentChapterId)
+          ?? loadedChapters.find((chapter) => chapter.status === "in_progress" || chapter.status === "unlocked");
+        setTodaysJourney({
+          ancestor: {
+            memberId: loadedAncestor.memberId,
+            name: loadedAncestor.name,
+            role: loadedAncestor.role,
+            relation: loadedAncestor.relation,
+            birthYear: loadedAncestor.birthYear ? Number(loadedAncestor.birthYear) : null,
+          },
+          storyCount: loadedAncestor.storyCount,
+          eventCount: loadedAncestor.eventCount,
+          placeCount: loadedAncestor.placeCount,
+          narration: activeChapter
+            ? `Continue your journey through Chapter ${activeChapter.chapter_number}, "${activeChapter.title}".`
+            : `Your family's story is ready to become a living journey with ${loadedAncestor.name}.`,
+          narrationId: null,
+          date: new Date().toISOString().slice(0, 10),
+        });
+      }
       if (reunionRes?.ok) { setReunionData(await reunionRes.json()); }
       if (coopRes?.ok) { setCoopReady(await coopRes.json()); }
       if (questsRes?.ok) {

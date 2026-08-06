@@ -183,11 +183,64 @@ export default function LegacyAiDirectorPage() {
           }
         }
 
-        // Fetch today's journey and vault gaps in parallel
+        // Fetch today's journey and vault gaps in parallel. The journey is
+        // derived from the live ancestor/chapter/session APIs; the retired
+        // Game Master "today" endpoint is intentionally no longer called.
         setTodayLoading(true);
-        fetch(`/api/legacy/game-master/${famId}/today`, { headers: authHeaders() })
-          .then((r) => r.ok ? r.json() : null)
-          .then((data) => { if (data) setTodayJourney(data); })
+        Promise.all([
+          fetch(`/api/legacy/ancestors/${famId}`, { headers: authHeaders() }),
+          fetch(`/api/legacy/chapters/${famId}`, { headers: authHeaders() }),
+          fetch(`/api/legacy/sessions/active/${famId}`, { headers: authHeaders() }),
+        ])
+          .then(async ([ancestorsRes, chaptersRes, sessionRes]) => {
+            const ancestorsBody = ancestorsRes.ok
+              ? await ancestorsRes.json() as { ancestors?: Array<{
+                  memberId: number;
+                  name: string;
+                  role: string | null;
+                  relation: string | null;
+                  birthYear: string | null;
+                  storyCount: number;
+                  eventCount: number;
+                  placeCount: number;
+                }> }
+              : {};
+            const chaptersBody = chaptersRes.ok
+              ? await chaptersRes.json() as { chapters?: Array<{ id: number; chapter_number: number; title: string; status: string }> }
+              : {};
+            const sessionBody = sessionRes.ok
+              ? await sessionRes.json() as { session?: { current_chapter_id?: number | null } }
+              : {};
+            const ancestor = ancestorsBody.ancestors?.[0];
+            if (!ancestor) {
+              setTodayJourney({ journey: null, message: "Add an ancestor to unlock today's journey." });
+              return;
+            }
+            const activeChapter = chaptersBody.chapters?.find(
+              (chapter) => chapter.id === sessionBody.session?.current_chapter_id,
+            ) ?? chaptersBody.chapters?.find(
+              (chapter) => chapter.status === "in_progress" || chapter.status === "unlocked",
+            );
+            setTodayJourney({
+              journey: {
+                ancestor: {
+                  memberId: ancestor.memberId,
+                  name: ancestor.name,
+                  role: ancestor.role,
+                  relation: ancestor.relation,
+                  birthYear: ancestor.birthYear ? Number(ancestor.birthYear) : null,
+                },
+                storyCount: ancestor.storyCount,
+                eventCount: ancestor.eventCount,
+                placeCount: ancestor.placeCount,
+                narration: activeChapter
+                  ? `Continue your journey through Chapter ${activeChapter.chapter_number}, "${activeChapter.title}".`
+                  : `Your family's story is ready to become a living journey with ${ancestor.name}.`,
+                narrationId: null,
+                date: new Date().toISOString().slice(0, 10),
+              },
+            });
+          })
           .catch(() => {})
           .finally(() => setTodayLoading(false));
 

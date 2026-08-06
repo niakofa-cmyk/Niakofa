@@ -111,10 +111,10 @@ export default function LegacyWorldEvolutionPage() {
           return;
         }
 
-        const [evoRes, sumRes, calRes] = await Promise.all([
+        const [evoRes, sumRes, seasonalEventsRes] = await Promise.all([
           fetch(`/api/legacy/world-evolution/${famId}`, { headers: authHeaders() }),
           fetch(`/api/legacy/world-evolution/${famId}/summary`, { headers: authHeaders() }),
-          fetch(`/api/legacy/game-master/${famId}/emotional-calendar`, { headers: authHeaders() }).catch(() => null),
+          fetch(`/api/legacy/seasonal-events/${famId}`, { headers: authHeaders() }).catch(() => null),
         ]);
 
         if (!evoRes.ok || !sumRes.ok) {
@@ -129,9 +129,37 @@ export default function LegacyWorldEvolutionPage() {
         setLog(evoBody.log ?? []);
         setSummary(evoBody.summary ?? null);
         setVaultStats(sumBody.vaultStats ?? null);
-        if (calRes && calRes.ok) {
-          const calBody = await calRes.json().catch(() => ({}));
-          setCalendar(calBody.calendar ?? []);
+        if (seasonalEventsRes?.ok) {
+          const seasonalBody = await seasonalEventsRes.json().catch(() => ({})) as {
+            events?: {
+              id: number;
+              event_type: string;
+              title: string;
+              description: string | null;
+              trigger_date: string | null;
+            }[];
+          };
+          const today = new Date();
+          const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+          setCalendar((seasonalBody.events ?? [])
+            .filter((event) => event.trigger_date)
+            .map((event) => {
+              const eventDate = new Date(`${event.trigger_date}T00:00:00Z`);
+              const daysUntil = Math.round((eventDate.getTime() - todayStart.getTime()) / 86_400_000);
+              return {
+                id: event.id,
+                type: event.event_type,
+                title: event.title,
+                description: event.description,
+                date: event.trigger_date,
+                memberName: null,
+                isToday: daysUntil === 0,
+                isUpcoming: daysUntil >= 0,
+                daysUntil,
+                yearsAgo: null,
+              };
+            })
+            .sort((a, b) => Math.abs(a.daysUntil) - Math.abs(b.daysUntil)));
         }
       } catch {
         setError("Failed to load world evolution.");

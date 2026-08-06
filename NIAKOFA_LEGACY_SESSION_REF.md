@@ -30,6 +30,23 @@ The latest uploaded references are now preserved in the live frontend:
 
 The `/legacy` hub now includes an interactive House of Mensah demo: artifacts can be placed in the house, the kitchen recipe thread can be unlocked, and the reunion scene links into the existing family quest flow. Placement progress is intentionally local demo state until the artifact model is connected to a family vault record.
 
+### August 6, 2026 API contract verification
+
+The Legacy frontend previously requested three retired Game Master endpoints (`today`,
+`daily-welcome`, and `emotional-calendar`) from the hub, start screen, world-evolution
+screen, and AI Director. Those requests produced avoidable 404s because the current API
+exposes world evolution, seasonal events, ancestors, chapters, and active sessions instead.
+
+The Legacy surfaces now use the live contracts:
+
+- Today's Journey is derived from the selected ancestor plus the active/unlocked chapter.
+- World activity and welcome cards use `world-evolution/:familyId/version-summary`.
+- Calendar cards use `seasonal-events/:familyId` and normalize trigger dates locally.
+- AI Director uses the same ancestor/chapter/session journey derivation.
+- The House of Mensah demo continues to use the tracked `niakofa-legacy-live-demo.png`
+  reference image. The newly uploaded Aug 5 panel PNG was not recoverable after the
+  workspace reset, so it is not represented as a new tracked file.
+
 ---
 
 ## Work Completed This Session
