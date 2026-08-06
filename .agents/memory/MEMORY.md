@@ -1,1 +1,6 @@
+- [Legacy Demo State Rules](legacy-demo-state-rules.md) — idempotency guards, trait validation, coopTasks storage sanitizer, worldVersion trigger, test journey pattern.
+- [Legacy Play Navigate Pattern](legacy-play-navigate-pattern.md) — safeNavigate ref pattern to prevent navigate-after-unmount in deferred routing.
 - [Niakofa Legacy Mode](niakofa-legacy.md) — RPG demo spec, system map, start-screen rules, all 20+ page inventory, and Aug 2026 decisions.
+- [Legacy House Demo](legacy-house-demo.md) — product boundary for the House of Mensah interactive demo layer.
+- [Legacy Start Screen](legacy-start-screen.md) — architecture of the cinematic start screen and how it wires into legacy-home.tsx.
+- [Legacy API contracts](legacy-api-contracts.md) — current data sources for Legacy journey, welcome, and calendar UI; retired endpoint list.
