@@ -299,10 +299,6 @@ export default function LegacyHomePage() {
   const [recording,     setRecording]     = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [promptIdx,     setPromptIdx]     = useState(0);
-  const [setupDone] = useState(() => {
-    try { return localStorage.getItem("legacy:setupDone") === "1"; } catch { return false; }
-  });
-
   // Real audio recording state
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<Blob[]>([]);
@@ -941,15 +937,6 @@ export default function LegacyHomePage() {
       }));
   const activeQuest = displayQuests[activeQuestIdx] ?? displayQuests[0];
 
-  // ── Setup check / onboarding (first-time experience) ──────────────────────
-  // If the player has never completed onboarding, send them to Chapter 0.
-
-  if (!loading && ready && !setupDone) {
-    // Redirect to the full Chapter 0 onboarding experience
-    navigate("/legacy/onboarding");
-    return null;
-  }
-
   // ── Readiness check screen ────────────────────────────────────────────────
 
   if (!loading && !ready) {
@@ -972,7 +959,7 @@ export default function LegacyHomePage() {
             isReady={false}
             hasJourney={false}
             onContinue={() => navigate("/legacy/play")}
-            onStartBuilding={() => navigate("/legacy/onboarding")}
+            onStartBuilding={() => navigate("/legacy/start")}
             worldVersion={dailyWelcome?.worldVersion ?? null}
             recentActivities={(dailyWelcome?.recentChanges ?? []).slice(0, 3).map(c => c.description ?? c.changeType.replace(/_/g, " "))}
             currentChapterNumber={dailyWelcome?.newChapters?.[0]?.chapterNumber ?? null}
@@ -1091,7 +1078,7 @@ export default function LegacyHomePage() {
         </div>
       )}
 
-      {!loading && ready && setupDone && (
+      {!loading && ready && (
         <div className="max-w-lg mx-auto">
 
           {/* ── Continue Journey Hero — the dominant first thing the player sees ── */}
