@@ -15,10 +15,10 @@ jobs:
       - name: Wait for deployment
         run: sleep 45
 
-      - name: Check API and Nia health endpoints
+      - name: Check required API health endpoints
         run: |
           set -euo pipefail
-          for path in /api/healthz /api/health; do
+          for path in /api/healthz /api/status; do
             echo "Checking ${path}..."
             for attempt in $(seq 1 6); do
               if curl --fail --silent --show-error --max-time 15 "${PRODUCTION_URL}${path}" | tee "/tmp/health-${attempt}.json"; then
@@ -34,7 +34,12 @@ jobs:
             done
           done
 
-      - name: Verify critical endpoints
+      - name: Inspect bounded Nia compatibility health
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 15 "${PRODUCTION_URL}/api/healthz" | jq .
+          # /api/health reports optional Nia availability and may return 503
+          # when Nia is intentionally disabled or its child process is down.
+          # Validate that it responds with the documented bounded JSON contract
+          # without making optional AI availability a deployment gate.
+          curl --silent --show-error --max-time 10 "${PRODUCTION_URL}/api/health" \
+            | jq -e '(.status == "ok" or .status == "degraded") and .service == "api-server" and (.nia_service.status == "ok" or .nia_service.status == "unavailable")'

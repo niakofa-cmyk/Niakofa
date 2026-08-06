@@ -575,6 +575,20 @@ describe("Health Endpoint", () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it("returns degraded health without failing the API contract when Nia is unavailable", async () => {
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Nia unavailable"));
+
+    try {
+      const res = await request(app).get("/api/health");
+
+      expect(res.status).toBe(503);
+      expect(res.body.status).toBe("degraded");
+      expect(res.body.nia_service).toEqual({ status: "unavailable" });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
 
 // ── Pagination Tests ──────────────────────────────────────────────────────────

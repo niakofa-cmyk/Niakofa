@@ -111,7 +111,7 @@ Lives in `artifacts/pay-it-forward/src/pages/legacy-start.tsx`:
       → Component ref: `legacy-start-visual.tsx` hero `<img src="/legacy-living-family-reference.png" />`
 - [x] Evaluate failing Railway CI/CD commits — earlier failures were followed by green corrective commits; current GitHub `main` CI and deploy-verification runs are green through `de16670`.
 - [x] Verify current Railway service before push — `/api/healthz` is 200 with a connected database; `/api/status` is 200 and reports optional Nia/Map degradation without blocking the deploy probe.
-- [ ] Verify the new `/api/health` compatibility probe after Railway auto-deploys the pushed commit.
+- [ ] Verify the new `/api/health` compatibility probe after Railway auto-deploys the health-contract correction.
 
 ## Completed This Session (both sessions)
 
