@@ -20,27 +20,37 @@ describe("Legacy public demo journey", () => {
     let state = resetDemo();
     expect(state.phase).toBe("prologue");
 
+    // Move from prologue to chapter1, then choose Wisdom trait (chapter1 → chapter2)
     state = advanceDemo(state);
-    for (const trait of ["Wisdom", "Leadership", "Courage", "Compassion", "Community", "Memory"]) {
-      state = chooseDemoTrait(state, trait, 5);
+    state = chooseDemoTrait(state, "Wisdom", 5);
+    expect(state.traits.Wisdom).toBe(40); // 35 + 5
+
+    // Advance through remaining phases until world-regen using advanceDemo
+    while (state.phase !== "world-regen") {
+      state = advanceDemo(state);
     }
     expect(state.phase).toBe("world-regen");
 
+    // Place all artifacts to unlock regeneration
     for (const artifactId of DEMO_ARTIFACT_IDS) {
       state = placeDemoArtifact(state, artifactId);
     }
     expect(state.placedArtifacts).toEqual([...DEMO_ARTIFACT_IDS]);
 
+    // Advance from world-regen → coop-quest, incrementing worldVersion
     state = advanceDemo(state);
+    expect(state.worldVersion).toBe(2);
+
     for (const questId of DEMO_COOP_QUEST_IDS) {
       state = completeDemoQuest(state, questId);
     }
     expect(state.completedQuests).toEqual([...DEMO_COOP_QUEST_IDS]);
 
+    // Advance through reunion → finale
+    state = advanceDemo(state);
     state = advanceDemo(state);
     expect(state.phase).toBe("finale");
     expect(state.worldVersion).toBe(2);
-    expect(state.traits.Wisdom).toBe(40);
   });
 
   it("is idempotent for repeated artifact and quest clicks", () => {
@@ -92,19 +102,33 @@ describe("World regeneration", () => {
   });
 
   it("increments world version only when all artifacts are placed and advancing from world-regen", () => {
+    // Advancing from world-regen WITHOUT all artifacts: no increment
     let state = resetDemo();
     state = { ...state, phase: "world-regen" };
-
     state = advanceDemo(state);
     expect(state.worldVersion).toBe(1);
+    expect(state.phase).toBe("coop-quest");
 
+    // Placing artifacts AFTER leaving world-regen does not retroactively increment
     for (const id of DEMO_ARTIFACT_IDS) {
       state = placeDemoArtifact(state, id);
     }
     expect(state.worldVersion).toBe(1);
 
+    // Advancing from coop-quest (not world-regen) also does not increment
     state = advanceDemo(state);
-    expect(state.worldVersion).toBe(2);
+    expect(state.worldVersion).toBe(1);
+    expect(state.phase).toBe("reunion");
+
+    // The correct trigger: place all artifacts THEN advance from world-regen
+    let state2 = resetDemo();
+    state2 = { ...state2, phase: "world-regen" };
+    for (const id of DEMO_ARTIFACT_IDS) {
+      state2 = placeDemoArtifact(state2, id);
+    }
+    state2 = advanceDemo(state2);
+    expect(state2.worldVersion).toBe(2);
+    expect(state2.phase).toBe("coop-quest");
   });
 
   it("does not increment world version when advancing from other phases", () => {

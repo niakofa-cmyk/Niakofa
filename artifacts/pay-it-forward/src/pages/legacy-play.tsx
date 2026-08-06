@@ -17,7 +17,7 @@
  * Shows a cinematic "Entering your world…" screen while loading.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { Loader2, Sparkles, BookHeart } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
@@ -44,6 +44,20 @@ export default function LegacyPlayPage() {
   const [, navigate] = useLocation();
   const [phase, setPhase] = useState<LoadPhase>("loading");
   const [message, setMessage] = useState("Entering your world…");
+  // Track pending setTimeout handles so we can cancel them on unmount
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+    };
+  }, []);
+
+  const safeNavigate = useCallback((path: string, delayMs: number) => {
+    const id = setTimeout(() => navigate(path), delayMs);
+    timersRef.current.push(id);
+  }, [navigate]);
 
   const resolveAndNavigate = useCallback(async () => {
     if (!currentUser) {
@@ -79,7 +93,7 @@ export default function LegacyPlayPage() {
             const sessData = await sessRes.json() as { session: Session | null };
             if (sessData.session?.current_chapter_id) {
               setMessage("Resuming journey…");
-              setTimeout(() => navigate(`/legacy/chapter/${sessData.session!.current_chapter_id}`), 800);
+              safeNavigate(`/legacy/chapter/${sessData.session!.current_chapter_id}`, 800);
               return;
             }
           }
@@ -92,7 +106,7 @@ export default function LegacyPlayPage() {
         const sessData = await sessRes.json() as { session: Session | null };
         if (sessData.session?.current_chapter_id) {
           setMessage("Resuming your journey…");
-          setTimeout(() => navigate(`/legacy/chapter/${sessData.session!.current_chapter_id}`), 600);
+          safeNavigate(`/legacy/chapter/${sessData.session!.current_chapter_id}`, 600);
           return;
         }
       }
@@ -116,14 +130,14 @@ export default function LegacyPlayPage() {
 
         if (active) {
           setMessage("Opening chapter…");
-          setTimeout(() => navigate(`/legacy/chapter/${active.id}`), 600);
+          safeNavigate(`/legacy/chapter/${active.id}`, 600);
           return;
         }
 
         // All chapters locked but world exists → go to start (ancestor selection)
         if (chapters.length > 0) {
           setMessage("Choose your ancestor…");
-          setTimeout(() => navigate("/legacy/start"), 600);
+          safeNavigate("/legacy/start", 600);
           return;
         }
       }
@@ -132,7 +146,7 @@ export default function LegacyPlayPage() {
       if (compData?.chapterUnlockReady) {
         // Vault is ready, just no chapters initialized — go to start
         setMessage("Begin your journey…");
-        setTimeout(() => navigate("/legacy/start"), 600);
+        safeNavigate("/legacy/start", 600);
         return;
       }
 
@@ -144,18 +158,18 @@ export default function LegacyPlayPage() {
       if (onboardingDone) {
         // Completed onboarding but not enough data — go to start which explains readiness
         setMessage("Building your world…");
-        setTimeout(() => navigate("/legacy/start"), 600);
+        safeNavigate("/legacy/start", 600);
         return;
       }
 
       // Step 7: New user — go to Chapter 0 onboarding
       setMessage("Awakening your legacy…");
-      setTimeout(() => navigate("/legacy/onboarding"), 600);
+      safeNavigate("/legacy/onboarding", 600);
 
     } catch {
       setPhase("error");
       setMessage("Something went wrong. Returning to Legacy Hub…");
-      setTimeout(() => navigate("/legacy"), 2000);
+      safeNavigate("/legacy", 2000);
     }
   }, [currentUser, navigate, params.sessionId]);
 

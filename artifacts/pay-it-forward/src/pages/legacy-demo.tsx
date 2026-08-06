@@ -916,6 +916,7 @@ function WorldRegenScreen({ state, onPlace, onContinue }: {
     if (!allPlaced) {
       placedCountRef.current = state.placedArtifacts.length;
     }
+    return undefined;
   }, [allPlaced, state.placedArtifacts.length]);
 
   const changeIcons: Record<string, typeof TreePine> = {

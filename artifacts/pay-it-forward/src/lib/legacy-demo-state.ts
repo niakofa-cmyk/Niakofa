@@ -229,7 +229,11 @@ export function advanceDemo(state: DemoState): DemoState {
   };
 }
 
+const KNOWN_TRAITS = ["Leadership", "Wisdom", "Courage", "Compassion"] as const;
+
 export function chooseDemoTrait(state: DemoState, trait: string, value: number): DemoState {
+  // Only accept known traits to prevent arbitrary state mutations
+  if (!KNOWN_TRAITS.includes(trait as (typeof KNOWN_TRAITS)[number])) return state;
   const nextPhase = phaseAfter(state.phase);
   // Record trait choice as NPC memory for reunion
   const memoryLabel = `You chose ${trait} in ${state.phase.replace("chapter", "Chapter ")}`;
@@ -290,6 +294,9 @@ export function completeDemoQuest(state: DemoState, questId: string): DemoState 
 }
 
 export function unlockKitchenRecipe(state: DemoState, recipeId: string): DemoState {
+  // Idempotent: no points awarded if the recipe is already unlocked
+  const recipe = state.kitchenRecipes.find(r => r.id === recipeId);
+  if (!recipe || recipe.unlocked) return state;
   return {
     ...state,
     kitchenRecipes: state.kitchenRecipes.map(r =>
@@ -303,24 +310,32 @@ export function unlockKitchenRecipe(state: DemoState, recipeId: string): DemoSta
 }
 
 export function advanceBusiness(state: DemoState): DemoState {
+  // Idempotent: no points awarded if already at max level
+  if (state.businessLevel >= 4) return state;
   return {
     ...state,
-    businessLevel: Math.min(state.businessLevel + 1, 4),
+    businessLevel: state.businessLevel + 1,
     legacyPoints: state.legacyPoints + 50,
   };
 }
 
 export function revealMystery(state: DemoState, mysteryId: string): DemoState {
+  // Idempotent: no points awarded if mystery is already revealed
+  const mystery = state.mysteries.find(m => m.id === mysteryId);
+  if (!mystery || mystery.revealed) return state;
   return {
     ...state,
     mysteries: state.mysteries.map(m =>
-      m.id === mysteryId ? { ...m, revealed: true } : m,
+      m.id === mysteryId ? { ...m, revealed: true, solved: true } : m,
     ),
     legacyPoints: state.legacyPoints + 75,
   };
 }
 
 export function completeReunionDialogue(state: DemoState, npcId: string): DemoState {
+  // Idempotent: no points awarded if dialogue is already completed
+  const dialogue = state.reunionDialogues.find(d => d.npcId === npcId);
+  if (!dialogue || dialogue.completed) return state;
   const allDone = state.reunionDialogues.filter(d => d.completed || d.npcId === npcId).length >= state.reunionDialogues.length;
   return {
     ...state,
@@ -379,13 +394,18 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
       worldChanges: Array.isArray(parsed.worldChanges)
         ? parsed.worldChanges.filter(c => c && typeof c.id === "string" && typeof c.artifactId === "string")
         : [],
-      coopTasks: Array.isArray(parsed.coopTasks) && parsed.coopTasks.length === DEMO_COOP_QUEST_IDS.length
-        ? parsed.coopTasks.map((t, i) => ({
-            questId: DEMO_COOP_QUEST_IDS[i],
-            status: (t.status === "completed" || t.status === "in-progress") ? t.status : "pending" as const,
-            assignedTo: DEMO_COOP_ASSIGNMENTS[DEMO_COOP_QUEST_IDS[i]] ?? "Family",
-            completedAt: typeof t.completedAt === "number" ? t.completedAt : null,
-          }))
+      coopTasks: Array.isArray(parsed.coopTasks)
+        ? DEMO_COOP_QUEST_IDS.map(qid => {
+            const saved = (parsed.coopTasks as CoopTaskState[]).find(t => t.questId === qid);
+            return {
+              questId: qid,
+              status: saved && (saved.status === "completed" || saved.status === "in-progress")
+                ? saved.status
+                : "pending" as const,
+              assignedTo: DEMO_COOP_ASSIGNMENTS[qid] ?? "Family",
+              completedAt: saved && typeof saved.completedAt === "number" ? saved.completedAt : null,
+            };
+          })
         : fresh.coopTasks.map(t => ({ ...t })),
       legacyPoints: typeof parsed.legacyPoints === "number" && Number.isFinite(parsed.legacyPoints)
         ? Math.max(0, parsed.legacyPoints)
