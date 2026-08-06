@@ -6,7 +6,7 @@ description: Architecture of the Niakofa Legacy cinematic start screen and how i
 # Legacy Start Screen
 
 ## The Rule
-`LegacyStartVisual` (artifacts/pay-it-forward/src/components/legacy-start-visual.tsx) is the **full-screen cinematic start panel** shown when a user taps "Legacy" in the bottom nav or settings. It replaced the old two-column card layout.
+`LegacyStartVisual` (artifacts/pay-it-forward/src/components/legacy-start-visual.tsx) is the **full-screen cinematic start panel** shown when a user taps "Legacy" in the bottom nav or settings. It replaced the old two-column card layout. The `/legacy` hub must render it directly; do not gate the hub behind the old `legacy:setupDone` local-storage flag or silently redirect to Chapter 0 onboarding.
 
 **Why:** User design spec (Aug 5 2026) required matching uploaded Niakofa panel reference exactly, removing the "Button States" section, and replacing it with a live "YOUR FAMILY WORLD" card.
 
@@ -19,6 +19,7 @@ description: Architecture of the Niakofa Legacy cinematic start screen and how i
 ## Navigation logic
 - "Get Started" / "Start New Journey" button → `/legacy/start` (LegacyStartPage — the Awaken the Legacy ancestor selection + cinematic workflow)
 - "Continue Journey" button → `/legacy/play`
+- `/legacy/onboarding` remains an explicit Chapter 0 flow, not the default `/legacy` entry.
 - Mode grid callbacks → `setActiveMode()` for legacy/exploration/quests/reunion
 - Bottom icon row → route to relevant pages
 
