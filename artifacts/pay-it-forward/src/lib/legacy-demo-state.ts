@@ -1,14 +1,32 @@
+/**
+ * legacy-demo-state.ts
+ *
+ * Shared state engine for the public Niakofa Legacy demo.
+ * Persistence contract: "niakofa:demo:v2" in localStorage.
+ *
+ * Covers all systems from the House of Mensah demo specification:
+ *   Prologue → Ch 1–6 → Kitchen → Business → Mystery → World-Regen → Co-op → Reunion → Finale
+ */
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export type DemoPhase =
   | "prologue"
   | "chapter1"
   | "chapter2"
+  | "kitchen"   // Family Kitchen mechanic — recipes unlock ancestor stories
   | "chapter3"
+  | "business"  // Business Legacy — House of Mensah Trading Company progression
   | "chapter4"
   | "chapter5"
+  | "mystery"   // Secret Mysteries — long-term family secrets to uncover
   | "chapter6"
   | "world-regen"
   | "coop-quest"
+  | "reunion"   // Interactive Family Reunion — talk to relatives, NPCs remember you
   | "finale";
+
+export type DemoSeason = "dry" | "rain" | "harvest" | "celebration";
 
 export interface WorldChange {
   id: string;
@@ -24,6 +42,29 @@ export interface CoopTaskState {
   completedAt: number | null;
 }
 
+export interface MysteryState {
+  id: string;
+  title: string;
+  clue: string;
+  revealed: boolean;
+  solved: boolean;
+}
+
+export interface NpcMemoryEntry {
+  npcName: string;
+  remembers: string;
+}
+
+export interface KitchenRecipe {
+  id: string;
+  unlocked: boolean;
+}
+
+export interface ReunionDialogue {
+  npcId: string;
+  completed: boolean;
+}
+
 export interface DemoState {
   phase: DemoPhase;
   placedArtifacts: string[];
@@ -33,7 +74,16 @@ export interface DemoState {
   worldChanges: WorldChange[];
   coopTasks: CoopTaskState[];
   legacyPoints: number;
+  // ── New systems ──
+  season: DemoSeason;
+  mysteries: MysteryState[];
+  businessLevel: number;          // 0 = farm, 1 = warehouse, 2 = market, 3 = factory, 4 = ships
+  kitchenRecipes: KitchenRecipe[];
+  npcMemory: NpcMemoryEntry[];
+  reunionDialogues: ReunionDialogue[];
 }
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 export const DEMO_STORAGE_KEY = "niakofa:demo:v2";
 
@@ -41,12 +91,16 @@ export const DEMO_PHASE_ORDER: readonly DemoPhase[] = [
   "prologue",
   "chapter1",
   "chapter2",
+  "kitchen",
   "chapter3",
+  "business",
   "chapter4",
   "chapter5",
+  "mystery",
   "chapter6",
   "world-regen",
   "coop-quest",
+  "reunion",
   "finale",
 ];
 
@@ -87,6 +141,43 @@ export const DEMO_COOP_ASSIGNMENTS: Record<string, string> = {
   "reconnect": "Ama",
 };
 
+export const DEMO_MYSTERIES: MysteryState[] = [
+  {
+    id: "gold-watch",
+    title: "The Missing Gold Watch",
+    clue: "A pocket watch inscribed with initials no one recognises was sold in 1923. The buyer's name appears in a ledger — but the page is torn.",
+    revealed: false,
+    solved: false,
+  },
+  {
+    id: "unlabeled-photo",
+    title: "The Unlabelled Photograph",
+    clue: "A formal portrait from 1907 shows a woman in fine dress standing beside your great-grandfather. No one knows who she is. The church registry has a gap that year.",
+    revealed: false,
+    solved: false,
+  },
+  {
+    id: "lost-business",
+    title: "The Lost Business Ledger",
+    clue: 'The family traded successfully until 1919. A ledger titled "Mensah & Sons — Vol. III" is missing. Two cousins stopped speaking that same year and never explained why.',
+    revealed: false,
+    solved: false,
+  },
+];
+
+export const DEMO_KITCHEN_RECIPES: KitchenRecipe[] = [
+  { id: "groundnut-soup", unlocked: false },
+  { id: "kontomire-stew", unlocked: false },
+  { id: "kelewele", unlocked: false },
+];
+
+export const DEMO_REUNION_DIALOGUES: ReunionDialogue[] = [
+  { npcId: "grandma", completed: false },
+  { npcId: "uncle-kofi", completed: false },
+  { npcId: "cousin-afia", completed: false },
+  { npcId: "young-child", completed: false },
+];
+
 export const DEFAULT_DEMO_STATE: DemoState = {
   phase: "prologue",
   placedArtifacts: [],
@@ -101,28 +192,55 @@ export const DEFAULT_DEMO_STATE: DemoState = {
     completedAt: null,
   })),
   legacyPoints: 0,
+  season: "dry",
+  mysteries: DEMO_MYSTERIES.map(m => ({ ...m })),
+  businessLevel: 0,
+  kitchenRecipes: DEMO_KITCHEN_RECIPES.map(r => ({ ...r })),
+  npcMemory: [],
+  reunionDialogues: DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
 };
+
+// ─── Phase helpers ────────────────────────────────────────────────────────────
 
 function phaseAfter(phase: DemoPhase): DemoPhase {
   const index = DEMO_PHASE_ORDER.indexOf(phase);
   return DEMO_PHASE_ORDER[Math.min(index + 1, DEMO_PHASE_ORDER.length - 1)];
 }
 
+function seasonForPhase(phase: DemoPhase): DemoSeason {
+  if (phase === "prologue" || phase === "chapter1") return "dry";
+  if (phase === "chapter2" || phase === "kitchen") return "harvest";
+  if (phase === "chapter3" || phase === "business") return "rain";
+  if (phase === "chapter4" || phase === "chapter5" || phase === "mystery") return "dry";
+  return "celebration";
+}
+
+// ─── State transitions ────────────────────────────────────────────────────────
+
 export function advanceDemo(state: DemoState): DemoState {
   const isRegen = state.phase === "world-regen";
   const allArtifactsPlaced = state.placedArtifacts.length >= DEMO_ARTIFACT_IDS.length;
+  const nextPhase = phaseAfter(state.phase);
   return {
     ...state,
-    phase: phaseAfter(state.phase),
+    phase: nextPhase,
+    season: seasonForPhase(nextPhase),
     worldVersion: isRegen && allArtifactsPlaced ? state.worldVersion + 1 : state.worldVersion,
   };
 }
 
 export function chooseDemoTrait(state: DemoState, trait: string, value: number): DemoState {
+  const nextPhase = phaseAfter(state.phase);
+  // Record trait choice as NPC memory for reunion
+  const memoryLabel = `You chose ${trait} in ${state.phase.replace("chapter", "Chapter ")}`;
   return {
     ...state,
     traits: { ...state.traits, [trait]: (state.traits[trait] ?? 0) + value },
-    phase: phaseAfter(state.phase),
+    phase: nextPhase,
+    season: seasonForPhase(nextPhase),
+    npcMemory: state.npcMemory.some(m => m.remembers.includes(state.phase))
+      ? state.npcMemory
+      : [...state.npcMemory, { npcName: "Grandma", remembers: memoryLabel }],
   };
 }
 
@@ -171,27 +289,81 @@ export function completeDemoQuest(state: DemoState, questId: string): DemoState 
   };
 }
 
+export function unlockKitchenRecipe(state: DemoState, recipeId: string): DemoState {
+  return {
+    ...state,
+    kitchenRecipes: state.kitchenRecipes.map(r =>
+      r.id === recipeId ? { ...r, unlocked: true } : r,
+    ),
+    legacyPoints: state.legacyPoints + 25,
+    npcMemory: state.npcMemory.some(m => m.npcName === "Grandma Ama")
+      ? state.npcMemory
+      : [...state.npcMemory, { npcName: "Grandma Ama", remembers: "You cooked with her in the kitchen" }],
+  };
+}
+
+export function advanceBusiness(state: DemoState): DemoState {
+  return {
+    ...state,
+    businessLevel: Math.min(state.businessLevel + 1, 4),
+    legacyPoints: state.legacyPoints + 50,
+  };
+}
+
+export function revealMystery(state: DemoState, mysteryId: string): DemoState {
+  return {
+    ...state,
+    mysteries: state.mysteries.map(m =>
+      m.id === mysteryId ? { ...m, revealed: true } : m,
+    ),
+    legacyPoints: state.legacyPoints + 75,
+  };
+}
+
+export function completeReunionDialogue(state: DemoState, npcId: string): DemoState {
+  const allDone = state.reunionDialogues.filter(d => d.completed || d.npcId === npcId).length >= state.reunionDialogues.length;
+  return {
+    ...state,
+    reunionDialogues: state.reunionDialogues.map(d =>
+      d.npcId === npcId ? { ...d, completed: true } : d,
+    ),
+    legacyPoints: state.legacyPoints + 30 + (allDone ? 120 : 0),
+  };
+}
+
 export function resetDemo(): DemoState {
   return {
     ...DEFAULT_DEMO_STATE,
     traits: { ...DEFAULT_DEMO_STATE.traits },
     coopTasks: DEFAULT_DEMO_STATE.coopTasks.map(t => ({ ...t })),
     worldChanges: [],
+    mysteries: DEMO_MYSTERIES.map(m => ({ ...m })),
+    kitchenRecipes: DEMO_KITCHEN_RECIPES.map(r => ({ ...r })),
+    reunionDialogues: DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
+    npcMemory: [],
+    businessLevel: 0,
+    season: "dry",
   };
 }
+
+// ─── Storage ──────────────────────────────────────────────────────────────────
 
 export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
   try {
     const raw = storage.getItem(DEMO_STORAGE_KEY);
     if (!raw) return resetDemo();
     const parsed = JSON.parse(raw) as Partial<DemoState>;
+    const fresh = resetDemo();
     const phase = DEMO_PHASE_ORDER.includes(parsed.phase as DemoPhase)
       ? (parsed.phase as DemoPhase)
-      : DEFAULT_DEMO_STATE.phase;
+      : fresh.phase;
     return {
-      ...resetDemo(),
+      ...fresh,
       ...parsed,
       phase,
+      season: (["dry", "rain", "harvest", "celebration"] as DemoSeason[]).includes(parsed.season as DemoSeason)
+        ? (parsed.season as DemoSeason)
+        : seasonForPhase(phase),
       placedArtifacts: Array.isArray(parsed.placedArtifacts)
         ? parsed.placedArtifacts.filter(item => typeof item === "string")
         : [],
@@ -199,25 +371,49 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
         ? parsed.completedQuests.filter(item => typeof item === "string")
         : [],
       traits: parsed.traits && typeof parsed.traits === "object"
-        ? { ...DEFAULT_DEMO_STATE.traits, ...parsed.traits }
-        : { ...DEFAULT_DEMO_STATE.traits },
+        ? { ...fresh.traits, ...(parsed.traits as Record<string, number>) }
+        : { ...fresh.traits },
       worldVersion: typeof parsed.worldVersion === "number" && Number.isFinite(parsed.worldVersion)
         ? Math.max(1, parsed.worldVersion)
-        : DEFAULT_DEMO_STATE.worldVersion,
+        : fresh.worldVersion,
       worldChanges: Array.isArray(parsed.worldChanges)
         ? parsed.worldChanges.filter(c => c && typeof c.id === "string" && typeof c.artifactId === "string")
         : [],
       coopTasks: Array.isArray(parsed.coopTasks) && parsed.coopTasks.length === DEMO_COOP_QUEST_IDS.length
         ? parsed.coopTasks.map((t, i) => ({
             questId: DEMO_COOP_QUEST_IDS[i],
-            status: (t.status === "completed" || t.status === "in-progress") ? t.status : "pending",
+            status: (t.status === "completed" || t.status === "in-progress") ? t.status : "pending" as const,
             assignedTo: DEMO_COOP_ASSIGNMENTS[DEMO_COOP_QUEST_IDS[i]] ?? "Family",
             completedAt: typeof t.completedAt === "number" ? t.completedAt : null,
           }))
-        : DEFAULT_DEMO_STATE.coopTasks.map(t => ({ ...t })),
+        : fresh.coopTasks.map(t => ({ ...t })),
       legacyPoints: typeof parsed.legacyPoints === "number" && Number.isFinite(parsed.legacyPoints)
         ? Math.max(0, parsed.legacyPoints)
         : 0,
+      mysteries: Array.isArray(parsed.mysteries) && parsed.mysteries.length > 0
+        ? DEMO_MYSTERIES.map(dm => {
+            const saved = (parsed.mysteries as MysteryState[]).find(m => m.id === dm.id);
+            return saved ? { ...dm, revealed: !!saved.revealed, solved: !!saved.solved } : dm;
+          })
+        : DEMO_MYSTERIES.map(m => ({ ...m })),
+      businessLevel: typeof parsed.businessLevel === "number" && Number.isFinite(parsed.businessLevel)
+        ? Math.min(Math.max(0, parsed.businessLevel), 4)
+        : 0,
+      kitchenRecipes: Array.isArray(parsed.kitchenRecipes) && parsed.kitchenRecipes.length > 0
+        ? DEMO_KITCHEN_RECIPES.map(dk => {
+            const saved = (parsed.kitchenRecipes as KitchenRecipe[]).find(r => r.id === dk.id);
+            return saved ? { ...dk, unlocked: !!saved.unlocked } : dk;
+          })
+        : DEMO_KITCHEN_RECIPES.map(r => ({ ...r })),
+      npcMemory: Array.isArray(parsed.npcMemory)
+        ? (parsed.npcMemory as NpcMemoryEntry[]).filter(m => m && typeof m.npcName === "string")
+        : [],
+      reunionDialogues: Array.isArray(parsed.reunionDialogues) && parsed.reunionDialogues.length > 0
+        ? DEMO_REUNION_DIALOGUES.map(dd => {
+            const saved = (parsed.reunionDialogues as ReunionDialogue[]).find(d => d.npcId === dd.npcId);
+            return saved ? { ...dd, completed: !!saved.completed } : dd;
+          })
+        : DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
     };
   } catch {
     return resetDemo();
