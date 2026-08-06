@@ -111,7 +111,7 @@ Lives in `artifacts/pay-it-forward/src/pages/legacy-start.tsx`:
       → Component ref: `legacy-start-visual.tsx` hero `<img src="/legacy-living-family-reference.png" />`
 - [x] Evaluate failing Railway CI/CD commits — earlier failures were followed by green corrective commits; current GitHub `main` CI and deploy-verification runs are green through `de16670`.
 - [x] Verify current Railway service before push — `/api/healthz` is 200 with a connected database; `/api/status` is 200 and reports optional Nia/Map degradation without blocking the deploy probe.
-- [ ] Verify the new `/api/health` compatibility probe after Railway auto-deploys the health-contract correction.
+- [x] Verify the new `/api/health` compatibility probe after Railway auto-deploys the health-contract correction — bounded JSON confirmed; optional Nia unavailable is reported as 503 while required `/api/healthz` and `/api/status` remain healthy.
 
 ## Completed This Session (both sessions)
 
@@ -123,6 +123,7 @@ Lives in `artifacts/pay-it-forward/src/pages/legacy-start.tsx`:
 - ✅ August 6, 2026 local verification: fresh dependency install, 0 TypeScript errors, 446 frontend tests passing, 242 API tests passing, release validation passing, production build passing, and both Replit artifact workflows running.
 - ✅ Added bounded `/api/health` compatibility probe for external Nia/deployment monitors, with regression coverage.
 - ✅ Updated GitHub deploy verification to use the Railway production URL, fail loudly on health regressions, and retry during rollout.
+- ✅ Pushed `22e4dad8` and the health-contract correction `6861b928` to GitHub `main`; CI and Deploy Verification passed for `6861b928`.
 
 ---
 
