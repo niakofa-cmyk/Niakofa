@@ -36,6 +36,7 @@ import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
 import { LegacyStartVisual } from "@/components/legacy-start-visual";
+import { LegacyHouseDemo } from "@/components/legacy-house-demo";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -997,6 +998,17 @@ export default function LegacyHomePage() {
               onSettings={() => navigate("/settings")}
             />
           </div>
+          <LegacyHouseDemo
+            familyId={families[0]?.id}
+            memberCount={members.length}
+            memoryCount={memories.length}
+            landmarkCount={completeness?.dimensions.find(d => d.key === "places")?.count ?? 0}
+            worldVersion={dailyWelcome?.worldVersion ?? worldVersion?.currentVersion ?? null}
+            onOpenVault={() => navigate(families[0] ? `/family/${families[0].id}` : "/diaspora/family")}
+            onOpenMap={() => navigate(families[0] ? `/legacy/map/${families[0].id}` : "/legacy/map")}
+            onRecordMemory={() => void handleStartRecording()}
+            onOpenReunion={() => setActiveMode("reunion")}
+          />
           <div className="px-4 py-5" style={{ background: "linear-gradient(to bottom, #0A0604, #1A0F08)" }}>
             <div
               className="rounded-2xl shadow-xl overflow-hidden relative"

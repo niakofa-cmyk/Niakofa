@@ -18,6 +18,18 @@
 - `artifacts/pay-it-forward/public/niakofa-legacy-logo.png`
 - `artifacts/pay-it-forward/public/niakofa-legacy-panel.png`
 
+### August 6 live-demo references
+
+The latest uploaded references are now preserved in the live frontend:
+
+| Asset | Live path | Use |
+|------|------|------|
+| Aug 5 panel overview | `artifacts/pay-it-forward/public/niakofa-legacy-live-demo.png` | House of Mensah live-demo visual |
+| Aug 5 family tree | `artifacts/pay-it-forward/public/niakofa-legacy-family-tree-reference.png` | Family Tree / world reference |
+| Aug 5 RPG screens | `artifacts/pay-it-forward/public/niakofa-legacy-rpg-reference.png` | Onboarding and chapter reference |
+
+The `/legacy` hub now includes an interactive House of Mensah demo: artifacts can be placed in the house, the kitchen recipe thread can be unlocked, and the reunion scene links into the existing family quest flow. Placement progress is intentionally local demo state until the artifact model is connected to a family vault record.
+
 ---
 
 ## Work Completed This Session
