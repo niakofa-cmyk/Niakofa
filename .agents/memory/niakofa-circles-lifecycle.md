@@ -53,7 +53,6 @@ The room checks browser media capabilities before enabling controls and gives ac
 **Why:** Mobile browsers commonly deliver ICE out of order, and permission/device failures otherwise look like controls that do nothing. Leaving tracks live after demotion can keep publishing audio or the camera after the UI removes the speaker controls.
 
 **How to apply:** Keep `publishLocalMedia`, `stopLocalMedia`, `stopVideoTracks`, and the room's role/mute handlers aligned. Preserve explicit capability feedback rather than silently disabling media.
-
 ## Heartbeat active-speaker reports are untrusted
 The browser may report the loudest peer in a heartbeat, but the server must verify that ID is an active participant in the same session before broadcasting `circle_active_speaker`.
 
