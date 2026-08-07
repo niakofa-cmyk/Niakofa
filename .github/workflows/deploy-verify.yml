@@ -1,0 +1,50 @@
+name: Deploy Verification
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-deployment:
+    name: Verify Production Deployment
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_URL: https://zesty-ambition-production-f6a1.up.railway.app
+    steps:
+      - name: Wait for deployment
+        run: sleep 45
+
+      - name: Check required API health endpoints
+        run: |
+          set -euo pipefail
+          for path in /api/healthz /api/status; do
+            echo "Checking ${path}..."
+            for attempt in $(seq 1 6); do
+              if curl --fail --silent --show-error --max-time 15 "${PRODUCTION_URL}${path}" | tee "/tmp/health-${attempt}.json"; then
+                echo
+                break
+              fi
+              if [ "$attempt" -eq 6 ]; then
+                echo "Health check failed for ${path}"
+                exit 1
+              fi
+              echo "Retrying ${path}..."
+              sleep 10
+            done
+          done
+
+      - name: Inspect bounded Nia compatibility health
+        run: |
+          set -euo pipefail
+          # /api/health reports optional Nia availability and may return 503
+          # when Nia is intentionally disabled or its child process is down.
+          # Validate that it responds with the documented bounded JSON contract
+          # without making optional AI availability a deployment gate.
+          curl --silent --show-error --max-time 10 "${PRODUCTION_URL}/api/health" \
+            | jq -e '(.status == "ok" or .status == "degraded") and .service == "api-server" and (.nia_service.status == "ok" or .nia_service.status == "unavailable")'
+
+      - name: Verify public Legacy demo asset graph
+        run: |
+          set -euo pipefail
+          PRODUCTION_URL="${PRODUCTION_URL}" node scripts/src/verify-legacy-demo-deployment.mjs
