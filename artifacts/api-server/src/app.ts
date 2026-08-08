@@ -188,8 +188,8 @@ app.use("/api", router);
 const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "uploads");
 app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
 
-// ── Production: serve built frontend static files ─────────────────────────────
-if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "true") {
+  # ── Production: serve built frontend static files ─────────────────────────────
+if (process.env.NODE_ENV === "production" || process.env.SERVE_FRONTEND === "true") {
   const frontendDist = path.join(import.meta.dirname, "..", "..", "pay-it-forward", "dist", "public");
 
   app.use(express.static(frontendDist, {
@@ -206,13 +206,22 @@ if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "tru
   }));
   logger.info({ frontendDist }, "serving frontend static files");
 
-  app.get("*path", (req, res) => {
-    if (!req.path.startsWith("/api") && !req.path.startsWith("/ws")) {
-      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
-      res.sendFile(path.join(frontendDist, "index.html"));
+  // Catch-all: serve index.html for any non-API, non-WS route (SPA fallback).
+  // This must come AFTER /api routes but BEFORE the error handler.
+  app.get("*path", (req, res, next) => {
+    // Skip API and WebSocket routes — let Express 404 them normally
+    if (req.path.startsWith("/api") || req.path.startsWith("/ws") || req.path.startsWith("/uploads")) {
+      return next();
     }
+    // Only serve index.html for GET requests that accept HTML
+    const accept = req.headers.accept || "";
+    if (!accept.includes("text/html")) {
+      return next();
+    }
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.sendFile(path.join(frontendDist, "index.html"));
   });
 }
 

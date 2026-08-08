@@ -18,9 +18,32 @@ NIA_PID_FILE="$(mktemp /tmp/nia-service-pid.XXXXXX)"
 trap 'rm -f "$NIA_PID_FILE"' EXIT
 
 # ── Migrations ────────────────────────────────────────────────────────────────
-echo "[start] running database migrations..."
-pnpm --filter @workspace/db run migrate
-echo "[start] migrations complete"
+# Migrations run before the server starts. If they fail, we retry up to 2
+# times (Railway PG connections can be transiently dropped during deploys).
+# If all retries fail, we log the error and continue — the healthz endpoint
+# will report 503 if the DB is truly unreachable, which is the correct signal
+# to Railway. Blocking the entire deploy on a transient migration error
+# prevents the healthz endpoint from ever starting, which means Railway's
+# probe never gets a response and the deploy always fails.
+MIGRATE_MAX_RETRIES=3
+MIGRATE_ATTEMPT=0
+MIGRATE_OK=false
+while [ "$MIGRATE_ATTEMPT" -lt "$MIGRATE_MAX_RETRIES" ]; do
+  MIGRATE_ATTEMPT=$((MIGRATE_ATTEMPT + 1))
+  echo "[start] running database migrations (attempt $MIGRATE_ATTEMPT/$MIGRATE_MAX_RETRIES)..."
+  if pnpm --filter @workspace/db run migrate; then
+    echo "[start] migrations complete"
+    MIGRATE_OK=true
+    break
+  fi
+  echo "[start] migration attempt $MIGRATE_ATTEMPT failed — retrying in 3s..."
+  sleep 3
+done
+
+if [ "$MIGRATE_OK" = "false" ]; then
+  echo "[start] WARNING: all migration attempts failed — starting server anyway"
+  echo "[start] the /api/healthz endpoint will report 503 if the DB is unreachable"
+fi
 
 # ── Signal handler — forward SIGTERM/SIGINT to current nia-service PID ────────
 cleanup() {
