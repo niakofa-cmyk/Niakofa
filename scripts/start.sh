@@ -41,6 +41,10 @@ trap cleanup TERM INT
 # The prior design spawned nia-service in the parent and tried to wait in
 # the subshell — bash returned 127 immediately, triggering constant false
 # crash-restart loops under Railway.
+#
+# EXIT CODE CAPTURE: `wait $PID; EXIT_CODE=$?` is used instead of
+# `wait $PID || true` because the latter always yields 0, masking crashes
+# as clean exits and preventing the supervisor from ever restarting.
 NIA_RESTART_MAX=5
 
 (
@@ -53,9 +57,12 @@ NIA_RESTART_MAX=5
     echo "$NIA_PID" > "$NIA_PID_FILE"
     echo "[supervisor] nia-service started (pid $NIA_PID)"
 
-    # wait is valid here — NIA_PID is a direct child of this subshell
-    wait "$NIA_PID" 2>/dev/null || true
+    # Capture the actual exit code — do NOT use `|| true` which masks it as 0.
+    # `set +e` around wait so the subshell doesn't exit on non-zero child status.
+    set +e
+    wait "$NIA_PID" 2>/dev/null
     EXIT_CODE=$?
+    set -e
 
     # 0 = clean exit, 143 = SIGTERM — don't restart
     if [ "$EXIT_CODE" -eq 0 ] || [ "$EXIT_CODE" -eq 143 ]; then
