@@ -45,6 +45,13 @@ const networkLimiter = rateLimit({
 });
 app.use(networkLimiter);
 
+// Health endpoint — api-server probes http://localhost:3001/health to
+// determine Nia availability. Without this route the probe gets a 404,
+// causing /api/health to report nia_service: unavailable and return 503.
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", service: "nia-service" });
+});
+
 app.use("/", chatRouter);
 app.use("/", crisisResourcesRouter);
 app.use("/", neighborhoodsRouter);
