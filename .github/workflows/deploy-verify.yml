@@ -12,6 +12,14 @@ jobs:
     env:
       PRODUCTION_URL: https://zesty-ambition-production-f6a1.up.railway.app
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Wait for deployment
         run: sleep 45
 
@@ -47,4 +55,15 @@ jobs:
       - name: Verify public Legacy demo asset graph
         run: |
           set -euo pipefail
-          PRODUCTION_URL="${PRODUCTION_URL}" node scripts/src/verify-legacy-demo-deployment.mjs
+          for attempt in $(seq 1 6); do
+            if PRODUCTION_URL="${PRODUCTION_URL}" node scripts/src/verify-legacy-demo-deployment.mjs; then
+              echo "Legacy demo verification passed."
+              exit 0
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "Legacy demo asset graph verification failed after $attempt attempts."
+              exit 1
+            fi
+            echo "Legacy demo verification attempt $attempt failed — waiting for rollout convergence..."
+            sleep 10
+          done
