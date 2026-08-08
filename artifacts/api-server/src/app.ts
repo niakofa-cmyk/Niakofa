@@ -188,7 +188,7 @@ app.use("/api", router);
 const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "uploads");
 app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
 
-  # ── Production: serve built frontend static files ─────────────────────────────
+// ── Production: serve built frontend static files ─────────────────────────────
 if (process.env.NODE_ENV === "production" || process.env.SERVE_FRONTEND === "true") {
   const frontendDist = path.join(import.meta.dirname, "..", "..", "pay-it-forward", "dist", "public");
 
