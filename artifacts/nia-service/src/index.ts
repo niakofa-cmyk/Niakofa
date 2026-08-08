@@ -62,25 +62,23 @@ app.use("/", knowledgeRefreshRouter);
 
 const port = Number(process.env.PORT ?? 3001);
 
-// PRIMARY BUG FIX: runMigrations() creates nia_knowledge, push_notification_queue,
-// and nia_cost_log — the only place those 3 tables are defined (they are NOT covered
-// by the main Drizzle pipeline). This function existed but was NEVER called, so in
-// production those 3 tables never existed. Confirmed by Postgres log showing
-// push_notification_queue erroring on every 5-minute poll cycle since boot.
-// Wrapped in try/catch: non-fatal since core Nia chat doesn't depend on them.
-try {
-  await runMigrations();
-  logger.info("nia: startup migrations applied (nia_knowledge, push_notification_queue, nia_cost_log)");
-} catch (err) {
-  logger.error(
-    { err },
-    "nia: startup migrations FAILED — nia_knowledge/push_notification_queue/nia_cost_log may not exist; " +
-    "continuing boot since core chat does not depend on them"
-  );
-}
-
+// Start listening FIRST, before migrations. The api-server health probe has a
+// 2-second timeout — if runMigrations() blocks app.listen(), nia-service
+// appears "unavailable" during startup even though it's still initializing.
+// Migrations are non-fatal (try/catch) and only create optional tables
+// (nia_knowledge, push_notification_queue, nia_cost_log) — core chat works
+// without them, so running them in the background after listen is safe.
 app.listen(port, () => {
   logger.info({ port }, "Nia service listening");
+
+  // Run migrations in the background — non-fatal, core chat works without them.
+  runMigrations()
+    .then(() => logger.info("nia: startup migrations applied (nia_knowledge, push_notification_queue, nia_cost_log)"))
+    .catch((err) => logger.error(
+      { err },
+      "nia: startup migrations FAILED — nia_knowledge/push_notification_queue/nia_cost_log may not exist; " +
+      "continuing boot since core chat does not depend on them"
+    ));
 
   // Hourly conversation purge — keeps nia_conversations lean (48h TTL)
   setInterval(async () => {
