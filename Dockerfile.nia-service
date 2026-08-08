@@ -18,7 +18,7 @@
 #   both of which are brittle in Railway's Alpine build environment.
 #   Plain npm install on the service's own package.json avoids all of that.
 
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -32,7 +32,7 @@ COPY artifacts/nia-service/src ./src
 RUN npx tsc
 
 # ── Runtime image ─────────────────────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
