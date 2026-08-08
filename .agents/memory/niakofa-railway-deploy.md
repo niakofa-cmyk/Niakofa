@@ -37,3 +37,18 @@ Same-origin requests (API + frontend on same domain) have no Origin header and a
 - `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` — for Web Push notifications
 
 **Why:** `VITE_*` vars are read by Vite at build time and baked into the JS bundle. They must be set in Railway at BUILD time (not just runtime).
+
+## Verification
+
+For this deployment, the authoritative synchronization check is the SHA returned by
+`GET /api/healthz`: compare it with local `HEAD`, `origin/main`, and a fresh
+`git ls-remote origin refs/heads/main`. The Railway URL can remain healthy while
+serving an older commit, so an HTTP 200 alone is not sufficient.
+
+**Why:** Railway can roll out asynchronously after a GitHub push; checking both
+health and the served commit distinguishes a healthy old rollout from the current
+source actually being live.
+
+**How to apply:** After pushing or pulling `main`, wait for the deployment,
+request `/api/healthz`, and require `status: "ok"`, `db: "connected"`, and an
+exact SHA match before declaring the landing verified.
