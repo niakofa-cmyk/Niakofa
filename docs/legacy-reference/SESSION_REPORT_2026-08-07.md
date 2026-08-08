@@ -82,16 +82,48 @@
 **File:** `.github/workflows/deploy-verify.yml`
 **Issue:** The workflow ran `node scripts/src/verify-legacy-demo-deployment.mjs` but never checked out the repository, so the script file didn't exist on the GitHub Actions runner.
 **Fix:** Added `actions/checkout@v4` and `actions/setup-node@v4` steps. Also added bounded retries (6 attempts, 10s apart) to the legacy demo asset-graph verification step for Railway rollout convergence.
+**Commit:** `a6ae90b2`
 
 ### 2. Nia Supervisor Exit Code Masking
 **File:** `scripts/start.sh`
 **Issue:** `wait "$NIA_PID" 2>/dev/null || true` always returns 0, so `EXIT_CODE` was always 0. The supervisor could never detect a crash — every crash was recorded as a clean exit and nia-service was never restarted.
-**Fix:** Replaced `|| true` with `set +e; wait ...; EXIT_CODE=$?; set -e` to capture the real exit status while preventing `set -e` from aborting the subshell on non-zero child exit.
+**Fix:** Replaced `|| true` with `set +e; wait ...; EXIT_CODE=$?; set -e` to capture the real exit status while preventing `set -e` from aborting the subshell on non-zero child exit. Also moved nia-service spawn inside the supervisor subshell so `wait` operates on a direct child PID.
+**Commit:** `47f3df91`
 
 ### 3. GIT_COMMIT Not Embedded in Production Build
 **File:** `railpack.json`
 **Issue:** The `.dockerignore` excludes `.git` from the build context, so `git rev-parse HEAD` fails during the Railpack build and `GIT_COMMIT` falls back to "unknown" in production health checks.
 **Fix:** Use `RAILWAY_GIT_COMMIT_SHA` (injected by Railway during builds) as the primary source, falling back to `git rev-parse HEAD` for local builds.
+**Commit:** `061497d3`
+**Verified in production:** `/api/healthz` now reports the correct commit SHA.
+
+### 4. Nia Service Missing /health Endpoint
+**File:** `artifacts/nia-service/src/index.ts`
+**Issue:** The api-server health route probes `http://localhost:3001/health` to determine Nia availability, but nia-service never exposed a `/health` route. Every probe got a 404, so `/api/health` always reported `nia_service: unavailable` and returned HTTP 503. This was the root cause of the persistent "degraded" health status on production.
+**Fix:** Added a simple JSON `/health` endpoint that returns `{ status: "ok", service: "nia-service" }` before the route mounts.
+**Commit:** `3ce911d3`
+
+### 5. Nia Service Dockerfile Node Version Mismatch
+**File:** `Dockerfile.nia-service`
+**Issue:** The root `package.json` requires Node >=22 and the Railpack build uses Node 22, but the standalone nia-service Dockerfile still used `node:20-alpine`. This could cause runtime behavior differences if the Dockerfile is used instead of Railpack.
+**Fix:** Updated both builder and runtime stages from `node:20-alpine` to `node:22-alpine` for consistency.
+**Commit:** `7d9f274b`
+
+### 6. Legacy Session Reference Archive
+**File:** `docs/legacy-reference/SESSION_REPORT_2026-08-07.md`
+**Issue:** No centralized reference file preserving session reports, audit findings, and reference asset catalog across sessions.
+**Fix:** Created comprehensive session archive documenting all reference documents, images, audit results, and fixes applied across both sessions.
+**Commit:** `eb229597`
+
+## Production Verification (August 8, 2026)
+
+| Endpoint | HTTP Status | Notes |
+|----------|-------------|-------|
+| `/` (landing) | 200 | HTML served correctly |
+| `/api/healthz` | 200 | DB connected, commit SHA embedded, circuit breaker closed |
+| `/api/status` | 200 | Operational — database, nia_ai (disabled), map all ok |
+| `/api/health` | 503 | Expected until Railway redeploys with nia-service /health fix |
+| `/legacy/demo` | 200 | Legacy demo SPA loads correctly |
 
 ## Architecture Summary
 
@@ -103,3 +135,20 @@
 - `artifacts/pay-it-forward` — React frontend SPA
 - `artifacts/db` — Database migrations (Drizzle ORM)
 - Railway healthcheck: `/api/healthz` (120s timeout, ON_FAILURE restart, max 3 retries)
+
+## All Commits This Session
+
+| SHA | Message |
+|-----|---------|
+| `a6ae90b2` | fix(ci): add missing checkout step and retry logic to deploy verification |
+| `47f3df91` | fix(start.sh): capture actual nia-service exit code instead of masking with \|\| true |
+| `061497d3` | fix(railpack): use RAILWAY_GIT_COMMIT_SHA for GIT_COMMIT when git is unavailable |
+| `eb229597` | docs: add Niakofa Legacy session reference archive |
+| `3ce911d3` | fix(nia-service): add /health endpoint so api-server health probe succeeds |
+| `7d9f274b` | fix(dockerfile): update nia-service Dockerfile from Node 20 to Node 22 |
+
+## Remaining Items
+
+- [ ] Embed the actual uploaded PNG images (panel, bg, logo) to `public/` once available on disk
+- [ ] Repository-wide lint baseline (507 errors) — documented, not addressed this session
+- [ ] `/api/health` will return 200 after Railway redeploys with the nia-service `/health` endpoint fix
