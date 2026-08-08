@@ -17,6 +17,22 @@ following durable requirements:
 | Living house, artifacts, reunion, kitchen, vault, landmarks, seasons, NPC memory, business legacy | `docs/legacy-mode-design/legacy-rpg-design-brief.txt` and `docs/legacy-mode-design/LEGACY-DESIGN-REFERENCE.md` |
 | Memory → world regeneration → new gameplay loop | `docs/NIAKOFA_LEGACY_REFERENCE.md` and `docs/family-vault-legacy-engine-spec.md` |
 
+## August 8, 2026 verification reports
+
+The reports used for this verification pass are retained in the repository
+under `attached_assets/` so future sessions can trace the deployment and
+Legacy-mode decisions without relying on chat history:
+
+| Report | Coverage |
+| --- | --- |
+| `Pasted-I-ll-first-inventory-the-uploaded-archive-report-inspec_1786228753188.txt` | Archive recovery, active-source inspection, startup supervisor fix, test-validation notes, and Legacy reference preservation |
+| `Pasted-Inspecting-deployment-failure-I-need-to-respond-to-the-_1786228770695.txt` | Railway/CI failure investigation, checkout and rollout-retry fixes, production endpoint verification, and Git synchronization findings |
+
+These reports are evidence records, not runtime inputs. The active build is
+the repository root; `niakofa-repo/` remains a historical duplicate and must
+not be used as an edit target or deployment source until it is explicitly
+retired in a later cleanup pass.
+
 ## Verification contract
 
 The public demo must:
