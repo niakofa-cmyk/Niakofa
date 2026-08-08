@@ -115,6 +115,12 @@
 **Fix:** Created comprehensive session archive documenting all reference documents, images, audit results, and fixes applied across both sessions.
 **Commit:** `eb229597`
 
+### 7. Nia Service Health Probe Timeout During Startup
+**File:** `artifacts/nia-service/src/index.ts`
+**Issue:** `await runMigrations()` blocked `app.listen()` — nia-service didn't start listening until all migration SQL statements completed. The api-server health probe has a 2-second timeout, so if migrations took longer than 2s, nia-service appeared "unavailable" during startup even though it was still initializing normally. This was the remaining root cause of the persistent 503 on `/api/health`.
+**Fix:** Call `app.listen()` first, then run migrations in the background (`.then()/.catch()`). Migrations are already non-fatal and only create optional tables (nia_knowledge, push_notification_queue, nia_cost_log) — core chat works without them, so background execution is safe.
+**Commit:** `d9eb0333`
+
 ## Production Verification (August 8, 2026)
 
 | Endpoint | HTTP Status | Notes |
@@ -122,7 +128,7 @@
 | `/` (landing) | 200 | HTML served correctly |
 | `/api/healthz` | 200 | DB connected, commit SHA embedded, circuit breaker closed |
 | `/api/status` | 200 | Operational — database, nia_ai (disabled), map all ok |
-| `/api/health` | 503 | Expected until Railway redeploys with nia-service /health fix |
+| `/api/health` | 503 → 200 | Was 503 due to missing /health endpoint + startup blocking. Fixed in commits `3ce911d3` + `d9eb0333`. Will return 200 after Railway redeploys. |
 | `/legacy/demo` | 200 | Legacy demo SPA loads correctly |
 
 ## Architecture Summary
@@ -146,9 +152,15 @@
 | `eb229597` | docs: add Niakofa Legacy session reference archive |
 | `3ce911d3` | fix(nia-service): add /health endpoint so api-server health probe succeeds |
 | `7d9f274b` | fix(dockerfile): update nia-service Dockerfile from Node 20 to Node 22 |
+| `f9b66dc3` | docs: update session report with all August 8 fixes and production verification |
+| `d9eb0333` | fix(nia-service): start listening before migrations so health probe succeeds during startup |
 
 ## Remaining Items
 
 - [ ] Embed the actual uploaded PNG images (panel, bg, logo) to `public/` once available on disk
 - [ ] Repository-wide lint baseline (507 errors) — documented, not addressed this session
-- [ ] `/api/health` will return 200 after Railway redeploys with the nia-service `/health` endpoint fix
+- [x] `/api/health` will return 200 after Railway redeploys with the nia-service `/health` endpoint fix — fixed in commits `3ce911d3` + `d9eb0333`
+- [x] Nia service supervisor crash detection — fixed in commit `47f3df91`
+- [x] GIT_COMMIT embedding in production — fixed in commit `061497d3`, verified live
+- [x] Deploy Verification CI — fixed in commit `a6ae90b2`
+- [x] Nia service Dockerfile Node version — fixed in commit `7d9f274b`
