@@ -44,27 +44,37 @@ app.use(
         // lh3.googleusercontent.com = Google profile pictures returned by Google OAuth
         imgSrc: [
           "'self'", "data:", "blob:",
+          "https://*.stripe.com",
           "https://*.mapbox.com",
+          "https://maps.gstatic.com",
+          "https://*.googlevideo.com",
           "https://lh3.googleusercontent.com",
           "https://avatars.githubusercontent.com",
         ],
+        // Mapbox GL JS spawns web workers from blob: URLs — required for map rendering
+        workerSrc: ["'self'", "blob:"],
+        childSrc: ["'self'", "blob:"],
+        // Mapbox fetches vector tiles, styles, geocoding, directions from these origins
         connectSrc: [
           "'self'",
-          "https://api.mapbox.com",
-          "https://events.mapbox.com",
-          "https://accounts.google.com",
-          // Stripe.js makes fetch calls to api.stripe.com for payment confirmation
+          "wss:",
+          "ws:",
           "https://api.stripe.com",
-          // Nia AI streams from the same origin in production; in dev it proxies
-          // through /api/nia so no extra origin is needed.
+          "https://api.mapbox.com",
+          "https://*.mapbox.com",
+          "https://events.mapbox.com",
+          "https://maps.googleapis.com",
+          "https://oauth2.googleapis.com",
+          "https://accounts.google.com",
+          process.env.NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app",
+        ].filter(Boolean),
+        frameSrc: [
+          "'self'",
+          "https://js.stripe.com",
+          "https://hooks.stripe.com",
+          "https://accounts.google.com",
         ],
-        workerSrc: ["'self'", "blob:"],
-        // Mapbox GL JS uses inline workers via blob: URLs for tile parsing
-        childSrc: ["'self'", "blob:"],
-        // Mapbox terrain tiles are fetched via fetch() (connectSrc) and the
-        // GL JS worker imports a script from its own CDN
         scriptSrcAttr: ["'self'", "'unsafe-inline'"],
-        // Google Identity Services injects inline onclick handlers
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'", "https://accounts.google.com"],
@@ -76,6 +86,16 @@ app.use(
     crossOriginOpenerPolicy: { policy: "same-origin" },
   }),
 );
+
+// Permissions-Policy — restrict powerful browser features to same-origin.
+// Helmet doesn't expose this header in all versions, so we set it directly.
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(self), microphone=(self), geolocation=(self), payment=(self \"https://js.stripe.com\"), fullscreen=(self)",
+  );
+  next();
+});
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // ALLOWED_ORIGIN is a comma-separated list of allowed origins for production.
@@ -113,18 +133,45 @@ app.use(pinoHttp({ logger }));
 
 // ── Request timeout ───────────────────────────────────────────────────────────
 // 30s for normal requests, 120s for long-poll / SSE endpoints.
-app.use(requestTimeout);
+app.use(requestTimeout(30_000));
 
 // ── Rate limiting ──────────────────────────────────────────────────────────────
 app.use(generalApiLimiter);
 
+// ── Raw body parsers for webhook endpoints ────────────────────────────────────
+// These MUST be mounted BEFORE express.json() so the raw body is preserved
+// for HMAC signature verification.
+app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/verification/identity/webhook", express.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/background-checks/webhook", express.raw({ type: "application/json", limit: "1mb" }));
+
+// Voice STT endpoint needs raw audio bytes before express.json() runs
+app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
+
+// Circle recording upload — raw audio body parsed before the json() middleware
+app.use("/api/audio-circle-sessions/:id/recording-upload", express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+
 // ── Body parsing ───────────────────────────────────────────────────────────────
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+// 10mb to allow base64 avatar uploads
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // ── Auth middleware ────────────────────────────────────────────────────────────
 // Parse session tokens on every request so req.user is available in routes.
 app.use(parseAuth);
+
+// ── X-Request-ID propagation ──────────────────────────────────────────────────
+// Echo the pino-http–generated request ID back to the client so that frontend
+// error reports can be correlated with server logs without sharing raw stack traces.
+// IMPORTANT: must be placed BEFORE the /api router so that every route response
+// carries the header — Express does not call downstream middleware after a route
+// calls res.json()/res.send(), so placing this after the router would mean it
+// never fires for any real API response.
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  const id = (_req as Request & { id?: unknown }).id;
+  if (id != null) res.setHeader("X-Request-ID", String(id));
+  next();
+});
 
 // ── Static uploads ─────────────────────────────────────────────────────────────
 // Uploaded files (profile pictures, voice recordings, family artifacts) are
@@ -156,24 +203,13 @@ app.use("/api/nia/voice", voiceAudioRawParser);
 // src/routes/index.ts. See CLAUDE.md — do NOT confuse this with src/index.ts.
 app.use("/api", router);
 
-// ── Health & status endpoints ──────────────────────────────────────────────────
-// /api/healthz is the Railway healthcheck target (see railway.toml).
-// It is registered here (not in routes/) so it works even if the DB is down.
-app.get("/api/healthz", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-app.get("/api/ping", (_req, res) => {
-  res.json({ pong: true, timestamp: new Date().toISOString() });
-});
-
 // ── Frontend SPA serving ───────────────────────────────────────────────────────
 // In production (or when SERVE_FRONTEND=true), Express serves the built React
 // SPA from artifacts/pay-it-forward/dist/public. The SPA catch-all below
 // serves index.html for any non-API route so client-side routing works.
 const frontendDist =
-  process.env.FRONTEND_DIST ||
-  path.resolve(__dirname, "../../pay-it-forward/dist/public");
+    process.env.FRONTEND_DIST ||
+    path.join(import.meta.dirname, "..", "..", "pay-it-forward", "dist", "public");
 
 const shouldServeFrontend =
   process.env.NODE_ENV === "production" || process.env.SERVE_FRONTEND === "true";
@@ -190,7 +226,7 @@ if (shouldServeFrontend) {
         // version. All other assets have content-hashed filenames so 1-year
         // cache is safe. The .vite/ directory contains dep-chunks that are
         // also content-hashed.
-        if (filePath.endsWith("index.html") || filePath.includes(".vite/")) {
+        if (filePath.endsWith("index.html") || filePath.endsWith("sw.js") || filePath.includes(".vite/")) {
           // "stuck on old build" experience. Treat it identically to index.html.
           res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
           res.setHeader("Pragma", "no-cache");
