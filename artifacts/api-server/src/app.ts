@@ -139,7 +139,7 @@ app.use(
     maxAge: "7d",
     etag: true,
     lastModified: true,
-  setHeaders: (res) => {
+    setHeaders: (res) => {
       res.setHeader("X-Content-Type-Options", "nosniff");
     },
   }),
@@ -210,9 +210,12 @@ if (shouldServeFrontend) {
     if (req.path.startsWith("/api") || req.path.startsWith("/ws") || req.path.startsWith("/uploads")) {
       return next();
     }
-    // Only serve index.html for GET requests that accept HTML
+    // Serve index.html for GET requests that accept HTML or any content type (*/*).
+    // The /api, /ws, /uploads prefix checks above already prevent intercepting
+    // API JSON 404s, so the Accept guard only needs to exclude explicit non-HTML
+    // requests (e.g. a client requesting application/json from a non-API path).
     const accept = req.headers.accept || "";
-    if (!accept.includes("text/html")) {
+    if (!accept.includes("text/html") && !accept.includes("*/*")) {
       return next();
     }
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
