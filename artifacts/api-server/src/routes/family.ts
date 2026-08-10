@@ -1321,6 +1321,17 @@ router.patch("/family/:id/interviews/:interviewId", generalApiLimiter, requireAu
   if (!interview) return res.status(404).json({ error: "Interview not found" });
 
   broadcast({ type: "family_interview_status_changed", payload: { family_id: familyId, interview_id: interview.id, status: interview.status } });
+  if (
+    parsed.data.status === "completed"
+    || parsed.data.status === "published"
+    || parsed.data.resulting_memory_id !== undefined
+  ) {
+    logWorldEvolution(
+      familyId,
+      "interview_added",
+      `Interview updated: ${interview.title ?? `Interview ${interview.id}`}`,
+    ).catch(() => {});
+  }
 
   return res.json({ interview });
 });

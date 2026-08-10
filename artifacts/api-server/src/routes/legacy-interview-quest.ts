@@ -337,11 +337,18 @@ router.post(
       // entries.
       if (interview.resulting_memory_id) {
         const [latestKnowledgeVersion] = await db
-          .select({ version: familyKnowledgeVersionsTable.version })
+          .select({ id: familyKnowledgeVersionsTable.id, version: familyKnowledgeVersionsTable.version })
           .from(familyKnowledgeVersionsTable)
           .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
           .orderBy(desc(familyKnowledgeVersionsTable.version))
           .limit(1);
+        const generatedWorld = buildInterviewWorldRegeneration({
+          familyId: interview.family_id,
+          interviewId: questId,
+          extraction: interview.extraction_result as InterviewExtraction | null,
+          worldVersion: latestKnowledgeVersion?.version ?? null,
+        });
+        const persistedSnapshot = await loadPersistedInterviewWorldSnapshot(interview.family_id, questId);
 
         return res.json({
           questId,
@@ -352,12 +359,9 @@ router.post(
           result: normalizeQuestResult(
             interview.transcript,
             interview.extraction_result as InterviewExtraction | null,
-            buildInterviewWorldRegeneration({
-              familyId: interview.family_id,
-              interviewId: questId,
-              extraction: interview.extraction_result as InterviewExtraction | null,
-              worldVersion: latestKnowledgeVersion?.version ?? null,
-            }),
+            persistedSnapshot
+              ? toRegenerationFromSnapshot(persistedSnapshot, generatedWorld)
+              : generatedWorld,
           ),
           nextSteps: [
             "Review extracted facts in your Family Vault",
@@ -498,18 +502,35 @@ Return as JSON:
         `Interview completed: ${interview.title}. ${worldChanges.length} world changes applied.`,
         worldChanges.length + 1,
       );
+      const [latestKnowledgeVersion] = await db
+        .select({ id: familyKnowledgeVersionsTable.id, version: familyKnowledgeVersionsTable.version })
+        .from(familyKnowledgeVersionsTable)
+        .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
+        .orderBy(desc(familyKnowledgeVersionsTable.version))
+        .limit(1);
 
       const worldRegeneration = buildInterviewWorldRegeneration({
         familyId: interview.family_id,
         interviewId: questId,
         extraction,
-        worldVersion,
+        worldVersion: latestKnowledgeVersion?.version ?? worldVersion,
       });
+      let persistedRegeneration = worldRegeneration;
+      try {
+        const persisted = await persistInterviewWorldSnapshot(
+          worldRegeneration,
+          questId,
+          latestKnowledgeVersion?.id ?? null,
+        );
+        persistedRegeneration = toRegenerationFromSnapshot(persisted.snapshot, worldRegeneration);
+      } catch (error) {
+        logPersistenceFailure(error, interview.family_id, questId);
+      }
 
       return res.json({
         questId, status: "transcribed", extraction, worldChanges,
         memoryId: memory.id,
-        result: normalizeQuestResult(transcript, extraction, worldRegeneration),
+        result: normalizeQuestResult(transcript, extraction, persistedRegeneration),
         nextSteps: [
           "Review extracted facts in your Family Vault",
           "New dialogue is being generated for this ancestor",
@@ -619,11 +640,18 @@ router.get(
       }
 
       const [latestKnowledgeVersion] = await db
-        .select({ version: familyKnowledgeVersionsTable.version })
+        .select({ id: familyKnowledgeVersionsTable.id, version: familyKnowledgeVersionsTable.version })
         .from(familyKnowledgeVersionsTable)
         .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
         .orderBy(desc(familyKnowledgeVersionsTable.version))
         .limit(1);
+      const generatedWorld = buildInterviewWorldRegeneration({
+        familyId: interview.family_id,
+        interviewId: questId,
+        extraction: interview.extraction_result as InterviewExtraction | null,
+        worldVersion: latestKnowledgeVersion?.version ?? null,
+      });
+      const persistedSnapshot = await loadPersistedInterviewWorldSnapshot(interview.family_id, questId);
 
       return res.json({
         interview: {
@@ -634,12 +662,9 @@ router.get(
         result: normalizeQuestResult(
           interview.transcript,
           interview.extraction_result as InterviewExtraction | null,
-          buildInterviewWorldRegeneration({
-            familyId: interview.family_id,
-            interviewId: questId,
-            extraction: interview.extraction_result as InterviewExtraction | null,
-            worldVersion: latestKnowledgeVersion?.version ?? null,
-          }),
+          persistedSnapshot
+            ? toRegenerationFromSnapshot(persistedSnapshot, generatedWorld)
+            : generatedWorld,
         ),
       });
     } catch (err) {
@@ -682,13 +707,16 @@ router.post(
           extraction: interview.extraction_result as InterviewExtraction | null,
           worldVersion: latestKnowledgeVersion?.version ?? null,
         });
+        const persistedSnapshot = await loadPersistedInterviewWorldSnapshot(interview.family_id, questId);
         return res.json({
           questId,
           status: "completed",
           worldUpdated: true,
           newContentAvailable: false,
           availableChapters: [],
-          worldRegeneration,
+          worldRegeneration: persistedSnapshot
+            ? toRegenerationFromSnapshot(persistedSnapshot, worldRegeneration)
+            : worldRegeneration,
           message: "This interview quest was already completed. Your regenerated world is still available in Legacy.",
         });
       }
@@ -708,6 +736,29 @@ router.post(
         interview.family_id, "interview_added",
         `Interview quest completed: ${interview.title}. World regenerated.`, 1,
       );
+      const [latestKnowledgeVersion] = await db
+        .select({ id: familyKnowledgeVersionsTable.id, version: familyKnowledgeVersionsTable.version })
+        .from(familyKnowledgeVersionsTable)
+        .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
+        .orderBy(desc(familyKnowledgeVersionsTable.version))
+        .limit(1);
+      const generatedWorld = buildInterviewWorldRegeneration({
+        familyId: interview.family_id,
+        interviewId: questId,
+        extraction: interview.extraction_result as InterviewExtraction | null,
+        worldVersion: latestKnowledgeVersion?.version ?? null,
+      });
+      let persistedRegeneration = generatedWorld;
+      try {
+        const persisted = await persistInterviewWorldSnapshot(
+          generatedWorld,
+          questId,
+          latestKnowledgeVersion?.id ?? null,
+        );
+        persistedRegeneration = toRegenerationFromSnapshot(persisted.snapshot, generatedWorld);
+      } catch (error) {
+        logPersistenceFailure(error, interview.family_id, questId);
+      }
 
       const [world] = await db
         .select().from(legacyWorldsTable)
@@ -725,17 +776,7 @@ router.post(
         availableChapters: chapters.filter((c) => c.status === "unlocked").map((c) => ({
           id: c.id, title: c.title, chapterNumber: c.chapter_number,
         })),
-        worldRegeneration: buildInterviewWorldRegeneration({
-          familyId: interview.family_id,
-          interviewId: questId,
-          extraction: interview.extraction_result as InterviewExtraction | null,
-          worldVersion: (await db
-            .select({ version: familyKnowledgeVersionsTable.version })
-            .from(familyKnowledgeVersionsTable)
-            .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
-            .orderBy(desc(familyKnowledgeVersionsTable.version))
-            .limit(1))[0]?.version ?? null,
-        }),
+        worldRegeneration: persistedRegeneration,
         message: "Your world has evolved. New stories, places, and chapters await.",
       });
     } catch (err) {
