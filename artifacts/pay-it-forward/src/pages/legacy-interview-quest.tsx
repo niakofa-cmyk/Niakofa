@@ -24,7 +24,7 @@ import {
   ArrowLeft, Loader2, Mic, MicOff, Square, Play, Pause,
   CheckCircle2, Sparkles, ChevronRight, AlertCircle,
   Users, MapPin, Calendar, BookOpen, Trophy, Brain,
-  Clock, Volume2, X, RefreshCw, Zap, Video,
+  Clock, Volume2, X, RefreshCw, Zap, Video, ShieldCheck,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -54,6 +54,7 @@ interface QuestResult {
   achievementGenerated: string | null;
 }
 
+type CaptureMode = "audio" | "video";
 type Phase = "browsing" | "recording" | "submitting" | "result" | "complete";
 
 export default function LegacyInterviewQuestPage() {
@@ -67,14 +68,19 @@ export default function LegacyInterviewQuestPage() {
   const [activeQuest, setActiveQuest] = useState<InterviewQuest | null>(null);
   const [phase, setPhase] = useState<Phase>("browsing");
   const [questId, setQuestId] = useState<number | null>(null);
+  const [captureMode, setCaptureMode] = useState<CaptureMode>("audio");
+  const [recordingConsent, setRecordingConsent] = useState(false);
 
   // Recording state
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [mediaBlob, setMediaBlob] = useState<Blob | null>(null);
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState("");
   const [playing, setPlaying] = useState(false);
   const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -111,20 +117,42 @@ export default function LegacyInterviewQuestPage() {
 
   // Start recording
   const startRecording = useCallback(async () => {
+    if (!recordingConsent) {
+      toast.error("Confirm that everyone being recorded has given permission first.");
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      audioChunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: captureMode === "video",
+      });
+      const supportedType = captureMode === "video"
+        ? ["video/webm;codecs=vp9,opus", "video/webm"].find((type) => MediaRecorder.isTypeSupported(type))
+        : ["audio/webm;codecs=opus", "audio/webm"].find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(
+        stream,
+        supportedType ? { mimeType: supportedType } : undefined,
+      );
+      mediaChunksRef.current = [];
+      mediaStreamRef.current = stream;
+      if (captureMode === "video" && videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
+        videoPreviewRef.current.play().catch(() => {});
+      }
 
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        if (e.data.size > 0) mediaChunksRef.current.push(e.data);
       };
 
       recorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        setAudioBlob(blob);
-        setAudioUrl(URL.createObjectURL(blob));
+        const blob = new Blob(mediaChunksRef.current, {
+          type: recorder.mimeType || (captureMode === "video" ? "video/webm" : "audio/webm"),
+        });
+        setMediaBlob(blob);
+        setMediaUrl(URL.createObjectURL(blob));
         stream.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+        if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null;
       };
 
       recorder.start();
@@ -137,11 +165,11 @@ export default function LegacyInterviewQuestPage() {
     } catch {
       toast.error("Couldn't access microphone. Check permissions and try again.");
     }
-  }, []);
+  }, [captureMode, recordingConsent]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -150,7 +178,7 @@ export default function LegacyInterviewQuestPage() {
 
   // Submit recording
   const submitRecording = useCallback(async () => {
-    if (!audioBlob || !familyId || !activeQuest) return;
+    if (!mediaBlob || !familyId || !activeQuest) return;
     setPhase("submitting");
     setSubmitError(null);
 
@@ -166,46 +194,74 @@ export default function LegacyInterviewQuestPage() {
         }),
       });
       if (!startRes.ok) throw new Error("Failed to start quest");
-      const startData = await startRes.json() as { quest: { id: number } };
-      setQuestId(startData.quest.id);
+      const startData = await startRes.json() as { interviewId: number };
+      setQuestId(startData.interviewId);
 
-      // Submit audio as form data
-      const formData = new FormData();
-      formData.append("audio", audioBlob, "interview.webm");
+      let finalTranscript = transcript.trim();
+      if (!finalTranscript && captureMode === "audio") {
+        const transcriptionRes = await fetch("/api/nia/voice/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": mediaBlob.type, ...authHeaders() },
+          body: mediaBlob,
+        });
+        if (transcriptionRes.ok) {
+          const transcriptionData = await transcriptionRes.json() as { text?: string };
+          finalTranscript = transcriptionData.text?.trim() ?? "";
+        }
+      }
+      if (finalTranscript.length < 10) {
+        throw new Error(captureMode === "video"
+          ? "Add a short transcript before submitting the video interview."
+          : "We couldn't transcribe that recording. Add the transcript below and try again.");
+      }
 
-      const submitRes = await fetch(`/api/legacy/interview-quests/${startData.quest.id}/submit`, {
+      const submitRes = await fetch(`/api/legacy/interview-quests/${startData.interviewId}/submit`, {
         method: "POST",
-        headers: { ...authHeaders() },
-        body: formData,
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ transcript: finalTranscript }),
       });
-      if (!submitRes.ok) throw new Error("Failed to submit recording");
-      const submitData = await submitRes.json() as { transcript: string };
+      if (!submitRes.ok) throw new Error("Failed to submit interview");
 
-      // Get results
-      const resultRes = await fetch(`/api/legacy/interview-quests/${startData.quest.id}/result`, {
+      const mediaRes = await fetch(`/api/legacy/interview-quests/${startData.interviewId}/media`, {
+        method: "POST",
+        headers: {
+          "Content-Type": mediaBlob.type || (captureMode === "video" ? "video/webm" : "audio/webm"),
+          "X-Filename": captureMode === "video" ? "legacy-interview.webm" : "legacy-interview-audio.webm",
+          ...authHeaders(),
+        },
+        body: mediaBlob,
+      });
+      if (!mediaRes.ok) {
+        throw new Error("Interview text was saved, but the recording could not be stored.");
+      }
+
+      // Get normalized results after media is preserved
+      const resultRes = await fetch(`/api/legacy/interview-quests/${startData.interviewId}/result`, {
         headers: authHeaders(),
       });
       if (!resultRes.ok) throw new Error("Failed to get results");
       const resultData = await resultRes.json() as { result: QuestResult };
       setResult(resultData.result);
+      setTranscript(finalTranscript);
       setPhase("result");
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to submit");
       setPhase("recording");
     }
-  }, [audioBlob, familyId, activeQuest]);
+  }, [captureMode, familyId, activeQuest, mediaBlob, transcript]);
 
   // Complete quest
   const completeQuest = useCallback(async () => {
     if (!questId) return;
     try {
-      await fetch(`/api/legacy/interview-quests/${questId}/complete`, {
+      const response = await fetch(`/api/legacy/interview-quests/${questId}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
       });
+      if (!response.ok) throw new Error("The interview was preserved, but world regeneration could not finish.");
       setPhase("complete");
-    } catch {
-      setPhase("complete");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to complete quest");
     }
   }, [questId]);
 
@@ -213,11 +269,13 @@ export default function LegacyInterviewQuestPage() {
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (mediaRecorderRef.current && isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
       }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      if (mediaUrl) URL.revokeObjectURL(mediaUrl);
     };
-  }, [isRecording]);
+  }, [mediaUrl]);
 
   // Format time
   const formatTime = (s: number) => {
@@ -312,8 +370,9 @@ export default function LegacyInterviewQuestPage() {
                 setPhase("browsing");
                 setActiveQuest(null);
                 setResult(null);
-                setAudioBlob(null);
-                setAudioUrl(null);
+                 setMediaBlob(null);
+                 setMediaUrl(null);
+                 setTranscript("");
                 setQuestId(null);
               }}
               className="text-amber-400 font-medium rounded-xl px-6 py-3 text-sm border border-amber-700/30"
@@ -466,8 +525,9 @@ export default function LegacyInterviewQuestPage() {
               stopRecording();
               setPhase("browsing");
               setActiveQuest(null);
-              setAudioBlob(null);
-              setAudioUrl(null);
+               setMediaBlob(null);
+               setMediaUrl(null);
+               setTranscript("");
             }}
             className="text-amber-500 active:opacity-70"
           >
@@ -491,11 +551,59 @@ export default function LegacyInterviewQuestPage() {
             </div>
           </div>
 
-          {/* Recording indicator */}
+           {/* Capture mode and consent */}
+           {!isRecording && !mediaBlob && (
+             <div className="space-y-3 mb-6">
+               <div className="grid grid-cols-2 gap-2">
+                 {(["audio", "video"] as CaptureMode[]).map((mode) => (
+                   <button
+                     key={mode}
+                     type="button"
+                     onClick={() => setCaptureMode(mode)}
+                     className={`rounded-xl border px-3 py-2.5 text-xs font-bold uppercase tracking-wider ${
+                       captureMode === mode
+                         ? "border-amber-400/60 bg-amber-500/15 text-amber-300"
+                         : "border-stone-700 bg-stone-900/40 text-stone-500"
+                     }`}
+                   >
+                     {mode === "video" ? <Video className="inline w-4 h-4 mr-1" /> : <Mic className="inline w-4 h-4 mr-1" />}
+                     {mode} interview
+                   </button>
+                 ))}
+               </div>
+               <label className="flex items-start gap-2 rounded-xl border border-amber-900/30 bg-amber-500/5 p-3 text-xs text-stone-400">
+                 <input
+                   type="checkbox"
+                   checked={recordingConsent}
+                   onChange={(event) => setRecordingConsent(event.target.checked)}
+                   className="mt-0.5 accent-amber-500"
+                 />
+                 <span>
+                   <ShieldCheck className="inline w-3.5 h-3.5 text-emerald-400 mr-1" />
+                   Everyone being recorded has agreed to preserve this interview in the Family Vault.
+                 </span>
+               </label>
+             </div>
+           )}
+
+           {captureMode === "video" && (
+             <video
+               ref={videoPreviewRef}
+               muted
+               playsInline
+               controls={Boolean(mediaBlob)}
+               src={mediaBlob && mediaUrl ? mediaUrl : undefined}
+               className={`w-full aspect-video rounded-2xl bg-black/40 object-cover mb-4 ${
+                 isRecording || mediaBlob ? "block" : "hidden"
+               }`}
+             />
+           )}
+
+           {/* Recording indicator */}
           {isRecording && (
             <div className="flex flex-col items-center gap-3 mb-6">
               <div className="w-20 h-20 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center animate-pulse">
-                <Mic className="w-8 h-8 text-red-400" />
+                 {captureMode === "video" ? <Video className="w-8 h-8 text-red-400" /> : <Mic className="w-8 h-8 text-red-400" />}
               </div>
               <p className="text-2xl font-black text-red-400 tabular-nums">{formatTime(recordingTime)}</p>
               <p className="text-xs text-stone-500 uppercase tracking-wider">Recording...</p>
@@ -503,15 +611,17 @@ export default function LegacyInterviewQuestPage() {
           )}
 
           {/* Recording controls */}
-          {!isRecording && !audioBlob && (
+           {!isRecording && !mediaBlob && (
             <div className="flex flex-col items-center gap-4 mb-6">
               <button
                 onClick={startRecording}
                 className="w-20 h-20 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center active:scale-95 transition-transform"
               >
-                <Mic className="w-8 h-8 text-amber-400" />
+                 {captureMode === "video" ? <Video className="w-8 h-8 text-amber-400" /> : <Mic className="w-8 h-8 text-amber-400" />}
               </button>
-              <p className="text-xs text-stone-500 uppercase tracking-wider">Tap to start recording</p>
+               <p className="text-xs text-stone-500 uppercase tracking-wider">
+                 {recordingConsent ? "Tap to start recording" : "Confirm consent to start"}
+               </p>
             </div>
           )}
 
@@ -527,13 +637,13 @@ export default function LegacyInterviewQuestPage() {
             </div>
           )}
 
-          {/* Playback */}
-          {audioBlob && audioUrl && (
+           {/* Playback */}
+           {mediaBlob && mediaUrl && captureMode === "audio" && (
             <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 mb-6">
               <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3">Recording Ready</h3>
               <audio
                 ref={audioPlaybackRef}
-                src={audioUrl}
+                 src={mediaUrl}
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
                 onEnded={() => setPlaying(false)}
@@ -552,12 +662,12 @@ export default function LegacyInterviewQuestPage() {
                 </button>
                 <div className="flex-1">
                   <p className="text-xs text-stone-400">Your recording</p>
-                  <p className="text-[10px] text-stone-500">{(audioBlob.size / 1024).toFixed(0)} KB</p>
+                   <p className="text-[10px] text-stone-500">{(mediaBlob.size / 1024).toFixed(0)} KB</p>
                 </div>
                 <button
                   onClick={() => {
-                    setAudioBlob(null);
-                    setAudioUrl(null);
+                     setMediaBlob(null);
+                     setMediaUrl(null);
                   }}
                   className="text-stone-500 hover:text-red-400"
                 >
@@ -566,6 +676,23 @@ export default function LegacyInterviewQuestPage() {
               </div>
             </div>
           )}
+
+           {mediaBlob && (
+             <div className="mb-6">
+               <label className="block text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
+                 Transcript fallback
+               </label>
+               <textarea
+                 value={transcript}
+                 onChange={(event) => setTranscript(event.target.value)}
+                 placeholder={captureMode === "video"
+                   ? "Type or paste what was said so Nia can extract the story..."
+                   : "Optional: type the transcript if automatic transcription is unavailable..."}
+                 rows={4}
+                 className="w-full rounded-xl border border-amber-900/30 bg-[#2A1A0F] p-3 text-sm text-stone-200 placeholder:text-stone-600 outline-none focus:border-amber-500/60"
+               />
+             </div>
+           )}
 
           {/* Submit error */}
           {submitError && (
@@ -576,7 +703,7 @@ export default function LegacyInterviewQuestPage() {
         </div>
 
         {/* Submit button */}
-        {audioBlob && (
+        {mediaBlob && (
           <div className="px-4 py-3 border-t border-stone-800/50">
             <button
               onClick={submitRecording}
@@ -646,9 +773,9 @@ export default function LegacyInterviewQuestPage() {
             </div>
             <div className="bg-rose-950/30 border border-rose-800/30 rounded-xl px-3 py-2.5 flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
-              <p className="text-xs text-rose-500 italic">
-                Live video interviews are coming soon. For now, record an audio interview below — it uses the same AI pipeline.
-              </p>
+                 <p className="text-xs text-rose-300 italic">
+                   Video capture is available now. Consent is required, and a typed transcript can be used when automatic transcription is unavailable.
+                 </p>
             </div>
           </div>
         </div>
@@ -681,8 +808,9 @@ export default function LegacyInterviewQuestPage() {
                 onClick={() => {
                   setActiveQuest(quest);
                   setPhase("recording");
-                  setAudioBlob(null);
-                  setAudioUrl(null);
+                  setMediaBlob(null);
+                  setMediaUrl(null);
+                  setTranscript("");
                   setResult(null);
                   setSubmitError(null);
                 }}

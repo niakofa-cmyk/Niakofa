@@ -24,6 +24,7 @@ import {
   db,
   familyMembersTable,
   familyMemoriesTable,
+  familyMemoryAssetsTable,
   familyInterviewsTable,
   familyStoriesTable,
   familyEventsTable,
@@ -39,6 +40,9 @@ import { logger } from "../lib/logger";
 import { getConsentedMemberIds } from "../lib/legacy-consent";
 import { legacyAI } from "../lib/legacy-ai-gateway";
 import { logWorldEvolution } from "../lib/legacy-world-evolution";
+import { getAssetUrl, getStorageBackend, putAsset } from "../lib/storage";
+import { normalizeQuestResult, type InterviewExtraction } from "../lib/legacy-interview-result";
+import { requestTimeout } from "../middlewares/timeout";
 
 const router = Router();
 
@@ -322,6 +326,30 @@ router.post(
         return res.status(400).json({ error: "Transcript too short for extraction" });
       }
 
+      // A client may retry after a timeout while the first request is still
+      // finishing. Reuse the existing canonical memory instead of rerunning
+      // extraction and duplicating places, events, stories, and evolution log
+      // entries.
+      if (interview.resulting_memory_id) {
+        return res.json({
+          questId,
+          status: interview.status,
+          extraction: interview.extraction_result,
+          worldChanges: [],
+          memoryId: interview.resulting_memory_id,
+          result: normalizeQuestResult(
+            interview.transcript,
+            interview.extraction_result as InterviewExtraction | null,
+          ),
+          nextSteps: [
+            "Review extracted facts in your Family Vault",
+            "New dialogue is being generated for this ancestor",
+            "Your world map has been updated with discovered places",
+            "Timeline events have been added",
+          ],
+        });
+      }
+
       const extractionPrompt = `You are Nia, the AI guardian of a family's legacy. Analyze this interview transcript and extract structured facts.
 
 Transcript:
@@ -380,6 +408,27 @@ Return as JSON:
         })
         .where(eq(familyInterviewsTable.id, questId));
 
+      // Every completed interview also becomes a canonical Family Vault memory.
+      // The interview row remains the extraction record; the memory is the
+      // durable player-facing object that can receive audio/video assets.
+      const [memory] = await db
+        .insert(familyMemoriesTable)
+        .values({
+          family_id: interview.family_id,
+          author_id: userId,
+          title: `Interview: ${interview.title ?? "Legacy Interview"}`,
+          description: extraction.summary || "Preserved oral history interview",
+          story: transcript.slice(0, 50_000),
+          source: "interview",
+          interview_id: questId,
+        })
+        .returning();
+
+      await db
+        .update(familyInterviewsTable)
+        .set({ resulting_memory_id: memory.id, updated_at: new Date() })
+        .where(eq(familyInterviewsTable.id, questId));
+
       const worldChanges: string[] = [];
 
       for (const place of extraction.places.slice(0, 5)) {
@@ -434,6 +483,8 @@ Return as JSON:
 
       return res.json({
         questId, status: "transcribed", extraction, worldChanges,
+        memoryId: memory.id,
+        result: normalizeQuestResult(transcript, extraction),
         nextSteps: [
           "Review extracted facts in your Family Vault",
           "New dialogue is being generated for this ancestor",
@@ -445,6 +496,80 @@ Return as JSON:
       logger.error({ err, questId }, "legacy-interview-quests: submit failed");
       return res.status(500).json({ error: "Failed to process interview" });
     }
+  },
+);
+
+// POST /legacy/interview-quests/:questId/media
+// Stores the captured audio/video in the canonical Family Vault memory created
+// by the transcript submission above. Raw media never enters Postgres.
+router.post(
+  "/legacy/interview-quests/:questId/media",
+  generalApiLimiter,
+  requestTimeout(120_000),
+  requireAuth,
+  async (req, res) => {
+    const questId = parseInt(String(req.params.questId), 10);
+    if (isNaN(questId)) return res.status(400).json({ error: "Invalid quest ID" });
+
+    const [interview] = await db
+      .select()
+      .from(familyInterviewsTable)
+      .where(eq(familyInterviewsTable.id, questId))
+      .limit(1);
+    if (!interview) return res.status(404).json({ error: "Interview quest not found" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, interview.family_id))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+    if (!interview.resulting_memory_id) {
+      return res.status(409).json({ error: "Submit the interview transcript before uploading media" });
+    }
+
+    const media = req.body as Buffer;
+    const mimeType = String(req.headers["content-type"] ?? "application/octet-stream").split(";")[0];
+    const assetType = mimeType.startsWith("video/") ? "video" : mimeType.startsWith("audio/") ? "audio" : null;
+    if (!assetType || !Buffer.isBuffer(media) || media.length === 0) {
+      return res.status(400).json({ error: "Audio or video data is required" });
+    }
+    if (media.length > 20 * 1024 * 1024) {
+      return res.status(413).json({ error: "Recording exceeds the 20 MB limit" });
+    }
+
+    const filename = String(req.headers["x-filename"] ?? `interview-${questId}.${assetType === "video" ? "webm" : "webm"}`)
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .slice(0, 120);
+    const storageKey = `families/${interview.family_id}/memories/${interview.resulting_memory_id}/interviews/${questId}_${filename}`;
+    await putAsset(storageKey, media, mimeType);
+
+    const [asset] = await db
+      .insert(familyMemoryAssetsTable)
+      .values({
+        memory_id: interview.resulting_memory_id,
+        asset_type: assetType,
+        storage_key: storageKey,
+        mime_type: mimeType,
+        byte_size: media.length,
+        transcript: interview.transcript,
+        processing_status: "ready",
+      })
+      .returning();
+
+    logger.info(
+      { questId, familyId: interview.family_id, assetId: asset.id, assetType, backend: getStorageBackend() },
+      "legacy_interview_media_stored",
+    );
+    await logWorldEvolution(
+      interview.family_id,
+      "interview_added",
+      `${assetType === "video" ? "Video" : "Audio"} interview recording preserved in the Family Vault.`,
+      1,
+    );
+
+    return res.status(201).json({
+      asset: { ...asset, url: await getAssetUrl(storageKey) },
+      memoryId: interview.resulting_memory_id,
+    });
   },
 );
 
@@ -474,6 +599,10 @@ router.get(
           transcript: interview.transcript, extraction: interview.extraction_result,
           completedAt: interview.completed_at,
         },
+        result: normalizeQuestResult(
+          interview.transcript,
+          interview.extraction_result as InterviewExtraction | null,
+        ),
       });
     } catch (err) {
       logger.error({ err, questId }, "legacy-interview-quests: result failed");

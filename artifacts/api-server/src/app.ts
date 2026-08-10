@@ -151,6 +151,13 @@ app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
 // Circle recording upload — raw audio body parsed before the json() middleware
 app.use("/api/audio-circle-sessions/:id/recording-upload", express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
 
+// Legacy interview media is uploaded as raw audio/video bytes. Mount this
+// before express.json() so the recording is never coerced into a JSON body.
+app.use(
+  "/api/legacy/interview-quests/:questId/media",
+  express.raw({ type: ["audio/*", "video/*", "application/octet-stream"], limit: "20mb" }),
+);
+
 // ── Body parsing ───────────────────────────────────────────────────────────────
 // 10mb to allow base64 avatar uploads
 app.use(express.json({ limit: "10mb" }));
