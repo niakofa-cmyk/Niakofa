@@ -669,6 +669,17 @@ router.post(
         return res.status(403).json({ error: "Not a member of this family" });
       }
 
+      if (interview.status === "completed") {
+        return res.json({
+          questId,
+          status: "completed",
+          worldUpdated: true,
+          newContentAvailable: false,
+          availableChapters: [],
+          message: "This interview quest was already completed. Your regenerated world is still available in Legacy.",
+        });
+      }
+
       await db.update(familyInterviewsTable)
         .set({ status: "completed", completed_at: new Date() })
         .where(eq(familyInterviewsTable.id, questId));

@@ -55,6 +55,7 @@ interface QuestResult {
   achievementGenerated: string | null;
   worldRegeneration: {
     status: "ready";
+    worldVersion: number | null;
     newCharacters: Array<{
       characterId: string;
       name: string;
@@ -62,10 +63,12 @@ interface QuestResult {
       evidence: "family-reported";
       renderStatus: "ready" | "pending_verified_appearance";
       appearance: {
+          age: number;
         ageGroup: "adult" | "kid";
         gender: "male" | "female";
         lifeStage: "youth" | "adult" | "mature" | "elder";
         era: string;
+          eraProfile: string;
         appearanceSeed: string;
         layers: {
           body: string;
@@ -78,6 +81,16 @@ interface QuestResult {
     newQuest: { id: string; title: string; reason: string; status: "seeded" } | null;
     chapterSeed: { id: string; title: string; reason: string; status: "seeded" } | null;
     newDialogue: string;
+    worldChanges: Array<{
+      type: string;
+      title: string;
+      description: string;
+      evidence: string;
+    }>;
+    snapshot: {
+      discoveries: Array<{ id: string; title: string; status: string }>;
+      mapChanges: Array<{ placeId: string; label: string; status: string }>;
+    };
   };
 }
 
@@ -393,6 +406,12 @@ export default function LegacyInterviewQuestPage() {
             >
               Return to Legacy Hub
             </button>
+             <button
+               onClick={() => navigate("/legacy/play")}
+               className="border border-emerald-500/30 text-emerald-300 font-bold rounded-xl px-6 py-3 text-sm"
+             >
+               Enter Changed World
+             </button>
             <button
               onClick={() => {
                 setPhase("browsing");
@@ -434,7 +453,7 @@ export default function LegacyInterviewQuestPage() {
 
         {/* Transcript */}
         {result.transcript && (
-          <div className="px-4 mb-6">
+         <div className="px-4 mb-6">
             <h3 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
               <Volume2 className="w-3.5 h-3.5" /> Transcript
             </h3>
@@ -529,7 +548,7 @@ export default function LegacyInterviewQuestPage() {
           </div>
         </div>
 
-        <WorldRegenerationSummary result={result} />
+         <WorldRegenerationSummary result={result} />
 
         {/* Complete button */}
         <div className="px-4">
@@ -901,13 +920,40 @@ function WorldRegenerationSummary({ result }: { result: QuestResult }) {
             World regenerated
           </h3>
         </div>
-        <p className="text-xs text-emerald-100/70 mb-4">
+        <p className="text-xs text-emerald-100/70 mb-2">
           Your family-reported evidence has created new, reviewable gameplay seeds.
           Visual identity remains pending when the interview did not state age and gender.
         </p>
           <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/80 mb-4">
             Knowledge world {worldRegeneration.worldVersion ? `v${worldRegeneration.worldVersion}` : "version pending"}
           </p>
+
+        {worldRegeneration.worldChanges.length > 0 && (
+          <div className="mb-4 rounded-xl border border-emerald-800/30 bg-black/10 p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2">World updated</p>
+            <div className="space-y-2">
+              {worldRegeneration.worldChanges.slice(0, 8).map((change, index) => (
+                <div key={`${change.type}-${change.title}-${index}`} className="flex items-start gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-emerald-100">{change.title}</p>
+                    <p className="text-[10px] text-emerald-200/60">{change.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {worldRegeneration.snapshot.mapChanges.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {worldRegeneration.snapshot.mapChanges.map((change) => (
+              <span key={change.placeId} className="rounded-full border border-sky-700/30 bg-sky-950/30 px-2 py-1 text-[9px] font-bold text-sky-300">
+                Map revealed · {change.label}
+              </span>
+            ))}
+          </div>
+        )}
 
         {worldRegeneration.newCharacters.length > 0 && (
           <div className="mb-4">

@@ -53,4 +53,22 @@ describe("Legacy generated character asset engine", () => {
       appearance: null,
     }]);
   });
+
+  it("keeps kid appearances on the approved base runtime layers", () => {
+    const [kid] = buildGeneratedCharacters({
+      familyId: 12,
+      interviewId: 19,
+      people: [{ name: "Ama", age: 9, gender: "female", era: "present" }],
+    });
+
+    expect(kid.appearance).toMatchObject({
+      ageGroup: "kid",
+      layers: {
+        body: "tv_body_kid_base",
+        clothing: "tv_clothing_kid_default",
+        rearHair: "tv_rear_hair_kid_default",
+        frontHair: "tv_front_hair_kid_default",
+      },
+    });
+  });
 });

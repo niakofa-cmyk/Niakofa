@@ -14,6 +14,8 @@ integrity checks used before implementation.
 | `attached_assets/Pasted-I-m-reviewing-the-current-checkpoint-and-repository-sta_1786372861277.txt` | `37c95846d7d1f6868ccc9af69b301103d8114cfb2f9b45b7aaa2145787f9338d` | `uploaded-source/Pasted-I-m-reviewing-the-current-checkpoint-and-repository-sta_1786372861277.txt` |
 | `attached_assets/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786372879688.txt` | `f0f522aef06b926794987c439e407d4d5f3499ef8633bcf08dd3fe2bccbac4a3` | existing byte-identical guidance copy in `uploaded-source/` |
 | `attached_assets/generator_1786372886715.zip` | `b98843ce0ca4687b44ef4679b7137b11a9e14af88c6e901666194f442da2d64f` | existing byte-identical archive in `uploaded-source/` |
+| `attached_assets/Pasted--The-app-still-needs-more-of-the-cinematic-game-world-v_1786391398105.txt` | `e4f3b94f075af1233ab5d5a259adb3fe4efd0e651e5ae04324d33743b6afd28f` | existing byte-identical brief copy in `uploaded-source/` |
+| `attached_assets/generator_1786391409924.zip` | `b98843ce0ca4687b44ef4679b7137b11a9e14af88c6e901666194f442da2d64f` | existing byte-identical archive in `uploaded-source/` |
 
 The new ZIP and guidance upload are byte-for-byte identical to the previously
 preserved source copies. The new filenames are retained in this manifest for

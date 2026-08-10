@@ -53,7 +53,34 @@ describe("normalizeQuestResult", () => {
       }],
       newQuest: { status: "seeded" },
       chapterSeed: { status: "seeded" },
+      snapshot: {
+        familyId: 7,
+        source: "family-reported-interview",
+        locations: [{ label: "Accra", status: "discovered" }],
+        mapChanges: [{ label: "Accra", status: "revealed" }],
+      },
+      worldChanges: expect.arrayContaining([
+        expect.objectContaining({ type: "character" }),
+        expect.objectContaining({ type: "place", title: "New place: Accra" }),
+      ]),
     });
+  });
+
+  it("turns an explicitly dated event into a world quest seed", () => {
+    const world = buildInterviewWorldRegeneration({
+      familyId: 7,
+      interviewId: 19,
+      extraction: {
+        events: [{ title: "The crossing", date: "1932-01-01" }],
+      },
+    });
+    expect(world.newQuest).toMatchObject({ title: "Investigate The crossing" });
+    expect(world.chapterSeed).toMatchObject({ title: "The Day That Changed the Family: The crossing" });
+    expect(world.snapshot.events).toMatchObject([{
+      title: "The crossing",
+      date: "1932-01-01",
+      evidence: "family-reported",
+    }]);
   });
 
   it("falls back safely when AI extraction is unavailable", () => {

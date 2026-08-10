@@ -14,10 +14,12 @@ export type GeneratedCharacterLifeStage = "youth" | "adult" | "mature" | "elder"
 export interface GeneratedCharacterAppearance {
   schemaVersion: 1;
   characterId: string;
+  age: number;
   ageGroup: GeneratedCharacterAgeGroup;
   gender: GeneratedCharacterGender;
   lifeStage: GeneratedCharacterLifeStage;
   era: string;
+  eraProfile: string;
   appearanceSeed: string;
   representation: "TV";
   layers: {
@@ -82,6 +84,21 @@ function lifeStageForAge(age: number): GeneratedCharacterLifeStage {
   return "elder";
 }
 
+/**
+ * Era profiles are visual wardrobe labels only. They never establish or infer
+ * a historical fact; the era is accepted only when the Family Vault/AI
+ * extraction explicitly supplies it.
+ */
+function eraProfileFor(era: string | null | undefined): string {
+  const normalized = era?.trim().toLowerCase() ?? "";
+  if (/\b189\d|\b190\d/.test(normalized)) return "cape-coast-early-century";
+  if (/\b191\d|\b192\d/.test(normalized)) return "golden-years";
+  if (/\b193\d|\b194\d|\b195\d/.test(normalized)) return "migration-era";
+  if (/\b196\d|\b197\d|\b198\d/.test(normalized)) return "mid-century-diaspora";
+  if (/\b199\d|\b20\d\d|present|modern/.test(normalized)) return "present-day";
+  return "unspecified";
+}
+
 function buildAppearance(
   person: ExtractedPerson,
   characterId: string,
@@ -94,22 +111,28 @@ function buildAppearance(
   const ageGroup: GeneratedCharacterAgeGroup = age < 18 ? "kid" : "adult";
   const lifeStage = lifeStageForAge(age);
   const suffix = ageGroup === "kid" ? "kid" : gender;
-  const variant = 2 + stableHash(`${characterId}|${lifeStage}|${person.era ?? "unspecified"}|${appearanceSeed}`) % 3;
+  // The curated kid runtime sample intentionally uses the approved base
+  // layers only. Adult profiles have the reviewed p02–p04 variants.
+  const variant = ageGroup === "kid"
+    ? 1
+    : 2 + stableHash(`${characterId}|${lifeStage}|${person.era ?? "unspecified"}|${appearanceSeed}`) % 3;
 
   return {
     schemaVersion: 1,
     characterId,
+    age,
     ageGroup,
     gender,
     lifeStage,
     era: person.era?.trim() || "unspecified",
+    eraProfile: eraProfileFor(person.era),
     appearanceSeed,
     representation: "TV",
     layers: {
       body: `tv_body_${suffix}_base`,
-      clothing: `tv_clothing_${suffix}_p0${variant}`,
-      rearHair: `tv_rear_hair_${suffix}_p0${variant}`,
-      frontHair: `tv_front_hair_${suffix}_p0${variant}`,
+      clothing: `tv_clothing_${suffix}_${variant === 1 ? "default" : `p0${variant}`}`,
+      rearHair: `tv_rear_hair_${suffix}_${variant === 1 ? "default" : `p0${variant}`}`,
+      frontHair: `tv_front_hair_${suffix}_${variant === 1 ? "default" : `p0${variant}`}`,
     },
     runtime: "approved",
   };
