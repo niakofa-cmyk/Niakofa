@@ -30,6 +30,7 @@ import {
   familyEventsTable,
   familyPlacesTable,
   familyMemoryPeopleTable,
+  familyKnowledgeVersionsTable,
   legacyWorldsTable,
   legacyChaptersTable,
 } from "@workspace/db";
@@ -41,7 +42,11 @@ import { getConsentedMemberIds } from "../lib/legacy-consent";
 import { legacyAI } from "../lib/legacy-ai-gateway";
 import { logWorldEvolution } from "../lib/legacy-world-evolution";
 import { getAssetUrl, getStorageBackend, putAsset } from "../lib/storage";
-import { normalizeQuestResult, type InterviewExtraction } from "../lib/legacy-interview-result";
+import {
+  buildInterviewWorldRegeneration,
+  normalizeQuestResult,
+  type InterviewExtraction,
+} from "../lib/legacy-interview-result";
 import { requestTimeout } from "../middlewares/timeout";
 
 const router = Router();
@@ -331,6 +336,13 @@ router.post(
       // extraction and duplicating places, events, stories, and evolution log
       // entries.
       if (interview.resulting_memory_id) {
+        const [latestKnowledgeVersion] = await db
+          .select({ version: familyKnowledgeVersionsTable.version })
+          .from(familyKnowledgeVersionsTable)
+          .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
+          .orderBy(desc(familyKnowledgeVersionsTable.version))
+          .limit(1);
+
         return res.json({
           questId,
           status: interview.status,
@@ -340,6 +352,12 @@ router.post(
           result: normalizeQuestResult(
             interview.transcript,
             interview.extraction_result as InterviewExtraction | null,
+            buildInterviewWorldRegeneration({
+              familyId: interview.family_id,
+              interviewId: questId,
+              extraction: interview.extraction_result as InterviewExtraction | null,
+              worldVersion: latestKnowledgeVersion?.version ?? null,
+            }),
           ),
           nextSteps: [
             "Review extracted facts in your Family Vault",
@@ -356,7 +374,7 @@ Transcript:
 "${transcript.slice(0, 3000)}"
 
 Extract:
-1. People mentioned (with relationships if stated)
+1. People mentioned (with relationships if stated). Include age, gender, and era only when the transcript explicitly states them; otherwise use null. Never infer these fields from a name, relationship, or context.
 2. Places mentioned (with country/region if stated)
 3. Events mentioned (with dates if stated)
 4. Traditions or cultural practices mentioned
@@ -365,7 +383,7 @@ Extract:
 
 Return as JSON:
 {
-  "people": [{"name": "...", "relationship": "...", "context": "..."}],
+  "people": [{"name": "...", "relationship": "...", "context": "...", "age": null, "gender": null, "era": null}],
   "places": [{"label": "...", "country": "...", "context": "..."}],
   "events": [{"title": "...", "date": "...", "description": "..."}],
   "traditions": [{"name": "...", "description": "..."}],
@@ -375,7 +393,7 @@ Return as JSON:
 }`;
 
       let extraction: {
-        people: Array<{ name: string; relationship: string; context: string }>;
+        people: Array<{ name: string; relationship: string; context: string; age?: number | null; gender?: string | null; era?: string | null }>;
         places: Array<{ label: string; country: string; context: string }>;
         events: Array<{ title: string; date: string; description: string }>;
         traditions: Array<{ name: string; description: string }>;
@@ -474,17 +492,24 @@ Return as JSON:
         worldChanges.push("New story preserved in vault");
       }
 
-      await logWorldEvolution(
+      const worldVersion = await logWorldEvolution(
         interview.family_id,
         "interview_added",
         `Interview completed: ${interview.title}. ${worldChanges.length} world changes applied.`,
         worldChanges.length + 1,
       );
 
+      const worldRegeneration = buildInterviewWorldRegeneration({
+        familyId: interview.family_id,
+        interviewId: questId,
+        extraction,
+        worldVersion,
+      });
+
       return res.json({
         questId, status: "transcribed", extraction, worldChanges,
         memoryId: memory.id,
-        result: normalizeQuestResult(transcript, extraction),
+        result: normalizeQuestResult(transcript, extraction, worldRegeneration),
         nextSteps: [
           "Review extracted facts in your Family Vault",
           "New dialogue is being generated for this ancestor",
@@ -593,6 +618,13 @@ router.get(
         return res.status(403).json({ error: "Not a member of this family" });
       }
 
+      const [latestKnowledgeVersion] = await db
+        .select({ version: familyKnowledgeVersionsTable.version })
+        .from(familyKnowledgeVersionsTable)
+        .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
+        .orderBy(desc(familyKnowledgeVersionsTable.version))
+        .limit(1);
+
       return res.json({
         interview: {
           id: interview.id, title: interview.title, status: interview.status,
@@ -602,6 +634,12 @@ router.get(
         result: normalizeQuestResult(
           interview.transcript,
           interview.extraction_result as InterviewExtraction | null,
+          buildInterviewWorldRegeneration({
+            familyId: interview.family_id,
+            interviewId: questId,
+            extraction: interview.extraction_result as InterviewExtraction | null,
+            worldVersion: latestKnowledgeVersion?.version ?? null,
+          }),
         ),
       });
     } catch (err) {

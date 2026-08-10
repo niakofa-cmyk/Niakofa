@@ -29,6 +29,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 
 interface InterviewQuest {
   questType: string;
@@ -52,6 +53,32 @@ interface QuestResult {
   dialogueSnippet: string;
   chapterUnlocked: boolean;
   achievementGenerated: string | null;
+  worldRegeneration: {
+    status: "ready";
+    newCharacters: Array<{
+      characterId: string;
+      name: string;
+      relationship: string | null;
+      evidence: "family-reported";
+      renderStatus: "ready" | "pending_verified_appearance";
+      appearance: {
+        ageGroup: "adult" | "kid";
+        gender: "male" | "female";
+        lifeStage: "youth" | "adult" | "mature" | "elder";
+        era: string;
+        appearanceSeed: string;
+        layers: {
+          body: string;
+          clothing: string;
+          rearHair: string;
+          frontHair: string;
+        };
+      } | null;
+    }>;
+    newQuest: { id: string; title: string; reason: string; status: "seeded" } | null;
+    chapterSeed: { id: string; title: string; reason: string; status: "seeded" } | null;
+    newDialogue: string;
+  };
 }
 
 type CaptureMode = "audio" | "video";
@@ -358,6 +385,7 @@ export default function LegacyInterviewQuestPage() {
               </div>
             </div>
           )}
+          {result?.worldRegeneration && <WorldRegenerationSummary result={result} />}
           <div className="flex flex-col gap-2">
             <button
               onClick={() => navigate("/legacy")}
@@ -500,6 +528,8 @@ export default function LegacyInterviewQuestPage() {
             )}
           </div>
         </div>
+
+        <WorldRegenerationSummary result={result} />
 
         {/* Complete button */}
         <div className="px-4">
@@ -847,6 +877,115 @@ export default function LegacyInterviewQuestPage() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function WorldRegenerationSummary({ result }: { result: QuestResult }) {
+  const { worldRegeneration } = result;
+  if (
+    worldRegeneration.newCharacters.length === 0
+    && !worldRegeneration.newQuest
+    && !worldRegeneration.chapterSeed
+    && !worldRegeneration.newDialogue
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="px-4 mb-6">
+      <div className="rounded-2xl border border-emerald-700/30 bg-emerald-950/20 p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Sparkles className="w-4 h-4 text-emerald-400" />
+          <h3 className="text-xs font-black uppercase tracking-widest text-emerald-300">
+            World regenerated
+          </h3>
+        </div>
+        <p className="text-xs text-emerald-100/70 mb-4">
+          Your family-reported evidence has created new, reviewable gameplay seeds.
+          Visual identity remains pending when the interview did not state age and gender.
+        </p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/80 mb-4">
+            Knowledge world {worldRegeneration.worldVersion ? `v${worldRegeneration.worldVersion}` : "version pending"}
+          </p>
+
+        {worldRegeneration.newCharacters.length > 0 && (
+          <div className="mb-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2">
+              New people in the story
+            </p>
+            <div className="space-y-2">
+              {worldRegeneration.newCharacters.map((character) => {
+                const appearance = character.appearance;
+                const spriteAppearance = appearance
+                  ? {
+                      ageGroup: appearance.ageGroup,
+                      gender: appearance.ageGroup === "kid" ? "unspecified" as const : appearance.gender,
+                      characterId: character.characterId,
+                      lifeStage: appearance.lifeStage,
+                      era: appearance.era,
+                      appearanceSeed: appearance.appearanceSeed,
+                      layers: {
+                        body: appearance.layers.body,
+                        clothing: appearance.layers.clothing,
+                        rearHair: appearance.layers.rearHair,
+                        frontHair: appearance.layers.frontHair,
+                      },
+                    }
+                  : null;
+                return (
+                  <div key={character.characterId} className="flex items-center gap-3 rounded-xl border border-emerald-800/30 bg-black/10 p-2.5">
+                    {spriteAppearance ? (
+                      <LegacyCharacterSprite {...spriteAppearance} size={44} />
+                    ) : (
+                      <div className="w-11 h-11 rounded-xl border border-amber-700/30 bg-amber-950/40 flex items-center justify-center text-amber-300 font-black">
+                        {character.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-emerald-100">{character.name}</p>
+                      <p className="text-[10px] text-emerald-200/60">
+                        {character.relationship ?? "Family story connection"} · {character.evidence}
+                      </p>
+                      <p className={`text-[9px] uppercase tracking-wide mt-0.5 ${
+                        character.renderStatus === "ready" ? "text-emerald-400" : "text-amber-400"
+                      }`}>
+                        {character.renderStatus === "ready"
+                          ? `TV sprite ready · ${appearance?.lifeStage} · ${appearance?.era}`
+                          : "Appearance pending explicit age + gender"}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {worldRegeneration.newQuest && (
+            <div className="rounded-xl border border-amber-800/30 bg-amber-950/20 p-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-amber-500">New quest seed</p>
+              <p className="text-xs font-bold text-amber-100 mt-1">{worldRegeneration.newQuest.title}</p>
+              <p className="text-[10px] text-amber-200/60 mt-1">{worldRegeneration.newQuest.reason}</p>
+            </div>
+          )}
+          {worldRegeneration.chapterSeed && (
+            <div className="rounded-xl border border-sky-800/30 bg-sky-950/20 p-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-sky-400">New chapter seed</p>
+              <p className="text-xs font-bold text-sky-100 mt-1">{worldRegeneration.chapterSeed.title}</p>
+              <p className="text-[10px] text-sky-200/60 mt-1">{worldRegeneration.chapterSeed.reason}</p>
+            </div>
+          )}
+        </div>
+
+        {worldRegeneration.newDialogue && (
+          <div className="mt-3 border-t border-emerald-800/30 pt-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">New dialogue</p>
+            <p className="text-xs text-emerald-100/80 italic mt-1">"{worldRegeneration.newDialogue.slice(0, 180)}"</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

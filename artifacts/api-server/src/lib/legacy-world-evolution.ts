@@ -20,7 +20,8 @@
  * "world_regenerated" entry with a real diff summary.
  */
 
-import { db, legacyWorldEvolutionLogTable } from "@workspace/db";
+import { db, familyKnowledgeVersionsTable, legacyWorldEvolutionLogTable } from "@workspace/db";
+import { desc, eq } from "drizzle-orm";
 import { logger } from "./logger";
 import { bumpKnowledgeVersionIfChanged } from "./legacy-knowledge-version";
 import { cacheDel } from "./cache";
@@ -40,7 +41,7 @@ export async function logWorldEvolution(
   changeType: LegacyChangeType,
   description?: string,
   affectedCount = 1,
-): Promise<void> {
+): Promise<number | null> {
   try {
     await db.insert(legacyWorldEvolutionLogTable).values({
       family_id: familyId,
@@ -63,8 +64,14 @@ export async function logWorldEvolution(
 
     // Recursion guard: bumpKnowledgeVersionIfChanged writes its own
     // "world_regenerated" entry via a direct db.insert (not this function).
-    bumpKnowledgeVersionIfChanged(familyId).catch((err) => {
-      logger.error({ err, familyId }, "legacy-world-evolution: knowledge version bump failed");
-    });
+    await bumpKnowledgeVersionIfChanged(familyId);
+    const [latest] = await db
+      .select({ version: familyKnowledgeVersionsTable.version })
+      .from(familyKnowledgeVersionsTable)
+      .where(eq(familyKnowledgeVersionsTable.family_id, familyId))
+      .orderBy(desc(familyKnowledgeVersionsTable.version))
+      .limit(1);
+    return latest?.version ?? null;
   }
+  return null;
 }
