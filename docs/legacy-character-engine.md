@@ -11,8 +11,9 @@ Family member → character profile → appearance definition
 
 ## What was reviewed
 
-- Guidance document: `attached_assets/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786260952820.txt`
-- Uploaded archive: `attached_assets/generator_1786260963758.zip`
+- Guidance document: `docs/legacy-reference/uploaded-source/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786349345491.txt`
+- Uploaded archive: `docs/legacy-reference/uploaded-source/generator_1786349364870.zip`
+- Archive SHA-256: `b98843ce0ca4687b44ef4679b7137b11a9e14af88c6e901666194f442da2d64f`
 - Archive integrity: verified with `unzip -t`
 - Archive shape: `Face`, `TV`, `TVD`, `SV`, `Variation`, and four gradient
   palettes (`grad_skin`, `grad_hair`, `grad_eyes`, `grad_common`)
@@ -27,7 +28,8 @@ copied into the application.
 Only a small, reviewed TV sample is shipped in
 `artifacts/pay-it-forward/public/legacy-character-assets/`:
 
-- one 144×192 walking body spritesheet for `Male`, `Female`, and `Kid`
+- 144×192 walking body, clothing, rear-hair, and front-hair spritesheets for
+  the explicit `adult/male`, `adult/female`, and `kid/unspecified` profiles
 - the four palette files remain cataloged as engine inputs, not family data
 - the full archive remains available in the uploaded attachment for future
   processing and is not delivered wholesale to the browser
@@ -47,4 +49,4 @@ or fictionalized gameplay.
 
 Before expanding the imported set or distributing it outside this project,
 verify the upstream RPG Maker asset license and record that decision in the
-catalog.
+catalog. The current catalog intentionally remains `review-required`.

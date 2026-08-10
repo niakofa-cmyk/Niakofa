@@ -5,3 +5,4 @@
 - [Legacy Start Screen](legacy-start-screen.md) — architecture of the cinematic start screen and how it wires into legacy-home.tsx.
 - [Legacy API contracts](legacy-api-contracts.md) — current data sources for Legacy journey, welcome, and calendar UI; retired endpoint list.
 - [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes require the supported GitHub connection and must not use pasted tokens.
+- [Legacy Character Engine Runtime](legacy-character-engine-runtime.md) — stable IDs, explicit runtime layers, and the archive/licensing boundary for character rendering.
