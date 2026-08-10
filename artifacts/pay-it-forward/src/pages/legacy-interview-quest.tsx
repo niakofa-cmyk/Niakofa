@@ -901,6 +901,7 @@ export default function LegacyInterviewQuestPage() {
 }
 
 function WorldRegenerationSummary({ result }: { result: QuestResult }) {
+  const [, navigate] = useLocation();
   const { worldRegeneration } = result;
   if (
     worldRegeneration.newCharacters.length === 0
@@ -1031,6 +1032,33 @@ function WorldRegenerationSummary({ result }: { result: QuestResult }) {
             <p className="text-xs text-emerald-100/80 italic mt-1">"{worldRegeneration.newDialogue.slice(0, 180)}"</p>
           </div>
         )}
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => navigate("/legacy/play")}
+            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-left text-[10px] font-black uppercase tracking-wider text-emerald-200 transition-colors hover:bg-emerald-500/20"
+          >
+            Enter changed world
+            <span className="mt-1 block text-[9px] font-medium normal-case tracking-normal text-emerald-200/60">Resume the next playable chapter</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/legacy/map")}
+            className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-left text-[10px] font-black uppercase tracking-wider text-sky-200 transition-colors hover:bg-sky-500/20"
+          >
+            Explore revealed map
+            <span className="mt-1 block text-[9px] font-medium normal-case tracking-normal text-sky-200/60">See why each place matters</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/legacy/characters")}
+            className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-left text-[10px] font-black uppercase tracking-wider text-amber-200 transition-colors hover:bg-amber-500/20"
+          >
+            Meet new people
+            <span className="mt-1 block text-[9px] font-medium normal-case tracking-normal text-amber-200/60">View persistent character identities</span>
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -670,12 +670,25 @@ router.post(
       }
 
       if (interview.status === "completed") {
+        const [latestKnowledgeVersion] = await db
+          .select({ version: familyKnowledgeVersionsTable.version })
+          .from(familyKnowledgeVersionsTable)
+          .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
+          .orderBy(desc(familyKnowledgeVersionsTable.version))
+          .limit(1);
+        const worldRegeneration = buildInterviewWorldRegeneration({
+          familyId: interview.family_id,
+          interviewId: questId,
+          extraction: interview.extraction_result as InterviewExtraction | null,
+          worldVersion: latestKnowledgeVersion?.version ?? null,
+        });
         return res.json({
           questId,
           status: "completed",
           worldUpdated: true,
           newContentAvailable: false,
           availableChapters: [],
+          worldRegeneration,
           message: "This interview quest was already completed. Your regenerated world is still available in Legacy.",
         });
       }
@@ -712,6 +725,17 @@ router.post(
         availableChapters: chapters.filter((c) => c.status === "unlocked").map((c) => ({
           id: c.id, title: c.title, chapterNumber: c.chapter_number,
         })),
+        worldRegeneration: buildInterviewWorldRegeneration({
+          familyId: interview.family_id,
+          interviewId: questId,
+          extraction: interview.extraction_result as InterviewExtraction | null,
+          worldVersion: (await db
+            .select({ version: familyKnowledgeVersionsTable.version })
+            .from(familyKnowledgeVersionsTable)
+            .where(eq(familyKnowledgeVersionsTable.family_id, interview.family_id))
+            .orderBy(desc(familyKnowledgeVersionsTable.version))
+            .limit(1))[0]?.version ?? null,
+        }),
         message: "Your world has evolved. New stories, places, and chapters await.",
       });
     } catch (err) {

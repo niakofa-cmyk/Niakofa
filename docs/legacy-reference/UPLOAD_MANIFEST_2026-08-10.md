@@ -7,6 +7,9 @@ integrity checks used before implementation.
 
 | Uploaded file | SHA-256 | Reference copy |
 | --- | --- | --- |
+| `attached_assets/Pasted-Continue-to-build-the-Niakofa-Character-Asset-Engine-et_1786393578065.txt` | `e2b207ca7b5d37a6b0d8649a5e4a7715fcd06922cfcd75a058eb13a65c1117d9` | `uploaded-source/Pasted-Continue-to-build-the-Niakofa-Character-Asset-Engine-et_1786393578065.txt` |
+| `attached_assets/Pasted--The-app-still-needs-more-of-the-cinematic-game-world-v_1786393566995.txt` | `e4f3b94f075af1233ab5d5a259adb3fe4efd0e651e5ae04324d33743b6afd28f` | `uploaded-source/Pasted--The-app-still-needs-more-of-the-cinematic-game-world-v_1786393566995.txt` |
+| `attached_assets/generator_1786393620810.zip` | `b98843ce0ca4687b44ef4679b7137b11a9e14af88c6e901666194f442da2d64f` | `uploaded-source/generator_1786393620810.zip` (byte-identical archive) |
 | `attached_assets/Pasted-6-hours-ago-Planning-GitHub-tasks-Planning-GitHub-tasks_1786371294342.txt` | `383e54137cc4bc06ff94b4914b72af6794fab3f039f3d2addca6c3eb239e13a0` | `uploaded-source/Pasted-6-hours-ago-Planning-GitHub-tasks-Planning-GitHub-tasks_1786371294342.txt` |
 | `attached_assets/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786371339631.txt` | `f0f522aef06b926794987c439e407d4d5f3499ef8633bcf08dd3fe2bccbac4a3` | `uploaded-source/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786371339631.txt` |
 | `attached_assets/Pasted-Continue-to-build-the-Niakofa-Character-Engine-use-the-_1786371320198.txt` | `bd4b3e092b5969e3a5c7bca2dd233d4b522013bd407cf4e348d1c30aeeba2d97` | `uploaded-source/Pasted-Continue-to-build-the-Niakofa-Character-Engine-use-the-_1786371320198.txt` |
