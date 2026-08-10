@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
+import { inferAppearance } from "@/lib/legacy-character-engine";
+import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 
 interface CharacterStats {
   knowledge: number;
@@ -219,11 +221,18 @@ export default function LegacyCharacterEvolutionPage() {
             <div key={char.memberId} className="bg-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4 shadow-lg">
               {/* Character header */}
               <div className="flex items-start gap-3 mb-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-600/30 to-amber-900/30 border border-amber-700/30 flex items-center justify-center flex-shrink-0">
-                  <span className="text-lg font-black text-amber-300">
-                    {char.name.charAt(0).toUpperCase()}
-                  </span>
-                </div>
+                {(() => {
+                  const appearance = inferAppearance({ role: char.role, birthYear: char.birthYear });
+                  return appearance
+                    ? <LegacyCharacterSprite {...appearance} size={56} />
+                    : (
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-600/30 to-amber-900/30 border border-amber-700/30 flex items-center justify-center flex-shrink-0">
+                        <span className="text-lg font-black text-amber-300">
+                          {char.name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                    );
+                })()}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-amber-100">{char.name}</p>
                   <p className="text-xs text-amber-600">{char.role}</p>
@@ -245,6 +254,9 @@ export default function LegacyCharacterEvolutionPage() {
                   </div>
                 </div>
               </div>
+              <p className="mb-3 text-[9px] text-amber-800">
+                Stylized RPG renderer · not a historical likeness
+              </p>
 
               {/* Stats */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-4">

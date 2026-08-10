@@ -471,10 +471,12 @@ export default function LegacyChapterPlay() {
         // The backend returns the updated chapter; it also unlocks the next
         // chapter and logs world evolution. We check the response for the next
         // chapter ID so we can offer a "Continue to Next Chapter" button.
+        let unlockedNextChapterId: number | null = null;
         if (completeRes.ok) {
           const completeData = await completeRes.json().catch(() => ({}));
-          if (completeData?.nextChapterId) {
-            setNextChapterId(completeData.nextChapterId);
+          if (typeof completeData?.nextChapterId === "number") {
+            unlockedNextChapterId = completeData.nextChapterId;
+            setNextChapterId(unlockedNextChapterId);
           }
         }
 
@@ -501,7 +503,10 @@ export default function LegacyChapterPlay() {
         // Show the core loop overlay: Memory→AI→World Changes→Player Notices→New Gameplay→New Memory
         const changes = buildWorldChanges("chapter_complete", {
           summary: completionNarration ?? undefined,
-          newChapterUnlocked: !!nextChapterId,
+          // React state updates are asynchronous. Use the response-local ID
+          // here so the first render of the overlay reflects the chapter that
+          // was actually unlocked by this completion request.
+          newChapterUnlocked: unlockedNextChapterId !== null,
         });
         setWorldChanges(changes);
         setShowCoreLoop(true);

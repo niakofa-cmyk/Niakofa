@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "libraryId": "niakofa-rpg-generator-v1",
+  "source": {
+    "archive": "attached_assets/generator_1786260963758.zip",
+    "guidance": "attached_assets/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786260952820.txt",
+    "archiveIntegrity": "verified",
+    "licenseStatus": "review-required"
+  },
+  "categories": {
+    "Face": { "purpose": "portrait and dialogue representation", "assetCount": 1138 },
+    "TV": { "purpose": "map and walking representation", "assetCount": 946 },
+    "TVD": { "purpose": "alternate map state representation", "assetCount": 726 },
+    "SV": { "purpose": "optional side-view action representation", "assetCount": 744 },
+    "Variation": { "purpose": "character-builder selection thumbnails", "assetCount": 668 },
+    "gradients": { "purpose": "appearance color system inputs", "assetCount": 4 }
+  },
+  "runtimeSamples": [
+    {
+      "assetId": "tv_body_male_base",
+      "representation": "TV",
+      "ageGroup": "adult",
+      "gender": "male",
+      "source": "generator/TV/Male/TV_Body_p01.png",
+      "file": "/legacy-character-assets/tv/TV_Body_p01-male.png",
+      "width": 144,
+      "height": 192,
+      "licenseStatus": "review-required"
+    },
+    {
+      "assetId": "tv_body_female_base",
+      "representation": "TV",
+      "ageGroup": "adult",
+      "gender": "female",
+      "source": "generator/TV/Female/TV_Body_p01.png",
+      "file": "/legacy-character-assets/tv/TV_Body_p01-female.png",
+      "width": 144,
+      "height": 192,
+      "licenseStatus": "review-required"
+    },
+    {
+      "assetId": "tv_body_kid_base",
+      "representation": "TV",
+      "ageGroup": "kid",
+      "gender": "unspecified",
+      "source": "generator/TV/Kid/TV_Body_p01.png",
+      "file": "/legacy-character-assets/tv/TV_Body_p01-kid.png",
+      "width": 144,
+      "height": 192,
+      "licenseStatus": "review-required"
+    }
+  ],
+  "engineInputs": [
+    { "assetId": "palette_skin", "file": "/legacy-character-assets/palettes/grad_skin.png", "width": 256, "height": 96 },
+    { "assetId": "palette_hair", "file": "/legacy-character-assets/palettes/grad_hair.png", "width": 256, "height": 96 },
+    { "assetId": "palette_eyes", "file": "/legacy-character-assets/palettes/grad_eyes.png", "width": 256, "height": 48 },
+    { "assetId": "palette_common", "file": "/legacy-character-assets/palettes/grad_common.png", "width": 256, "height": 72 }
+  ]
+}
