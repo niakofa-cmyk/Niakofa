@@ -35,9 +35,9 @@ Only a small, reviewed TV sample is shipped in
   processing and is not delivered wholesale to the browser
 
 The catalog is `public/legacy-character-assets/catalog.json`. Each record
-uses a stable `assetId` and stores category, age group, source path,
-dimensions, and a license-review note. Future appearance definitions should
-reference those IDs rather than raw archive paths.
+uses a stable `assetId` and stores category, age group, source path, and
+dimensions. Future appearance definitions should reference those IDs rather
+than raw archive paths.
 
 ## Provenance boundary
 
@@ -49,12 +49,13 @@ or fictionalized gameplay.
 
 Before expanding the imported set or distributing it outside this project,
 verify the upstream RPG Maker asset license and record that decision in the
-catalog. The current catalog intentionally remains `review-required`.
+project's provenance documentation.
 
 ## Life-stage rendering
 
 The runtime now derives presentation metadata from verified birth/death years:
 `youth` (under 18), `adult` (18–34), `mature` (35–54), and `elder` (55+).
 Deceased characters are evaluated at their recorded death year rather than
-continuing to age. This only selects the existing kid/adult stylized walking
-profile; it never infers gender, family role, history, or likeness.
+continuing to age. The resolver selects a deterministic curated variant using
+character ID, life stage, era, and appearance seed. It never infers gender,
+family role, history, or likeness.

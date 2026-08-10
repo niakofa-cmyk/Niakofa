@@ -23,6 +23,10 @@ export type LegacyLayer =
 export interface LegacyAppearanceInput {
   ageGroup: LegacyAgeGroup;
   gender: LegacyGender;
+  characterId?: string;
+  lifeStage?: LegacyLifeStage;
+  era?: string;
+  appearanceSeed?: string | number;
   /**
    * Appearance choices are explicit asset IDs. The engine never derives a
    * person's identity, history, or gender from an asset filename.
@@ -63,6 +67,10 @@ export interface LegacyWalkingAppearance {
   layers: LegacyWalkingLayer[];
   width: 144;
   height: 192;
+  characterId?: string;
+  lifeStage?: LegacyLifeStage;
+  era?: string;
+  appearanceSeed?: string | number;
 }
 
 export interface LegacyLifeStageProfile {
@@ -106,15 +114,15 @@ export function deriveLifeStage(input: {
   const age = Math.max(0, referenceYear - birthYear);
 
   if (age < 18) {
-    return { id: "youth", label: "Youth", age, description: "The character engine uses the kid walking profile." };
+    return { id: "youth", label: "Youth", age, description: "The character engine uses a curated youth walking profile." };
   }
   if (age < 35) {
-    return { id: "adult", label: "Adult", age, description: "The character engine uses the adult walking profile." };
+    return { id: "adult", label: "Adult", age, description: "The character engine uses a curated adult walking profile." };
   }
   if (age < 55) {
-    return { id: "mature", label: "Mature", age, description: "The character engine uses the adult walking profile with mature life context." };
+    return { id: "mature", label: "Mature", age, description: "The character engine uses a mature curated walking profile." };
   }
-  return { id: "elder", label: "Elder", age, description: "The character engine uses the adult walking profile with elder life context." };
+  return { id: "elder", label: "Elder", age, description: "The character engine uses an elder curated walking profile." };
 }
 
 const BODY_ASSETS: Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender, LegacyWalkingAsset>>>> = {
@@ -256,6 +264,46 @@ const APPROVED_LAYER_ASSETS: Record<string, LegacyAssetRecord> = {
   },
 };
 
+const CURATED_VARIANT_PROFILES = [
+  { ageGroup: "adult", gender: "male", suffix: "male" },
+  { ageGroup: "adult", gender: "female", suffix: "female" },
+  { ageGroup: "kid", gender: "unspecified", suffix: "kid" },
+] as const satisfies Array<{ ageGroup: LegacyAgeGroup; gender: LegacyGender; suffix: string }>;
+
+const CURATED_VARIANT_LAYERS = [
+  { layer: "clothing", filePrefix: "TV_Clothing2" },
+  { layer: "rearHair", filePrefix: "TV_RearHair1" },
+  { layer: "frontHair", filePrefix: "TV_FrontHair1" },
+] as const satisfies Array<{ layer: LegacyLayer; filePrefix: string }>;
+
+/**
+ * Only this small, explicit subset of the uploaded source library is shipped
+ * to the browser. The rest of the archive stays catalog-only.
+ */
+const CURATED_VARIANT_ASSETS: Record<string, LegacyAssetRecord> = {};
+for (const profile of CURATED_VARIANT_PROFILES) {
+  for (const variant of [2, 3, 4]) {
+    for (const layer of CURATED_VARIANT_LAYERS) {
+      const layerId = layer.layer === "rearHair" ? "rear_hair" : layer.layer === "frontHair" ? "front_hair" : layer.layer;
+      const assetId = `tv_${layerId}_${profile.suffix}_p0${variant}`;
+      CURATED_VARIANT_ASSETS[assetId] = {
+        assetId,
+        representation: "TV",
+        layer: layer.layer,
+        ageGroup: profile.ageGroup,
+        gender: profile.gender,
+        file: `/legacy-character-assets/tv/${layer.filePrefix}_p0${variant}-${profile.suffix}.png`,
+        source: `generator/TV/${profile.suffix === "male" ? "Male" : profile.suffix === "female" ? "Female" : "Kid"}/${layer.filePrefix}_p0${variant}.png`,
+        width: 144,
+        height: 192,
+        runtime: "approved",
+      };
+    }
+  }
+}
+
+Object.assign(APPROVED_LAYER_ASSETS, CURATED_VARIANT_ASSETS);
+
 type LegacyLayerDefaults = Partial<Record<LegacyLayer, string>>;
 
 const DEFAULT_LAYERS: Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender, LegacyLayerDefaults>>>> = {
@@ -282,6 +330,43 @@ const DEFAULT_LAYERS: Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender
 
 const LAYER_ORDER: LegacyLayer[] = ["clothing", "rearHair", "frontHair", "beard", "accessoryA", "accessoryB", "glasses", "facialMark"];
 
+function stableHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function deterministicVariant(
+  input: Pick<LegacyAppearanceInput, "characterId" | "lifeStage" | "era" | "appearanceSeed">,
+  layer: "clothing" | "rearHair" | "frontHair",
+): number {
+  const identity = [
+    input.characterId ?? "",
+    input.lifeStage ?? "unknown",
+    input.era ?? "unspecified",
+    input.appearanceSeed ?? "",
+    layer,
+  ].join("|");
+  return 2 + (stableHash(identity) % 3);
+}
+
+function getDefaultLayers(input: LegacyAppearanceInput): LegacyLayerDefaults {
+  const defaults = DEFAULT_LAYERS[input.ageGroup]?.[input.gender] ?? {};
+  if (!input.characterId || !input.lifeStage || input.lifeStage === "unknown") {
+    return defaults;
+  }
+
+  const variants = {
+    clothing: `tv_clothing_${input.gender === "unspecified" ? "kid" : input.gender}_p0${deterministicVariant(input, "clothing")}`,
+    rearHair: `tv_rear_hair_${input.gender === "unspecified" ? "kid" : input.gender}_p0${deterministicVariant(input, "rearHair")}`,
+    frontHair: `tv_front_hair_${input.gender === "unspecified" ? "kid" : input.gender}_p0${deterministicVariant(input, "frontHair")}`,
+  };
+  return { ...defaults, ...variants };
+}
+
 export function resolveWalkingAsset(input: LegacyAppearanceInput): LegacyWalkingAsset | null {
   return BODY_ASSETS[input.ageGroup]?.[input.gender] ?? null;
 }
@@ -290,7 +375,7 @@ export function resolveWalkingAppearance(input: LegacyAppearanceInput): LegacyWa
   const body = resolveWalkingAsset(input);
   if (!body) return null;
 
-  const defaults = DEFAULT_LAYERS[input.ageGroup]?.[input.gender] ?? {};
+  const defaults = getDefaultLayers(input);
   const requestedLayers = { ...defaults, ...input.layers };
   const resolvedLayers: LegacyWalkingLayer[] = [];
   for (const layer of LAYER_ORDER) {
@@ -316,7 +401,7 @@ export function resolveWalkingAppearance(input: LegacyAppearanceInput): LegacyWa
     }
   }
 
-  return {
+  const appearance: LegacyWalkingAppearance = {
     layers: [
       {
         assetId: body.assetId,
@@ -330,6 +415,28 @@ export function resolveWalkingAppearance(input: LegacyAppearanceInput): LegacyWa
     width: body.width,
     height: body.height,
   };
+  if (input.characterId !== undefined) appearance.characterId = input.characterId;
+  if (input.lifeStage !== undefined) appearance.lifeStage = input.lifeStage;
+  if (input.era !== undefined) appearance.era = input.era;
+  if (input.appearanceSeed !== undefined) appearance.appearanceSeed = input.appearanceSeed;
+  return appearance;
+}
+
+/**
+ * Named entry point for world regeneration and NPC creation. Callers must
+ * provide an explicit identity and appearance seed; the engine never creates
+ * a likeness from family facts that were not supplied.
+ */
+export function resolveCharacterAppearance(input: {
+  characterId: string;
+  ageGroup: LegacyAgeGroup;
+  gender: LegacyGender;
+  lifeStage: LegacyLifeStage;
+  era: string;
+  appearanceSeed?: string | number;
+  layers?: Partial<Record<LegacyLayer, string>>;
+}): LegacyWalkingAppearance | null {
+  return resolveWalkingAppearance(input);
 }
 
 export function getApprovedAsset(assetId: string): LegacyAssetRecord | null {
@@ -337,10 +444,13 @@ export function getApprovedAsset(assetId: string): LegacyAssetRecord | null {
 }
 
 export function inferAppearance(input: {
+  characterId?: string | number;
   role?: string | null;
   birthYear?: number | null;
   deathYear?: number | null;
   currentYear?: number;
+  era?: string;
+  appearanceSeed?: string | number;
 }): LegacyAppearanceInput | null {
   const role = input.role?.toLowerCase() ?? "";
   const femaleRoles = /\b(aunt|daughter|grandmother|mother|sister|wife|woman|female)\b/;
@@ -361,8 +471,22 @@ export function inferAppearance(input: {
     : referenceYear - (input.birthYear as number);
 
   const ageGroup: LegacyAgeGroup = age !== null && age >= 0 && age < 18 ? "kid" : "adult";
-  if (ageGroup === "kid") return { ageGroup, gender: "unspecified" };
-  if (femaleRoles.test(role)) return { ageGroup, gender: "female" };
-  if (maleRoles.test(role)) return { ageGroup, gender: "male" };
-  return null;
+  const gender: LegacyGender = ageGroup === "kid"
+    ? "unspecified"
+    : femaleRoles.test(role)
+      ? "female"
+      : maleRoles.test(role)
+        ? "male"
+        : "unspecified";
+  if (gender === "unspecified" && ageGroup === "adult") return null;
+  const appearance: LegacyAppearanceInput = { ageGroup, gender };
+  if (input.characterId !== undefined) appearance.characterId = String(input.characterId);
+  if (input.era !== undefined) appearance.era = input.era;
+  if (input.appearanceSeed !== undefined) appearance.appearanceSeed = input.appearanceSeed;
+  if (input.characterId !== undefined || input.era !== undefined || input.appearanceSeed !== undefined) {
+    appearance.lifeStage = ageGroup === "kid"
+      ? "youth"
+      : deriveLifeStage({ birthYear: input.birthYear ?? null, deathYear, currentYear }).id;
+  }
+  return appearance;
 }

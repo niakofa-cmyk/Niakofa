@@ -8,8 +8,10 @@ generator filenames.
 The curated sample contains 144x192 RPG Maker TV sheets (48x48 frames) for
 body, clothing, rear-hair, and front-hair layers across the explicit
 male/female/kid runtime profiles. The engine composites these layers in a
-stable order. They are visual vocabulary only and must not be treated as
-evidence about a real family member.
+stable order. The curated variants are used for deterministic life-stage
+rendering; they are visual vocabulary only and must not be treated as evidence
+about a real family member.
 
-License status for the uploaded assets is `review-required`. Confirm the
-upstream license before adding more files or distributing this library.
+The catalog intentionally records provenance without asserting a license
+decision. Confirm the upstream license before adding more files or distributing
+this library.

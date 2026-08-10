@@ -3,6 +3,7 @@ import { expect } from "expect";
 import {
   deriveLifeStage,
   inferAppearance,
+  resolveCharacterAppearance,
   resolveWalkingAppearance,
   resolveWalkingAsset,
 } from "../legacy-character-engine";
@@ -32,6 +33,50 @@ describe("Legacy character engine", () => {
         { assetId: "tv_front_hair_female_default", layer: "frontHair" },
       ],
     });
+  });
+
+  it("selects a deterministic curated variant for a character's life stage and era", () => {
+    const input = {
+      characterId: "kwame-mensah",
+      ageGroup: "adult" as const,
+      gender: "male" as const,
+      lifeStage: "mature" as const,
+      era: "1910s",
+      appearanceSeed: "house-of-mensah",
+    };
+    const first = resolveCharacterAppearance(input);
+    const second = resolveCharacterAppearance(input);
+    expect(first).toEqual(second);
+    expect(first?.layers.map((layer) => layer.assetId)).toEqual([
+      "tv_body_male_base",
+      expect.stringMatching(/^tv_clothing_male_p0[234]$/),
+      expect.stringMatching(/^tv_rear_hair_male_p0[234]$/),
+      expect.stringMatching(/^tv_front_hair_male_p0[234]$/),
+    ]);
+  });
+
+  it("keeps different life stages visually addressable without changing identity", () => {
+    const youth = inferAppearance({
+      characterId: "kwame-mensah",
+      role: "Grandfather",
+      birthYear: 1900,
+      currentYear: 1916,
+      era: "1910s",
+      appearanceSeed: "kwame",
+    });
+    const elder = inferAppearance({
+      characterId: "kwame-mensah",
+      role: "Grandfather",
+      birthYear: 1900,
+      currentYear: 1970,
+      era: "1970s",
+      appearanceSeed: "kwame",
+    });
+    expect(youth?.characterId).toBe("kwame-mensah");
+    expect(youth?.lifeStage).toBe("youth");
+    expect(elder?.lifeStage).toBe("elder");
+    expect(resolveWalkingAppearance(youth!)?.layers[1].assetId).toMatch(/^tv_clothing_kid_p0[234]$/);
+    expect(resolveWalkingAppearance(elder!)?.layers[1].assetId).toMatch(/^tv_clothing_male_p0[234]$/);
   });
 
   it("ignores unknown or catalog-only selections instead of constructing raw paths", () => {

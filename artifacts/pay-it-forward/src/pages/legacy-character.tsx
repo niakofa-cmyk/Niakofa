@@ -194,9 +194,12 @@ export default function LegacyCharacterPage() {
     storytelling: Math.floor(character.stats.legacy / 20),
   };
   const appearance = inferAppearance({
+    characterId: character.memberId,
     role: character.role,
     birthYear: character.birthYear,
     deathYear: character.deathYear,
+    era: character.birthYear ? `${Math.floor(character.birthYear / 10) * 10}s` : undefined,
+    appearanceSeed: character.memberId,
   });
   const lifeStage = deriveLifeStage({
     birthYear: character.birthYear,
