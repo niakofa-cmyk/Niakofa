@@ -225,7 +225,11 @@ export default function LegacyCharacterEvolutionPage() {
               {/* Character header */}
               <div className="flex items-start gap-3 mb-4">
                 {(() => {
-                  const appearance = inferAppearance({ role: char.role, birthYear: char.birthYear });
+                  const appearance = inferAppearance({
+                    role: char.role,
+                    birthYear: char.birthYear,
+                    deathYear: char.deathYear,
+                  });
                   return appearance
                     ? <LegacyCharacterSprite {...appearance} size={56} />
                     : (

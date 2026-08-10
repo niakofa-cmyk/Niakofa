@@ -82,7 +82,12 @@ export function deriveLifeStage(input: {
   deathYear?: number | null;
   currentYear?: number;
 }): LegacyLifeStageProfile {
-  if (!Number.isFinite(input.birthYear)) {
+  const currentYear = input.currentYear ?? new Date().getFullYear();
+  if (
+    !Number.isInteger(input.birthYear) ||
+    !Number.isInteger(currentYear) ||
+    (input.birthYear as number) > currentYear
+  ) {
     return {
       id: "unknown",
       label: "Life stage unknown",
@@ -92,10 +97,12 @@ export function deriveLifeStage(input: {
   }
 
   const birthYear = input.birthYear as number;
-  const deathYear = Number.isFinite(input.deathYear) && (input.deathYear as number) >= birthYear
+  const deathYear = Number.isInteger(input.deathYear)
+    && (input.deathYear as number) >= birthYear
+    && (input.deathYear as number) <= currentYear
     ? (input.deathYear as number)
     : null;
-  const referenceYear = deathYear ?? input.currentYear ?? new Date().getFullYear();
+  const referenceYear = deathYear ?? currentYear;
   const age = Math.max(0, referenceYear - birthYear);
 
   if (age < 18) {
@@ -338,12 +345,17 @@ export function inferAppearance(input: {
   const role = input.role?.toLowerCase() ?? "";
   const femaleRoles = /\b(aunt|daughter|grandmother|mother|sister|wife|woman|female)\b/;
   const maleRoles = /\b(brother|father|grandfather|husband|man|male|son|uncle)\b/;
-  const hasBirthYear = Number.isFinite(input.birthYear);
-  const deathYear = hasBirthYear && Number.isFinite(input.deathYear)
+  const currentYear = input.currentYear ?? new Date().getFullYear();
+  const hasBirthYear = Number.isInteger(input.birthYear)
+    && Number.isInteger(currentYear)
+    && (input.birthYear as number) <= currentYear;
+  if (!Number.isInteger(currentYear) || (Number.isInteger(input.birthYear) && !hasBirthYear)) return null;
+  const deathYear = hasBirthYear && Number.isInteger(input.deathYear)
     && (input.deathYear as number) >= (input.birthYear as number)
+    && (input.deathYear as number) <= currentYear
     ? (input.deathYear as number)
     : null;
-  const referenceYear = deathYear ?? input.currentYear ?? new Date().getFullYear();
+  const referenceYear = deathYear ?? currentYear;
   const age = !hasBirthYear
     ? null
     : referenceYear - (input.birthYear as number);

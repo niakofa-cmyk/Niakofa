@@ -96,6 +96,41 @@ describe("Legacy character engine", () => {
     });
   });
 
+  it("keeps deceased youth profiles on the kid asset when the death year is wired through", () => {
+    expect(inferAppearance({
+      role: "Grandfather",
+      birthYear: 1900,
+      deathYear: 1916,
+      currentYear: 2026,
+    })).toEqual({
+      ageGroup: "kid",
+      gender: "unspecified",
+    });
+  });
+
+  it("does not select a kid profile for a future birth year", () => {
+    expect(deriveLifeStage({ birthYear: 2027, currentYear: 2026 })).toMatchObject({
+      id: "unknown",
+      age: null,
+    });
+    expect(inferAppearance({
+      role: "Child",
+      birthYear: 2027,
+      currentYear: 2026,
+    })).toBeNull();
+  });
+
+  it("ignores contradictory future death dates", () => {
+    expect(deriveLifeStage({
+      birthYear: 2000,
+      deathYear: 2030,
+      currentYear: 2026,
+    })).toMatchObject({
+      id: "adult",
+      age: 26,
+    });
+  });
+
   it("does not invent a life stage when the birth year is missing", () => {
     expect(deriveLifeStage({ birthYear: null, currentYear: 2026 })).toMatchObject({
       id: "unknown",

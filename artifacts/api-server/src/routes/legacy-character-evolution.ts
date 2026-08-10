@@ -121,11 +121,19 @@ router.get(
             .where(inArray(familyMemoryPeopleTable.memory_id, familyMemoryIds))
         : [];
 
-      // Derive birth years from events (family_members has no birth_year column)
+      // Derive verified life dates from member records/events. The member
+      // record is preferred when present because it is the canonical profile
+      // value; events remain a backwards-compatible source for imported data.
       const birthYearByMember = new Map<number, number>();
+      const deathYearByMember = new Map<number, number>();
       for (const ev of events) {
         if (ev.category === 'birth' && ev.member_id !== null && ev.event_date) {
-          birthYearByMember.set(ev.member_id, new Date(ev.event_date).getFullYear());
+          const year = new Date(ev.event_date).getFullYear();
+          if (Number.isInteger(year)) birthYearByMember.set(ev.member_id, year);
+        }
+        if (ev.category === 'death' && ev.member_id !== null && ev.event_date) {
+          const year = new Date(ev.event_date).getFullYear();
+          if (Number.isInteger(year)) deathYearByMember.set(ev.member_id, year);
         }
       }
 
@@ -178,6 +186,7 @@ router.get(
           role: member.role,
           isLiving: member.is_living ?? true,
           birthYear: birthYearByMember.get(member.id) ?? null,
+          deathYear: member.death_year ?? deathYearByMember.get(member.id) ?? null,
           stats,
           contentCounts: {
             stories: memberStories.length,

@@ -11,10 +11,13 @@ integrity checks used before implementation.
 | `attached_assets/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786371339631.txt` | `f0f522aef06b926794987c439e407d4d5f3499ef8633bcf08dd3fe2bccbac4a3` | `uploaded-source/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786371339631.txt` |
 | `attached_assets/Pasted-Continue-to-build-the-Niakofa-Character-Engine-use-the-_1786371320198.txt` | `bd4b3e092b5969e3a5c7bca2dd233d4b522013bd407cf4e348d1c30aeeba2d97` | `uploaded-source/Pasted-Continue-to-build-the-Niakofa-Character-Engine-use-the-_1786371320198.txt` |
 | `attached_assets/generator_1786371386883.zip` | `b98843ce0ca4687b44ef4679b7137b11a9e14af88c6e901666194f442da2d64f` | `uploaded-source/generator_1786371386883.zip` |
+| `attached_assets/Pasted-I-m-reviewing-the-current-checkpoint-and-repository-sta_1786372861277.txt` | `37c95846d7d1f6868ccc9af69b301103d8114cfb2f9b45b7aaa2145787f9338d` | `uploaded-source/Pasted-I-m-reviewing-the-current-checkpoint-and-repository-sta_1786372861277.txt` |
+| `attached_assets/Pasted-One-thing-I-would-NOT-do-Don-t-simply-dump-this-ZIP-int_1786372879688.txt` | `f0f522aef06b926794987c439e407d4d5f3499ef8633bcf08dd3fe2bccbac4a3` | existing byte-identical guidance copy in `uploaded-source/` |
+| `attached_assets/generator_1786372886715.zip` | `b98843ce0ca4687b44ef4679b7137b11a9e14af88c6e901666194f442da2d64f` | existing byte-identical archive in `uploaded-source/` |
 
-The generator archive is byte-for-byte identical to the previously preserved
-source archive. The August 10 filename is retained as the exact upload
-reference, while the earlier copy remains for prior-session provenance; the
+The new ZIP and guidance upload are byte-for-byte identical to the previously
+preserved source copies. The new filenames are retained in this manifest for
+provenance, while the earlier copies remain the canonical reference files; the
 application imports neither archive wholesale. `unzip -t` passes and the
 inventory is:
 
