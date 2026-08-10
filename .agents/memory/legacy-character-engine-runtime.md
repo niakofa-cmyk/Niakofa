@@ -14,3 +14,5 @@ library hard to evolve and could imply a family likeness from incomplete data.
 **How to apply:** Add new layers by updating the catalog, promoting only
 licensed runtime files, and extending the resolver with explicit compatibility
 checks. Never infer identity, gender, history, or relationships from filenames.
+Use recorded death year as the reference year for deceased life-stage rendering;
+unknown adult gender remains unspecified unless an explicit override exists.

@@ -1,0 +1,1525 @@
+One thing I would NOT do
+Don't simply dump this ZIP into the Niakofa frontend.
+It needs to be treated as a generator asset library.
+I'd create a service/component like:
+
+Niakofa Character Engine
+
+with:
+
+Family Member
+      ↓
+Character Profile
+      ↓
+Appearance Definition
+      ↓
+Generator Layers
+      ↓
+Face
+TV
+SV
+TVD
+      ↓
+RPG Character
+
+Then the Niakofa database stores the character definition, not a pile of generated PNGs as the source of truth.
+
+
+
+
+
+
+
+What is actually inside the ZIP?
+The archive contains:
+8,494 total archive entries
+with approximately 8,492 files/folders including macOS metadata, and about 9.6 MB of uncompressed image data.
+The meaningful structure is:
+
+generator/
+│
+├── grad_skin.png
+├── grad_eyes.png
+├── grad_hair.png
+├── grad_common.png
+│
+├── Face/
+│   ├── Male/
+│   ├── Female/
+│   └── Kid/
+│
+├── SV/
+│   ├── Male/
+│   ├── Female/
+│   └── Kid/
+│
+├── TV/
+│   ├── Male/
+│   ├── Female/
+│   └── Kid/
+│
+├── TVD/
+│   ├── Male/
+│   ├── Female/
+│   └── Kid/
+│
+└── Variation/
+    ├── Male/
+    ├── Female/
+    └── Kid/
+
+That directory structure is characteristic of the RPG Maker character generator.
+The four gradient files are particularly strong evidence: RPG Maker's character generator uses grad_common.png, grad_eyes.png, grad_hair.png, and grad_skin.png for its color system.
+
+
+I would not import the entire ZIP into Niakofa. I would turn it into a controlled Niakofa Character Asset Library, while building the actual Family Vault → AI → Knowledge Graph → World Regeneration system around it.
+The ZIP supplies the visual character layer. Niakofa supplies the family intelligence and game logic.
+The architecture I would build
+
+                    NIAKOFA FAMILY VAULT
+                            │
+            ┌───────────────┼────────────────┐
+            │               │                │
+          Photos          Audio            Video
+          Docs            Stories          Interviews
+            │               │                │
+            └───────────────┼────────────────┘
+                            ▼
+                     AI EXTRACTION
+                            │
+                 People / Places / Dates
+                 Events / Relationships
+                 Objects / Stories
+                            │
+                            ▼
+                  FAMILY KNOWLEDGE GRAPH
+                            │
+                  ┌─────────┴─────────┐
+                  │                   │
+             Character Data      World Data
+                  │                   │
+                  ▼                   ▼
+       ZIP CHARACTER ASSETS    WORLD REGENERATION
+                  │                   │
+                  ▼                   ▼
+           RPG CHARACTERS      Maps / Quests / NPCs
+                  │            Dialogue / Chapters
+                  │                   │
+                  └─────────┬─────────┘
+                            ▼
+                    NIAKOFA LEGACY RPG
+                            │
+                            ▼
+                  Player discovers something
+                            │
+                            ▼
+                     New contribution
+                            │
+                            └──────► VAULT
+
+The important distinction is:
+ZIP = visual vocabulary
+Niakofa = intelligence
+
+
+
+
+
+What I would use from the ZIP — priority
+ZIP Component	Niakofa use	Priority
+TV/Male	Male walking characters	🔴 Essential
+TV/Female	Female walking characters	🔴 Essential
+TV/Kid	Children	🔴 Essential
+Face/	Dialogue/profile portraits	🔴 Essential
+Variation/	Character builder	🟠 High
+grad_skin	Appearance system	🟠 High
+grad_hair	Appearance system	🟠 High
+grad_eyes	Appearance system	🟠 High
+TVD/	Character state	🟡 Later
+SV/	Combat/action	🟡 Optional
+All raw assets	Direct frontend delivery	❌ No
+
+
+
+
+
+What I would NOT import wholesale
+I wouldn't simply copy:
+
+generator/
+
+directly into the Niakofa frontend.
+Instead:
+
+generator ZIP
+       ↓
+Asset processing
+       ↓
+Niakofa Asset Catalog
+       ↓
+Only required assets
+       ↓
+CDN / object storage
+       ↓
+Niakofa Character Engine
+
+This prevents the frontend from carrying thousands of unnecessary files.
+
+
+What I would actually take from the ZIP
+Based on the structure we identified, I'd bring over these categories.
+A. Face
+This is one of the most valuable pieces.
+I'd use the face components to generate the portrait identity of family characters.
+For example:
+
+Face/
+ ├── Male/
+ ├── Female/
+ └── Kid/
+
+The character record could reference:
+
+characterId: kwame-mensah
+face:
+    base: ...
+    eyes: ...
+    eyebrows: ...
+    nose: ...
+    mouth: ...
+    hair: ...
+    beard: ...
+    glasses: ...
+
+This gives the Legacy RPG a consistent portrait whenever Kwame speaks.
+
+2. TV — extremely important
+I'd definitely bring in the TV assets.
+These are the walking/map representations.
+That gives us:
+Family member → actual person walking around the Living World
+For example:
+Kwame Mensah
+could have:
+
+Portrait
+    ↓
+Dialogue screen
+
+TV sprite
+    ↓
+Walking through 1890 Cape Coast
+
+This is probably the single most important asset category for getting the House of Mensah demo playable quickly.
+
+3. TVD
+I'd include the TVD assets as part of the character runtime.
+They're useful for alternate character states and should remain associated with the corresponding TV character.
+I wouldn't expose these directly to users.
+The character engine handles them.
+
+4. SV
+I would import these but not prioritize them initially.
+They're useful if we eventually implement:
+* combat
+* dramatic action sequences
+* RPG battles
+* special events
+* animated character scenes
+But your current Niakofa Legacy concept doesn't need to become a combat RPG.
+So:
+Phase 1
+TV + Face
+Phase 2
+TVD
+Phase 3
+SV if gameplay actually needs it.
+
+5. Variation
+I'd definitely keep the variation assets.
+This is where we can create the Niakofa Character Builder.
+For example:
+
+Hair
+Eyes
+Face
+Clothing
+Accessories
+Beard
+Glasses
+
+The user doesn't need to see RPG Maker terminology.
+Instead:
+Create Family Character
+Appearance
+Hair
+Eyes
+Face
+Clothing
+Accessories
+
+6. The gradient assets
+I'd also retain:
+
+grad_skin.png
+grad_hair.png
+grad_eyes.png
+grad_common.png
+
+But I wouldn't expose them as raw assets.
+I'd wrap them in a Niakofa appearance system.
+For example:
+
+Skin Tone
+Hair Color
+Eye Color
+
+This is useful for creating a family member's playable interpretation.
+
+
+
+The key thing the ZIP does NOT provide
+This is where your question becomes really important.
+The ZIP cannot tell us:
+Who is Kwame Mensah?
+It can only help us answer:
+What should Kwame look like inside the RPG?
+The Family Vault needs to provide:
+
+Kwame Mensah
+Born: 1874
+Birthplace: Cape Coast
+Father: ...
+Mother: ...
+Occupation: Merchant
+Spouse: ...
+Children: ...
+Stories: ...
+Photos: ...
+Places: ...
+Achievements: ...
+
+Then the AI transforms that information into a character definition.
+
+
+
+
+Build a Niakofa Character Definition
+I would create something like:
+
+FamilyCharacter
+
+with:
+
+id
+familyId
+personId
+
+name
+birthDate
+deathDate
+
+historicalPeriod
+locations
+occupations
+
+relationships
+
+appearance
+    gender
+    age
+    skin
+    hair
+    eyes
+    clothing
+    accessories
+
+rpgAppearance
+    faceAssets
+    tvAssets
+    tvdAssets
+    svAssets
+
+personality
+traits
+memories
+relationships
+
+storyState
+chapterAvailability
+questAvailability
+
+knowledgeVersion
+worldVersion
+
+Now the ZIP becomes a renderer for the appearance portion.
+
+
+
+This is where AI becomes powerful
+Suppose the user uploads a photograph.
+Family Vault
+"This is my great-grandfather Kwame."
+AI extraction:
+
+PERSON
+Kwame Mensah
+
+RELATIONSHIP
+Great-grandfather
+
+LOCATION
+Cape Coast
+
+ERA
+1890s
+
+OCCUPATION
+Merchant
+
+FAMILY
+Mensah
+
+MEMORY
+Owned trading business
+
+Then the Knowledge Graph updates.
+
+11. AI shouldn't invent the family history
+This is extremely important for Niakofa.
+I'd divide information into:
+Verified
+Directly supported by:
+* document
+* photograph
+* recording
+* family member
+* source
+Family Reported
+Someone said it but it hasn't been corroborated.
+AI Inferred
+AI believes this might be relevant.
+Fictionalized Gameplay
+Created specifically to turn history into an RPG experience.
+That lets us make the game dramatic without pretending fictional events actually happened.
+For example:
+Historical Record
+Kwame owned a trading business.
+Then:
+Reconstructed Gameplay
+The player investigates a fictionalized dispute surrounding the business.
+That's much safer and more respectful of family history.
+
+12. The Knowledge Graph becomes the real heart of the game
+Imagine:
+
+KWAME MENSAH
+       │
+       ├── married ── AMA
+       │
+       ├── parent ── KOFI
+       │
+       ├── lived ── CAPE COAST
+       │
+       ├── owned ── MENSAH TRADING
+       │
+       ├── visited ── ACCRA
+       │
+       ├── memory ── COCOA FARM
+       │
+       └── artifact ── OLD LEDGER
+
+The game engine reads that graph.
+It doesn't need to understand raw photos, audio, PDFs, etc.
+
+13. Then World Regeneration reads the graph
+Suppose someone adds:
+New person
+Yaw Mensah
+The system asks:
+Who is Yaw?
+AI identifies:
+Son of Kwame
+Now the world can change.
+Regeneration event
+
+NEW FAMILY MEMBER
+       ↓
+Knowledge Graph updated
+       ↓
+World Version 14 → 15
+       ↓
+New character
+       ↓
+New relationship
+       ↓
+New dialogue
+       ↓
+New quest
+       ↓
+New chapter seed
+
+
+14. And the ZIP supplies the new character
+This is the beautiful part.
+The World Generator says:
+
+Create character:
+
+Yaw Mensah
+Age: 22
+Era: 1912
+Location: Cape Coast
+Relationship: Kwame's son
+
+Character Engine:
+
+Appearance
+    ↓
+Face assets
+    ↓
+TV assets
+    ↓
+Character created
+
+Then:
+Yaw appears in the game.
+
+
+
+12. The Knowledge Graph becomes the real heart of the game
+Imagine:
+
+KWAME MENSAH
+       │
+       ├── married ── AMA
+       │
+       ├── parent ── KOFI
+       │
+       ├── lived ── CAPE COAST
+       │
+       ├── owned ── MENSAH TRADING
+       │
+       ├── visited ── ACCRA
+       │
+       ├── memory ── COCOA FARM
+       │
+       └── artifact ── OLD LEDGER
+
+The game engine reads that graph.
+It doesn't need to understand raw photos, audio, PDFs, etc.
+
+13. Then World Regeneration reads the graph
+Suppose someone adds:
+New person
+Yaw Mensah
+The system asks:
+Who is Yaw?
+AI identifies:
+Son of Kwame
+Now the world can change.
+Regeneration event
+
+NEW FAMILY MEMBER
+       ↓
+Knowledge Graph updated
+       ↓
+World Version 14 → 15
+       ↓
+New character
+       ↓
+New relationship
+       ↓
+New dialogue
+       ↓
+New quest
+       ↓
+New chapter seed
+
+
+14. And the ZIP supplies the new character
+This is the beautiful part.
+The World Generator says:
+
+Create character:
+
+Yaw Mensah
+Age: 22
+Era: 1912
+Location: Cape Coast
+Relationship: Kwame's son
+
+Character Engine:
+
+Appearance
+    ↓
+Face assets
+    ↓
+TV assets
+    ↓
+Character created
+
+Then:
+Yaw appears in the game.
+
+15. The same system handles NPCs
+This is where the ZIP becomes much more valuable.
+Don't use the generator only for player characters.
+Use it for:
+* ancestors
+* cousins
+* grandparents
+* neighbors
+* teachers
+* merchants
+* village elders
+* friends
+* coworkers
+* historical NPCs
+* family friends
+So the AI can generate:
+"Create an NPC connected to this family story."
+Then the character engine gives that NPC a visual identity.
+
+16. The Living World should have an asset-generation pipeline
+I'd build:
+
+Family Data
+     ↓
+AI
+     ↓
+World Entity
+     ↓
+Character Entity
+     ↓
+Character Asset Resolver
+     ↓
+ZIP Asset Library
+     ↓
+RPG Character
+
+So the AI isn't generating PNGs every time.
+Instead, it chooses appropriate existing visual components.
+That is much faster and cheaper.
+
+17. World Regeneration needs its own output format
+I'd create a WorldSnapshot.
+Something conceptually like:
+
+WorldSnapshot
+│
+├── version
+├── familyId
+├── timeline
+├── locations
+├── characters
+├── relationships
+├── quests
+├── chapters
+├── dialogue
+├── collectibles
+├── achievements
+├── mapChanges
+└── discoveries
+
+Every contribution creates a new version.
+For example:
+
+World 001
+    ↓
+World 002
+    ↓
+World 003
+    ↓
+World 004
+
+The player can see:
+The Mensah World has evolved.
+
+
+
+
+
+The ZIP also gives us a huge advantage for character aging
+We can create several appearance definitions.
+For example:
+Kwame — 16
+Young character.
+Kwame — 28
+Adult.
+Kwame — 45
+Mature.
+Kwame — 67
+Elder.
+The RPG doesn't treat these as four different people.
+They're:
+
+PERSON ID: kwame-mensah
+
+with different life-stage appearances.
+That is exactly what your historical life-journey gameplay requires.
+
+20. I would add a Niakofa Asset Registry
+This is important technically.
+Instead of the game directly referencing:
+
+generator/Face/Male/FG_Face...
+
+use:
+
+assetId: face_male_10_1
+
+The registry knows:
+
+assetId
+type
+category
+gender
+ageGroup
+source
+license
+file
+compatibleRuntime
+
+That gives us the ability to eventually replace RPG Maker assets with custom Niakofa artwork without rewriting the game.
+
+21. What I would put into the first House of Mensah build
+Character system
+Use:
+Face + TV + Variation + gradients
+for:
+* Kwame
+* Ama
+* parents
+* grandparents
+* village elders
+* merchants
+* family members
+* American descendants
+World
+Build custom maps for:
+Cape Coast
+Mensah compound
+Cocoa farm
+Village market
+Trading business
+Village square
+Migration sequence
+American neighborhood
+Grandmother's house
+
+
+
+
+What do SV / TV / TVD actually mean?
+This is important for the House of Mensah demo.
+Face
+These are the portrait components.
+For example:
+
+FG_Face
+FG_Eyes
+FG_Eyebrows
+FG_Mouth
+FG_Nose
+FG_FrontHair
+FG_RearHair
+FG_Clothing
+FG_Beard
+FG_Glasses
+FG_AccA
+FG_AccB
+
+These can be layered into a character portrait.
+
+TV
+Top-view / map character.
+This is the actual little character walking around the RPG world.
+The standard format is a 144×192 spritesheet, containing 48×48 frames.
+So this is what you could use for:
+Kwame walking through the Mensah compound.
+
+SV
+Side-view battle character.
+These are larger animated character sheets used for side-view battle presentation.
+The standard format is 576×384, with 64×64 frames.
+This matters if you decide to include combat.
+For your current House of Mensah concept, though, combat isn't necessary.
+
+TVD
+Top-view damage/downed character.
+These are used for the alternate map-state sprite.
+The standard format is 144×48, with 48×48 frames.
+
+Variation
+These are the little thumbnail icons used to select generator parts.
+For example:
+
+icon_Eyes_p04.png
+icon_Nose_p05.png
+icon_Mouth_p21.png
+icon_RearHair_p10.png
+icon_Clothing_p14.png
+
+The documented generator format uses these as the selectable variation previews.
+
+4. What can this actually produce?
+Quite a lot.
+You can construct a character from layers such as:
+
+Body
++
+Skin tone
++
+Face
++
+Eyes
++
+Eyebrows
++
+Nose
++
+Mouth
++
+Hair
++
+Clothing
++
+Beard
++
+Glasses
++
+Accessories
+
+And then produce multiple representations of that same character:
+
+                 KWAME MENSAH
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+       Portrait       Map        Battle
+        (Face)        (TV)         (SV)
+          │            │            │
+          ▼            ▼            ▼
+       Dialogue      Walking      Combat
+       scenes         world        scenes
+
+That's exactly the type of pipeline we need for an RPG.
+
+5. But there's an important limitation for Niakofa
+This is not a modern realistic character generator.
+It's a stylized 2D RPG generator.
+So I would not try to make the Mensah family look photorealistic using these assets.
+Instead, embrace the style.
+That could actually work beautifully.
+Your real family photographs can remain the authentic Family Vault representation.
+Then the RPG character becomes the playable interpretation of that person.
+For example:
+Family Vault
+Kwame Mensah
+[real historical photograph]
+Born: 1874
+Cape Coast
+Merchant
+
+Playable Character
+Kwame Mensah
+[2D RPG character]
+Play
+Explore his life
+That distinction is powerful.
+
+6. It is extremely suitable for the House of Mensah demo
+I'd say:
+Yes — 9/10 suitability
+Because your demo needs multiple generations.
+You could construct:
+Generation 1
+Kwame Mensah
+16 years old
+1890
+
+Generation 2
+His parents.
+
+Generation 3
+His children.
+
+Migration generation
+Adult descendants.
+
+American generation
+Grandchildren.
+
+Present generation
+Player character.
+
+Grandmother
+Present-day elder.
+And because the generator supports Male / Female / Kid, you can represent different generations without building every sprite manually.
+
+7. Here's where it becomes especially interesting for Niakofa
+We shouldn't make the user manually design every ancestor.
+Instead:
+Family Vault → Character Generator
+Suppose a user adds:
+Kwame Mensah Born 1874 Male Cape Coast Farmer / Merchant
+The system automatically creates:
+
+KWAME MENSAH
+
+Age: 16
+Era: 1890
+Location: Cape Coast
+
+RPG Appearance
+↓
+generated character
+
+Then when the player reaches 35:
+same character, different appearance/clothing
+And when the story advances:
+different historical clothing
+
+8. This could become your Character Evolution system
+This is where I would go beyond a normal RPG Maker generator.
+Instead of a character being static:
+
+Kwame = sprite001
+
+we store:
+
+Character ID
+Family ID
+Birth year
+Age
+Era
+Location
+Occupation
+Clothing era
+Life events
+Relationships
+Achievements
+
+Then:
+
+Age 16
+ ↓
+Age 22
+ ↓
+Age 35
+ ↓
+Age 52
+ ↓
+Age 70
+
+The appearance changes as the person's life progresses.
+That's much more appropriate for your game.
+
+9. The historical clothing issue
+There is one limitation.
+The default RPG Maker generator assets aren't specifically designed around:
+1890 Ghanaian clothing
+or
+early-20th-century West African merchant clothing
+or
+1950s African-American migration-era clothing.
+So I would not rely exclusively on these assets for the final visual identity.
+For the demo, use them for:
+* NPC placeholders
+* gameplay prototypes
+* family members
+* testing
+* movement
+* dialogue
+* RPG systems
+Then gradually replace important characters with custom Niakofa historical character art.
+
+10. This is how I would use it in the House of Mensah demo
+Prologue
+Present-day player
+↓
+Grandmother
+↓
+Family members
+↓
+
+Chapter 1
+Kwame Mensah — age 16
+Use generator.
+↓
+Village
+↓
+Family compound
+↓
+Farm
+↓
+Market
+
+Chapter 2
+Kwame — adult
+Change clothing/appearance.
+↓
+Trading business
+↓
+Family relationships
+
+Chapter 3
+Betrayal
+Same characters.
+Different expressions.
+Different dialogue.
+Different relationships.
+
+Chapter 4
+Collapse
+Characters leave.
+Buildings disappear.
+Family members become unavailable.
+
+Chapter 5
+Migration
+New generation.
+New clothing.
+New locations.
+
+Chapter 6
+America
+New generation.
+New characters.
+
+Finale
+Present-day family.
+Grandmother.
+Children.
+Grandchildren.
+Sunday dinner.
+
+
+
+The RPG Play flow is substantially wired
+The /legacy/play route isn't merely another dashboard.
+It actually attempts:
+
+Find family
+ ↓
+Find active session
+ ↓
+Find current chapter
+ ↓
+Resume
+
+If there's no session:
+
+Find chapters
+ ↓
+Find in-progress chapter
+ ↓
+Find unlocked chapter
+ ↓
+Open it
+
+If there's no usable world:
+
+Legacy Onboarding
+
+That is a good recovery architecture.
+It addresses the problem we previously identified where "Continue" could leave the player stranded.
+
+5. Chapters are real
+The backend contains:
+* worlds
+* chapters
+* sessions
+* chapter status
+* chapter progression
+* scenes
+* chapter completion
+* next chapter unlocking
+The smoke test specifically tests:
+
+Completeness
+ ↓
+Ancestor selection
+ ↓
+Chapter initialization
+ ↓
+Chapter → in_progress
+ ↓
+Scene loading
+ ↓
+Session progress
+ ↓
+Record memory
+ ↓
+Chapter completion
+ ↓
+Next chapter
+ ↓
+Journal
+
+That's extremely important.
+It means the team has at least recognized the canonical end-to-end path.
+
+6. World Regeneration is partially real
+This is another major improvement.
+The code now has:
+Knowledge versions
+
+familyKnowledgeVersions
+
+World evolution log
+
+legacyWorldEvolutionLog
+
+World fingerprints
+Reservoir invalidation
+World version summaries
+Change types
+Including:
+
+member_added
+memory_added
+story_added
+interview_added
+place_added
+event_added
+relation_added
+world_regenerated
+
+And the code explicitly tries to bump the knowledge version when family information changes.
+That's the correct foundation for your signature feature.
+
+7. But there is an important World Regeneration gap
+The current implementation is strongest at:
+Detecting that the family world changed and refreshing generated content.
+It is not yet the full vision of:
+Every new contribution physically reconstructs the playable world.
+For example:
+Current
+New ancestor added:
+
+Knowledge version changes
+↓
+World evolution recorded
+↓
+AI/content regeneration
+↓
+New chapter/dialogue/quest possibilities
+
+Ultimate Niakofa vision
+New ancestor added:
+
+New ancestor
+↓
+New branch on Baobab
+↓
+New playable character
+↓
+New historical period
+↓
+New map region
+↓
+New landmark
+↓
+New NPCs
+↓
+New dialogue
+↓
+New quests
+↓
+New collectibles
+↓
+New journal
+↓
+New timeline
+↓
+New chapter
+↓
+New gameplay
+
+We're not fully at the second version yet.
+That's the biggest strategic gap.
+
+8. Now to your specific question: the Character Asset Library
+Here's the most important finding.
+The ZIP is not being utilized to its full potential.
+The project currently contains:
+
+public/legacy-character-assets/
+
+with a catalog.
+The catalog recognizes:
+Face
+1,138 assets
+TV
+946 assets
+TVD
+726 assets
+SV
+744 assets
+Variation
+668 assets
+Gradients
+4
+So the project knows about a substantial generator library.
+But the actual runtime implementation currently resolves only:
+
+TV_Body_p01-male.png
+TV_Body_p01-female.png
+TV_Body_p01-kid.png
+
+That's it for the live walking asset resolver.
+
+9. This is the biggest Character Asset gap
+The current engine essentially says:
+
+Adult male
+   ↓
+male base body
+
+Adult female
+   ↓
+female base body
+
+Kid
+   ↓
+kid base body
+
+That's a placeholder character renderer, not a full Character Asset Library.
+The library contains hundreds/thousands of potential components.
+The runtime is using approximately the equivalent of:
+"Give me the default body."
+We need to turn it into:
+"Construct this specific person's RPG identity."
+
+10. The current character engine is intentionally conservative
+I actually like one aspect of its design.
+The engine explicitly says:
+Family facts stay in the Vault. This module only resolves a visual runtime representation from an appearance definition and never infers history.
+That's correct.
+The code also avoids guessing an adult's gender when it doesn't have enough information.
+That's good for Niakofa because we should never allow an AI to invent a person's identity from insufficient family information just because an RPG sprite needs to be rendered.
+But we need a much richer explicit appearance definition.
+
+11. Character Evolution is present—but it's primarily knowledge/stat evolution
+This system is real.
+The backend calculates things such as:
+* Knowledge
+* Relationships
+* Cultural Wisdom
+* Courage
+* Reputation
+* Legacy
+* Faith
+It also tracks:
+* stories
+* memories
+* interviews
+* events
+* places
+* relationships
+And snapshots can record:
+* new dialogue
+* new journal
+* new quests
+* new memories
+* knowledge version
+So:
+Character Evolution = YES
+But currently it mostly means:
+The character becomes richer in knowledge/content/statistics.
+It does not yet fully mean:
+The character's visual identity evolves through their life.
+That is what I would add next.
+
+12. We need two kinds of Character Evolution
+This is critical.
+A. Knowledge Evolution
+Already substantially implemented.
+
+5 stories
+↓
+18 stories
+↓
+new dialogue
+↓
+new quests
+↓
+new journal
+↓
+higher knowledge
+
+B. Life-stage Visual Evolution
+Needs to be built.
+
+Age 16
+ ↓
+Age 22
+ ↓
+Age 35
+ ↓
+Age 50
+ ↓
+Age 70
+
+The character should visibly change.
+Hair.
+Clothing.
+Accessories.
+Body/life stage.
+Possibly portrait.
+This would make the historical journey feel dramatically more alive.
+
+13. What the Character System should become
+Instead of:
+
+memberId
+↓
+male/female/kid
+↓
+base sprite
+
+I recommend:
+
+FAMILY MEMBER
+       ↓
+CHARACTER ID
+       ↓
+APPEARANCE PROFILE
+       │
+       ├── age
+       ├── life stage
+       ├── gender/presentation
+       ├── skin palette
+       ├── hair
+       ├── eyes
+       ├── face
+       ├── clothing
+       ├── accessories
+       └── era
+       ↓
+CHARACTER ASSET RESOLVER
+       ↓
+       ├── Face
+       ├── TV
+       ├── TVD
+       └── SV
+       ↓
+PLAYABLE CHARACTER
+
+That's what I would build now.
+
+14. The generator ZIP should become a real Character Asset Library
+Right now it's basically:
+curated runtime sample.
+I would turn it into:
+Niakofa Character Asset Registry
+Something like:
+
+character-assets/
+│
+├── bodies
+├── faces
+├── eyes
+├── eyebrows
+├── noses
+├── mouths
+├── hair
+├── clothing
+├── beards
+├── accessories
+├── glasses
+├── kids
+├── adults
+├── palettes
+└── eras
+
+And every asset receives:
+
+assetId
+category
+ageGroup
+gender
+era
+layer
+compatibleRepresentations
+license
+source
+
+The game stores:
+
+assetId
+
+—not filenames.
+The current project already understands this principle in the catalog. We just need to finish the implementation.
+
+15. The biggest opportunity: historical clothing
+This is where I'd be careful.
+The generator gives us a huge general-purpose RPG vocabulary.
+But Niakofa is not supposed to look like a generic fantasy RPG.
+House of Mensah is a family-history RPG.
+So I'd use the generator for:
+* base body
+* face
+* hair
+* eyes
+* basic character construction
+* NPC population
+* gameplay prototyping
+Then create Niakofa-specific historical clothing/character packs for:
+1890s West Africa
+Early 1900s
+Migration era
+Mid-century America
+Modern America
+That would dramatically improve authenticity.
+
+16. I would also add "Character Era Profiles"
+This is one of the most important additions.
+For example:
+
+Kwame Mensah
+
+1890
+Age 16
+Cape Coast
+Merchant family
+
+Appearance:
+Era = 1890
+LifeStage = youth
+Clothing = historical_1890_merchant
+
+Then:
+
+1910
+Age 36
+Accra
+
+Appearance:
+Era = 1910
+LifeStage = adult
+Clothing = historical_1910
+
+Then:
+
+1950
+Descendant
+United States
+
+Appearance:
+Era = 1950
+LifeStage = adult
+Clothing = historical_us_1950
+
+Now the RPG actually looks like time is passing.
+
+17. We should also use the generator for NPC population
+This is an underused opportunity.
+When World Regeneration creates:
+Village elder
+don't hand-code the sprite.
+The World Generator should create:
+
+NPC Definition
+↓
+age
+↓
+appearance
+↓
+occupation
+↓
+relationship
+↓
+era
+↓
+asset resolver
+↓
+NPC
+
+Suddenly a regenerated village can contain new people.
+That's much closer to your Living World idea.
+
+18. And this solves a major World Regeneration problem
+You previously said:
+Nothing should stay static.
+Exactly.
+Suppose the AI discovers:
+three new relatives lived near the Mensah trading house.
+World regeneration could create:
+
+3 new family NPCs
++
+2 new village NPCs
++
+1 merchant
++
+1 elder
++
+new dialogue
++
+new quest
+
+The generator provides the visual vocabulary.
+The Knowledge Graph provides the relationships.
+The World Generator provides the reason those people exist.
+The RPG runtime renders them.
+That's the complete loop.
+
+19. Live Video: still a gap
+You specifically asked about microphone and live video.
+The current app has microphone recording.
+The interview quest has a Video icon and recognizes video-related concepts, and the Vault supports video asset types.
+But I found no getUserMedia video stream implementation and no <video> live-preview implementation in the Legacy pages.
+So I would classify:
+Audio oral history
+🟢 Real
+Upload prerecorded video
+🟠 Supported as a Vault media type
+Live face-to-face Legacy interview
+🔴 Not yet implemented
+This remains one of the clearest gaps against your vision.
+
+20. I recommend making Live Interview a first-class Legacy mechanic
+Not just:
+Upload video.
+Instead:
+Interview Grandma
+
+┌─────────────────────────────────────┐
+│                                     │
+│       GRANDMOTHER VIDEO             │
+│                                     │
+│       [LIVE VIDEO]                  │
+│                                     │
+│  "Tell me about the old business."  │
+│                                     │
+│  🎙 Record                         │
+│                                     │
+│  Question 1 / 5                    │
+└─────────────────────────────────────┘
+
+Then:
+
+LIVE INTERVIEW
+       ↓
+Recording
+       ↓
+Transcription
+       ↓
+AI Extraction
+       ↓
+People
+Places
+Events
+Objects
+Stories
+       ↓
+Knowledge Graph
+       ↓
+World Regeneration
+       ↓
+NEW GAME CONTENT
+
+That would be a killer Niakofa feature.

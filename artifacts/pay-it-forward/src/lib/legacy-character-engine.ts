@@ -8,6 +8,7 @@
 export type LegacyAgeGroup = "adult" | "kid";
 export type LegacyGender = "male" | "female" | "unspecified";
 export type LegacyRepresentation = "TV" | "Face" | "TVD" | "SV";
+export type LegacyLifeStage = "youth" | "adult" | "mature" | "elder" | "unknown";
 export type LegacyLayer =
   | "body"
   | "clothing"
@@ -62,6 +63,51 @@ export interface LegacyWalkingAppearance {
   layers: LegacyWalkingLayer[];
   width: 144;
   height: 192;
+}
+
+export interface LegacyLifeStageProfile {
+  id: LegacyLifeStage;
+  label: string;
+  age: number | null;
+  description: string;
+}
+
+/**
+ * Life stages are presentation metadata, not facts about a person's identity.
+ * A deceased person's appearance is evaluated at their recorded death year so
+ * a historical profile does not keep aging after the life they represent.
+ */
+export function deriveLifeStage(input: {
+  birthYear: number | null;
+  deathYear?: number | null;
+  currentYear?: number;
+}): LegacyLifeStageProfile {
+  if (!Number.isFinite(input.birthYear)) {
+    return {
+      id: "unknown",
+      label: "Life stage unknown",
+      age: null,
+      description: "Add a verified birth year to select a life-stage appearance.",
+    };
+  }
+
+  const birthYear = input.birthYear as number;
+  const deathYear = Number.isFinite(input.deathYear) && (input.deathYear as number) >= birthYear
+    ? (input.deathYear as number)
+    : null;
+  const referenceYear = deathYear ?? input.currentYear ?? new Date().getFullYear();
+  const age = Math.max(0, referenceYear - birthYear);
+
+  if (age < 18) {
+    return { id: "youth", label: "Youth", age, description: "The character engine uses the kid walking profile." };
+  }
+  if (age < 35) {
+    return { id: "adult", label: "Adult", age, description: "The character engine uses the adult walking profile." };
+  }
+  if (age < 55) {
+    return { id: "mature", label: "Mature", age, description: "The character engine uses the adult walking profile with mature life context." };
+  }
+  return { id: "elder", label: "Elder", age, description: "The character engine uses the adult walking profile with elder life context." };
 }
 
 const BODY_ASSETS: Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender, LegacyWalkingAsset>>>> = {
@@ -286,14 +332,21 @@ export function getApprovedAsset(assetId: string): LegacyAssetRecord | null {
 export function inferAppearance(input: {
   role?: string | null;
   birthYear?: number | null;
+  deathYear?: number | null;
   currentYear?: number;
 }): LegacyAppearanceInput | null {
   const role = input.role?.toLowerCase() ?? "";
   const femaleRoles = /\b(aunt|daughter|grandmother|mother|sister|wife|woman|female)\b/;
   const maleRoles = /\b(brother|father|grandfather|husband|man|male|son|uncle)\b/;
-  const age = input.birthYear == null
+  const hasBirthYear = Number.isFinite(input.birthYear);
+  const deathYear = hasBirthYear && Number.isFinite(input.deathYear)
+    && (input.deathYear as number) >= (input.birthYear as number)
+    ? (input.deathYear as number)
+    : null;
+  const referenceYear = deathYear ?? input.currentYear ?? new Date().getFullYear();
+  const age = !hasBirthYear
     ? null
-    : (input.currentYear ?? new Date().getFullYear()) - input.birthYear;
+    : referenceYear - (input.birthYear as number);
 
   const ageGroup: LegacyAgeGroup = age !== null && age >= 0 && age < 18 ? "kid" : "adult";
   if (ageGroup === "kid") return { ageGroup, gender: "unspecified" };

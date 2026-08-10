@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
-const archive = process.argv[2] ?? "docs/legacy-reference/uploaded-source/generator_1786349364870.zip";
+const archive = process.argv[2] ?? "docs/legacy-reference/uploaded-source/generator_1786371386883.zip";
 if (!existsSync(archive)) {
   console.error(`Archive not found: ${archive}`);
   process.exit(1);

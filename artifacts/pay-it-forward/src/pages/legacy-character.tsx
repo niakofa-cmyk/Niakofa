@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
+import { deriveLifeStage, inferAppearance } from "@/lib/legacy-character-engine";
+import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 
 interface CharacterBio {
   memberId: number;
@@ -191,6 +193,15 @@ export default function LegacyCharacterPage() {
     craftsmanship: Math.floor(character.stats.culturalWisdom / 20),
     storytelling: Math.floor(character.stats.legacy / 20),
   };
+  const appearance = inferAppearance({
+    role: character.role,
+    birthYear: character.birthYear,
+    deathYear: character.deathYear,
+  });
+  const lifeStage = deriveLifeStage({
+    birthYear: character.birthYear,
+    deathYear: character.deathYear,
+  });
 
   return (
     <div className="min-h-screen bg-[#1A1008] text-amber-100 pb-8">
@@ -203,8 +214,14 @@ export default function LegacyCharacterPage() {
 
       {/* Hero Header */}
       <div className="px-4 pt-6 pb-4 text-center">
-        <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-600/30 flex items-center justify-center mx-auto mb-3">
-          <Users className="w-10 h-10 text-amber-500" />
+        <div className="w-20 h-20 mx-auto mb-3 flex items-center justify-center">
+          {appearance ? (
+            <LegacyCharacterSprite {...appearance} size={80} className="rounded-2xl" />
+          ) : (
+            <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-600/30 flex items-center justify-center">
+              <Users className="w-10 h-10 text-amber-500" />
+            </div>
+          )}
         </div>
         <h2 className="text-xl font-black text-amber-200">{character.name}</h2>
         <p className="text-xs text-amber-600 mt-0.5">
@@ -217,6 +234,14 @@ export default function LegacyCharacterPage() {
           {character.deathYear && <span>{character.deathYear}</span>}
           {!character.birthYear && !character.deathYear && <span>Dates unknown</span>}
           {character.isLiving && !character.deathYear && <span>· Living</span>}
+        </div>
+        <div className="max-w-sm mx-auto mt-3 rounded-xl border border-sky-900/30 bg-sky-950/20 px-3 py-2 text-left">
+          <p className="text-[10px] font-black uppercase tracking-wider text-sky-400">
+            Character engine · {lifeStage.label}
+            {lifeStage.age !== null ? ` · age ${lifeStage.age}` : ""}
+          </p>
+          <p className="mt-1 text-[10px] leading-relaxed text-sky-200/60">{lifeStage.description}</p>
+          <p className="mt-1 text-[9px] text-sky-300/40">Stylized RPG rendering · not a historical likeness</p>
         </div>
       </div>
 

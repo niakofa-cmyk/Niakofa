@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
-import { inferAppearance } from "@/lib/legacy-character-engine";
+import { deriveLifeStage, inferAppearance } from "@/lib/legacy-character-engine";
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 
 interface CharacterStats {
@@ -40,6 +40,7 @@ interface Character {
   role: string;
   isLiving: boolean;
   birthYear: number | null;
+  deathYear?: number | null;
   stats: CharacterStats;
   contentCounts: {
     stories: number;
@@ -217,7 +218,9 @@ export default function LegacyCharacterEvolutionPage() {
         </div>
       ) : (
         <div className="px-4 mt-4 space-y-4">
-          {characters.map((char) => (
+          {characters.map((char) => {
+            const lifeStage = deriveLifeStage({ birthYear: char.birthYear, deathYear: char.deathYear });
+            return (
             <div key={char.memberId} className="bg-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4 shadow-lg">
               {/* Character header */}
               <div className="flex items-start gap-3 mb-4">
@@ -237,6 +240,9 @@ export default function LegacyCharacterEvolutionPage() {
                   <p className="text-sm font-bold text-amber-100">{char.name}</p>
                   <p className="text-xs text-amber-600">{char.role}</p>
                   <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-sky-300 bg-sky-900/20 px-1.5 py-0.5 rounded-full">
+                      {lifeStage.label}
+                    </span>
                     {char.birthYear && (
                       <span className="text-[10px] text-amber-700 bg-amber-900/30 px-1.5 py-0.5 rounded-full">
                         b. {char.birthYear}
@@ -257,6 +263,12 @@ export default function LegacyCharacterEvolutionPage() {
               <p className="mb-3 text-[9px] text-amber-800">
                 Stylized RPG renderer · not a historical likeness
               </p>
+              <div className="mb-4 rounded-lg border border-sky-900/30 bg-sky-950/20 px-2.5 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                  Character engine · {lifeStage.label}
+                </p>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-sky-200/60">{lifeStage.description}</p>
+              </div>
 
               {/* Stats */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-4">
@@ -326,7 +338,8 @@ export default function LegacyCharacterEvolutionPage() {
                 <TrendingUp className="w-3 h-3" /> View Evolution History
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

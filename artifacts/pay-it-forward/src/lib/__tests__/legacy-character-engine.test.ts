@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import { expect } from "expect";
-import { inferAppearance, resolveWalkingAppearance, resolveWalkingAsset } from "../legacy-character-engine";
+import {
+  deriveLifeStage,
+  inferAppearance,
+  resolveWalkingAppearance,
+  resolveWalkingAsset,
+} from "../legacy-character-engine";
 
 describe("Legacy character engine", () => {
   it("resolves stable runtime asset IDs instead of raw generator paths", () => {
@@ -44,11 +49,57 @@ describe("Legacy character engine", () => {
     });
   });
 
+  it("uses a verified death year when selecting a deceased character profile", () => {
+    expect(inferAppearance({
+      role: "Grandfather",
+      birthYear: 1900,
+      deathYear: 1916,
+      currentYear: 2026,
+    })).toEqual({
+      ageGroup: "kid",
+      gender: "unspecified",
+    });
+  });
+
   it("only applies adult gender hints from explicit family-role language", () => {
     expect(inferAppearance({ role: "Grandmother", birthYear: 1940, currentYear: 2026 })).toEqual({
       ageGroup: "adult",
       gender: "female",
     });
     expect(inferAppearance({ role: "Ancestor", birthYear: 1880, currentYear: 2026 })).toBeNull();
+  });
+
+  it("derives life stages without changing the explicit appearance contract", () => {
+    expect(deriveLifeStage({ birthYear: 2010, currentYear: 2026 })).toMatchObject({
+      id: "youth",
+      label: "Youth",
+      age: 16,
+    });
+    expect(deriveLifeStage({ birthYear: 2000, currentYear: 2026 })).toMatchObject({
+      id: "adult",
+      age: 26,
+    });
+    expect(deriveLifeStage({ birthYear: 1980, currentYear: 2026 })).toMatchObject({
+      id: "mature",
+      age: 46,
+    });
+    expect(deriveLifeStage({ birthYear: 1940, currentYear: 2026 })).toMatchObject({
+      id: "elder",
+      age: 86,
+    });
+  });
+
+  it("anchors a deceased character to their recorded death year", () => {
+    expect(deriveLifeStage({ birthYear: 1874, deathYear: 1910, currentYear: 2026 })).toMatchObject({
+      id: "mature",
+      age: 36,
+    });
+  });
+
+  it("does not invent a life stage when the birth year is missing", () => {
+    expect(deriveLifeStage({ birthYear: null, currentYear: 2026 })).toMatchObject({
+      id: "unknown",
+      age: null,
+    });
   });
 });
