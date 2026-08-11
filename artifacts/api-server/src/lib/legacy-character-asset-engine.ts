@@ -2,9 +2,10 @@
  * Server-side contract for characters created by Legacy world regeneration.
  *
  * This module deliberately emits asset IDs, never raw archive paths. A person
- * only receives a render-ready appearance when the extraction includes explicit
- * age and gender metadata. Missing metadata remains visible as "pending" rather
- * than being guessed from a name or relationship.
+ * only receives a render-ready map appearance when the extraction includes
+ * explicit age and gender metadata. Missing metadata remains visible as
+ * "pending" rather than being guessed from a name or relationship. Face assets
+ * remain catalog-only until their licensing is approved for runtime use.
  */
 
 export type GeneratedCharacterAgeGroup = "adult" | "kid";
@@ -31,6 +32,16 @@ export interface GeneratedCharacterAppearance {
   runtime: "approved";
 }
 
+export interface GeneratedCharacterPortrait {
+  schemaVersion: 1;
+  representation: "Face";
+  runtime: "catalog-only";
+  status: "catalog-only";
+  catalogCategory: "Face";
+  selectionSeed: string;
+  candidateIndex: number;
+}
+
 export interface GeneratedCharacter {
   characterId: string;
   name: string;
@@ -38,6 +49,7 @@ export interface GeneratedCharacter {
   evidence: "family-reported";
   renderStatus: "ready" | "pending_verified_appearance";
   appearance: GeneratedCharacterAppearance | null;
+  portrait: GeneratedCharacterPortrait;
 }
 
 interface ExtractedPerson {
@@ -99,6 +111,24 @@ function eraProfileFor(era: string | null | undefined): string {
   return "unspecified";
 }
 
+const FACE_CATALOG_ASSET_COUNT = 1138;
+
+export function buildCatalogPortraitReference(
+  characterId: string,
+  appearanceSeed: string,
+): GeneratedCharacterPortrait {
+  const selectionSeed = `${characterId}|portrait|${appearanceSeed}`;
+  return {
+    schemaVersion: 1,
+    representation: "Face",
+    runtime: "catalog-only",
+    status: "catalog-only",
+    catalogCategory: "Face",
+    selectionSeed,
+    candidateIndex: stableHash(selectionSeed) % FACE_CATALOG_ASSET_COUNT,
+  };
+}
+
 function buildAppearance(
   person: ExtractedPerson,
   characterId: string,
@@ -148,16 +178,22 @@ export function buildGeneratedCharacters(input: {
     .slice(0, 8)
     .map((person) => {
       const name = person.name!.trim().slice(0, 120);
-      const characterId = `npc-${input.familyId}-${slug(name)}-${stableHash(`${input.interviewId}|${name}|${person.context ?? ""}`).toString(36)}`;
-      const appearanceSeed = `interview:${input.interviewId}:${slug(name)}`;
+      const relationship = person.relationship?.trim() || null;
+      // Interview IDs are provenance, not identity. Keeping them out of this
+      // key prevents a later interview from creating a second NPC for the same
+      // family-reported relative.
+      const identitySeed = `${name}|${relationship ?? "unspecified"}`;
+      const characterId = `npc-${input.familyId}-${slug(name)}-${stableHash(identitySeed).toString(36)}`;
+      const appearanceSeed = `family:${input.familyId}:${slug(name)}:${slug(relationship ?? "unspecified")}`;
       const appearance = buildAppearance(person, characterId, appearanceSeed);
       return {
         characterId,
         name,
-        relationship: person.relationship?.trim() || null,
+        relationship,
         evidence: "family-reported" as const,
         renderStatus: appearance ? "ready" as const : "pending_verified_appearance" as const,
         appearance,
+        portrait: buildCatalogPortraitReference(characterId, appearanceSeed),
       };
     });
 }

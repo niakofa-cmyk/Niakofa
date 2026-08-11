@@ -47,6 +47,12 @@ import {
   normalizeQuestResult,
   type InterviewExtraction,
 } from "../lib/legacy-interview-result";
+import {
+  loadPersistedInterviewWorldSnapshot,
+  logPersistenceFailure,
+  persistInterviewWorldSnapshot,
+  toRegenerationFromSnapshot,
+} from "../lib/legacy-world-snapshot-persistence";
 import { requestTimeout } from "../middlewares/timeout";
 
 const router = Router();

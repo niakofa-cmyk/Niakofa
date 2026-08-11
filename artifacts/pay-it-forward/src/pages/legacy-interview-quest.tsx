@@ -62,6 +62,13 @@ interface QuestResult {
       relationship: string | null;
       evidence: "family-reported";
       renderStatus: "ready" | "pending_verified_appearance";
+      portrait: {
+        representation: "Face";
+        runtime: "catalog-only";
+        status: "catalog-only";
+        catalogCategory: "Face";
+        candidateIndex: number;
+      };
       appearance: {
           age: number;
         ageGroup: "adult" | "kid";
@@ -998,9 +1005,12 @@ function WorldRegenerationSummary({ result }: { result: QuestResult }) {
                         character.renderStatus === "ready" ? "text-emerald-400" : "text-amber-400"
                       }`}>
                         {character.renderStatus === "ready"
-                          ? `TV sprite ready · ${appearance?.lifeStage} · ${appearance?.era}`
+                          ? `TV map sprite ready · ${appearance?.lifeStage} · ${appearance?.era}`
                           : "Appearance pending explicit age + gender"}
                       </p>
+                       <p className="text-[9px] text-emerald-200/50 mt-0.5">
+                         Face portrait catalog-only · candidate {character.portrait.candidateIndex + 1}
+                       </p>
                     </div>
                   </div>
                 );

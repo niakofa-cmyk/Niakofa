@@ -1322,8 +1322,7 @@ router.patch("/family/:id/interviews/:interviewId", generalApiLimiter, requireAu
 
   broadcast({ type: "family_interview_status_changed", payload: { family_id: familyId, interview_id: interview.id, status: interview.status } });
   if (
-    parsed.data.status === "completed"
-    || parsed.data.status === "published"
+    parsed.data.status === "published"
     || parsed.data.resulting_memory_id !== undefined
   ) {
     logWorldEvolution(

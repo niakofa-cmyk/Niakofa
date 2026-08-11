@@ -7,6 +7,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import type { InterviewWorldRegeneration, LegacyWorldSnapshot } from "./legacy-interview-result";
+import { buildCatalogPortraitReference } from "./legacy-character-asset-engine";
 import { logger } from "./logger";
 
 type PersistedWorldData = Record<string, unknown> & {
@@ -27,6 +28,19 @@ function readWorldData(value: unknown): PersistedWorldData {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as PersistedWorldData
     : {};
+}
+
+function normalizeSnapshot(snapshot: LegacyWorldSnapshot): LegacyWorldSnapshot {
+  return {
+    ...snapshot,
+    characters: snapshot.characters.map((character) => ({
+      ...character,
+      portrait: character.portrait ?? buildCatalogPortraitReference(
+        character.characterId,
+        character.appearance?.appearanceSeed ?? `legacy:${character.characterId}`,
+      ),
+    })),
+  };
 }
 
 function questTypeForSnapshot(snapshot: LegacyWorldSnapshot): "mystery" | "exploration" {
@@ -190,25 +204,27 @@ export async function loadPersistedInterviewWorldSnapshot(
     .where(eq(legacyWorldsTable.family_id, familyId))
     .orderBy(desc(legacyWorldsTable.updated_at))
     .limit(1);
-  return readWorldData(world?.world_data).interviewSnapshots?.[String(interviewId)] ?? null;
+  const snapshot = readWorldData(world?.world_data).interviewSnapshots?.[String(interviewId)];
+  return snapshot ? normalizeSnapshot(snapshot) : null;
 }
 
 export function toRegenerationFromSnapshot(
   snapshot: LegacyWorldSnapshot,
   fallback: InterviewWorldRegeneration,
 ): InterviewWorldRegeneration {
+  const normalizedSnapshot = normalizeSnapshot(snapshot);
   return {
     ...fallback,
-    worldVersion: snapshot.worldVersion,
-    newCharacters: snapshot.characters,
-    newQuest: fallback.newQuest && snapshot.quests.some((quest) => quest.id === fallback.newQuest?.id)
+    worldVersion: normalizedSnapshot.worldVersion,
+    newCharacters: normalizedSnapshot.characters,
+    newQuest: fallback.newQuest && normalizedSnapshot.quests.some((quest) => quest.id === fallback.newQuest?.id)
       ? fallback.newQuest
       : null,
-    chapterSeed: fallback.chapterSeed && snapshot.chapters.some((chapter) => chapter.id === fallback.chapterSeed?.id)
+    chapterSeed: fallback.chapterSeed && normalizedSnapshot.chapters.some((chapter) => chapter.id === fallback.chapterSeed?.id)
       ? fallback.chapterSeed
       : null,
-    newDialogue: snapshot.dialogue[0]?.text ?? "",
-    snapshot,
+    newDialogue: normalizedSnapshot.dialogue[0]?.text ?? "",
+    snapshot: normalizedSnapshot,
   };
 }
 

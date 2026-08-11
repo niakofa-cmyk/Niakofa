@@ -1,5 +1,8 @@
 import { describe, expect, it } from "@jest/globals";
-import { buildGeneratedCharacters } from "../lib/legacy-character-asset-engine";
+import {
+  buildCatalogPortraitReference,
+  buildGeneratedCharacters,
+} from "../lib/legacy-character-asset-engine";
 
 describe("Legacy generated character asset engine", () => {
   it("is deterministic and emits only approved TV asset IDs", () => {
@@ -24,6 +27,15 @@ describe("Legacy generated character asset engine", () => {
       characterId: expect.stringMatching(/^npc-12-ama-mensah-/),
       evidence: "family-reported",
       renderStatus: "ready",
+      portrait: {
+        schemaVersion: 1,
+        representation: "Face",
+        runtime: "catalog-only",
+        status: "catalog-only",
+        catalogCategory: "Face",
+        selectionSeed: expect.stringContaining("portrait"),
+        candidateIndex: expect.any(Number),
+      },
       appearance: {
         schemaVersion: 1,
         representation: "TV",
@@ -51,6 +63,11 @@ describe("Legacy generated character asset engine", () => {
       evidence: "family-reported",
       renderStatus: "pending_verified_appearance",
       appearance: null,
+       portrait: {
+         representation: "Face",
+         runtime: "catalog-only",
+         status: "catalog-only",
+       },
     }]);
   });
 
@@ -69,6 +86,33 @@ describe("Legacy generated character asset engine", () => {
         rearHair: "tv_rear_hair_kid_default",
         frontHair: "tv_front_hair_kid_default",
       },
+    });
+  });
+
+  it("keeps the same person identity and portrait candidate across interviews", () => {
+    const first = buildGeneratedCharacters({
+      familyId: 12,
+      interviewId: 34,
+      people: [{ name: "Ama Mensah", relationship: "grandmother", age: 72, gender: "female" }],
+    })[0];
+    const later = buildGeneratedCharacters({
+      familyId: 12,
+      interviewId: 91,
+      people: [{ name: "Ama Mensah", relationship: "grandmother", age: 72, gender: "female" }],
+    })[0];
+
+    expect(later.characterId).toBe(first.characterId);
+    expect(later.appearance).toEqual(first.appearance);
+    expect(later.portrait).toEqual(first.portrait);
+  });
+
+  it("can rebuild a catalog-only portrait reference for older snapshots", () => {
+    expect(buildCatalogPortraitReference("npc-12-ama-abc", "legacy:npc-12-ama-abc")).toMatchObject({
+      representation: "Face",
+      runtime: "catalog-only",
+      status: "catalog-only",
+      catalogCategory: "Face",
+      candidateIndex: expect.any(Number),
     });
   });
 });
