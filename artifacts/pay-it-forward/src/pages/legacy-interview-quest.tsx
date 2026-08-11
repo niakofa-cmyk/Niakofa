@@ -95,6 +95,9 @@ interface QuestResult {
       evidence: string;
     }>;
     snapshot: {
+      dialogue: Array<{ id: string; text: string; status: string }>;
+      quests: Array<{ id: string; title: string; status: string }>;
+      chapters: Array<{ id: string; title: string; status: string }>;
       discoveries: Array<{ id: string; title: string; status: string }>;
       mapChanges: Array<{ placeId: string; label: string; status: string }>;
     };
@@ -910,6 +913,13 @@ export default function LegacyInterviewQuestPage() {
 function WorldRegenerationSummary({ result }: { result: QuestResult }) {
   const [, navigate] = useLocation();
   const { worldRegeneration } = result;
+  const discoveryCounts = [
+    { label: "People", value: worldRegeneration.newCharacters.length, tone: "text-amber-200" },
+    { label: "Landmarks", value: worldRegeneration.snapshot.mapChanges.length, tone: "text-sky-200" },
+    { label: "Dialogue", value: worldRegeneration.snapshot.dialogue.length, tone: "text-emerald-200" },
+    { label: "Quests", value: worldRegeneration.snapshot.quests.length, tone: "text-orange-200" },
+    { label: "Chapter seeds", value: worldRegeneration.snapshot.chapters.length, tone: "text-violet-200" },
+  ];
   if (
     worldRegeneration.newCharacters.length === 0
     && !worldRegeneration.newQuest
@@ -932,9 +942,28 @@ function WorldRegenerationSummary({ result }: { result: QuestResult }) {
           Your family-reported evidence has created new, reviewable gameplay seeds.
           Visual identity remains pending when the interview did not state age and gender.
         </p>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/80 mb-4">
-            Knowledge world {worldRegeneration.worldVersion ? `v${worldRegeneration.worldVersion}` : "version pending"}
-          </p>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/80">
+              Knowledge world {worldRegeneration.worldVersion ? `v${worldRegeneration.worldVersion}` : "version pending"}
+            </p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">
+              Your family world has changed
+            </p>
+          </div>
+
+          <div className="mb-4 rounded-xl border border-emerald-800/30 bg-black/10 p-3">
+            <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-emerald-500">
+              New discoveries
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {discoveryCounts.map((discovery) => (
+                <div key={discovery.label} className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-2 py-2">
+                  <p className={`text-lg font-black leading-none ${discovery.tone}`}>+{discovery.value}</p>
+                  <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-emerald-100/55">{discovery.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
 
         {worldRegeneration.worldChanges.length > 0 && (
           <div className="mb-4 rounded-xl border border-emerald-800/30 bg-black/10 p-3">
