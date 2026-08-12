@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx/esm --test src/lib/__tests__/heading-math.test.ts src/lib/__tests__/sankofa-bird.test.ts src/lib/__tests__/geo-utils.test.ts src/lib/__tests__/sankofa-bird-animation.test.ts src/lib/__tests__/sankofa-bird-device.test.ts src/lib/__tests__/sme-core.test.ts src/lib/__tests__/sankofa-bird-phase27.test.ts src/lib/__tests__/legacy-demo-state.test.ts src/lib/__tests__/legacy-character-engine.test.ts src/lib/__tests__/legacy-core-loop.test.ts src/lib/__tests__/legacy-demo-ui-contract.test.ts src/lib/__tests__/legacy-interview-quest-contract.test.ts"
+    "test": "node --import tsx/esm --test src/lib/__tests__/heading-math.test.ts src/lib/__tests__/sankofa-bird.test.ts src/lib/__tests__/geo-utils.test.ts src/lib/__tests__/sankofa-bird-animation.test.ts src/lib/__tests__/sankofa-bird-device.test.ts src/lib/__tests__/sme-core.test.ts src/lib/__tests__/sankofa-bird-phase27.test.ts src/lib/__tests__/legacy-demo-state.test.ts src/lib/__tests__/legacy-character-engine.test.ts src/lib/__tests__/legacy-core-loop.test.ts src/lib/__tests__/legacy-demo-ui-contract.test.ts src/lib/__tests__/legacy-interview-quest-contract.test.ts src/lib/__tests__/legacy-rpg-assets-catalog.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

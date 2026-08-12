@@ -56,7 +56,9 @@ try {
     `Entry script is not JavaScript: HTTP ${entry.response.status}, ${entry.contentType}`,
   );
 
-  const demoMatch = entry.body.match(/assets\/(legacy-demo-[A-Za-z0-9_-]+\.js)/);
+  const demoMatch = entry.body.match(
+    /assets\/(legacy-demo-(?!state(?:-|\.))[A-Za-z0-9_-]+\.js)/,
+  );
   assert(demoMatch, "Entry script does not reference a Legacy demo chunk");
 
   const demo = await get(`/assets/${demoMatch[1]}`);
@@ -65,12 +67,21 @@ try {
     `Legacy demo chunk is not JavaScript: HTTP ${demo.response.status}, ${demo.contentType}`,
   );
   assert(
-    demo.body.includes("niakofa:demo:v2"),
-    "Legacy demo chunk is missing its persistence contract",
-  );
   assert(
     demo.body.includes("House of Mensah"),
     "Legacy demo chunk is missing the House of Mensah experience",
+  );
+
+  const stateMatch = entry.body.match(/assets\/(legacy-demo-state-[A-Za-z0-9_-]+\.js)/);
+  assert(stateMatch, "Entry script does not reference the Legacy demo state chunk");
+  const state = await get(`/assets/${stateMatch[1]}`);
+  assert(
+    state.response.ok && /javascript|ecmascript/i.test(state.contentType),
+    `Legacy demo state chunk is not JavaScript: HTTP ${state.response.status}, ${state.contentType}`,
+  );
+  assert(
+    state.body.includes("niakofa:demo:v2"),
+    "Legacy demo state chunk is missing its persistence contract",
   );
 
   const catalog = await get("/legacy-world-assets/catalog-original.json");
@@ -111,6 +122,51 @@ try {
     assert(
       asset.response.ok && /^image\/png\b/i.test(asset.contentType),
       `Original-art asset is not a served PNG: ${assetPath} (HTTP ${asset.response.status}, ${asset.contentType})`,
+    );
+  }
+
+  const rpgCatalog = await get("/legacy-rpg-assets/catalog.json");
+  assert(
+    rpgCatalog.response.ok && /application\/json/i.test(rpgCatalog.contentType),
+    `Curated RPG asset catalog is not JSON: HTTP ${rpgCatalog.response.status}, ${rpgCatalog.contentType}`,
+  );
+
+  let rpgCatalogData;
+  try {
+    rpgCatalogData = JSON.parse(rpgCatalog.body);
+  } catch {
+    throw new Error("Curated RPG asset catalog is not valid JSON");
+  }
+
+  assert(
+    rpgCatalogData?.runtime === "react-presentation-only"
+      && rpgCatalogData?.historicalEvidence === false
+      && rpgCatalogData?.familyLikeness === "prohibited"
+      && rpgCatalogData?.licenseStatus === "review-required",
+    "Curated RPG asset catalog is missing its presentation-only safety boundary",
+  );
+
+  const curatedRpgAssets = Array.isArray(rpgCatalogData?.assets)
+    ? rpgCatalogData.assets
+    : [];
+  assert(
+    curatedRpgAssets.length === 6,
+    `Curated RPG asset catalog must contain exactly six approved files, found ${curatedRpgAssets.length}`,
+  );
+
+  for (const asset of curatedRpgAssets) {
+    assert(
+      typeof asset?.file === "string"
+        && asset.file.startsWith("/legacy-rpg-assets/")
+        && asset.runtime === "approved"
+        && asset.role !== "family-portrait"
+        && !/(?:rpg_core|rpg_objects|LinearMotionBattleSystem)/i.test(asset.file),
+      `Curated RPG asset has an unsafe runtime or identity declaration: ${asset?.file ?? "unknown"}`,
+    );
+    const servedAsset = await get(asset.file);
+    assert(
+      servedAsset.response.ok && /^image\/png\b/i.test(servedAsset.contentType),
+      `Curated RPG asset is not a served PNG: ${asset.file} (HTTP ${servedAsset.response.status}, ${servedAsset.contentType})`,
     );
   }
 

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "runtime": "react-presentation-only",
+  "purpose": "Curated visual cues for the Niakofa Legacy memory encounter.",
+  "licenseStatus": "review-required",
+  "historicalEvidence": false,
+  "familyLikeness": "prohibited",
+  "assets": [
+    {
+      "id": "encounter-grassland",
+      "file": "/legacy-rpg-assets/encounter/grassland.png",
+      "role": "scene",
+      "sourceArchive": "battlebacks1_1786536760612.zip",
+      "sourceEntry": "battlebacks1/Grassland.png",
+      "sha256": "a309f6dc2e0dc07182dabaae80191a0f2c3953f6931139e84f420832762e4d3e",
+      "runtime": "approved"
+    },
+    {
+      "id": "encounter-brick",
+      "file": "/legacy-rpg-assets/encounter/brick.png",
+      "role": "scene",
+      "sourceArchive": "battlebacks2_1786538024364.zip",
+      "sourceEntry": "battlebacks2/Brick.png",
+      "sha256": "5aba07e12140e5c8cc309a3ff070905b43deb87b1f626b94395112d7d719bdf6",
+      "runtime": "approved"
+    },
+    {
+      "id": "encounter-face-3",
+      "file": "/legacy-rpg-assets/encounter/face-3.png",
+      "role": "portrait-reference",
+      "sourceArchive": "battlecommands_1786538020818.zip",
+      "sourceEntry": "battlecommands/Face_3.png",
+      "sha256": "1e49352ad32401818bbedc82b9651354b7bbdef8442187337287d120f1d73494",
+      "runtime": "approved"
+    },
+    {
+      "id": "encounter-command-item",
+      "file": "/legacy-rpg-assets/encounter/command-item.png",
+      "role": "command-cue",
+      "sourceArchive": "battlecommands_1786538020818.zip",
+      "sourceEntry": "battlecommands/Com_Item.png",
+      "sha256": "d69e7adc3e0c6da9a0509fed35fdf1ae1a1f2e181abbd081b6ddd418e0958c03",
+      "runtime": "approved"
+    },
+    {
+      "id": "encounter-command-summon",
+      "file": "/legacy-rpg-assets/encounter/command-summon.png",
+      "role": "command-cue",
+      "sourceArchive": "battlecommands_1786538020818.zip",
+      "sourceEntry": "battlecommands/Com_Summon.png",
+      "sha256": "57f1c7908f0f3ca7857116868981a6564aac5e362ee36d085fa468e6cb532227",
+      "runtime": "approved"
+    },
+    {
+      "id": "encounter-cursor",
+      "file": "/legacy-rpg-assets/encounter/cursor.png",
+      "role": "focus-cue",
+      "sourceArchive": "battlecommands_1786538020818.zip",
+      "sourceEntry": "battlecommands/Cursor.png",
+      "sha256": "f7ca28c5e95432547e20e1b374eed70693251f61b96cb78267447a4190f88cee",
+      "runtime": "approved"
+    }
+  ]
+}

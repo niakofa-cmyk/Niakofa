@@ -5,6 +5,10 @@ on August 12, 2026. The production implementation remains a React/Vite
 experience; it does **not** embed the RPG Maker runtime or create a second game
 architecture inside Niakofa.
 
+The current session review, checksums, and archive counts are recorded in
+`session-2026-08-12.md`. Current-session ZIP entry inventories are retained
+under `source-manifests/`.
+
 ## Source boundary
 
 - Family Vault records remain the source of truth. The RPG may surface verified
@@ -29,16 +33,16 @@ architecture inside Niakofa.
 | `uploads/yuruyuri_1786531557162.zip` | Reference-only scene/UI art; not promoted because its anime imagery is not Niakofa family-history evidence. |
 | `uploads/Damage_1786531565509.zip` | Reference/status feedback; only the world-update and gold labels are promoted under `public/legacy-rpg-assets/uploaded-effects/`. |
 | `uploads/charparticles_1786531584439.zip` | Reference particle effects; only the discovery glow is promoted under `public/legacy-rpg-assets/uploaded-effects/`. |
-| `uploads/lmbs_1786528503234.zip` | Reference only; full entry inventory is in `source-manifests/`. |
+| `uploads/lmbs_1786528503234.zip` | Reference only; full entry inventory is in `source-manifests/`. The current-session upload is byte-identical. |
 | `uploads/fishing_1786528492243.zip` | Promoted fishing shoreline, rod, fish, and splash art under `public/legacy-rpg-assets/fishing/`. |
-| `uploads/animations_1786528522105.zip` | Promoted status/combat effect art under `public/legacy-rpg-assets/animations/`. |
+| `uploads/animations_1786528522105.zip` | Promoted status/combat effect art under `public/legacy-rpg-assets/animations/`. The current-session upload is byte-identical. |
 
 The uploaded fishing archive contains 22 entries and the animation archive
-contains 118 entries. The three newly reviewed archives are preserved byte-for-
-byte under `uploads/`, with line-by-line ZIP entry manifests under
-`source-manifests/`. The LMBS archive was extracted and reviewed as a
-reference; its complete manifest is retained as a text inventory instead of
-shipping the entire engine/archive into the runtime bundle.
+contains 118 entries. The reviewed archives are preserved byte-for-byte under
+`uploads/`, with line-by-line ZIP entry manifests under `source-manifests/`.
+The LMBS archive was extracted and reviewed as a reference; its complete
+manifest is retained as a text inventory instead of shipping the entire
+engine/archive into the runtime bundle.
 
 ## Runtime mapping
 
@@ -75,7 +79,8 @@ Vault data.
 
 The August 12 battleback and battle-command uploads remain preserved in full
 under `uploads/` and are catalogued line by line in `source-manifests/`.
-Only six small files are promoted to the browser:
+The exact current-session names and SHA-256 values are recorded in
+`session-2026-08-12.md`. Only six small files are promoted to the browser:
 
 - `grassland.png` — initial-world memory encounter setting.
 - `brick.png` — changed-world setting after regeneration.
@@ -84,6 +89,7 @@ Only six small files are promoted to the browser:
 - `cursor.png` — focus cue.
 
 The encounter is intentionally a React presentation backed by the shared demo
-state. It does not import RPG Maker runtime files or turn the supplied actors
-into real family identities. Confirm provenance and licensing before public
-commercial launch.
+state. Its six promoted files are enforced by
+`public/legacy-rpg-assets/catalog.json`. It does not import RPG Maker runtime
+files or turn the supplied actors into real family identities. Confirm
+provenance and licensing before public commercial launch.

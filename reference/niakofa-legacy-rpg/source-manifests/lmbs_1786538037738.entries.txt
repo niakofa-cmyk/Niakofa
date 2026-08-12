@@ -1,0 +1,256 @@
+lmbs/
+lmbs/MOG_Scrollbar.js
+lmbs/Cursor_B.png
+lmbs/Cursor.png
+lmbs/AltSaveScreen.js
+lmbs/ExampleSkillMotionCommonItem.json
+__MACOSX/lmbs/._ExampleSkillMotionCommonItem.json
+lmbs/MOG_ActionName.js
+lmbs/.DS_Store
+__MACOSX/lmbs/._.DS_Store
+lmbs/rpg_windows.js
+lmbs/rpg_core.js
+lmbs/rpg_objects.js
+lmbs/MOG_BattleTransitions.js
+lmbs/rpg_sprites.js
+lmbs/MOG_OugiAnimation.js
+lmbs/MOG_BattlebackEX.js
+lmbs/LinearMotionBattleSystem_Core.js
+__MACOSX/lmbs/._LinearMotionBattleSystem_Core.js
+lmbs/MadeWithMv.js
+lmbs/plugins.js
+lmbs/ExampleAnimationDescriptor.json
+lmbs/rpg_managers.js
+lmbs/MOG_BattleResult.js
+lmbs/concat.js
+lmbs/MOG_LMBS.js
+lmbs/MOG_MenuParticles.js
+lmbs/battlers/
+lmbs/MOG_MapNameHud.js
+lmbs/MOG_BattleCamera.js
+lmbs/TitleCommandPosition.js
+lmbs/EnemyHP_A.png
+lmbs/SRD_PreloaderCore.js
+lmbs/rpg_scenes.js
+lmbs/main.js
+lmbs/MOG_MenuBackground.js
+lmbs/KienLib.js
+__MACOSX/lmbs/._KienLib.js
+lmbs/EnemyHP_B.png
+lmbs/MOG_LMBS_EnemyHP.js
+lmbs/IconCom.png
+lmbs/MOG_ComboCounter.js
+lmbs/ItemBook.js
+lmbs/Escape_B.png
+lmbs/MOG_BattleHud.js
+lmbs/SimpleMsgSideView.js
+lmbs/Escape_A.png
+lmbs/skills/
+lmbs/MOG_MenuCursor.js
+lmbs/MOG_BattleCry.js
+lmbs/AltMenuScreen.js
+lmbs/------------------------.js
+__MACOSX/lmbs/._------------------------.js
+lmbs/MOG_BossHP.js
+lmbs/Community_Basic.js
+lmbs/WeaponSkill.js
+lmbs/EnemyBook.js
+lmbs/MOG_DmgPopupEffects.js
+lmbs/MOG_SkipWindowLog.js
+lmbs/filelist.json
+__MACOSX/lmbs/._filelist.json
+lmbs/battlers/.DS_Store
+__MACOSX/lmbs/battlers/._.DS_Store
+lmbs/battlers/Refernce Only/
+lmbs/skills/Thumbs.db
+lmbs/skills/Psycho_Reflector.png
+lmbs/skills/IceSpear01.png
+lmbs/skills/Psycho_Ball.png
+lmbs/skills/ShockWave_01.png
+lmbs/skills/ShockWave_02.png
+lmbs/skills/Rock.png
+lmbs/skills/FireSpear02.png
+lmbs/skills/SonicFist01.png
+lmbs/skills/FireSpear01.png
+lmbs/skills/SonicFist02.png
+lmbs/skills/Arrow01.png
+lmbs/skills/FireBall01.png
+lmbs/skills/Phoenix.png
+lmbs/skills/FireBall02.png
+lmbs/battlers/Refernce Only/Arche[Cast].png
+__MACOSX/lmbs/battlers/Refernce Only/._Arche[Cast].png
+lmbs/battlers/Refernce Only/Farah[Cast].png
+lmbs/battlers/Refernce Only/Lamia[Fall].png
+lmbs/battlers/Refernce Only/Leon[AirDash].png
+lmbs/battlers/Refernce Only/Demon[Dead].png
+lmbs/battlers/Refernce Only/Demon[Damage].png
+lmbs/battlers/Refernce Only/Farah[Victory].png
+lmbs/battlers/Refernce Only/Lamia[Jump].png
+lmbs/battlers/Refernce Only/Chelsea[Walk].png
+lmbs/battlers/Refernce Only/Athena[Action2].png
+lmbs/battlers/Refernce Only/Lamia[Damage].png
+lmbs/battlers/Refernce Only/Farah[Damage].png
+lmbs/battlers/Refernce Only/Farah[Action6].png
+lmbs/battlers/Refernce Only/Lamia.png
+lmbs/battlers/Refernce Only/Leon[Walk].png
+lmbs/battlers/Refernce Only/Sword[Dash].png
+__MACOSX/lmbs/battlers/Refernce Only/._Sword[Dash].png
+lmbs/battlers/Refernce Only/Leon[Action1].png
+lmbs/battlers/Refernce Only/Harpy.png
+lmbs/battlers/Refernce Only/Frog[Dash].png
+lmbs/battlers/Refernce Only/Athena.png
+lmbs/battlers/Refernce Only/Arche[Idle].png
+lmbs/battlers/Refernce Only/Arche[Victory].png
+lmbs/battlers/Refernce Only/Farah[Idle].png
+lmbs/battlers/Refernce Only/Farah.png
+lmbs/battlers/Refernce Only/Farah[Dash].png
+lmbs/battlers/Refernce Only/Sword[Action2].png
+lmbs/battlers/Refernce Only/Arche[Dash].png
+lmbs/battlers/Refernce Only/Chelsea[Victory].png
+lmbs/battlers/Refernce Only/Frog[Idle].png
+lmbs/battlers/Refernce Only/Demon[Jump].png
+lmbs/battlers/Refernce Only/Sword[Idle].png
+lmbs/battlers/Refernce Only/Demon[Fall].png
+lmbs/battlers/Refernce Only/Chelsea[Item].png
+lmbs/battlers/Refernce Only/Lamia[Dead].png
+lmbs/battlers/Refernce Only/Farah[Action7].png
+lmbs/battlers/Refernce Only/Leon[Item].png
+lmbs/battlers/Refernce Only/Athena[Action3].png
+lmbs/battlers/Refernce Only/Farah[Guard].png
+lmbs/battlers/Refernce Only/Sword[Cast].png
+lmbs/battlers/Refernce Only/Harpy[Damage].png
+lmbs/battlers/Refernce Only/Frog[Cast].png
+lmbs/battlers/Refernce Only/Harpy[Action2].png
+lmbs/battlers/Refernce Only/Arche[Walk].png
+__MACOSX/lmbs/battlers/Refernce Only/._Arche[Walk].png
+lmbs/battlers/Refernce Only/Farah[Walk].png
+lmbs/battlers/Refernce Only/Chelsea[action1].png
+lmbs/battlers/Refernce Only/Harpy[Dead].png
+lmbs/battlers/Refernce Only/Ghost[AirDash].png
+lmbs/battlers/Refernce Only/Leon[Idle].png
+lmbs/battlers/Refernce Only/Arche[Guard].png
+lmbs/battlers/Refernce Only/Athena[Action8].png
+lmbs/battlers/Refernce Only/Chelsea[Cast].png
+lmbs/battlers/Refernce Only/Ghost[Action1].png
+lmbs/battlers/Refernce Only/Chelsea[Idle].png
+lmbs/battlers/Refernce Only/Leon[Cast].png
+lmbs/battlers/Refernce Only/Athena[Jump].png
+lmbs/battlers/Refernce Only/Athena[Walk][F13][S4].png
+lmbs/battlers/Refernce Only/Athena[Fall].png
+lmbs/battlers/Refernce Only/Sword[Damage].png
+lmbs/battlers/Refernce Only/Athena[Action4].png
+lmbs/battlers/Refernce Only/Chelsea[AirDash].png
+lmbs/battlers/Refernce Only/Ghost[Dead].png
+lmbs/battlers/Refernce Only/Chelsea[Guard].png
+lmbs/battlers/Refernce Only/Arche[AirDash].png
+lmbs/battlers/Refernce Only/Farah[Action1].png
+lmbs/battlers/Refernce Only/Leon[Damage].png
+lmbs/battlers/Refernce Only/Athena[Action5].png
+lmbs/battlers/Refernce Only/Harpy[Jump].png
+lmbs/battlers/Refernce Only/Demon[Guard].png
+lmbs/battlers/Refernce Only/Farah[Item].png
+lmbs/battlers/Refernce Only/Ghost[Guard].png
+lmbs/battlers/Refernce Only/Arche[Item].png
+lmbs/battlers/Refernce Only/Harpy[Fall].png
+lmbs/battlers/Refernce Only/Lamia[Action2].png
+lmbs/battlers/Refernce Only/Chelsea[Dash].png
+lmbs/battlers/Refernce Only/Ghost[Fall].png
+lmbs/battlers/Refernce Only/Athena[Action9].png
+lmbs/battlers/Refernce Only/Leon[Dash].png
+lmbs/battlers/Refernce Only/Lamia[Guard].png
+lmbs/battlers/Refernce Only/Athena[Dead].png
+lmbs/battlers/Refernce Only/Leon[Action6].png
+lmbs/battlers/Refernce Only/Arche[Action1].png
+lmbs/battlers/Refernce Only/Farah[AirDash].png
+lmbs/battlers/Refernce Only/Ghost.png
+lmbs/battlers/Refernce Only/Sword[Walk].png
+lmbs/battlers/Refernce Only/Chelsea[Damage].png
+lmbs/battlers/Refernce Only/Leon[Victory].png
+lmbs/battlers/Refernce Only/Ghost[Jump].png
+lmbs/battlers/Refernce Only/Frog[Walk].png
+lmbs/battlers/Refernce Only/Lamia[AirDash].png
+lmbs/battlers/Refernce Only/Chelsea[Dead].png
+lmbs/battlers/Refernce Only/Leon[Action5].png
+lmbs/battlers/Refernce Only/Demon[Walk].png
+lmbs/battlers/Refernce Only/Arche[Action2].png
+lmbs/battlers/Refernce Only/Harpy[Cast].png
+lmbs/battlers/Refernce Only/Chelsea[Action3].png
+lmbs/battlers/Refernce Only/Ghost[Idle].png
+lmbs/battlers/Refernce Only/Farah[Action2].png
+lmbs/battlers/Refernce Only/Ghost[Cast].png
+lmbs/battlers/Refernce Only/Sword.png
+lmbs/battlers/Refernce Only/Athena[Action6].png
+lmbs/battlers/Refernce Only/Harpy[Idle].png
+lmbs/battlers/Refernce Only/Athena[Dash].png
+lmbs/battlers/Refernce Only/Lamia[Action1].png
+lmbs/battlers/Refernce Only/Athena[Victory].png
+lmbs/battlers/Refernce Only/Leon[Dead].png
+lmbs/battlers/Refernce Only/Demon[AirDash].png
+lmbs/battlers/Refernce Only/Ghost[Action2].png
+lmbs/battlers/Refernce Only/Chelsea[Jump].png
+lmbs/battlers/Refernce Only/Lamia[Walk].png
+lmbs/battlers/Refernce Only/Frog.png
+lmbs/battlers/Refernce Only/Athena[Idle].png
+lmbs/battlers/Refernce Only/Harpy[AirDash].png
+lmbs/battlers/Refernce Only/Harpy[Guard].png
+lmbs/battlers/Refernce Only/Harpy[Dash].png
+lmbs/battlers/Refernce Only/Athena[Action7].png
+lmbs/battlers/Refernce Only/Chelsea[Fall].png
+lmbs/battlers/Refernce Only/Farah[Action3].png
+lmbs/battlers/Refernce Only/Harpy[Action1].png
+lmbs/battlers/Refernce Only/Ghost[Dash].png
+lmbs/battlers/Refernce Only/Chelsea[Action2].png
+lmbs/battlers/Refernce Only/Leon[Guard].png
+lmbs/battlers/Refernce Only/Leon[Fall].png
+lmbs/battlers/Refernce Only/Leon[Action4].png
+lmbs/battlers/Refernce Only/Sword[Guard].png
+lmbs/battlers/Refernce Only/Athena[Cast].png
+lmbs/battlers/Refernce Only/Leon[Jump].png
+lmbs/battlers/Refernce Only/Chelsea.png
+lmbs/battlers/Refernce Only/HarpyAction2.png
+lmbs/battlers/Refernce Only/Farah[Action4].png
+lmbs/battlers/Refernce Only/Frog[Guard].png
+lmbs/battlers/Refernce Only/Lamia[Dash].png
+lmbs/battlers/Refernce Only/Farah[Action11].png
+lmbs/battlers/Refernce Only/Leon.png
+lmbs/battlers/Refernce Only/Harpy[Walk].png
+lmbs/battlers/Refernce Only/Sword[AirDash].png
+lmbs/battlers/Refernce Only/Demon[Cast].png
+lmbs/battlers/Refernce Only/Farah[Dead].png
+lmbs/battlers/Refernce Only/Frog[Damage].png
+lmbs/battlers/Refernce Only/Arche[Dead].png
+__MACOSX/lmbs/battlers/Refernce Only/._Arche[Dead].png
+lmbs/battlers/Refernce Only/Sword[Action1].png
+lmbs/battlers/Refernce Only/Farah[Action8].png
+lmbs/battlers/Refernce Only/Ghost[Walk].png
+lmbs/battlers/Refernce Only/Frog[Jump].png
+lmbs/battlers/Refernce Only/Demon[Idle].png
+lmbs/battlers/Refernce Only/Leon[Action3].png
+lmbs/battlers/Refernce Only/Sword[Jump].png
+lmbs/battlers/Refernce Only/Sword[Fall].png
+lmbs/battlers/Refernce Only/Frog[Fall].png
+lmbs/battlers/Refernce Only/Arche.png
+lmbs/battlers/Refernce Only/Lamia[Cast].png
+lmbs/battlers/Refernce Only/Farah[Fall].png
+lmbs/battlers/Refernce Only/Arche[Fall].png
+lmbs/battlers/Refernce Only/Chelsea[Action4].png
+lmbs/battlers/Refernce Only/Athena[AirDash].png
+lmbs/battlers/Refernce Only/Frog[AirDash].png
+lmbs/battlers/Refernce Only/Athena[Damage].png
+lmbs/battlers/Refernce Only/Leon[Action2].png
+lmbs/battlers/Refernce Only/Demon[Dash].png
+lmbs/battlers/Refernce Only/Arche[Damage].png
+lmbs/battlers/Refernce Only/Farah[Action9].png
+lmbs/battlers/Refernce Only/Demon.png
+lmbs/battlers/Refernce Only/Arche[Jump].png
+lmbs/battlers/Refernce Only/Farah[Jump].png
+lmbs/battlers/Refernce Only/Athena[Guard].png
+lmbs/battlers/Refernce Only/Frog[Dead].png
+lmbs/battlers/Refernce Only/Sword[Dead].png
+lmbs/battlers/Refernce Only/Ghost[Damage].png
+lmbs/battlers/Refernce Only/Athena[Walk].png
+lmbs/battlers/Refernce Only/Farah[Action10].png
+lmbs/battlers/Refernce Only/Athena[Action1].png
+lmbs/battlers/Refernce Only/Lamia[Idle].png
+lmbs/battlers/Refernce Only/Farah[Action5].png
+lmbs/battlers/Refernce Only/Frog[Action1].png
