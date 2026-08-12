@@ -183,6 +183,57 @@ export function summarizeDemoWorldChanges(worldChanges: readonly WorldChange[]) 
     .filter(group => group.count > 0);
 }
 
+export interface DemoMemoryChainNode {
+  artifactId: (typeof DEMO_ARTIFACT_IDS)[number];
+  title: string;
+  source: string;
+  outcome: string;
+  changeType: WorldChange["changeType"];
+}
+
+/**
+ * The Memory Chain is the player-facing explanation of regeneration:
+ * a preserved object becomes a concrete change in the shared world.
+ * It is intentionally declarative so the UI cannot invent a second mapping.
+ */
+export const DEMO_MEMORY_CHAIN: readonly DemoMemoryChainNode[] = [
+  {
+    artifactId: "photo",
+    title: "Recognize an ancestor",
+    source: "Old photograph",
+    outcome: "Family Tree branch",
+    changeType: "ancestor",
+  },
+  {
+    artifactId: "recipe",
+    title: "Recover a living voice",
+    source: "Family recipe",
+    outcome: "Kitchen dialogue",
+    changeType: "dialogue",
+  },
+  {
+    artifactId: "medal",
+    title: "Open a chapter seed",
+    source: "Military medal",
+    outcome: "Rising Again",
+    changeType: "chapter",
+  },
+  {
+    artifactId: "certificate",
+    title: "Trace the family route",
+    source: "Marriage certificate",
+    outcome: "Migration route",
+    changeType: "migration",
+  },
+];
+
+export function getDemoMemoryChain(
+  placedArtifacts: readonly string[],
+): Array<DemoMemoryChainNode & { placed: boolean }> {
+  const placed = new Set(placedArtifacts);
+  return DEMO_MEMORY_CHAIN.map(node => ({ ...node, placed: placed.has(node.artifactId) }));
+}
+
 export const DEMO_COOP_ASSIGNMENTS: Record<string, string> = {
   "photo-id": "You",
   "elder-interview": "Akua",

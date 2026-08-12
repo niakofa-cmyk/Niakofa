@@ -53,6 +53,18 @@ describe("Legacy demo navigation contract", () => {
     expect(spriteSource).toContain("legacy-sprite-walk");
   });
 
+  it("explains how preserved artifacts become world updates", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../../pages/legacy-demo.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("Memory Chain");
+    expect(source).toContain("Family Vault → Living World");
+    expect(source).toContain("getDemoMemoryChain");
+    expect(source).toContain("The chain is complete");
+  });
+
   it("keeps the authenticated house panel on the canonical demo state key", () => {
     const source = readFileSync(
       fileURLToPath(new URL("../../components/legacy-house-demo.tsx", import.meta.url)),

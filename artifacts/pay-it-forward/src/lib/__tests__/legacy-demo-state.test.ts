@@ -7,6 +7,7 @@ import {
   DEFAULT_DEMO_STATE,
   DEMO_ARTIFACT_IDS,
   DEMO_COOP_QUEST_IDS,
+  DEMO_MEMORY_CHAIN,
   DEMO_TRAITS,
   DEMO_WORLD_CHANGES,
   enterLivingBaobab,
@@ -22,6 +23,7 @@ import {
   summarizeDemoWorldChanges,
   updateDemoMapPosition,
   writeDemoState,
+  getDemoMemoryChain,
 } from "../legacy-demo-state";
 
 describe("Legacy public demo journey", () => {
@@ -238,6 +240,18 @@ describe("Legacy public demo journey", () => {
 });
 
 describe("World regeneration", () => {
+  it("projects each preserved artifact into one explicit Memory Chain link", () => {
+    const chain = getDemoMemoryChain(["photo", "not-real"]);
+    expect(chain).toHaveLength(DEMO_MEMORY_CHAIN.length);
+    expect(chain.filter(node => node.placed).map(node => node.artifactId)).toEqual(["photo"]);
+    expect(chain.find(node => node.artifactId === "photo")).toMatchObject({
+      title: "Recognize an ancestor",
+      outcome: "Family Tree branch",
+      changeType: "ancestor",
+    });
+    expect(chain.find(node => node.artifactId === "recipe")?.placed).toBe(false);
+  });
+
   it("tracks a world change for each artifact placed", () => {
     let state = resetDemo();
     expect(state.worldChanges).toEqual([]);

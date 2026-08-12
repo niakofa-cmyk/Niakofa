@@ -50,6 +50,7 @@ import {
   completeDemoQuest,
   DEFAULT_DEMO_STATE,
   DEMO_STATE_EVENT,
+  getDemoMemoryChain,
   DEMO_PHASE_ORDER,
   enterLivingBaobab,
   placeDemoArtifact,
@@ -934,6 +935,8 @@ function WorldRegenScreen({ state, onPlace, onContinue }: {
 }) {
   const placed = new Set(state.placedArtifacts);
   const allPlaced = ARTIFACTS.every(a => placed.has(a.id));
+  const memoryChain = getDemoMemoryChain(state.placedArtifacts);
+  const nextMemory = memoryChain.find(node => !node.placed);
   const [showRegen, setShowRegen] = useState(false);
   const placedCountRef = useRef(0);
 
@@ -983,6 +986,74 @@ function WorldRegenScreen({ state, onPlace, onContinue }: {
       <p className="text-sm text-amber-200/80 leading-relaxed">
         Afia records a story from her grandmother. Watch the house transform in real time — every artifact placed physically changes a room.
       </p>
+
+      {/* Memory Chain */}
+      <section
+        aria-labelledby="memory-chain-title"
+        className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-[#21140b] via-[#1a0d07] to-[#120a06] p-3.5"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[0.22em] text-amber-600">Family Vault → Living World</p>
+            <h3 id="memory-chain-title" className="mt-1 text-sm font-black text-amber-100">Memory Chain</h3>
+            <p className="mt-1 max-w-sm text-[10px] leading-relaxed text-amber-200/60">
+              Each preserved object links a person, a place, or a path into the next version of the world.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-amber-300">
+            {memoryChain.filter(node => node.placed).length}/{memoryChain.length} linked
+          </span>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {memoryChain.map((node, index) => (
+            <div key={node.artifactId} className="relative">
+              {index > 0 && (
+                <span
+                  aria-hidden="true"
+                  className={`absolute -left-2 top-5 hidden h-px w-2 sm:block ${
+                    node.placed ? "bg-amber-400/60" : "bg-amber-800/40"
+                  }`}
+                />
+              )}
+              <div
+                className={`h-full rounded-lg border p-2.5 transition-all ${
+                  node.placed
+                    ? "border-emerald-400/35 bg-emerald-950/25"
+                    : "border-amber-900/35 bg-black/10"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className={`text-[9px] font-black uppercase tracking-wide ${node.placed ? "text-emerald-300" : "text-amber-700"}`}>
+                    0{index + 1}
+                  </span>
+                  {node.placed ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" aria-label="Memory linked" />
+                  ) : (
+                    <span className="h-2 w-2 rounded-full border border-amber-700/70" aria-label="Memory waiting" />
+                  )}
+                </div>
+                <p className={`mt-2 text-[10px] font-bold leading-tight ${node.placed ? "text-amber-100" : "text-amber-500/70"}`}>
+                  {node.title}
+                </p>
+                <p className="mt-1 text-[9px] leading-tight text-amber-700">{node.source}</p>
+                <div className={`mt-2 border-t pt-2 text-[9px] leading-tight ${node.placed ? "border-emerald-400/15 text-emerald-200/75" : "border-amber-900/25 text-amber-800"}`}>
+                  → {node.outcome}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p role="status" aria-live="polite" className="mt-3 flex items-center gap-1.5 text-[10px] text-amber-300/65">
+          <Sparkles className="h-3 w-3 shrink-0 text-amber-400" />
+          {allPlaced
+            ? "The chain is complete. Your shared world is ready for its next update."
+            : nextMemory
+              ? `Next link: ${nextMemory.source} → ${nextMemory.outcome}`
+              : "Preserve a memory to begin the chain."}
+        </p>
+      </section>
 
       {/* Living House */}
       <div className="rounded-xl border border-amber-700/40 bg-[#1a0d07] p-3">
