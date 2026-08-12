@@ -46,6 +46,7 @@ import {
   advanceBusiness,
   castFishing,
   chooseDemoTrait,
+  completeMemoryEncounter,
   completeReunionDialogue,
   completeDemoQuest,
   DEFAULT_DEMO_STATE,
@@ -71,6 +72,7 @@ import {
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 import { LegacyLivingWorld } from "@/components/legacy-living-world";
 import { LegacyLivingBaobab } from "@/components/legacy-living-baobab";
+import { LegacyMemoryEncounter } from "@/components/legacy-memory-encounter";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -806,10 +808,12 @@ function BusinessScreen({
 function MysteryScreen({
   state,
   onReveal,
+  onEncounterComplete,
   onContinue,
 }: {
   state: DemoState;
   onReveal: (id: string) => void;
+  onEncounterComplete: () => void;
   onContinue: () => void;
 }) {
   const [investigating, setInvestigating] = useState<string | null>(null);
@@ -902,6 +906,12 @@ function MysteryScreen({
           );
         })}
       </div>
+
+      <LegacyMemoryEncounter
+        worldVersion={state.worldVersion}
+        completed={state.memoryEncounterCompleted}
+        onComplete={onEncounterComplete}
+      />
 
       {anyRevealed && (
         <div className="space-y-3 animate-[fadeIn_0.5s_ease-out]">
@@ -1707,6 +1717,12 @@ export default function LegacyDemoPage() {
     });
   }, [persist]);
 
+  const handleMemoryEncounterComplete = useCallback(() => {
+    setState(prev => {
+      return persist(completeMemoryEncounter(prev));
+    });
+  }, [persist]);
+
   const handleReunionDialogue = useCallback((npcId: string) => {
     setState(prev => {
       return persist(completeReunionDialogue(prev, npcId));
@@ -1867,7 +1883,12 @@ export default function LegacyDemoPage() {
         )}
 
         {state.phase === "mystery" && (
-          <MysteryScreen state={state} onReveal={handleRevealMystery} onContinue={advance} />
+          <MysteryScreen
+            state={state}
+            onReveal={handleRevealMystery}
+            onEncounterComplete={handleMemoryEncounterComplete}
+            onContinue={advance}
+          />
         )}
 
         {state.phase === "world-regen" && (

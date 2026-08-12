@@ -6,3 +6,4 @@
 - [Legacy API contracts](legacy-api-contracts.md) — current data sources for Legacy journey, welcome, and calendar UI; retired endpoint list.
 - [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes require the supported GitHub connection and must not use pasted tokens.
 - [Legacy Character Engine Runtime](legacy-character-engine-runtime.md) — stable IDs, explicit runtime layers, and the archive/licensing boundary for character rendering.
+- [Legacy RPG art boundary](legacy-rpg-art-boundary.md) — supplied RPG art is curated into React presentation only; never promote a second runtime or imply historical identity.

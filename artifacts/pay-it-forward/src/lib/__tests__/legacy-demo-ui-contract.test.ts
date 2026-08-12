@@ -65,6 +65,30 @@ describe("Legacy demo navigation contract", () => {
     expect(source).toContain("The chain is complete");
   });
 
+  it("keeps the RPG command vocabulary grounded in a persisted memory encounter", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../../pages/legacy-demo.tsx", import.meta.url)),
+      "utf8",
+    );
+    const encounterSource = readFileSync(
+      fileURLToPath(new URL("../../components/legacy-memory-encounter.tsx", import.meta.url)),
+      "utf8",
+    );
+    const stateSource = readFileSync(
+      fileURLToPath(new URL("../legacy-demo-state.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("LegacyMemoryEncounter");
+    expect(encounterSource).toContain("The ledger remembers");
+    expect(encounterSource).toContain("Listen to the memory");
+    expect(encounterSource).toContain("Preserve this discovery");
+    expect(encounterSource).toContain("/legacy-rpg-assets/encounter/grassland.png");
+    expect(encounterSource).toContain("/legacy-rpg-assets/encounter/brick.png");
+    expect(stateSource).toContain("completeMemoryEncounter");
+    expect(stateSource).toContain("memoryEncounterCompleted");
+  });
+
   it("keeps the authenticated house panel on the canonical demo state key", () => {
     const source = readFileSync(
       fileURLToPath(new URL("../../components/legacy-house-demo.tsx", import.meta.url)),

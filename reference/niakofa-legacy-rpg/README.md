@@ -48,6 +48,7 @@ shipping the entire engine/archive into the runtime bundle.
 | Small, meaningful RPG activity | River-memory fishing encounter with cast-power choices, persistent catch journal, rarity, and Legacy Points. |
 | Effects without a second engine | Promoted animation PNGs render as lightweight feedback overlays in the existing React encounter. |
 | World regeneration continuity | Each placed artifact is summarized by its concrete mutation type before the shared world advances from v1 to v2. |
+| RPG command vocabulary without a second engine | Curated battleback/portrait/command art frames a persisted “memory encounter”; listen, inspect, and connect replace combat verbs. |
 | Resume and cross-surface continuity | Versioned demo state is sanitized, same-tab/cross-tab synced, and storage failures are surfaced to the player. |
 
 ## Source manifests
@@ -69,3 +70,20 @@ The new `uploaded-effects/` files are used only as decorative discovery feedback
 These assets remain subject to licensing/source confirmation before a public
 commercial launch. They are not historical evidence and never replace Family
 Vault data.
+
+## Curated memory encounter assets
+
+The August 12 battleback and battle-command uploads remain preserved in full
+under `uploads/` and are catalogued line by line in `source-manifests/`.
+Only six small files are promoted to the browser:
+
+- `grassland.png` — initial-world memory encounter setting.
+- `brick.png` — changed-world setting after regeneration.
+- `face-3.png` — stylized portrait reference, never a family likeness.
+- `command-item.png` and `command-summon.png` — visual command cues.
+- `cursor.png` — focus cue.
+
+The encounter is intentionally a React presentation backed by the shared demo
+state. It does not import RPG Maker runtime files or turn the supplied actors
+into real family identities. Confirm provenance and licensing before public
+commercial launch.

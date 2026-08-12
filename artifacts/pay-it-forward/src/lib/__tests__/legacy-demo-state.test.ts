@@ -14,6 +14,7 @@ import {
   completeReunionDialogue,
   advanceBusiness,
   castFishing,
+  completeMemoryEncounter,
   revealMystery,
   unlockKitchenRecipe,
   placeDemoArtifact,
@@ -27,6 +28,26 @@ import {
 } from "../legacy-demo-state";
 
 describe("Legacy public demo journey", () => {
+  it("awards the memory encounter points once and survives storage round trips", () => {
+    const completed = completeMemoryEncounter(resetDemo());
+    const repeated = completeMemoryEncounter(completed);
+
+    expect(completed.memoryEncounterCompleted).toBe(true);
+    expect(completed.legacyPoints).toBe(20);
+    expect(repeated.legacyPoints).toBe(20);
+
+    const stored: Record<string, string> = {};
+    writeDemoState(
+      {
+        setItem(key, value) {
+          stored[key] = value;
+        },
+      },
+      completed,
+    );
+    expect(readDemoState({ getItem: key => stored[key] ?? null }).memoryEncounterCompleted).toBe(true);
+  });
+
   it("persists the playable map position and facing in the shared demo state", () => {
     const moved = updateDemoMapPosition(resetDemo(), { row: 4, column: 3 }, "up");
     expect(moved.mapPosition).toEqual({ row: 4, column: 3 });

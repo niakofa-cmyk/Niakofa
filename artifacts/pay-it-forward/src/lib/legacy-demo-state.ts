@@ -103,6 +103,7 @@ export interface DemoState {
   mapPosition: DemoMapPosition;
   mapFacing: DemoFacing;
   fishing: FishingJournal;
+  memoryEncounterCompleted: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -308,6 +309,7 @@ export const DEFAULT_DEMO_STATE: DemoState = {
   mapPosition: { row: 5, column: 3 },
   mapFacing: "down",
   fishing: { castCount: 0, catches: [], lastCatch: null },
+  memoryEncounterCompleted: false,
 };
 
 // ─── Phase helpers ────────────────────────────────────────────────────────────
@@ -466,6 +468,15 @@ export function revealMystery(state: DemoState, mysteryId: string): DemoState {
       m.id === mysteryId ? { ...m, revealed: true, solved: true } : m,
     ),
     legacyPoints: state.legacyPoints + 75,
+  };
+}
+
+export function completeMemoryEncounter(state: DemoState): DemoState {
+  if (state.memoryEncounterCompleted) return state;
+  return {
+    ...state,
+    memoryEncounterCompleted: true,
+    legacyPoints: state.legacyPoints + 20,
   };
 }
 
@@ -631,6 +642,7 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
       legacyPoints: typeof parsed.legacyPoints === "number" && Number.isFinite(parsed.legacyPoints)
         ? Math.max(0, parsed.legacyPoints)
         : 0,
+      memoryEncounterCompleted: parsed.memoryEncounterCompleted === true,
       mysteries: Array.isArray(parsed.mysteries) && parsed.mysteries.length > 0
         ? DEMO_MYSTERIES.map(dm => {
             const saved = (parsed.mysteries as MysteryState[]).find(m => m.id === dm.id);
