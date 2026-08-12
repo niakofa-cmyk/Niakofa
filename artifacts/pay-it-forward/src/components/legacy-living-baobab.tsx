@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ArrowRight, BookOpen, HeartHandshake, MapPin, Sparkles, TreePine } from "lucide-react";
 
 interface LegacyLivingBaobabProps {
@@ -5,12 +6,65 @@ interface LegacyLivingBaobabProps {
   onEnter: () => void;
 }
 
+type LivingBranch = {
+  id: string;
+  label: string;
+  member: string;
+  era: string;
+  detail: string;
+  evidence: string;
+  position: { left: string; top: string };
+};
+
+const LIVING_BRANCHES: readonly LivingBranch[] = [
+  {
+    id: "ancestor",
+    label: "Ancestor branch",
+    member: "Kwame Mensah",
+    era: "1890 · Gold Coast",
+    detail: "Merchant, farmer, and the first known keeper of the House of Mensah story.",
+    evidence: "12 memories · 4 places · 2 chapters",
+    position: { left: "24%", top: "38%" },
+  },
+  {
+    id: "kitchen",
+    label: "Living kitchen",
+    member: "Ama's recipes",
+    era: "1932 · Family memory",
+    detail: "A recipe can carry a voice, a place, and the person who taught it.",
+    evidence: "3 recipes · 1 oral history · 1 new dialogue",
+    position: { left: "72%", top: "38%" },
+  },
+  {
+    id: "migration",
+    label: "Migration route",
+    member: "The next branch",
+    era: "Across generations",
+    detail: "Follow the route from the village to the places where the family took root.",
+    evidence: "2 landmarks · 1 route · more to discover",
+    position: { left: "35%", top: "26%" },
+  },
+  {
+    id: "living",
+    label: "Living relatives",
+    member: "Your family now",
+    era: "Today · Connected",
+    detail: "New contributions become leaves, stories become fruit, and the tree keeps growing.",
+    evidence: "Living leaves · shared quests · memories waiting",
+    position: { left: "62%", top: "26%" },
+  },
+];
+
 /**
  * The public demo's home screen. The Baobab is deliberately a lightweight
  * entry surface rather than a second navigation system: the existing golden
  * path remains the source of truth once the player enters the story.
  */
 export function LegacyLivingBaobab({ worldVersion, onEnter }: LegacyLivingBaobabProps) {
+  const [selectedBranchId, setSelectedBranchId] = useState(LIVING_BRANCHES[0].id);
+  const selectedBranch =
+    LIVING_BRANCHES.find(branch => branch.id === selectedBranchId) ?? LIVING_BRANCHES[0];
+
   return (
     <section
       aria-labelledby="living-baobab-title"
@@ -107,6 +161,33 @@ export function LegacyLivingBaobab({ worldVersion, onEnter }: LegacyLivingBaobab
             <path d="M42 274 Q180 235 318 274" fill="none" stroke="#b88232" strokeDasharray="3 9" opacity="0.55" />
           </svg>
 
+          <div
+            className="absolute inset-0"
+            aria-label="Family branches"
+          >
+            {LIVING_BRANCHES.map(branch => {
+              const isSelected = branch.id === selectedBranch.id;
+              return (
+                <button
+                  key={branch.id}
+                  type="button"
+                  aria-label={`Focus ${branch.label}: ${branch.member}`}
+                  aria-pressed={isSelected}
+                  onClick={() => setSelectedBranchId(branch.id)}
+                  className={[
+                    "absolute flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-[11px] font-black shadow-[0_0_18px_rgba(245,200,66,0.35)] transition-all focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-offset-2 focus:ring-offset-[#120b07]",
+                    isSelected
+                      ? "z-10 scale-110 border-amber-100 bg-amber-400 text-[#241205]"
+                      : "border-amber-300/70 bg-[#203c2b] text-amber-100 hover:scale-105 hover:border-amber-100",
+                  ].join(" ")}
+                  style={{ left: branch.position.left, top: branch.position.top }}
+                >
+                  <span aria-hidden="true">{isSelected ? "✦" : "·"}</span>
+                </button>
+              );
+            })}
+          </div>
+
           <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 px-4">
             <span className="rounded-full border border-amber-700/30 bg-[#1d120a]/90 px-2.5 py-1 text-[9px] font-bold text-amber-500">
               4 branches
@@ -116,6 +197,35 @@ export function LegacyLivingBaobab({ worldVersion, onEnter }: LegacyLivingBaobab
             </span>
           </div>
         </div>
+
+        <section
+          aria-live="polite"
+          aria-labelledby="selected-branch-title"
+          className="rounded-2xl border border-amber-700/35 bg-[#1a0d07]/90 p-4 shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-600">
+                {selectedBranch.label}
+              </p>
+              <h2
+                id="selected-branch-title"
+                className="mt-1 text-xl font-black text-amber-100"
+                style={{ fontFamily: "Georgia, serif" }}
+              >
+                {selectedBranch.member}
+              </h2>
+              <p className="mt-1 text-[10px] font-bold text-amber-500/80">{selectedBranch.era}</p>
+            </div>
+            <TreePine className="h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" />
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-amber-200/75">{selectedBranch.detail}</p>
+          <p className="mt-2 text-[10px] font-bold text-emerald-400/85">{selectedBranch.evidence}</p>
+        </section>
+
+        <p className="text-center text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">
+          Select a branch to see what it remembers
+        </p>
 
         <div className="grid grid-cols-3 gap-2" aria-label="Living Baobab features">
           {[

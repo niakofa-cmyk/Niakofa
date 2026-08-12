@@ -7,3 +7,4 @@
 - [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes require the supported GitHub connection and must not use pasted tokens.
 - [Legacy Character Engine Runtime](legacy-character-engine-runtime.md) — stable IDs, explicit runtime layers, and the archive/licensing boundary for character rendering.
 - [Legacy RPG art boundary](legacy-rpg-art-boundary.md) — supplied RPG art is curated into React presentation only; never promote a second runtime or imply historical identity.
+- [Legacy runtime boundary](legacy-runtime-boundary.md) — keep Legacy as one React/Vite runtime with Family Vault/world state authoritative and assets curated as presentation references.

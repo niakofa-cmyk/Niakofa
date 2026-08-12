@@ -33,6 +33,10 @@ describe("Legacy demo navigation contract", () => {
     expect(baobabSource).toContain("The Living Baobab");
     expect(baobabSource).toContain("Live Their Story");
     expect(baobabSource).toContain('aria-labelledby="living-baobab-title"');
+    expect(baobabSource).toContain("LIVING_BRANCHES");
+    expect(baobabSource).toContain('aria-label={`Focus ${branch.label}: ${branch.member}`}');
+    expect(baobabSource).toContain("aria-pressed={isSelected}");
+    expect(baobabSource).toContain("Select a branch to see what it remembers");
   });
 
   it("announces restored-memory discoveries from the playable map", () => {
