@@ -1,0 +1,11 @@
+{
+  "name": "niakofa-legacy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Niakofa Legacy — the House of Mensah vertical slice",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check public/app.js"
+  }
+}
