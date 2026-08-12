@@ -1,5 +1,12 @@
+import { useState, type KeyboardEvent } from "react";
 import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   Building2,
+  Compass,
+  Gamepad2,
   Landmark,
   MapPin,
   Ship,
@@ -163,6 +170,168 @@ const SEASON_OVERLAYS: Record<DemoSeason, string> = {
   celebration: "radial-gradient(circle at 72% 18%, rgba(255,159,67,0.32), transparent 34%)",
 };
 
+const TILE_ROOT = "/legacy-world-assets/tiles";
+const WORLD_MAP = [
+  ["tree_canopy", "tree_canopy", "grass_01", "grass_02", "grass_01", "tree_canopy", "grass_01", "grass_02", "tree_canopy"],
+  ["tree_canopy", "baobab_trunk", "grass_01", "dirt_path", "dirt_path", "grass_02", "grass_01", "tree_canopy", "tree_canopy"],
+  ["grass_02", "compound_wall", "thatch_roof", "dirt_path", "dirt_path", "market_stall", "grass_02", "grass_01", "grass_02"],
+  ["grass_01", "fence", "red_earth", "dirt_path", "dirt_path", "cocoa_row", "grass_01", "sand", "sand"],
+  ["grass_02", "grass_01", "grass_02", "dirt_path", "water", "water", "dirt_path", "sand", "water"],
+  ["grass_01", "grass_02", "red_earth", "dirt_path", "dirt_path", "grass_01", "grass_02", "grass_01", "grass_02"],
+] as const;
+
+type TileName = (typeof WORLD_MAP)[number][number];
+type PlayerPosition = { row: number; column: number };
+
+const BLOCKED_TILES = new Set<TileName>([
+  "water",
+  "compound_wall",
+  "thatch_roof",
+  "tree_canopy",
+  "baobab_trunk",
+  "market_stall",
+  "fence",
+]);
+
+const TILE_LABELS: Record<TileName, string> = {
+  grass_01: "grass",
+  grass_02: "grass",
+  dirt_path: "dirt path",
+  red_earth: "red earth",
+  water: "water",
+  sand: "sand",
+  compound_wall: "compound wall",
+  thatch_roof: "family compound",
+  tree_canopy: "tree canopy",
+  baobab_trunk: "living baobab",
+  market_stall: "market stall",
+  fence: "fence",
+  cocoa_row: "cocoa row",
+};
+
+function HouseOfMensahMap({
+  character,
+  worldVersion,
+}: {
+  character: WorldScene["character"];
+  worldVersion: number;
+}) {
+  const [player, setPlayer] = useState<PlayerPosition>({ row: 5, column: 3 });
+  const tile = WORLD_MAP[player.row][player.column];
+
+  const move = (rowDelta: number, columnDelta: number) => {
+    setPlayer((current) => {
+      const row = current.row + rowDelta;
+      const column = current.column + columnDelta;
+      const nextTile = WORLD_MAP[row]?.[column];
+      if (!nextTile || BLOCKED_TILES.has(nextTile)) return current;
+      return { row, column };
+    });
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const key = event.key.toLowerCase();
+    const movement: Record<string, [number, number]> = {
+      arrowup: [-1, 0],
+      w: [-1, 0],
+      arrowdown: [1, 0],
+      s: [1, 0],
+      arrowleft: [0, -1],
+      a: [0, -1],
+      arrowright: [0, 1],
+      d: [0, 1],
+    };
+    const direction = movement[key];
+    if (!direction) return;
+    event.preventDefault();
+    move(direction[0], direction[1]);
+  };
+
+  return (
+    <div className="relative z-[1] mt-4 rounded-2xl border border-amber-300/20 bg-[#120904]/80 p-3 shadow-inner shadow-black/30">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Compass className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+          <div className="min-w-0">
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-300">House of Mensah · playable map</p>
+            <p className="truncate text-[9px] text-amber-100/60">{TILE_LABELS[tile]} · World v{worldVersion}</p>
+          </div>
+        </div>
+        <span className="flex shrink-0 items-center gap-1 text-[9px] font-bold text-amber-100/55">
+          <Gamepad2 className="h-3 w-3" /> explore
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+        <div
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onClick={(event) => event.currentTarget.focus()}
+          className="relative aspect-[3/2] w-full overflow-hidden rounded-xl border border-amber-400/20 bg-[#201207] outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70"
+          aria-label={`House of Mensah map. You are on ${TILE_LABELS[tile]}. Use arrow keys or W A S D to move.`}
+        >
+          <div className="absolute inset-0 grid grid-cols-9 grid-rows-6">
+            {WORLD_MAP.flatMap((row, rowIndex) =>
+              row.map((tileName, columnIndex) => (
+                <img
+                  key={`${rowIndex}-${columnIndex}`}
+                  src={`${TILE_ROOT}/${tileName}.png`}
+                  alt=""
+                  draggable={false}
+                  className="h-full w-full select-none object-cover"
+                  style={{ imageRendering: "pixelated" }}
+                />
+              )),
+            )}
+          </div>
+          <div
+            className="absolute z-10 flex items-end justify-center transition-[left,top] duration-150 ease-out"
+            style={{
+              width: `${100 / 9}%`,
+              height: `${100 / 6}%`,
+              left: `${(player.column * 100) / 9}%`,
+              top: `${(player.row * 100) / 6}%`,
+            }}
+            aria-hidden="true"
+          >
+            <LegacyCharacterSprite
+              {...character}
+              appearanceSeed={`map-player-${worldVersion}`}
+              libraryId="niakofa-original-art-demo-v1"
+              size={32}
+              className="mb-0.5 border-amber-200/70 bg-amber-950/30 shadow-[0_0_12px_rgba(245,200,66,0.7)]"
+            />
+          </div>
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-white/5" />
+        </div>
+
+        <div className="flex items-center justify-center gap-1" aria-label="Map movement controls">
+          <div className="grid grid-cols-3 gap-1">
+            <span />
+            <button type="button" onClick={() => move(-1, 0)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move north">
+              <ArrowUp className="h-3.5 w-3.5" />
+            </button>
+            <span />
+            <button type="button" onClick={() => move(0, -1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move west">
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-[9px] font-black text-amber-300">MOVE</span>
+            <button type="button" onClick={() => move(0, 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move east">
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+            <span />
+            <button type="button" onClick={() => move(1, 0)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move south">
+              <ArrowDown className="h-3.5 w-3.5" />
+            </button>
+            <span />
+          </div>
+        </div>
+      </div>
+      <p className="mt-2 text-center text-[9px] text-amber-100/50">Arrow keys / W A S D or the compass · water and buildings are blocked</p>
+    </div>
+  );
+}
+
 export function LegacyLivingWorld({
   phase,
   season,
@@ -204,11 +373,7 @@ export function LegacyLivingWorld({
         </span>
       </div>
 
-      <div className="relative min-h-[206px] overflow-hidden px-4 pb-4 pt-5" style={{ background: `${SEASON_OVERLAYS[season]}, linear-gradient(180deg, #2c1a10 0%, #6b3b1b 54%, #30150c 55%, #1a0b06 100%)` }}>
-        <div className="absolute inset-x-0 bottom-0 h-14 opacity-70" style={{ background: "repeating-linear-gradient(165deg, transparent 0 13px, rgba(234,165,76,0.18) 14px 15px), linear-gradient(90deg, #291207, #8c5123 45%, #291207)" }} />
-        <div className="absolute bottom-10 left-[11%] h-16 w-14 rounded-t-[60%] bg-[#1c120d] opacity-90" />
-        <div className="absolute bottom-10 left-[17%] h-20 w-4 rounded-full bg-[#27150b] opacity-90" />
-        <div className="absolute bottom-10 right-[12%] h-20 w-24 rounded-t-[55%] border-4 border-b-0 border-[#27150b] opacity-80" />
+      <div className="relative overflow-hidden px-4 pb-4 pt-5" style={{ background: `${SEASON_OVERLAYS[season]}, linear-gradient(180deg, #2c1a10 0%, #6b3b1b 54%, #30150c 55%, #1a0b06 100%)` }}>
         <div className="absolute right-[14%] top-8 h-9 w-9 rounded-full bg-amber-300/15 blur-sm" />
 
         <div className="relative z-[1] flex items-start justify-between gap-4">
@@ -237,7 +402,9 @@ export function LegacyLivingWorld({
           </div>
         </div>
 
-        <div className="absolute bottom-3 left-4 right-4 z-[1] flex items-center justify-between gap-3">
+        <HouseOfMensahMap character={scene.character} worldVersion={worldVersion} />
+
+        <div className="relative z-[1] mt-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 text-[9px] font-bold text-amber-100/65">
             <TreePine className="h-3 w-3" />
             Baobab growth

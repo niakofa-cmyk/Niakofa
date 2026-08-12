@@ -2,13 +2,17 @@
 
 ## Baseline
 
-- GitHub `origin/main` was fetched with the repository's configured GitHub
-  authorization and aligned locally at `e1720a0fb6fdcdbba1ec88587b7cadf40688e67d`.
+- Local `main` is aligned with the locally available `origin/main` object at
+  `2244a2892d1e9fef84eb559717283dd835999dbc`
+  (`fix(legacy): verify original art runtime and demo readiness`). A supported
+  GitHub write path was not available in this session, so this is not a claim
+  of an independently fetched GitHub remote.
 - The uploaded original-art engine patch was compared against this baseline.
   It was not reapplied because the current engine, tests, catalog, and runtime
   assets are already newer and present in `origin/main`.
 - The uploaded references are preserved in
-  `docs/legacy-reference/uploaded-2026-08-12/`.
+  `docs/legacy-reference/uploaded-2026-08-12/`, including the exact current
+  upload snapshot in `session-current/` with SHA-256 checksums.
 
 ## Changes in this checkpoint
 
@@ -18,22 +22,30 @@
    every catalog runtime asset is shipped at its browser-resolvable path.
 3. Preserved the complete session upload bundle and a live production-readiness
    screenshot for future Legacy work.
+4. Shipped all 13 documented original-art world tiles under
+   `artifacts/pay-it-forward/public/legacy-world-assets/tiles/`.
+5. Added a responsive House of Mensah map that uses those real tile assets,
+   supports arrow keys/WASD and touch-friendly compass controls, blocks
+   impassable terrain, and renders the current original-art player sprite.
+6. Added a regression test that reads the world-tile catalog and verifies every
+   documented tile exists at its browser-resolvable runtime path.
 
 ## Verified
 
-- Legacy/app test suite: **487 passed, 0 failed**.
+- Legacy/app test suite: **488 passed, 0 failed**.
 - Pay-it-forward Vite production build: **passed**.
 - Full workspace TypeScript build/typecheck: **passed**.
-- Legacy files touched in this checkpoint: **ESLint clean**.
-- Built-SPA Legacy verifier against a local Vite preview:
-  `/legacy/demo` and its hashed Legacy chunk: **passed**.
+- The changed Legacy component and engine test compile through the full
+  workspace typecheck; repository-wide ESLint still has unrelated pre-existing
+  findings.
 - Both configured workflows are running:
   - `artifacts/pay-it-forward: web` on port 5000
   - `artifacts/api-server: API Server` on port 8080
-- Runtime checks: `/legacy/demo`, the original-art catalog, and an original
-  character sprite all returned HTTP 200 from the web workflow.
-- The live `/legacy/demo` screenshot shows the House of Mensah prologue and
-  original-art character surface with no browser console errors.
+- Runtime checks: `/legacy/demo`, the original-art catalog, all 13 world tiles,
+  and an original character sprite returned HTTP 200 from the web workflow.
+- The live `/legacy/demo` screenshot shows the House of Mensah prologue, the
+  playable pixel-art map, compass controls, and the original-art character
+  surface with no browser console errors after both workflows were running.
 
 ## Boundaries and remaining work
 
@@ -47,6 +59,9 @@
   Nia service is unavailable. The API server itself starts and listens
   successfully; the public Legacy demo does not require that external AI
   service to render or play.
+- GitHub remains unsynced from this session: the declined GitHub integration,
+  rejected provisioned credentials, and unavailable public repository path
+  prevent a truthful push/fetch confirmation.
 - The deployment verifier requires a real `PRODUCTION_URL`; this checkpoint
   verified the built SPA against a local Vite preview. A published deployment
   URL must be supplied by the deployment workflow for production verification.

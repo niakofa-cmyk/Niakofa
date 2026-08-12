@@ -203,6 +203,25 @@ describe("Original-art library (niakofa-original-art-demo-v1)", () => {
     }
   });
 
+  it("ships every documented original-art world tile", () => {
+    const catalogPath = fileURLToPath(
+      new URL("../../../public/legacy-world-assets/catalog-original.json", import.meta.url),
+    );
+    const catalog = JSON.parse(readFileSync(catalogPath, "utf8")) as {
+      worldTiles?: { path: string; tiles: string[] };
+    };
+
+    expect(catalog.worldTiles?.tiles).toHaveLength(13);
+    for (const tile of catalog.worldTiles?.tiles ?? []) {
+      expect(
+        existsSync(fileURLToPath(new URL(
+          `../../../public${catalog.worldTiles?.path}${tile}.png`,
+          import.meta.url,
+        ))),
+      ).toBe(true);
+    }
+  });
+
   it("is opt-in only - default library is unchanged", () => {
     expect(resolveWalkingAsset({ ageGroup: "adult", gender: "female" })?.file)
       .toBe("/legacy-character-assets/tv/TV_Body_p01-female.png");
