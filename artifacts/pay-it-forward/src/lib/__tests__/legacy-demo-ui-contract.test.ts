@@ -16,6 +16,25 @@ describe("Legacy demo navigation contract", () => {
     expect(source).toContain('aria-label="Reset demo progress"');
   });
 
+  it("starts new demo journeys at the Living Baobab before the prologue", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../../pages/legacy-demo.tsx", import.meta.url)),
+      "utf8",
+    );
+    const baobabSource = readFileSync(
+      fileURLToPath(new URL("../../components/legacy-living-baobab.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("showBaobab");
+    expect(source).toContain("LegacyLivingBaobab");
+    expect(source).toContain("state.baobabEntered");
+    expect(source).toContain("enterLivingBaobab");
+    expect(baobabSource).toContain("The Living Baobab");
+    expect(baobabSource).toContain("Live Their Story");
+    expect(baobabSource).toContain('aria-labelledby="living-baobab-title"');
+  });
+
   it("announces restored-memory discoveries from the playable map", () => {
     const source = readFileSync(
       fileURLToPath(new URL("../../components/legacy-living-world.tsx", import.meta.url)),

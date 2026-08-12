@@ -85,6 +85,7 @@ export interface FishingJournal {
 
 export interface DemoState {
   phase: DemoPhase;
+  baobabEntered: boolean;
   placedArtifacts: string[];
   traits: Record<string, number>;
   completedQuests: string[];
@@ -209,6 +210,7 @@ export const DEMO_FISHING_CATCHES = [
 
 export const DEFAULT_DEMO_STATE: DemoState = {
   phase: "prologue",
+  baobabEntered: false,
   placedArtifacts: [],
   traits: { Leadership: 40, Wisdom: 35, Courage: 30, Compassion: 40 },
   completedQuests: [],
@@ -265,6 +267,11 @@ function sanitizeDemoMapPosition(
 }
 
 // ─── State transitions ────────────────────────────────────────────────────────
+
+export function enterLivingBaobab(state: DemoState): DemoState {
+  if (state.baobabEntered) return state;
+  return { ...state, baobabEntered: true };
+}
 
 export function advanceDemo(state: DemoState): DemoState {
   const isRegen = state.phase === "world-regen";
@@ -460,27 +467,48 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
     if (!raw) return resetDemo();
     const parsed = JSON.parse(raw) as Partial<DemoState>;
     const fresh = resetDemo();
-    const phase = DEMO_PHASE_ORDER.includes(parsed.phase as DemoPhase)
+    const savedPhase = DEMO_PHASE_ORDER.includes(parsed.phase as DemoPhase)
       ? (parsed.phase as DemoPhase)
       : fresh.phase;
+    const savedPhaseIndex = DEMO_PHASE_ORDER.indexOf(savedPhase);
+    const coopQuestIndex = DEMO_PHASE_ORDER.indexOf("coop-quest");
+    const rawWorldVersion = typeof parsed.worldVersion === "number" && Number.isFinite(parsed.worldVersion)
+      ? Math.trunc(parsed.worldVersion)
+      : fresh.worldVersion;
+    const savedArtifacts = Array.isArray(parsed.placedArtifacts)
+      ? parsed.placedArtifacts.filter((item): item is string =>
+          typeof item === "string"
+          && DEMO_ARTIFACT_IDS.includes(item as (typeof DEMO_ARTIFACT_IDS)[number]),
+        )
+      : [];
+    const placedArtifacts = [...new Set(savedArtifacts)];
+    const savedCompletedQuests = Array.isArray(parsed.completedQuests)
+      ? parsed.completedQuests.filter((item): item is string =>
+          typeof item === "string"
+          && DEMO_COOP_QUEST_IDS.includes(item as (typeof DEMO_COOP_QUEST_IDS)[number]),
+        )
+      : [];
+    const completedQuests = [...new Set(savedCompletedQuests)];
+    // A versioned world or a completed co-op task can only exist after the
+    // regeneration gate. Prefer the later, recoverable state over rendering
+    // contradictory progress from a stale or hand-edited localStorage value.
+    const hasRegeneratedEvidence =
+      rawWorldVersion >= 2
+      || savedPhaseIndex >= coopQuestIndex
+      || completedQuests.length > 0;
+    const phase = hasRegeneratedEvidence && savedPhaseIndex < coopQuestIndex
+      ? "coop-quest"
+      : savedPhase;
+    const worldVersion = hasRegeneratedEvidence ? 2 : 1;
     return {
       ...fresh,
       phase,
+      baobabEntered: parsed.baobabEntered === true || phase !== "prologue" || placedArtifacts.length > 0,
       season: (["dry", "rain", "harvest", "celebration"] as DemoSeason[]).includes(parsed.season as DemoSeason)
         ? (parsed.season as DemoSeason)
         : seasonForPhase(phase),
-      placedArtifacts: Array.isArray(parsed.placedArtifacts)
-        ? parsed.placedArtifacts.filter((item): item is string =>
-            typeof item === "string"
-            && DEMO_ARTIFACT_IDS.includes(item as (typeof DEMO_ARTIFACT_IDS)[number]),
-          )
-        : [],
-      completedQuests: Array.isArray(parsed.completedQuests)
-        ? parsed.completedQuests.filter((item): item is string =>
-            typeof item === "string"
-            && DEMO_COOP_QUEST_IDS.includes(item as (typeof DEMO_COOP_QUEST_IDS)[number]),
-          )
-        : [],
+      placedArtifacts,
+      completedQuests,
       traits: parsed.traits && typeof parsed.traits === "object"
         ? DEMO_TRAITS.reduce<Record<string, number>>((traits, trait) => {
             const value = (parsed.traits as Record<string, unknown>)[trait];
@@ -490,22 +518,23 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
             return traits;
           }, {})
         : { ...fresh.traits },
-      worldVersion: typeof parsed.worldVersion === "number" && Number.isFinite(parsed.worldVersion)
-        ? Math.max(1, parsed.worldVersion)
-        : fresh.worldVersion,
+      worldVersion,
       worldChanges: Array.isArray(parsed.worldChanges)
         ? parsed.worldChanges.filter(c => c && typeof c.id === "string" && typeof c.artifactId === "string")
         : [],
       coopTasks: Array.isArray(parsed.coopTasks)
         ? DEMO_COOP_QUEST_IDS.map(qid => {
             const saved = (parsed.coopTasks as CoopTaskState[]).find(t => t.questId === qid);
+            const isCompleted = completedQuests.includes(qid);
             return {
               questId: qid,
-              status: saved && (saved.status === "completed" || saved.status === "in-progress")
+              status: isCompleted
+                ? "completed" as const
+                : saved && saved.status === "in-progress"
                 ? saved.status
                 : "pending" as const,
               assignedTo: DEMO_COOP_ASSIGNMENTS[qid] ?? "Family",
-              completedAt: saved && typeof saved.completedAt === "number" ? saved.completedAt : null,
+              completedAt: isCompleted && saved && typeof saved.completedAt === "number" ? saved.completedAt : null,
             };
           })
         : fresh.coopTasks.map(t => ({ ...t })),
@@ -538,9 +567,7 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
         : DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
       mapPosition: parsed.mapPosition && typeof parsed.mapPosition === "object"
         ? sanitizeDemoMapPosition(
-            typeof parsed.worldVersion === "number" && Number.isFinite(parsed.worldVersion)
-              ? Math.max(1, parsed.worldVersion)
-              : fresh.worldVersion,
+            worldVersion,
             {
               row: typeof (parsed.mapPosition as DemoMapPosition).row === "number"
                 ? Math.trunc((parsed.mapPosition as DemoMapPosition).row)

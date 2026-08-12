@@ -4,7 +4,7 @@
  * Route: /legacy/demo  (bypasses auth — no login required)
  *
  * Covers every system in the "House of Mensah" demo specification:
- *   Prologue → Chapters 1–6 → Kitchen → Business → Mystery →
+ *   Living Baobab → Prologue → Chapters 1–6 → Kitchen → Business → Mystery →
  *   World Regeneration → Co-op Quest → Family Reunion → Finale
  *
  * Progress is stored in localStorage so the demo can be resumed or reset.
@@ -51,6 +51,7 @@ import {
   DEFAULT_DEMO_STATE,
   DEMO_STATE_EVENT,
   DEMO_PHASE_ORDER,
+  enterLivingBaobab,
   placeDemoArtifact,
   readDemoState,
   resetDemo,
@@ -67,6 +68,7 @@ import {
 } from "@/lib/legacy-demo-state";
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 import { LegacyLivingWorld } from "@/components/legacy-living-world";
+import { LegacyLivingBaobab } from "@/components/legacy-living-baobab";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -1604,6 +1606,10 @@ export default function LegacyDemoPage() {
     setState(persist(fresh));
   }, [persist]);
 
+  const handleEnterBaobab = useCallback(() => {
+    setState(prev => persist(enterLivingBaobab(prev)));
+  }, [persist]);
+
   const handlePlayFull = () => {
     window.location.href = "/legacy";
   };
@@ -1619,6 +1625,7 @@ export default function LegacyDemoPage() {
   const chapterDef = CHAPTERS.find(c => c.id === state.phase);
   const phaseIdx = DEMO_PHASE_ORDER.indexOf(state.phase);
   const { label: seasonLabel, accent } = getSeasonStyle(state.season);
+  const showBaobab = !state.baobabEntered && state.phase === "prologue";
 
   return (
     <div
@@ -1698,20 +1705,24 @@ export default function LegacyDemoPage() {
       )}
 
       <div className="max-w-lg mx-auto pb-20">
-        <LegacyLivingWorld
-          phase={state.phase}
-          season={state.season}
-          worldVersion={state.worldVersion}
-          placedArtifacts={state.placedArtifacts}
-          businessLevel={state.businessLevel}
-          mapPosition={state.mapPosition}
-          mapFacing={state.mapFacing}
-          onMapMove={handleMapMove}
-          fishing={state.fishing}
-          onFishingCast={handleFishingCast}
-        />
+        {showBaobab ? (
+          <LegacyLivingBaobab worldVersion={state.worldVersion} onEnter={handleEnterBaobab} />
+        ) : (
+          <LegacyLivingWorld
+            phase={state.phase}
+            season={state.season}
+            worldVersion={state.worldVersion}
+            placedArtifacts={state.placedArtifacts}
+            businessLevel={state.businessLevel}
+            mapPosition={state.mapPosition}
+            mapFacing={state.mapFacing}
+            onMapMove={handleMapMove}
+            fishing={state.fishing}
+            onFishingCast={handleFishingCast}
+          />
+        )}
 
-        {state.phase === "prologue" && (
+        {state.phase === "prologue" && state.baobabEntered && (
           <PrologueScreen onBegin={advance} season={state.season} />
         )}
 
@@ -1755,7 +1766,7 @@ export default function LegacyDemoPage() {
       </div>
 
       {/* Bottom system tray */}
-      {state.phase !== "prologue" && state.phase !== "finale" && (
+      {state.baobabEntered && state.phase !== "prologue" && state.phase !== "finale" && (
         <div
           className="fixed bottom-0 left-0 right-0 px-4 py-3"
           style={{ background: "rgba(10,6,4,0.96)", borderTop: "1px solid rgba(180,120,40,0.18)", backdropFilter: "blur(8px)" }}

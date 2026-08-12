@@ -9,6 +9,7 @@ import {
   DEMO_COOP_QUEST_IDS,
   DEMO_TRAITS,
   DEMO_WORLD_CHANGES,
+  enterLivingBaobab,
   completeReunionDialogue,
   advanceBusiness,
   castFishing,
@@ -42,6 +43,16 @@ describe("Legacy public demo journey", () => {
     });
     expect(restored.mapPosition).toEqual({ row: 4, column: 3 });
     expect(restored.mapFacing).toBe("up");
+  });
+
+  it("persists the Living Baobab entry gate and reset returns to it", () => {
+    const entered = enterLivingBaobab(resetDemo());
+    expect(entered.baobabEntered).toBe(true);
+
+    const stored: Record<string, string> = {};
+    writeDemoState({ setItem: (key, value) => { stored[key] = value; } }, entered);
+    expect(readDemoState({ getItem: key => stored[key] ?? null }).baobabEntered).toBe(true);
+    expect(resetDemo().baobabEntered).toBe(false);
   });
 
   it("completes the House of Mensah golden path across every interactive system", () => {
@@ -153,6 +164,25 @@ describe("Legacy public demo journey", () => {
     expect(state.placedArtifacts).toEqual(["photo"]);
 
     expect(() => writeDemoState({ setItem: () => { throw new Error("blocked"); } }, state)).not.toThrow();
+  });
+
+  it("normalizes contradictory persisted world and quest progress", () => {
+    const state = readDemoState({
+      getItem: () => JSON.stringify({
+        phase: "chapter2",
+        worldVersion: 99.7,
+        completedQuests: ["photo-id"],
+        coopTasks: [{ questId: "photo-id", status: "pending", assignedTo: "Someone Else", completedAt: null }],
+      }),
+    });
+
+    expect(state.phase).toBe("coop-quest");
+    expect(state.worldVersion).toBe(2);
+    expect(state.completedQuests).toEqual(["photo-id"]);
+    expect(state.coopTasks.find(task => task.questId === "photo-id")).toMatchObject({
+      status: "completed",
+      assignedTo: "You",
+    });
   });
 
   it("advances for every supported trait choice", () => {
