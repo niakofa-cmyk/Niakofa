@@ -320,14 +320,17 @@ function AppContent() {
 
   const pathname =
     typeof window !== "undefined" ? window.location.pathname : "";
-  if (pathname === "/status" || pathname.endsWith("/status")) {
+  const normalizedPathname =
+    pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+
+  if (normalizedPathname === "/status" || normalizedPathname.endsWith("/status")) {
     return (
       <Suspense fallback={<PageFallback />}>
         <StatusPage />
       </Suspense>
     );
   }
-  if (pathname === "/impact" || pathname.startsWith("/impact/")) {
+  if (normalizedPathname === "/impact" || normalizedPathname.startsWith("/impact/")) {
     return (
       <Suspense fallback={<PageFallback />}>
         <CountyImpactPage />
@@ -342,7 +345,7 @@ function AppContent() {
     );
   }
   // Public demo — no auth required
-  if (pathname === "/legacy/demo") {
+  if (normalizedPathname === "/legacy/demo") {
     return (
       <Suspense fallback={<PageFallback />}>
         <LegacyDemoPage />
