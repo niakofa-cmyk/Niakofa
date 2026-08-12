@@ -33,6 +33,9 @@
 7. Added a canonical golden-path regression test that completes the House of
    Mensah kitchen, business, mystery, world regeneration, co-op, reunion, and
    persistence flows in one journey.
+8. Added visible, stable map landmarks for each restored artifact and a
+   regenerated-world discovery panel, so world regeneration changes the
+   playable surface instead of only changing state metadata.
 
 ## Verified
 

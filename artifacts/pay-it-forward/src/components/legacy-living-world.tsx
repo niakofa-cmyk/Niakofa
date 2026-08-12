@@ -5,14 +5,18 @@ import {
   ArrowRight,
   ArrowUp,
   Building2,
+  Camera,
   Compass,
   Gamepad2,
   Landmark,
   MapPin,
+  Medal,
+  ScrollText,
   Ship,
   Sparkles,
   Sprout,
   TreePine,
+  UtensilsCrossed,
   Waves,
 } from "lucide-react";
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
@@ -183,6 +187,41 @@ const WORLD_MAP = [
 type TileName = (typeof WORLD_MAP)[number][number];
 type PlayerPosition = { row: number; column: number };
 
+const WORLD_LANDMARKS = [
+  {
+    artifactId: "photo",
+    row: 1,
+    column: 4,
+    label: "Portrait wall",
+    description: "A newly named ancestor watches over the market road.",
+    icon: Camera,
+  },
+  {
+    artifactId: "recipe",
+    row: 2,
+    column: 3,
+    label: "Kitchen hearth",
+    description: "Grandma Ama's recipe opens a remembered conversation.",
+    icon: UtensilsCrossed,
+  },
+  {
+    artifactId: "medal",
+    row: 3,
+    column: 2,
+    label: "Service marker",
+    description: "A chapter seed marks the soldier's return home.",
+    icon: Medal,
+  },
+  {
+    artifactId: "certificate",
+    row: 4,
+    column: 6,
+    label: "Migration route",
+    description: "A family branch now connects this path to a new place.",
+    icon: ScrollText,
+  },
+] as const;
+
 const BLOCKED_TILES = new Set<TileName>([
   "water",
   "compound_wall",
@@ -212,12 +251,16 @@ const TILE_LABELS: Record<TileName, string> = {
 function HouseOfMensahMap({
   character,
   worldVersion,
+  placedArtifacts,
 }: {
   character: WorldScene["character"];
   worldVersion: number;
+  placedArtifacts: string[];
 }) {
   const [player, setPlayer] = useState<PlayerPosition>({ row: 5, column: 3 });
   const tile = WORLD_MAP[player.row][player.column];
+  const placed = new Set(placedArtifacts);
+  const visibleLandmarks = WORLD_LANDMARKS.filter(({ artifactId }) => placed.has(artifactId));
 
   const move = (rowDelta: number, columnDelta: number) => {
     setPlayer((current) => {
@@ -284,6 +327,23 @@ function HouseOfMensahMap({
               )),
             )}
           </div>
+          {visibleLandmarks.map(({ artifactId, row, column, label, description, icon: Icon }) => (
+            <div
+              key={artifactId}
+              role="img"
+              aria-label={`${label}: ${description}`}
+              title={`${label} — ${description}`}
+              className="absolute z-[5] flex items-center justify-center rounded-full border border-amber-200/80 bg-[#2b1708]/90 text-amber-200 shadow-[0_0_10px_rgba(245,200,66,0.75)]"
+              style={{
+                width: `${100 / 9}%`,
+                height: `${100 / 6}%`,
+                left: `${(column * 100) / 9}%`,
+                top: `${(row * 100) / 6}%`,
+              }}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </div>
+          ))}
           <div
             className="absolute z-10 flex items-end justify-center transition-[left,top] duration-150 ease-out"
             style={{
@@ -402,7 +462,33 @@ export function LegacyLivingWorld({
           </div>
         </div>
 
-        <HouseOfMensahMap character={scene.character} worldVersion={worldVersion} />
+        <HouseOfMensahMap
+          character={scene.character}
+          worldVersion={worldVersion}
+          placedArtifacts={placedArtifacts}
+        />
+
+        {hasRegenerated && (
+          <div className="relative z-[1] mt-3 rounded-xl border border-emerald-300/20 bg-emerald-950/20 p-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-emerald-300" />
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-300">
+                World discoveries are live
+              </p>
+            </div>
+            <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+              {WORLD_LANDMARKS.map(({ artifactId, label, description, icon: Icon }) => (
+                <div key={artifactId} className="flex items-start gap-2 rounded-lg bg-black/15 px-2 py-1.5">
+                  <Icon className="mt-0.5 h-3 w-3 shrink-0 text-emerald-300/80" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold text-emerald-100/85">{label}</p>
+                    <p className="text-[9px] leading-relaxed text-emerald-100/55">{description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="relative z-[1] mt-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 text-[9px] font-bold text-amber-100/65">
