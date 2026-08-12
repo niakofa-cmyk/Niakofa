@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Niakofa Legacy — House of Mensah Demo</title>
+<style>
+  :root{
+    --gold:#d69e2e; --gold-dim:#8a6a2a; --ink:#0a0604; --panel:#171009;
+    --panel2:#1f1710; --text:#f1e6d2; --dim:#b8a988;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--ink);color:var(--text);
+    font-family:'Georgia',serif;overflow:hidden;}
+  #app{position:relative;width:100%;height:100%;}
+  .screen{position:absolute;inset:0;display:none;}
+  .screen.active{display:block;}
+
+  /* ---------- Baobab screen ---------- */
+  #baobab-screen{background:radial-gradient(ellipse at 50% 20%, #2a1a10 0%, #0a0604 70%);}
+  #baobab-header{text-align:center;padding:18px 12px 4px;}
+  #baobab-header h1{margin:0;color:var(--gold);letter-spacing:4px;font-size:22px;font-weight:normal;}
+  #baobab-header p{margin:4px 0 0;color:var(--dim);font-size:12px;letter-spacing:1px;}
+  #tree-wrap{position:absolute;top:70px;bottom:150px;left:0;right:0;display:flex;
+    align-items:center;justify-content:center;}
+  #tree-svg{max-height:100%;max-width:100%;}
+  .branch{cursor:pointer;transition:opacity .3s;}
+  .branch:hover circle.leaf{filter:brightness(1.4);}
+  .leaf{transition:r .4s ease, opacity .4s ease;}
+  .leaf.new{animation:pop 900ms ease;}
+  @keyframes pop{0%{r:0;opacity:0;}60%{r:9;opacity:1;}100%{r:6;opacity:1;}}
+  .branch-line{stroke:#5a3d22;stroke-width:3;fill:none;transition:d .6s ease;}
+  .branch-line.new{animation:draw 900ms ease;}
+  #baobab-log{position:absolute;bottom:0;left:0;right:0;height:150px;
+    background:linear-gradient(180deg, rgba(10,6,4,0) 0%, rgba(10,6,4,.95) 30%);
+    padding:10px 16px;overflow-y:auto;font-size:12px;color:var(--dim);}
+  #baobab-log .entry{padding:3px 0;border-bottom:1px solid rgba(214,158,46,.08);}
+  #baobab-log .entry b{color:var(--gold);}
+
+  /* ---------- Character card ---------- */
+  #card-overlay{position:absolute;inset:0;background:rgba(0,0,0,.75);
+    display:none;align-items:center;justify-content:center;z-index:20;}
+  #card-overlay.active{display:flex;}
+  #char-card{background:var(--panel);border:1px solid var(--gold-dim);border-radius:8px;
+    width:300px;padding:20px;text-align:center;box-shadow:0 0 40px rgba(214,158,46,.15);}
+  #char-card canvas{image-rendering:pixelated;background:#241a10;border-radius:6px;
+    border:1px solid var(--gold-dim);}
+  #char-card h2{color:var(--gold);margin:12px 0 2px;font-weight:normal;font-size:18px;}
+  #char-card .meta{color:var(--dim);font-size:12px;margin-bottom:10px;line-height:1.5;}
+  #char-card button{width:100%;padding:10px;margin-top:8px;background:none;
+    border:1px solid var(--gold-dim);color:var(--gold);border-radius:5px;cursor:pointer;
+    font-family:inherit;letter-spacing:1px;font-size:12px;}
+  #char-card button.primary{background:var(--gold);color:#1a1006;border:none;font-weight:bold;}
+  #char-card button:hover{filter:brightness(1.15);}
+
+  /* ---------- World screen ---------- */
+  #world-screen{background:#0a0604;}
+  #world-hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    align-items:center;padding:10px 14px;background:linear-gradient(180deg, rgba(10,6,4,.9), rgba(10,6,4,0));
+    z-index:5;}
+  #world-hud .title{color:var(--gold);font-size:13px;letter-spacing:2px;}
+  #world-hud .hint{color:var(--dim);font-size:11px;}
+  #back-btn{background:none;border:1px solid var(--gold-dim);color:var(--gold);
+    padding:6px 12px;border-radius:5px;cursor:pointer;font-family:inherit;font-size:11px;}
+  #canvas-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+  #world-canvas{image-rendering:pixelated;border:2px solid #3a2a18;box-shadow:0 0 60px rgba(0,0,0,.6);}
+  #world-bottom{position:absolute;bottom:0;left:0;right:0;padding:12px 16px;
+    background:linear-gradient(0deg, rgba(10,6,4,.95), rgba(10,6,4,0));
+    display:flex;justify-content:center;gap:10px;z-index:5;}
+  #record-btn{background:var(--gold);color:#1a1006;border:none;padding:10px 18px;
+    border-radius:6px;font-weight:bold;cursor:pointer;font-family:inherit;font-size:12px;
+    letter-spacing:1px;}
+  #record-btn:hover{filter:brightness(1.1);}
+  #toast{position:absolute;top:56px;left:50%;transform:translateX(-50%);
+    background:var(--panel2);border:1px solid var(--gold);color:var(--text);
+    padding:10px 18px;border-radius:6px;font-size:12px;opacity:0;pointer-events:none;
+    transition:opacity .4s, transform .4s;z-index:10;text-align:center;max-width:80%;}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(4px);}
+  #toast b{color:var(--gold);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================== BAOBAB HOME SCREEN ===================== -->
+  <div id="baobab-screen" class="screen active">
+    <div id="baobab-header">
+      <h1>THE LIVING BAOBAB</h1>
+      <p>House of Mensah &nbsp;•&nbsp; World Version <span id="world-version">1</span></p>
+    </div>
+    <div id="tree-wrap"><svg id="tree-svg" viewBox="0 0 480 420"></svg></div>
+    <div id="baobab-log"></div>
+  </div>
+
+  <!-- ===================== CHARACTER CARD ===================== -->
+  <div id="card-overlay">
+    <div id="char-card">
+      <canvas id="card-canvas" width="96" height="96"></canvas>
+      <h2 id="card-name">—</h2>
+      <div class="meta" id="card-meta">—</div>
+      <button class="primary" id="card-play">LIVE THEIR STORY</button>
+      <button id="card-close">Close</button>
+    </div>
+  </div>
+
+  <!-- ===================== WORLD SCREEN ===================== -->
+  <div id="world-screen" class="screen">
+    <div id="world-hud">
+      <div class="title" id="world-title">CAPE COAST — 1890</div>
+      <div class="hint">Move: Arrow keys / WASD</div>
+      <button id="back-btn">← Baobab</button>
+    </div>
+    <div id="canvas-wrap"><canvas id="world-canvas" width="480" height="320"></canvas></div>
+    <div id="toast"></div>
+    <div id="world-bottom">
+      <button id="record-btn">🎙 Record a Family Memory</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* =========================================================================
+   NIAKOFA LEGACY DEMO — original asset pack, no third-party art.
+   Character sprites: ../characters/tv/*.png  (144x192, 3x4 grid, 48px cells)
+   World tiles:        ../world/tiles/*.png    (32x32)
+   ========================================================================= */
+
+const ASSET = {
+  tv: (name) => `../characters/tv/${name}`,
+  tile: (name) => `../world/tiles/${name}.png`,
+};
+
+// ---- character definitions (matches legacy-character-engine.ts groups) ---
+// group -> "adult_male" | "adult_female" | "kid"
+function bodyFile(group){ return ASSET.tv(`TV_Body_p01-${group}.png`); }
+function clothingFile(group, idx){ return ASSET.tv(`TV_Clothing_p0${idx}-${group}.png`); }
+function hairFiles(group, idx){
+  return [ASSET.tv(`TV_RearHair_p0${idx}-${group}.png`), ASSET.tv(`TV_FrontHair_p0${idx}-${group}.png`)];
+}
+const HAIR_STYLES = ["afro","coils","braids","bun","locs"];
+
+// Deterministic-ish family roster for the demo (mirrors resolveCharacterAppearance)
+let familyRoster = [
+  { characterId:"kwame-mensah", name:"Kwame Mensah", relation:"Great-great-grandfather",
+    era:"1890 · Cape Coast", occupation:"Cocoa merchant", group:"adult_male", clothing:1, hair:2, branch:0 },
+  { characterId:"ama-mensah", name:"Ama Mensah", relation:"Great-great-grandmother",
+    era:"1890 · Cape Coast", occupation:"Trader", group:"adult_female", clothing:2, hair:5, branch:1 },
+  { characterId:"kofi-mensah", name:"Kofi Mensah", relation:"Son of Kwame",
+    era:"1912 · Accra", occupation:"Schoolteacher", group:"adult_male", clothing:3, hair:1, branch:2 },
+  { characterId:"abena-mensah", name:"Abena Mensah", relation:"Grandchild",
+    era:"1948 · Cape Coast", occupation:"Youth", group:"kid", clothing:2, hair:3, branch:3 },
+];
+
+let worldVersion = 1;
+let logEntries = [];
+
+// ---- sprite compositing ----------------------------------------------
+const spriteCache = new Map();
+function loadImg(src){
+  return new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+}
+async function composeSpriteSheet(member){
+  const key = `${member.group}:${member.clothing}:${member.hair}`;
+  if (spriteCache.has(key)) return spriteCache.get(key);
+  const [rearSrc, frontSrc] = hairFiles(member.group, member.hair);
+  const [body, cloth, rear, front] = await Promise.all([
+    loadImg(bodyFile(member.group)),
+    loadImg(clothingFile(member.group, member.clothing)),
+    loadImg(rearSrc),
+    loadImg(frontSrc),
+  ]);
+  const canvas = document.createElement("canvas");
+  canvas.width = 144; canvas.height = 192;
+  const ctx = canvas.getContext("2d");
+  [rear, body, cloth, front].forEach(img => { if (img) ctx.drawImage(img, 0, 0); });
+  spriteCache.set(key, canvas);
+  return canvas;
+}
+
+// ---- BAOBAB TREE (SVG, grows with each family member) -----------------
+const treeSvg = document.getElementById("tree-svg");
+const BRANCH_ANCHORS = [
+  {x:150, y:170}, {x:330, y:170}, {x:110, y:260}, {x:370, y:260},
+  {x:240, y:120}, {x:190, y:300}, {x:290, y:300},
+];
+
+function renderTree(newIndex = -1){
+  treeSvg.innerHTML = "";
+  const ns = "http://www.w3.org/2000/svg";
+  const trunk = document.createElementNS(ns, "path");
+  trunk.setAttribute("d", "M240,420 C238,340 236,300 240,250");
+  trunk.setAttribute("stroke", "#5a3d22"); trunk.setAttribute("stroke-width", "22");
+  trunk.setAttribute("fill", "none"); trunk.setAttribute("stroke-linecap", "round");
+  treeSvg.appendChild(trunk);
+
+  // canopy base glow
+  const glow = document.createElementNS(ns, "ellipse");
+  glow.setAttribute("cx","240"); glow.setAttribute("cy","210"); glow.setAttribute("rx","170"); glow.setAttribute("ry","110");
+  glow.setAttribute("fill","rgba(214,158,46,0.05)");
+  treeSvg.appendChild(glow);
+
+  familyRoster.forEach((member, i) => {
+    const anchor = BRANCH_ANCHORS[member.branch % BRANCH_ANCHORS.length];
+    const isNew = i === newIndex;
+    const line = document.createElementNS(ns, "path");
+    line.setAttribute("class", "branch-line" + (isNew ? " new" : ""));
+    line.setAttribute("d", `M240,250 Q${(240+anchor.x)/2},${(250+anchor.y)/2-30} ${anchor.x},${anchor.y}`);
+    treeSvg.appendChild(line);
+
+    const g = document.createElementNS(ns, "g");
+    g.setAttribute("class", "branch");
+    g.setAttribute("data-idx", i);
+    const leaf = document.createElementNS(ns, "circle");
+    leaf.setAttribute("class", "leaf" + (isNew ? " new" : ""));
+    leaf.setAttribute("cx", anchor.x); leaf.setAttribute("cy", anchor.y); leaf.setAttribute("r", "6");
+    leaf.setAttribute("fill", member.group === "kid" ? "#e8b84b" : "#7fae5a");
+    leaf.setAttribute("stroke", "#d69e2e"); leaf.setAttribute("stroke-width","1");
+    g.appendChild(leaf);
+    const label = document.createElementNS(ns, "text");
+    label.setAttribute("x", anchor.x); label.setAttribute("y", anchor.y - 14);
+    label.setAttribute("text-anchor","middle"); label.setAttribute("fill","#f1e6d2");
+    label.setAttribute("font-size","10"); label.setAttribute("font-family","Georgia, serif");
+    label.textContent = member.name.split(" ")[0];
+    g.appendChild(label);
+    g.addEventListener("click", () => openCard(i));
+    treeSvg.appendChild(g);
+  });
+}
+
+function addLogEntry(html){
+  logEntries.unshift(html);
+  const log = document.getElementById("baobab-log");
+  log.innerHTML = logEntries.map(e => `<div class="entry">${e}</div>`).join("");
+}
+
+// ---- character card -----------------------------------------------------
+let currentMember = null;
+async function openCard(idx){
+  currentMember = familyRoster[idx];
+  const overlay = document.getElementById("card-overlay");
+  overlay.classList.add("active");
+  document.getElementById("card-name").textContent = currentMember.name;
+  document.getElementById("card-meta").innerHTML =
+    `${currentMember.relation}<br>${currentMember.era}<br>${currentMember.occupation}<br>` +
+    `<span style="color:#d69e2e">hairstyle: ${HAIR_STYLES[currentMember.hair-1]}</span>`;
+  const sheet = await composeSpriteSheet(currentMember);
+  const ctx = document.getElementById("card-canvas").getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0,0,96,96);
+  // frame 0, direction "down" (row 0)
+  ctx.drawImage(sheet, 0, 0, 48, 48, 24, 0, 96, 96);
+}
+document.getElementById("card-close").onclick = () => document.getElementById("card-overlay").classList.remove("active");
+document.getElementById("card-play").onclick = () => { document.getElementById("card-overlay").classList.remove("active"); enterWorld(currentMember); };
+
+// ============================================================================
+// WORLD (walkable village map)
+// ============================================================================
+const TILE = 32;
+const MAP_W = 15, MAP_H = 10;
+// 0 grass1 1 grass2 2 dirt 3 redearth 4 water 5 compound 6 fence 7 cocoa 8 baobabtrunk 9 stall
+const MAP = [
+ [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ [1,0,0,2,2,2,2,2,0,0,0,7,7,7,1],
+ [1,0,5,5,2,0,0,2,0,9,0,7,7,7,1],
+ [1,0,5,5,2,0,0,2,0,0,0,7,7,7,1],
+ [1,6,6,6,2,0,0,2,6,6,6,0,0,0,1],
+ [1,0,0,2,2,2,2,2,0,0,0,0,8,0,1],
+ [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+ [1,0,0,4,4,4,4,4,0,0,0,0,0,0,1],
+ [1,0,0,4,4,4,4,4,0,0,0,0,0,0,1],
+ [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+];
+const TILE_NAMES = ["grass_01","grass_02","dirt_path","red_earth","water","compound_wall","fence","cocoa_row","baobab_trunk","market_stall"];
+const SOLID = new Set([1,4,5,6,9,8]); // walls, water, buildings, fences, stall, trunk are solid
+
+let tileImgs = {};
+let worldCanvas = document.getElementById("world-canvas");
+let wctx = worldCanvas.getContext("2d");
+wctx.imageSmoothingEnabled = false;
+
+let player = { x: 5, y: 6, px: 5*TILE, py: 6*TILE, dir: 0, frame: 0, moving:false, sheet:null };
+let npcs = []; // {x,y,px,py,dir,sheet,name}
+let keys = {};
+
+async function loadTiles(){
+  for (const name of TILE_NAMES){
+    tileImgs[name] = await loadImg(ASSET.tile(name));
+  }
+}
+
+async function enterWorld(member){
+  document.getElementById("baobab-screen").classList.remove("active");
+  document.getElementById("world-screen").classList.add("active");
+  document.getElementById("world-title").textContent = member.era.toUpperCase() + " — HOUSE OF MENSAH";
+  player.sheet = await composeSpriteSheet(member);
+  player.name = member.name;
+  if (Object.keys(tileImgs).length === 0) await loadTiles();
+  // populate a couple of NPCs from the rest of the roster
+  npcs = [];
+  const others = familyRoster.filter(m => m.characterId !== member.characterId).slice(0,2);
+  for (const [i, o] of others.entries()){
+    const sheet = await composeSpriteSheet(o);
+    npcs.push({ x: 9+i*2, y: 3, px:(9+i*2)*TILE, py:3*TILE, dir:0, sheet, name:o.name });
+  }
+  requestAnimationFrame(gameLoop);
+}
+document.getElementById("back-btn").onclick = () => {
+  document.getElementById("world-screen").classList.remove("active");
+  document.getElementById("baobab-screen").classList.add("active");
+};
+
+window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+
+function solidAt(tx, ty){
+  if (tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return true;
+  return SOLID.has(MAP[ty][tx]);
+}
+
+let lastTs = 0, animTimer = 0;
+function gameLoop(ts){
+  if (!document.getElementById("world-screen").classList.contains("active")) return;
+  const dt = Math.min(32, ts - lastTs || 16); lastTs = ts;
+  const speed = 0.09 * dt;
+
+  let dx=0, dy=0, dir = player.dir;
+  if (keys["arrowup"]||keys["w"]){ dy=-1; dir=3; }
+  else if (keys["arrowdown"]||keys["s"]){ dy=1; dir=0; }
+  else if (keys["arrowleft"]||keys["a"]){ dx=-1; dir=1; }
+  else if (keys["arrowright"]||keys["d"]){ dx=1; dir=2; }
+
+  player.moving = dx!==0 || dy!==0;
+  player.dir = dir;
+  if (player.moving){
+    const nx = player.px + dx*speed, ny = player.py + dy*speed;
+    const tx = Math.floor((nx + 16) / TILE), ty = Math.floor((ny + 24) / TILE);
+    if (!solidAt(tx, Math.floor((player.py+24)/TILE))) player.px = nx;
+    if (!solidAt(Math.floor((player.px+16)/TILE), ty)) player.py = ny;
+    animTimer += dt;
+    if (animTimer > 130){ player.frame = (player.frame+1)%3; animTimer = 0; }
+  } else { player.frame = 0; animTimer = 0; }
+
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+function draw(){
+  wctx.clearRect(0,0,worldCanvas.width, worldCanvas.height);
+  const camX = Math.max(0, Math.min(player.px - 240 + 16, MAP_W*TILE - 480));
+  const camY = Math.max(0, Math.min(player.py - 160 + 24, MAP_H*TILE - 320));
+  for (let y=0;y<MAP_H;y++){
+    for (let x=0;x<MAP_W;x++){
+      const img = tileImgs[TILE_NAMES[MAP[y][x]]];
+      if (img) wctx.drawImage(img, x*TILE-camX, y*TILE-camY, TILE, TILE);
+    }
+  }
+  // npcs
+  for (const n of npcs){
+    wctx.drawImage(n.sheet, 0, 0, 48,48, n.px-camX-8, n.py-camY-16, 48,48);
+  }
+  // player
+  wctx.drawImage(player.sheet, player.frame*48, player.dir*48, 48,48, player.px-camX-8, player.py-camY-16, 48,48);
+}
+
+// ---- world regeneration demo: "Record a Family Memory" -----------------
+const NEW_NAMES = [
+  {name:"Yaw Mensah", relation:"Cousin of Kofi", occupation:"Merchant's apprentice", group:"adult_male"},
+  {name:"Esi Mensah", relation:"Sister of Ama", occupation:"Midwife", group:"adult_female"},
+  {name:"Kojo Mensah", relation:"Nephew", occupation:"Farmhand", group:"kid"},
+];
+let toastTimer = null;
+function showToast(html){
+  const t = document.getElementById("toast");
+  t.innerHTML = html;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), 3600);
+}
+
+document.getElementById("record-btn").onclick = async () => {
+  const pick = NEW_NAMES[Math.floor(Math.random()*NEW_NAMES.length)];
+  const idx = familyRoster.length;
+  const newMember = {
+    characterId: pick.name.toLowerCase().replace(/\s+/g,"-") + "-" + idx,
+    name: pick.name, relation: pick.relation, era: "1890 · Cape Coast",
+    occupation: pick.occupation, group: pick.group,
+    clothing: 1 + Math.floor(Math.random()*3),
+    hair: 1 + Math.floor(Math.random()*5),
+    branch: idx,
+  };
+  familyRoster.push(newMember);
+  worldVersion += 1;
+
+  showToast(`🌍 <b>WORLD UPDATED</b> — World Version ${worldVersion-1} → ${worldVersion}<br>
+    +1 Ancestor discovered: <b>${newMember.name}</b><br>+1 Dialogue thread &nbsp; +1 Quest seed`);
+
+  // add the NPC into the current world scene too
+  const sheet = await composeSpriteSheet(newMember);
+  const spot = 3 + npcs.length*2;
+  npcs.push({ x: spot, y: 7, px: spot*TILE, py: 7*TILE, dir:0, sheet, name:newMember.name });
+
+  // reflect back on the baobab (rendered next time we go home)
+  document.getElementById("world-version").textContent = worldVersion;
+  addLogEntry(`<b>${newMember.name}</b> discovered — ${newMember.relation}. New branch grown.`);
+  window._pendingNewIndex = idx;
+};
+
+document.getElementById("back-btn").addEventListener("click", () => {
+  renderTree(window._pendingNewIndex ?? -1);
+  window._pendingNewIndex = undefined;
+});
+
+// ---- boot ----------------------------------------------------------------
+renderTree();
+addLogEntry(`Family world initialized. <b>4</b> ancestors known.`);
+</script>
+</body>
+</html>

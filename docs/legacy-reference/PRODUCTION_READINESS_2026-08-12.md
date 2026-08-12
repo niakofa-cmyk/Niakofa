@@ -2,12 +2,11 @@
 
 ## Baseline
 
-- Local `main` is aligned with the locally available `origin/main` object at
-  `6bafeee12a828f152b080dc18a15ae1e571471d0`
-  (`Legagy Demo - legacy-living-world.tsx M legacy-character-engine.test.ts M
-  PRODUCTION_READINESS_2026-08-12.md M README.md M baobab_trunk.png`). A supported
-  GitHub write path was not available in this session, so this is not a claim
-  of an independently fetched GitHub remote.
+- The workspace baseline is the locally available `origin/main` object at
+  `56d4fefb` (`Legacy Living World`), with the current session's upload bundle
+  preserved below. A supported GitHub write path was not available during the
+  baseline import, so this is not a claim of an independently fetched GitHub
+  remote.
 - The uploaded original-art engine patch was compared against this baseline.
   It was not reapplied because the current engine, tests, catalog, and runtime
   assets are already newer and present in `origin/main`.
@@ -36,10 +35,16 @@
 8. Added visible, stable map landmarks for each restored artifact and a
    regenerated-world discovery panel, so world regeneration changes the
    playable surface instead of only changing state metadata.
+9. Made the public demo progress indicator cover all 14 phases, exposed its
+   current step through the progressbar accessibility contract, and named the
+   back/reset controls for keyboard and assistive-technology users.
+10. Extended the deployment verifier to fetch the original-art catalog and
+    validate that all documented character layers and world tiles are served as
+    PNGs from the built SPA.
 
 ## Verified
 
-- Legacy/app test suite: **488 passed, 0 failed**.
+- Legacy/app test suite: **489 passed, 0 failed**.
 - Pay-it-forward Vite production build: **passed**.
 - Full workspace TypeScript build/typecheck: **passed**.
 - The changed Legacy component and engine test compile through the full
@@ -48,8 +53,10 @@
 - Both configured workflows are running:
   - `artifacts/pay-it-forward: web` on port 5000
   - `artifacts/api-server: API Server` on port 8080
-- Runtime checks: `/legacy/demo`, the original-art catalog, all 13 world tiles,
-  and an original character sprite returned HTTP 200 from the web workflow.
+- Built-SPA deployment verification: `/legacy/demo` and its lazy chunk loaded
+  successfully from a local Vite preview; all **55/55** documented original-art
+  assets (42 character layers + 13 world tiles) returned HTTP 200 with
+  `image/png` content types.
 - The live `/legacy/demo` screenshot shows the House of Mensah prologue, the
   playable pixel-art map, compass controls, and the original-art character
   surface with no browser console errors after both workflows were running.

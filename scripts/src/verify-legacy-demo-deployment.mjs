@@ -73,8 +73,49 @@ try {
     "Legacy demo chunk is missing the House of Mensah experience",
   );
 
+  const catalog = await get("/legacy-world-assets/catalog-original.json");
+  assert(
+    catalog.response.ok && /application\/json/i.test(catalog.contentType),
+    `Original-art catalog is not JSON: HTTP ${catalog.response.status}, ${catalog.contentType}`,
+  );
+
+  let catalogData;
+  try {
+    catalogData = JSON.parse(catalog.body);
+  } catch {
+    throw new Error("Original-art catalog is not valid JSON");
+  }
+
+  const runtimeAssetPaths = [
+    ...(Array.isArray(catalogData.runtimeAssets)
+      ? catalogData.runtimeAssets.map((asset) => asset?.file)
+      : []),
+    ...(
+      catalogData.worldTiles
+      && typeof catalogData.worldTiles.path === "string"
+      && Array.isArray(catalogData.worldTiles.tiles)
+        ? catalogData.worldTiles.tiles.map(
+            (tile) => `${catalogData.worldTiles.path}${tile}.png`,
+          )
+        : []
+    ),
+  ].filter((path) => typeof path === "string" && path.startsWith("/"));
+
+  assert(
+    runtimeAssetPaths.length > 0,
+    "Original-art catalog did not document any runtime assets",
+  );
+
+  for (const assetPath of runtimeAssetPaths) {
+    const asset = await get(assetPath);
+    assert(
+      asset.response.ok && /^image\/png\b/i.test(asset.contentType),
+      `Original-art asset is not a served PNG: ${assetPath} (HTTP ${asset.response.status}, ${asset.contentType})`,
+    );
+  }
+
   process.stdout.write(
-    `Legacy demo deployment verified: ${baseUrl}/legacy/demo (${demoMatch[1]})\n`,
+    `Legacy demo deployment verified: ${baseUrl}/legacy/demo (${demoMatch[1]}); ${runtimeAssetPaths.length} original-art assets served\n`,
   );
 } catch (error) {
   console.error(`Legacy demo deployment verification failed: ${error.message}`);

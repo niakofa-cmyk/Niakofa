@@ -1646,6 +1646,7 @@ export default function LegacyDemoPage() {
               }
             }}
             className="w-8 h-8 rounded-lg bg-amber-900/30 flex items-center justify-center text-amber-500 active:opacity-70 shrink-0"
+            aria-label={`Go back to ${DEMO_PHASE_ORDER[Math.max(phaseIdx - 1, 0)]}`}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -1655,11 +1656,19 @@ export default function LegacyDemoPage() {
           <p className="text-[9px]" style={{ color: accent }}>{seasonLabel} · House of Mensah · World v{state.worldVersion}</p>
         </div>
         {/* Phase progress dots */}
-        <div className="flex items-center gap-1 overflow-hidden max-w-[120px]">
-          {DEMO_PHASE_ORDER.slice(0, 10).map((p, i) => (
+        <div
+          className="flex max-w-[140px] items-center gap-1 overflow-x-auto scrollbar-none"
+          role="progressbar"
+          aria-label={`Legacy demo progress: step ${phaseIdx + 1} of ${DEMO_PHASE_ORDER.length}`}
+          aria-valuemin={1}
+          aria-valuemax={DEMO_PHASE_ORDER.length}
+          aria-valuenow={phaseIdx + 1}
+        >
+          {DEMO_PHASE_ORDER.map((p, i) => (
             <div
               key={p}
               className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all"
+              aria-hidden="true"
               style={{
                 background:
                   p === state.phase
@@ -1676,6 +1685,7 @@ export default function LegacyDemoPage() {
           onClick={handleReset}
           className="w-8 h-8 rounded-lg bg-amber-900/20 flex items-center justify-center text-amber-700 active:opacity-70 shrink-0"
           title="Reset demo"
+          aria-label="Reset demo progress"
         >
           <RotateCcw className="w-3.5 h-3.5" />
         </button>
