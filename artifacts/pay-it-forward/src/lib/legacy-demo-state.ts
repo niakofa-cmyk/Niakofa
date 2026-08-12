@@ -106,6 +106,7 @@ export const DEMO_PHASE_ORDER: readonly DemoPhase[] = [
 
 export const DEMO_ARTIFACT_IDS = ["photo", "recipe", "medal", "certificate"] as const;
 export const DEMO_COOP_QUEST_IDS = ["photo-id", "elder-interview", "location-tag", "reconnect"] as const;
+export const DEMO_TRAITS = ["Leadership", "Wisdom", "Courage", "Compassion"] as const;
 
 export const DEMO_WORLD_CHANGES: Record<string, WorldChange> = {
   photo: {
@@ -229,11 +230,9 @@ export function advanceDemo(state: DemoState): DemoState {
   };
 }
 
-const KNOWN_TRAITS = ["Leadership", "Wisdom", "Courage", "Compassion"] as const;
-
 export function chooseDemoTrait(state: DemoState, trait: string, value: number): DemoState {
   // Only accept known traits to prevent arbitrary state mutations
-  if (!KNOWN_TRAITS.includes(trait as (typeof KNOWN_TRAITS)[number])) return state;
+  if (!DEMO_TRAITS.includes(trait as (typeof DEMO_TRAITS)[number]) || !Number.isFinite(value)) return state;
   const nextPhase = phaseAfter(state.phase);
   // Record trait choice as NPC memory for reunion
   const memoryLabel = `You chose ${trait} in ${state.phase.replace("chapter", "Chapter ")}`;
@@ -380,13 +379,25 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
         ? (parsed.season as DemoSeason)
         : seasonForPhase(phase),
       placedArtifacts: Array.isArray(parsed.placedArtifacts)
-        ? parsed.placedArtifacts.filter(item => typeof item === "string")
+        ? parsed.placedArtifacts.filter((item): item is string =>
+            typeof item === "string"
+            && DEMO_ARTIFACT_IDS.includes(item as (typeof DEMO_ARTIFACT_IDS)[number]),
+          )
         : [],
       completedQuests: Array.isArray(parsed.completedQuests)
-        ? parsed.completedQuests.filter(item => typeof item === "string")
+        ? parsed.completedQuests.filter((item): item is string =>
+            typeof item === "string"
+            && DEMO_COOP_QUEST_IDS.includes(item as (typeof DEMO_COOP_QUEST_IDS)[number]),
+          )
         : [],
       traits: parsed.traits && typeof parsed.traits === "object"
-        ? { ...fresh.traits, ...(parsed.traits as Record<string, number>) }
+        ? DEMO_TRAITS.reduce<Record<string, number>>((traits, trait) => {
+            const value = (parsed.traits as Record<string, unknown>)[trait];
+            traits[trait] = typeof value === "number" && Number.isFinite(value)
+              ? value
+              : fresh.traits[trait];
+            return traits;
+          }, {})
         : { ...fresh.traits },
       worldVersion: typeof parsed.worldVersion === "number" && Number.isFinite(parsed.worldVersion)
         ? Math.max(1, parsed.worldVersion)

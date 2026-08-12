@@ -7,6 +7,7 @@ import {
   DEFAULT_DEMO_STATE,
   DEMO_ARTIFACT_IDS,
   DEMO_COOP_QUEST_IDS,
+  DEMO_TRAITS,
   DEMO_WORLD_CHANGES,
   placeDemoArtifact,
   readDemoState,
@@ -74,6 +75,35 @@ describe("Legacy public demo journey", () => {
     expect(state.placedArtifacts).toEqual(["photo"]);
 
     expect(() => writeDemoState({ setItem: () => { throw new Error("blocked"); } }, state)).not.toThrow();
+  });
+
+  it("advances for every supported trait choice", () => {
+    for (const trait of DEMO_TRAITS) {
+      const state = chooseDemoTrait(resetDemo(), trait, 5);
+      expect(state.phase).toBe("chapter1");
+      expect(state.traits[trait]).toBe(DEFAULT_DEMO_STATE.traits[trait] + 5);
+    }
+  });
+
+  it("ignores non-finite trait values without changing state", () => {
+    const state = resetDemo();
+    expect(chooseDemoTrait(state, "Wisdom", Number.NaN)).toBe(state);
+    expect(chooseDemoTrait(state, "Wisdom", Number.POSITIVE_INFINITY)).toBe(state);
+  });
+
+  it("removes unknown persisted traits and artifact IDs", () => {
+    const values = new Map<string, string>([[
+      "niakofa:demo:v2",
+      JSON.stringify({
+        traits: { Wisdom: 44, Curiosity: 999, Courage: "high" },
+        placedArtifacts: ["photo", "not-real"],
+        completedQuests: ["photo-id", "not-real"],
+      }),
+    ]]);
+    const state = readDemoState({ getItem: key => values.get(key) ?? null });
+    expect(state.traits).toEqual({ Leadership: 40, Wisdom: 44, Courage: 30, Compassion: 40 });
+    expect(state.placedArtifacts).toEqual(["photo"]);
+    expect(state.completedQuests).toEqual(["photo-id"]);
   });
 });
 

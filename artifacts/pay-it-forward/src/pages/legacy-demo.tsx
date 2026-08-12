@@ -61,6 +61,7 @@ import {
   type DemoState,
 } from "@/lib/legacy-demo-state";
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
+import { LegacyLivingWorld } from "@/components/legacy-living-world";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -82,8 +83,8 @@ const CHAPTERS: Array<{
       'You are Kwame Mensah, sixteen years old. The family owns one of the region\'s largest cocoa farms. Walk through the compound, meet your grandparents, help prepare goods for market. The village depends on you. Your grandmother watches you stare at a portrait on the wall and says: "Do you know who he was?"',
     choices: [
       { label: "Tell me.", trait: "Wisdom", value: 5 },
-      { label: "I think I've heard his name.", trait: "Curiosity", value: 3 },
-      { label: "I don't know.", trait: "Honesty", value: 4 },
+        { label: "I think I've heard his name.", trait: "Wisdom", value: 3 },
+        { label: "I don't know.", trait: "Courage", value: 4 },
     ],
     outcome: "You learned where you came from. The world has begun to awaken.",
   },
@@ -123,7 +124,7 @@ const CHAPTERS: Array<{
     description:
       "The business fails. Homes are sold. Artifacts disappear. The family map shrinks. Familiar NPCs move away. You experience loss through gameplay — journals update, collectibles become locked, the world feels smaller. Some relatives remain.",
     choices: [
-      { label: "Stay and rebuild.", trait: "Resilience", value: 12 },
+        { label: "Stay and rebuild.", trait: "Courage", value: 12 },
       { label: "Document everything before it's gone.", trait: "Wisdom", value: 10 },
       { label: "Help those who cannot leave.", trait: "Compassion", value: 12 },
     ],
@@ -139,7 +140,7 @@ const CHAPTERS: Array<{
     choices: [
       { label: "Write letters home every month.", trait: "Compassion", value: 10 },
       { label: "Build a new business immediately.", trait: "Leadership", value: 10 },
-      { label: "Find other diaspora families.", trait: "Community", value: 8 },
+        { label: "Find other diaspora families.", trait: "Compassion", value: 8 },
     ],
     outcome: "A new branch of the Mensah family takes root in America.",
   },
@@ -151,9 +152,9 @@ const CHAPTERS: Array<{
     description:
       "Generations later, you control Afia Mensah — granddaughter. She discovers an old Family Vault chest. Inside: photographs, handwritten letters, deeds, recordings, business ledgers, recipes, oral histories. Every item is an artifact. Every artifact unlocks a new chapter.",
     choices: [
-      { label: "Open the old photograph album.", trait: "Memory", value: 8 },
-      { label: "Play the recorded voice message.", trait: "Connection", value: 10 },
-      { label: "Read the business ledger.", trait: "Legacy", value: 8 },
+        { label: "Open the old photograph album.", trait: "Wisdom", value: 8 },
+        { label: "Play the recorded voice message.", trait: "Compassion", value: 10 },
+        { label: "Read the business ledger.", trait: "Leadership", value: 8 },
     ],
     outcome:
       "The vault is open. World Regeneration begins — the game rebuilds itself around your family's real history.",
@@ -1682,6 +1683,14 @@ export default function LegacyDemoPage() {
       </div>
 
       <div className="max-w-lg mx-auto pb-20">
+        <LegacyLivingWorld
+          phase={state.phase}
+          season={state.season}
+          worldVersion={state.worldVersion}
+          placedArtifacts={state.placedArtifacts}
+          businessLevel={state.businessLevel}
+        />
+
         {state.phase === "prologue" && (
           <PrologueScreen onBegin={advance} season={state.season} />
         )}

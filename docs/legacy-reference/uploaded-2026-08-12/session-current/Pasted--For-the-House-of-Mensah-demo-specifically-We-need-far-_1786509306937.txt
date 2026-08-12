@@ -1,0 +1,708 @@
+
+
+
+
+For the House of Mensah demo specifically
+We need far less than the entire package.
+I'd build the demo asset set around these scenes:
+Scene 1 — Grandmother's House
+Need:
+* kitchen
+* dining room
+* photographs
+* family table
+* chairs
+* cabinets
+* walls
+* windows
+* family artifacts
+Scene 2 — Mensah Family Compound, 1890
+Need:
+* village ground
+* dirt paths
+* homes
+* vegetation
+* trees
+* farm
+* cocoa environment
+* tools
+* animals
+* marketplace objects
+Scene 3 — Village
+Need:
+* roads
+* homes
+* market
+* elders' gathering area
+* wells
+* crops
+* trees
+* collectibles
+Scene 4 — Mission School
+Need:
+* school building
+* desks
+* books
+* paths
+* surrounding village
+Scene 5 — Collapse
+Reuse the same world but regenerate:
+
+damaged buildings
+empty shops
+missing NPCs
+overgrown areas
+lost artifacts
+
+This is important.
+We don't need completely new maps for every chapter.
+The same world should change.
+That's World Regeneration.
+
+17. Migration chapter
+We need:
+* port
+* ship
+* train station
+* train
+* city
+* neighborhood
+* new home
+The existing:
+
+Train.png
+TrainStation.png
+Roof_Train.png
+Roof_TrainStation.png
+
+are therefore particularly useful.
+
+18. And this is where the ZIP becomes really powerful
+We can make the world reuse assets across generations.
+For example:
+1890
+
+Family compound
+Healthy cocoa farm
+Busy marketplace
+
+1912
+
+Expanded business
+New school
+More homes
+
+1920
+
+Damaged business
+Fewer people
+Abandoned buildings
+
+1930
+
+Migration
+
+Present
+
+Grandmother's house
+Modern neighborhood
+Family reunion
+
+The same asset library supports the historical transformation.
+
+
+
+
+
+
+1. The most important folder: tilesets
+I would definitely retain the useful parts of:
+
+img/tilesets/
+
+There are 84 files here.
+This is where we get the building blocks for the actual RPG environment.
+There are categories for:
+* outside environments
+* inside environments
+* water
+* roads
+* grass
+* forests
+* beaches
+* mountains
+* furniture
+* pathways
+* fences
+* houses
+* lakes
+* animated environmental elements
+For example, the archive contains:
+
+World_A1.png
+World_A2.png
+World_B.png
+World_C.png
+
+Outside_A1.png
+Outside_A2.png
+Outside_A3.png
+Outside_A4.png
+Outside_A5.png
+
+Outside_B.png
+Outside_C.png
+
+Inside_A1.png
+Inside_A2.png
+Inside_A4.png
+Inside_A5.png
+Inside_B.png
+Inside_C.png
+
+And useful custom groups:
+
+Biomes/
+    TS_Field_Grass.png
+    TS_Forest_Grass.png
+    TS_Beach_Sand.png
+    TS_Snowy_Mountain.png
+
+Furniture/
+    TS_Living_Room.png
+    TS_Bedroom.png
+    TS_Kitchen.png
+
+Misc/
+    TS_Pathways.png
+    TS_House.png
+    TS_Fence.png
+    TS_Wall.png
+    TS_Rails.png
+
+But there's an important caveat
+A lot of these are clearly generic/fantasy RPG Maker tiles, including castles, demon castles, snow environments, etc.
+So I would not dump all 84 files into the game.
+We should create a Niakofa-specific tileset collection:
+
+Niakofa Legacy/
+  tiles/
+    west-africa/
+    village/
+    cocoa-farm/
+    family-compound/
+    marketplace/
+    school/
+    coastal-town/
+    colonial-town/
+    america/
+    grandmother-house/
+    migration/
+    interiors/
+    roads/
+    water/
+    vegetation/
+
+That is much cleaner.
+
+2. Sprites is one of the best parts of the ZIP
+This is only about 0.3 MB, so there is no reason to exclude it for Git/LFS reasons.
+The archive contains useful things like:
+Buildings
+
+Hospital.png
+Train.png
+House1.png
+House2.png
+House3.png
+Bakery.png
+TrainStation.png
+
+Collectibles
+
+Sunflower.png
+Rose.png
+Lavender.png
+Tulip.png
+Shiitake.png
+AmanitaMuscaria.png
+...
+
+Animals
+
+SpriteSheet_Rabbit.png
+SpriteSheet_Rat.png
+
+Food
+
+Cake.png
+Coffee.png
+Salmon.png
+Beef.png
+Pancake.png
+Water.png
+Jam.png
+Juice.png
+Soup.png
+
+Tools/items
+
+Sickle.png
+Axe.png
+FishingRod.png
+Pickaxe.png
+Medkit.png
+
+This is very useful for the actual gameplay layer.
+For example:
+Kwame walks through the family farm.
+He can interact with:
+* crops
+* tools
+* food
+* animals
+* buildings
+* collectibles
+That is considerably better than having a static background.
+
+3. Weather should absolutely come over
+The entire:
+
+img/weather/
+
+folder is only around 0.6 MB.
+That's a no-brainer.
+It contains:
+
+Rain
+Fire
+Leaves
+Flowers
+Clouds
+Light
+Snow
+Wind
+Particles
+
+This is particularly important for the Living World concept.
+Imagine:
+Chapter 1
+Morning.
+Bright sunlight.
+Birds.
+Light wind.
+Chapter 3 — Betrayal
+Clouds darken.
+Wind increases.
+Chapter 4 — Collapse
+Rain.
+Empty marketplace.
+Damaged buildings.
+Chapter 5 — Migration
+Ocean.
+Storm.
+Fog.
+Present-day finale
+Warm Sunday afternoon.
+That makes the world feel alive without requiring a huge amount of additional technology.
+
+4. Event indicators are extremely valuable
+Keep:
+
+img/eventindicators/
+
+It's tiny.
+And it already has things such as:
+
+Quest_A.png
+Quest_B.png
+NewIndicator.png
+
+ArrowUp.png
+ArrowDown.png
+ArrowLeft.png
+ArrowRight.png
+
+Flower.png
+Food.png
+
+EnemyNormal.png
+EnemyHard.png
+EnemyBoss.png
+
+ShopWeapon.png
+ShopArmor.png
+ShopItem.png
+
+For Niakofa I would reinterpret these.
+Instead of:
+Quest marker
+we can have:
+Memory discovered
+Ancestor clue
+Family member
+Oral history
+Landmark
+Artifact
+Chapter seed
+New story
+That directly connects the asset system to World Regeneration.
+
+5. UI: keep, but don't ship the generic RPG UI unchanged
+The ZIP has a surprisingly useful small UI library:
+
+img/UI/
+
+including:
+
+Buttons/
+Bars/
+Dialogue/
+Menus/
+
+For example:
+
+Button_Play.png
+Button_Menu_NewGame.png
+Button_Menu_Continue.png
+
+HealthBar_SpriteSheet.png
+EnergyBar_SpriteSheet.png
+XP_Bar-Sheet.png
+
+Dialogue_Box.png
+Dialogue_Box_Next.png
+Dialogue_Name_Box.png
+
+This is useful as gameplay infrastructure/reference.
+But Niakofa needs its own visual identity:
+Instead of
+
+HP
+MP
+XP
+
+I'd use:
+
+HEALTH
+KNOWLEDGE
+COURAGE
+RELATIONSHIPS
+LEGACY
+
+And instead of a generic RPG dialogue box:
+Grandmother
+"Come sit with me."
+We should build the Niakofa cinematic dialogue treatment.
+
+6. menus/ — keep selectively
+The menus folder is roughly 10 MB.
+There are useful concepts for:
+* inventory
+* status
+* equipment
+* skills
+* save
+* character information
+* item lists
+* faces
+* commands
+But don't copy the entire menu system into the current Niakofa frontend.
+We already have a much more ambitious Niakofa UI.
+Instead, harvest the underlying assets and interaction patterns.
+
+7. The Retro Tree Pack needs special treatment
+This is one of the things you specifically mentioned.
+It's about 21 MB, not 200+ MB, and contains:
+
+Live Trees
+Dead Trees
+Tree Bark
+GLB
+FBX
+OBJ
+DAE
+Textures
+
+There are multiple resolutions:
+
+Super Low Res
+Low Res
+
+and models such as:
+
+tree_rt_1
+tree_rt_2
+tree_rt_3
+tree_rt_4
+small_tree_rt_1
+dead_tree_rt_1
+dead_tree_rt_2
+
+I would NOT put all of this into Git.
+For the Niakofa game, I would select:
+GLB low-resolution trees + required textures
+and retain the full source pack somewhere outside the main production branch.
+This is exactly the kind of thing your note about the 1.5 GB repository is getting at.
+
+8. But Retro Tree Pack has an especially interesting Niakofa application
+Remember your:
+Living Baobab
+concept?
+The tree that grows every time a family member is added?
+This type of asset library can help us build the environmental foundation for that.
+However, I would not use a generic tree as the final Niakofa Baobab.
+I'd create a dedicated:
+Niakofa Living Baobab
+asset.
+It should have:
+
+Baobab_Base
+Baobab_Branch_01
+Baobab_Branch_02
+Baobab_Branch_03
+...
+Baobab_LeafCluster
+Baobab_AncestorNode
+Baobab_FamilyNode
+Baobab_MemoryNode
+
+Then:
+
+New family member
+       ↓
+New branch
+       ↓
+Family member portrait appears
+       ↓
+Touch branch
+       ↓
+Family member card opens
+       ↓
+Tap card
+       ↓
+Family Vault / RPG chapter
+
+That is much more proprietary and much more "Niakofa."
+
+9. Ground / Grass / Tree Bark / Indoor Walls
+These four folders account for most of the ZIP's size.
+Together they are roughly:
+
+Grass          ~502 MB
+Ground         ~433 MB
+Tree Bark      ~289 MB
+Indoor Walls   ~144 MB
+
+So DO NOT put these entire folders in Git.
+These are largely material/source libraries.
+They contain:
+
+diffuse
+normal
+height
+AO
+metallic
+smoothness
+edge
+
+These are useful when you're building a 3D renderer.
+But the Niakofa RPG shouldn't carry hundreds of megabytes of unused material maps.
+For production:
+Keep only the textures actually referenced by the game.
+For example:
+
+niakofa-legacy/assets/world/materials/
+    village-ground.png
+    cocoa-soil.png
+    coastal-sand.png
+    red-earth.png
+    forest-floor.png
+    family-compound-ground.png
+
+
+10. StylooVillageFREEPack — potentially useful
+This folder is only about 14 MB.
+It has:
+FBX
+and
+GLB
+versions of:
+* houses
+* carts
+* trees
+* fences
+* benches
+* gardens
+* street lights
+* billboards
+The README specifically recommends GLTF/GLB for easier use.
+This could be useful if we decide to have a 3D presentation layer for selected locations.
+For example:
+Present-day grandmother's neighborhood.
+But I wouldn't mix the 3D Styloo assets with every part of the 2D RPG.
+Use them strategically.
+
+11. The Company Asset Pack Styloo
+This one is around 49 MB.
+It contains:
+
+elf
+knight
+dragon
+mage
+nain
+plants
+
+This is not a good fit for the House of Mensah demo as-is.
+The fantasy characters should not become the historical Mensah family.
+However, the plant/environment assets can potentially be useful.
+And the README says the pack is CC0, so that particular pack is much easier from a licensing standpoint.
+I would still retain it outside the core repository until individual assets are actually used.
+
+12. What I would do with the title assets
+The archive has:
+
+titles1/
+titles2/
+
+These contain a lot of generic RPG/fantasy presentation imagery.
+I would not include most of them.
+Niakofa already has a much stronger visual direction:
+Baobab + family + heritage + gold/earth palette + Living World.
+We don't need:
+
+Dragon.png
+DemonCastle.png
+Volcano.png
+Universe.png
+Sword.png
+Devil.png
+
+for House of Mensah.
+They create visual noise.
+
+13. What I would actually put into the Niakofa repository
+I'd create something like:
+
+public/
+└── legacy/
+    └── assets/
+        ├── characters/
+        ├── environments/
+        │   ├── village/
+        │   ├── family-compound/
+        │   ├── marketplace/
+        │   ├── cocoa-farm/
+        │   ├── mission-school/
+        │   ├── colonial-town/
+        │   ├── cape-coast/
+        │   ├── america/
+        │   └── grandmother-house/
+        │
+        ├── tiles/
+        │   ├── terrain/
+        │   ├── buildings/
+        │   ├── roads/
+        │   ├── water/
+        │   └── interiors/
+        │
+        ├── sprites/
+        │   ├── buildings/
+        │   ├── animals/
+        │   ├── collectibles/
+        │   ├── food/
+        │   └── tools/
+        │
+        ├── weather/
+        ├── effects/
+        ├── dialogue/
+        ├── ui/
+        ├── maps/
+        └── baobab/
+
+This is what the actual game should see.
+
+14. What should NOT go into the main branch
+I'd exclude:
+
+__MACOSX/
+.DS_Store
+
+Obviously.
+And then:
+Source-heavy material libraries
+
+Ground/
+Grass/
+Tree Bark/
+Indoor Walls/
+
+unless a specific file is actually used.
+Duplicate model formats
+If we use:
+
+tree.glb
+
+there is usually no reason for production to also carry:
+
+tree.fbx
+tree.obj
+tree.dae
+tree.mtl
+
+Keep source formats in an asset archive, not production.
+Generic fantasy assets
+Especially:
+
+dragons
+demons
+knights
+mages
+fantasy castles
+volcanoes
+magic circles
+
+unless we later deliberately introduce a fantasy/interpretive Legacy chapter.
+
+
+
+
+
+My final asset priority
+
+🔥 Tier A — Put into the production game
+
+tilesets — curated
+Sprites — most/all
+weather — most/all
+eventindicators — most/all
+selected UI
+selected menus
+selected system assets
+selected parallaxes
+
+🟡 Tier B — Keep in an external/source asset library
+
+Retro Tree Pack
+StylooVillageFREEPack
+The company Asset Pack Styloo
+
+Take only the specific GLB/PNG assets actually used.
+🟠 Tier C — Extract only specific materials
+
+Ground
+Grass
+Tree Bark
+Indoor Walls
+
+Do not bring hundreds of MB into production.
+🔴 Tier D — Do not use for House of Mensah
+
+generic fantasy title art
+dragon assets
+demon assets
+knight/mage characters
+fantasy castles
+unrelated fantasy UI
+unused RTP material
