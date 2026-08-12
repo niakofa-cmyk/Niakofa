@@ -60,6 +60,7 @@ import {
   type DemoSeason,
   type DemoState,
 } from "@/lib/legacy-demo-state";
+import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -388,6 +389,28 @@ function PrologueScreen({ onBegin, season }: { onBegin: () => void; season: Demo
         <blockquote className="mt-2 text-sm font-bold text-amber-400">
           "Then let me show you where we came from…"
         </blockquote>
+      </div>
+
+      <div className="w-full max-w-xs rounded-xl border border-amber-900/40 bg-[#1a0d07] p-3 flex items-center gap-3 text-left">
+        <LegacyCharacterSprite
+          ageGroup="kid"
+          gender="unspecified"
+          characterId="kwame-mensah"
+          lifeStage="youth"
+          era="1890s"
+          appearanceSeed="house-of-mensah"
+          libraryId="niakofa-original-art-demo-v1"
+          size={64}
+          className="rounded-xl"
+        />
+        <div className="min-w-0">
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">Your first playable ancestor</p>
+          <p className="mt-1 text-sm font-bold text-amber-200">Kwame Mensah</p>
+          <p className="text-[10px] leading-relaxed text-amber-500/80">
+            Age 16 · 1890 · family compound
+          </p>
+          <p className="mt-1 text-[9px] text-amber-800">Stylized RPG character · not a historical likeness</p>
+        </div>
       </div>
 
       {/* Living House preview */}
