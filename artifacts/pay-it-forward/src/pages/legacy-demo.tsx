@@ -54,6 +54,7 @@ import {
   getDemoMemoryChain,
   DEMO_PHASE_ORDER,
   enterLivingBaobab,
+  inspectDemoLandmark,
   placeDemoArtifact,
   readDemoState,
   resetDemo,
@@ -1735,6 +1736,12 @@ export default function LegacyDemoPage() {
     });
   }, [persist]);
 
+  const handleLandmarkInspect = useCallback((artifactId: string) => {
+    setState(prev => {
+      return persist(inspectDemoLandmark(prev, artifactId));
+    });
+  }, [persist]);
+
   const handleFishingCast = useCallback((power: number) => {
     setState(prev => persist(castFishing(prev, power)));
   }, [persist]);
@@ -1851,10 +1858,12 @@ export default function LegacyDemoPage() {
             season={state.season}
             worldVersion={state.worldVersion}
             placedArtifacts={state.placedArtifacts}
+            discoveredLandmarks={state.discoveredLandmarks}
             businessLevel={state.businessLevel}
             mapPosition={state.mapPosition}
             mapFacing={state.mapFacing}
             onMapMove={handleMapMove}
+            onLandmarkInspect={handleLandmarkInspect}
             fishing={state.fishing}
             onFishingCast={handleFishingCast}
           />

@@ -221,16 +221,20 @@ function HouseOfMensahMap({
   character,
   worldVersion,
   placedArtifacts,
+  discoveredLandmarks,
   mapPosition,
   mapFacing,
   onMapMove,
+  onLandmarkInspect,
 }: {
   character: WorldScene["character"];
   worldVersion: number;
   placedArtifacts: string[];
+  discoveredLandmarks: string[];
   mapPosition: DemoMapPosition;
   mapFacing: DemoFacing;
   onMapMove: (position: DemoMapPosition, facing: DemoFacing) => void;
+  onLandmarkInspect: (artifactId: string) => void;
 }) {
   const layout = getLegacyWorldLayout(worldVersion);
   const worldMap = layout.map;
@@ -241,6 +245,7 @@ function HouseOfMensahMap({
     : mapPosition;
   const tile = worldMap[player.row][player.column];
   const placed = new Set(placedArtifacts);
+  const discovered = new Set(discoveredLandmarks);
   const visibleLandmarks = layout.landmarks.filter(({ artifactId }) => placed.has(artifactId));
   const activeLandmark = getLegacyWorldLandmarkAt(layout, player);
 
@@ -270,6 +275,7 @@ function HouseOfMensahMap({
 
   const interact = () => {
     if (!activeLandmark || !visibleLandmarks.some(({ artifactId }) => artifactId === activeLandmark.artifactId)) return;
+    onLandmarkInspect(activeLandmark.artifactId);
     setActionState("interacting");
   };
 
@@ -409,7 +415,7 @@ function HouseOfMensahMap({
           disabled={!activeLandmark || actionState === "interacting"}
           className="rounded-lg border border-emerald-300/30 bg-emerald-950/25 px-3 py-1.5 text-[9px] font-black uppercase tracking-wide text-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {actionState === "interacting" ? "Listening…" : "Inspect memory"}
+          {actionState === "interacting" ? "Listening…" : discovered.has(activeLandmark?.artifactId ?? "") ? "Review memory" : "Inspect memory"}
         </button>
         <span className="text-right text-[9px] text-amber-100/50">Enter / Space to interact</span>
       </div>
@@ -420,7 +426,7 @@ function HouseOfMensahMap({
           className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-950/20 px-2.5 py-2 text-center"
         >
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">
-             {actionState === "interacting" ? "Memory inspected" : "Memory discovered"} · {activeLandmark.label}
+            {actionState === "interacting" || discovered.has(activeLandmark.artifactId) ? "Memory inspected" : "Memory discovered"} · {activeLandmark.label}
           </p>
           <p className="mt-0.5 text-[9px] leading-relaxed text-emerald-100/60">{activeLandmark.description}</p>
         </div>
@@ -439,10 +445,12 @@ export function LegacyLivingWorld({
   season,
   worldVersion,
   placedArtifacts,
+  discoveredLandmarks,
   businessLevel,
   mapPosition,
   mapFacing,
   onMapMove,
+  onLandmarkInspect,
   fishing,
   onFishingCast,
 }: {
@@ -450,10 +458,12 @@ export function LegacyLivingWorld({
   season: DemoSeason;
   worldVersion: number;
   placedArtifacts: string[];
+  discoveredLandmarks: string[];
   businessLevel: number;
   mapPosition: DemoMapPosition;
   mapFacing: DemoFacing;
   onMapMove: (position: DemoMapPosition, facing: DemoFacing) => void;
+  onLandmarkInspect: (artifactId: string) => void;
   fishing: FishingJournal;
   onFishingCast: (power: number) => void;
 }) {
@@ -524,9 +534,11 @@ export function LegacyLivingWorld({
           character={scene.character}
           worldVersion={worldVersion}
           placedArtifacts={placedArtifacts}
+          discoveredLandmarks={discoveredLandmarks}
           mapPosition={mapPosition}
           mapFacing={mapFacing}
           onMapMove={onMapMove}
+          onLandmarkInspect={onLandmarkInspect}
         />
         <LegacyFishingEncounter fishing={fishing} onCast={onFishingCast} />
 

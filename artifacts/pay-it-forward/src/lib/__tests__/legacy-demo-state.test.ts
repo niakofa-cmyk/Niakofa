@@ -15,6 +15,7 @@ import {
   advanceBusiness,
   castFishing,
   completeMemoryEncounter,
+  inspectDemoLandmark,
   revealMystery,
   unlockKitchenRecipe,
   placeDemoArtifact,
@@ -67,6 +68,19 @@ describe("Legacy public demo journey", () => {
     });
     expect(restored.mapPosition).toEqual({ row: 4, column: 3 });
     expect(restored.mapFacing).toBe("up");
+  });
+
+  it("records each restored map memory once and preserves it through storage", () => {
+    const discovered = inspectDemoLandmark(placeDemoArtifact(resetDemo(), "photo"), "photo");
+    const repeated = inspectDemoLandmark(discovered, "photo");
+
+    expect(discovered.discoveredLandmarks).toEqual(["photo"]);
+    expect(discovered.legacyPoints).toBe(10);
+    expect(repeated).toBe(discovered);
+
+    const stored: Record<string, string> = {};
+    writeDemoState({ setItem: (key, value) => { stored[key] = value; } }, discovered);
+    expect(readDemoState({ getItem: key => stored[key] ?? null }).discoveredLandmarks).toEqual(["photo"]);
   });
 
   it("persists the Living Baobab entry gate and reset returns to it", () => {
@@ -257,6 +271,17 @@ describe("Legacy public demo journey", () => {
     expect(state.traits).toEqual({ Leadership: 40, Wisdom: 44, Courage: 30, Compassion: 40 });
     expect(state.placedArtifacts).toEqual(["photo"]);
     expect(state.completedQuests).toEqual(["photo-id"]);
+  });
+
+  it("sanitizes unknown restored map memories", () => {
+    const state = readDemoState({
+      getItem: () => JSON.stringify({
+        placedArtifacts: ["photo"],
+        discoveredLandmarks: ["photo", "photo", "not-real", 4],
+      }),
+    });
+
+    expect(state.discoveredLandmarks).toEqual(["photo"]);
   });
 });
 

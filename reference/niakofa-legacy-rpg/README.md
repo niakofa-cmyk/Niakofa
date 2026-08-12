@@ -43,6 +43,9 @@ under `source-manifests/`.
 | `uploads/Ground_1786543159558.zip` | 136-entry material reference; one stone/earth study is promoted for the regeneration path cue. |
 | `uploads/Retro_Tree_Pack_v1.0_1786543062147.zip` | 149-entry tree reference; living and stressed canopy sheets are promoted for deterministic atmosphere states. |
 | `uploads/StylooVillageFREEPack_1786543032013.zip` | 48-entry GLB/FBX village reference; kept catalog-only because the React runtime does not need a 3D engine. |
+| `uploads/Materials_Stylized_MixStones_01_1786562505717.zip` | 78-entry PBR stone/earth material study; reference-only because the production runtime remains 2D React. |
+| `uploads/Materials_Stylized_CeramicTiles_1786562515573.zip` | 74-entry PBR ceramic wall/floor study; reference-only because the production runtime remains 2D React. |
+| `uploads/LUD_FREE_ASSETS_1786562539269.zip` | 20-entry generic RPG environment/prop reference; catalog-only and never family likeness evidence. |
 
 The uploaded fishing archive contains 22 entries and the animation archive
 contains 118 entries. The reviewed archives are preserved byte-for-byte under
@@ -74,7 +77,11 @@ inventories and current-session hashes are retained in `source-manifests/` and
 
 `source-manifests/` contains the line-by-line archive entry inventories generated
 from the uploaded ZIP files. `uploads/` preserves the reviewed source files for
-future Legacy work. Runtime promotion remains intentionally small and auditable.
+future Legacy work. The current-session checksums and complete inventories are
+also recorded in `UPLOAD-CATALOG.md` and
+`source-manifests/current-materials-2026-08-12.entries.txt`; the raw current
+uploads remain byte-preserved on the local upload snapshot branch. Runtime
+promotion remains intentionally small and auditable.
 
 ## Curated runtime effects
 

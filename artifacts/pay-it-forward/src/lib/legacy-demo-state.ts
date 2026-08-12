@@ -102,6 +102,7 @@ export interface DemoState {
   reunionDialogues: ReunionDialogue[];
   mapPosition: DemoMapPosition;
   mapFacing: DemoFacing;
+  discoveredLandmarks: string[];
   fishing: FishingJournal;
   memoryEncounterCompleted: boolean;
 }
@@ -308,6 +309,7 @@ export const DEFAULT_DEMO_STATE: DemoState = {
   reunionDialogues: DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
   mapPosition: { row: 5, column: 3 },
   mapFacing: "down",
+  discoveredLandmarks: [],
   fishing: { castCount: 0, catches: [], lastCatch: null },
   memoryEncounterCompleted: false,
 };
@@ -528,6 +530,18 @@ export function updateDemoMapPosition(
   };
 }
 
+export function inspectDemoLandmark(state: DemoState, artifactId: string): DemoState {
+  if (!DEMO_ARTIFACT_IDS.includes(artifactId as (typeof DEMO_ARTIFACT_IDS)[number])) return state;
+  if (!state.placedArtifacts.includes(artifactId)) return state;
+  if (state.discoveredLandmarks.includes(artifactId)) return state;
+
+  return {
+    ...state,
+    discoveredLandmarks: [...state.discoveredLandmarks, artifactId],
+    legacyPoints: state.legacyPoints + 10,
+  };
+}
+
 export function resetDemo(): DemoState {
   return {
     ...DEFAULT_DEMO_STATE,
@@ -542,6 +556,7 @@ export function resetDemo(): DemoState {
     season: "dry",
     mapPosition: { row: 5, column: 3 },
     mapFacing: "down",
+    discoveredLandmarks: [],
     fishing: { ...DEFAULT_DEMO_STATE.fishing, catches: [] },
   };
 }
@@ -683,6 +698,13 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
       mapFacing: (["down", "left", "right", "up"] as DemoFacing[]).includes(parsed.mapFacing as DemoFacing)
         ? (parsed.mapFacing as DemoFacing)
         : fresh.mapFacing,
+      discoveredLandmarks: Array.isArray(parsed.discoveredLandmarks)
+        ? [...new Set(parsed.discoveredLandmarks.filter((id): id is string =>
+            typeof id === "string"
+            && placedArtifacts.includes(id)
+            && DEMO_ARTIFACT_IDS.includes(id as (typeof DEMO_ARTIFACT_IDS)[number]),
+          ))]
+        : [],
       fishing: parsed.fishing && typeof parsed.fishing === "object"
         ? {
             castCount: typeof (parsed.fishing as FishingJournal).castCount === "number"
