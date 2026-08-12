@@ -158,6 +158,31 @@ export const DEMO_WORLD_CHANGES: Record<string, WorldChange> = {
   },
 };
 
+export const DEMO_WORLD_CHANGE_GROUPS = [
+  { changeType: "ancestor", label: "Ancestor branch", detail: "Family Tree" },
+  { changeType: "dialogue", label: "Dialogue thread", detail: "Living Kitchen" },
+  { changeType: "chapter", label: "Chapter seed", detail: "Story archive" },
+  { changeType: "migration", label: "Migration route", detail: "Family map" },
+] as const satisfies ReadonlyArray<{
+  changeType: WorldChange["changeType"];
+  label: string;
+  detail: string;
+}>;
+
+/**
+ * Groups the concrete world mutations already earned by the player.
+ * Keeping this summary in the state module makes the regeneration UI a
+ * projection of canonical progress rather than a second set of game rules.
+ */
+export function summarizeDemoWorldChanges(worldChanges: readonly WorldChange[]) {
+  return DEMO_WORLD_CHANGE_GROUPS
+    .map(group => ({
+      ...group,
+      count: worldChanges.filter(change => change.changeType === group.changeType).length,
+    }))
+    .filter(group => group.count > 0);
+}
+
 export const DEMO_COOP_ASSIGNMENTS: Record<string, string> = {
   "photo-id": "You",
   "elder-interview": "Akua",
@@ -488,7 +513,21 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
           && DEMO_COOP_QUEST_IDS.includes(item as (typeof DEMO_COOP_QUEST_IDS)[number]),
         )
       : [];
-    const completedQuests = [...new Set(savedCompletedQuests)];
+    const taskCompletedQuests = Array.isArray(parsed.coopTasks)
+      ? parsed.coopTasks
+        .filter(task =>
+          task
+          && typeof task === "object"
+          && typeof task.questId === "string"
+          && task.status === "completed"
+          && DEMO_COOP_QUEST_IDS.includes(task.questId as (typeof DEMO_COOP_QUEST_IDS)[number]),
+        )
+        .map(task => task.questId)
+      : [];
+    // Treat either persisted representation as evidence of completion. Older
+    // demo saves recorded the task status but not completedQuests, so dropping
+    // that signal would silently move a returning player backwards.
+    const completedQuests = [...new Set([...savedCompletedQuests, ...taskCompletedQuests])];
     // A versioned world or a completed co-op task can only exist after the
     // regeneration gate. Prefer the later, recoverable state over rendering
     // contradictory progress from a stale or hand-edited localStorage value.

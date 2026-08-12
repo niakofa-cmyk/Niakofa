@@ -1,0 +1,15 @@
+charparticles/
+charparticles/Fire_0.png
+charparticles/Fire_1.png
+charparticles/Particles_2.png
+charparticles/Particles_0.png
+charparticles/Particles_1.png
+charparticles/Waterfall_0.png
+charparticles/Smoke_0.png
+charparticles/Particles_1G.png
+charparticles/Particles_1F.png
+charparticles/Particles_1D.png
+charparticles/Particles_1E.png
+charparticles/Particles_1A.png
+charparticles/Particles_1B.png
+charparticles/Particles_1C.png

@@ -136,6 +136,13 @@ export function LegacyFishingEncounter({
               className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-30"
               draggable={false}
             />
+            <img
+              src="/legacy-rpg-assets/uploaded-effects/legacy-particles-discovery.png"
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-2 -top-5 h-20 w-20 opacity-35 mix-blend-screen animate-pulse"
+              draggable={false}
+            />
             <div className="relative flex items-center gap-2">
               <img
                 src={catchArt.image}

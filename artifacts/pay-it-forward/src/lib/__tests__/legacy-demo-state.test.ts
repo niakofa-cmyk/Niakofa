@@ -19,6 +19,7 @@ import {
   readDemoState,
   resetDemo,
   startDemoQuest,
+  summarizeDemoWorldChanges,
   updateDemoMapPosition,
   writeDemoState,
 } from "../legacy-demo-state";
@@ -306,6 +307,17 @@ describe("World regeneration", () => {
     expect(state.worldChanges).toHaveLength(4);
     const types = state.worldChanges.map(c => c.changeType).sort();
     expect(types).toEqual(["ancestor", "chapter", "dialogue", "migration"]);
+  });
+
+  it("summarizes earned world changes without inventing missing categories", () => {
+    let state = resetDemo();
+    state = placeDemoArtifact(state, "photo");
+    state = placeDemoArtifact(state, "recipe");
+
+    expect(summarizeDemoWorldChanges(state.worldChanges)).toEqual([
+      { changeType: "ancestor", label: "Ancestor branch", detail: "Family Tree", count: 1 },
+      { changeType: "dialogue", label: "Dialogue thread", detail: "Living Kitchen", count: 1 },
+    ]);
   });
 });
 

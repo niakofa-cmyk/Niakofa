@@ -56,6 +56,7 @@ import {
   readDemoState,
   resetDemo,
   revealMystery,
+  summarizeDemoWorldChanges,
   startDemoQuest,
   unlockKitchenRecipe,
   updateDemoMapPosition,
@@ -1034,6 +1035,56 @@ function WorldRegenScreen({ state, onPlace, onContinue }: {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {allPlaced && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="relative overflow-hidden rounded-xl border border-emerald-300/35 bg-gradient-to-br from-emerald-950/60 via-amber-950/40 to-[#21140b] p-4 animate-[fadeIn_0.45s_ease-out]"
+        >
+          <img
+            src="/legacy-rpg-assets/uploaded-effects/legacy-particles-discovery.png"
+            alt=""
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-2 -top-3 h-20 w-20 opacity-35 mix-blend-screen"
+            draggable={false}
+          />
+          <div className="relative flex items-start gap-3">
+            <img
+              src="/legacy-rpg-assets/uploaded-effects/legacy-world-updated.png"
+              alt="World updated"
+              className="h-4 w-auto shrink-0 object-contain [image-rendering:pixelated]"
+              draggable={false}
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-200">
+                World Version {state.worldVersion} → {state.worldVersion + 1}
+              </p>
+              <p className="mt-1 text-[10px] leading-relaxed text-emerald-100/75">
+                Four preserved facts are now ready to become places, people, and paths in the next world.
+              </p>
+            </div>
+          </div>
+          <div className="relative mt-3 grid grid-cols-2 gap-2">
+            {summarizeDemoWorldChanges(state.worldChanges).map(group => (
+              <div key={group.changeType} className="rounded-lg border border-emerald-200/15 bg-black/15 px-2.5 py-2">
+                <p className="text-[9px] font-black uppercase tracking-wide text-emerald-200">{group.label}</p>
+                <p className="mt-0.5 text-[9px] text-emerald-100/55">{group.detail} · {group.count}</p>
+              </div>
+            ))}
+          </div>
+          <p className="relative mt-3 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide text-amber-200/80">
+            <img
+              src="/legacy-rpg-assets/uploaded-effects/legacy-gold.png"
+              alt=""
+              aria-hidden="true"
+              className="h-4 w-4 object-contain [image-rendering:pixelated]"
+              draggable={false}
+            />
+            Ready to regenerate the shared family world
+          </p>
         </div>
       )}
 
