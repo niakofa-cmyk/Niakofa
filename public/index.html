@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10231d" />
+    <meta name="description" content="Niakofa Legacy — a living family history RPG." />
+    <title>Niakofa Legacy · House of Mensah</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/character-fix.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Niakofa Legacy home">
+          <span class="brand-mark" aria-hidden="true">N</span>
+          <span><strong>NIAKOFA</strong><small>LEGACY RPG</small></span>
+        </a>
+        <div class="topbar-status"><span class="status-dot"></span><span id="world-status">World alive</span><span class="status-divider"></span><span>v0.1 · 1890</span></div>
+        <button class="icon-button" id="sound-toggle" type="button" aria-pressed="false" aria-label="Toggle ambient sound">♫</button>
+      </header>
+
+      <main id="main-menu" class="main-menu">
+        <nav class="tabs" aria-label="Main navigation">
+          <button class="tab is-active" data-view="legacy" type="button">Legacy tree</button>
+          <button class="tab" data-view="journal" type="button">Journal <span class="tab-count" id="journal-count">2</span></button>
+          <button class="tab" data-view="world" type="button">Enter world</button>
+        </nav>
+
+        <section class="legacy-layout" data-panel="legacy">
+          <div class="tree-stage">
+            <div class="kicker">HOUSE OF MENSAH <span>·</span> CHAPTER 01</div>
+            <h1>The living<br /><em>legacy.</em></h1>
+            <p class="intro">Every story adds a branch. Every branch carries a life. Step into the world your family is still writing.</p>
+            <div class="tree-controls" aria-label="Baobab tree controls">
+              <button class="soft-button" id="zoom-out" type="button" aria-label="Zoom tree out">−</button>
+              <span id="tree-zoom-label">100%</span>
+              <button class="soft-button" id="zoom-in" type="button" aria-label="Zoom tree in">+</button>
+            </div>
+            <div class="baobab-wrap" id="baobab-wrap">
+              <div class="tree-glow" aria-hidden="true"></div>
+              <svg class="baobab" id="baobab" viewBox="0 0 760 620" role="img" aria-label="The Mensah family living Baobab tree">
+                <defs>
+                  <linearGradient id="trunk" x1="0" x2="1"><stop stop-color="#3c261d"/><stop offset=".45" stop-color="#62402b"/><stop offset="1" stop-color="#2b211b"/></linearGradient>
+                  <linearGradient id="leafCanopy" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#527c57"/><stop offset="1" stop-color="#1e3f36"/></linearGradient>
+                  <filter id="soft-glow"><feGaussianBlur stdDeviation="7" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                </defs>
+                <path class="ground-shadow" d="M80 567 Q375 515 680 568 Q420 618 80 567Z"/>
+                <path class="root" d="M364 516 Q273 575 188 566 M388 518 Q487 571 590 566 M360 520 Q325 584 265 584 M395 516 Q430 577 498 585"/>
+                <path class="trunk-shape" fill="url(#trunk)" d="M325 542 C327 485 307 414 316 347 C325 284 275 250 234 210 C281 224 326 251 361 280 C351 212 359 147 385 80 C406 146 410 213 399 282 C438 247 490 218 538 208 C497 247 454 286 440 349 C447 416 423 483 436 542 C408 558 354 558 325 542Z"/>
+                <path class="branch" d="M377 301 Q296 258 207 229 M395 285 Q470 242 568 221 M365 260 Q324 195 297 123 M411 259 Q461 188 498 126" />
+                <g class="canopy" fill="url(#leafCanopy)">
+                  <ellipse cx="176" cy="190" rx="105" ry="68"/><ellipse cx="278" cy="128" rx="119" ry="80"/><ellipse cx="410" cy="119" rx="144" ry="93"/><ellipse cx="550" cy="177" rx="122" ry="80"/><ellipse cx="631" cy="244" rx="74" ry="58"/><ellipse cx="113" cy="267" rx="75" ry="56"/><ellipse cx="254" cy="223" rx="130" ry="64"/><ellipse cx="480" cy="222" rx="132" ry="72"/>
+                </g>
+                <g class="fruit" aria-hidden="true"><circle cx="165" cy="151" r="7"/><circle cx="526" cy="140" r="7"/><circle cx="612" cy="234" r="7"/><circle cx="236" cy="210" r="6"/></g>
+                <g class="tree-node ancestor-node" data-member="kwame-mensah" tabindex="0" role="button" aria-label="Open Kwame Mensah, great grandfather">
+                  <circle class="node-ring" cx="378" cy="99" r="28"/><circle class="node-core" cx="378" cy="99" r="18"/><text x="378" y="143" text-anchor="middle">KWAME</text>
+                </g>
+                <g class="tree-node living-node" data-member="ama-mensah" tabindex="0" role="button" aria-label="Open Ama Mensah, family storyteller">
+                  <circle class="node-ring" cx="598" cy="199" r="25"/><circle class="node-core" cx="598" cy="199" r="15"/><text x="598" y="238" text-anchor="middle">AMA</text>
+                </g>
+                <g class="tree-node mystery-node" data-member="unknown-branch" tabindex="0" role="button" aria-label="Open an unknown family branch">
+                  <circle class="node-ring" cx="174" cy="218" r="23"/><circle class="node-core" cx="174" cy="218" r="13"/><text x="174" y="254" text-anchor="middle">?</text>
+                </g>
+                <g class="tree-node new-node" data-member="memory-branch" tabindex="0" role="button" aria-label="Open the new memory branch">
+                  <circle class="node-ring" cx="501" cy="91" r="22"/><circle class="node-core" cx="501" cy="91" r="12"/><text x="501" y="126" text-anchor="middle">NEW</text>
+                </g>
+              </svg>
+              <div class="tree-caption"><span class="caption-dot"></span><span id="tree-caption-text">Your family tree is growing</span></div>
+            </div>
+            <div class="root-trail" aria-label="Family origins"><span>ROOTS</span><i></i><b>Ghana</b><i></i><b>Cape Coast</b><i></i><b>Mensah compound</b></div>
+          </div>
+
+          <aside class="profile-card" id="profile-card" aria-live="polite">
+            <div class="profile-label"><span class="live-pill">●</span> SELECTED BRANCH</div>
+            <div class="portrait-frame"><div class="layered-character portrait-character" data-character="kwame"><img class="layer body" src="/assets/characters/kwame-body.png" alt="" /><img class="layer clothing" src="/assets/characters/kwame-clothing.png" alt="" /><img class="layer rear-hair" src="/assets/characters/kwame-rear-hair.png" alt="" /><img class="layer front-hair" src="/assets/characters/kwame-front-hair.png" alt="" /></div><div class="portrait-sun"></div></div>
+            <div class="profile-copy">
+              <div class="profile-meta" id="profile-meta">GREAT GRANDFATHER · 1884—1917</div>
+              <h2 id="profile-name">Kwame Mensah</h2>
+              <p id="profile-role">Merchant · Gold Coast</p>
+              <div class="profile-stats"><span><strong id="profile-stories">12</strong> stories</span><span><strong id="profile-photos">4</strong> photos</span><span><strong id="profile-letters">3</strong> letters</span></div>
+              <button class="primary-button full-width" id="play-life" type="button"><span>Play this life</span><span>↗</span></button>
+              <button class="text-button" id="view-memories" type="button">View memories <span>→</span></button>
+            </div>
+            <div class="profile-footer"><span class="signal-icon">◌</span> <span id="profile-signal">4 memories ready to discover</span></div>
+          </aside>
+        </section>
+
+        <section class="journal-panel is-hidden" data-panel="journal">
+          <div class="section-heading"><div><div class="kicker">THE FAMILY VAULT · KNOWLEDGE VERSION 02</div><h2>What the world remembers</h2></div><button class="primary-button" id="record-echo-journal" type="button">+ Record a memory echo</button></div>
+          <div class="journal-grid" id="journal-grid"></div>
+        </section>
+
+        <section class="chapter-strip" aria-label="Chapter progression">
+          <div class="chapter-heading"><span class="kicker">THE MENSAH CHRONICLE</span><span class="chapter-progress">01 <i></i> 06</span></div>
+          <div class="chapters">
+            <button class="chapter-card active" type="button" data-chapter="1"><span class="chapter-number">01</span><span><strong>The Prosperous Estate</strong><small>1890 · Cape Coast</small></span><span class="chapter-arrow">↗</span></button>
+            <button class="chapter-card" type="button" data-chapter="2"><span class="chapter-number">02</span><span><strong>Golden Years</strong><small>Stories unlock this chapter</small></span><span class="lock">✦</span></button>
+            <button class="chapter-card locked" type="button"><span class="chapter-number">03</span><span><strong>Betrayal</strong><small>Knowledge version 03</small></span><span class="lock">⌁</span></button>
+            <button class="chapter-card locked" type="button"><span class="chapter-number">04</span><span><strong>Collapse</strong><small>World event pending</small></span><span class="lock">⌁</span></button>
+          </div>
+        </section>
+      </main>
+
+      <main id="world-screen" class="world-screen is-hidden">
+        <div class="world-toolbar"><button class="back-button" id="back-to-tree" type="button">← <span>Back to tree</span></button><div class="world-title"><span class="kicker">CHAPTER 01</span><strong>THE PROSPEROUS ESTATE</strong></div><div class="world-tools"><button class="round-button" id="weather-toggle" type="button" aria-label="Toggle weather">☼</button><button class="round-button" id="open-journal" type="button" aria-label="Open journal">☰</button></div></div>
+        <section class="game-layout">
+          <div class="game-stage" id="game-stage" tabindex="0" aria-label="House of Mensah village. Use arrow keys or WASD to walk.">
+            <div class="terrain-layer"></div><div class="vignette"></div><div class="rain-layer is-hidden" id="rain-layer"></div>
+            <div class="world-label label-estate"><span class="label-pin">⌂</span> MENSAH COMPOUND</div>
+            <div class="world-object house-object"><img src="/assets/world/house.png" alt="Mensah family compound" /><span>Family compound</span></div>
+            <div class="world-object bakery-object"><img src="/assets/world/bakery.png" alt="Market bakery" /><span>Market house</span></div>
+            <div class="world-tree tree-one"><img src="/assets/world/tree.png" alt="" /></div><div class="world-tree tree-two"><img src="/assets/world/tree-2.png" alt="" /></div>
+            <div class="world-object quest-object" id="quest-object"><img src="/assets/world/quest.png" alt="" /><span>Story fragment</span></div>
+            <div class="world-npc ama-npc" data-npc="ama"><div class="layered-character tiny-character"><img class="layer body" src="/assets/characters/ama-body.png" alt="" /><img class="layer clothing" src="/assets/characters/ama-clothing.png" alt="" /><img class="layer rear-hair" src="/assets/characters/ama-rear-hair.png" alt="" /><img class="layer front-hair" src="/assets/characters/ama-front-hair.png" alt="" /></div><span>Ama · storyteller</span></div>
+            <div class="world-npc kofi-npc" data-npc="kofi"><div class="layered-character tiny-character"><img class="layer body" src="/assets/characters/kwame-body.png" alt="" /><img class="layer clothing" src="/assets/characters/kwame-clothing.png" alt="" /><img class="layer rear-hair" src="/assets/characters/kwame-rear-hair.png" alt="" /><img class="layer front-hair" src="/assets/characters/kwame-front-hair.png" alt="" /></div><span>Kofi · merchant <b class="new-badge">NEW</b></span></div>
+            <div class="player-character" id="player-character" style="--x: 48%; --y: 67%;"><div class="layered-character tiny-character"><img class="layer body" src="/assets/characters/kwame-body.png" alt="" /><img class="layer clothing" src="/assets/characters/kwame-clothing.png" alt="" /><img class="layer rear-hair" src="/assets/characters/kwame-rear-hair.png" alt="" /><img class="layer front-hair" src="/assets/characters/kwame-front-hair.png" alt="" /></div><span>You</span></div>
+            <div class="interaction-hint is-hidden" id="interaction-hint">Press <kbd>SPACE</kbd> to listen</div>
+            <div class="map-compass">N <span>↑</span></div>
+            <div class="movement-help">WASD / ARROWS <span>move</span><i></i><kbd>SPACE</kbd> <span>interact</span></div>
+          </div>
+          <aside class="quest-panel">
+            <div class="quest-panel-top"><span class="kicker">ACTIVE JOURNEY</span><span class="quest-status" id="quest-status">IN PROGRESS</span></div>
+            <h2 id="quest-title">The Trading Ledger</h2><p id="quest-description">Ama remembers a ledger your great-grandfather carried on market days. Find the story fragment near the compound.</p>
+            <div class="quest-progress"><div class="progress-label"><span>LEGACY KNOWLEDGE</span><strong id="knowledge-value">64%</strong></div><div class="progress-track"><span id="knowledge-bar" style="width:64%"></span></div></div>
+            <div class="quest-objective" id="quest-objective"><span class="objective-check">○</span><span>Listen to Ama's memory</span></div><div class="quest-objective"><span class="objective-check done">✓</span><span>Enter the Mensah compound</span></div>
+            <div class="echo-card"><div class="echo-icon">◒</div><div><span class="kicker">MEMORY ECHO</span><p id="echo-quote">“He sang to the river before every market day.”</p><small>Recorded by Ama · today</small></div></div>
+            <button class="primary-button full-width" id="regenerate-world" type="button"><span>Regenerate world</span><span>✦</span></button>
+            <button class="text-button full-width" id="world-journal" type="button">Open family journal <span>→</span></button>
+          </aside>
+        </section>
+      </main>
+      <footer class="site-footer"><span>Niakofa Legacy</span><span>ZIP = visual vocabulary · Niakofa = intelligence</span><span>House of Mensah · 1890</span></footer>
+    </div>
+
+    <div class="modal-backdrop is-hidden" id="echo-modal" role="dialog" aria-modal="true" aria-labelledby="echo-title">
+      <form class="echo-modal" id="echo-form"><button class="modal-close" id="close-echo" type="button" aria-label="Close">×</button><span class="kicker">FAMILY VAULT · NEW CONTRIBUTION</span><h2 id="echo-title">Add a memory echo</h2><p>Your words become part of the living world. A recorded detail can grow a branch, reveal a place, or change a quest.</p><label for="echo-input">What should the family remember?</label><textarea id="echo-input" required maxlength="280" placeholder="My grandfather always..."></textarea><div class="modal-actions"><button class="text-button" id="cancel-echo" type="button">Not yet</button><button class="primary-button" type="submit">Add to the world <span>↗</span></button></div></form>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

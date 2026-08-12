@@ -1,0 +1,10 @@
+/* RPG Maker TV sheets are 3 columns x 4 rows. Crop to the center-facing first frame. */
+.layered-character .layer {
+  width: 300%;
+  height: 400%;
+  max-width: none;
+  left: -100%;
+  top: 0;
+  image-rendering: pixelated;
+  object-fit: initial;
+}
