@@ -14,6 +14,12 @@ import {
   Users,
   UtensilsCrossed,
 } from "lucide-react";
+import {
+  placeDemoArtifact,
+  readDemoState,
+  writeDemoState,
+  type DemoState,
+} from "@/lib/legacy-demo-state";
 
 type HouseArea = "house" | "kitchen" | "reunion";
 type DemoArtifact = {
@@ -66,17 +72,6 @@ const ARTIFACTS: DemoArtifact[] = [
     icon: ScrollText,
   },
 ];
-
-const STORAGE_KEY = "niakofa:legacy-house-demo:v1";
-
-function readPlacedArtifacts(): string[] {
-  try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-  } catch {
-    return [];
-  }
-}
 
 function HouseArtifact({
   artifact,
@@ -131,25 +126,24 @@ export function LegacyHouseDemo({
   onOpenReunion,
 }: LegacyHouseDemoProps) {
   const [area, setArea] = useState<HouseArea>("house");
-  const [placedArtifacts, setPlacedArtifacts] = useState<string[]>([]);
+  const [demoState, setDemoState] = useState<DemoState | null>(null);
 
   useEffect(() => {
-    setPlacedArtifacts(readPlacedArtifacts());
+    const syncState = () => setDemoState(readDemoState(localStorage));
+    syncState();
+    window.addEventListener("storage", syncState);
+    return () => window.removeEventListener("storage", syncState);
   }, []);
 
+  const placedArtifacts = demoState?.placedArtifacts ?? [];
   const placedCount = placedArtifacts.length;
   const placed = useMemo(() => new Set(placedArtifacts), [placedArtifacts]);
   const houseStage = placedCount >= 4 ? "Museum of the Mensah Family" : placedCount >= 2 ? "A house becoming a story" : "Grandma's Sunday house";
 
   const placeArtifact = (id: string) => {
-    setPlacedArtifacts((current) => {
-      if (current.includes(id)) return current;
-      const next = [...current, id];
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // The demo remains usable when storage is unavailable.
-      }
+    setDemoState((current) => {
+      const next = placeDemoArtifact(current ?? readDemoState(localStorage), id);
+      writeDemoState(localStorage, next);
       return next;
     });
   };

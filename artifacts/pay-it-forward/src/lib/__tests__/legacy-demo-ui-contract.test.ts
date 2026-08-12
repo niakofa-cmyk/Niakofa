@@ -26,5 +26,23 @@ describe("Legacy demo navigation contract", () => {
     expect(source).toContain('role="status"');
     expect(source).toContain('aria-live="polite"');
     expect(source).toContain("Memory discovered");
+    expect(source).toContain("Inspect memory");
+    const spriteSource = readFileSync(
+      fileURLToPath(new URL("../../components/legacy-character-sprite.tsx", import.meta.url)),
+      "utf8",
+    );
+    expect(spriteSource).toContain("legacy-sprite-walk");
+  });
+
+  it("keeps the authenticated house panel on the canonical demo state key", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../../components/legacy-house-demo.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("readDemoState");
+    expect(source).toContain("placeDemoArtifact");
+    expect(source).toContain("writeDemoState");
+    expect(source).not.toContain("niakofa:legacy-house-demo:v1");
   });
 });

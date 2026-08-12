@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -20,7 +20,12 @@ import {
   Waves,
 } from "lucide-react";
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
-import type { DemoPhase, DemoSeason } from "@/lib/legacy-demo-state";
+import type {
+  DemoFacing,
+  DemoMapPosition,
+  DemoPhase,
+  DemoSeason,
+} from "@/lib/legacy-demo-state";
 import {
   getLegacyWorldLayout,
   getLegacyWorldLandmarkAt,
@@ -221,45 +226,79 @@ function HouseOfMensahMap({
   character,
   worldVersion,
   placedArtifacts,
+  mapPosition,
+  mapFacing,
+  onMapMove,
 }: {
   character: WorldScene["character"];
   worldVersion: number;
   placedArtifacts: string[];
+  mapPosition: DemoMapPosition;
+  mapFacing: DemoFacing;
+  onMapMove: (position: DemoMapPosition, facing: DemoFacing) => void;
 }) {
   const layout = getLegacyWorldLayout(worldVersion);
   const worldMap = layout.map;
-  const [player, setPlayer] = useState<PlayerPosition>({ row: 5, column: 3 });
+  const [motion, setMotion] = useState<"idle" | "walk">("idle");
+  const [actionState, setActionState] = useState<"idle" | "interacting">("idle");
+  const player: PlayerPosition = BLOCKED_TILES.has(worldMap[mapPosition.row]?.[mapPosition.column] as TileName)
+    ? { row: 5, column: 3 }
+    : mapPosition;
   const tile = worldMap[player.row][player.column];
   const placed = new Set(placedArtifacts);
   const visibleLandmarks = layout.landmarks.filter(({ artifactId }) => placed.has(artifactId));
   const activeLandmark = getLegacyWorldLandmarkAt(layout, player);
 
-  const move = (rowDelta: number, columnDelta: number) => {
-    setPlayer((current) => {
-      const row = current.row + rowDelta;
-      const column = current.column + columnDelta;
-      const nextTile = worldMap[row]?.[column];
-      if (!nextTile || BLOCKED_TILES.has(nextTile)) return current;
-      return { row, column };
-    });
+  useEffect(() => {
+    if (motion === "idle") return;
+    const timeout = window.setTimeout(() => setMotion("idle"), 180);
+    return () => window.clearTimeout(timeout);
+  }, [motion]);
+
+  useEffect(() => {
+    if (actionState === "idle") return;
+    const timeout = window.setTimeout(() => setActionState("idle"), 700);
+    return () => window.clearTimeout(timeout);
+  }, [actionState]);
+
+  const move = (rowDelta: number, columnDelta: number, facing: DemoFacing) => {
+    const row = player.row + rowDelta;
+    const column = player.column + columnDelta;
+    const nextTile = worldMap[row]?.[column];
+    if (!nextTile || BLOCKED_TILES.has(nextTile)) {
+      onMapMove(player, facing);
+      return;
+    }
+    onMapMove({ row, column }, facing);
+    setMotion("walk");
+  };
+
+  const interact = () => {
+    if (!activeLandmark || !visibleLandmarks.some(({ artifactId }) => artifactId === activeLandmark.artifactId)) return;
+    setActionState("interacting");
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const key = event.key.toLowerCase();
-    const movement: Record<string, [number, number]> = {
-      arrowup: [-1, 0],
-      w: [-1, 0],
-      arrowdown: [1, 0],
-      s: [1, 0],
-      arrowleft: [0, -1],
-      a: [0, -1],
-      arrowright: [0, 1],
-      d: [0, 1],
+    const movement: Record<string, [number, number, DemoFacing]> = {
+      arrowup: [-1, 0, "up"],
+      w: [-1, 0, "up"],
+      arrowdown: [1, 0, "down"],
+      s: [1, 0, "down"],
+      arrowleft: [0, -1, "left"],
+      a: [0, -1, "left"],
+      arrowright: [0, 1, "right"],
+      d: [0, 1, "right"],
     };
+    if (key === " " || key === "enter") {
+      event.preventDefault();
+      interact();
+      return;
+    }
     const direction = movement[key];
     if (!direction) return;
     event.preventDefault();
-    move(direction[0], direction[1]);
+    move(direction[0], direction[1], direction[2]);
   };
 
   return (
@@ -269,7 +308,7 @@ function HouseOfMensahMap({
           <Compass className="h-3.5 w-3.5 shrink-0 text-amber-300" />
           <div className="min-w-0">
             <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-300">House of Mensah · playable map</p>
-            <p className="truncate text-[9px] text-amber-100/60">{TILE_LABELS[tile]} · World v{worldVersion}</p>
+           <p className="truncate text-[9px] text-amber-100/60">{TILE_LABELS[tile]} · Facing {mapFacing} · World v{worldVersion}</p>
           </div>
         </div>
         <span className="flex shrink-0 items-center gap-1 text-[9px] font-bold text-amber-100/55">
@@ -333,11 +372,13 @@ function HouseOfMensahMap({
             }}
             aria-hidden="true"
           >
-            <LegacyCharacterSprite
+             <LegacyCharacterSprite
               {...character}
               appearanceSeed={`map-player-${worldVersion}`}
               libraryId="niakofa-original-art-demo-v1"
               size={32}
+               facing={mapFacing}
+               motion={motion}
               className="mb-0.5 border-amber-200/70 bg-amber-950/30 shadow-[0_0_12px_rgba(245,200,66,0.7)]"
             />
           </div>
@@ -347,24 +388,35 @@ function HouseOfMensahMap({
         <div className="flex items-center justify-center gap-1" aria-label="Map movement controls">
           <div className="grid grid-cols-3 gap-1">
             <span />
-            <button type="button" onClick={() => move(-1, 0)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move north">
+            <button type="button" onClick={() => move(-1, 0, "up")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move north">
               <ArrowUp className="h-3.5 w-3.5" />
             </button>
             <span />
-            <button type="button" onClick={() => move(0, -1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move west">
+            <button type="button" onClick={() => move(0, -1, "left")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move west">
               <ArrowLeft className="h-3.5 w-3.5" />
             </button>
             <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-[9px] font-black text-amber-300">MOVE</span>
-            <button type="button" onClick={() => move(0, 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move east">
+            <button type="button" onClick={() => move(0, 1, "right")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move east">
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
             <span />
-            <button type="button" onClick={() => move(1, 0)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move south">
+            <button type="button" onClick={() => move(1, 0, "down")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move south">
               <ArrowDown className="h-3.5 w-3.5" />
             </button>
             <span />
           </div>
         </div>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={interact}
+          disabled={!activeLandmark || actionState === "interacting"}
+          className="rounded-lg border border-emerald-300/30 bg-emerald-950/25 px-3 py-1.5 text-[9px] font-black uppercase tracking-wide text-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {actionState === "interacting" ? "Listening…" : "Inspect memory"}
+        </button>
+        <span className="text-right text-[9px] text-amber-100/50">Enter / Space to interact</span>
       </div>
       {activeLandmark && visibleLandmarks.some(({ artifactId }) => artifactId === activeLandmark.artifactId) ? (
         <div
@@ -373,7 +425,7 @@ function HouseOfMensahMap({
           className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-950/20 px-2.5 py-2 text-center"
         >
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">
-            Memory discovered · {activeLandmark.label}
+             {actionState === "interacting" ? "Memory inspected" : "Memory discovered"} · {activeLandmark.label}
           </p>
           <p className="mt-0.5 text-[9px] leading-relaxed text-emerald-100/60">{activeLandmark.description}</p>
         </div>
@@ -393,12 +445,18 @@ export function LegacyLivingWorld({
   worldVersion,
   placedArtifacts,
   businessLevel,
+  mapPosition,
+  mapFacing,
+  onMapMove,
 }: {
   phase: DemoPhase;
   season: DemoSeason;
   worldVersion: number;
   placedArtifacts: string[];
   businessLevel: number;
+  mapPosition: DemoMapPosition;
+  mapFacing: DemoFacing;
+  onMapMove: (position: DemoMapPosition, facing: DemoFacing) => void;
 }) {
   const scene = WORLD_SCENES[phase];
   const SceneIcon = scene.icon;
@@ -462,6 +520,9 @@ export function LegacyLivingWorld({
           character={scene.character}
           worldVersion={worldVersion}
           placedArtifacts={placedArtifacts}
+          mapPosition={mapPosition}
+          mapFacing={mapFacing}
+          onMapMove={onMapMove}
         />
 
         {hasRegenerated && (

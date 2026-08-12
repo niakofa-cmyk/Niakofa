@@ -55,7 +55,10 @@ import {
   revealMystery,
   startDemoQuest,
   unlockKitchenRecipe,
+  updateDemoMapPosition,
   writeDemoState,
+  type DemoFacing,
+  type DemoMapPosition,
   type DemoPhase,
   type DemoSeason,
   type DemoState,
@@ -1597,6 +1600,14 @@ export default function LegacyDemoPage() {
     });
   }, []);
 
+  const handleMapMove = useCallback((position: DemoMapPosition, facing: DemoFacing) => {
+    setState(prev => {
+      const next = updateDemoMapPosition(prev, position, facing);
+      writeDemoState(localStorage, next);
+      return next;
+    });
+  }, []);
+
   const handleReset = useCallback(() => {
     const fresh = resetDemo();
     writeDemoState(localStorage, fresh);
@@ -1698,6 +1709,9 @@ export default function LegacyDemoPage() {
           worldVersion={state.worldVersion}
           placedArtifacts={state.placedArtifacts}
           businessLevel={state.businessLevel}
+            mapPosition={state.mapPosition}
+            mapFacing={state.mapFacing}
+            onMapMove={handleMapMove}
         />
 
         {state.phase === "prologue" && (

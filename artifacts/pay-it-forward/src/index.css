@@ -256,6 +256,25 @@
   }
 }
 
+@keyframes legacy-sprite-walk {
+  from {
+    background-position-x: var(--legacy-sprite-frame-start);
+  }
+  to {
+    background-position-x: var(--legacy-sprite-frame-end);
+  }
+}
+
+.legacy-sprite-walk {
+  animation: legacy-sprite-walk 420ms steps(3, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .legacy-sprite-walk {
+    animation: none;
+  }
+}
+
 /**
  * Using the elevate system.
  * Automatic contrast adjustment.

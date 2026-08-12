@@ -17,10 +17,32 @@ import {
   readDemoState,
   resetDemo,
   startDemoQuest,
+  updateDemoMapPosition,
   writeDemoState,
 } from "../legacy-demo-state";
 
 describe("Legacy public demo journey", () => {
+  it("persists the playable map position and facing in the shared demo state", () => {
+    const moved = updateDemoMapPosition(resetDemo(), { row: 4, column: 3 }, "up");
+    expect(moved.mapPosition).toEqual({ row: 4, column: 3 });
+    expect(moved.mapFacing).toBe("up");
+
+    const stored: Record<string, string> = {};
+    writeDemoState(
+      {
+        setItem(key, value) {
+          stored[key] = value;
+        },
+      },
+      moved,
+    );
+    const restored = readDemoState({
+      getItem: key => stored[key] ?? null,
+    });
+    expect(restored.mapPosition).toEqual({ row: 4, column: 3 });
+    expect(restored.mapFacing).toBe("up");
+  });
+
   it("completes the House of Mensah golden path across every interactive system", () => {
     let state = resetDemo();
     expect(state.phase).toBe("prologue");

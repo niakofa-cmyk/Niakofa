@@ -7,6 +7,10 @@ import {
   type LegacyLayer,
   type LegacyLifeStage,
 } from "@/lib/legacy-character-engine";
+import type { CSSProperties } from "react";
+
+export type LegacySpriteFacing = "down" | "left" | "right" | "up";
+export type LegacySpriteMotion = "idle" | "walk";
 
 interface LegacyCharacterSpriteProps {
   ageGroup: LegacyAgeGroup;
@@ -20,6 +24,8 @@ interface LegacyCharacterSpriteProps {
   layers?: Partial<Record<LegacyLayer, string>>;
   size?: number;
   className?: string;
+  facing?: LegacySpriteFacing;
+  motion?: LegacySpriteMotion;
 }
 
 /**
@@ -39,6 +45,8 @@ export function LegacyCharacterSprite({
   layers,
   size = 56,
   className = "",
+  facing = "right",
+  motion = "idle",
 }: LegacyCharacterSpriteProps) {
   const appearance = resolveWalkingAppearance({
     ageGroup,
@@ -54,6 +62,19 @@ export function LegacyCharacterSprite({
   if (!appearance) return null;
 
   const scale = size / 48;
+  const rowByFacing: Record<LegacySpriteFacing, number> = {
+    down: 0,
+    left: 1,
+    right: 2,
+    up: 3,
+  };
+  const frameY = -48 * scale * rowByFacing[facing];
+  const spriteStyle = {
+    "--legacy-sprite-frame-start": "0px",
+    "--legacy-sprite-frame-end": `${-144 * scale}px`,
+    backgroundPosition: `${-48 * scale}px ${frameY}px`,
+    backgroundSize: `${appearance.layers[0]?.width * scale}px ${appearance.layers[0]?.height * scale}px`,
+  } as CSSProperties;
   return (
     <span
       aria-hidden="true"
@@ -68,10 +89,10 @@ export function LegacyCharacterSprite({
         <span
           key={layer.assetId}
           aria-hidden="true"
-          className="absolute inset-0"
+          className={`absolute inset-0 ${motion === "walk" ? "legacy-sprite-walk" : ""}`}
           style={{
             backgroundImage: `url(${layer.file})`,
-            backgroundPosition: `${-48 * scale}px ${-96 * scale}px`,
+            ...spriteStyle,
             backgroundSize: `${layer.width * scale}px ${layer.height * scale}px`,
             imageRendering: "pixelated",
           }}

@@ -27,6 +27,12 @@ export type DemoPhase =
   | "finale";
 
 export type DemoSeason = "dry" | "rain" | "harvest" | "celebration";
+export type DemoFacing = "down" | "left" | "right" | "up";
+
+export interface DemoMapPosition {
+  row: number;
+  column: number;
+}
 
 export interface WorldChange {
   id: string;
@@ -81,6 +87,8 @@ export interface DemoState {
   kitchenRecipes: KitchenRecipe[];
   npcMemory: NpcMemoryEntry[];
   reunionDialogues: ReunionDialogue[];
+  mapPosition: DemoMapPosition;
+  mapFacing: DemoFacing;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -199,6 +207,8 @@ export const DEFAULT_DEMO_STATE: DemoState = {
   kitchenRecipes: DEMO_KITCHEN_RECIPES.map(r => ({ ...r })),
   npcMemory: [],
   reunionDialogues: DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
+  mapPosition: { row: 5, column: 3 },
+  mapFacing: "down",
 };
 
 // ─── Phase helpers ────────────────────────────────────────────────────────────
@@ -352,6 +362,20 @@ export function completeReunionDialogue(state: DemoState, npcId: string): DemoSt
   };
 }
 
+export function updateDemoMapPosition(
+  state: DemoState,
+  position: DemoMapPosition,
+  facing: DemoFacing,
+): DemoState {
+  const row = Number.isInteger(position.row) ? Math.min(Math.max(position.row, 0), 5) : state.mapPosition.row;
+  const column = Number.isInteger(position.column) ? Math.min(Math.max(position.column, 0), 8) : state.mapPosition.column;
+  return {
+    ...state,
+    mapPosition: { row, column },
+    mapFacing: facing,
+  };
+}
+
 export function resetDemo(): DemoState {
   return {
     ...DEFAULT_DEMO_STATE,
@@ -364,6 +388,8 @@ export function resetDemo(): DemoState {
     npcMemory: [],
     businessLevel: 0,
     season: "dry",
+    mapPosition: { row: 5, column: 3 },
+    mapFacing: "down",
   };
 }
 
@@ -452,6 +478,19 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
             return saved ? { ...dd, completed: !!saved.completed } : dd;
           })
         : DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
+      mapPosition: parsed.mapPosition && typeof parsed.mapPosition === "object"
+        ? {
+            row: typeof (parsed.mapPosition as DemoMapPosition).row === "number"
+              ? Math.min(Math.max(Math.trunc((parsed.mapPosition as DemoMapPosition).row), 0), 5)
+              : fresh.mapPosition.row,
+            column: typeof (parsed.mapPosition as DemoMapPosition).column === "number"
+              ? Math.min(Math.max(Math.trunc((parsed.mapPosition as DemoMapPosition).column), 0), 8)
+              : fresh.mapPosition.column,
+          }
+        : { ...fresh.mapPosition },
+      mapFacing: (["down", "left", "right", "up"] as DemoFacing[]).includes(parsed.mapFacing as DemoFacing)
+        ? (parsed.mapFacing as DemoFacing)
+        : fresh.mapFacing,
     };
   } catch {
     return resetDemo();
