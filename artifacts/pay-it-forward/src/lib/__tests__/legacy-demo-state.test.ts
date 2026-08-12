@@ -11,6 +11,7 @@ import {
   DEMO_WORLD_CHANGES,
   completeReunionDialogue,
   advanceBusiness,
+  castFishing,
   revealMystery,
   unlockKitchenRecipe,
   placeDemoArtifact,
@@ -166,6 +167,27 @@ describe("Legacy public demo journey", () => {
     const state = resetDemo();
     expect(chooseDemoTrait(state, "Wisdom", Number.NaN)).toBe(state);
     expect(chooseDemoTrait(state, "Wisdom", Number.POSITIVE_INFINITY)).toBe(state);
+  });
+
+  it("records fishing discoveries and awards repeat casts without duplicating the journal", () => {
+    let state = resetDemo();
+    state = castFishing(state, 90);
+    expect(state.fishing).toEqual({
+      castCount: 1,
+      catches: ["river-spirit"],
+      lastCatch: "river-spirit",
+    });
+    expect(state.legacyPoints).toBe(60);
+
+    state = castFishing(state, 90);
+    expect(state.fishing.catches).toEqual(["river-spirit"]);
+    expect(state.fishing.castCount).toBe(2);
+    expect(state.legacyPoints).toBe(122);
+  });
+
+  it("keeps saved map positions on walkable tiles", () => {
+    const state = updateDemoMapPosition(resetDemo(), { row: 4, column: 4 }, "up");
+    expect(state.mapPosition).toEqual({ row: 5, column: 3 });
   });
 
   it("removes unknown persisted traits and artifact IDs", () => {

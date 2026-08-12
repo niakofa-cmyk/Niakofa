@@ -17,6 +17,7 @@ import {
 import {
   placeDemoArtifact,
   readDemoState,
+  DEMO_STATE_EVENT,
   writeDemoState,
   type DemoState,
 } from "@/lib/legacy-demo-state";
@@ -132,7 +133,11 @@ export function LegacyHouseDemo({
     const syncState = () => setDemoState(readDemoState(localStorage));
     syncState();
     window.addEventListener("storage", syncState);
-    return () => window.removeEventListener("storage", syncState);
+    window.addEventListener(DEMO_STATE_EVENT, syncState);
+    return () => {
+      window.removeEventListener("storage", syncState);
+      window.removeEventListener(DEMO_STATE_EVENT, syncState);
+    };
   }, []);
 
   const placedArtifacts = demoState?.placedArtifacts ?? [];

@@ -8,6 +8,12 @@
  *   Prologue → Ch 1–6 → Kitchen → Business → Mystery → World-Regen → Co-op → Reunion → Finale
  */
 
+import {
+  getLegacyWorldLayout,
+  getLegacyWorldSpawn,
+  isLegacyWorldPositionWalkable,
+} from "@/lib/legacy-world-layout";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type DemoPhase =
@@ -71,6 +77,12 @@ export interface ReunionDialogue {
   completed: boolean;
 }
 
+export interface FishingJournal {
+  castCount: number;
+  catches: string[];
+  lastCatch: string | null;
+}
+
 export interface DemoState {
   phase: DemoPhase;
   placedArtifacts: string[];
@@ -89,11 +101,13 @@ export interface DemoState {
   reunionDialogues: ReunionDialogue[];
   mapPosition: DemoMapPosition;
   mapFacing: DemoFacing;
+  fishing: FishingJournal;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const DEMO_STORAGE_KEY = "niakofa:demo:v2";
+export const DEMO_STATE_EVENT = "niakofa:demo:updated";
 
 export const DEMO_PHASE_ORDER: readonly DemoPhase[] = [
   "prologue",
@@ -187,6 +201,12 @@ export const DEMO_REUNION_DIALOGUES: ReunionDialogue[] = [
   { npcId: "young-child", completed: false },
 ];
 
+export const DEMO_FISHING_CATCHES = [
+  { id: "river-tilapia", name: "River tilapia", rarity: "common", points: 10 },
+  { id: "golden-fish", name: "Golden river fish", rarity: "rare", points: 25 },
+  { id: "river-spirit", name: "River spirit", rarity: "legendary", points: 60 },
+] as const;
+
 export const DEFAULT_DEMO_STATE: DemoState = {
   phase: "prologue",
   placedArtifacts: [],
@@ -209,6 +229,7 @@ export const DEFAULT_DEMO_STATE: DemoState = {
   reunionDialogues: DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
   mapPosition: { row: 5, column: 3 },
   mapFacing: "down",
+  fishing: { castCount: 0, catches: [], lastCatch: null },
 };
 
 // ─── Phase helpers ────────────────────────────────────────────────────────────
@@ -224,6 +245,23 @@ function seasonForPhase(phase: DemoPhase): DemoSeason {
   if (phase === "chapter3" || phase === "business") return "rain";
   if (phase === "chapter4" || phase === "chapter5" || phase === "mystery") return "dry";
   return "celebration";
+}
+
+function sanitizeDemoMapPosition(
+  worldVersion: number,
+  position: DemoMapPosition,
+): DemoMapPosition {
+  const layout = getLegacyWorldLayout(worldVersion);
+  const spawn = getLegacyWorldSpawn(worldVersion);
+  const row = Number.isInteger(position.row)
+    ? Math.min(Math.max(position.row, 0), layout.map.length - 1)
+    : spawn.row;
+  const column = Number.isInteger(position.column)
+    ? Math.min(Math.max(position.column, 0), (layout.map[0]?.length ?? 1) - 1)
+    : spawn.column;
+  return isLegacyWorldPositionWalkable(layout, { row, column })
+    ? { row, column }
+    : spawn;
 }
 
 // ─── State transitions ────────────────────────────────────────────────────────
@@ -362,16 +400,36 @@ export function completeReunionDialogue(state: DemoState, npcId: string): DemoSt
   };
 }
 
+export function castFishing(state: DemoState, power: number): DemoState {
+  if (!Number.isFinite(power)) return state;
+  const safePower = Math.min(Math.max(Math.trunc(power), 0), 100);
+  const catchData = safePower >= 85
+    ? DEMO_FISHING_CATCHES[2]
+    : safePower >= 55
+      ? DEMO_FISHING_CATCHES[1]
+      : DEMO_FISHING_CATCHES[0];
+  const alreadyCaught = state.fishing.catches.includes(catchData.id);
+
+  return {
+    ...state,
+    fishing: {
+      castCount: state.fishing.castCount + 1,
+      catches: alreadyCaught ? state.fishing.catches : [...state.fishing.catches, catchData.id],
+      lastCatch: catchData.id,
+    },
+    legacyPoints: state.legacyPoints + catchData.points + (alreadyCaught ? 2 : 0),
+  };
+}
+
 export function updateDemoMapPosition(
   state: DemoState,
   position: DemoMapPosition,
   facing: DemoFacing,
 ): DemoState {
-  const row = Number.isInteger(position.row) ? Math.min(Math.max(position.row, 0), 5) : state.mapPosition.row;
-  const column = Number.isInteger(position.column) ? Math.min(Math.max(position.column, 0), 8) : state.mapPosition.column;
+  const nextPosition = sanitizeDemoMapPosition(state.worldVersion, position);
   return {
     ...state,
-    mapPosition: { row, column },
+    mapPosition: nextPosition,
     mapFacing: facing,
   };
 }
@@ -390,6 +448,7 @@ export function resetDemo(): DemoState {
     season: "dry",
     mapPosition: { row: 5, column: 3 },
     mapFacing: "down",
+    fishing: { ...DEFAULT_DEMO_STATE.fishing, catches: [] },
   };
 }
 
@@ -406,7 +465,6 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
       : fresh.phase;
     return {
       ...fresh,
-      ...parsed,
       phase,
       season: (["dry", "rain", "harvest", "celebration"] as DemoSeason[]).includes(parsed.season as DemoSeason)
         ? (parsed.season as DemoSeason)
@@ -479,28 +537,56 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
           })
         : DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
       mapPosition: parsed.mapPosition && typeof parsed.mapPosition === "object"
-        ? {
-            row: typeof (parsed.mapPosition as DemoMapPosition).row === "number"
-              ? Math.min(Math.max(Math.trunc((parsed.mapPosition as DemoMapPosition).row), 0), 5)
-              : fresh.mapPosition.row,
-            column: typeof (parsed.mapPosition as DemoMapPosition).column === "number"
-              ? Math.min(Math.max(Math.trunc((parsed.mapPosition as DemoMapPosition).column), 0), 8)
-              : fresh.mapPosition.column,
-          }
+        ? sanitizeDemoMapPosition(
+            typeof parsed.worldVersion === "number" && Number.isFinite(parsed.worldVersion)
+              ? Math.max(1, parsed.worldVersion)
+              : fresh.worldVersion,
+            {
+              row: typeof (parsed.mapPosition as DemoMapPosition).row === "number"
+                ? Math.trunc((parsed.mapPosition as DemoMapPosition).row)
+                : fresh.mapPosition.row,
+              column: typeof (parsed.mapPosition as DemoMapPosition).column === "number"
+                ? Math.trunc((parsed.mapPosition as DemoMapPosition).column)
+                : fresh.mapPosition.column,
+            },
+          )
         : { ...fresh.mapPosition },
       mapFacing: (["down", "left", "right", "up"] as DemoFacing[]).includes(parsed.mapFacing as DemoFacing)
         ? (parsed.mapFacing as DemoFacing)
         : fresh.mapFacing,
+      fishing: parsed.fishing && typeof parsed.fishing === "object"
+        ? {
+            castCount: typeof (parsed.fishing as FishingJournal).castCount === "number"
+              ? Math.max(0, Math.trunc((parsed.fishing as FishingJournal).castCount))
+              : 0,
+            catches: Array.isArray((parsed.fishing as FishingJournal).catches)
+              ? (parsed.fishing as FishingJournal).catches.filter((id): id is string =>
+                  DEMO_FISHING_CATCHES.some(catchData => catchData.id === id),
+                )
+              : [],
+            lastCatch: DEMO_FISHING_CATCHES.some(catchData =>
+              catchData.id === (parsed.fishing as FishingJournal).lastCatch,
+            )
+              ? (parsed.fishing as FishingJournal).lastCatch
+              : null,
+          }
+        : { ...fresh.fishing, catches: [] },
     };
   } catch {
     return resetDemo();
   }
 }
 
-export function writeDemoState(storage: Pick<Storage, "setItem">, state: DemoState): void {
+export function writeDemoState(storage: Pick<Storage, "setItem">, state: DemoState): boolean {
   try {
     storage.setItem(DEMO_STORAGE_KEY, JSON.stringify(state));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(DEMO_STATE_EVENT));
+    }
+    return true;
   } catch {
-    // The public demo remains playable when browser storage is unavailable.
+    // The public demo remains playable when browser storage is unavailable, but
+    // callers can surface the failure instead of silently losing progress.
+    return false;
   }
 }

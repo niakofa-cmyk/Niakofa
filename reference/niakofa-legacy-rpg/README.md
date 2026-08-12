@@ -1,31 +1,50 @@
 # Niakofa Legacy RPG reference bundle
 
-This directory preserves the files supplied as design and systems references for
-the Niakofa Legacy RPG. The runtime does **not** import the RPG Maker/LMBS
-engine, its plugins, or the uploaded image archives.
+This directory is the durable handoff for the Legacy RPG references reviewed
+on August 12, 2026. The production implementation remains a React/Vite
+experience; it does **not** embed the RPG Maker runtime or create a second game
+architecture inside Niakofa.
 
-## Reference boundary
+## Source boundary
 
-- The TXT is product and implementation guidance. Its history/evidence rules
-  remain authoritative: Family Vault records are the source of truth, and AI
-  must not invent family history.
+- Family Vault records remain the source of truth. The RPG may surface verified
+  memories, but it must not invent family history or present reference sprites
+  as family likenesses.
 - The LMBS archive is a movement, collision, action-state, and combat UX
-  reference only. Do not copy `rpg_core.js`, `rpg_objects.js`, RPG Maker
-  runtime files, or the whole archive into the React application.
-- The fishing and animation archives are visual/gameplay references only.
-- Any future runtime asset promotion requires a separate licensing review.
-  Current Legacy character rendering uses the approved original-art catalog.
-- The uploaded files may contain third-party code or assets. Keep them in this
-  reference area and do not present them as Niakofa family records or likenesses.
+  reference only. Do not copy `rpg_core.js`, `rpg_objects.js`, or RPG Maker
+  runtime files into the React application.
+- The fishing and animation archives are visual/gameplay references. A small,
+  explicitly promoted subset is used by the public demo's river-memory activity.
+- The uploaded notes were reviewed in full with sensitive credential-bearing
+  content excluded from durable project files. Never store credentials in the
+  repository, source comments, or reference notes.
+- Any future promotion of third-party assets still requires licensing review.
 
-## Supplied files and integrity
+## Reviewed uploads
 
-| File | Type | Inventory | SHA-256 |
-|---|---|---:|---|
-| `Pasted-I-wouldn-t-simply-dump-rpg-core-js-rpg-objects-js-rpg-s_1786528550043.txt` | design/source notes | 6,425 text lines | `11b9ed0cfcab194ed69403fb7cfa033ac1fc35e42ff55e5acb91ab10aa124d89` |
-| `lmbs_1786528503234.zip` | RPG Maker MV/LMBS reference | 256 archive entries | `887a4769f290b72f4b86d59eafdd68a9ead049ade83d1dc1536bcf5564e58ea9` |
-| `fishing_1786528492243.zip` | fishing reference images | 22 archive entries | `cd9d27a0895c41770f8aa7a79bd4c4a2206aaae875467eb8160c2ccc2e2b75f6` |
-| `animations_1786528522105.zip` | combat/effect reference images | 118 archive entries | `ab3ae92d0c11deb307fc44e5f9074db57a692732daf845af201f15796da3f0f5` |
+| Upload | Use in this edition |
+|---|---|
+| `Pasted-I-wouldn-t-simply-dump-rpg-core-js-rpg-objects-js-rpg-s_1786529652318.txt` | Product guidance: keep one architecture, strengthen the living-world loop, and close concrete persistence/collision gaps. |
+| `lmbs_1786529663994.zip` | Reference only; full entry inventory is in `source-manifests/`. |
+| `fishing_1786529675495.zip` | Promoted fishing shoreline, rod, fish, and splash art under `public/legacy-rpg-assets/fishing/`. |
+| `animations_1786529683315.zip` | Promoted status/combat effect art under `public/legacy-rpg-assets/animations/`. |
 
-Checksums were generated from the preserved files in this directory. Archive
-inventories include macOS metadata entries where present.
+The uploaded fishing archive contains 22 entries and the animation archive
+contains 118 entries. The LMBS archive was extracted and reviewed as a
+reference; its complete manifest is retained as a text inventory instead of
+shipping the entire engine/archive into the runtime bundle.
+
+## Runtime mapping
+
+| Reference idea | Niakofa implementation |
+|---|---|
+| Living navigation and safe exploration | Shared `legacy-world-layout` walkability and spawn contract; blocked saved positions are repaired instead of rendered as teleports. |
+| Small, meaningful RPG activity | River-memory fishing encounter with cast-power choices, persistent catch journal, rarity, and Legacy Points. |
+| Effects without a second engine | Promoted animation PNGs render as lightweight feedback overlays in the existing React encounter. |
+| Resume and cross-surface continuity | Versioned demo state is sanitized, same-tab/cross-tab synced, and storage failures are surfaced to the player. |
+
+## Source manifests
+
+`source-manifests/` contains the line-by-line archive entry inventories generated
+from the uploaded ZIP files. The original uploads remain session attachments;
+the runtime promotion above is the intentionally small, auditable subset.

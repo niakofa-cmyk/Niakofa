@@ -44,10 +44,12 @@ import {
 import {
   advanceDemo,
   advanceBusiness,
+  castFishing,
   chooseDemoTrait,
   completeReunionDialogue,
   completeDemoQuest,
   DEFAULT_DEMO_STATE,
+  DEMO_STATE_EVENT,
   DEMO_PHASE_ORDER,
   placeDemoArtifact,
   readDemoState,
@@ -1514,105 +1516,93 @@ function FinaleScreen({ state, onRestart, onPlay }: {
 export default function LegacyDemoPage() {
   const [state, setState] = useState<DemoState>(DEFAULT_DEMO_STATE);
   const [loaded, setLoaded] = useState(false);
+  const [persistenceWarning, setPersistenceWarning] = useState(false);
 
   useEffect(() => {
-    setState(readDemoState(localStorage));
+    const syncState = () => setState(readDemoState(localStorage));
+    syncState();
     setLoaded(true);
+    window.addEventListener("storage", syncState);
+    window.addEventListener(DEMO_STATE_EVENT, syncState);
+    return () => {
+      window.removeEventListener("storage", syncState);
+      window.removeEventListener(DEMO_STATE_EVENT, syncState);
+    };
   }, []);
 
-  const update = useCallback((patch: Partial<DemoState>) => {
-    setState(prev => {
-      const next = { ...prev, ...patch };
-      writeDemoState(localStorage, next);
-      return next;
-    });
+  const persist = useCallback((next: DemoState) => {
+    setPersistenceWarning(!writeDemoState(localStorage, next));
+    return next;
   }, []);
 
   const advance = useCallback(() => {
     setState(prev => {
-      const next = advanceDemo(prev);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(advanceDemo(prev));
     });
-  }, []);
+  }, [persist]);
 
   const handleChoice = useCallback((trait: string, value: number) => {
     setState(prev => {
-      const next = chooseDemoTrait(prev, trait, value);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(chooseDemoTrait(prev, trait, value));
     });
-  }, []);
+  }, [persist]);
 
   const handlePlace = useCallback((id: string) => {
     setState(prev => {
-      const next = placeDemoArtifact(prev, id);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(placeDemoArtifact(prev, id));
     });
-  }, []);
+  }, [persist]);
 
   const handleStartQuest = useCallback((id: string) => {
     setState(prev => {
-      const next = startDemoQuest(prev, id);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(startDemoQuest(prev, id));
     });
-  }, []);
+  }, [persist]);
 
   const handleCompleteQuest = useCallback((id: string) => {
     setState(prev => {
-      const next = completeDemoQuest(prev, id);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(completeDemoQuest(prev, id));
     });
-  }, []);
+  }, [persist]);
 
   const handleUnlockRecipe = useCallback((id: string) => {
     setState(prev => {
-      const next = unlockKitchenRecipe(prev, id);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(unlockKitchenRecipe(prev, id));
     });
-  }, []);
+  }, [persist]);
 
   const handleAdvanceBusiness = useCallback(() => {
     setState(prev => {
-      const next = advanceBusiness(prev);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(advanceBusiness(prev));
     });
-  }, []);
+  }, [persist]);
 
   const handleRevealMystery = useCallback((id: string) => {
     setState(prev => {
-      const next = revealMystery(prev, id);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(revealMystery(prev, id));
     });
-  }, []);
+  }, [persist]);
 
   const handleReunionDialogue = useCallback((npcId: string) => {
     setState(prev => {
-      const next = completeReunionDialogue(prev, npcId);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(completeReunionDialogue(prev, npcId));
     });
-  }, []);
+  }, [persist]);
 
   const handleMapMove = useCallback((position: DemoMapPosition, facing: DemoFacing) => {
     setState(prev => {
-      const next = updateDemoMapPosition(prev, position, facing);
-      writeDemoState(localStorage, next);
-      return next;
+      return persist(updateDemoMapPosition(prev, position, facing));
     });
-  }, []);
+  }, [persist]);
+
+  const handleFishingCast = useCallback((power: number) => {
+    setState(prev => persist(castFishing(prev, power)));
+  }, [persist]);
 
   const handleReset = useCallback(() => {
     const fresh = resetDemo();
-    writeDemoState(localStorage, fresh);
-    setState(fresh);
-  }, []);
+    setState(persist(fresh));
+  }, [persist]);
 
   const handlePlayFull = () => {
     window.location.href = "/legacy";
@@ -1629,9 +1619,6 @@ export default function LegacyDemoPage() {
   const chapterDef = CHAPTERS.find(c => c.id === state.phase);
   const phaseIdx = DEMO_PHASE_ORDER.indexOf(state.phase);
   const { label: seasonLabel, accent } = getSeasonStyle(state.season);
-
-  // Suppress unused warning — update used inside callbacks
-  void update;
 
   return (
     <div
@@ -1651,8 +1638,7 @@ export default function LegacyDemoPage() {
                 const prev = DEMO_PHASE_ORDER[phaseIdx - 1];
                 setState(s => {
                   const next = { ...s, phase: prev };
-                  writeDemoState(localStorage, next);
-                  return next;
+                  return persist(next);
                 });
               }
             }}
@@ -1702,6 +1688,15 @@ export default function LegacyDemoPage() {
         </button>
       </div>
 
+      {persistenceWarning && (
+        <div
+          role="alert"
+          className="border-b border-rose-400/30 bg-rose-950/60 px-4 py-2 text-center text-[10px] font-bold text-rose-200"
+        >
+          Progress is still playable, but this browser could not save it. Check private-mode or storage settings.
+        </div>
+      )}
+
       <div className="max-w-lg mx-auto pb-20">
         <LegacyLivingWorld
           phase={state.phase}
@@ -1709,9 +1704,11 @@ export default function LegacyDemoPage() {
           worldVersion={state.worldVersion}
           placedArtifacts={state.placedArtifacts}
           businessLevel={state.businessLevel}
-            mapPosition={state.mapPosition}
-            mapFacing={state.mapFacing}
-            onMapMove={handleMapMove}
+          mapPosition={state.mapPosition}
+          mapFacing={state.mapFacing}
+          onMapMove={handleMapMove}
+          fishing={state.fishing}
+          onFishingCast={handleFishingCast}
         />
 
         {state.phase === "prologue" && (

@@ -34,6 +34,16 @@ export interface LegacyWorldPosition {
   column: number;
 }
 
+export const LEGACY_WORLD_BLOCKED_TILES = new Set<LegacyWorldTile>([
+  "water",
+  "compound_wall",
+  "thatch_roof",
+  "tree_canopy",
+  "baobab_trunk",
+  "market_stall",
+  "fence",
+]);
+
 const ORIGINAL_LAYOUT: LegacyWorldLayout = {
   map: [
     ["tree_canopy", "tree_canopy", "grass_01", "grass_02", "grass_01", "tree_canopy", "grass_01", "grass_02", "tree_canopy"],
@@ -126,6 +136,29 @@ const REGENERATED_LAYOUT: LegacyWorldLayout = {
 
 export function getLegacyWorldLayout(worldVersion: number): LegacyWorldLayout {
   return worldVersion >= 2 ? REGENERATED_LAYOUT : ORIGINAL_LAYOUT;
+}
+
+export function isLegacyWorldPositionWalkable(
+  layout: LegacyWorldLayout,
+  position: LegacyWorldPosition,
+): boolean {
+  const tile = layout.map[position.row]?.[position.column];
+  return tile !== undefined && !LEGACY_WORLD_BLOCKED_TILES.has(tile);
+}
+
+export function getLegacyWorldSpawn(worldVersion: number): LegacyWorldPosition {
+  const layout = getLegacyWorldLayout(worldVersion);
+  const preferred = { row: 5, column: 3 };
+  if (isLegacyWorldPositionWalkable(layout, preferred)) return preferred;
+
+  for (let row = layout.map.length - 1; row >= 0; row -= 1) {
+    for (let column = 0; column < (layout.map[row]?.length ?? 0); column += 1) {
+      const position = { row, column };
+      if (isLegacyWorldPositionWalkable(layout, position)) return position;
+    }
+  }
+
+  return { row: 0, column: 0 };
 }
 
 /**

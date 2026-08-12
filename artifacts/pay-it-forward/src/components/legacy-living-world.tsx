@@ -29,9 +29,13 @@ import type {
 import {
   getLegacyWorldLayout,
   getLegacyWorldLandmarkAt,
+  getLegacyWorldSpawn,
+  isLegacyWorldPositionWalkable,
   type LegacyWorldLandmarkIcon,
   type LegacyWorldTile,
 } from "@/lib/legacy-world-layout";
+import { LegacyFishingEncounter } from "@/components/legacy-fishing-encounter";
+import type { FishingJournal } from "@/lib/legacy-demo-state";
 
 type WorldScene = {
   title: string;
@@ -196,16 +200,6 @@ const WORLD_LANDMARK_ICONS: Record<LegacyWorldLandmarkIcon, typeof Camera> = {
   certificate: ScrollText,
 };
 
-const BLOCKED_TILES = new Set<TileName>([
-  "water",
-  "compound_wall",
-  "thatch_roof",
-  "tree_canopy",
-  "baobab_trunk",
-  "market_stall",
-  "fence",
-]);
-
 const TILE_LABELS: Record<TileName, string> = {
   grass_01: "grass",
   grass_02: "grass",
@@ -241,8 +235,8 @@ function HouseOfMensahMap({
   const worldMap = layout.map;
   const [motion, setMotion] = useState<"idle" | "walk">("idle");
   const [actionState, setActionState] = useState<"idle" | "interacting">("idle");
-  const player: PlayerPosition = BLOCKED_TILES.has(worldMap[mapPosition.row]?.[mapPosition.column] as TileName)
-    ? { row: 5, column: 3 }
+  const player: PlayerPosition = !isLegacyWorldPositionWalkable(layout, mapPosition)
+    ? getLegacyWorldSpawn(worldVersion)
     : mapPosition;
   const tile = worldMap[player.row][player.column];
   const placed = new Set(placedArtifacts);
@@ -265,7 +259,7 @@ function HouseOfMensahMap({
     const row = player.row + rowDelta;
     const column = player.column + columnDelta;
     const nextTile = worldMap[row]?.[column];
-    if (!nextTile || BLOCKED_TILES.has(nextTile)) {
+    if (!nextTile || !isLegacyWorldPositionWalkable(layout, { row, column })) {
       onMapMove(player, facing);
       return;
     }
@@ -448,6 +442,8 @@ export function LegacyLivingWorld({
   mapPosition,
   mapFacing,
   onMapMove,
+  fishing,
+  onFishingCast,
 }: {
   phase: DemoPhase;
   season: DemoSeason;
@@ -457,6 +453,8 @@ export function LegacyLivingWorld({
   mapPosition: DemoMapPosition;
   mapFacing: DemoFacing;
   onMapMove: (position: DemoMapPosition, facing: DemoFacing) => void;
+  fishing: FishingJournal;
+  onFishingCast: (power: number) => void;
 }) {
   const scene = WORLD_SCENES[phase];
   const SceneIcon = scene.icon;
@@ -524,6 +522,7 @@ export function LegacyLivingWorld({
           mapFacing={mapFacing}
           onMapMove={onMapMove}
         />
+        <LegacyFishingEncounter fishing={fishing} onCast={onFishingCast} />
 
         {hasRegenerated && (
           <div className="relative z-[1] mt-3 rounded-xl border border-emerald-300/20 bg-emerald-950/20 p-3">
