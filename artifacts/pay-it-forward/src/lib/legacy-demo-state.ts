@@ -371,6 +371,11 @@ export function advanceDemo(state: DemoState): DemoState {
 export function chooseDemoTrait(state: DemoState, trait: string, value: number): DemoState {
   // Only accept known traits to prevent arbitrary state mutations
   if (!DEMO_TRAITS.includes(trait as (typeof DEMO_TRAITS)[number]) || !Number.isFinite(value)) return state;
+  // The header intentionally allows revisiting an earlier phase. Treat the
+  // NPC memory written by the first choice as the completion marker so a
+  // replay cannot award the same trait again.
+  const phaseLabel = state.phase.replace("chapter", "Chapter ");
+  if (state.npcMemory.some(memory => memory.remembers.includes(phaseLabel))) return state;
   const nextPhase = phaseAfter(state.phase);
   // Record trait choice as NPC memory for reunion
   const memoryLabel = `You chose ${trait} in ${state.phase.replace("chapter", "Chapter ")}`;

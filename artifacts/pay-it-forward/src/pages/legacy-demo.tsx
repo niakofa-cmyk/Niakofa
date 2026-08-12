@@ -1648,13 +1648,36 @@ function FinaleScreen({ state, onRestart, onPlay }: {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+type DemoStorage = Pick<Storage, "getItem" | "setItem">;
+
+const sessionOnlyDemoStorage: DemoStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+};
+
+function getDemoStorage(): { storage: DemoStorage; available: boolean } {
+  try {
+    // Some privacy modes throw while evaluating window.localStorage rather
+    // than from getItem/setItem. Keep the demo playable in that environment.
+    return { storage: window.localStorage, available: true };
+  } catch {
+    return { storage: sessionOnlyDemoStorage, available: false };
+  }
+}
+
 export default function LegacyDemoPage() {
   const [state, setState] = useState<DemoState>(DEFAULT_DEMO_STATE);
   const [loaded, setLoaded] = useState(false);
   const [persistenceWarning, setPersistenceWarning] = useState(false);
+  const storageRef = useRef<DemoStorage>(sessionOnlyDemoStorage);
+  const storageAvailableRef = useRef(false);
 
   useEffect(() => {
-    const syncState = () => setState(readDemoState(localStorage));
+    const storageAccess = getDemoStorage();
+    storageRef.current = storageAccess.storage;
+    storageAvailableRef.current = storageAccess.available;
+    setPersistenceWarning(!storageAccess.available);
+    const syncState = () => setState(readDemoState(storageAccess.storage));
     syncState();
     setLoaded(true);
     window.addEventListener("storage", syncState);
@@ -1666,7 +1689,8 @@ export default function LegacyDemoPage() {
   }, []);
 
   const persist = useCallback((next: DemoState) => {
-    setPersistenceWarning(!writeDemoState(localStorage, next));
+    const didSave = writeDemoState(storageRef.current, next);
+    setPersistenceWarning(!storageAvailableRef.current || !didSave);
     return next;
   }, []);
 

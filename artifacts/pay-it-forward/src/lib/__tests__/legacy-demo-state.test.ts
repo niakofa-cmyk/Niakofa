@@ -231,6 +231,17 @@ describe("Legacy public demo journey", () => {
     }
   });
 
+  it("does not award a chapter trait twice after revisiting the phase", () => {
+    const firstChoice = chooseDemoTrait(advanceDemo(resetDemo()), "Wisdom", 5);
+    const revisited = {
+      ...firstChoice,
+      phase: "chapter1" as const,
+    };
+
+    expect(chooseDemoTrait(revisited, "Leadership", 20)).toBe(revisited);
+    expect(revisited.traits).toEqual({ ...DEFAULT_DEMO_STATE.traits, Wisdom: 40 });
+  });
+
   it("ignores non-finite trait values without changing state", () => {
     const state = resetDemo();
     expect(chooseDemoTrait(state, "Wisdom", Number.NaN)).toBe(state);

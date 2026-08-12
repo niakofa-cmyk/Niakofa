@@ -128,3 +128,22 @@ story timeline visible without creating a second runtime:
 - the Ground material provides a small path cue;
 - the Retro Tree living/dead sheets switch with pressure and world regeneration;
 - the UI labels all of this as presentation art, never as family evidence.
+
+## Workspace continuation uploads — August 12, 2026
+
+The four files supplied for this continuation are preserved byte-for-byte in
+`uploads/continuation-2026-08-12/`. Their complete archive entry traversal,
+per-entry SHA-256 values, and document line-read record are in
+`source-manifests/continuation-2026-08-12.entries.txt`.
+
+| Upload | Review result |
+|---|---|
+| `Pasted-I-wouldn-t-simply-dump-rpg-core-js-rpg-objects-js-rpg-s_1786568716117.txt` | Read in full: keep the Family Vault/knowledge graph authoritative, use the Living Baobab as the emotional navigation surface, and do not embed RPG Maker as a second architecture. |
+| `js_1786568782841.zip` | 113 entries / 3,347,297 uncompressed bytes read in full; LMBS/RPG Maker source remains movement, collision, action-state, and UI reference only. |
+| `Debug_1786568786704.zip` | 143 entries / 906,885 uncompressed bytes read in full; debug/runtime source remains reference-only and is not shipped to the browser. |
+| `UI_1786568806270.zip` | 96 entries / 101,342 uncompressed bytes read in full; UI artwork remains reference-only pending provenance/licensing review. |
+
+No uploaded runtime source or generic image set is promoted into the production
+bundle. The current app remains one React/Vite runtime, and the public demo
+continues to use the existing curated, explicitly cataloged presentation
+assets.
