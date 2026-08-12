@@ -223,7 +223,7 @@ Interview Quest → Record Audio (MediaRecorder)
 
 | Gap | Priority | Notes |
 |---|---|---|
-| Live Video Interview | High | Needs WebRTC/video infra. UI stub added (Aug 2026). |
+| Live Video Interview | High | Browser audio/video capture, consent, transcript fallback, media upload, and world-regeneration handoff are implemented. Production WebRTC/live multi-party infrastructure and deployment QA remain separate work. |
 | SMS/offline onboarding | Low | Architecture planned, not implemented |
 | Email/SMS notifications | Low | Stored but only push delivered |
 | Civic Portal Stripe wiring | Low | Separate from Legacy Mode |

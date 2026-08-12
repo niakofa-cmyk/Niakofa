@@ -1,12 +1,12 @@
 # Niakofa Legacy production-readiness checkpoint — 2026-08-12
 
+> Current audit: `docs/legacy-reference/SESSION_AUDIT_2026-08-12.md`.
+
 ## Baseline
 
-- The workspace baseline is the locally available `origin/main` object at
-  `56d4fefb` (`Legacy Living World`), with the current session's upload bundle
-  preserved below. A supported GitHub write path was not available during the
-  baseline import, so this is not a claim of an independently fetched GitHub
-  remote.
+- The current verified baseline is commit `d106e455` (`Make restored memories
+  discoverable on the living map`), with the current session's upload bundle
+  preserved below.
 - The uploaded original-art engine patch was compared against this baseline.
   It was not reapplied because the current engine, tests, catalog, and runtime
   assets are already newer and present in `origin/main`.
@@ -41,10 +41,14 @@
 10. Extended the deployment verifier to fetch the original-art catalog and
     validate that all documented character layers and world tiles are served as
     PNGs from the built SPA.
+11. Made restored-memory landmarks discoverable during map movement with a
+    visible and screen-reader-friendly discovery announcement.
+12. Hardened interview submission retries so transcript failures do not create
+    orphan quests and media/submission retries reuse the same quest.
 
 ## Verified
 
-- Legacy/app test suite: **489 passed, 0 failed**.
+- Legacy/app test suite: **492 passed, 0 failed**.
 - Pay-it-forward Vite production build: **passed**.
 - Full workspace TypeScript build/typecheck: **passed**.
 - The changed Legacy component and engine test compile through the full
@@ -73,9 +77,8 @@
   Nia service is unavailable. The API server itself starts and listens
   successfully; the public Legacy demo does not require that external AI
   service to render or play.
-- GitHub remains unsynced from this session: the declined GitHub integration,
-  rejected provisioned credentials, and unavailable public repository path
-  prevent a truthful push/fetch confirmation.
+- GitHub synchronization is independently confirmed in the current audit with
+  both `git fetch` and a direct `git ls-remote` check.
 - The deployment verifier requires a real `PRODUCTION_URL`; this checkpoint
   verified the built SPA against a local Vite preview. A published deployment
   URL must be supplied by the deployment workflow for production verification.

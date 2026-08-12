@@ -233,20 +233,6 @@ export default function LegacyInterviewQuestPage() {
     setSubmitError(null);
 
     try {
-      // Start the quest first
-      const startRes = await fetch(`/api/legacy/interview-quests/${familyId}/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          questType: activeQuest.questType,
-          targetMemberId: activeQuest.targetMemberId,
-          title: activeQuest.title,
-        }),
-      });
-      if (!startRes.ok) throw new Error("Failed to start quest");
-      const startData = await startRes.json() as { interviewId: number };
-      setQuestId(startData.interviewId);
-
       let finalTranscript = transcript.trim();
       if (!finalTranscript && captureMode === "audio") {
         const transcriptionRes = await fetch("/api/nia/voice/transcribe", {
@@ -265,14 +251,34 @@ export default function LegacyInterviewQuestPage() {
           : "We couldn't transcribe that recording. Add the transcript below and try again.");
       }
 
-      const submitRes = await fetch(`/api/legacy/interview-quests/${startData.interviewId}/submit`, {
+      // Validate the transcript before creating a server-side quest. If a
+      // recording needs a transcript fallback, a failed first attempt should
+      // not leave an orphaned in-progress quest behind.
+      let interviewId = questId;
+      if (!interviewId) {
+        const startRes = await fetch(`/api/legacy/interview-quests/${familyId}/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({
+            questType: activeQuest.questType,
+            targetMemberId: activeQuest.targetMemberId,
+            title: activeQuest.title,
+          }),
+        });
+        if (!startRes.ok) throw new Error("Failed to start quest");
+        const startData = await startRes.json() as { interviewId: number };
+        interviewId = startData.interviewId;
+        setQuestId(interviewId);
+      }
+
+      const submitRes = await fetch(`/api/legacy/interview-quests/${interviewId}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ transcript: finalTranscript }),
       });
       if (!submitRes.ok) throw new Error("Failed to submit interview");
 
-      const mediaRes = await fetch(`/api/legacy/interview-quests/${startData.interviewId}/media`, {
+      const mediaRes = await fetch(`/api/legacy/interview-quests/${interviewId}/media`, {
         method: "POST",
         headers: {
           "Content-Type": mediaBlob.type || (captureMode === "video" ? "video/webm" : "audio/webm"),
@@ -286,7 +292,7 @@ export default function LegacyInterviewQuestPage() {
       }
 
       // Get normalized results after media is preserved
-      const resultRes = await fetch(`/api/legacy/interview-quests/${startData.interviewId}/result`, {
+      const resultRes = await fetch(`/api/legacy/interview-quests/${interviewId}/result`, {
         headers: authHeaders(),
       });
       if (!resultRes.ok) throw new Error("Failed to get results");
@@ -298,7 +304,7 @@ export default function LegacyInterviewQuestPage() {
       setSubmitError(err instanceof Error ? err.message : "Failed to submit");
       setPhase("recording");
     }
-  }, [captureMode, familyId, activeQuest, mediaBlob, transcript]);
+  }, [captureMode, familyId, activeQuest, mediaBlob, questId, transcript]);
 
   // Complete quest
   const completeQuest = useCallback(async () => {
@@ -867,6 +873,7 @@ export default function LegacyInterviewQuestPage() {
                 onClick={() => {
                   setActiveQuest(quest);
                   setPhase("recording");
+                    setQuestId(null);
                   setMediaBlob(null);
                   setMediaUrl(null);
                   setTranscript("");
