@@ -29,6 +29,11 @@ export interface LegacyWorldLayout {
   landmarks: readonly LegacyWorldLandmark[];
 }
 
+export interface LegacyWorldPosition {
+  row: number;
+  column: number;
+}
+
 const ORIGINAL_LAYOUT: LegacyWorldLayout = {
   map: [
     ["tree_canopy", "tree_canopy", "grass_01", "grass_02", "grass_01", "tree_canopy", "grass_01", "grass_02", "tree_canopy"],
@@ -121,4 +126,19 @@ const REGENERATED_LAYOUT: LegacyWorldLayout = {
 
 export function getLegacyWorldLayout(worldVersion: number): LegacyWorldLayout {
   return worldVersion >= 2 ? REGENERATED_LAYOUT : ORIGINAL_LAYOUT;
+}
+
+/**
+ * Returns the restored memory at a player's current map position, if any.
+ * Keeping this lookup beside the deterministic layout prevents the renderer
+ * from duplicating coordinate rules and gives the exploration loop a small,
+ * testable contract.
+ */
+export function getLegacyWorldLandmarkAt(
+  layout: LegacyWorldLayout,
+  position: LegacyWorldPosition,
+): LegacyWorldLandmark | null {
+  return layout.landmarks.find(
+    (landmark) => landmark.row === position.row && landmark.column === position.column,
+  ) ?? null;
 }

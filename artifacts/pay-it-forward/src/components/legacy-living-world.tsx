@@ -21,7 +21,12 @@ import {
 } from "lucide-react";
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 import type { DemoPhase, DemoSeason } from "@/lib/legacy-demo-state";
-import { getLegacyWorldLayout, type LegacyWorldLandmarkIcon, type LegacyWorldTile } from "@/lib/legacy-world-layout";
+import {
+  getLegacyWorldLayout,
+  getLegacyWorldLandmarkAt,
+  type LegacyWorldLandmarkIcon,
+  type LegacyWorldTile,
+} from "@/lib/legacy-world-layout";
 
 type WorldScene = {
   title: string;
@@ -227,6 +232,7 @@ function HouseOfMensahMap({
   const tile = worldMap[player.row][player.column];
   const placed = new Set(placedArtifacts);
   const visibleLandmarks = layout.landmarks.filter(({ artifactId }) => placed.has(artifactId));
+  const activeLandmark = getLegacyWorldLandmarkAt(layout, player);
 
   const move = (rowDelta: number, columnDelta: number) => {
     setPlayer((current) => {
@@ -301,7 +307,11 @@ function HouseOfMensahMap({
               role="img"
               aria-label={`${label}: ${description}`}
               title={`${label} — ${description}`}
-              className="absolute z-[5] flex items-center justify-center rounded-full border border-amber-200/80 bg-[#2b1708]/90 text-amber-200 shadow-[0_0_10px_rgba(245,200,66,0.75)]"
+              className={`absolute z-[5] flex items-center justify-center rounded-full border bg-[#2b1708]/90 text-amber-200 transition-all ${
+                activeLandmark?.artifactId === artifactId
+                  ? "border-emerald-200 ring-2 ring-emerald-300/70 shadow-[0_0_16px_rgba(110,231,183,0.95)]"
+                  : "border-amber-200/80 shadow-[0_0_10px_rgba(245,200,66,0.75)]"
+              }`}
               style={{
                 width: `${100 / 9}%`,
                 height: `${100 / 6}%`,
@@ -356,7 +366,23 @@ function HouseOfMensahMap({
           </div>
         </div>
       </div>
-      <p className="mt-2 text-center text-[9px] text-amber-100/50">Arrow keys / W A S D or the compass · water and buildings are blocked</p>
+      {activeLandmark && visibleLandmarks.some(({ artifactId }) => artifactId === activeLandmark.artifactId) ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-950/20 px-2.5 py-2 text-center"
+        >
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">
+            Memory discovered · {activeLandmark.label}
+          </p>
+          <p className="mt-0.5 text-[9px] leading-relaxed text-emerald-100/60">{activeLandmark.description}</p>
+        </div>
+      ) : (
+        <p className="mt-2 text-center text-[9px] text-amber-100/50">
+          Arrow keys / W A S D or the compass · water and buildings are blocked
+          {visibleLandmarks.length > 0 ? " · move onto a glowing memory marker" : ""}
+        </p>
+      )}
     </div>
   );
 }
