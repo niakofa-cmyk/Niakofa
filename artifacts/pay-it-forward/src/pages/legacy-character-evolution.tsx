@@ -232,9 +232,10 @@ export default function LegacyCharacterEvolutionPage() {
                     deathYear: char.deathYear,
                     era: char.birthYear ? `${Math.floor(char.birthYear / 10) * 10}s` : undefined,
                     appearanceSeed: char.memberId,
+                    libraryId: "niakofa-original-art-demo-v1",
                   });
                   return appearance
-                    ? <LegacyCharacterSprite {...appearance} size={56} />
+                     ? <LegacyCharacterSprite {...appearance} libraryId="niakofa-original-art-demo-v1" size={56} />
                     : (
                       <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-600/30 to-amber-900/30 border border-amber-700/30 flex items-center justify-center flex-shrink-0">
                         <span className="text-lg font-black text-amber-300">

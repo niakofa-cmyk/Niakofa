@@ -183,3 +183,72 @@ describe("Legacy character engine", () => {
     });
   });
 });
+
+describe("Original-art library (niakofa-original-art-demo-v1)", () => {
+  it("is opt-in only - default library is unchanged", () => {
+    expect(resolveWalkingAsset({ ageGroup: "adult", gender: "female" })?.file)
+      .toBe("/legacy-character-assets/tv/TV_Body_p01-female.png");
+  });
+
+  it("resolves a full layered appearance from the original-art library", () => {
+    const result = resolveWalkingAppearance({
+      ageGroup: "adult",
+      gender: "male",
+      libraryId: "niakofa-original-art-demo-v1",
+    });
+    expect(result?.libraryId).toBe("niakofa-original-art-demo-v1");
+    expect(result?.layers.map((layer) => layer.assetId)).toEqual([
+      "tv_body_adult_male_base",
+      "tv_clothing_adult_male_p01",
+      "tv_rear_hair_adult_male_p01_afro",
+      "tv_front_hair_adult_male_p01_afro",
+    ]);
+    expect(result?.layers.every((layer) => layer.file.startsWith("/legacy-world-assets/tv/"))).toBe(true);
+  });
+
+  it("honors an explicit named hairstyle instead of the deterministic default", () => {
+    const result = resolveCharacterAppearance({
+      characterId: "ama-mensah",
+      ageGroup: "adult",
+      gender: "female",
+      lifeStage: "adult",
+      era: "1890s",
+      libraryId: "niakofa-original-art-demo-v1",
+      hairStyle: "locs",
+    });
+    const rear = result?.layers.find((layer) => layer.layer === "rearHair");
+    const front = result?.layers.find((layer) => layer.layer === "frontHair");
+    expect(rear?.assetId).toBe("tv_rear_hair_adult_female_p05_locs");
+    expect(front?.assetId).toBe("tv_front_hair_adult_female_p05_locs");
+  });
+
+  it("stays deterministic for the same character/era/seed without an explicit hairstyle", () => {
+    const input = {
+      characterId: "kwame-mensah",
+      ageGroup: "adult" as const,
+      gender: "male" as const,
+      lifeStage: "mature" as const,
+      era: "1910s",
+      appearanceSeed: "house-of-mensah",
+      libraryId: "niakofa-original-art-demo-v1" as const,
+    };
+    const first = resolveCharacterAppearance(input);
+    const second = resolveCharacterAppearance(input);
+    expect(first).toEqual(second);
+    expect(first?.layers.map((layer) => layer.assetId)).toEqual([
+      "tv_body_adult_male_base",
+      expect.stringMatching(/^tv_clothing_adult_male_p0[123]$/),
+      expect.stringMatching(/^tv_rear_hair_adult_male_p0[1-5]_(afro|coils|braids|bun|locs)$/),
+      expect.stringMatching(/^tv_front_hair_adult_male_p0[1-5]_(afro|coils|braids|bun|locs)$/),
+    ]);
+  });
+
+  it("resolves kid appearances in the original-art library too", () => {
+    const result = resolveWalkingAppearance({
+      ageGroup: "kid",
+      gender: "unspecified",
+      libraryId: "niakofa-original-art-demo-v1",
+    });
+    expect(result?.layers[0].assetId).toBe("tv_body_kid_base");
+  });
+});

@@ -1008,6 +1008,7 @@ function WorldRegenerationSummary({ result }: { result: QuestResult }) {
                       lifeStage: appearance.lifeStage,
                       era: appearance.era,
                       appearanceSeed: appearance.appearanceSeed,
+                      libraryId: "niakofa-original-art-demo-v1" as const,
                       layers: {
                         body: appearance.layers.body,
                         clothing: appearance.layers.clothing,
@@ -1019,7 +1020,7 @@ function WorldRegenerationSummary({ result }: { result: QuestResult }) {
                 return (
                   <div key={character.characterId} className="flex items-center gap-3 rounded-xl border border-emerald-800/30 bg-black/10 p-2.5">
                     {spriteAppearance ? (
-                      <LegacyCharacterSprite {...spriteAppearance} size={44} />
+                      <LegacyCharacterSprite {...spriteAppearance} libraryId="niakofa-original-art-demo-v1" size={44} />
                     ) : (
                       <div className="w-11 h-11 rounded-xl border border-amber-700/30 bg-amber-950/40 flex items-center justify-center text-amber-300 font-black">
                         {character.name.charAt(0).toUpperCase()}

@@ -2,6 +2,8 @@ import {
   resolveWalkingAppearance,
   type LegacyAgeGroup,
   type LegacyGender,
+  type LegacyHairStyle,
+  type LegacyLibraryId,
   type LegacyLayer,
   type LegacyLifeStage,
 } from "@/lib/legacy-character-engine";
@@ -13,6 +15,8 @@ interface LegacyCharacterSpriteProps {
   lifeStage?: LegacyLifeStage;
   era?: string;
   appearanceSeed?: string | number;
+  libraryId?: LegacyLibraryId;
+  hairStyle?: LegacyHairStyle;
   layers?: Partial<Record<LegacyLayer, string>>;
   size?: number;
   className?: string;
@@ -30,6 +34,8 @@ export function LegacyCharacterSprite({
   lifeStage,
   era,
   appearanceSeed,
+  libraryId,
+  hairStyle,
   layers,
   size = 56,
   className = "",
@@ -41,6 +47,8 @@ export function LegacyCharacterSprite({
     lifeStage,
     era,
     appearanceSeed,
+    libraryId,
+    hairStyle,
     layers,
   });
   if (!appearance) return null;

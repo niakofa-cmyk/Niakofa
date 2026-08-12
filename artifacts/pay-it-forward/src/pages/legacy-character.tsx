@@ -200,6 +200,7 @@ export default function LegacyCharacterPage() {
     deathYear: character.deathYear,
     era: character.birthYear ? `${Math.floor(character.birthYear / 10) * 10}s` : undefined,
     appearanceSeed: character.memberId,
+    libraryId: "niakofa-original-art-demo-v1",
   });
   const lifeStage = deriveLifeStage({
     birthYear: character.birthYear,

@@ -3,6 +3,24 @@
  *
  * Family facts stay in the vault. This module only resolves a visual runtime
  * representation from an appearance definition and never infers history.
+ *
+ * ---------------------------------------------------------------------------
+ * TWO SWAPPABLE LIBRARIES
+ * ---------------------------------------------------------------------------
+ * "niakofa-rpg-generator-v1"   — curated subset of the uploaded RPG Maker
+ *                                 generator archive. Licensing status is
+ *                                 "review-required" (see catalog.json).
+ * "niakofa-original-art-demo-v1" — fully original procedurally-generated
+ *                                 art created for this project. No
+ *                                 third-party or RPG Maker content. Safe to
+ *                                 ship without a license review.
+ *
+ * DEFAULT_LIBRARY_ID controls which one callers get when they don't specify
+ * a library explicitly. It stays "niakofa-rpg-generator-v1" so this change
+ * is non-breaking for every existing caller and test. Opt a call site into
+ * the license-clean art by passing libraryId: "niakofa-original-art-demo-v1"
+ * explicitly (or flip this constant once the generator library's licensing
+ * review is resolved one way or the other).
  */
 
 export type LegacyAgeGroup = "adult" | "kid";
@@ -20,6 +38,18 @@ export type LegacyLayer =
   | "glasses"
   | "facialMark";
 
+export type LegacyLibraryId = "niakofa-rpg-generator-v1" | "niakofa-original-art-demo-v1";
+
+/**
+ * Original-art library only: named, non-derivative hairstyle silhouettes.
+ * The generator library has no equivalent — its hair variants are only
+ * numbered (p02/p03/p04), not named.
+ */
+export type LegacyHairStyle = "afro" | "coils" | "braids" | "bun" | "locs";
+
+export const DEFAULT_LIBRARY_ID: LegacyLibraryId = "niakofa-rpg-generator-v1";
+export const HAIR_STYLES: LegacyHairStyle[] = ["afro", "coils", "braids", "bun", "locs"];
+
 export interface LegacyAppearanceInput {
   ageGroup: LegacyAgeGroup;
   gender: LegacyGender;
@@ -27,6 +57,9 @@ export interface LegacyAppearanceInput {
   lifeStage?: LegacyLifeStage;
   era?: string;
   appearanceSeed?: string | number;
+  libraryId?: LegacyLibraryId;
+  /** Original-art library only. Ignored by the generator library. */
+  hairStyle?: LegacyHairStyle;
   /**
    * Appearance choices are explicit asset IDs. The engine never derives a
    * person's identity, history, or gender from an asset filename.
@@ -45,6 +78,7 @@ export interface LegacyAssetRecord {
   width: number;
   height: number;
   runtime: "approved" | "catalog-only";
+  hairStyle?: LegacyHairStyle;
 }
 
 export interface LegacyWalkingAsset {
@@ -71,6 +105,7 @@ export interface LegacyWalkingAppearance {
   lifeStage?: LegacyLifeStage;
   era?: string;
   appearanceSeed?: string | number;
+  libraryId: LegacyLibraryId;
 }
 
 export interface LegacyLifeStageProfile {
@@ -125,7 +160,36 @@ export function deriveLifeStage(input: {
   return { id: "elder", label: "Elder", age, description: "The character engine uses an elder curated walking profile." };
 }
 
-const BODY_ASSETS: Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender, LegacyWalkingAsset>>>> = {
+// ============================================================================
+// Per-library asset tables
+// ============================================================================
+
+type BodyTable = Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender, LegacyWalkingAsset>>>>;
+type LayerDefaults = Partial<Record<LegacyLayer, string>>;
+type DefaultsTable = Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender, LayerDefaults>>>>;
+
+interface LibraryTables {
+  bodyAssets: BodyTable;
+  layerAssets: Record<string, LegacyAssetRecord>;
+  defaultLayers: DefaultsTable;
+}
+
+const LAYER_ORDER: LegacyLayer[] = ["clothing", "rearHair", "frontHair", "beard", "accessoryA", "accessoryB", "glasses", "facialMark"];
+
+function stableHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+// ---------------------------------------------------------------------------
+// Library 1: "niakofa-rpg-generator-v1" (curated generator subset, unchanged)
+// ---------------------------------------------------------------------------
+
+const GENERATOR_BODY_ASSETS: BodyTable = {
   adult: {
     male: {
       assetId: "tv_body_male_base",
@@ -153,7 +217,7 @@ const BODY_ASSETS: Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender, L
   },
 };
 
-const APPROVED_LAYER_ASSETS: Record<string, LegacyAssetRecord> = {
+const GENERATOR_LAYER_ASSETS: Record<string, LegacyAssetRecord> = {
   tv_clothing_male_default: {
     assetId: "tv_clothing_male_default",
     representation: "TV",
@@ -264,29 +328,24 @@ const APPROVED_LAYER_ASSETS: Record<string, LegacyAssetRecord> = {
   },
 };
 
-const CURATED_VARIANT_PROFILES = [
+const GENERATOR_VARIANT_PROFILES = [
   { ageGroup: "adult", gender: "male", suffix: "male" },
   { ageGroup: "adult", gender: "female", suffix: "female" },
   { ageGroup: "kid", gender: "unspecified", suffix: "kid" },
 ] as const satisfies Array<{ ageGroup: LegacyAgeGroup; gender: LegacyGender; suffix: string }>;
 
-const CURATED_VARIANT_LAYERS = [
+const GENERATOR_VARIANT_LAYERS = [
   { layer: "clothing", filePrefix: "TV_Clothing2" },
   { layer: "rearHair", filePrefix: "TV_RearHair1" },
   { layer: "frontHair", filePrefix: "TV_FrontHair1" },
 ] as const satisfies Array<{ layer: LegacyLayer; filePrefix: string }>;
 
-/**
- * Only this small, explicit subset of the uploaded source library is shipped
- * to the browser. The rest of the archive stays catalog-only.
- */
-const CURATED_VARIANT_ASSETS: Record<string, LegacyAssetRecord> = {};
-for (const profile of CURATED_VARIANT_PROFILES) {
+for (const profile of GENERATOR_VARIANT_PROFILES) {
   for (const variant of [2, 3, 4]) {
-    for (const layer of CURATED_VARIANT_LAYERS) {
+    for (const layer of GENERATOR_VARIANT_LAYERS) {
       const layerId = layer.layer === "rearHair" ? "rear_hair" : layer.layer === "frontHair" ? "front_hair" : layer.layer;
       const assetId = `tv_${layerId}_${profile.suffix}_p0${variant}`;
-      CURATED_VARIANT_ASSETS[assetId] = {
+      GENERATOR_LAYER_ASSETS[assetId] = {
         assetId,
         representation: "TV",
         layer: layer.layer,
@@ -302,11 +361,7 @@ for (const profile of CURATED_VARIANT_PROFILES) {
   }
 }
 
-Object.assign(APPROVED_LAYER_ASSETS, CURATED_VARIANT_ASSETS);
-
-type LegacyLayerDefaults = Partial<Record<LegacyLayer, string>>;
-
-const DEFAULT_LAYERS: Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender, LegacyLayerDefaults>>>> = {
+const GENERATOR_DEFAULT_LAYERS: DefaultsTable = {
   adult: {
     male: {
       clothing: "tv_clothing_male_default",
@@ -328,20 +383,123 @@ const DEFAULT_LAYERS: Partial<Record<LegacyAgeGroup, Partial<Record<LegacyGender
   },
 };
 
-const LAYER_ORDER: LegacyLayer[] = ["clothing", "rearHair", "frontHair", "beard", "accessoryA", "accessoryB", "glasses", "facialMark"];
+// ---------------------------------------------------------------------------
+// Library 2: "niakofa-original-art-demo-v1" (original, license-clean art)
+// See /public/legacy-world-assets/catalog-original.json for the full
+// generated manifest this table mirrors.
+// ---------------------------------------------------------------------------
 
-function stableHash(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+const ORIGINAL_GROUPS = [
+  { ageGroup: "adult", gender: "male", suffix: "adult_male" },
+  { ageGroup: "adult", gender: "female", suffix: "adult_female" },
+  { ageGroup: "kid", gender: "unspecified", suffix: "kid" },
+] as const satisfies Array<{ ageGroup: LegacyAgeGroup; gender: LegacyGender; suffix: string }>;
+
+const ORIGINAL_ASSET_ROOT = "/legacy-world-assets/tv";
+
+const ORIGINAL_BODY_ASSETS: BodyTable = {};
+const ORIGINAL_LAYER_ASSETS: Record<string, LegacyAssetRecord> = {};
+const ORIGINAL_DEFAULT_LAYERS: DefaultsTable = {};
+
+for (const group of ORIGINAL_GROUPS) {
+  const bodyAssetId = `tv_body_${group.suffix}_base`;
+  const bodyEntry: LegacyWalkingAsset = {
+    assetId: bodyAssetId,
+    file: `${ORIGINAL_ASSET_ROOT}/TV_Body_p01-${group.suffix}.png`,
+    width: 144,
+    height: 192,
+    layer: "body",
+  };
+  ORIGINAL_BODY_ASSETS[group.ageGroup] = {
+    ...(ORIGINAL_BODY_ASSETS[group.ageGroup] ?? {}),
+    [group.gender]: bodyEntry,
+  };
+
+  // clothing p01-p03
+  for (let i = 1; i <= 3; i += 1) {
+    const assetId = `tv_clothing_${group.suffix}_p0${i}`;
+    ORIGINAL_LAYER_ASSETS[assetId] = {
+      assetId,
+      representation: "TV",
+      layer: "clothing",
+      ageGroup: group.ageGroup,
+      gender: group.gender,
+      file: `${ORIGINAL_ASSET_ROOT}/TV_Clothing_p0${i}-${group.suffix}.png`,
+      source: "original-art (generated for this project)",
+      width: 144,
+      height: 192,
+      runtime: "approved",
+    };
   }
-  return hash >>> 0;
+
+  // hair p01-p05, one named style per index
+  HAIR_STYLES.forEach((style, index) => {
+    const n = index + 1;
+    const rearId = `tv_rear_hair_${group.suffix}_p0${n}_${style}`;
+    const frontId = `tv_front_hair_${group.suffix}_p0${n}_${style}`;
+    ORIGINAL_LAYER_ASSETS[rearId] = {
+      assetId: rearId,
+      representation: "TV",
+      layer: "rearHair",
+      ageGroup: group.ageGroup,
+      gender: group.gender,
+      file: `${ORIGINAL_ASSET_ROOT}/TV_RearHair_p0${n}-${group.suffix}.png`,
+      source: "original-art (generated for this project)",
+      width: 144,
+      height: 192,
+      runtime: "approved",
+      hairStyle: style,
+    };
+    ORIGINAL_LAYER_ASSETS[frontId] = {
+      assetId: frontId,
+      representation: "TV",
+      layer: "frontHair",
+      ageGroup: group.ageGroup,
+      gender: group.gender,
+      file: `${ORIGINAL_ASSET_ROOT}/TV_FrontHair_p0${n}-${group.suffix}.png`,
+      source: "original-art (generated for this project)",
+      width: 144,
+      height: 192,
+      runtime: "approved",
+      hairStyle: style,
+    };
+  });
+
+  ORIGINAL_DEFAULT_LAYERS[group.ageGroup] = {
+    ...(ORIGINAL_DEFAULT_LAYERS[group.ageGroup] ?? {}),
+    [group.gender]: {
+      clothing: `tv_clothing_${group.suffix}_p01`,
+      rearHair: `tv_rear_hair_${group.suffix}_p01_afro`,
+      frontHair: `tv_front_hair_${group.suffix}_p01_afro`,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+
+const LIBRARIES: Record<LegacyLibraryId, LibraryTables> = {
+  "niakofa-rpg-generator-v1": {
+    bodyAssets: GENERATOR_BODY_ASSETS,
+    layerAssets: GENERATOR_LAYER_ASSETS,
+    defaultLayers: GENERATOR_DEFAULT_LAYERS,
+  },
+  "niakofa-original-art-demo-v1": {
+    bodyAssets: ORIGINAL_BODY_ASSETS,
+    layerAssets: ORIGINAL_LAYER_ASSETS,
+    defaultLayers: ORIGINAL_DEFAULT_LAYERS,
+  },
+};
+
+function resolveLibrary(libraryId?: LegacyLibraryId): { id: LegacyLibraryId; tables: LibraryTables } {
+  const id = libraryId ?? DEFAULT_LIBRARY_ID;
+  return { id, tables: LIBRARIES[id] };
 }
 
 function deterministicVariant(
   input: Pick<LegacyAppearanceInput, "characterId" | "lifeStage" | "era" | "appearanceSeed">,
   layer: "clothing" | "rearHair" | "frontHair",
+  min: number,
+  count: number,
 ): number {
   const identity = [
     input.characterId ?? "",
@@ -350,37 +508,58 @@ function deterministicVariant(
     input.appearanceSeed ?? "",
     layer,
   ].join("|");
-  return 2 + (stableHash(identity) % 3);
+  return min + (stableHash(identity) % count);
 }
 
-function getDefaultLayers(input: LegacyAppearanceInput): LegacyLayerDefaults {
-  const defaults = DEFAULT_LAYERS[input.ageGroup]?.[input.gender] ?? {};
+function getDefaultLayers(input: LegacyAppearanceInput, libraryId: LegacyLibraryId, tables: LibraryTables): LayerDefaults {
+  const defaults = tables.defaultLayers[input.ageGroup]?.[input.gender] ?? {};
   if (!input.characterId || !input.lifeStage || input.lifeStage === "unknown") {
     return defaults;
   }
 
+  const legacySuffix = input.gender === "unspecified" ? "kid" : input.gender;
+
+  if (libraryId === "niakofa-original-art-demo-v1") {
+    // original-art library ships exactly 3 clothing variants (p01-p03)
+    const suffix = input.gender === "unspecified" ? "kid" : `adult_${input.gender}`;
+    const clothingN = deterministicVariant(input, "clothing", 1, 3);
+    const style = input.hairStyle
+      ?? HAIR_STYLES[stableHash([input.characterId, input.lifeStage, input.era ?? "", "hair"].join("|")) % HAIR_STYLES.length];
+    const styleIndex = HAIR_STYLES.indexOf(style) + 1;
+    return {
+      ...defaults,
+      clothing: `tv_clothing_${suffix}_p0${clothingN}`,
+      rearHair: `tv_rear_hair_${suffix}_p0${styleIndex}_${style}`,
+      frontHair: `tv_front_hair_${suffix}_p0${styleIndex}_${style}`,
+    };
+  }
+
+  // generator library: numbered variants only (p02-p04), no named styles.
+  // Same min/count as the original implementation - unchanged behavior.
   const variants = {
-    clothing: `tv_clothing_${input.gender === "unspecified" ? "kid" : input.gender}_p0${deterministicVariant(input, "clothing")}`,
-    rearHair: `tv_rear_hair_${input.gender === "unspecified" ? "kid" : input.gender}_p0${deterministicVariant(input, "rearHair")}`,
-    frontHair: `tv_front_hair_${input.gender === "unspecified" ? "kid" : input.gender}_p0${deterministicVariant(input, "frontHair")}`,
+    clothing: `tv_clothing_${legacySuffix}_p0${deterministicVariant(input, "clothing", 2, 3)}`,
+    rearHair: `tv_rear_hair_${legacySuffix}_p0${deterministicVariant(input, "rearHair", 2, 3)}`,
+    frontHair: `tv_front_hair_${legacySuffix}_p0${deterministicVariant(input, "frontHair", 2, 3)}`,
   };
   return { ...defaults, ...variants };
 }
 
 export function resolveWalkingAsset(input: LegacyAppearanceInput): LegacyWalkingAsset | null {
-  return BODY_ASSETS[input.ageGroup]?.[input.gender] ?? null;
+  const { tables } = resolveLibrary(input.libraryId);
+  return tables.bodyAssets[input.ageGroup]?.[input.gender] ?? null;
 }
 
 export function resolveWalkingAppearance(input: LegacyAppearanceInput): LegacyWalkingAppearance | null {
-  const body = resolveWalkingAsset(input);
+  const { id: libraryId, tables } = resolveLibrary(input.libraryId);
+  const body = tables.bodyAssets[input.ageGroup]?.[input.gender] ?? null;
   if (!body) return null;
 
-  const defaults = getDefaultLayers(input);
+  const defaults = getDefaultLayers(input, libraryId, tables);
   const requestedLayers = { ...defaults, ...input.layers };
   const resolvedLayers: LegacyWalkingLayer[] = [];
   for (const layer of LAYER_ORDER) {
     const requested = requestedLayers[layer];
-    const requestedAsset = requested ? APPROVED_LAYER_ASSETS[requested] : undefined;
+    const requestedAsset = requested ? tables.layerAssets[requested] : undefined;
     const isCompatible = requestedAsset
       && requestedAsset.ageGroup === input.ageGroup
       && requestedAsset.gender === input.gender;
@@ -388,7 +567,7 @@ export function resolveWalkingAppearance(input: LegacyAppearanceInput): LegacyWa
     const asset = isCompatible
       ? requestedAsset
       : fallbackId
-        ? APPROVED_LAYER_ASSETS[fallbackId]
+        ? tables.layerAssets[fallbackId]
         : undefined;
     if (asset?.runtime === "approved") {
       resolvedLayers.push({
@@ -414,6 +593,7 @@ export function resolveWalkingAppearance(input: LegacyAppearanceInput): LegacyWa
     ],
     width: body.width,
     height: body.height,
+    libraryId,
   };
   if (input.characterId !== undefined) appearance.characterId = input.characterId;
   if (input.lifeStage !== undefined) appearance.lifeStage = input.lifeStage;
@@ -434,13 +614,16 @@ export function resolveCharacterAppearance(input: {
   lifeStage: LegacyLifeStage;
   era: string;
   appearanceSeed?: string | number;
+  libraryId?: LegacyLibraryId;
+  hairStyle?: LegacyHairStyle;
   layers?: Partial<Record<LegacyLayer, string>>;
 }): LegacyWalkingAppearance | null {
   return resolveWalkingAppearance(input);
 }
 
-export function getApprovedAsset(assetId: string): LegacyAssetRecord | null {
-  return APPROVED_LAYER_ASSETS[assetId] ?? null;
+export function getApprovedAsset(assetId: string, libraryId?: LegacyLibraryId): LegacyAssetRecord | null {
+  const { tables } = resolveLibrary(libraryId);
+  return tables.layerAssets[assetId] ?? null;
 }
 
 export function inferAppearance(input: {
@@ -451,6 +634,7 @@ export function inferAppearance(input: {
   currentYear?: number;
   era?: string;
   appearanceSeed?: string | number;
+  libraryId?: LegacyLibraryId;
 }): LegacyAppearanceInput | null {
   const role = input.role?.toLowerCase() ?? "";
   const femaleRoles = /\b(aunt|daughter|grandmother|mother|sister|wife|woman|female)\b/;
@@ -480,6 +664,7 @@ export function inferAppearance(input: {
         : "unspecified";
   if (gender === "unspecified" && ageGroup === "adult") return null;
   const appearance: LegacyAppearanceInput = { ageGroup, gender };
+  if (input.libraryId !== undefined) appearance.libraryId = input.libraryId;
   if (input.characterId !== undefined) appearance.characterId = String(input.characterId);
   if (input.era !== undefined) appearance.era = input.era;
   if (input.appearanceSeed !== undefined) appearance.appearanceSeed = input.appearanceSeed;
