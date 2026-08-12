@@ -3,8 +3,9 @@
 ## Baseline
 
 - Local `main` is aligned with the locally available `origin/main` object at
-  `2244a2892d1e9fef84eb559717283dd835999dbc`
-  (`fix(legacy): verify original art runtime and demo readiness`). A supported
+  `6bafeee12a828f152b080dc18a15ae1e571471d0`
+  (`Legagy Demo - legacy-living-world.tsx M legacy-character-engine.test.ts M
+  PRODUCTION_READINESS_2026-08-12.md M README.md M baobab_trunk.png`). A supported
   GitHub write path was not available in this session, so this is not a claim
   of an independently fetched GitHub remote.
 - The uploaded original-art engine patch was compared against this baseline.
@@ -29,6 +30,9 @@
    impassable terrain, and renders the current original-art player sprite.
 6. Added a regression test that reads the world-tile catalog and verifies every
    documented tile exists at its browser-resolvable runtime path.
+7. Added a canonical golden-path regression test that completes the House of
+   Mensah kitchen, business, mystery, world regeneration, co-op, reunion, and
+   persistence flows in one journey.
 
 ## Verified
 

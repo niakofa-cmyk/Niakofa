@@ -9,6 +9,10 @@ import {
   DEMO_COOP_QUEST_IDS,
   DEMO_TRAITS,
   DEMO_WORLD_CHANGES,
+  completeReunionDialogue,
+  advanceBusiness,
+  revealMystery,
+  unlockKitchenRecipe,
   placeDemoArtifact,
   readDemoState,
   resetDemo,
@@ -17,7 +21,7 @@ import {
 } from "../legacy-demo-state";
 
 describe("Legacy public demo journey", () => {
-  it("advances through every phase and regenerates the world once", () => {
+  it("completes the House of Mensah golden path across every interactive system", () => {
     let state = resetDemo();
     expect(state.phase).toBe("prologue");
 
@@ -26,10 +30,34 @@ describe("Legacy public demo journey", () => {
     state = chooseDemoTrait(state, "Wisdom", 5);
     expect(state.traits.Wisdom).toBe(40); // 35 + 5
 
-    // Advance through remaining phases until world-regen using advanceDemo
-    while (state.phase !== "world-regen") {
-      state = advanceDemo(state);
+    // Kitchen: each recipe unlocks an ancestor memory and awards points.
+    state = advanceDemo(state); // chapter2 → kitchen
+    for (const recipeId of ["groundnut-soup", "kontomire-stew", "kelewele"]) {
+      state = unlockKitchenRecipe(state, recipeId);
     }
+    expect(state.kitchenRecipes.every(recipe => recipe.unlocked)).toBe(true);
+    expect(state.npcMemory.some(memory => memory.npcName === "Grandma Ama")).toBe(true);
+
+    // Business: progress through the House of Mensah Trading Company.
+    state = advanceDemo(state); // kitchen → chapter3
+    state = advanceDemo(state); // chapter3 → business
+    for (let level = 0; level < 4; level += 1) {
+      state = advanceBusiness(state);
+    }
+    expect(state.businessLevel).toBe(4);
+
+    // Mystery: reveal all long-term family secrets before the final chapter.
+    state = advanceDemo(state); // business → chapter4
+    state = advanceDemo(state); // chapter4 → chapter5
+    state = advanceDemo(state); // chapter5 → mystery
+    for (const mystery of state.mysteries) {
+      state = revealMystery(state, mystery.id);
+    }
+    expect(state.mysteries.every(mystery => mystery.revealed && mystery.solved)).toBe(true);
+
+    // Continue the chapter sequence to the world regeneration gate.
+    state = advanceDemo(state); // mystery → chapter6
+    state = advanceDemo(state); // chapter6 → world-regen
     expect(state.phase).toBe("world-regen");
 
     // Place all artifacts to unlock regeneration
@@ -43,15 +71,42 @@ describe("Legacy public demo journey", () => {
     expect(state.worldVersion).toBe(2);
 
     for (const questId of DEMO_COOP_QUEST_IDS) {
+      state = startDemoQuest(state, questId);
       state = completeDemoQuest(state, questId);
     }
     expect(state.completedQuests).toEqual([...DEMO_COOP_QUEST_IDS]);
 
-    // Advance through reunion → finale
-    state = advanceDemo(state);
-    state = advanceDemo(state);
+    // Reunion: every relative remembers the player before the finale.
+    state = advanceDemo(state); // coop-quest → reunion
+    for (const dialogue of state.reunionDialogues) {
+      state = completeReunionDialogue(state, dialogue.npcId);
+    }
+    expect(state.reunionDialogues.every(dialogue => dialogue.completed)).toBe(true);
+
+    state = advanceDemo(state); // reunion → finale
     expect(state.phase).toBe("finale");
     expect(state.worldVersion).toBe(2);
+    expect(state.legacyPoints).toBe(1240);
+
+    // The completed journey can be restored without losing any progression.
+    const savedValues = new Map<string, string>();
+    const saved = {
+      getItem: (key: string) => savedValues.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        savedValues.set(key, value);
+      },
+    };
+    writeDemoState(saved, state);
+    const restored = readDemoState(saved);
+    expect(restored).toMatchObject({
+      phase: "finale",
+      worldVersion: 2,
+      businessLevel: 4,
+      legacyPoints: 1240,
+    });
+    expect(restored.placedArtifacts).toEqual([...DEMO_ARTIFACT_IDS]);
+    expect(restored.completedQuests).toEqual([...DEMO_COOP_QUEST_IDS]);
+    expect(restored.worldChanges).toHaveLength(4);
   });
 
   it("is idempotent for repeated artifact and quest clicks", () => {
