@@ -36,6 +36,10 @@ under `source-manifests/`.
 | `uploads/lmbs_1786528503234.zip` | Reference only; full entry inventory is in `source-manifests/`. The current-session upload is byte-identical. |
 | `uploads/fishing_1786528492243.zip` | Promoted fishing shoreline, rod, fish, and splash art under `public/legacy-rpg-assets/fishing/`. |
 | `uploads/animations_1786528522105.zip` | Promoted status/combat effect art under `public/legacy-rpg-assets/animations/`. The current-session upload is byte-identical. |
+| `uploads/Pasted-I-wouldn-t-simply-dump-rpg-core-js-rpg-objects-js-rpg-s_1786539478390.txt` | Full Legacy design brief: Living Baobab hub, memory/world loop, grounded narration, meaningful inventory, relationship progression, mystery quests, co-op, and audio direction. |
+| `uploads/Tree_Bark_1786539587004.zip` | Full bark material reference; one bark study is promoted for the living-tree atmosphere layer. |
+| `uploads/Village_Asset_Pack_1786539607435.zip` | Full village environment/UI/character reference; eight curated presentation assets are promoted. |
+| `uploads/villager_npc_spritesheet_1786539602605.zip` | Full generic villager spritesheet reference; one ambient motion cue is promoted. |
 
 The uploaded fishing archive contains 22 entries and the animation archive
 contains 118 entries. The reviewed archives are preserved byte-for-byte under
@@ -43,6 +47,12 @@ contains 118 entries. The reviewed archives are preserved byte-for-byte under
 The LMBS archive was extracted and reviewed as a reference; its complete
 manifest is retained as a text inventory instead of shipping the entire
 engine/archive into the runtime bundle.
+
+The August 12 village uploads contain 91, 140, and 3 ZIP entries respectively
+(Tree Bark, Village Asset Pack, and villager spritesheet). They pass `unzip -t`
+integrity checks and remain preserved byte-for-byte under `uploads/`. The
+browser receives only the files listed in
+`artifacts/pay-it-forward/public/legacy-village-assets/catalog.json`.
 
 ## Runtime mapping
 
@@ -93,3 +103,14 @@ state. Its six promoted files are enforced by
 `public/legacy-rpg-assets/catalog.json`. It does not import RPG Maker runtime
 files or turn the supplied actors into real family identities. Confirm
 provenance and licensing before public commercial launch.
+
+## Curated village atmosphere
+
+`legacy-village-atmosphere.tsx` uses the promoted village layer to make the
+story timeline visible without creating a second runtime:
+
+- prosperous and ravaged house art changes with the current story pressure;
+- a field, tree, bark study, and generic elder sprite establish a living place;
+- the migration phase surfaces a train-station landmark;
+- other phases surface a small villager motion cue;
+- the UI labels all of this as presentation art, never as family evidence.

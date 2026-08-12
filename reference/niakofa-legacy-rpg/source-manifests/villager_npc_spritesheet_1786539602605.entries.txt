@@ -1,0 +1,3 @@
+villager_npc_spritesheet/
+villager_npc_spritesheet/Licence_and_Info.txt
+villager_npc_spritesheet/npc01_spritesheet.png

@@ -36,6 +36,7 @@ import {
 } from "@/lib/legacy-world-layout";
 import { LegacyFishingEncounter } from "@/components/legacy-fishing-encounter";
 import type { FishingJournal } from "@/lib/legacy-demo-state";
+import { LegacyVillageAtmosphere } from "@/components/legacy-village-atmosphere";
 
 type WorldScene = {
   title: string;
@@ -514,6 +515,11 @@ export function LegacyLivingWorld({
           </div>
         </div>
 
+        <LegacyVillageAtmosphere
+          phase={phase}
+          season={season}
+          worldVersion={worldVersion}
+        />
         <HouseOfMensahMap
           character={scene.character}
           worldVersion={worldVersion}

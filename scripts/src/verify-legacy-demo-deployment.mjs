@@ -67,7 +67,6 @@ try {
     `Legacy demo chunk is not JavaScript: HTTP ${demo.response.status}, ${demo.contentType}`,
   );
   assert(
-  assert(
     demo.body.includes("House of Mensah"),
     "Legacy demo chunk is missing the House of Mensah experience",
   );
@@ -170,8 +169,52 @@ try {
     );
   }
 
+  const villageCatalog = await get("/legacy-village-assets/catalog.json");
+  assert(
+    villageCatalog.response.ok && /application\/json/i.test(villageCatalog.contentType),
+    `Curated village asset catalog is not JSON: HTTP ${villageCatalog.response.status}, ${villageCatalog.contentType}`,
+  );
+
+  let villageCatalogData;
+  try {
+    villageCatalogData = JSON.parse(villageCatalog.body);
+  } catch {
+    throw new Error("Curated village asset catalog is not valid JSON");
+  }
+
+  assert(
+    villageCatalogData?.runtime === "react-presentation-only"
+      && villageCatalogData?.historicalEvidence === false
+      && villageCatalogData?.familyLikeness === "prohibited"
+      && villageCatalogData?.licenseStatus === "review-required",
+    "Curated village asset catalog is missing its presentation-only safety boundary",
+  );
+
+  const curatedVillageAssets = Array.isArray(villageCatalogData?.assets)
+    ? villageCatalogData.assets
+    : [];
+  assert(
+    curatedVillageAssets.length === 8,
+    `Curated village asset catalog must contain exactly eight approved files, found ${curatedVillageAssets.length}`,
+  );
+
+  for (const asset of curatedVillageAssets) {
+    assert(
+      typeof asset?.file === "string"
+        && asset.file.startsWith("/legacy-village-assets/")
+        && asset.runtime === "approved"
+        && asset.role !== "family-portrait",
+      `Curated village asset has an unsafe runtime or identity declaration: ${asset?.file ?? "unknown"}`,
+    );
+    const servedAsset = await get(asset.file);
+    assert(
+      servedAsset.response.ok && /^image\/png\b/i.test(servedAsset.contentType),
+      `Curated village asset is not a served PNG: ${asset.file} (HTTP ${servedAsset.response.status}, ${servedAsset.contentType})`,
+    );
+  }
+
   process.stdout.write(
-    `Legacy demo deployment verified: ${baseUrl}/legacy/demo (${demoMatch[1]}); ${runtimeAssetPaths.length} original-art assets served\n`,
+    `Legacy demo deployment verified: ${baseUrl}/legacy/demo (${demoMatch[1]}); ${runtimeAssetPaths.length} original-art assets and ${curatedVillageAssets.length} village assets served\n`,
   );
 } catch (error) {
   console.error(`Legacy demo deployment verification failed: ${error.message}`);
