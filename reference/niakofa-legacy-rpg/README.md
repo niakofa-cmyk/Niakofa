@@ -40,6 +40,9 @@ under `source-manifests/`.
 | `uploads/Tree_Bark_1786539587004.zip` | Full bark material reference; one bark study is promoted for the living-tree atmosphere layer. |
 | `uploads/Village_Asset_Pack_1786539607435.zip` | Full village environment/UI/character reference; eight curated presentation assets are promoted. |
 | `uploads/villager_npc_spritesheet_1786539602605.zip` | Full generic villager spritesheet reference; one ambient motion cue is promoted. |
+| `uploads/Ground_1786543159558.zip` | 136-entry material reference; one stone/earth study is promoted for the regeneration path cue. |
+| `uploads/Retro_Tree_Pack_v1.0_1786543062147.zip` | 149-entry tree reference; living and stressed canopy sheets are promoted for deterministic atmosphere states. |
+| `uploads/StylooVillageFREEPack_1786543032013.zip` | 48-entry GLB/FBX village reference; kept catalog-only because the React runtime does not need a 3D engine. |
 
 The uploaded fishing archive contains 22 entries and the animation archive
 contains 118 entries. The reviewed archives are preserved byte-for-byte under
@@ -49,9 +52,11 @@ manifest is retained as a text inventory instead of shipping the entire
 engine/archive into the runtime bundle.
 
 The August 12 village uploads contain 91, 140, and 3 ZIP entries respectively
-(Tree Bark, Village Asset Pack, and villager spritesheet). They pass `unzip -t`
-integrity checks and remain preserved byte-for-byte under `uploads/`. The
-browser receives only the files listed in
+(Tree Bark, Village Asset Pack, and villager spritesheet). The current material
+and environment uploads contain 136, 149, and 48 entries (Ground, Retro Tree,
+and Styloo Village). They pass `unzip -t` integrity checks; their complete
+inventories and current-session hashes are retained in `source-manifests/` and
+`session-2026-08-12.md`. The browser receives only the files listed in
 `artifacts/pay-it-forward/public/legacy-village-assets/catalog.json`.
 
 ## Runtime mapping
@@ -113,4 +118,6 @@ story timeline visible without creating a second runtime:
 - a field, tree, bark study, and generic elder sprite establish a living place;
 - the migration phase surfaces a train-station landmark;
 - other phases surface a small villager motion cue;
+- the Ground material provides a small path cue;
+- the Retro Tree living/dead sheets switch with pressure and world regeneration;
 - the UI labels all of this as presentation art, never as family evidence.

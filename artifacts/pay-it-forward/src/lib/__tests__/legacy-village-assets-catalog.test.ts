@@ -41,6 +41,9 @@ describe("Legacy village presentation asset catalog", () => {
       "elder-idle",
       "villager-spritesheet",
       "tree-bark-study",
+      "ground-stone-echo",
+      "retro-live-tree-sheet",
+      "retro-dead-tree-sheet",
     ]);
   });
 

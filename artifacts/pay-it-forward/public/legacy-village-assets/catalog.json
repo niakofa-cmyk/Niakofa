@@ -77,6 +77,33 @@
       "sourceEntry": "Tree Bark/1/1.png",
       "sha256": "5fece47c9fd2552c8d0fa56b97d975d0de79825606616f78ce6d27a5c3c27acc",
       "runtime": "approved"
+    },
+    {
+      "id": "ground-stone-echo",
+      "file": "/legacy-village-assets/materials/ground-stone-echo.png",
+      "role": "regeneration-ground-cue",
+      "sourceArchive": "Ground_1786543159558.zip",
+      "sourceEntry": "Ground/1/1.png",
+      "sha256": "19f445be4714153bc909ace12a5e3e3556d14c2b44db594aec38f0de569f3934",
+      "runtime": "approved"
+    },
+    {
+      "id": "retro-live-tree-sheet",
+      "file": "/legacy-village-assets/environment/retro-live-trees.png",
+      "role": "recovered-canopy-atmosphere",
+      "sourceArchive": "Retro_Tree_Pack_v1.0_1786543062147.zip",
+      "sourceEntry": "Retro Tree Pack/Live Trees (Low Res).png",
+      "sha256": "6f98386c0da397acf423d65ca39d7fc7b3946001c5ffad3358953616c9290095",
+      "runtime": "approved"
+    },
+    {
+      "id": "retro-dead-tree-sheet",
+      "file": "/legacy-village-assets/environment/retro-dead-trees.png",
+      "role": "pressure-canopy-atmosphere",
+      "sourceArchive": "Retro_Tree_Pack_v1.0_1786543062147.zip",
+      "sourceEntry": "Retro Tree Pack/Dead Trees (Low Res).png",
+      "sha256": "654d60150ff4431d7a9fcce13ebebd875872b43690614b9652b2f8db636ab118",
+      "runtime": "approved"
     }
   ]
 }

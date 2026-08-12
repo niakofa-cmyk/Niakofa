@@ -107,6 +107,26 @@ export function LegacyVillageAtmosphere({
     ? "Stylized ravaged village house used to show a pressured world state"
     : "Stylized village house used to show a growing world state";
   const isMigration = phase === "chapter5";
+  const environmentLayer = worldVersion > 1
+    ? {
+        label: "Canopy restored",
+        description: "A contribution gives the path back its green horizon.",
+        file: "retro-live-trees.png",
+        alt: "Generic living tree silhouettes used as a recovered world-state cue",
+      }
+    : state.pressure
+      ? {
+          label: "Canopy under pressure",
+          description: "The same route is held in a quieter, stressed season.",
+          file: "retro-dead-trees.png",
+          alt: "Generic bare tree silhouettes used as a pressured world-state cue",
+        }
+      : {
+          label: "Canopy waiting",
+          description: "The village is ready for the next remembered detail.",
+          file: "retro-live-trees.png",
+          alt: "Generic living tree silhouettes used as ambient environment art",
+        };
 
   return (
     <section
@@ -144,6 +164,11 @@ export function LegacyVillageAtmosphere({
             alt="Stylized village tree used as ambient environment art"
             className="absolute bottom-3 left-2 h-28 w-24 object-contain drop-shadow-[0_8px_8px_rgba(0,0,0,0.45)]"
             style={{ imageRendering: "pixelated" }}
+          />
+          <img
+            src={`${VILLAGE_ASSET_ROOT}/environment/${environmentLayer.file}`}
+            alt={environmentLayer.alt}
+            className="absolute bottom-0 right-0 h-24 w-36 object-contain object-right opacity-45 mix-blend-screen"
           />
           <img
             src={`${VILLAGE_ASSET_ROOT}/buildings/${building}`}
@@ -223,6 +248,26 @@ export function LegacyVillageAtmosphere({
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-2 rounded-xl border border-orange-200/15 bg-orange-950/20 px-2.5 py-2">
+        <span className="h-10 w-12 shrink-0 overflow-hidden rounded-lg border border-orange-200/15 bg-black/20">
+          <img
+            src={`${VILLAGE_ASSET_ROOT}/materials/ground-stone-echo.png`}
+            alt="Stylized ground material used as a generic path texture cue"
+            className="h-full w-full object-cover opacity-75"
+          />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[9px] font-black uppercase tracking-wide text-orange-200/80">
+            {worldVersion > 1 ? "Restored path" : "Path texture cue"}
+          </p>
+          <p className="mt-0.5 text-[9px] leading-relaxed text-orange-100/55">
+            {worldVersion > 1
+              ? "The ground carries the visible change without inventing a new family fact."
+              : `${environmentLayer.label} · ${environmentLayer.description}`}
+          </p>
         </div>
       </div>
 
