@@ -221,6 +221,9 @@ function seasonForPhase(phase: DemoPhase): DemoSeason {
 export function advanceDemo(state: DemoState): DemoState {
   const isRegen = state.phase === "world-regen";
   const allArtifactsPlaced = state.placedArtifacts.length >= DEMO_ARTIFACT_IDS.length;
+  // World regeneration is the Golden Path gate: leaving this phase early
+  // would create a new world version without the family's preserved facts.
+  if (isRegen && !allArtifactsPlaced) return state;
   const nextPhase = phaseAfter(state.phase);
   return {
     ...state,
@@ -278,6 +281,10 @@ export function startDemoQuest(state: DemoState, questId: string): DemoState {
 export function completeDemoQuest(state: DemoState, questId: string): DemoState {
   if (!DEMO_COOP_QUEST_IDS.includes(questId as (typeof DEMO_COOP_QUEST_IDS)[number])) return state;
   if (state.completedQuests.includes(questId)) return state;
+  const task = state.coopTasks.find(candidate => candidate.questId === questId);
+  // A family member must explicitly accept a co-op task before it can be
+  // completed. This keeps the shared quest loop honest and idempotent.
+  if (!task || task.status !== "in-progress") return state;
 
   const allDone = [...state.completedQuests, questId].length >= DEMO_COOP_QUEST_IDS.length;
   return {

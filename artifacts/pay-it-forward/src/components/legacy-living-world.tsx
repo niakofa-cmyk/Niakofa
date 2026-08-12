@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 import type { DemoPhase, DemoSeason } from "@/lib/legacy-demo-state";
+import { getLegacyWorldLayout, type LegacyWorldLandmarkIcon, type LegacyWorldTile } from "@/lib/legacy-world-layout";
 
 type WorldScene = {
   title: string;
@@ -175,52 +176,15 @@ const SEASON_OVERLAYS: Record<DemoSeason, string> = {
 };
 
 const TILE_ROOT = "/legacy-world-assets/tiles";
-const WORLD_MAP = [
-  ["tree_canopy", "tree_canopy", "grass_01", "grass_02", "grass_01", "tree_canopy", "grass_01", "grass_02", "tree_canopy"],
-  ["tree_canopy", "baobab_trunk", "grass_01", "dirt_path", "dirt_path", "grass_02", "grass_01", "tree_canopy", "tree_canopy"],
-  ["grass_02", "compound_wall", "thatch_roof", "dirt_path", "dirt_path", "market_stall", "grass_02", "grass_01", "grass_02"],
-  ["grass_01", "fence", "red_earth", "dirt_path", "dirt_path", "cocoa_row", "grass_01", "sand", "sand"],
-  ["grass_02", "grass_01", "grass_02", "dirt_path", "water", "water", "dirt_path", "sand", "water"],
-  ["grass_01", "grass_02", "red_earth", "dirt_path", "dirt_path", "grass_01", "grass_02", "grass_01", "grass_02"],
-] as const;
-
-type TileName = (typeof WORLD_MAP)[number][number];
+type TileName = LegacyWorldTile;
 type PlayerPosition = { row: number; column: number };
 
-const WORLD_LANDMARKS = [
-  {
-    artifactId: "photo",
-    row: 1,
-    column: 4,
-    label: "Portrait wall",
-    description: "A newly named ancestor watches over the market road.",
-    icon: Camera,
-  },
-  {
-    artifactId: "recipe",
-    row: 2,
-    column: 3,
-    label: "Kitchen hearth",
-    description: "Grandma Ama's recipe opens a remembered conversation.",
-    icon: UtensilsCrossed,
-  },
-  {
-    artifactId: "medal",
-    row: 3,
-    column: 2,
-    label: "Service marker",
-    description: "A chapter seed marks the soldier's return home.",
-    icon: Medal,
-  },
-  {
-    artifactId: "certificate",
-    row: 4,
-    column: 6,
-    label: "Migration route",
-    description: "A family branch now connects this path to a new place.",
-    icon: ScrollText,
-  },
-] as const;
+const WORLD_LANDMARK_ICONS: Record<LegacyWorldLandmarkIcon, typeof Camera> = {
+  photo: Camera,
+  recipe: UtensilsCrossed,
+  medal: Medal,
+  certificate: ScrollText,
+};
 
 const BLOCKED_TILES = new Set<TileName>([
   "water",
@@ -257,16 +221,18 @@ function HouseOfMensahMap({
   worldVersion: number;
   placedArtifacts: string[];
 }) {
+  const layout = getLegacyWorldLayout(worldVersion);
+  const worldMap = layout.map;
   const [player, setPlayer] = useState<PlayerPosition>({ row: 5, column: 3 });
-  const tile = WORLD_MAP[player.row][player.column];
+  const tile = worldMap[player.row][player.column];
   const placed = new Set(placedArtifacts);
-  const visibleLandmarks = WORLD_LANDMARKS.filter(({ artifactId }) => placed.has(artifactId));
+  const visibleLandmarks = layout.landmarks.filter(({ artifactId }) => placed.has(artifactId));
 
   const move = (rowDelta: number, columnDelta: number) => {
     setPlayer((current) => {
       const row = current.row + rowDelta;
       const column = current.column + columnDelta;
-      const nextTile = WORLD_MAP[row]?.[column];
+      const nextTile = worldMap[row]?.[column];
       if (!nextTile || BLOCKED_TILES.has(nextTile)) return current;
       return { row, column };
     });
@@ -314,7 +280,7 @@ function HouseOfMensahMap({
           aria-label={`House of Mensah map. You are on ${TILE_LABELS[tile]}. Use arrow keys or W A S D to move.`}
         >
           <div className="absolute inset-0 grid grid-cols-9 grid-rows-6">
-            {WORLD_MAP.flatMap((row, rowIndex) =>
+            {worldMap.flatMap((row, rowIndex) =>
               row.map((tileName, columnIndex) => (
                 <img
                   key={`${rowIndex}-${columnIndex}`}
@@ -327,7 +293,9 @@ function HouseOfMensahMap({
               )),
             )}
           </div>
-          {visibleLandmarks.map(({ artifactId, row, column, label, description, icon: Icon }) => (
+          {visibleLandmarks.map(({ artifactId, row, column, label, description, icon }) => {
+            const Icon = WORLD_LANDMARK_ICONS[icon];
+            return (
             <div
               key={artifactId}
               role="img"
@@ -343,7 +311,8 @@ function HouseOfMensahMap({
             >
               <Icon className="h-3.5 w-3.5" />
             </div>
-          ))}
+            );
+          })}
           <div
             className="absolute z-10 flex items-end justify-center transition-[left,top] duration-150 ease-out"
             style={{
@@ -408,6 +377,7 @@ export function LegacyLivingWorld({
   const scene = WORLD_SCENES[phase];
   const SceneIcon = scene.icon;
   const hasRegenerated = worldVersion > 1;
+  const worldLayout = getLegacyWorldLayout(worldVersion);
   const memoriesRestored = placedArtifacts.length;
   const growth = Math.min(4, businessLevel + (memoriesRestored > 0 ? 1 : 0));
 
@@ -477,7 +447,9 @@ export function LegacyLivingWorld({
               </p>
             </div>
             <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-              {WORLD_LANDMARKS.map(({ artifactId, label, description, icon: Icon }) => (
+              {worldLayout.landmarks.map(({ artifactId, label, description, icon }) => {
+                const Icon = WORLD_LANDMARK_ICONS[icon];
+                return (
                 <div key={artifactId} className="flex items-start gap-2 rounded-lg bg-black/15 px-2 py-1.5">
                   <Icon className="mt-0.5 h-3 w-3 shrink-0 text-emerald-300/80" />
                   <div className="min-w-0">
@@ -485,7 +457,8 @@ export function LegacyLivingWorld({
                     <p className="text-[9px] leading-relaxed text-emerald-100/55">{description}</p>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

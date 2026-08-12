@@ -116,7 +116,7 @@ describe("Legacy public demo journey", () => {
     state = completeDemoQuest(state, "photo-id");
     state = completeDemoQuest(state, "photo-id");
     expect(state.placedArtifacts).toEqual(["photo"]);
-    expect(state.completedQuests).toEqual(["photo-id"]);
+    expect(state.completedQuests).toEqual([]);
   });
 
   it("rejects unknown persisted values and survives storage errors", () => {
@@ -187,23 +187,20 @@ describe("World regeneration", () => {
   });
 
   it("increments world version only when all artifacts are placed and advancing from world-regen", () => {
-    // Advancing from world-regen WITHOUT all artifacts: no increment
+    // Advancing from world-regen WITHOUT all artifacts is blocked.
     let state = resetDemo();
     state = { ...state, phase: "world-regen" };
     state = advanceDemo(state);
     expect(state.worldVersion).toBe(1);
-    expect(state.phase).toBe("coop-quest");
+    expect(state.phase).toBe("world-regen");
 
-    // Placing artifacts AFTER leaving world-regen does not retroactively increment
+    // Once the missing facts are placed, the same transition succeeds.
     for (const id of DEMO_ARTIFACT_IDS) {
       state = placeDemoArtifact(state, id);
     }
-    expect(state.worldVersion).toBe(1);
-
-    // Advancing from coop-quest (not world-regen) also does not increment
     state = advanceDemo(state);
-    expect(state.worldVersion).toBe(1);
-    expect(state.phase).toBe("reunion");
+    expect(state.worldVersion).toBe(2);
+    expect(state.phase).toBe("coop-quest");
 
     // The correct trigger: place all artifacts THEN advance from world-regen
     let state2 = resetDemo();
@@ -261,6 +258,7 @@ describe("Co-op quest", () => {
 
   it("completes a task and awards legacy points", () => {
     let state = resetDemo();
+    state = startDemoQuest(state, "photo-id");
     state = completeDemoQuest(state, "photo-id");
     expect(state.coopTasks[0].status).toBe("completed");
     expect(state.coopTasks[0].completedAt).not.toBeNull();
@@ -271,10 +269,12 @@ describe("Co-op quest", () => {
   it("awards bonus 100 points when all tasks are completed", () => {
     let state = resetDemo();
     for (let i = 0; i < DEMO_COOP_QUEST_IDS.length - 1; i++) {
+      state = startDemoQuest(state, DEMO_COOP_QUEST_IDS[i]);
       state = completeDemoQuest(state, DEMO_COOP_QUEST_IDS[i]);
     }
     expect(state.legacyPoints).toBe(300);
 
+    state = startDemoQuest(state, DEMO_COOP_QUEST_IDS[DEMO_COOP_QUEST_IDS.length - 1]);
     state = completeDemoQuest(state, DEMO_COOP_QUEST_IDS[DEMO_COOP_QUEST_IDS.length - 1]);
     expect(state.legacyPoints).toBe(500);
     expect(state.completedQuests).toHaveLength(4);
@@ -282,6 +282,7 @@ describe("Co-op quest", () => {
 
   it("does not award points for duplicate quest completion", () => {
     let state = resetDemo();
+    state = startDemoQuest(state, "photo-id");
     state = completeDemoQuest(state, "photo-id");
     state = completeDemoQuest(state, "photo-id");
     expect(state.legacyPoints).toBe(100);
@@ -289,10 +290,16 @@ describe("Co-op quest", () => {
 
   it("preserves completed task status when starting other tasks", () => {
     let state = resetDemo();
+    state = startDemoQuest(state, "photo-id");
     state = completeDemoQuest(state, "photo-id");
     state = startDemoQuest(state, "elder-interview");
     expect(state.coopTasks[0].status).toBe("completed");
     expect(state.coopTasks[1].status).toBe("in-progress");
+  });
+
+  it("does not complete a pending task or award points", () => {
+    const state = resetDemo();
+    expect(completeDemoQuest(state, "photo-id")).toBe(state);
   });
 
   it("sanitizes corrupted coopTasks from storage", () => {
