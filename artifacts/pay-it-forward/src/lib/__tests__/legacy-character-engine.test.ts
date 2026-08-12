@@ -1,4 +1,6 @@
 import { describe, it } from "node:test";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect } from "expect";
 import {
   deriveLifeStage,
@@ -185,6 +187,22 @@ describe("Legacy character engine", () => {
 });
 
 describe("Original-art library (niakofa-original-art-demo-v1)", () => {
+  it("ships every catalog entry that the browser renderer can resolve", () => {
+    const catalogPath = fileURLToPath(
+      new URL("../../../public/legacy-world-assets/catalog-original.json", import.meta.url),
+    );
+    const catalog = JSON.parse(readFileSync(catalogPath, "utf8")) as {
+      runtimeAssets: Array<{ file: string; runtime?: string }>;
+    };
+
+    expect(catalog.runtimeAssets.length).toBeGreaterThan(0);
+    for (const asset of catalog.runtimeAssets) {
+      expect(
+        existsSync(fileURLToPath(new URL(`../../../public${asset.file}`, import.meta.url))),
+      ).toBe(true);
+    }
+  });
+
   it("is opt-in only - default library is unchanged", () => {
     expect(resolveWalkingAsset({ ageGroup: "adult", gender: "female" })?.file)
       .toBe("/legacy-character-assets/tv/TV_Body_p01-female.png");

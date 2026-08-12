@@ -693,7 +693,6 @@ function BusinessScreen({
   onAdvance: () => void;
   onContinue: () => void;
 }) {
-  const current = BUSINESS_STAGES[state.businessLevel] ?? BUSINESS_STAGES[0];
   const next = BUSINESS_STAGES[state.businessLevel + 1];
   const maxed = state.businessLevel >= 4;
 
