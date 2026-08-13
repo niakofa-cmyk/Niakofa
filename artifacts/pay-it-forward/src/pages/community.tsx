@@ -1054,7 +1054,7 @@ export default function CommunityScreen() {
                           {req.requester_name} received help
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5">
-                          {CATEGORY_LABELS[(req as unknown).category] ?? (req as any).category}
+                          {CATEGORY_LABELS[(req as unknown).category] ?? (req as unknown).category}
                         </div>
                       </div>
                       <span className="shrink-0 text-[9px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-1 rounded-full">

@@ -72,7 +72,7 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
   if (optedInIdSet.length === 0) return res.json([]);
 
   // SQL bounding-box pre-filter — avoids full table scan
-  let query = db.select().from(usersTable).$dynamic();
+  const query = db.select().from(usersTable).$dynamic();
   // A suspended helper or one whose helper application was denied/revoked
   // must never show up as "available" on the map, even if their
   // helper_mode_active flag is still stale true from before the moderation

@@ -48,20 +48,20 @@ jest.unstable_mockModule("stripe", () => ({
 }));
 
 jest.unstable_mockModule("../middlewares/auth.js", () => ({
-  requireAuth: (req: unknown, _res: any, next: any) => {
+  requireAuth: (req: unknown, _res: unknown, next: unknown) => {
     req.authenticatedUserId = 42;
     req.authenticatedTokenVersion = 0;
     next();
   },
-  requireApproved: jest.fn((req: unknown, _res: any, next: any) => next()),
+  requireApproved: jest.fn((req: unknown, _res: unknown, next: unknown) => next()),
 }));
 
 jest.unstable_mockModule("../middlewares/authz.js", () => ({
-  requireOwnership: (_field: string) => (_req: unknown, _res: any, next: any) => next(),
+  requireOwnership: (_field: string) => (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
-  paymentLimiter: (_req: unknown, _res: any, next: any) => next(),
+  paymentLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../lib/ws-hub.js", () => ({
@@ -111,7 +111,7 @@ beforeEach(() => {
 
 describe("POST /api/stripe/payment-intent", () => {
   it("runs the approval gate before creating a charge", async () => {
-    requireApproved.mockImplementationOnce((_req: unknown, res: any) =>
+    requireApproved.mockImplementationOnce((_req: unknown, res: unknown) =>
       res.status(403).json({ error: "Account suspended — contact support" }),
     );
     const response = await request(app)

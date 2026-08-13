@@ -41,10 +41,10 @@ const mockDb: Record<string, unknown> = {
   onConflictDoNothing: jest.fn().mockResolvedValue([]),
   onConflictDoUpdate: jest.fn().mockResolvedValue([]),
   execute: jest.fn().mockResolvedValue({ rows: [] }),
-  then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
+  then: jest.fn().mockImplementation((resolve: unknown, reject: unknown) =>
     Promise.resolve([]).then(resolve, reject),
   ),
-  transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(mockDb)),
+  transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
 };
 
 jest.unstable_mockModule("@workspace/db", () => ({
@@ -215,7 +215,7 @@ beforeEach(() => {
   // Return a universal count object as the default so calculateCompleteness-style
   // destructured selects (const [{ memberCount }] = await db.select()...) don't
   // throw when they destructure from an empty array.
-  (mockDb.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: any) =>
+  (mockDb.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: unknown) =>
     Promise.resolve([{
       memberCount: 0, relationCount: 0, eventCount: 0, memoryCount: 0,
       storyCount: 0, placeCount: 0, interviewCount: 0, consentCount: 0,
@@ -223,7 +223,7 @@ beforeEach(() => {
     }]).then(resolve, reject),
   );
   (mockDb.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
-  (mockDb.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(mockDb));
+  (mockDb.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb));
   (mockDb.onConflictDoNothing as jest.Mock).mockReset().mockResolvedValue([]);
   (mockDb.onConflictDoUpdate as jest.Mock).mockReset().mockResolvedValue([]);
 });

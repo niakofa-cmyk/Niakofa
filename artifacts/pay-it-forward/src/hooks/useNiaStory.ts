@@ -23,7 +23,7 @@ export function useNiaStory(userName: string) {
   const recognitionRef = useRef<unknown>(null);
 
   const startRecording = useCallback(() => {
-    const SR: unknown = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR: unknown = (window as unknown).SpeechRecognition || (window as unknown).webkitSpeechRecognition;
     if (!SR) {
       setError("Voice recording not supported in this browser.");
       setState("error");

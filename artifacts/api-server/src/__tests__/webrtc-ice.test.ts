@@ -15,12 +15,12 @@ import request from "supertest";
 import { jest } from "@jest/globals";
 
 jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
-  generalApiLimiter: (_req: unknown, _res: any, next: any) => next(),
+  generalApiLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 let mockAuthEnabled = true;
 jest.unstable_mockModule("../middlewares/auth.js", () => ({
-  requireAuth: (req: unknown, res: any, next: any) => {
+  requireAuth: (req: unknown, res: unknown, next: unknown) => {
     if (!mockAuthEnabled) return res.status(401).json({ error: "Unauthorized" });
     req.authenticatedUserId = 42;
     next();

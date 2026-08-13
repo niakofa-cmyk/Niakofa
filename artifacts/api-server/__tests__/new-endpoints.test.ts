@@ -32,8 +32,8 @@ const mockDb: Record<string, jest.Mock> = {
   innerJoin: jest.fn().mockReturnThis(),
   groupBy:  jest.fn().mockReturnValue([]),
   offset:   jest.fn().mockReturnThis(),
-  transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(mockDb)),
-  then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
+  transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
+  then: jest.fn().mockImplementation((resolve: unknown, reject: unknown) =>
     Promise.resolve([]).then(resolve, reject)
   ),
   execute: jest.fn().mockResolvedValue({ rows: [] }),
@@ -80,40 +80,40 @@ jest.unstable_mockModule("@workspace/db", () => ({
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({
-  eq:    jest.fn((a: unknown, b: any) => ({ _eq: [a, b] })),
+  eq:    jest.fn((a: unknown, b: unknown) => ({ _eq: [a, b] })),
   and:   jest.fn((...args: unknown[]) => ({ _and: args })),
   or:    jest.fn((...args: unknown[]) => ({ _or: args })),
-  ne:    jest.fn((a: unknown, b: any) => ({ _ne: [a, b] })),
-  gt:    jest.fn((a: unknown, b: any) => ({ _gt: [a, b] })),
-  gte:   jest.fn((a: unknown, b: any) => ({ _gte: [a, b] })),
-  lt:    jest.fn((a: unknown, b: any) => ({ _lt: [a, b] })),
-  lte:   jest.fn((a: unknown, b: any) => ({ _lte: [a, b] })),
+  ne:    jest.fn((a: unknown, b: unknown) => ({ _ne: [a, b] })),
+  gt:    jest.fn((a: unknown, b: unknown) => ({ _gt: [a, b] })),
+  gte:   jest.fn((a: unknown, b: unknown) => ({ _gte: [a, b] })),
+  lt:    jest.fn((a: unknown, b: unknown) => ({ _lt: [a, b] })),
+  lte:   jest.fn((a: unknown, b: unknown) => ({ _lte: [a, b] })),
   isNull: jest.fn((a: unknown) => ({ _isNull: a })),
   isNotNull: jest.fn((a: unknown) => ({ _isNotNull: a })),
   sql:   jest.fn((s: unknown) => s),
   desc:  jest.fn((a: unknown) => ({ _desc: a })),
   asc:   jest.fn((a: unknown) => ({ _asc: a })),
-  inArray: jest.fn((a: unknown, b: any) => ({ _in: [a, b] })),
+  inArray: jest.fn((a: unknown, b: unknown) => ({ _in: [a, b] })),
   count: jest.fn(() => "count"),
   sum:   jest.fn((a: unknown) => ({ _sum: a })),
 }));
 
 jest.unstable_mockModule("../src/middlewares/auth.js", () => ({
   parseAuth:       jest.fn(),
-  requireAuth:     jest.fn((_req: unknown, _res: any, next: any) => next()),
-  requireApproved: jest.fn((_req: unknown, _res: any, next: any) => next()),
+  requireAuth:     jest.fn((_req: unknown, _res: unknown, next: unknown) => next()),
+  requireApproved: jest.fn((_req: unknown, _res: unknown, next: unknown) => next()),
   signTokenById:   jest.fn().mockReturnValue("test-token"),
   verifyToken:     jest.fn().mockReturnValue({ userId: 1, valid: true }),
   isSelf:          jest.fn().mockReturnValue(false),
 }));
 
 jest.unstable_mockModule("../src/middlewares/authz.js", () => ({
-  requireAdmin:    () => (_req: unknown, _res: any, next: any) => next(),
-  requireOwnership: () => (_req: unknown, _res: any, next: any) => next(),
-  resolveMeParam:  (_req: unknown, _res: any, next: any) => next(),
+  requireAdmin:    () => (_req: unknown, _res: unknown, next: unknown) => next(),
+  requireOwnership: () => (_req: unknown, _res: unknown, next: unknown) => next(),
+  resolveMeParam:  (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
-const _passthrough = (_req: unknown, _res: any, next: any) => next();
+const _passthrough = (_req: unknown, _res: unknown, next: unknown) => next();
 jest.unstable_mockModule("../src/middlewares/rate-limit.js", () => ({
   authLimiter:            _passthrough,
   gpsLimiter:             _passthrough,
@@ -258,7 +258,7 @@ const resetMockDb = () => {
   mockDb.returning.mockResolvedValue([]);
   mockDb.execute.mockResolvedValue({ rows: [] });
   // then() — the "await on a query chain" path — returns empty array
-  mockDb.then.mockImplementation((resolve: unknown, _reject: any) =>
+  mockDb.then.mockImplementation((resolve: unknown, _reject: unknown) =>
     Promise.resolve([]).then(resolve)
   );
   mockDb.transaction.mockImplementation(async (cb: unknown) => cb(mockDb));
@@ -267,12 +267,12 @@ const resetMockDb = () => {
 beforeEach(() => {
   jest.resetAllMocks();
   // Re-wire middleware mocks after reset
-  (requireAuth as jest.Mock).mockImplementation((req: unknown, _res: any, next: any) => {
+  (requireAuth as jest.Mock).mockImplementation((req: unknown, _res: unknown, next: unknown) => {
     req.authenticatedUserId = 1;
     req.authenticatedUser   = { id: 1, name: "Test", email: "test@test.com", is_admin: true, active: true };
     next();
   });
-  (requireApproved as jest.Mock).mockImplementation((_req: unknown, _res: any, next: any) => next());
+  (requireApproved as jest.Mock).mockImplementation((_req: unknown, _res: unknown, next: unknown) => next());
   resetMockDb();
 });
 
@@ -289,7 +289,7 @@ function makeApp(router: unknown) {
 // ════════════════════════════════════════════════════════════════════════════
 describe("POST /requests/:id/tip-wallet", () => {
   it("returns 401 when not authenticated", async () => {
-    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: any) =>
+    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: unknown) =>
       res.status(401).json({ error: "Unauthorized" })
     );
     const app = makeApp(requestsRouter);
@@ -328,7 +328,7 @@ describe("POST /requests/:id/tip-wallet", () => {
 // ════════════════════════════════════════════════════════════════════════════
 describe("PATCH /users/:id/toggle-admin", () => {
   it("returns 401 when not authenticated", async () => {
-    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: any) =>
+    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: unknown) =>
       res.status(401).json({ error: "Unauthorized" })
     );
     const app = makeApp(usersRouter);
@@ -370,7 +370,7 @@ describe("PATCH /users/:id/toggle-admin", () => {
 // ════════════════════════════════════════════════════════════════════════════
 describe("DELETE /griot/stories/:id", () => {
   it("returns 401 when not authenticated", async () => {
-    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: any) =>
+    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: unknown) =>
       res.status(401).json({ error: "Unauthorized" })
     );
     const app = makeApp(griotRouter);
@@ -392,12 +392,12 @@ describe("DELETE /griot/stories/:id", () => {
 
   it("returns 403 when caller is not author and not admin", async () => {
     // Caller is user 2, story author is 1, user 2 is not admin
-    (requireAuth as jest.Mock).mockImplementation((req: unknown, _res: any, next: any) => {
+    (requireAuth as jest.Mock).mockImplementation((req: unknown, _res: unknown, next: unknown) => {
       req.authenticatedUserId = 2;
       req.authenticatedUser   = { id: 2, name: "Other", email: "other@test.com", is_admin: false, active: true };
       next();
     });
-    (requireApproved as jest.Mock).mockImplementation((_req: unknown, _res: any, next: any) => next());
+    (requireApproved as jest.Mock).mockImplementation((_req: unknown, _res: unknown, next: unknown) => next());
     // Story fetch uses await db.select().from().where() — resolves via .then()
     mockDb.then.mockImplementationOnce((resolve: unknown) =>
       Promise.resolve([{ id: 1, author_id: 1, status: "published" }]).then(resolve)
@@ -431,7 +431,7 @@ describe("DELETE /griot/stories/:id", () => {
 // ════════════════════════════════════════════════════════════════════════════
 describe("GET /civic/needs/:id", () => {
   it("returns 401 when not authenticated", async () => {
-    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: any) =>
+    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: unknown) =>
       res.status(401).json({ error: "Unauthorized" })
     );
     const app = makeApp(civicRouter);

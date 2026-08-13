@@ -44,17 +44,17 @@ jest.unstable_mockModule("drizzle-orm", () => ({
 
 jest.unstable_mockModule("../middlewares/auth.js", () => ({
   parseAuth: jest.fn(),
-  requireAuth: jest.fn((_req: unknown, _res: any, next: any) => next()),
+  requireAuth: jest.fn((_req: unknown, _res: unknown, next: unknown) => next()),
 }));
 
 jest.unstable_mockModule("../middlewares/authz.js", () => ({
-  requireAdmin: () => (_req: unknown, _res: any, next: any) => next(),
+  requireAdmin: () => (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
-  crisisAwareChatLimiter: (_req: unknown, _res: any, next: any) => next(),
-  niaChatHistoryLimiter: (_req: unknown, _res: any, next: any) => next(),
-  adminLimiter: (_req: unknown, _res: any, next: any) => next(),
+  crisisAwareChatLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  niaChatHistoryLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  adminLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../lib/ws-hub.js", () => ({

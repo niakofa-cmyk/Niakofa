@@ -31,8 +31,8 @@ jest.unstable_mockModule("@workspace/db", () => {
     groupBy: jest.fn().mockReturnValue([]),
     onConflictDoNothing: jest.fn().mockResolvedValue([]),
     onConflictDoUpdate: jest.fn().mockResolvedValue([]),
-    transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<any>) => cb(mockDb)),
-    then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
+    transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
+    then: jest.fn().mockImplementation((resolve: unknown, reject: unknown) =>
       Promise.resolve([]).then(resolve, reject)
     ),
     // Production code (safety-ping) does a fire-and-forget
@@ -158,10 +158,10 @@ beforeEach(() => {
   (db.values as jest.Mock).mockReset().mockReturnThis();
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
-  (db.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: any) =>
+  (db.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: unknown) =>
     Promise.resolve([]).then(resolve, reject)
   );
-  (db.transaction as jest.Mock).mockReset().mockImplementation((cb: (tx: unknown) => Promise<any>) => cb(db));
+  (db.transaction as jest.Mock).mockReset().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(db));
   (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   broadcastMock.mockReset();
   sendToUserMock.mockReset();

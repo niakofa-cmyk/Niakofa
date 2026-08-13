@@ -28,27 +28,27 @@ jest.unstable_mockModule("../lib/logger.js", () => ({
 
 // ── Mock rate limiter so it never blocks test requests ────────────────────────
 jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
-  navigationLimiter: (_req: unknown, _res: any, next: any) => next(),
-  limiter: (_req: unknown, _res: any, next: any) => next(),
-  helperLimiter: (_req: unknown, _res: any, next: any) => next(),
-  authLimiter: (_req: unknown, _res: any, next: any) => next(),
+  navigationLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  limiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  helperLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  authLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 // ── Mock requireAuth so we can test both authed and unauthed paths ────────────
 let mockAuthEnabled = true;
 jest.unstable_mockModule("../middlewares/auth.js", () => ({
-  requireAuth: (req: unknown, _res: any, next: any) => {
+  requireAuth: (req: unknown, _res: unknown, next: unknown) => {
     if (!mockAuthEnabled) {
       return _res.status(401).json({ error: "Unauthorized" });
     }
     req.authenticatedUserId = 1;
     next();
   },
-  requireApproved: (req: unknown, _res: any, next: any) => {
+  requireApproved: (req: unknown, _res: unknown, next: unknown) => {
     req.authenticatedUserId = 1;
     next();
   },
-  optionalAuth: (req: unknown, _res: any, next: any) => {
+  optionalAuth: (req: unknown, _res: unknown, next: unknown) => {
     req.authenticatedUserId = 1;
     next();
   },

@@ -49,10 +49,10 @@ jest.unstable_mockModule("stripe", () => ({
   },
 }));
 
-const requireApproved = jest.fn((_req: unknown, _res: any, next: any) => next());
+const requireApproved = jest.fn((_req: unknown, _res: unknown, next: unknown) => next());
 
 jest.unstable_mockModule("../middlewares/auth.js", () => ({
-  requireAuth: (req: unknown, _res: any, next: any) => {
+  requireAuth: (req: unknown, _res: unknown, next: unknown) => {
     req.authenticatedUserId = 42;
     next();
   },
@@ -60,12 +60,12 @@ jest.unstable_mockModule("../middlewares/auth.js", () => ({
 }));
 
 jest.unstable_mockModule("../middlewares/authz.js", () => ({
-  requireAdmin: () => (_req: unknown, _res: any, next: any) => next(),
+  requireAdmin: () => (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
-  paymentLimiter: (_req: unknown, _res: any, next: any) => next(),
-  adminLimiter: (_req: unknown, _res: any, next: any) => next(),
+  paymentLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  adminLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../lib/queue.js", () => ({
@@ -101,7 +101,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  requireApproved.mockImplementation((_req: unknown, _res: any, next: any) => next());
+  requireApproved.mockImplementation((_req: unknown, _res: unknown, next: unknown) => next());
   tx.execute.mockResolvedValue([
     { id: 42, benevolence_wallet: 20, is_helper: true },
   ]);
@@ -116,7 +116,7 @@ beforeEach(() => {
 
 describe("POST /api/wallet/cashout", () => {
   it("blocks a suspended account before reserving wallet funds", async () => {
-    requireApproved.mockImplementationOnce((_req: unknown, res: any) =>
+    requireApproved.mockImplementationOnce((_req: unknown, res: unknown) =>
       res.status(403).json({ error: "Account suspended — contact support" }),
     );
 

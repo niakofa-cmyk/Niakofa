@@ -44,14 +44,14 @@ jest.unstable_mockModule("drizzle-orm", () => ({
 }));
 
 jest.unstable_mockModule("../middlewares/auth.js", () => ({
-  requireAuth: (req: unknown, _res: any, next: any) => {
+  requireAuth: (req: unknown, _res: unknown, next: unknown) => {
     req.authenticatedUserId = 42;
     next();
   },
 }));
 
 jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
-  generalApiLimiter: (_req: unknown, _res: any, next: any) => next(),
+  generalApiLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../lib/ws-hub.js", () => ({

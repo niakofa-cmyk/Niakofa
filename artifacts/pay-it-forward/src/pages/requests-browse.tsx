@@ -378,7 +378,7 @@ export default function RequestsBrowsePage() {
                     </div>
 
                     <div className="shrink-0 flex flex-col items-end gap-1.5">
-                      {(req as unknown).pay_it_forward_amount && (req as any).payment_type === "immediate" && (
+                      {(req as unknown).pay_it_forward_amount && (req as unknown).payment_type === "immediate" && (
                         <div className="flex items-center gap-0.5 text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-1 rounded-full">
                           <DollarSign className="w-3 h-3" />
                           <span className="text-[11px] font-black">{parseFloat((req as unknown).pay_it_forward_amount).toFixed(0)}</span>

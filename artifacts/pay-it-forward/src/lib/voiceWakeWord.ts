@@ -56,7 +56,7 @@ export class VoiceWakeWordEngine {
 
   private initSpeechRecognition() {
     const SR: unknown =
-      (window as unknown).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      (window as unknown).SpeechRecognition || (window as unknown).webkitSpeechRecognition;
     const rec = new SR();
     rec.continuous = false; // VAD controls restarts — don't auto-loop
     rec.interimResults = true;
@@ -113,7 +113,7 @@ export class VoiceWakeWordEngine {
     try {
       // Phase 7d: acquire mic stream for VAD
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const AC: unknown = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const AC: unknown = (window as unknown).AudioContext || (window as unknown).webkitAudioContext;
       this.audioCtx = new AC();
       this.analyser = (this.audioCtx as AudioContext).createAnalyser();
       this.analyser.fftSize = 512;
@@ -149,7 +149,7 @@ export class VoiceWakeWordEngine {
   private _startFallback() {
     // Phase 7a fallback: continuous recognition without VAD
     const SR: unknown =
-      (window as unknown).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      (window as unknown).SpeechRecognition || (window as unknown).webkitSpeechRecognition;
     this.recognition = new SR();
     this.recognition.continuous = this.options.continuous ?? true;
     this.recognition.interimResults = true;
