@@ -524,7 +524,13 @@ function getDefaultLayers(input: LegacyAppearanceInput, libraryId: LegacyLibrary
     const suffix = input.gender === "unspecified" ? "kid" : `adult_${input.gender}`;
     const clothingN = deterministicVariant(input, "clothing", 1, 3);
     const style = input.hairStyle
-      ?? HAIR_STYLES[stableHash([input.characterId, input.lifeStage, input.era ?? "", "hair"].join("|")) % HAIR_STYLES.length];
+      ?? HAIR_STYLES[stableHash([
+        input.characterId,
+        input.lifeStage,
+        input.era ?? "unspecified",
+        input.appearanceSeed ?? "",
+        "hair",
+      ].join("|")) % HAIR_STYLES.length];
     const styleIndex = HAIR_STYLES.indexOf(style) + 1;
     return {
       ...defaults,

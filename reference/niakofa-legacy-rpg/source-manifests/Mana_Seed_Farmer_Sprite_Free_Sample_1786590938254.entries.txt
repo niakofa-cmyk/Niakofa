@@ -1,0 +1,17 @@
+Source archive: attached_assets/Mana_Seed_Farmer_Sprite_Free_Sample_1786590938254.zip
+SHA-256: 02463060c20ea6f96c67b4bdff1244f5b3783181ab6a4084315501c18f80eb9f
+Integrity: unzip -t passed on 2026-08-13
+Archive entries: 52
+
+Reference findings:
+- The free sample contains a limited farmer set with walk and jump
+  animations, layered 1024x1024 sheets, palettes, ramps, guides, and readmes.
+- The supplied sample notice explicitly permits use of the included sheets and
+  visible frames in a game, including commercial use; the full asset pack is
+  separate and must not be assumed available.
+- The Farmer Sprite System readme documents layer IDs, palette ramps, frame
+  layout, and the `_e` hair-replacement rule. These are references for future
+  bounded sprite-import tooling, not a license for unrelated assets.
+- Niakofa does not currently promote this sample into the browser runtime.
+  Any future promotion must add an asset-level manifest and preserve the
+  existing identity, likeness, and single-runtime boundaries.

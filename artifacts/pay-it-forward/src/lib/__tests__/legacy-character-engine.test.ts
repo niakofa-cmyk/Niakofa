@@ -280,6 +280,30 @@ describe("Original-art library (niakofa-original-art-demo-v1)", () => {
     ]);
   });
 
+  it("uses appearanceSeed for every generated layer, including original-art hair", () => {
+    const base = {
+      characterId: "kwame-mensah",
+      ageGroup: "adult" as const,
+      gender: "male" as const,
+      lifeStage: "mature" as const,
+      era: "1910s",
+      libraryId: "niakofa-original-art-demo-v1" as const,
+    };
+    const first = resolveCharacterAppearance({ ...base, appearanceSeed: "ledger-a" });
+    const second = resolveCharacterAppearance({ ...base, appearanceSeed: "ledger-d" });
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(first).toEqual(resolveCharacterAppearance({ ...base, appearanceSeed: "ledger-a" }));
+    expect(second).toEqual(resolveCharacterAppearance({ ...base, appearanceSeed: "ledger-d" }));
+    expect(first?.appearanceSeed).toBe("ledger-a");
+    expect(second?.appearanceSeed).toBe("ledger-d");
+
+    const firstHair = first?.layers.find(layer => layer.layer === "rearHair")?.assetId;
+    const secondHair = second?.layers.find(layer => layer.layer === "rearHair")?.assetId;
+    expect(firstHair).not.toBe(secondHair);
+  });
+
   it("resolves kid appearances in the original-art library too", () => {
     const result = resolveWalkingAppearance({
       ageGroup: "kid",

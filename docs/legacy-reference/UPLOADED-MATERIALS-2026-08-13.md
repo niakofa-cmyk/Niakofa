@@ -72,3 +72,18 @@ presentation layer: each explicitly placed demo artifact can reveal a
 deterministic, clickable “memory echo” in World Version 2. These echoes are
 generic story prompts rendered with original art; they are not claimed to be
 verified family likenesses and do not infer facts from asset names.
+
+## August 13 pass upload record
+
+The three uploads used for this pass are retained in the workspace and
+recorded in `reference/niakofa-legacy-rpg/source-manifests/`:
+
+| Upload | SHA-256 | Integrity | Scope |
+|---|---|---|---|
+| `Pasted-The-biggest-discovery-Universal-LPC-This-is-the-largest_1786590915947.txt` | `5174e11fc836a01046db35f47c91fabf115ed1787925d111707e1d0ac6c5c1f0` | 7,222 lines read | Character/world architecture reference |
+| `tdsm-master_1786590922267.zip` | `508ec7f42a175fd894d5c3d5841b5f8f75ace256d9204e371b402e2c4beb0f5a` | 349 entries; `unzip -t` passed | TDSM layering/export/license reference |
+| `Mana_Seed_Farmer_Sprite_Free_Sample_1786590938254.zip` | `02463060c20ea6f96c67b4bdff1244f5b3783181ab6a4084315501c18f80eb9f` | 52 entries; `unzip -t` passed | Free-sample sprite/palette reference |
+
+The raw uploads remain ignored from the production bundle. They are not
+copied wholesale into the browser runtime; only explicitly curated assets with
+asset-level provenance may be promoted.
