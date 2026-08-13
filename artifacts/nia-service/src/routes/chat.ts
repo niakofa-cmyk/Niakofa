@@ -358,7 +358,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       );
 
       let toolUseBlocks: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
-      const _currentTextContent = "";
+      let _currentTextContent = "";
 
       for await (const chunk of stream) {
         if (chunk.type === "content_block_start" && chunk.content_block?.type === "tool_use") {
