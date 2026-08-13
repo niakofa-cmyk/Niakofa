@@ -75,6 +75,7 @@ import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
 import { LegacyLivingWorld } from "@/components/legacy-living-world";
 import { LegacyLivingBaobab } from "@/components/legacy-living-baobab";
 import { LegacyMemoryEncounter } from "@/components/legacy-memory-encounter";
+import { LegacySatchel, type LegacySatchelItem } from "@/components/legacy-satchel";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -179,6 +180,41 @@ const ARTIFACTS = [
   { id: "recipe", label: "Family recipe", icon: UtensilsCrossed, unlocks: "Kitchen memory + new ancestor dialogue" },
   { id: "medal", label: "Military medal", icon: Medal, unlocks: "Display cabinet + service chapter" },
   { id: "certificate", label: "Marriage certificate", icon: ScrollText, unlocks: "Hallway timeline + relationship branch" },
+];
+
+const SATCHEL_ITEMS: readonly LegacySatchelItem[] = [
+  {
+    id: "photo",
+    label: "Old photograph",
+    icon: "📷",
+    source: "Family Vault · portrait wall",
+    outcome: "A named ancestor and a family mystery quest",
+    description: "A preserved face becomes a question the family can investigate together.",
+  },
+  {
+    id: "recipe",
+    label: "Family recipe",
+    icon: "🍲",
+    source: "Grandma Ama · kitchen memory",
+    outcome: "A living kitchen dialogue",
+    description: "The recipe carries a voice forward without turning an interpretation into verified history.",
+  },
+  {
+    id: "medal",
+    label: "Military medal",
+    icon: "🏅",
+    source: "Family Vault · display cabinet",
+    outcome: "A service chapter seed",
+    description: "The medal opens a path to ask what returning home meant for this family.",
+  },
+  {
+    id: "certificate",
+    label: "Marriage certificate",
+    icon: "📜",
+    source: "Family Vault · hallway timeline",
+    outcome: "A migration and relationship branch",
+    description: "A document links people and place while leaving unknown details open for the family to verify.",
+  },
 ];
 
 const COOP_TASKS = [
@@ -1731,6 +1767,7 @@ export default function LegacyDemoPage() {
   const [state, setState] = useState<DemoState>(DEFAULT_DEMO_STATE);
   const [loaded, setLoaded] = useState(false);
   const [persistenceWarning, setPersistenceWarning] = useState(false);
+  const [satchelOpen, setSatchelOpen] = useState(false);
   const storageRef = useRef<DemoStorage>(sessionOnlyDemoStorage);
   const storageAvailableRef = useRef(false);
 
@@ -2015,6 +2052,7 @@ export default function LegacyDemoPage() {
         >
           <div className="max-w-lg mx-auto flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
             {[
+              { icon: Package, label: "Satchel" },
               { icon: TreePine, label: "Family Tree" },
               { icon: ScrollText, label: "Vault" },
               { icon: UtensilsCrossed, label: "Kitchen" },
@@ -2023,16 +2061,41 @@ export default function LegacyDemoPage() {
               { icon: Landmark, label: "Map" },
               { icon: Mic, label: "Stories" },
               { icon: Sparkles, label: "AI" },
-            ].map(({ icon: Icon, label }) => (
-              <div key={label} className="flex flex-col items-center gap-1 shrink-0">
-                <div className="w-7 h-7 rounded-lg bg-amber-950/40 border border-amber-900/30 flex items-center justify-center">
-                  <Icon className="w-3.5 h-3.5 text-amber-600" />
+            ].map(({ icon: Icon, label }) => label === "Satchel" ? (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setSatchelOpen((open) => !open)}
+                className="flex shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-0.5 hover:bg-amber-950/40"
+                aria-label={`${satchelOpen ? "Close" : "Open"} Legacy Satchel`}
+                aria-pressed={satchelOpen}
+              >
+                <div className={`flex h-7 w-7 items-center justify-center rounded-lg border ${
+                  satchelOpen ? "border-emerald-300/50 bg-emerald-950/40" : "border-amber-900/30 bg-amber-950/40"
+                }`}>
+                  <Icon className={`h-3.5 w-3.5 ${satchelOpen ? "text-emerald-300" : "text-amber-600"}`} />
+                </div>
+                <span className={`text-[8px] font-bold uppercase tracking-wide ${satchelOpen ? "text-emerald-300" : "text-amber-800"}`}>{label}</span>
+              </button>
+            ) : (
+              <div key={label} className="flex shrink-0 flex-col items-center gap-1">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-900/30 bg-amber-950/40">
+                  <Icon className="h-3.5 w-3.5 text-amber-600" />
                 </div>
                 <span className="text-[8px] font-bold uppercase tracking-wide text-amber-800">{label}</span>
               </div>
             ))}
           </div>
         </div>
+      )}
+      {satchelOpen && state.baobabEntered && state.phase !== "prologue" && state.phase !== "finale" && (
+        <LegacySatchel
+          items={SATCHEL_ITEMS}
+          placedArtifacts={state.placedArtifacts}
+          discoveredLandmarks={state.discoveredLandmarks}
+          worldVersion={state.worldVersion}
+          onClose={() => setSatchelOpen(false)}
+        />
       )}
     </div>
   );

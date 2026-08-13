@@ -117,4 +117,23 @@ describe("Legacy demo navigation contract", () => {
     expect(source).toContain("writeDemoState");
     expect(source).not.toContain("niakofa:legacy-house-demo:v1");
   });
+
+  it("keeps the Satchel as a projection of canonical artifact progress", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../../pages/legacy-demo.tsx", import.meta.url)),
+      "utf8",
+    );
+    const satchelSource = readFileSync(
+      fileURLToPath(new URL("../../components/legacy-satchel.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("SATCHEL_ITEMS");
+    expect(source).toContain("<LegacySatchel");
+    expect(source).toContain("placedArtifacts={state.placedArtifacts}");
+    expect(satchelSource).toContain("Legacy Satchel");
+    expect(satchelSource).toContain("/legacy-rpg-assets/inventory/Inventory_Slot.png");
+    expect(satchelSource).toContain("canonical demo state");
+    expect(satchelSource).toContain('aria-label="Close Legacy Satchel"');
+  });
 });
