@@ -66,6 +66,19 @@
 | Session Reference | `NIAKOFA_LEGACY_SESSION_REF.md` | Aug 2026 session work log |
 | Legacy API Contracts | `.agents/memory/legacy-api-contracts.md` | Current data sources for Legacy journey |
 | Character Engine Runtime | `.agents/memory/legacy-character-engine-runtime.md` | Stable IDs, runtime layers, licensing boundary |
+
+### August 13, 2026 upload audit
+
+| Reference | Location | Use |
+|-----------|----------|-----|
+| Upload review notes | `docs/legacy-reference/uploaded-2026-08-13/README.md` | Scope, provenance, and runtime boundary |
+| Upload manifest | `docs/legacy-reference/uploaded-2026-08-13/UPLOAD_MANIFEST_2026-08-13.md` | SHA-256 hashes, complete archive counts, and license gate |
+
+The August 13 review covered the Universal LPC guidance document, an AI asset
+pipeline sample, a layered character creator, and a Unity 2D controller
+reference. Their useful ideas are implemented only inside the existing
+React/Vite Legacy runtime: explicit character layers, deterministic movement,
+reviewed world changes, and visible provenance disclosures.
 | RPG Art Boundary | `.agents/memory/legacy-rpg-art-boundary.md` | Art is presentation only, never a second runtime |
 | Runtime Boundary | `.agents/memory/legacy-runtime-boundary.md` | One React/Vite runtime, Family Vault authoritative |
 | House Demo | `.agents/memory/legacy-house-demo.md` | House of Mensah interactive demo boundary |

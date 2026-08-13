@@ -93,6 +93,17 @@ describe("Legacy demo navigation contract", () => {
     expect(stateSource).toContain("memoryEncounterCompleted");
   });
 
+  it("discloses the curated-art and provenance boundary in the satchel", () => {
+    const satchelSource = readFileSync(
+      fileURLToPath(new URL("../../components/legacy-satchel.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(satchelSource).toContain("About the visual archive");
+    expect(satchelSource).toContain("Family Vault evidence supplies the facts");
+    expect(satchelSource).toContain("Licensing review is required");
+  });
+
   it("renders regenerated memory echoes from explicit artifact progress", () => {
     const worldSource = readFileSync(
       fileURLToPath(new URL("../../components/legacy-living-world.tsx", import.meta.url)),

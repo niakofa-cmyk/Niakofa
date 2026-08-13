@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { CheckCircle2, ChevronRight, Package, Sparkles, X } from "lucide-react";
+import { CheckCircle2, ChevronRight, Info, Package, Sparkles, X } from "lucide-react";
 
 export interface LegacySatchelItem {
   id: string;
@@ -40,6 +40,7 @@ export function LegacySatchel({
   onClose,
 }: LegacySatchelProps) {
   const [selectedId, setSelectedId] = useState(items[0]?.id ?? null);
+  const [showReferenceNote, setShowReferenceNote] = useState(false);
   const placed = new Set(placedArtifacts);
   const discovered = new Set(discoveredLandmarks);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
@@ -154,6 +155,32 @@ export function LegacySatchel({
         ) : (
           <p className="flex items-center justify-center rounded-xl border border-amber-200/10 p-4 text-center text-[10px] text-amber-100/55">
             Preserve an artifact to add evidence to the satchel.
+          </p>
+        )}
+      </div>
+      <div className="border-t border-amber-300/15 bg-black/20 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setShowReferenceNote((open) => !open)}
+          className="flex w-full items-center justify-between gap-2 text-left text-[9px] font-bold uppercase tracking-wide text-amber-200/60 hover:text-amber-100"
+          aria-expanded={showReferenceNote}
+        >
+          <span className="flex items-center gap-1.5">
+            <Info className="h-3 w-3 text-amber-300" aria-hidden="true" />
+            About the visual archive
+          </span>
+          <span aria-hidden="true">{showReferenceNote ? "−" : "+"}</span>
+        </button>
+        {showReferenceNote && (
+          <p
+            role="note"
+            className="mt-2 max-w-prose text-[9px] leading-relaxed text-amber-100/55"
+          >
+            Character layers and inventory textures are curated presentation
+            references from the Legacy asset archive. Family Vault evidence
+            supplies the facts; these stylized sprites never represent a
+            verified likeness. Licensing review is required before commercial
+            release.
           </p>
         )}
       </div>
