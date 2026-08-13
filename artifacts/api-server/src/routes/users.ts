@@ -164,7 +164,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
   const token = signTokenById(user.id, user.token_version);
   // Strip all sensitive fields — including password_reset_* which were previously
   // leaked in the login response (zip-file fix BUG-SEC-01).
-  const { _password_hash, _password_reset_code, _password_reset_expires_at, google_id: _gid, ...safeUser } = user;
+  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, ...safeUser } = user;
   return res.json({ user: safeUser, token });
 });
 
@@ -576,7 +576,7 @@ router.get("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async 
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { _password_hash, ...safeUser } = user;
+  const { password_hash: _ph, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -607,7 +607,7 @@ router.patch("/users/:id", requireAuth, resolveMeParam, requireOwnership(), asyn
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { _password_hash, ...safeUser } = user;
+  const { password_hash: _ph, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -627,7 +627,7 @@ router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnershi
       payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
     });
   }
-  const { _password_hash, ...safeUser } = user;
+  const { password_hash: _ph, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -667,7 +667,7 @@ router.patch("/users/:id/helper-mode", requireAuth, resolveMeParam, requireAppro
     type: bParsed.data.active ? "helper_online" : "helper_offline",
     payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng },
   });
-  const { _password_hash, ...safeUser } = user;
+  const { password_hash: _ph, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -861,7 +861,7 @@ router.post("/users/:id/avatar", requireAuth, resolveMeParam, requireApproved, r
     .where(eq(usersTable.id, id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { _password_hash, ...safeUser } = user;
+  const { password_hash: _ph, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -1275,7 +1275,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
       // matching comment on PATCH /users/:id/moderation.
       broadcast({ type: "helper_offline", payload: { id } });
     }
-    const { _password_hash, ...safe } = updated;
+    const { password_hash: _ph, ...safe } = updated;
     return res.json(safe);
   }
 
@@ -1314,7 +1314,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
     .returning();
 
   if (!updated) return res.status(404).json({ error: "User not found" });
-  const { _password_hash, ...safe } = updated;
+  const { password_hash: _ph, ...safe } = updated;
 
   // Notify admin in real time that a new helper application needs review.
   // (The register-time is_helper=true path also broadcasts this, but most

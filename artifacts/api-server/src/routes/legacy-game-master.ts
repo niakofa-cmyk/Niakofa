@@ -125,13 +125,14 @@ router.get(
       }
 
       // Generate new narration
-      const content: string = aiResponse.content || "The ancestors' voices echo softly through time...";
-      const modelUsed: string = aiResponse.model;
       const aiResponse = await legacyAI.generate({
         system: "You are Nia, the AI Game Master for the Niakofa Legacy RPG. Generate vivid, emotionally resonant narration grounded in real family history. Never fabricate specific facts.",
         userPrompt,
         maxTokens: 300,
       });
+
+      const content: string = aiResponse.content || "The ancestors' voices echo softly through time...";
+      const modelUsed: string = aiResponse.model;
 
       const [narration] = await db
         .insert(legacyGameMasterNarrationsTable)

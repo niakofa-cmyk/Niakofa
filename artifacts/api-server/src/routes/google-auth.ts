@@ -263,9 +263,9 @@ router.post("/auth/google", authLimiter, async (req: Request, res: Response) => 
 
   // Strip all sensitive and internal-only fields before sending to client
   const {
-    _password_hash,
-    _password_reset_code,
-    _password_reset_expires_at,
+    password_hash: _ph,
+    password_reset_code: _prc,
+    password_reset_expires_at: _pre,
     google_id: _gid, // internal — never expose to clients
     ...safeUser
   } = user;

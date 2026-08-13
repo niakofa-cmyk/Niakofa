@@ -670,7 +670,7 @@ router.patch("/admin/accounts/:id/approval", requireAuth, requireAdmin(), adminL
     });
   }
 
-  const { _password_hash, ...safe } = updated;
+  const { password_hash: _ph, ...safe } = updated;
   return res.json(safe);
 });
 
