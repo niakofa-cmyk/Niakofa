@@ -217,6 +217,69 @@ const TILE_LABELS: Record<TileName, string> = {
   cocoa_row: "cocoa row",
 };
 
+const WORLD_MEMORY_ECHOES = [
+  {
+    artifactId: "photo",
+    title: "Portrait echo",
+    subtitle: "A name has found a place in the world.",
+    description: "The preserved photograph now appears as a quiet story prompt beside the market road.",
+    row: 0,
+    column: 3,
+    character: {
+      ageGroup: "adult" as const,
+      gender: "unspecified" as const,
+      characterId: "memory-echo-photo",
+      lifeStage: "mature" as const,
+      era: "1900s",
+    },
+  },
+  {
+    artifactId: "recipe",
+    title: "Kitchen echo",
+    subtitle: "A recipe carries a voice forward.",
+    description: "The recovered recipe opens a remembered conversation, even after the kitchen has gone quiet.",
+    row: 2,
+    column: 6,
+    character: {
+      ageGroup: "adult" as const,
+      gender: "unspecified" as const,
+      characterId: "memory-echo-recipe",
+      lifeStage: "adult" as const,
+      era: "1900s",
+    },
+  },
+  {
+    artifactId: "medal",
+    title: "Return echo",
+    subtitle: "A chapter seed marks the road home.",
+    description: "The medal becomes a playable reminder that returning home is part of the family story.",
+    row: 5,
+    column: 2,
+    character: {
+      ageGroup: "adult" as const,
+      gender: "unspecified" as const,
+      characterId: "memory-echo-medal",
+      lifeStage: "mature" as const,
+      era: "1910s",
+    },
+  },
+  {
+    artifactId: "certificate",
+    title: "Route echo",
+    subtitle: "A family route now crosses the map.",
+    description: "The certificate adds a visible route prompt without guessing who travelled or why.",
+    row: 4,
+    column: 7,
+    character: {
+      ageGroup: "adult" as const,
+      gender: "unspecified" as const,
+      characterId: "memory-echo-certificate",
+      lifeStage: "adult" as const,
+      era: "present",
+    },
+  },
+] as const;
+
 function HouseOfMensahMap({
   character,
   worldVersion,
@@ -247,7 +310,12 @@ function HouseOfMensahMap({
   const placed = new Set(placedArtifacts);
   const discovered = new Set(discoveredLandmarks);
   const visibleLandmarks = layout.landmarks.filter(({ artifactId }) => placed.has(artifactId));
+  const visibleEchoes = worldVersion > 1
+    ? WORLD_MEMORY_ECHOES.filter(({ artifactId }) => placed.has(artifactId))
+    : [];
   const activeLandmark = getLegacyWorldLandmarkAt(layout, player);
+  const [selectedEchoId, setSelectedEchoId] = useState<string | null>(null);
+  const selectedEcho = visibleEchoes.find(({ artifactId }) => artifactId === selectedEchoId);
 
   useEffect(() => {
     if (motion === "idle") return;
@@ -363,6 +431,42 @@ function HouseOfMensahMap({
             </div>
             );
           })}
+          {visibleEchoes.map((echo) => {
+            const selected = selectedEchoId === echo.artifactId;
+            return (
+              <button
+                key={echo.artifactId}
+                type="button"
+                aria-label={`${echo.title}: ${echo.subtitle}`}
+                aria-pressed={selected}
+                onClick={() => setSelectedEchoId(selected ? null : echo.artifactId)}
+                className={`absolute z-[7] flex items-end justify-center rounded-lg border transition-all ${
+                  selected
+                    ? "border-emerald-200 bg-emerald-950/65 ring-2 ring-emerald-300/70 shadow-[0_0_16px_rgba(110,231,183,0.9)]"
+                    : "border-sky-200/70 bg-[#142b32]/75 shadow-[0_0_10px_rgba(125,211,252,0.6)] hover:border-emerald-200"
+                }`}
+                style={{
+                  width: `${100 / 9}%`,
+                  height: `${100 / 6}%`,
+                  left: `${(echo.column * 100) / 9}%`,
+                  top: `${(echo.row * 100) / 6}%`,
+                }}
+              >
+                <LegacyCharacterSprite
+                  {...echo.character}
+                  appearanceSeed={`memory-echo:${echo.artifactId}`}
+                  libraryId="niakofa-original-art-demo-v1"
+                  size={30}
+                  facing="down"
+                  motion={selected ? "walk" : "idle"}
+                  className="border-sky-200/30 bg-transparent"
+                />
+                <span className="absolute -bottom-1 rounded-full bg-[#10252b] px-1 py-0.5 text-[7px] font-black uppercase tracking-wide text-sky-200">
+                  echo
+                </span>
+              </button>
+            );
+          })}
           <div
             className="absolute z-10 flex items-end justify-center transition-[left,top] duration-150 ease-out"
             style={{
@@ -419,7 +523,19 @@ function HouseOfMensahMap({
         </button>
         <span className="text-right text-[9px] text-amber-100/50">Enter / Space to interact</span>
       </div>
-      {activeLandmark && visibleLandmarks.some(({ artifactId }) => artifactId === activeLandmark.artifactId) ? (
+      {selectedEcho ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-2 rounded-lg border border-sky-300/25 bg-sky-950/25 px-2.5 py-2 text-center"
+        >
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-200">
+            Memory echo · {selectedEcho.title}
+          </p>
+          <p className="mt-0.5 text-[9px] font-bold text-sky-100/75">{selectedEcho.subtitle}</p>
+          <p className="mt-0.5 text-[9px] leading-relaxed text-sky-100/60">{selectedEcho.description}</p>
+        </div>
+      ) : activeLandmark && visibleLandmarks.some(({ artifactId }) => artifactId === activeLandmark.artifactId) ? (
         <div
           role="status"
           aria-live="polite"
@@ -434,6 +550,7 @@ function HouseOfMensahMap({
         <p className="mt-2 text-center text-[9px] text-amber-100/50">
           Arrow keys / W A S D or the compass · water and buildings are blocked
           {visibleLandmarks.length > 0 ? " · move onto a glowing memory marker" : ""}
+          {visibleEchoes.length > 0 ? " · tap a blue echo to hear what changed" : ""}
         </p>
       )}
     </div>

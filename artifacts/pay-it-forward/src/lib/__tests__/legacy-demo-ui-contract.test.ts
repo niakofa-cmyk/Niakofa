@@ -93,6 +93,19 @@ describe("Legacy demo navigation contract", () => {
     expect(stateSource).toContain("memoryEncounterCompleted");
   });
 
+  it("renders regenerated memory echoes from explicit artifact progress", () => {
+    const worldSource = readFileSync(
+      fileURLToPath(new URL("../../components/legacy-living-world.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(worldSource).toContain("WORLD_MEMORY_ECHOES");
+    expect(worldSource).toContain('worldVersion > 1');
+    expect(worldSource).toContain('libraryId="niakofa-original-art-demo-v1"');
+    expect(worldSource).toContain("tap a blue echo to hear what changed");
+    expect(worldSource).toContain("memory-echo:");
+  });
+
   it("keeps the authenticated house panel on the canonical demo state key", () => {
     const source = readFileSync(
       fileURLToPath(new URL("../../components/legacy-house-demo.tsx", import.meta.url)),
