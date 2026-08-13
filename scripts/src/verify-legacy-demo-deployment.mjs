@@ -194,8 +194,8 @@ try {
     ? villageCatalogData.assets
     : [];
   assert(
-    curatedVillageAssets.length === 8,
-    `Curated village asset catalog must contain exactly eight approved files, found ${curatedVillageAssets.length}`,
+    curatedVillageAssets.length === 11,
+    `Curated village asset catalog must contain exactly eleven approved files, found ${curatedVillageAssets.length}`,
   );
 
   for (const asset of curatedVillageAssets) {
