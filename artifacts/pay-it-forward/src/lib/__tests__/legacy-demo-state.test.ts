@@ -445,6 +445,50 @@ describe("Co-op quest", () => {
     expect(state.legacyPoints).toBe(100);
   });
 
+  it("turns preserved evidence and reunion dialogue into relationship memories", () => {
+    let state = resetDemo();
+    const grandmaBefore = state.relationships.find(relationship => relationship.npcId === "grandma");
+    const afiaBefore = state.relationships.find(relationship => relationship.npcId === "cousin-afia");
+    expect(grandmaBefore).toBeDefined();
+    expect(afiaBefore).toBeDefined();
+
+    state = placeDemoArtifact(state, "recipe");
+    state = revealMystery(state, "unlabeled-photo");
+    state = completeReunionDialogue(state, "grandma");
+
+    const grandma = state.relationships.find(relationship => relationship.npcId === "grandma");
+    const afia = state.relationships.find(relationship => relationship.npcId === "cousin-afia");
+    expect(grandma?.trust).toBe((grandmaBefore?.trust ?? 0) + 9);
+    expect(grandma?.sharedMemories).toContain("We preserved Grandma Ama's kitchen recipe");
+    expect(afia?.trust).toBe((afiaBefore?.trust ?? 0) + 7);
+    expect(afia?.sharedMemories).toContain("We gave the unlabelled photograph a name and a place");
+
+    const repeated = completeReunionDialogue(state, "grandma");
+    expect(repeated).toBe(state);
+  });
+
+  it("sanitizes relationship meters and memories when restoring a save", () => {
+    const state = readDemoState({
+      getItem: () => JSON.stringify({
+        relationships: [
+          {
+            npcId: "grandma",
+            trust: 999,
+            respect: -20,
+            love: 44.9,
+            conflict: "high",
+            sharedMemories: ["kept", "kept", 42, "x".repeat(121)],
+          },
+          { npcId: "not-a-family-member", trust: 100 },
+        ],
+      }),
+    });
+    const grandma = state.relationships.find(relationship => relationship.npcId === "grandma");
+    expect(grandma).toMatchObject({ trust: 100, respect: 0, love: 44, conflict: 8 });
+    expect(grandma?.sharedMemories).toEqual(["kept"]);
+    expect(state.relationships).toHaveLength(4);
+  });
+
   it("preserves completed task status when starting other tasks", () => {
     let state = resetDemo();
     state = startDemoQuest(state, "photo-id");

@@ -67,6 +67,7 @@ import {
   type DemoFacing,
   type DemoMapPosition,
   type DemoPhase,
+  type DemoRelationship,
   type DemoSeason,
   type DemoState,
 } from "@/lib/legacy-demo-state";
@@ -368,6 +369,67 @@ function TraitBar({ label, value }: { label: string; value: number }) {
       </div>
       <span className="w-8 text-[10px] font-bold text-amber-500 shrink-0">{value}</span>
     </div>
+  );
+}
+
+function RelationshipPanel({ relationships }: { relationships: DemoRelationship[] }) {
+  return (
+    <section
+      aria-labelledby="relationship-panel-title"
+      className="mx-4 mb-4 rounded-2xl border border-rose-400/20 bg-gradient-to-br from-[#211018] via-[#170b10] to-[#10070a] p-3.5"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-[0.22em] text-rose-300/70">Living relationships</p>
+          <h2 id="relationship-panel-title" className="mt-1 text-sm font-black text-rose-100">
+            The people remember what you preserve
+          </h2>
+        </div>
+        <HeartHandshake className="mt-1 h-4 w-4 shrink-0 text-rose-300" aria-hidden="true" />
+      </div>
+      <p className="mt-2 text-[10px] leading-relaxed text-rose-100/60">
+        Your choices change trust, respect, love, and conflict. Shared memories stay with the family.
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {relationships.map(relationship => {
+          const closeness = Math.round(
+            (relationship.trust + relationship.respect + relationship.love + (100 - relationship.conflict)) / 4,
+          );
+          return (
+            <div key={relationship.npcId} className="rounded-xl border border-rose-200/10 bg-black/15 p-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-black text-rose-100">{relationship.name}</p>
+                  <p className="truncate text-[9px] text-rose-200/50">{relationship.role}</p>
+                </div>
+                <span className="shrink-0 text-[9px] font-black text-rose-300">{closeness}% bond</span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                {[
+                  ["Trust", relationship.trust, "bg-sky-300"],
+                  ["Respect", relationship.respect, "bg-amber-300"],
+                  ["Love", relationship.love, "bg-rose-300"],
+                  ["Conflict", relationship.conflict, "bg-violet-300"],
+                ].map(([label, value, color]) => (
+                  <div key={label as string} className="flex items-center gap-1.5">
+                    <span className="w-10 text-[8px] uppercase tracking-wide text-rose-100/45">{label}</span>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-rose-950/70">
+                      <div className={`h-full rounded-full ${color}`} style={{ width: `${value}%` }} />
+                    </div>
+                    <span className="w-5 text-right text-[8px] font-bold text-rose-100/65">{value}</span>
+                  </div>
+                ))}
+              </div>
+              {relationship.sharedMemories.length > 0 && (
+                <p className="mt-2 truncate border-t border-rose-200/10 pt-1.5 text-[9px] italic text-rose-200/55">
+                  Last shared memory: {relationship.sharedMemories.at(-1)}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1891,6 +1953,10 @@ export default function LegacyDemoPage() {
             fishing={state.fishing}
             onFishingCast={handleFishingCast}
           />
+        )}
+
+        {state.baobabEntered && state.phase !== "finale" && (
+          <RelationshipPanel relationships={state.relationships} />
         )}
 
         {state.phase === "prologue" && state.baobabEntered && (

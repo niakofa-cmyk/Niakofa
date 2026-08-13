@@ -77,6 +77,17 @@ export interface ReunionDialogue {
   completed: boolean;
 }
 
+export interface DemoRelationship {
+  npcId: string;
+  name: string;
+  role: string;
+  trust: number;
+  respect: number;
+  love: number;
+  conflict: number;
+  sharedMemories: string[];
+}
+
 export interface FishingJournal {
   castCount: number;
   catches: string[];
@@ -100,6 +111,7 @@ export interface DemoState {
   kitchenRecipes: KitchenRecipe[];
   npcMemory: NpcMemoryEntry[];
   reunionDialogues: ReunionDialogue[];
+  relationships: DemoRelationship[];
   mapPosition: DemoMapPosition;
   mapFacing: DemoFacing;
   discoveredLandmarks: string[];
@@ -132,6 +144,49 @@ export const DEMO_PHASE_ORDER: readonly DemoPhase[] = [
 export const DEMO_ARTIFACT_IDS = ["photo", "recipe", "medal", "certificate"] as const;
 export const DEMO_COOP_QUEST_IDS = ["photo-id", "elder-interview", "location-tag", "reconnect"] as const;
 export const DEMO_TRAITS = ["Leadership", "Wisdom", "Courage", "Compassion"] as const;
+
+export const DEMO_RELATIONSHIPS: readonly DemoRelationship[] = [
+  {
+    npcId: "grandma",
+    name: "Grandma Ama",
+    role: "Keeper of the family kitchen",
+    trust: 72,
+    respect: 78,
+    love: 86,
+    conflict: 8,
+    sharedMemories: [],
+  },
+  {
+    npcId: "uncle-kofi",
+    name: "Uncle Kofi",
+    role: "Witness to the missing ledger",
+    trust: 44,
+    respect: 58,
+    love: 42,
+    conflict: 34,
+    sharedMemories: [],
+  },
+  {
+    npcId: "cousin-afia",
+    name: "Cousin Afia",
+    role: "Researcher of the lost family branch",
+    trust: 56,
+    respect: 52,
+    love: 64,
+    conflict: 18,
+    sharedMemories: [],
+  },
+  {
+    npcId: "young-child",
+    name: "Little Kofi",
+    role: "The next generation",
+    trust: 82,
+    respect: 46,
+    love: 78,
+    conflict: 4,
+    sharedMemories: [],
+  },
+] as const;
 
 export const DEMO_WORLD_CHANGES: Record<string, WorldChange> = {
   photo: {
@@ -307,6 +362,10 @@ export const DEFAULT_DEMO_STATE: DemoState = {
   kitchenRecipes: DEMO_KITCHEN_RECIPES.map(r => ({ ...r })),
   npcMemory: [],
   reunionDialogues: DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
+  relationships: DEMO_RELATIONSHIPS.map(relationship => ({
+    ...relationship,
+    sharedMemories: [],
+  })),
   mapPosition: { row: 5, column: 3 },
   mapFacing: "down",
   discoveredLandmarks: [],
@@ -344,6 +403,31 @@ function sanitizeDemoMapPosition(
   return isLegacyWorldPositionWalkable(layout, { row, column })
     ? { row, column }
     : spawn;
+}
+
+function updateRelationship(
+  state: DemoState,
+  npcId: string,
+  changes: Partial<Pick<DemoRelationship, "trust" | "respect" | "love" | "conflict">>,
+  memory?: string,
+): DemoState {
+  return {
+    ...state,
+    relationships: state.relationships.map(relationship => {
+      if (relationship.npcId !== npcId) return relationship;
+      const sharedMemories = memory && !relationship.sharedMemories.includes(memory)
+        ? [...relationship.sharedMemories, memory]
+        : relationship.sharedMemories;
+      return {
+        ...relationship,
+        trust: Math.min(100, Math.max(0, relationship.trust + (changes.trust ?? 0))),
+        respect: Math.min(100, Math.max(0, relationship.respect + (changes.respect ?? 0))),
+        love: Math.min(100, Math.max(0, relationship.love + (changes.love ?? 0))),
+        conflict: Math.min(100, Math.max(0, relationship.conflict + (changes.conflict ?? 0))),
+        sharedMemories,
+      };
+    }),
+  };
 }
 
 // ─── State transitions ────────────────────────────────────────────────────────
@@ -399,8 +483,39 @@ export function placeDemoArtifact(state: DemoState, artifactId: string): DemoSta
     ? [...state.worldChanges, change]
     : state.worldChanges;
 
+  const relationshipByArtifact: Record<string, {
+    npcId: string;
+    changes: Partial<Pick<DemoRelationship, "trust" | "respect" | "love" | "conflict">>;
+    memory: string;
+  }> = {
+    photo: {
+      npcId: "cousin-afia",
+      changes: { trust: 5, respect: 4 },
+      memory: "We identified a face together in the old photograph",
+    },
+    recipe: {
+      npcId: "grandma",
+      changes: { trust: 6, love: 4, conflict: -2 },
+      memory: "We preserved Grandma Ama's kitchen recipe",
+    },
+    medal: {
+      npcId: "uncle-kofi",
+      changes: { respect: 6, trust: 3 },
+      memory: "We placed the family medal in the cabinet",
+    },
+    certificate: {
+      npcId: "cousin-afia",
+      changes: { trust: 4, love: 3, conflict: -3 },
+      memory: "We traced a missing branch through the certificate",
+    },
+  };
+  const relationship = relationshipByArtifact[artifactId];
+  const relationshipState = relationship
+    ? updateRelationship(state, relationship.npcId, relationship.changes, relationship.memory)
+    : state;
+
   return {
-    ...state,
+    ...relationshipState,
     placedArtifacts: [...state.placedArtifacts, artifactId],
     worldChanges: newChanges,
   };
@@ -469,8 +584,25 @@ export function revealMystery(state: DemoState, mysteryId: string): DemoState {
   // Idempotent: no points awarded if mystery is already revealed
   const mystery = state.mysteries.find(m => m.id === mysteryId);
   if (!mystery || mystery.revealed) return state;
+
+  const relationshipState = mysteryId === "lost-business"
+    ? updateRelationship(
+        state,
+        "uncle-kofi",
+        { trust: 5, respect: 4, conflict: -8 },
+        "We reconstructed the missing business ledger timeline",
+      )
+    : mysteryId === "unlabeled-photo"
+      ? updateRelationship(
+          state,
+          "cousin-afia",
+          { trust: 7, respect: 5, conflict: -4 },
+          "We gave the unlabelled photograph a name and a place",
+        )
+      : state;
+
   return {
-    ...state,
+    ...relationshipState,
     mysteries: state.mysteries.map(m =>
       m.id === mysteryId ? { ...m, revealed: true, solved: true } : m,
     ),
@@ -492,8 +624,16 @@ export function completeReunionDialogue(state: DemoState, npcId: string): DemoSt
   const dialogue = state.reunionDialogues.find(d => d.npcId === npcId);
   if (!dialogue || dialogue.completed) return state;
   const allDone = state.reunionDialogues.filter(d => d.completed || d.npcId === npcId).length >= state.reunionDialogues.length;
+
+  const relationshipState = updateRelationship(
+    state,
+    npcId,
+    { trust: 3, respect: 5, love: 5, conflict: -4 },
+    `We shared a family story with ${dialogue.npcId}`,
+  );
+
   return {
-    ...state,
+    ...relationshipState,
     reunionDialogues: state.reunionDialogues.map(d =>
       d.npcId === npcId ? { ...d, completed: true } : d,
     ),
@@ -556,6 +696,10 @@ export function resetDemo(): DemoState {
     mysteries: DEMO_MYSTERIES.map(m => ({ ...m })),
     kitchenRecipes: DEMO_KITCHEN_RECIPES.map(r => ({ ...r })),
     reunionDialogues: DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
+    relationships: DEMO_RELATIONSHIPS.map(relationship => ({
+      ...relationship,
+      sharedMemories: [],
+    })),
     npcMemory: [],
     businessLevel: 0,
     season: "dry",
@@ -687,6 +831,37 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
             return saved ? { ...dd, completed: !!saved.completed } : dd;
           })
         : DEMO_REUNION_DIALOGUES.map(d => ({ ...d })),
+      relationships: Array.isArray(parsed.relationships)
+        ? fresh.relationships.map(relationship => {
+            const saved = parsed.relationships?.find(candidate =>
+              candidate
+              && typeof candidate === "object"
+              && candidate.npcId === relationship.npcId,
+            );
+            if (!saved || typeof saved !== "object") return { ...relationship };
+            const numeric = (
+              key: keyof Pick<DemoRelationship, "trust" | "respect" | "love" | "conflict">,
+            ) =>
+              typeof saved[key] === "number" && Number.isFinite(saved[key])
+                ? Math.min(100, Math.max(0, Math.trunc(saved[key] as number)))
+                : relationship[key];
+            return {
+              ...relationship,
+              trust: numeric("trust"),
+              respect: numeric("respect"),
+              love: numeric("love"),
+              conflict: numeric("conflict"),
+              sharedMemories: Array.isArray(saved.sharedMemories)
+                ? [...new Set(saved.sharedMemories.filter((memory): memory is string =>
+                    typeof memory === "string" && memory.length <= 120,
+                  ))].slice(0, 12)
+                : [],
+            };
+          })
+        : fresh.relationships.map(relationship => ({
+            ...relationship,
+            sharedMemories: [...relationship.sharedMemories],
+          })),
       mapPosition: parsed.mapPosition && typeof parsed.mapPosition === "object"
         ? sanitizeDemoMapPosition(
             worldVersion,
