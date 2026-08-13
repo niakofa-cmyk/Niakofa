@@ -59,6 +59,7 @@ import {
   readDemoState,
   resetDemo,
   revealMystery,
+  seasonForPhase,
   summarizeDemoWorldChanges,
   startDemoQuest,
   unlockKitchenRecipe,
@@ -576,7 +577,7 @@ function ChapterScreen({
   };
 
   // Find relevant NPC memory for this chapter
-  const relevantMemory = npcMemory.find(m => m.remembers.includes("chapter"));
+  const relevantMemory = npcMemory.find(m => m.remembers.includes("Chapter"));
 
   return (
     <div className="px-4 py-6 space-y-5 animate-[fadeIn_0.5s_ease-out]">
@@ -1912,7 +1913,7 @@ export default function LegacyDemoPage() {
               if (phaseIdx > 0) {
                 const prev = DEMO_PHASE_ORDER[phaseIdx - 1];
                 setState(s => {
-                  const next = { ...s, phase: prev };
+                  const next = { ...s, phase: prev, season: seasonForPhase(prev) };
                   return persist(next);
                 });
               }

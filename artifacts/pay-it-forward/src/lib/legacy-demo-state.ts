@@ -380,7 +380,7 @@ function phaseAfter(phase: DemoPhase): DemoPhase {
   return DEMO_PHASE_ORDER[Math.min(index + 1, DEMO_PHASE_ORDER.length - 1)];
 }
 
-function seasonForPhase(phase: DemoPhase): DemoSeason {
+export function seasonForPhase(phase: DemoPhase): DemoSeason {
   if (phase === "prologue" || phase === "chapter1") return "dry";
   if (phase === "chapter2" || phase === "kitchen") return "harvest";
   if (phase === "chapter3" || phase === "business") return "rain";
@@ -468,7 +468,7 @@ export function chooseDemoTrait(state: DemoState, trait: string, value: number):
     traits: { ...state.traits, [trait]: (state.traits[trait] ?? 0) + value },
     phase: nextPhase,
     season: seasonForPhase(nextPhase),
-    npcMemory: state.npcMemory.some(m => m.remembers.includes(state.phase))
+    npcMemory: state.npcMemory.some(m => m.remembers.includes(phaseLabel))
       ? state.npcMemory
       : [...state.npcMemory, { npcName: "Grandma", remembers: memoryLabel }],
   };

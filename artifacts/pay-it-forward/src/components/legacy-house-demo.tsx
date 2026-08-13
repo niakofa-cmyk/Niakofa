@@ -130,7 +130,9 @@ export function LegacyHouseDemo({
   const [demoState, setDemoState] = useState<DemoState | null>(null);
 
   useEffect(() => {
-    const syncState = () => setDemoState(readDemoState(localStorage));
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { storage = null; }
+    const syncState = () => setDemoState(storage ? readDemoState(storage) : null);
     syncState();
     window.addEventListener("storage", syncState);
     window.addEventListener(DEMO_STATE_EVENT, syncState);
@@ -146,9 +148,12 @@ export function LegacyHouseDemo({
   const houseStage = placedCount >= 4 ? "Museum of the Mensah Family" : placedCount >= 2 ? "A house becoming a story" : "Grandma's Sunday house";
 
   const placeArtifact = (id: string) => {
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { storage = null; }
+    if (!storage) return;
     setDemoState((current) => {
-      const next = placeDemoArtifact(current ?? readDemoState(localStorage), id);
-      writeDemoState(localStorage, next);
+      const next = placeDemoArtifact(current ?? readDemoState(storage!), id);
+      writeDemoState(storage!, next);
       return next;
     });
   };

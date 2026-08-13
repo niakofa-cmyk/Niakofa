@@ -59,7 +59,7 @@ const MODE_ICON_REUNION = () => (
 
 // ─── Niakofa "N" Emblem (CSS/SVG recreation of the gold logo) ─────────────────
 
-function NiakofahEmblem({ size = 72 }: { size?: number }) {
+function NiakofaEmblem({ size = 72 }: { size?: number }) {
   return (
     <div
       className="relative flex items-center justify-center rounded-full"
@@ -240,7 +240,7 @@ export function LegacyStartVisual({
 
         {/* ── Emblem + Title ── */}
         <div className="relative z-10 flex flex-col items-center pt-10 pb-6 px-4">
-          <NiakofahEmblem size={80} />
+          <NiakofaEmblem size={80} />
           <h1
             className="mt-4 text-5xl font-black uppercase tracking-[0.12em] text-center"
             style={{
