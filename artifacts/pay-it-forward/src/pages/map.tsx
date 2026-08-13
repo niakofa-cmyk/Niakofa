@@ -163,7 +163,7 @@ export default function MapScreen() {
     const timer = setTimeout(() => setStatsExpanded(false), 4500);
     try { localStorage.setItem("niakofa_stats_pill_seen", "1"); } catch {}
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
 
@@ -1109,7 +1109,7 @@ export default function MapScreen() {
       if (RIGHT_DIRS.has(dir)) return "right";
     }
     return null;
-  }, [helperModeActive, bestMatchRouteData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [helperModeActive, bestMatchRouteData]);  
 
   // GeoJSON feature collection for request markers — drives both the cluster
   // source (low zoom) and the demand heatmap layer. Re-computed only when the
@@ -1125,7 +1125,7 @@ export default function MapScreen() {
       },
       geometry: { type: "Point", coordinates: [r.lng, r.lat] },
     })),
-  }), [openRequests]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [openRequests]);  
 
   // Show individual React Markers only when Mapbox's cluster has already broken
   // the points into individual features (i.e. zoom > CLUSTER_MAX_ZOOM).

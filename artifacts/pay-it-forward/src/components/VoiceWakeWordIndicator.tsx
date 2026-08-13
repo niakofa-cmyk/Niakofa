@@ -2,8 +2,9 @@
 // Visual feedback for voice listening states
 
 import React from "react";
-import { ListeningState } from "../lib/voiceWakeWord";
-import { CulturalLanguage, getProfile } from "../lib/culturalGreetings";
+import type { ListeningState } from "../lib/voiceWakeWord";
+import type { CulturalLanguage} from "../lib/culturalGreetings";
+import { getProfile } from "../lib/culturalGreetings";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 
 interface VoiceWakeWordIndicatorProps {

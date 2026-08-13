@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import type { z } from "zod/v4";
 
 // Business governance status values for help_requests.status:
 // - pending_owner_approval: staff posted under business; awaiting owner review

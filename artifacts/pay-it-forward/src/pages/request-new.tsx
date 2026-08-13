@@ -199,7 +199,7 @@ export default function NewRequestScreen() {
   const [showWaiverModal, setShowWaiverModal] = useState(false);
   const [waiverAccepted, setWaiverAccepted] = useState(false);
   const [waiverPending, setWaiverPending] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const pendingMutateRef = useRef<(() => void) | null>(null);
   const isWaiverCategory = WAIVER_CATEGORIES.includes(selectedCategory as WaiverCategory);
 

@@ -41,4 +41,10 @@ export default tseslint.config(
       "no-var": "error",
     },
   },
+  {
+    files: ["scripts/**/*.{ts,js,mjs}", "*.js", "*.mjs", "artifacts/api-server/build.mjs", "lib/db/scripts/**/*.{mjs,js}"],
+    rules: {
+      "no-console": "off",
+    },
+  },
 );

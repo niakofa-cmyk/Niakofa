@@ -3,7 +3,8 @@
  * Auth: requires x-internal-secret header matching INTERNAL_SECRET env var
  * (service-to-service auth, called by the nia-checkin-worker).
  */
-import { Router, Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../lib/logger";
 

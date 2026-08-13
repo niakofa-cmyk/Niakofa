@@ -14,7 +14,7 @@
  *   - Hub metrics for admin health endpoint
  */
 import { WebSocketServer, WebSocket } from "ws";
-import { IncomingMessage } from "http";
+import type { IncomingMessage, Server as HttpServer } from "http";
 import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
 import { db, chatMessagesTable, requestsTable, usersTable } from "@workspace/db";
@@ -552,7 +552,7 @@ function buildWsOriginAllowlist(): Set<string> | null {
 }
 const WS_ORIGIN_ALLOWLIST = buildWsOriginAllowlist();
 
-export function initWebSocketServer(server: import("http").Server): WebSocketServer {
+export function initWebSocketServer(server: HttpServer): WebSocketServer {
   wss = new WebSocketServer({ server, path: "/ws" });
 
   // ── Server-initiated heartbeat: ping every 30s, terminate non-responsive sockets ──

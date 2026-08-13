@@ -178,7 +178,7 @@ export function foodResourcesAlreadyShown(): boolean {
 // Builds a warm, specific food resource message.
 // Keeps it short — 2–3 resources max, not a wall of text.
 
-import { CulturalLanguage } from "./culturalGreetings";
+import type { CulturalLanguage } from "./culturalGreetings";
 import { getTimeOfDay } from "./culturalGreetings";
 
 interface FoodResourceOptions {

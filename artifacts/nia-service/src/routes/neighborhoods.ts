@@ -11,7 +11,8 @@
  * api-server stores everything generated here as unverified and surfaces it
  * to admins for review/correction before treating it as authoritative.
  */
-import { Router, Request, Response } from "express";
+import type { Request, Response } from "express";
+import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { pino } from "pino";
 

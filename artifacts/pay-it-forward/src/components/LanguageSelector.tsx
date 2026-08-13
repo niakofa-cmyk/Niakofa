@@ -2,7 +2,8 @@
 // Lets users set their preferred Niakofa language
 
 import React from "react";
-import { CulturalLanguage, CULTURAL_PROFILES } from "../lib/culturalGreetings";
+import type { CulturalLanguage} from "../lib/culturalGreetings";
+import { CULTURAL_PROFILES } from "../lib/culturalGreetings";
 
 const LANGUAGE_LABELS: Record<CulturalLanguage, string> = {
   en: "English",

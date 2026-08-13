@@ -14,7 +14,7 @@
 // this key when the user picks a voice from GET /api/nia/voice/profiles.
 
 import { useCallback, useRef } from "react";
-import { CulturalLanguage } from "../lib/culturalGreetings";
+import type { CulturalLanguage } from "../lib/culturalGreetings";
 
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 

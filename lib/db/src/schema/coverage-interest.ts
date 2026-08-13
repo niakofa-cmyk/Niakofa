@@ -1,6 +1,6 @@
 import { pgTable, serial, integer, doublePrecision, text, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import type { z } from "zod/v4";
 
 // Coverage interest (migration 0065) — demand signal for counties that don't have
 // an active Community Pool yet. Captured from the "notify me when this county

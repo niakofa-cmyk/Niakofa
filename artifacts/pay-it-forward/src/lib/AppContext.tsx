@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
+import type { ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import type { User } from "@workspace/api-client-react";
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
@@ -580,7 +581,7 @@ const NO_REDIRECT_PATHS = [
       });
 
     return () => { active = false; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ── Nia kill-switch: poll + WS (single source of truth) ─────────────────
   // All components that need niaEnabled must read it from context — never

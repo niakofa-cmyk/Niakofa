@@ -1,4 +1,5 @@
-import { matchWakeWord, CulturalLanguage } from "./culturalGreetings";
+import type { CulturalLanguage } from "./culturalGreetings";
+import { matchWakeWord } from "./culturalGreetings";
 
 export type ListeningState = "idle" | "listening" | "detected" | "error";
 

@@ -9,7 +9,8 @@
  * the admin gets a clear success/failure signal rather than a deferred job.
  * The full cycle can take ~5 minutes (30s gap × 7 topics) — this is expected.
  */
-import { Router, Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import { pino } from "pino";
 import { triggerLearningCycle } from "../workers/continuous-learning-worker.js";
 

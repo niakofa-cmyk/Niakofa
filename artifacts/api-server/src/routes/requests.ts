@@ -2406,11 +2406,12 @@ router.post("/requests/:id/repayment-plan", requireAuth, requestCreationLimiter,
 
   // Dynamic import for repaymentPlansTable (graceful degradation if migration 0058
   // has not yet been applied on older DB instances)
-  let repaymentPlansTable: typeof import("@workspace/db").repaymentPlansTable | undefined;
+  type DbModule = typeof import("@workspace/db");
+  let repaymentPlansTable: DbModule["repaymentPlansTable"] | undefined;
   try {
     const dbModule = await import("@workspace/db");
     repaymentPlansTable = (dbModule as Record<string, unknown>)["repaymentPlansTable"] as
-      typeof import("@workspace/db").repaymentPlansTable | undefined;
+      DbModule["repaymentPlansTable"] | undefined;
   } catch {
     // Fall back to plain scheduled_payments without a plan row
   }

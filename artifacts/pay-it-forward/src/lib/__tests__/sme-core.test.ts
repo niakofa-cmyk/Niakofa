@@ -197,7 +197,7 @@ describe("MotionSolver", () => {
     const out = solver.step(makeFS({ velocity: 0.8, turnRate: 0.5 }), 1 / 60);
     for (const [_key, val] of Object.entries(out)) {
       expect(isFinite(val as number)).toBe(true);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
     }
   });
 

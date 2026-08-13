@@ -152,7 +152,7 @@ export default function WalletScreen() {
     });
     // Remove params so a refresh doesn't re-trigger the banner
     window.history.replaceState({}, "", window.location.pathname);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   // Auto-open pledge drawer when navigated from a quick-pay link (?requestId=X&amount=Y)

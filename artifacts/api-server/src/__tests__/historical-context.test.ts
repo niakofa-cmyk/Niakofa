@@ -28,7 +28,8 @@ jest.unstable_mockModule("@anthropic-ai/sdk", () => ({
   })),
 }));
 
-let getHistoricalContext: typeof import("../lib/historical-context.js")["getHistoricalContext"];
+type HistoricalContextModule = typeof import("../lib/historical-context.js");
+let getHistoricalContext: HistoricalContextModule["getHistoricalContext"];
 
 beforeEach(async () => {
   jest.clearAllMocks();

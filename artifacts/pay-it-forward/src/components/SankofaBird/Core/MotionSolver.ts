@@ -58,7 +58,8 @@
  *   SolverOutput → useAnimationMixer (written as --sme-* CSS vars)
  */
 
-import { SankofaRig, BirdPart } from "./SankofaRig";
+import type { SankofaRig} from "./SankofaRig";
+import { BirdPart } from "./SankofaRig";
 import type { FlightState } from "./FlightState";
 
 // ── Solver output ─────────────────────────────────────────────────────────

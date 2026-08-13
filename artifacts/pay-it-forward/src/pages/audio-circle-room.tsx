@@ -660,7 +660,7 @@ export default function AudioCircleRoomScreen() {
     }
     if (localLevel > loudestLevel && myUserId && canSpeak) loudestId = myUserId;
     return loudestId;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [speakingLevels, localLevel, myUserId, canSpeak]);
   const atSpeakerLimit = session ? onStageCurrent >= session.max_speakers : false;
   const nearSpeakerLimit = session ? onStageCurrent >= session.max_speakers - 1 : false;
@@ -850,7 +850,7 @@ export default function AudioCircleRoomScreen() {
       }, getSharedAudioCtx());
       analyserCleanupsRef.current.set(key, cleanup);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [remoteStreams]);
 
   // Connect mesh to peers
@@ -1511,7 +1511,7 @@ export default function AudioCircleRoomScreen() {
     const handler = () => loadRecordingArchive();
     window.addEventListener("circle:open-archive", handler);
     return () => window.removeEventListener("circle:open-archive", handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [session?.circle_id]);
 
   // ── Device enumeration — runs once after mic permission is granted ─────────

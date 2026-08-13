@@ -1,4 +1,5 @@
-import { Router, Request, Response } from "express";
+import type { Request, Response } from "express";
+import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { timingSafeEqual } from "node:crypto";
 import { checkSafety } from "../lib/safety.js";

@@ -6,7 +6,8 @@
  * so a change to the location prefix silently stops providing context to Nia.
  */
 import { describe, it, expect } from "@jest/globals";
-import { buildLocationPrefix, LocationContext } from "../middleware/location.js";
+import type { LocationContext } from "../middleware/location.js";
+import { buildLocationPrefix } from "../middleware/location.js";
 
 describe("buildLocationPrefix", () => {
   it("returns empty string when no location context provided", () => {

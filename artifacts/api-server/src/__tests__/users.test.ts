@@ -20,7 +20,8 @@
  */
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
-import express, { Express } from "express";
+import type { Express } from "express";
+import express from "express";
 
 const mockDb: Record<string, jest.Mock> = {
   select:  jest.fn().mockReturnThis(),

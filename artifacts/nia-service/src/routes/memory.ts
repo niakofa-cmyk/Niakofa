@@ -13,7 +13,8 @@
  * DELETE /api/nia/memory to these routes (strips /api/nia prefix,
  * adds userId from token). These routes are the nia-service implementation.
  */
-import { Router, Request, Response } from "express";
+import type { Request, Response } from "express";
+import { Router } from "express";
 import { getUserMemory, getStructuredMemory } from "../lib/db.js";
 import { parseOptionalAuth } from "../lib/auth.js";
 import { pino } from "pino";

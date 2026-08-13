@@ -9,14 +9,10 @@
  * unrelated state changes.
  */
 
-import React, { createContext, useContext } from "react";
-import type {
-  LandingPhase as LandingPhaseMath,
-  GazeDirection,
-  AeroMode,
-  SaccadePhase,
-  TurnDirection,
-} from "@/lib/sankofa-bird-math";
+import type React from "react";
+import { createContext, useContext } from "react";
+import type { DiagonalPoseTransform } from "../Navigation/ViewSelector";
+
 
 // Re-export for convenience
 export type { LandingPhase as LandingPhaseMath } from "@/lib/sankofa-bird-math";
@@ -149,7 +145,7 @@ export interface BirdContextValue {
   /** Opacity weight for the south-facing (back) sprite — 0–1. */
   backOpacity: number;
   /** 2.5D diagonal pose transform for NE/SE/SW/NW headings (Poses.ts LEFT_45/RIGHT_45). */
-  diagonalPose: import("../Navigation/ViewSelector").DiagonalPoseTransform;
+  diagonalPose: DiagonalPoseTransform;
 
   // ── Per-instance SVG gradient IDs ──────────────────────────────────────
   eggGradId: string;

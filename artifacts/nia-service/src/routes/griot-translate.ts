@@ -22,7 +22,8 @@
  *  4. Return the drafts so the worker can log/verify
  */
 
-import { Router, Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { pool } from "../lib/db.js";
 import { pino } from "pino";

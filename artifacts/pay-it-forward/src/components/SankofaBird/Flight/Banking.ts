@@ -43,7 +43,7 @@ export function useBanking(
     setBankDeg(bank);
     const t = setTimeout(() => { setBankDeg(0); }, 700);
     return () => clearTimeout(t);
-  }, [heading, hasHeading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [heading, hasHeading]);  
 
   const effectiveBankDeg = zoomTier === "low"
     ? Math.max(-20, Math.min(20, bankDeg))

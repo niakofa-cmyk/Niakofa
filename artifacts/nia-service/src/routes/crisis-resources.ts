@@ -7,7 +7,8 @@
  * An admin must review, correct, and hit "Save & Verify" before users ever
  * see local contacts. Claude can hallucinate phone numbers — never auto-publish.
  */
-import { Router, Request, Response } from "express";
+import type { Request, Response } from "express";
+import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { pino } from "pino";
 import { timingSafeEqual } from "crypto";

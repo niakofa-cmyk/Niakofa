@@ -1,7 +1,8 @@
 // useVoiceWakeWord — Phase 7a
 import { useEffect, useRef, useState, useCallback } from "react";
-import { VoiceWakeWordEngine, ListeningState } from "../lib/voiceWakeWord";
-import { CulturalLanguage } from "../lib/culturalGreetings";
+import type { ListeningState } from "../lib/voiceWakeWord";
+import { VoiceWakeWordEngine } from "../lib/voiceWakeWord";
+import type { CulturalLanguage } from "../lib/culturalGreetings";
 
 interface UseVoiceWakeWordOptions {
   enabled?: boolean;

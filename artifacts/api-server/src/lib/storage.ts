@@ -57,9 +57,11 @@ export function getStorageDescription(): string {
 // We import dynamically so the package is only loaded when actually needed —
 // this keeps the local-disk path free of any AWS SDK overhead at startup.
 
-let _s3Client: import("@aws-sdk/client-s3").S3Client | null = null;
+import type { S3Client as S3ClientType } from "@aws-sdk/client-s3";
 
-async function getS3Client(): Promise<import("@aws-sdk/client-s3").S3Client> {
+let _s3Client: S3ClientType | null = null;
+
+async function getS3Client(): Promise<S3ClientType> {
   if (_s3Client) return _s3Client;
   const { S3Client } = await import("@aws-sdk/client-s3");
   const endpoint = process.env["STORAGE_ENDPOINT"];

@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import type { z } from "zod/v4";
 
 /**
  * government_sponsors — applications from county/government entities to sponsor

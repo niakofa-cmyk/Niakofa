@@ -19,7 +19,8 @@
  * (service-to-service auth between api-server and nia-service)
  */
 
-import { Router, Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { pool } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";

@@ -11,7 +11,8 @@
  */
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
-import express, { Express } from "express";
+import type { Express } from "express";
+import express from "express";
 
 jest.unstable_mockModule("@workspace/db", () => {
   const mockDb: Record<string, unknown> = {
