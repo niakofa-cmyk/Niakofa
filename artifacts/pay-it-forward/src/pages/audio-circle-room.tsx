@@ -588,7 +588,7 @@ export default function AudioCircleRoomScreen() {
   const [showTransferModal, setShowTransferModal] = useState(false);
 
   // ── Desktop mod right-sidebar tab ─────────────────────────────────────────
-  const [_desktopModTab, setDesktopModTab] = useState<"controls" | "chat">("controls");
+  const [_desktopModTab, _setDesktopModTab] = useState<"controls" | "chat">("controls");
 
   // ── Creator Tools: Polls, Q&A, Screen share, Shared notes, Auto-remove ──
   const [showPollModal, setShowPollModal] = useState(false);

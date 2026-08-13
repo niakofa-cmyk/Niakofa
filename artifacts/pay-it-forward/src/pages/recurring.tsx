@@ -172,7 +172,8 @@ function MatchedHelperCard({ helper }: { helper: MatchedHelper }) {
   );
 }
 
-function _MatchedHelpersSection({ lat, lng }: { lat: number | null; lng: number | null }) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function MatchedHelpersSection({ lat, lng }: { lat: number | null; lng: number | null }) {
   const [helpers, setHelpers] = useState<MatchedHelper[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);

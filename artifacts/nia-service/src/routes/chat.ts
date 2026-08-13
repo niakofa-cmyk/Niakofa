@@ -357,7 +357,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       );
 
       let toolUseBlocks: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
-      let currentTextContent = "";
+      const _currentTextContent = "";
 
       for await (const chunk of stream) {
         if (chunk.type === "content_block_start" && chunk.content_block?.type === "tool_use") {
@@ -365,7 +365,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
         }
         if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
           const text = chunk.delta.text;
-          currentTextContent += text;
+          _currentTextContent += text;
           fullResponse += text;
           res.write(`data: ${JSON.stringify({ type: "delta", text })}\n\n`);
         }

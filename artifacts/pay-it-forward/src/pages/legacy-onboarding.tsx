@@ -197,7 +197,7 @@ export default function LegacyOnboardingPage() {
   const [recordingDone,    setRecordingDone]    = useState(false);
   const [transcript,       setTranscript]       = useState<string | null>(null);
   const [transcribing,     setTranscribing]     = useState(false);
-  const [q2MemoryId,       setQ2MemoryId]       = useState<number | null>(null);
+  const [_q2MemoryId,       setQ2MemoryId]       = useState<number | null>(null);
 
   // Quest 3 state
   const [q3PlaceType,  setQ3PlaceType]  = useState<string>("");

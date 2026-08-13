@@ -960,7 +960,8 @@ function AuditLogTable() {
 }
 
 // ── Bulk Helper Approvals ─────────────────────────────────────────────────────
-function _BulkHelperApprovals() {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function BulkHelperApprovals() {
   const [pending, setPending] = useState<PendingHelper[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);

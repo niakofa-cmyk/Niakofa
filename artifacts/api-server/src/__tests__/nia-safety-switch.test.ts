@@ -20,8 +20,8 @@ const whereMock = jest.fn();
 const limitMock = jest.fn();
 
 const mockDbRef: unknown = {
-  select: (...args: unknown[]) => mockDbRef,
-  from: (...args: unknown[]) => mockDbRef,
+  select: (..._args: unknown[]) => mockDbRef,
+  from: (..._args: unknown[]) => mockDbRef,
   where: (...args: unknown[]) => {
     whereMock(...args);
     return { limit: limitMock };
