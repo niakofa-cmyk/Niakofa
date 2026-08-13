@@ -31,8 +31,8 @@ jest.unstable_mockModule("@workspace/db", () => {
     groupBy: jest.fn().mockReturnValue([]),
     onConflictDoNothing: jest.fn().mockResolvedValue([]),
     onConflictDoUpdate: jest.fn().mockResolvedValue([]),
-    transaction: jest.fn().mockImplementation((cb: (tx: any) => Promise<any>) => cb(mockDb)),
-    then: jest.fn().mockImplementation((resolve: any, reject: any) =>
+    transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<any>) => cb(mockDb)),
+    then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
       Promise.resolve([]).then(resolve, reject)
     ),
     // Production code (safety-ping) does a fire-and-forget
@@ -40,7 +40,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     // builders are full thenables and support .catch() directly, but this
     // mock only exposed .then(), so that call threw "catch is not a
     // function" and turned a safe fire-and-forget write into a 500.
-    catch: jest.fn().mockImplementation((reject: any) => Promise.resolve([]).catch(reject)),
+    catch: jest.fn().mockImplementation((reject: unknown) => Promise.resolve([]).catch(reject)),
     execute: jest.fn().mockResolvedValue({ rows: [] }),
   };
   (mockDb.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
@@ -128,7 +128,7 @@ jest.unstable_mockModule("../lib/mailer.js", () => ({
 }));
 
 let app: Express;
-let db: any;
+let db: unknown;
 let signTokenById: (id: number) => string;
 
 beforeAll(async () => {
@@ -158,10 +158,10 @@ beforeEach(() => {
   (db.values as jest.Mock).mockReset().mockReturnThis();
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
-  (db.then as jest.Mock).mockReset().mockImplementation((resolve: any, reject: any) =>
+  (db.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: any) =>
     Promise.resolve([]).then(resolve, reject)
   );
-  (db.transaction as jest.Mock).mockReset().mockImplementation((cb: (tx: any) => Promise<any>) => cb(db));
+  (db.transaction as jest.Mock).mockReset().mockImplementation((cb: (tx: unknown) => Promise<any>) => cb(db));
   (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   broadcastMock.mockReset();
   sendToUserMock.mockReset();
@@ -195,7 +195,7 @@ describe("POST /api/requests/:id/safety-ping", () => {
     (db.limit as jest.Mock).mockResolvedValueOnce([{ requester_id: 10, helper_id: 20, status: "en_route" }]);
     // Simulate a DB hiccup on the fire-and-forget updated_at write — the
     // response must not depend on it succeeding.
-    (db.catch as jest.Mock).mockImplementationOnce((reject: any) => Promise.reject(new Error("db down")).catch(reject));
+    (db.catch as jest.Mock).mockImplementationOnce((reject: unknown) => Promise.reject(new Error("db down")).catch(reject));
     const res = await request(app)
       .post("/api/requests/1/safety-ping")
       .set("Authorization", bearerToken(20))

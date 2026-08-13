@@ -530,7 +530,7 @@ export default function NewRequestScreen() {
         description: fullDescription || undefined,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         category: values.category as any,
-        urgency: values.urgency as any,
+        urgency: values.urgency as unknown,
         payment_type: paymentType,
         requester_id: currentUser.id,
         lat: pinLocation.lat,

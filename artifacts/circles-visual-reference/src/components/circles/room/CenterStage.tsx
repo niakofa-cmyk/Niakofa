@@ -48,11 +48,11 @@ export function CenterStage({
   currentUserRole,
   isMicOn,
   isCameraOn,
-  raisedHandsCount,
+  _raisedHandsCount,
   onToggleMic,
   onToggleCamera,
   onLeave,
-  onShowRaisedHands,
+  _onShowRaisedHands,
   onRaiseHand,
 }: CenterStageProps) {
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
@@ -78,7 +78,7 @@ export function CenterStage({
   const remainingCount = Math.max(0, audienceParticipants.length - 6);
 
   const isAudience = currentUserRole === 'audience';
-  const isOnStage = currentUserRole === 'host' || currentUserRole === 'co-host' || currentUserRole === 'speaker';
+  const _isOnStage = currentUserRole === 'host' || currentUserRole === 'co-host' || currentUserRole === 'speaker';
 
   return (
     <div className="relative flex h-full flex-col bg-room-bg">

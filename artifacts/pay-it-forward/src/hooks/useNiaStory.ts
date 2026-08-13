@@ -4,7 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import { detectVoiceLocale } from "@/lib/locale-utils";
 
 // share-story routes through the api-server proxy
-const API_BASE = (import.meta as any).env?.BASE_URL?.replace(/\/$/, "") ?? "";
+const API_BASE = (import.meta as unknown).env?.BASE_URL?.replace(/\/$/, "") ?? "";
 
 export type StoryState = "idle" | "recording" | "processing" | "done" | "error";
 
@@ -20,10 +20,10 @@ export function useNiaStory(userName: string) {
   const [story, setStory] = useState<NiaStory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState("");
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<unknown>(null);
 
   const startRecording = useCallback(() => {
-    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR: unknown = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
       setError("Voice recording not supported in this browser.");
       setState("error");
@@ -39,7 +39,7 @@ export function useNiaStory(userName: string) {
     let fullTranscript = "";
 
     rec.onstart = () => setState("recording");
-    rec.onresult = (event: any) => {
+    rec.onresult = (event: unknown) => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
@@ -50,7 +50,7 @@ export function useNiaStory(userName: string) {
       }
       setTranscript(fullTranscript + interim);
     };
-    rec.onerror = (e: any) => {
+    rec.onerror = (e: unknown) => {
       setError(e.error);
       setState("error");
     };
@@ -87,13 +87,13 @@ export function useNiaStory(userName: string) {
         if (res.status === 401) {
           throw new Error("Please sign in to share your story.");
         }
-        const errBody = await res.json().catch(() => ({})) as any;
+        const errBody = await res.json().catch(() => ({})) as unknown;
         throw new Error(errBody.error ?? `Something went wrong (${res.status})`);
       }
       const data = await res.json();
       setStory(data);
       setState("done");
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.message ?? "Failed to craft story");
       setState("error");
     }

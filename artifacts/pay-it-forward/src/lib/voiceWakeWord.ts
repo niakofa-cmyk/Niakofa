@@ -14,7 +14,7 @@ export interface VoiceWakeWordOptions {
 }
 
 export class VoiceWakeWordEngine {
-  private recognition: any = null;
+  private recognition: unknown = null;
   private options: VoiceWakeWordOptions;
   private state: ListeningState = "idle";
   private active = false;
@@ -55,8 +55,8 @@ export class VoiceWakeWordEngine {
   }
 
   private initSpeechRecognition() {
-    const SR: any =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR: unknown =
+      (window as unknown).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const rec = new SR();
     rec.continuous = false; // VAD controls restarts — don't auto-loop
     rec.interimResults = true;
@@ -70,7 +70,7 @@ export class VoiceWakeWordEngine {
       this.setState("listening");
     };
 
-    rec.onresult = (event: any) => {
+    rec.onresult = (event: unknown) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         this.options.onTranscript?.(transcript);
@@ -84,7 +84,7 @@ export class VoiceWakeWordEngine {
       }
     };
 
-    rec.onerror = (event: any) => {
+    rec.onerror = (event: unknown) => {
       if (event.error !== "no-speech" && event.error !== "aborted") {
         this.options.onError?.(event.error);
         this.setState("error");
@@ -113,7 +113,7 @@ export class VoiceWakeWordEngine {
     try {
       // Phase 7d: acquire mic stream for VAD
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const AC: unknown = (window as any).AudioContext || (window as any).webkitAudioContext;
       this.audioCtx = new AC();
       this.analyser = (this.audioCtx as AudioContext).createAnalyser();
       this.analyser.fftSize = 512;
@@ -139,7 +139,7 @@ export class VoiceWakeWordEngine {
           }
         }
       }, this.VAD_CHECK_MS);
-    } catch (err) {
+    } catch (_err) {
       // Mic access denied or unavailable — fall back to continuous recognition
       this.options.onError?.("Microphone access denied. Using fallback mode.");
       this._startFallback();
@@ -148,15 +148,15 @@ export class VoiceWakeWordEngine {
 
   private _startFallback() {
     // Phase 7a fallback: continuous recognition without VAD
-    const SR: any =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR: unknown =
+      (window as unknown).SpeechRecognition || (window as any).webkitSpeechRecognition;
     this.recognition = new SR();
     this.recognition.continuous = this.options.continuous ?? true;
     this.recognition.interimResults = true;
     this.recognition.lang = navigator.language || "en-US";
 
     this.recognition.onstart = () => { this.active = true; this.setState("listening"); };
-    this.recognition.onresult = (event: any) => {
+    this.recognition.onresult = (event: unknown) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         this.options.onTranscript?.(transcript);
@@ -169,7 +169,7 @@ export class VoiceWakeWordEngine {
         }
       }
     };
-    this.recognition.onerror = (event: any) => {
+    this.recognition.onerror = (event: unknown) => {
       if (event.error !== "no-speech") {
         this.options.onError?.(event.error);
         this.setState("error");

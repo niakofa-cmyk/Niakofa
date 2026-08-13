@@ -43,7 +43,7 @@ import {
   computeFlapPeriodMs,
   computeLeanDeg,
   computeGazeVector,
-  nextSaccadePhase,
+  _nextSaccadePhase,
   computeAeroMode,
   computeFigureEightAmplitude,
   computeLegStrideDelays,
@@ -56,7 +56,7 @@ import {
   type LandingPhase,
   type GazeDirection,
   type SaccadePhase,
-  type AeroMode,
+  type _AeroMode,
 } from "../sankofa-bird-math";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ describe("Phase 7-9: Landing sequence phase invariants", () => {
 // Phase 12: Real-time gaze system
 // ─────────────────────────────────────────────────────────────────────────────
 describe("Phase 12: Real-time gaze system — all 8 directions", () => {
-  const allGazeDirections: GazeDirection[] = [
+  const _allGazeDirections: GazeDirection[] = [
     "left", "right", "up", "down", "upleft", "upright", "downleft", "downright", null,
   ];
 

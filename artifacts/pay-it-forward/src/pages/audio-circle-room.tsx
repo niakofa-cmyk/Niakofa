@@ -1924,7 +1924,7 @@ export default function AudioCircleRoomScreen() {
         setScreenStream(null);
       };
       toast({ title: "Screen sharing started", description: "Others can see your screen." });
-    } catch (error) {
+    } catch (_error) {
       toast({ title: "Screen share failed", description: "Couldn't access screen.", variant: "destructive" });
     }
   };

@@ -268,7 +268,7 @@ export default function FamilyVaultPage() {
       }
       setPendingUpload(null);
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Network error — likely server restart between sessions
       const msg = err?.message?.includes("fetch") || err?.name === "TypeError"
         ? "Server unavailable — memory saved. Use the retry button when the server is back."
@@ -316,7 +316,7 @@ export default function FamilyVaultPage() {
       setMTitle(""); setMDesc(""); setMDate(""); setMLoc(""); setMTags(""); setMFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       loadMemories(searchQ || undefined);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(err.message ?? "Couldn't save memory");
     } finally {
       setMSaving(false);
@@ -352,7 +352,7 @@ export default function FamilyVaultPage() {
       setShowInvite(false);
       setIName(""); setIEmail(""); setIRel(""); setIRole("contributor");
       loadFamily();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(err.message ?? "Couldn't invite member");
     } finally {
       setISaving(false);
@@ -368,7 +368,7 @@ export default function FamilyVaultPage() {
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
       toast.success("Memory deleted");
       setMemories(ms => ms.filter(m => m.id !== memoryId));
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(err.message ?? "Couldn't delete memory");
     }
   }
@@ -970,7 +970,7 @@ function GedcomImportModal({ familyId, onClose, onDone }: { familyId: number; on
       const data = await res.json();
       setResult(data);
       toast.success(`Imported ${data.imported} of ${data.total} family members!`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(err.message ?? "Import failed");
     } finally {
       setImporting(false);
@@ -1079,7 +1079,7 @@ function TranslateMemoryModal({ familyId, memory, onClose }: { familyId: number;
       }
       const data = await res.json();
       setResult({ translated: data.translated, langName: data.langName });
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(err.message ?? "Translation failed");
     } finally {
       setTranslating(false);
@@ -1196,7 +1196,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
 
       // Wire up Web Audio API for the live level meter
       try {
-        const ActxClass = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+        const ActxClass = (window.AudioContext || (window as unknown).webkitAudioContext) as typeof AudioContext;
         const audioCtx  = new ActxClass();
         const source    = audioCtx.createMediaStreamSource(stream);
         const analyser  = audioCtx.createAnalyser();
@@ -1230,7 +1230,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
       setElapsed(0);
       setPhase("recording");
       timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err?.message?.includes("Permission") || err?.name === "NotAllowedError"
         ? "Microphone access denied. Please allow microphone access in your browser settings."
         : err?.message ?? "Could not access microphone.");
@@ -1338,7 +1338,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
 
       setDoneCount(prev => prev + 1);
       setPhase("done");
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err?.message ?? "Upload failed — please try again.");
       setPhase("idle");
     }
@@ -1492,7 +1492,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
 // ─── Interviews sub-component ──────────────────────────────────────────────────
 
 function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boolean }) {
-  const [interviews, setInterviews]   = useState<any[]>([]);
+  const [interviews, setInterviews]   = useState<unknown[]>([]);
   const [loading, setLoading]         = useState(true);
   const [showRecord, setShowRecord]   = useState(false);
 
@@ -1543,7 +1543,7 @@ function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boo
           <p className="text-xs text-muted-foreground">Capture an elder's voice before it's too late.</p>
         </div>
       ) : (
-        interviews.map((iv: any) => (
+        interviews.map((iv: unknown) => (
           <div key={iv.id} className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <div>

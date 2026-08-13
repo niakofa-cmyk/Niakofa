@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play, BanknoteIcon, LifeBuoy, AlertCircle, RotateCcw } from "lucide-react";
+import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play, BanknoteIcon, LifeBuoy, _AlertCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppContext } from "@/lib/AppContext";
@@ -364,14 +364,14 @@ export default function WalletScreen() {
   const wallet = currentUser?.benevolence_wallet ?? 0;
   const goodwill = currentUser?.goodwill_score ?? 0;
   const helpCount = currentUser?.help_count ?? 0;
-  const trustScore = currentUser?.trust_score ?? 0;
+  const _trustScore = currentUser?.trust_score ?? 0;
 
   const totalEarned = transactions.filter(t => t.type === "earned").reduce((s, t) => s + t.amount, 0);
   const totalReceived = transactions.filter(t => t.type === "pledge_received").reduce((s, t) => s + t.amount, 0);
   const totalTips = transactions.filter(t => (t.type as string) === "tip_received").reduce((s, t) => s + t.amount, 0);
   const earningsTransactions = transactions.filter(t => t.type === "earned" || (t.type as string) === "tip_received");
 
-  const livesImpacted = helpCount + goodwill;
+  const _livesImpacted = helpCount + goodwill;
 
   const pendingScheduled = (scheduledPayments as ScheduledPayment[]).filter(p => p.status === "pending");
 

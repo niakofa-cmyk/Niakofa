@@ -762,6 +762,7 @@ export default function GlobePage() {
   const toggleLayer = (layer: GlobeLayer) => {
     setEnabledLayers(prev => {
       const next = new Set(prev);
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
       next.has(layer) ? next.delete(layer) : next.add(layer);
       return next;
     });

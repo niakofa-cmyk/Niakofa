@@ -15,12 +15,12 @@ import request from "supertest";
 import { jest } from "@jest/globals";
 
 jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
-  generalApiLimiter: (_req: any, _res: any, next: any) => next(),
+  generalApiLimiter: (_req: unknown, _res: any, next: any) => next(),
 }));
 
 let mockAuthEnabled = true;
 jest.unstable_mockModule("../middlewares/auth.js", () => ({
-  requireAuth: (req: any, res: any, next: any) => {
+  requireAuth: (req: unknown, res: any, next: any) => {
     if (!mockAuthEnabled) return res.status(401).json({ error: "Unauthorized" });
     req.authenticatedUserId = 42;
     next();
@@ -79,7 +79,7 @@ describe("GET /api/webrtc-ice-servers — TURN configured", () => {
     const res = await request(app).get("/api/webrtc-ice-servers");
     expect(res.status).toBe(200);
 
-    const turnEntry = res.body.iceServers.find((s: any) => String(s.urls).startsWith("turn:"));
+    const turnEntry = res.body.iceServers.find((s: unknown) => String(s.urls).startsWith("turn:"));
     expect(turnEntry).toBeDefined();
     expect(turnEntry.username).toBeDefined();
     expect(turnEntry.credential).toBeDefined();
@@ -102,7 +102,7 @@ describe("GET /api/webrtc-ice-servers — TURN configured", () => {
     app = await buildApp();
 
     const res = await request(app).get("/api/webrtc-ice-servers");
-    const turnEntry = res.body.iceServers.find((s: any) => Array.isArray(s.urls));
+    const turnEntry = res.body.iceServers.find((s: unknown) => Array.isArray(s.urls));
     expect(turnEntry).toBeDefined();
     expect(turnEntry.urls).toEqual([
       "turn:turn.example.com:3478",
@@ -117,8 +117,8 @@ describe("GET /api/webrtc-ice-servers — TURN configured", () => {
 
     const res1 = await request(app).get("/api/webrtc-ice-servers");
     const res2 = await request(app).get("/api/webrtc-ice-servers");
-    const turn1 = res1.body.iceServers.find((s: any) => String(s.urls).startsWith("turn:"));
-    const turn2 = res2.body.iceServers.find((s: any) => String(s.urls).startsWith("turn:"));
+    const turn1 = res1.body.iceServers.find((s: unknown) => String(s.urls).startsWith("turn:"));
+    const turn2 = res2.body.iceServers.find((s: unknown) => String(s.urls).startsWith("turn:"));
     expect(turn1.username).not.toBe(turn2.username);
     expect(turn1.credential).not.toBe(turn2.credential);
   });

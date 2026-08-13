@@ -14,4 +14,5 @@
 
 import type { SpiritCompanionProps } from "@/components/SpiritAnimal/types";
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface BlackPantherProps extends SpiritCompanionProps {}

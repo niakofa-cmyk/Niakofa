@@ -32,8 +32,8 @@ const mockDb: Record<string, jest.Mock> = {
   innerJoin: jest.fn().mockReturnThis(),
   groupBy:  jest.fn().mockReturnValue([]),
   offset:   jest.fn().mockReturnThis(),
-  transaction: jest.fn().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(mockDb)),
-  then: jest.fn().mockImplementation((resolve: any, reject: any) =>
+  transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(mockDb)),
+  then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
     Promise.resolve([]).then(resolve, reject)
   ),
   execute: jest.fn().mockResolvedValue({ rows: [] }),
@@ -80,40 +80,40 @@ jest.unstable_mockModule("@workspace/db", () => ({
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({
-  eq:    jest.fn((a: any, b: any) => ({ _eq: [a, b] })),
-  and:   jest.fn((...args: any[]) => ({ _and: args })),
-  or:    jest.fn((...args: any[]) => ({ _or: args })),
-  ne:    jest.fn((a: any, b: any) => ({ _ne: [a, b] })),
-  gt:    jest.fn((a: any, b: any) => ({ _gt: [a, b] })),
-  gte:   jest.fn((a: any, b: any) => ({ _gte: [a, b] })),
-  lt:    jest.fn((a: any, b: any) => ({ _lt: [a, b] })),
-  lte:   jest.fn((a: any, b: any) => ({ _lte: [a, b] })),
-  isNull: jest.fn((a: any) => ({ _isNull: a })),
-  isNotNull: jest.fn((a: any) => ({ _isNotNull: a })),
-  sql:   jest.fn((s: any) => s),
-  desc:  jest.fn((a: any) => ({ _desc: a })),
-  asc:   jest.fn((a: any) => ({ _asc: a })),
-  inArray: jest.fn((a: any, b: any) => ({ _in: [a, b] })),
+  eq:    jest.fn((a: unknown, b: any) => ({ _eq: [a, b] })),
+  and:   jest.fn((...args: unknown[]) => ({ _and: args })),
+  or:    jest.fn((...args: unknown[]) => ({ _or: args })),
+  ne:    jest.fn((a: unknown, b: any) => ({ _ne: [a, b] })),
+  gt:    jest.fn((a: unknown, b: any) => ({ _gt: [a, b] })),
+  gte:   jest.fn((a: unknown, b: any) => ({ _gte: [a, b] })),
+  lt:    jest.fn((a: unknown, b: any) => ({ _lt: [a, b] })),
+  lte:   jest.fn((a: unknown, b: any) => ({ _lte: [a, b] })),
+  isNull: jest.fn((a: unknown) => ({ _isNull: a })),
+  isNotNull: jest.fn((a: unknown) => ({ _isNotNull: a })),
+  sql:   jest.fn((s: unknown) => s),
+  desc:  jest.fn((a: unknown) => ({ _desc: a })),
+  asc:   jest.fn((a: unknown) => ({ _asc: a })),
+  inArray: jest.fn((a: unknown, b: any) => ({ _in: [a, b] })),
   count: jest.fn(() => "count"),
-  sum:   jest.fn((a: any) => ({ _sum: a })),
+  sum:   jest.fn((a: unknown) => ({ _sum: a })),
 }));
 
 jest.unstable_mockModule("../src/middlewares/auth.js", () => ({
   parseAuth:       jest.fn(),
-  requireAuth:     jest.fn((_req: any, _res: any, next: any) => next()),
-  requireApproved: jest.fn((_req: any, _res: any, next: any) => next()),
+  requireAuth:     jest.fn((_req: unknown, _res: any, next: any) => next()),
+  requireApproved: jest.fn((_req: unknown, _res: any, next: any) => next()),
   signTokenById:   jest.fn().mockReturnValue("test-token"),
   verifyToken:     jest.fn().mockReturnValue({ userId: 1, valid: true }),
   isSelf:          jest.fn().mockReturnValue(false),
 }));
 
 jest.unstable_mockModule("../src/middlewares/authz.js", () => ({
-  requireAdmin:    () => (_req: any, _res: any, next: any) => next(),
-  requireOwnership: () => (_req: any, _res: any, next: any) => next(),
-  resolveMeParam:  (_req: any, _res: any, next: any) => next(),
+  requireAdmin:    () => (_req: unknown, _res: any, next: any) => next(),
+  requireOwnership: () => (_req: unknown, _res: any, next: any) => next(),
+  resolveMeParam:  (_req: unknown, _res: any, next: any) => next(),
 }));
 
-const _passthrough = (_req: any, _res: any, next: any) => next();
+const _passthrough = (_req: unknown, _res: any, next: any) => next();
 jest.unstable_mockModule("../src/middlewares/rate-limit.js", () => ({
   authLimiter:            _passthrough,
   gpsLimiter:             _passthrough,
@@ -230,15 +230,15 @@ jest.unstable_mockModule("../src/lib/queue.js", () => ({
 }));
 
 // ── Dynamic imports after mocks are registered ────────────────────────────────
-let requestsRouter: any;
-let usersRouter: any;
-let griotRouter: any;
-let civicRouter: any;
+let requestsRouter: unknown;
+let usersRouter: unknown;
+let griotRouter: unknown;
+let civicRouter: unknown;
 let requireAuth: jest.Mock;
 let requireApproved: jest.Mock;
 
 beforeAll(async () => {
-  const auth = await import("../src/middlewares/auth.js") as any;
+  const auth = await import("../src/middlewares/auth.js") as unknown;
   requireAuth    = auth.requireAuth;
   requireApproved = auth.requireApproved;
   requestsRouter = (await import("../src/routes/requests.js")).default;
@@ -250,7 +250,7 @@ beforeAll(async () => {
 const resetMockDb = () => {
   // Make all chainable methods return the proxy again
   for (const k of Object.keys(mockDb)) {
-    const fn = (mockDb as any)[k];
+    const fn = (mockDb as unknown)[k];
     if (fn && typeof fn.mockReturnThis === "function") fn.mockReturnThis();
   }
   // Terminal methods: return empty by default
@@ -258,26 +258,26 @@ const resetMockDb = () => {
   mockDb.returning.mockResolvedValue([]);
   mockDb.execute.mockResolvedValue({ rows: [] });
   // then() — the "await on a query chain" path — returns empty array
-  mockDb.then.mockImplementation((resolve: any, _reject: any) =>
+  mockDb.then.mockImplementation((resolve: unknown, _reject: any) =>
     Promise.resolve([]).then(resolve)
   );
-  mockDb.transaction.mockImplementation(async (cb: any) => cb(mockDb));
+  mockDb.transaction.mockImplementation(async (cb: unknown) => cb(mockDb));
 };
 
 beforeEach(() => {
   jest.resetAllMocks();
   // Re-wire middleware mocks after reset
-  (requireAuth as jest.Mock).mockImplementation((req: any, _res: any, next: any) => {
+  (requireAuth as jest.Mock).mockImplementation((req: unknown, _res: any, next: any) => {
     req.authenticatedUserId = 1;
     req.authenticatedUser   = { id: 1, name: "Test", email: "test@test.com", is_admin: true, active: true };
     next();
   });
-  (requireApproved as jest.Mock).mockImplementation((_req: any, _res: any, next: any) => next());
+  (requireApproved as jest.Mock).mockImplementation((_req: unknown, _res: any, next: any) => next());
   resetMockDb();
 });
 
 // ── Helper: build a minimal Express app from a router ────────────────────────
-function makeApp(router: any) {
+function makeApp(router: unknown) {
   const app = express();
   app.use(express.json());
   app.use(router);
@@ -289,7 +289,7 @@ function makeApp(router: any) {
 // ════════════════════════════════════════════════════════════════════════════
 describe("POST /requests/:id/tip-wallet", () => {
   it("returns 401 when not authenticated", async () => {
-    (requireAuth as jest.Mock).mockImplementation((_req: any, res: any) =>
+    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: any) =>
       res.status(401).json({ error: "Unauthorized" })
     );
     const app = makeApp(requestsRouter);
@@ -328,7 +328,7 @@ describe("POST /requests/:id/tip-wallet", () => {
 // ════════════════════════════════════════════════════════════════════════════
 describe("PATCH /users/:id/toggle-admin", () => {
   it("returns 401 when not authenticated", async () => {
-    (requireAuth as jest.Mock).mockImplementation((_req: any, res: any) =>
+    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: any) =>
       res.status(401).json({ error: "Unauthorized" })
     );
     const app = makeApp(usersRouter);
@@ -370,7 +370,7 @@ describe("PATCH /users/:id/toggle-admin", () => {
 // ════════════════════════════════════════════════════════════════════════════
 describe("DELETE /griot/stories/:id", () => {
   it("returns 401 when not authenticated", async () => {
-    (requireAuth as jest.Mock).mockImplementation((_req: any, res: any) =>
+    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: any) =>
       res.status(401).json({ error: "Unauthorized" })
     );
     const app = makeApp(griotRouter);
@@ -380,7 +380,7 @@ describe("DELETE /griot/stories/:id", () => {
 
   it("returns 404 when story does not exist", async () => {
     // griot DELETE uses db.select().from().where() without .limit() → resolves via .then()
-    mockDb.then.mockImplementationOnce((resolve: any) =>
+    mockDb.then.mockImplementationOnce((resolve: unknown) =>
       Promise.resolve([]).then(resolve)
     );
     const app = makeApp(griotRouter);
@@ -392,14 +392,14 @@ describe("DELETE /griot/stories/:id", () => {
 
   it("returns 403 when caller is not author and not admin", async () => {
     // Caller is user 2, story author is 1, user 2 is not admin
-    (requireAuth as jest.Mock).mockImplementation((req: any, _res: any, next: any) => {
+    (requireAuth as jest.Mock).mockImplementation((req: unknown, _res: any, next: any) => {
       req.authenticatedUserId = 2;
       req.authenticatedUser   = { id: 2, name: "Other", email: "other@test.com", is_admin: false, active: true };
       next();
     });
-    (requireApproved as jest.Mock).mockImplementation((_req: any, _res: any, next: any) => next());
+    (requireApproved as jest.Mock).mockImplementation((_req: unknown, _res: any, next: any) => next());
     // Story fetch uses await db.select().from().where() — resolves via .then()
-    mockDb.then.mockImplementationOnce((resolve: any) =>
+    mockDb.then.mockImplementationOnce((resolve: unknown) =>
       Promise.resolve([{ id: 1, author_id: 1, status: "published" }]).then(resolve)
     );
     // Caller is_admin check uses .limit(1)
@@ -413,7 +413,7 @@ describe("DELETE /griot/stories/:id", () => {
 
   it("deletes the story when caller is the author", async () => {
     // Story fetch resolves via .then() — author_id:1 = callerId:1
-    mockDb.then.mockImplementationOnce((resolve: any) =>
+    mockDb.then.mockImplementationOnce((resolve: unknown) =>
       Promise.resolve([{ id: 1, author_id: 1, status: "published" }]).then(resolve)
     );
     // Admin check via .limit(1) not needed since author check short-circuits
@@ -431,7 +431,7 @@ describe("DELETE /griot/stories/:id", () => {
 // ════════════════════════════════════════════════════════════════════════════
 describe("GET /civic/needs/:id", () => {
   it("returns 401 when not authenticated", async () => {
-    (requireAuth as jest.Mock).mockImplementation((_req: any, res: any) =>
+    (requireAuth as jest.Mock).mockImplementation((_req: unknown, res: any) =>
       res.status(401).json({ error: "Unauthorized" })
     );
     const app = makeApp(civicRouter);

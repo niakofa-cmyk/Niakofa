@@ -20,7 +20,7 @@ import { getAppNavItems } from "@/lib/appNavItems";
 
 export function DesktopSidebar() {
   const [location] = useLocation();
-  const { currentUser, logout } = useAppContext() as any;
+  const { currentUser, logout } = useAppContext() as unknown;
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
 

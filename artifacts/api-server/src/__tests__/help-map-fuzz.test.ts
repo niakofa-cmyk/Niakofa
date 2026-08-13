@@ -29,8 +29,8 @@ jest.unstable_mockModule("@workspace/db", () => {
     groupBy: jest.fn().mockReturnValue([]),
     onConflictDoNothing: jest.fn().mockResolvedValue([]),
     onConflictDoUpdate: jest.fn().mockResolvedValue([]),
-    transaction: jest.fn().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(mockDb)),
-    then: jest.fn().mockImplementation((resolve: any, reject: any) =>
+    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(mockDb)),
+    then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
       Promise.resolve([]).then(resolve, reject)
     ),
     execute: jest.fn().mockResolvedValue({ rows: [] }),

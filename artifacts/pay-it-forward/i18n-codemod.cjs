@@ -1,5 +1,8 @@
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const ts = require("typescript");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = require("fs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const path = require("path");
 
 const filePath = process.argv[2];

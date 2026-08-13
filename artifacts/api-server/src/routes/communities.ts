@@ -130,7 +130,7 @@ router.get("/communities/default", generalApiLimiter, async (_req, res) => {
     }
     const data = await fetchCommunityData(defaultId);
     return res.json({ community: data });
-  } catch (err) {
+  } catch (_err) {
     return res.status(500).json({ error: "Failed to load community data" });
   }
 });
@@ -194,7 +194,7 @@ router.get("/communities", generalApiLimiter, async (_req, res) => {
     });
 
     return res.json({ communities: result });
-  } catch (err) {
+  } catch (_err) {
     return res.status(500).json({ error: "Failed to load communities" });
   }
 });
@@ -209,7 +209,7 @@ router.get("/communities/:id", generalApiLimiter, async (req, res) => {
     const data = await fetchCommunityData(id);
     if (!data) return res.status(404).json({ error: "Community not found" });
     return res.json({ community: data });
-  } catch (err) {
+  } catch (_err) {
     return res.status(500).json({ error: "Failed to load community data" });
   }
 });
@@ -256,7 +256,7 @@ router.get("/communities/:id/ledger", generalApiLimiter, async (req, res) => {
     }));
 
     return res.json({ entries });
-  } catch (err) {
+  } catch (_err) {
     return res.status(500).json({ error: "Failed to load ledger" });
   }
 });

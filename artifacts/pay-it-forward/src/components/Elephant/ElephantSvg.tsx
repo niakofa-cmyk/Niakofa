@@ -15,6 +15,7 @@ import { useMemo } from "react";
 import type { SpiritCompanionProps } from "@/components/SpiritAnimal/types";
 import { computeSpiritBehavior } from "@/components/SpiritAnimal/SpiritController";
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ElephantProps extends SpiritCompanionProps {}
 
 export function ElephantSvg({

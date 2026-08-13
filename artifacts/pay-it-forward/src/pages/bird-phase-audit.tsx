@@ -447,8 +447,8 @@ function Phase12Panel() {
     { dir: "right",     upcomingTurn: null as null,       label: "Gaze right",          sub: "data-gaze=right" },
     { dir: "up",        upcomingTurn: null as null,       label: "Gaze up",             sub: "data-gaze=up" },
     { dir: "down",      upcomingTurn: null as null,       label: "Gaze down",           sub: "data-gaze=down" },
-    { dir: "upleft",    upcomingTurn: "left" as "left",   label: "Gaze upleft",         sub: "turn=left → anticipatory" },
-    { dir: "upright",   upcomingTurn: "right" as "right", label: "Gaze upright",        sub: "turn=right → anticipatory" },
+    { dir: "upleft",    upcomingTurn: "left" as const,   label: "Gaze upleft",         sub: "turn=left → anticipatory" },
+    { dir: "upright",   upcomingTurn: "right" as const, label: "Gaze upright",        sub: "turn=right → anticipatory" },
     { dir: "downleft",  upcomingTurn: null as null,       label: "Gaze downleft",       sub: "saccade phase 6" },
     { dir: "downright", upcomingTurn: null as null,       label: "Gaze downright",      sub: "saccade phase 7" },
   ];

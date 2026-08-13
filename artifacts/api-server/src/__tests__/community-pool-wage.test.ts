@@ -31,8 +31,8 @@ jest.unstable_mockModule("@workspace/db", () => {
     values: jest.fn().mockReturnThis(),
     limit: jest.fn(),
     returning: jest.fn(),
-    transaction: jest.fn().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(mockDb)),
-    then: jest.fn().mockImplementation((resolve: any, reject: any) =>
+    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(mockDb)),
+    then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
       Promise.resolve([]).then(resolve, reject)
     ),
   };
@@ -66,7 +66,7 @@ jest.unstable_mockModule("../lib/ws-hub.js", () => ({
   broadcast: jest.fn(),
 }));
 
-let db: any;
+let db: unknown;
 let getHourlyMinimumRate: (communityId?: number | null) => Promise<number>;
 let getGuaranteedMinimum: (estimatedHours?: number | null, helperId?: number | null) => Promise<number>;
 
@@ -80,7 +80,7 @@ beforeEach(() => {
   (db.from as jest.Mock).mockReset().mockReturnThis();
   (db.where as jest.Mock).mockReset().mockReturnThis();
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
-  (db.then as jest.Mock).mockReset().mockImplementation((resolve: any, reject: any) =>
+  (db.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: any) =>
     Promise.resolve([]).then(resolve, reject)
   );
 });
@@ -131,7 +131,7 @@ describe("getGuaranteedMinimum — payout actually scales with per-county wage",
         trust_score: 0, help_count: 0, highest_tier_reached: null, community_id: 99,
       }]))
       .mockImplementationOnce(() => Promise.resolve([{ target_reserve_amount: 100 }])); // pool 100% funded
-    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+    (db.then as jest.Mock).mockImplementationOnce((resolve: unknown, reject: any) =>
       Promise.resolve([{ balance: 100 }]).then(resolve, reject) // balance == target -> health ratio 1.0
     );
     return getGuaranteedMinimum(hours, 1);

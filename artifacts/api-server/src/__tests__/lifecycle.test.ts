@@ -38,9 +38,9 @@ jest.unstable_mockModule("@workspace/db", () => {
     onConflictDoNothing: jest.fn().mockResolvedValue([]),
     onConflictDoUpdate: jest.fn().mockResolvedValue([]),
     // db.transaction is used by community-pool.ts payHelperFromPool.
-    transaction: jest.fn().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(mockDb)),
+    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(mockDb)),
     // Make the mock thenable so chains ending on .where() can be awaited.
-    then: jest.fn().mockImplementation((resolve: any, reject: any) =>
+    then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
       Promise.resolve([]).then(resolve, reject)
     ),
     execute: jest.fn().mockResolvedValue({ rows: [] }),
@@ -141,7 +141,7 @@ jest.unstable_mockModule("../lib/mailer.js", () => ({
 
 // ── App + mocked-module handles, wired up after mocks are registered ─────────
 let app: Express;
-let db: any;
+let db: unknown;
 let signTokenById: (id: number) => string;
 
 beforeAll(async () => {
@@ -179,11 +179,11 @@ beforeEach(() => {
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   // Restore thenable so chains ending on .where() can be awaited (no .limit()).
-  (db.then as jest.Mock).mockReset().mockImplementation((resolve: any, reject: any) =>
+  (db.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: any) =>
     Promise.resolve([]).then(resolve, reject)
   );
   // Restore transaction, execute, and conflict-handling mocks each test.
-  (db.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(db));
+  (db.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(db));
   (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   (db.onConflictDoNothing as jest.Mock).mockReset().mockResolvedValue([]);
   (db.onConflictDoUpdate as jest.Mock).mockReset().mockResolvedValue([]);

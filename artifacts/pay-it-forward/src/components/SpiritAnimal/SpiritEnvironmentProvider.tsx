@@ -46,9 +46,9 @@ export function SpiritEnvironmentProvider({ children }: { children: ReactNode })
   const prevSpeciesRef = useRef<SpiritAnimalId | null>(null);
 
   const species: SpiritAnimalId = isValidSpiritAnimalId(
-    (currentUser as any)?.spirit_animal
+    (currentUser as unknown)?.spirit_animal
   )
-    ? ((currentUser as any).spirit_animal as SpiritAnimalId)
+    ? ((currentUser as unknown).spirit_animal as SpiritAnimalId)
     : "sankofa_bird";
 
   useEffect(() => {

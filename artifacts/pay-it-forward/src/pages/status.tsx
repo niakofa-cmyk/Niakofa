@@ -96,7 +96,7 @@ export default function StatusPage() {
       const json = await res.json();
       setData(json);
       setLastFetch(new Date());
-    } catch (e) {
+    } catch (_e) {
       setError("Could not reach Niakofa servers. Check your connection.");
     } finally {
       setLoading(false);

@@ -12,7 +12,7 @@
  * Test runner: node --import tsx/esm --test (NOT jest)
  */
 
-import { describe, it, before, beforeEach } from "node:test";
+import { describe, it, _before, beforeEach } from "node:test";
 import { expect } from "expect";
 
 import { SankofaRig, BirdPart }      from "../../components/SankofaBird/Core/SankofaRig";

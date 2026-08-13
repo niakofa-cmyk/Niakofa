@@ -248,15 +248,16 @@ export default function HelperOnboardingScreen() {
   // ── All hooks MUST be declared before any conditional return (Rules of Hooks) ──
   const [step, setStep] = useState(0);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(
-    new Set((currentUser as any)?.helper_skills ?? [])
+    new Set((currentUser as unknown)?.helper_skills ?? [])
   );
   const [availSlots, setAvailSlots] = useState<AvailabilitySlot[]>([]);
-  const [bio, setBio] = useState((currentUser as any)?.helper_bio ?? "");
+  const [bio, setBio] = useState((currentUser as unknown)?.helper_bio ?? "");
   const [saving, setSaving] = useState(false);
 
   const toggleSkill = useCallback((s: string) => {
     setSelectedSkills(prev => {
       const next = new Set(prev);
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
       next.has(s) ? next.delete(s) : next.add(s);
       return next;
     });
@@ -269,8 +270,8 @@ export default function HelperOnboardingScreen() {
     });
   }, []);
 
-  const bgStatus = (currentUser as any)?.background_check_status ?? "not_started";
-  const helperStatus = (currentUser as any)?.helper_status as string | undefined;
+  const bgStatus = (currentUser as unknown)?.background_check_status ?? "not_started";
+  const helperStatus = (currentUser as unknown)?.helper_status as string | undefined;
 
   const STEPS = [
     { id: "skills",       label: "Skills",       icon: Wrench },
@@ -338,7 +339,7 @@ export default function HelperOnboardingScreen() {
 
       toast({ title: "Application submitted! 🎉", description: "We'll review it and notify you shortly." });
       setLocation("/profile");
-    } catch (err) {
+    } catch (_err) {
       toast({ title: "Something went wrong", description: "Please try again.", variant: "destructive" });
     } finally {
       setSaving(false);

@@ -78,7 +78,7 @@ export default function HelperProfileScreen() {
     );
   }
 
-  const specialties: string[] = (helper as any).specialties ?? [];
+  const specialties: string[] = (helper as unknown).specialties ?? [];
   const noShowCount = helper.no_show_count ?? 0;
   const completionRate = (helper.help_count ?? 0) > 0
     ? Math.round(((helper.help_count ?? 0) / ((helper.help_count ?? 0) + noShowCount)) * 100)
@@ -91,7 +91,7 @@ export default function HelperProfileScreen() {
     <div className="min-h-[100dvh] bg-background">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(-1 as any)} className="rounded-full shrink-0">
+        <Button variant="ghost" size="icon" onClick={() => setLocation(-1 as unknown)} className="rounded-full shrink-0">
           <ChevronLeft className="w-5 h-5" />
         </Button>
         <span className="font-black text-base truncate">{helper.name}</span>
@@ -207,7 +207,7 @@ export default function HelperProfileScreen() {
           <div className="flex flex-wrap gap-2">
             {[
               { label: "Email verified", done: true },
-              { label: "Phone verified", done: !!(helper as any).phone_masked },
+              { label: "Phone verified", done: !!(helper as unknown).phone_masked },
               { label: "Background check", done: (helper.help_count ?? 0) >= 15 },
               { label: "Community member", done: true },
             ].map(({ label, done }) => (

@@ -141,7 +141,7 @@ jest.unstable_mockModule("../lib/logger.js", () => ({
 
 // ── App + mocked-module handles, wired up after mocks are registered ─────────
 let app: Express;
-let db: any;
+let db: unknown;
 let signTokenById: (id: number) => string;
 
 beforeAll(async () => {

@@ -40,7 +40,7 @@ import {
   computeFlapPeriodMs,
   computeLeanDeg,
   computeGazeVector,
-  computeAeroMode,
+  _computeAeroMode,
   computeFigureEightAmplitude,
   computeLegStrideDelays,
   computeTurnDirection,

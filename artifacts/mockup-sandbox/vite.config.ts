@@ -30,10 +30,10 @@ if (!basePath) {
 export default defineConfig({
   base: basePath,
   plugins: [
-    mockupPreviewPlugin() as any,
+    mockupPreviewPlugin() as unknown,
     react(),
     tailwindcss(),
-    runtimeErrorOverlay() as any,
+    runtimeErrorOverlay() as unknown,
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

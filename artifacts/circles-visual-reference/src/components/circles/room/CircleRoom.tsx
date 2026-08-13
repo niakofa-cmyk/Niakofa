@@ -34,7 +34,7 @@ export function CircleRoom({ circle, onLeave }: CircleRoomProps) {
   const [mobileView, setMobileView] = useState<MobileView>('stage');
 
   const isAudience = room.currentUserRole === 'audience';
-  const isOnStage = room.currentUserRole === 'host' || room.currentUserRole === 'co-host' || room.currentUserRole === 'speaker';
+  const _isOnStage = room.currentUserRole === 'host' || room.currentUserRole === 'co-host' || room.currentUserRole === 'speaker';
 
   return (
     <div className="flex h-full flex-col bg-room-bg">

@@ -57,13 +57,13 @@ jest.unstable_mockModule("@workspace/db", () => {
     // `const [row] = ...` yields undefined, which causes a 500 in the route.
     // Chains that call .limit() or .returning() ignore this .then because those
     // methods return their own native Promises, not the mock object.
-    then: jest.fn().mockImplementation((resolve: any, reject: any) =>
+    then: jest.fn().mockImplementation((resolve: unknown, reject: any) =>
       Promise.resolve([]).then(resolve, reject)
     ),
     // db.transaction is used by community-pool.ts payHelperFromPool. The mock
     // runs the callback with a proxy of mockDb so advisory-lock and insert/update
     // chains inside the transaction work the same way as the top-level mock.
-    transaction: jest.fn().mockImplementation(async (cb: (tx: any) => Promise<any>) => {
+    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => {
       return cb(mockDb);
     }),
   };
@@ -196,7 +196,7 @@ jest.unstable_mockModule("../lib/cache.js", () => ({
 
 // ── App + mocked-module handles, wired up after mocks are registered ─────────
 let app: Express;
-let db: any;
+let db: unknown;
 let signTokenById: (id: number) => string;
 let sendNiaEventToUser: (...args: unknown[]) => unknown;
 
@@ -242,12 +242,12 @@ beforeEach(() => {
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   // Re-establish the thenable default so chains ending on .where() still resolve to [].
-  (db.then as jest.Mock).mockReset().mockImplementation((resolve: any, reject: any) =>
+  (db.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: any) =>
     Promise.resolve([]).then(resolve, reject)
   );
   (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   // Re-establish transaction mock so payHelperFromPool works in every test.
-  (db.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(db));
+  (db.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: unknown) => Promise<any>) => cb(db));
   (db.onConflictDoNothing as jest.Mock).mockReset().mockResolvedValue([]);
   (db.onConflictDoUpdate as jest.Mock).mockReset().mockResolvedValue([]);
 });

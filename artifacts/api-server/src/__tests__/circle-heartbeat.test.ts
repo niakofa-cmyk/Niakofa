@@ -13,7 +13,7 @@ const sendToCircleParticipants = jest.fn();
 const updateReturning = jest.fn();
 const selectThen = jest.fn();
 
-const db: any = {
+const db: unknown = {
   update: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
@@ -44,14 +44,14 @@ jest.unstable_mockModule("drizzle-orm", () => ({
 }));
 
 jest.unstable_mockModule("../middlewares/auth.js", () => ({
-  requireAuth: (req: any, _res: any, next: any) => {
+  requireAuth: (req: unknown, _res: any, next: any) => {
     req.authenticatedUserId = 42;
     next();
   },
 }));
 
 jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
-  generalApiLimiter: (_req: any, _res: any, next: any) => next(),
+  generalApiLimiter: (_req: unknown, _res: any, next: any) => next(),
 }));
 
 jest.unstable_mockModule("../lib/ws-hub.js", () => ({
