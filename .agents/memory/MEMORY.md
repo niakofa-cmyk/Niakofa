@@ -8,3 +8,4 @@
 - [Legacy Character Engine Runtime](legacy-character-engine-runtime.md) — stable IDs, explicit runtime layers, and the archive/licensing boundary for character rendering.
 - [Legacy RPG art boundary](legacy-rpg-art-boundary.md) — supplied RPG art is curated into React presentation only; never promote a second runtime or imply historical identity.
 - [Legacy runtime boundary](legacy-runtime-boundary.md) — keep Legacy as one React/Vite runtime with Family Vault/world state authoritative and assets curated as presentation references.
+- [Legacy type declaration boundary](legacy-type-declaration-boundary.md) — all Window extensions (openNia, webkitAudioContext, SpeechRecognition) live in one file: src/speech-recognition.d.ts; never split again.
