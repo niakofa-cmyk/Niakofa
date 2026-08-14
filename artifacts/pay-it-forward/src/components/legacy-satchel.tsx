@@ -177,10 +177,8 @@ export function LegacySatchel({
             className="mt-2 max-w-prose text-[9px] leading-relaxed text-amber-100/55"
           >
             Character layers and inventory textures are curated presentation
-            references from the Legacy asset archive. Family Vault evidence
-            supplies the facts; these stylized sprites never represent a
-            verified likeness. Licensing review is required before commercial
-            release.
+            references from the Legacy asset archive. Family Vault evidence supplies the facts; these stylized sprites never represent a verified likeness.
+            Licensing review is required before commercial release.
           </p>
         )}
       </div>

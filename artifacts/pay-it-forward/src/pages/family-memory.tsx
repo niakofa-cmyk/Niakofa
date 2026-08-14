@@ -245,7 +245,7 @@ export default function FamilyMemoryPage() {
       setComments(cs => [...cs, comment]);
       setCommentText("");
     } catch (err: unknown) {
-      toast.error(err.message ?? "Couldn't post comment");
+      toast.error(err instanceof Error ? err.message : "Couldn't post comment");
     } finally {
       setPosting(false);
     }
@@ -270,7 +270,7 @@ export default function FamilyMemoryPage() {
       setEditing(false);
       toast.success("Memory updated");
     } catch (err: unknown) {
-      toast.error(err.message ?? "Couldn't save changes");
+      toast.error(err instanceof Error ? err.message : "Couldn't save changes");
     } finally {
       setSaving(false);
     }
@@ -287,7 +287,7 @@ export default function FamilyMemoryPage() {
       toast.success("Memory deleted");
       navigate(`/family/${familyId}`);
     } catch (err: unknown) {
-      toast.error(err.message ?? "Couldn't delete memory");
+      toast.error(err instanceof Error ? err.message : "Couldn't delete memory");
     }
   }
 
@@ -315,7 +315,7 @@ export default function FamilyMemoryPage() {
       setAssets(prev => [...prev, asset]);
       toast.success("File attached to this memory!");
     } catch (err: unknown) {
-      toast.error(err.message ?? "Upload failed");
+      toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
       if (addFileRef.current) addFileRef.current.value = "";
@@ -351,7 +351,7 @@ export default function FamilyMemoryPage() {
       setTranslatedLang(data.langName);
       toast.success(`Translated to ${data.langName}!`);
     } catch (err: unknown) {
-      toast.error(err.message ?? "Couldn't translate");
+      toast.error(err instanceof Error ? err.message : "Couldn't translate");
     } finally {
       setTranslating(false);
     }

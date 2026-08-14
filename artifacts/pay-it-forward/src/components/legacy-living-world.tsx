@@ -299,12 +299,12 @@ function HouseOfMensahMap({
   onMapMove: (position: DemoMapPosition, facing: DemoFacing) => void;
   onLandmarkInspect: (artifactId: string) => void;
 }) {
-  const layout = getLegacyWorldLayout(worldVersion);
+  const layout = getLegacyWorldLayout(worldVersion, placedArtifacts);
   const worldMap = layout.map;
   const [motion, setMotion] = useState<"idle" | "walk">("idle");
   const [actionState, setActionState] = useState<"idle" | "interacting">("idle");
   const player: PlayerPosition = !isLegacyWorldPositionWalkable(layout, mapPosition)
-    ? getLegacyWorldSpawn(worldVersion)
+    ? getLegacyWorldSpawn(worldVersion, placedArtifacts)
     : mapPosition;
   const tile = worldMap[player.row][player.column];
   const placed = new Set(placedArtifacts);
@@ -377,7 +377,7 @@ function HouseOfMensahMap({
           <Compass className="h-3.5 w-3.5 shrink-0 text-amber-300" />
           <div className="min-w-0">
             <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-300">House of Mensah · playable map</p>
-           <p className="truncate text-[9px] text-amber-100/60">{TILE_LABELS[tile]} · Facing {mapFacing} · World v{worldVersion}</p>
+           <p className="truncate text-[9px] text-amber-100/60">{TILE_LABELS[tile]} · Facing {mapFacing} · World v{worldVersion} · {layout.restorations.length}/4 terrain restorations</p>
           </div>
         </div>
         <span className="flex shrink-0 items-center gap-1 text-[9px] font-bold text-amber-100/55">
@@ -407,6 +407,21 @@ function HouseOfMensahMap({
               )),
             )}
           </div>
+          {layout.restorations.map(({ artifactId, row, column, label, description }) => (
+            <div
+              key={`restoration-${artifactId}`}
+              role="img"
+              aria-label={`${label}: ${description}`}
+              title={`${label} — ${description}`}
+              className="pointer-events-none absolute z-[2] rounded-sm border border-dashed border-emerald-200/80 bg-emerald-200/10 shadow-[inset_0_0_12px_rgba(110,231,183,0.45)]"
+              style={{
+                width: `${100 / 9}%`,
+                height: `${100 / 6}%`,
+                left: `${(column * 100) / 9}%`,
+                top: `${(row * 100) / 6}%`,
+              }}
+            />
+          ))}
           {visibleLandmarks.map(({ artifactId, row, column, label, description, icon }) => {
             const Icon = WORLD_LANDMARK_ICONS[icon];
             return (
@@ -587,7 +602,7 @@ export function LegacyLivingWorld({
   const scene = WORLD_SCENES[phase];
   const SceneIcon = scene.icon;
   const hasRegenerated = worldVersion > 1;
-  const worldLayout = getLegacyWorldLayout(worldVersion);
+  const worldLayout = getLegacyWorldLayout(worldVersion, placedArtifacts);
   const memoriesRestored = placedArtifacts.length;
   const growth = Math.min(4, businessLevel + (memoriesRestored > 0 ? 1 : 0));
 
@@ -681,6 +696,20 @@ export function LegacyLivingWorld({
                 );
               })}
             </div>
+            {worldLayout.restorations.length > 0 && (
+              <div className="mt-3 border-t border-emerald-300/10 pt-2">
+                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-emerald-200/70">
+                  Memory-rooted terrain
+                </p>
+                <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                  {worldLayout.restorations.map(({ artifactId, label, description }) => (
+                    <p key={artifactId} className="text-[9px] leading-relaxed text-emerald-100/55">
+                      <span className="font-bold text-emerald-100/80">{label}:</span> {description}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

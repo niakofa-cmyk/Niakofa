@@ -470,7 +470,7 @@ export default function LegacyAchievementsPage() {
 
             {/* Nia inventory prompt */}
             <button
-              onClick={() => (window as unknown).openNia?.("What items might be in my family's inventory based on our history?")}
+              onClick={() => window.openNia?.("What items might be in my family's inventory based on our history?")}
               className="w-full flex items-center gap-2 p-3 rounded-xl border border-primary/20 bg-primary/5 text-sm active:opacity-70"
             >
               <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />

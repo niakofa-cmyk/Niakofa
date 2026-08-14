@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Loader2, Users, Calendar, Plus, CheckCircle2,
-  Gift, Sparkles, X, _Trophy, Heart, Cake, Globe2, MapPin,
+  Gift, Sparkles, X, Trophy, Heart, Cake, Globe2, MapPin,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";

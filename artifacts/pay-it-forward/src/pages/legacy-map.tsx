@@ -20,7 +20,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import MapGL, { Marker, Popup, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { ArrowLeft, MapPin, Loader2, Church, School, Home, Landmark, Building2, TreePine, CheckCircle2, Navigation, Plus, X, BookOpen, Camera, _Star, Compass, Globe2 } from "lucide-react";
+import { ArrowLeft, MapPin, Loader2, Church, School, Home, Landmark, Building2, TreePine, CheckCircle2, Navigation, Plus, X, BookOpen, Camera, Star, Compass, Globe2 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 

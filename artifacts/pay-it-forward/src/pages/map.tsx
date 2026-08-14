@@ -796,7 +796,7 @@ export default function MapScreen() {
   const handleMapLoad = useCallback(() => {
     const lang = detectMapLanguage();
     if (lang !== "en" && mapRef.current) {
-      localizeMapLabels(mapRef.current as unknown, lang);
+      localizeMapLabels(mapRef.current as { setLayoutProperty: (layer: string, prop: string, value: unknown) => void }, lang);
     }
 
     mapRef.current?.on("moveend", () => {

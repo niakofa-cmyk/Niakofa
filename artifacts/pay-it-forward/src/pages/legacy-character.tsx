@@ -23,7 +23,7 @@ import {
   Users, Star, Heart, Globe2, Crown,
   Shield, Zap, Brain, Sparkles, Award,
   TreePine, GraduationCap, Compass, Hammer, MessageCircle,
-  _TrendingUp, Trophy, Lock,
+  TrendingUp, Trophy, Lock,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";

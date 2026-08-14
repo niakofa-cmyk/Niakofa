@@ -270,9 +270,9 @@ export default function FamilyVaultPage() {
       return true;
     } catch (err: unknown) {
       // Network error — likely server restart between sessions
-      const msg = err?.message?.includes("fetch") || err?.name === "TypeError"
+      const msg = (err instanceof Error && (err.message.includes("fetch") || err.name === "TypeError"))
         ? "Server unavailable — memory saved. Use the retry button when the server is back."
-        : `Upload failed: ${err?.message ?? "unknown error"}`;
+        : `Upload failed: ${err instanceof Error ? err.message : "unknown error"}`;
       toast.error(msg);
       setPendingUpload({ memoryId, file });
       return false;
@@ -317,7 +317,7 @@ export default function FamilyVaultPage() {
       if (fileInputRef.current) fileInputRef.current.value = "";
       loadMemories(searchQ || undefined);
     } catch (err: unknown) {
-      toast.error(err.message ?? "Couldn't save memory");
+      toast.error(err instanceof Error ? err.message : "Couldn't save memory");
     } finally {
       setMSaving(false);
     }
@@ -353,7 +353,7 @@ export default function FamilyVaultPage() {
       setIName(""); setIEmail(""); setIRel(""); setIRole("contributor");
       loadFamily();
     } catch (err: unknown) {
-      toast.error(err.message ?? "Couldn't invite member");
+      toast.error(err instanceof Error ? err.message : "Couldn't invite member");
     } finally {
       setISaving(false);
     }
@@ -369,7 +369,7 @@ export default function FamilyVaultPage() {
       toast.success("Memory deleted");
       setMemories(ms => ms.filter(m => m.id !== memoryId));
     } catch (err: unknown) {
-      toast.error(err.message ?? "Couldn't delete memory");
+      toast.error(err instanceof Error ? err.message : "Couldn't delete memory");
     }
   }
 
@@ -971,7 +971,7 @@ function GedcomImportModal({ familyId, onClose, onDone }: { familyId: number; on
       setResult(data);
       toast.success(`Imported ${data.imported} of ${data.total} family members!`);
     } catch (err: unknown) {
-      toast.error(err.message ?? "Import failed");
+      toast.error(err instanceof Error ? err.message : "Import failed");
     } finally {
       setImporting(false);
     }
@@ -1080,7 +1080,7 @@ function TranslateMemoryModal({ familyId, memory, onClose }: { familyId: number;
       const data = await res.json();
       setResult({ translated: data.translated, langName: data.langName });
     } catch (err: unknown) {
-      toast.error(err.message ?? "Translation failed");
+      toast.error(err instanceof Error ? err.message : "Translation failed");
     } finally {
       setTranslating(false);
     }
@@ -1196,7 +1196,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
 
       // Wire up Web Audio API for the live level meter
       try {
-        const ActxClass = (window.AudioContext || (window as unknown).webkitAudioContext) as typeof AudioContext;
+        const ActxClass = (window.AudioContext || window.webkitAudioContext) as typeof AudioContext;
         const audioCtx  = new ActxClass();
         const source    = audioCtx.createMediaStreamSource(stream);
         const analyser  = audioCtx.createAnalyser();
@@ -1231,9 +1231,9 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
       setPhase("recording");
       timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
     } catch (err: unknown) {
-      setError(err?.message?.includes("Permission") || err?.name === "NotAllowedError"
+      setError((err instanceof Error && (err.message.includes("Permission") || err.name === "NotAllowedError"))
         ? "Microphone access denied. Please allow microphone access in your browser settings."
-        : err?.message ?? "Could not access microphone.");
+        : err instanceof Error ? err.message : "Could not access microphone.");
     }
   }
 
@@ -1339,7 +1339,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
       setDoneCount(prev => prev + 1);
       setPhase("done");
     } catch (err: unknown) {
-      setError(err?.message ?? "Upload failed — please try again.");
+      setError(err instanceof Error ? err.message : "Upload failed — please try again.");
       setPhase("idle");
     }
   }
@@ -1491,8 +1491,15 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
 
 // ─── Interviews sub-component ──────────────────────────────────────────────────
 
+interface OralHistoryInterview {
+  id: number;
+  status: string;
+  created_at: string;
+  prompts_used?: string[];
+}
+
 function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boolean }) {
-  const [interviews, setInterviews]   = useState<unknown[]>([]);
+  const [interviews, setInterviews]   = useState<OralHistoryInterview[]>([]);
   const [loading, setLoading]         = useState(true);
   const [showRecord, setShowRecord]   = useState(false);
 
@@ -1543,7 +1550,7 @@ function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boo
           <p className="text-xs text-muted-foreground">Capture an elder's voice before it's too late.</p>
         </div>
       ) : (
-        interviews.map((iv: unknown) => (
+        interviews.map((iv) => (
           <div key={iv.id} className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <div>
@@ -1560,7 +1567,7 @@ function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boo
                 {iv.status}
               </span>
             </div>
-            {iv.prompts_used?.length > 1 && (
+            {iv.prompts_used && iv.prompts_used.length > 1 && (
               <div className="border-t border-border pt-2 mt-1">
                 <p className="text-xs text-muted-foreground mb-1">All prompts:</p>
                 <ul className="text-xs text-foreground space-y-0.5">

@@ -43,7 +43,7 @@ export function getAppNavItems(opts: { openNotifications: () => void }): AppNavI
     { key: "wallet", label: "Wallet", icon: Wallet, href: "/wallet",
       isActive: (l) => l.startsWith("/wallet") },
     { key: "nia", label: "AI Assistant (Nia)", icon: Sparkles,
-      onClick: () => (window as unknown).openNia?.() },
+      onClick: () => window.openNia?.() },
     { key: "notifications", label: "Notifications", icon: Bell,
       onClick: opts.openNotifications },
     { key: "settings", label: "Settings", icon: Settings, href: "/settings",

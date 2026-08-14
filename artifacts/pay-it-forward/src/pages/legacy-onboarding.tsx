@@ -18,8 +18,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import {
   Play, Users, Mic, MapPin, Sparkles, CheckCircle2,
-  Loader2, ArrowRight, Square, BookHeart, _Globe2, Home,
-  Building2, Church, School, Trees, Volume2, _AlertCircle,
+  Loader2, ArrowRight, Square, BookHeart, Globe2, Home,
+  Building2, Church, School, Trees, Volume2, AlertCircle,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -947,7 +947,7 @@ export default function LegacyOnboardingPage() {
 
             {/* Place type selector */}
             <div className="grid grid-cols-3 gap-2.5 mb-4">
-              {PLACE_TYPES.map(({ id, label, icon: Icon, _desc }) => (
+              {PLACE_TYPES.map(({ id, label, icon: Icon, desc }) => (
                 <button
                   key={id}
                   onClick={() => setQ3PlaceType(id)}

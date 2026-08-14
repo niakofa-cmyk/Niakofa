@@ -644,13 +644,17 @@ function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (
         }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({})) as unknown;
-        throw new Error(data.error ?? `Post failed (${res.status})`);
+        const data: unknown = await res.json().catch(() => ({}));
+        const message = typeof data === "object" && data !== null && "error" in data
+          && typeof data.error === "string"
+          ? data.error
+          : `Post failed (${res.status})`;
+        throw new Error(message);
       }
       onPosted(story.story);
       onClose();
     } catch (err: unknown) {
-      setPostError(err.message ?? "Failed to post story. Try again.");
+      setPostError(err instanceof Error ? err.message : "Failed to post story. Try again.");
     } finally {
       setPosting(false);
     }
@@ -1014,11 +1018,11 @@ export default function CommunityScreen() {
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="bg-background/60 rounded-xl p-2.5 text-center">
-                    <div className="text-lg font-black text-green-400">{(currentUser as unknown).help_count ?? 0}</div>
+                    <div className="text-lg font-black text-green-400">{(currentUser as { help_count?: number }).help_count ?? 0}</div>
                     <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Helped</div>
                   </div>
                   <div className="bg-background/60 rounded-xl p-2.5 text-center">
-                    <div className="text-lg font-black text-yellow-400">{(currentUser as unknown).request_count ?? 0}</div>
+                    <div className="text-lg font-black text-yellow-400">{(currentUser as { request_count?: number }).request_count ?? 0}</div>
                     <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Received</div>
                   </div>
                   <div className="bg-background/60 rounded-xl p-2.5 text-center">
@@ -1030,7 +1034,7 @@ export default function CommunityScreen() {
             )}
 
             {/* Full Circle — recently completed Pay-It-Forward tasks */}
-            {recentCompleted.filter(r => (r as unknown).payment_type === "pay_it_forward").length > 0 && (
+            {recentCompleted.filter(r => (r as { payment_type?: string }).payment_type === "pay_it_forward").length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm">🔄</span>
@@ -1038,7 +1042,7 @@ export default function CommunityScreen() {
                 </div>
                 <p className="text-[11px] text-muted-foreground/70 -mt-1">Neighbors who received help and paid it forward in return.</p>
                 {recentCompleted
-                  .filter(r => (r as unknown).payment_type === "pay_it_forward")
+                  .filter(r => (r as { payment_type?: string }).payment_type === "pay_it_forward")
                   .slice(0, 3)
                   .map(req => (
                     <motion.div
@@ -1054,7 +1058,7 @@ export default function CommunityScreen() {
                           {req.requester_name} received help
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5">
-                          {CATEGORY_LABELS[(req as unknown).category] ?? (req as unknown).category}
+                          {CATEGORY_LABELS[(req as unknown as Record<string, string>).category] ?? (req as unknown as Record<string, string>).category}
                         </div>
                       </div>
                       <span className="shrink-0 text-[9px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-1 rounded-full">

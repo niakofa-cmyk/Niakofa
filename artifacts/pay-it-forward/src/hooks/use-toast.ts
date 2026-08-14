@@ -15,7 +15,7 @@ type ToasterToast = ToastProps & {
   action?: ToastActionElement
 }
 
-const _actionTypes = {
+const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
   UPDATE_TOAST: "UPDATE_TOAST",
   DISMISS_TOAST: "DISMISS_TOAST",
@@ -123,6 +123,8 @@ export const reducer = (state: State, action: Action): State => {
         ...state,
         toasts: state.toasts.filter((t) => t.id !== action.toastId),
       }
+    default:
+      throw new Error("Unknown toast action");
   }
 }
 

@@ -15,7 +15,7 @@ export interface VoiceWakeWordOptions {
 }
 
 export class VoiceWakeWordEngine {
-  private recognition: unknown = null;
+  private recognition: SpeechRecognition | null = null;
   private options: VoiceWakeWordOptions;
   private state: ListeningState = "idle";
   private active = false;
@@ -41,8 +41,8 @@ export class VoiceWakeWordEngine {
 
   isSupported(): boolean {
     return (
-      ("SpeechRecognition" in window || "webkitSpeechRecognition" in window) &&
-      "AudioContext" in window || "webkitAudioContext" in window
+      Boolean((window.SpeechRecognition || window.webkitSpeechRecognition)
+        && (window.AudioContext || window.webkitAudioContext))
     );
   }
 
@@ -56,8 +56,8 @@ export class VoiceWakeWordEngine {
   }
 
   private initSpeechRecognition() {
-    const SR: unknown =
-      (window as unknown).SpeechRecognition || (window as unknown).webkitSpeechRecognition;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
     const rec = new SR();
     rec.continuous = false; // VAD controls restarts — don't auto-loop
     rec.interimResults = true;
@@ -71,7 +71,7 @@ export class VoiceWakeWordEngine {
       this.setState("listening");
     };
 
-    rec.onresult = (event: unknown) => {
+    rec.onresult = (event) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         this.options.onTranscript?.(transcript);
@@ -85,7 +85,7 @@ export class VoiceWakeWordEngine {
       }
     };
 
-    rec.onerror = (event: unknown) => {
+    rec.onerror = (event) => {
       if (event.error !== "no-speech" && event.error !== "aborted") {
         this.options.onError?.(event.error);
         this.setState("error");
@@ -114,7 +114,8 @@ export class VoiceWakeWordEngine {
     try {
       // Phase 7d: acquire mic stream for VAD
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const AC: unknown = (window as unknown).AudioContext || (window as unknown).webkitAudioContext;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) throw new Error("Audio capture is not supported in this browser.");
       this.audioCtx = new AC();
       this.analyser = (this.audioCtx as AudioContext).createAnalyser();
       this.analyser.fftSize = 512;
@@ -132,9 +133,11 @@ export class VoiceWakeWordEngine {
 
         if (rms > this.VAD_THRESHOLD && !this.recognitionActive) {
           // Voice energy detected — start recognition
-          this.recognition = this.initSpeechRecognition();
+          const recognition = this.initSpeechRecognition();
+          if (!recognition) return;
+          this.recognition = recognition;
           try {
-            this.recognition.start();
+            recognition.start();
           } catch {
             // already started — ignore
           }
@@ -149,15 +152,20 @@ export class VoiceWakeWordEngine {
 
   private _startFallback() {
     // Phase 7a fallback: continuous recognition without VAD
-    const SR: unknown =
-      (window as unknown).SpeechRecognition || (window as unknown).webkitSpeechRecognition;
-    this.recognition = new SR();
-    this.recognition.continuous = this.options.continuous ?? true;
-    this.recognition.interimResults = true;
-    this.recognition.lang = navigator.language || "en-US";
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      this.options.onError?.("Voice recognition not supported in this browser.");
+      this.setState("error");
+      return;
+    }
+    const recognition = new SR();
+    this.recognition = recognition;
+    recognition.continuous = this.options.continuous ?? true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
 
-    this.recognition.onstart = () => { this.active = true; this.setState("listening"); };
-    this.recognition.onresult = (event: unknown) => {
+    recognition.onstart = () => { this.active = true; this.setState("listening"); };
+    recognition.onresult = (event) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         this.options.onTranscript?.(transcript);
@@ -170,17 +178,17 @@ export class VoiceWakeWordEngine {
         }
       }
     };
-    this.recognition.onerror = (event: unknown) => {
+    recognition.onerror = (event) => {
       if (event.error !== "no-speech") {
         this.options.onError?.(event.error);
         this.setState("error");
       }
     };
-    this.recognition.onend = () => {
+    recognition.onend = () => {
       if (this.active) setTimeout(() => this.recognition?.start(), 300);
       else this.setState("idle");
     };
-    this.recognition.start();
+    recognition.start();
   }
 
   stop() {

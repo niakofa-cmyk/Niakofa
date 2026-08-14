@@ -20,7 +20,7 @@ import { getAppNavItems } from "@/lib/appNavItems";
 
 export function DesktopSidebar() {
   const [location] = useLocation();
-  const { currentUser, logout } = useAppContext() as unknown;
+  const { currentUser, logout } = useAppContext();
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
 
@@ -56,7 +56,7 @@ export function DesktopSidebar() {
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold truncate">{currentUser?.name ?? "Account"}</div>
             <div className="text-[11px] text-muted-foreground truncate">
-              @{currentUser?.username ?? "you"}
+              @{(currentUser as (typeof currentUser & { username?: string }) | null)?.username ?? "you"}
             </div>
           </div>
           <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${accountOpen ? "rotate-180" : ""}`} />

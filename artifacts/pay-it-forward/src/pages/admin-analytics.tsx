@@ -103,7 +103,7 @@ export default function AdminAnalyticsDashboard() {
       setData(await res.json());
       setRefreshedAt(new Date());
     } catch (e: unknown) {
-      setError(e.message ?? "Failed to load analytics");
+      setError(e instanceof Error ? e.message : "Failed to load analytics");
     } finally {
       setLoading(false);
     }

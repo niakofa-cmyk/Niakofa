@@ -24,9 +24,19 @@ export interface LegacyWorldLandmark {
   icon: LegacyWorldLandmarkIcon;
 }
 
+export interface LegacyWorldRestoration {
+  artifactId: string;
+  row: number;
+  column: number;
+  tile: LegacyWorldTile;
+  label: string;
+  description: string;
+}
+
 export interface LegacyWorldLayout {
   map: readonly (readonly LegacyWorldTile[])[];
   landmarks: readonly LegacyWorldLandmark[];
+  restorations: readonly LegacyWorldRestoration[];
 }
 
 export interface LegacyWorldPosition {
@@ -87,6 +97,7 @@ const ORIGINAL_LAYOUT: LegacyWorldLayout = {
       icon: "certificate",
     },
   ],
+  restorations: [],
 };
 
 const REGENERATED_LAYOUT: LegacyWorldLayout = {
@@ -132,10 +143,68 @@ const REGENERATED_LAYOUT: LegacyWorldLayout = {
       icon: "certificate",
     },
   ],
+  restorations: [],
 };
 
-export function getLegacyWorldLayout(worldVersion: number): LegacyWorldLayout {
-  return worldVersion >= 2 ? REGENERATED_LAYOUT : ORIGINAL_LAYOUT;
+const ARTIFACT_TERRAIN_RESTORATIONS: readonly LegacyWorldRestoration[] = [
+  {
+    artifactId: "photo",
+    row: 0,
+    column: 3,
+    tile: "dirt_path",
+    label: "Portrait path",
+    description: "A named ancestor opens a path toward the market road.",
+  },
+  {
+    artifactId: "recipe",
+    row: 2,
+    column: 6,
+    tile: "red_earth",
+    label: "Hearth garden",
+    description: "A recovered recipe brings a kitchen garden back into the village.",
+  },
+  {
+    artifactId: "medal",
+    row: 5,
+    column: 2,
+    tile: "dirt_path",
+    label: "Return road",
+    description: "A service memory clears a road for the journey home.",
+  },
+  {
+    artifactId: "certificate",
+    row: 4,
+    column: 7,
+    tile: "dirt_path",
+    label: "Migration crossing",
+    description: "A family route becomes walkable across the regenerated map.",
+  },
+] as const;
+
+function buildRegeneratedLayout(placedArtifacts: readonly string[]): LegacyWorldLayout {
+  const placed = new Set(placedArtifacts);
+  const map = REGENERATED_LAYOUT.map.map(row => [...row]);
+  const restorations = ARTIFACT_TERRAIN_RESTORATIONS.filter(({ artifactId }) => placed.has(artifactId));
+
+  for (const restoration of restorations) {
+    const row = map[restoration.row];
+    if (row) row[restoration.column] = restoration.tile;
+  }
+
+  return {
+    map,
+    landmarks: REGENERATED_LAYOUT.landmarks,
+    restorations,
+  };
+}
+
+export function getLegacyWorldLayout(
+  worldVersion: number,
+  placedArtifacts: readonly string[] = [],
+): LegacyWorldLayout {
+  return worldVersion >= 2
+    ? buildRegeneratedLayout(placedArtifacts)
+    : ORIGINAL_LAYOUT;
 }
 
 export function isLegacyWorldPositionWalkable(
@@ -146,8 +215,11 @@ export function isLegacyWorldPositionWalkable(
   return tile !== undefined && !LEGACY_WORLD_BLOCKED_TILES.has(tile);
 }
 
-export function getLegacyWorldSpawn(worldVersion: number): LegacyWorldPosition {
-  const layout = getLegacyWorldLayout(worldVersion);
+export function getLegacyWorldSpawn(
+  worldVersion: number,
+  placedArtifacts: readonly string[] = [],
+): LegacyWorldPosition {
+  const layout = getLegacyWorldLayout(worldVersion, placedArtifacts);
   const preferred = { row: 5, column: 3 };
   if (isLegacyWorldPositionWalkable(layout, preferred)) return preferred;
 

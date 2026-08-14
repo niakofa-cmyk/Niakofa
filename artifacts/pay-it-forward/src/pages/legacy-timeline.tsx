@@ -342,7 +342,7 @@ export default function LegacyTimelinePage() {
               ].map(q => (
                 <button
                   key={q}
-                  onClick={() => (window as unknown).openNia?.(q)}
+                  onClick={() => window.openNia?.(q)}
                   className="flex-shrink-0 text-[10px] text-primary/80 bg-primary/5 border border-primary/15 px-2 py-1 rounded-full active:opacity-70"
                 >
                   {q}

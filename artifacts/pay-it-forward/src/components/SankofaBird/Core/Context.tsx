@@ -12,6 +12,13 @@
 import type React from "react";
 import { createContext, useContext } from "react";
 import type { DiagonalPoseTransform } from "../Navigation/ViewSelector";
+import type {
+  AeroMode,
+  GazeDirection,
+  LandingPhase as LandingPhaseMath,
+  SaccadePhase,
+  TurnDirection,
+} from "@/lib/sankofa-bird-math";
 
 
 // Re-export for convenience

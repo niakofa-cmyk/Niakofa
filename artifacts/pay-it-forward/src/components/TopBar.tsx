@@ -258,7 +258,7 @@ export function TopBar({
   function handleNiaOrbTap() {
     if (niaEnabled === true) {
       // Active — open the drawer via the global bridge NiaGlobal registered.
-      (window as unknown).openNia?.();
+      window.openNia?.();
       onNiaClick?.();
     } else {
       // Dormant — show a self-dismissing tooltip, do nothing else.

@@ -508,7 +508,12 @@ function PledgePoolDashboard() {
     const tok = getToken();
     fetch(`${BASE}/api/admin/analytics`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
       .then(r => r.ok ? r.json() : null)
-      .then((d: unknown) => {
+      .then((raw: unknown) => {
+        const d = raw as {
+          pledge_pool?: { total_pledged: number; total_paid: number; pending: number };
+          daily_request_volume?: Array<{ day: string; count: number }>;
+          helper_compensation?: { avg_effective_hourly_rate: number; sample_size: number };
+        };
         if (d?.pledge_pool) {
           setData({
             total_pledged: d.pledge_pool.total_pledged,
@@ -517,7 +522,7 @@ function PledgePoolDashboard() {
             completion_rate: d.pledge_pool.total_pledged > 0
               ? Math.round((d.pledge_pool.total_paid / d.pledge_pool.total_pledged) * 100)
               : 0,
-            daily_volume: d.daily_request_volume || [],
+            daily_volume: d.daily_request_volume ?? [],
             avg_effective_hourly_rate: d.helper_compensation?.avg_effective_hourly_rate ?? 0,
             hourly_rate_sample_size: d.helper_compensation?.sample_size ?? 0,
           });
@@ -537,7 +542,7 @@ function PledgePoolDashboard() {
     <div className="text-center py-8 text-muted-foreground text-xs">Pledge pool data unavailable</div>
   );
 
-  const dailyCounts = data.daily_volume.map((d: unknown) => d.count || 0);
+  const dailyCounts = data.daily_volume.map((d) => d.count || 0);
 
   return (
     <div className="space-y-4">
@@ -577,7 +582,7 @@ function PledgePoolDashboard() {
           </div>
           <Sparkline data={dailyCounts} color="#3b82f6" height={60} />
           <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
-            {data.daily_volume.map((d: unknown, i: number) => (
+            {data.daily_volume.map((d, i) => (
               <span key={i} className="text-center flex-1">{d.day?.slice(0, 3) ?? ""}</span>
             ))}
           </div>
@@ -594,6 +599,7 @@ interface PledgeRequest {
   id: number;
   title: string;
   pledge_amount: number | null;
+  pledge_paid?: number | null;
   pledge_status: string;
   status: string;
   created_at: string;
@@ -619,7 +625,7 @@ function PledgeWriteOffCard() {
       .then(r => r.ok ? r.json() : [])
       .then((raw: unknown) => {
         // API returns { requests, total } or plain array depending on version
-        const data: PledgeRequest[] = Array.isArray(raw) ? raw : (raw as unknown)?.requests ?? [];
+        const data: PledgeRequest[] = Array.isArray(raw) ? (raw as PledgeRequest[]) : ((raw as { requests?: PledgeRequest[] })?.requests ?? []);
         setPledges(data.filter(r =>
           (r.pledge_amount ?? 0) > 0 &&
           // Show active (ongoing), defaulted (past-due), AND those awaiting resolution
@@ -693,7 +699,7 @@ function PledgeWriteOffCard() {
 
       <div className="space-y-2">
         {visible.map(p => {
-          const outstanding = Math.max(0, (p.pledge_amount ?? 0) - ((p as unknown).pledge_paid ?? 0));
+          const outstanding = Math.max(0, (p.pledge_amount ?? 0) - (p.pledge_paid ?? 0));
           const isDefaulted = p.pledge_status === "defaulted";
           const isExpanded = expandedReason === p.id;
           const isPending = processing === p.id;

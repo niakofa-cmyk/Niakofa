@@ -81,7 +81,12 @@ export default function RequestsBrowsePage() {
 
     if (categoryFilter !== "all") list = list.filter(r => r.category === categoryFilter);
     if (urgencyFilter !== "all")  list = list.filter(r => r.urgency === urgencyFilter);
-    if (paymentFilter !== "all")  list = list.filter(r => (r as unknown).payment_type === paymentFilter);
+    if (paymentFilter !== "all") {
+      list = list.filter(r => {
+        const payment = r as typeof r & { payment_type?: string };
+        return payment.payment_type === paymentFilter;
+      });
+    }
 
     list.sort((a, b) => {
       if (sort === "urgency") {
@@ -308,7 +313,11 @@ export default function RequestsBrowsePage() {
           <AnimatePresence initial={false}>
             {filtered.map((req, i) => {
               const urgStyle = URGENCY_STYLES[req.urgency ?? "low"] ?? URGENCY_STYLES.low;
-              const payStyle = PAYMENT_LABELS[(req as unknown).payment_type ?? ""] ?? null;
+              const payment = req as typeof req & {
+                payment_type?: string;
+                pay_it_forward_amount?: string | number | null;
+              };
+              const payStyle = PAYMENT_LABELS[payment.payment_type ?? ""] ?? null;
               const catLabel = CATEGORY_LABELS[req.category ?? ""] ?? req.category ?? "";
               const isEmergency = req.urgency === "emergency";
 
@@ -378,10 +387,10 @@ export default function RequestsBrowsePage() {
                     </div>
 
                     <div className="shrink-0 flex flex-col items-end gap-1.5">
-                      {(req as unknown).pay_it_forward_amount && (req as unknown).payment_type === "immediate" && (
+                      {payment.pay_it_forward_amount && payment.payment_type === "immediate" && (
                         <div className="flex items-center gap-0.5 text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-1 rounded-full">
                           <DollarSign className="w-3 h-3" />
-                          <span className="text-[11px] font-black">{parseFloat((req as unknown).pay_it_forward_amount).toFixed(0)}</span>
+                          <span className="text-[11px] font-black">{Number(payment.pay_it_forward_amount).toFixed(0)}</span>
                         </div>
                       )}
                       {req.urgency === "high" || req.urgency === "emergency" ? (

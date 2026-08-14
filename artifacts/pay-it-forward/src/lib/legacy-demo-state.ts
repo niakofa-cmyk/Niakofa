@@ -391,9 +391,10 @@ export function seasonForPhase(phase: DemoPhase): DemoSeason {
 function sanitizeDemoMapPosition(
   worldVersion: number,
   position: DemoMapPosition,
+  placedArtifacts: readonly string[] = [],
 ): DemoMapPosition {
-  const layout = getLegacyWorldLayout(worldVersion);
-  const spawn = getLegacyWorldSpawn(worldVersion);
+  const layout = getLegacyWorldLayout(worldVersion, placedArtifacts);
+  const spawn = getLegacyWorldSpawn(worldVersion, placedArtifacts);
   const row = Number.isInteger(position.row)
     ? Math.min(Math.max(position.row, 0), layout.map.length - 1)
     : spawn.row;
@@ -667,7 +668,7 @@ export function updateDemoMapPosition(
   position: DemoMapPosition,
   facing: DemoFacing,
 ): DemoState {
-  const nextPosition = sanitizeDemoMapPosition(state.worldVersion, position);
+  const nextPosition = sanitizeDemoMapPosition(state.worldVersion, position, state.placedArtifacts);
   return {
     ...state,
     mapPosition: nextPosition,
@@ -873,6 +874,7 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
                 ? Math.trunc((parsed.mapPosition as DemoMapPosition).column)
                 : fresh.mapPosition.column,
             },
+            placedArtifacts,
           )
         : { ...fresh.mapPosition },
       mapFacing: (["down", "left", "right", "up"] as DemoFacing[]).includes(parsed.mapFacing as DemoFacing)
