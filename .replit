@@ -76,3 +76,4 @@ APP_URL = "https://344ee55e-2b07-4834-a035-cf6e3d86f117-00-10iu0k7uswe2t.kirk.re
 
 [nix]
 channel = "stable-25_05"
+packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "mupdf", "openjpeg", "swig", "xcbuild"]
