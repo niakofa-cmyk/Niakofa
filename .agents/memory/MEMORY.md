@@ -9,3 +9,5 @@
 - [Legacy RPG art boundary](legacy-rpg-art-boundary.md) — supplied RPG art is curated into React presentation only; never promote a second runtime or imply historical identity.
 - [Legacy runtime boundary](legacy-runtime-boundary.md) — keep Legacy as one React/Vite runtime with Family Vault/world state authoritative and assets curated as presentation references.
 - [Legacy type declaration boundary](legacy-type-declaration-boundary.md) — all Window extensions (openNia, webkitAudioContext, SpeechRecognition) live in one file: src/speech-recognition.d.ts; never split again.
+- [Kwame Canonical Spec](kwame-canonical-spec.md) — color palette, art asset paths, 4-direction type, animation states, evolution timeline; "up"=back view, "back" is not a valid LegacySpriteFacing value.
+- [Niakofa Canonical Source](niakofa-canonical-source.md) — artifacts/ is canonical; niakofa-repo/ is stale archived mirror with CANONICAL_SOURCE.md; never edit niakofa-repo/artifacts/.
