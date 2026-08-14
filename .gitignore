@@ -59,3 +59,12 @@ zipFile.zip
 
 # User-uploaded chat assets — may contain sensitive data
 attached_assets/
+
+# Agent temp outputs and audit scripts — never commit
+.agents/outputs/
+.agents/scripts/
+
+# Python workspace artifacts from Replit env setup — not part of the app
+main.py
+pyproject.toml
+uv.lock

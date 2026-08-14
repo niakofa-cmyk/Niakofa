@@ -46,4 +46,9 @@ interface SpeechRecognition extends EventTarget {
 interface Window {
   SpeechRecognition?: { new (): SpeechRecognition };
   webkitSpeechRecognition?: { new (): SpeechRecognition };
+  /** Non-standard, Safari/older-Chromium prefixed AudioContext constructor. */
+  webkitAudioContext?: typeof AudioContext;
+  /** Global escape hatch set by App.tsx so any component can open the Nia
+   *  drawer (optionally seeded with a starter question) without prop drilling. */
+  openNia?: (seedQuestion?: string) => void;
 }

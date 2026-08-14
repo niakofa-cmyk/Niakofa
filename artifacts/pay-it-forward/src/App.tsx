@@ -121,8 +121,10 @@ function NiaGlobal() {
   const [isStripeConnected] = useRoute("/wallet/connected");
 
   useEffect(() => {
-    window.openNia = () => {
-      if (niaEnabled === true) setNiaOpen(true);
+    window.openNia = (seedQuestion?: string) => {
+      if (niaEnabled !== true) return;
+      if (seedQuestion) setNiaInitialMessage(seedQuestion);
+      setNiaOpen(true);
     };
     return () => { delete window.openNia; };
   }, [niaEnabled]);

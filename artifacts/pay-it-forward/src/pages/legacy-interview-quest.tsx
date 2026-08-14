@@ -21,10 +21,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import {
-  ArrowLeft, Loader2, Mic, MicOff, Square, Play, Pause,
+  ArrowLeft, Loader2, Mic, Square, Play, Pause,
   CheckCircle2, Sparkles, ChevronRight, AlertCircle,
   Users, MapPin, Calendar, BookOpen, Trophy, Brain,
-  Clock, Volume2, X, RefreshCw, Zap, Video, ShieldCheck,
+  Clock, Volume2, X, Zap, Video, ShieldCheck,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";

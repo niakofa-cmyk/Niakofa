@@ -22,7 +22,7 @@ import { useLocation } from "wouter";
 import {
   ArrowLeft, Play, Crown, MapPin, BookOpen, Mic,
   Camera, Users, Star, Loader2, Sparkles, Gift,
-  Sunrise, Moon, Heart,
+  Sunrise, Moon,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
