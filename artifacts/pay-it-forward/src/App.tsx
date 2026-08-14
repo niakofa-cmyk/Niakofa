@@ -74,6 +74,7 @@ const LegacyOnboardingPage      = lazy(() => import("@/pages/legacy-onboarding")
 const LegacyPlayPage            = lazy(() => import("@/pages/legacy-play"));
 const LegacyInterviewQuestPage = lazy(() => import("@/pages/legacy-interview-quest"));
 const LegacyDemoPage           = lazy(() => import("@/pages/legacy-demo"));
+const LegacyKwamePage          = lazy(() => import("@/pages/legacy-kwame"));
 
 function PageFallback() {
   return (
@@ -351,6 +352,14 @@ function AppContent() {
     return (
       <Suspense fallback={<PageFallback />}>
         <LegacyDemoPage />
+      </Suspense>
+    );
+  }
+  // Public character sheet — no auth required
+  if (normalizedPathname === "/legacy/kwame") {
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <LegacyKwamePage />
       </Suspense>
     );
   }

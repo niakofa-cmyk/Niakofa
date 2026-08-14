@@ -1926,7 +1926,9 @@ export default function LegacyDemoPage() {
         )}
         <div className="flex-1 min-w-0">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-400">Niakofa Legacy · Demo</p>
-          <p className="text-[9px]" style={{ color: accent }}>{seasonLabel} · House of Mensah · World v{state.worldVersion}</p>
+          <p className="text-[9px]" style={{ color: accent }}>{seasonLabel} · House of Mensah · World v{state.worldVersion} ·{" "}
+            <a href="/legacy/kwame" className="underline decoration-dotted hover:text-amber-300 transition-colors">Kwame ↗</a>
+          </p>
         </div>
         {/* Phase progress dots */}
         <div
