@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { ArrowRight, BookOpen, HeartHandshake, MapPin, Sparkles, TreePine } from "lucide-react";
 
 interface LegacyLivingBaobabProps {
@@ -55,6 +55,32 @@ const LIVING_BRANCHES: readonly LivingBranch[] = [
   },
 ];
 
+// ── Firefly animation config ───────────────────────────────────────────────────
+
+type FireflyConfig = {
+  id: number;
+  x: string;
+  y: string;
+  dur: string;
+  delay: string;
+  size: number;
+};
+
+function useFireflies(count: number): FireflyConfig[] {
+  const ref = useRef<FireflyConfig[] | null>(null);
+  if (!ref.current) {
+    ref.current = Array.from({ length: count }, (_, i) => ({
+      id: i,
+      x: `${8 + (i * 13.7 + i * 3) % 84}%`,
+      y: `${15 + (i * 11.3 + i * 5) % 65}%`,
+      dur: `${2.8 + (i % 5) * 0.6}s`,
+      delay: `${(i * 0.38) % 2.8}s`,
+      size: i % 3 === 0 ? 5 : i % 3 === 1 ? 4 : 3,
+    }));
+  }
+  return ref.current;
+}
+
 /**
  * The public demo's home screen. The Baobab is deliberately a lightweight
  * entry surface rather than a second navigation system: the existing golden
@@ -64,6 +90,7 @@ export function LegacyLivingBaobab({ worldVersion, onEnter }: LegacyLivingBaobab
   const [selectedBranchId, setSelectedBranchId] = useState(LIVING_BRANCHES[0].id);
   const selectedBranch =
     LIVING_BRANCHES.find(branch => branch.id === selectedBranchId) ?? LIVING_BRANCHES[0];
+  const fireflies = useFireflies(10);
 
   return (
     <section
@@ -160,6 +187,26 @@ export function LegacyLivingBaobab({ worldVersion, onEnter }: LegacyLivingBaobab
             </g>
             <path d="M42 274 Q180 235 318 274" fill="none" stroke="#b88232" strokeDasharray="3 9" opacity="0.55" />
           </svg>
+
+          {/* Animated fireflies — memory sparks drifting through the canopy */}
+          <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+            {fireflies.map(fly => (
+              <div
+                key={fly.id}
+                className="absolute rounded-full legacy-firefly"
+                style={{
+                  left: fly.x,
+                  top: fly.y,
+                  width: fly.size,
+                  height: fly.size,
+                  background: "#f5c842",
+                  boxShadow: `0 0 ${fly.size + 3}px rgba(245,200,66,0.8)`,
+                  "--firefly-dur": fly.dur,
+                  animationDelay: fly.delay,
+                } as React.CSSProperties}
+              />
+            ))}
+          </div>
 
           <div
             className="absolute inset-0"

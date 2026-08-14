@@ -77,6 +77,8 @@ import { LegacyLivingWorld } from "@/components/legacy-living-world";
 import { LegacyLivingBaobab } from "@/components/legacy-living-baobab";
 import { LegacyMemoryEncounter } from "@/components/legacy-memory-encounter";
 import { LegacySatchel, type LegacySatchelItem } from "@/components/legacy-satchel";
+import { LegacyCinematicDialogue } from "@/components/legacy-cinematic-dialogue";
+import { LegacyChapterEnvironment } from "@/components/legacy-chapter-environment";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -476,12 +478,9 @@ function PrologueScreen({ onBegin, season }: { onBegin: () => void; season: Demo
   const { label: seasonLabel } = getSeasonStyle(season);
   return (
     <div className="flex flex-col items-center px-6 py-10 text-center space-y-6 animate-[fadeIn_0.6s_ease-out]">
-      <div
-        className="w-20 h-20 rounded-full border-2 border-amber-500/60 flex items-center justify-center"
-        style={{ background: "radial-gradient(circle, rgba(214,158,46,0.15) 0%, rgba(10,6,4,0.95) 70%)" }}
-      >
-        <span className="text-3xl">🌳</span>
-      </div>
+      {/* Painted prologue scene */}
+      <LegacyChapterEnvironment phase="prologue" season={season} worldVersion={1} compact />
+
       <div>
         <p className="text-[9px] font-black uppercase tracking-[0.3em] text-amber-700 mb-1">{seasonLabel}</p>
         <p className="text-[10px] font-black uppercase tracking-[0.28em] text-amber-600 mb-2">Prologue · Present Day</p>
@@ -556,98 +555,37 @@ function ChapterScreen({
   traits,
   npcMemory,
   season,
+  phase,
+  worldVersion,
   onChoice,
 }: {
   chapter: (typeof CHAPTERS)[0];
   traits: Record<string, number>;
   npcMemory: { npcName: string; remembers: string }[];
   season: DemoSeason;
+  phase: DemoPhase;
+  worldVersion: number;
   onChoice: (trait: string, value: number) => void;
 }) {
-  const [chosen, setChosen] = useState<number | null>(null);
-  const { label: seasonLabel } = getSeasonStyle(season);
-
-  const handleChoice = (idx: number) => {
-    if (chosen !== null) return;
-    setChosen(idx);
-    const c = chapter.choices?.[idx];
-    if (c) {
-      setTimeout(() => onChoice(c.trait, c.value), 900);
-    }
-  };
-
-  // Find relevant NPC memory for this chapter
-  const relevantMemory = npcMemory.find(m => m.remembers.includes("Chapter"));
-
   return (
-    <div className="px-4 py-6 space-y-5 animate-[fadeIn_0.5s_ease-out]">
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
-          <BookOpen className="w-4 h-4 text-amber-400" />
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">{seasonLabel}</p>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600">
-            Chapter {chapter.number} · {chapter.era}
-          </p>
-          <h2 className="text-base font-black text-amber-100" style={{ fontFamily: "Georgia, serif" }}>
-            {chapter.title}
-          </h2>
-        </div>
-      </div>
+    <div className="px-4 py-6 space-y-4 animate-[fadeIn_0.5s_ease-out]">
+      {/* Painted chapter environment */}
+      <LegacyChapterEnvironment
+        phase={phase}
+        season={season}
+        worldVersion={worldVersion}
+      />
 
-      <p className="text-sm text-amber-200/85 leading-relaxed">{chapter.description}</p>
+      {/* Cinematic dialogue with typewriter */}
+      <LegacyCinematicDialogue
+        chapter={chapter}
+        season={season}
+        traits={traits}
+        npcMemory={npcMemory}
+        onChoice={onChoice}
+        animate
+      />
 
-      {/* NPC Memory hint */}
-      {relevantMemory && (
-        <div className="rounded-xl border border-amber-700/30 bg-amber-950/30 p-2.5 flex items-start gap-2 animate-[fadeIn_0.4s_ease-out]">
-          <span className="text-sm mt-0.5">💬</span>
-          <p className="text-[10px] text-amber-500 leading-relaxed italic">
-            Grandma remembers: "{relevantMemory.remembers}"
-          </p>
-        </div>
-      )}
-
-      <div className="rounded-xl border border-amber-900/40 bg-[#21140b] p-3 space-y-2">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-700 mb-2">Kwame Mensah · Traits</p>
-        {Object.entries(traits)
-          .slice(0, 4)
-          .map(([k, v]) => (
-            <TraitBar key={k} label={k} value={v} />
-          ))}
-      </div>
-
-      {chapter.choices && chosen === null && (
-        <div className="space-y-2">
-          <p className="text-xs font-black uppercase tracking-widest text-amber-700">Choose your path</p>
-          {chapter.choices.map((c, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => handleChoice(i)}
-              className="w-full text-left rounded-xl border border-amber-800/40 bg-[#21140b] p-3 flex items-center gap-3 active:scale-[0.98] transition-all hover:border-amber-600/50 hover:bg-amber-950/30"
-            >
-              <ArrowRight className="w-4 h-4 text-amber-600 shrink-0" />
-              <span className="text-sm text-amber-200">{c.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {chosen !== null && (
-        <div className="rounded-xl border border-amber-400/30 bg-amber-400/8 p-4 animate-[fadeIn_0.3s_ease-out]">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle2 className="w-4 h-4 text-amber-400" />
-            <p className="text-xs font-black uppercase tracking-wide text-amber-400">Choice made</p>
-          </div>
-          <p className="text-sm text-amber-200/90 italic">{chapter.choices?.[chosen]?.label}</p>
-          <p className="mt-2 text-[10px] text-amber-600">
-            +{chapter.choices?.[chosen]?.value} {chapter.choices?.[chosen]?.trait}
-          </p>
-          <p className="mt-3 text-xs text-amber-300/80 leading-relaxed">{chapter.outcome}</p>
-          <p className="mt-2 text-[10px] text-amber-700 animate-pulse">Advancing…</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -2009,6 +1947,8 @@ export default function LegacyDemoPage() {
             traits={state.traits}
             npcMemory={state.npcMemory}
             season={state.season}
+            phase={state.phase}
+            worldVersion={state.worldVersion}
             onChoice={handleChoice}
           />
         )}
