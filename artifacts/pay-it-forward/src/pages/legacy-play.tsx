@@ -38,14 +38,38 @@ interface Chapter {
 
 type LoadPhase = "loading" | "routing" | "error";
 
+// Ancestral wisdom shown during the cinematic load — cycles every ~3 s
+const ANCESTOR_WISDOM = [
+  "The elders say: what is told around the fire never fully burns out.",
+  "A tree that forgets its roots will not survive the storm.",
+  "The child who walks in the path of ancestors never walks alone.",
+  "Memory is the thread that stitches generations together.",
+  "Your name carries every name that came before it.",
+  "Every story preserved is a door left open for the future.",
+  "The river does not forget where it began.",
+  "What you protect today, your children will build upon tomorrow.",
+  "An elder dies twice — once in body, once when their stories are forgotten.",
+  "The seed planted by the great-grandmother feeds the great-grandchild.",
+];
+
 export default function LegacyPlayPage() {
   const { currentUser } = useAppContext();
   const params = useParams<{ sessionId?: string }>();
   const [, navigate] = useLocation();
   const [phase, setPhase] = useState<LoadPhase>("loading");
   const [message, setMessage] = useState("Entering your world…");
+  const [quoteIdx, setQuoteIdx] = useState(() => Math.floor(Math.random() * ANCESTOR_WISDOM.length));
   // Track pending setTimeout handles so we can cancel them on unmount
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cycle through ancestral wisdom every 3 s while loading
+  useEffect(() => {
+    if (phase === "error") return;
+    const interval = setInterval(() => {
+      setQuoteIdx(i => (i + 1) % ANCESTOR_WISDOM.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [phase]);
 
   useEffect(() => {
     return () => {
@@ -227,8 +251,19 @@ export default function LegacyPlayPage() {
         {/* Shimmer line */}
         <div className="mt-8 w-24 h-px bg-gradient-to-r from-transparent via-amber-700/40 to-transparent mx-auto" />
 
+        {/* Cycling ancestral wisdom */}
+        {phase !== "error" && (
+          <p
+            key={quoteIdx}
+            className="text-[11px] text-amber-700/70 italic mt-4 leading-relaxed px-2"
+            style={{ animation: "fadeIn 0.8s ease-out" }}
+          >
+            {ANCESTOR_WISDOM[quoteIdx]}
+          </p>
+        )}
+
         {/* Tagline */}
-        <p className="text-[10px] text-amber-800 uppercase tracking-widest mt-3">
+        <p className="text-[10px] text-amber-800 uppercase tracking-widest mt-4">
           Play · Discover · Preserve · Honor
         </p>
       </div>
