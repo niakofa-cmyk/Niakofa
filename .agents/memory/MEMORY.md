@@ -4,7 +4,8 @@
 - [Legacy House Demo](legacy-house-demo.md) — product boundary for the House of Mensah interactive demo layer.
 - [Legacy Start Screen](legacy-start-screen.md) — architecture of the cinematic start screen and how it wires into legacy-home.tsx.
 - [Legacy API contracts](legacy-api-contracts.md) — current data sources for Legacy journey, welcome, and calendar UI; retired endpoint list.
-- [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes require the supported GitHub connection and must not use pasted tokens.
+- [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes use GITHUB_PERSONAL_ACCESS_TOKEN in remote URL (token auth, not password).
+- [Legacy Cinematic Layer](legacy-cinematic-layer.md) — LegacyCinematicDialogue + LegacyChapterEnvironment arch; ChapterScreen prop contract; CSS animation class names.
 - [Legacy Character Engine Runtime](legacy-character-engine-runtime.md) — stable IDs, explicit runtime layers, and the archive/licensing boundary for character rendering.
 - [Legacy RPG art boundary](legacy-rpg-art-boundary.md) — supplied RPG art is curated into React presentation only; never promote a second runtime or imply historical identity.
 - [Legacy runtime boundary](legacy-runtime-boundary.md) — keep Legacy as one React/Vite runtime with Family Vault/world state authoritative and assets curated as presentation references.
