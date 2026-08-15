@@ -1,32 +1,50 @@
 ---
 name: Legacy NPC + HUD wiring
-description: How the NPC system, Game HUD, and NPC dialogue are wired into the demo; key prop contracts and state location.
+description: Prop contracts, state location, wiring status for NPC dialogue and game HUD in legacy-demo.tsx
 ---
 
-## What was built
+## State location (legacy-demo.tsx)
+- `gameHour` — local `useState(8)`, advanced by `advanceGameHour()` on each `handleMapMove`
+- `activeNpcId` — local `useState<string | null>(null)`
+- `npcInteractionCount` — local `useState(0)`, incremented in `handleNpcOutcome`
+- `journalOpen` — local `useState(false)`, toggles Memory Journal overlay
+- `journalEntries: DemoJournalEntry[]` — local `useState([])`, appended in `handleNpcOutcome`
 
-- **LegacyNpcSystem** (`src/lib/legacy-npc-system.ts`): 4 NPCs with daily schedules on the 9×6 tile map. `getPhaseNpcs(phase, hour)` returns `{ npc, col, row, activity }[]`. `advanceGameHour(h)` cycles 6→20.
-- **LegacyQuestSystem** (`src/lib/legacy-quest-system.ts`): 5 quest definitions; not yet wired to HUD `activeQuest` (currently `null` — next step).
-- **LegacyGameHud** (`src/components/legacy-game-hud.tsx`): RPG overlay (`pointer-events-none absolute inset-x-0 top-0 z-20`). Needs `relative` parent. `deriveLifeSkills(traits, npcInteractionCount, questsCompleted, artifactsPlaced)` → `LifeSkills`.
-- **LegacyNpcDialogue** (`src/components/legacy-npc-dialogue.tsx`): Fixed bottom-sheet `(fixed inset-x-0 bottom-0 z-50)`. `onOutcome(outcome, memoryTag?, discoversId?, traitGain?)`.
+These are NOT persisted to DemoState; they reset naturally each session.
 
-## State wiring (legacy-demo.tsx)
+## Wired as of commit 7167e4cd (Aug 2026)
+- `activeQuest` → `getAvailableQuests(state.phase, []).at(0) ?? null` via `useMemo`
+- `nearbyNpcs` → `getPhaseNpcs(state.phase, gameHour).filter(Manhattan ≤ 2)` via `useMemo`
+- `playerMemoryTags` → derived from `journalEntries` (type=conversation), via `useMemo`
+- `handleNpcOutcome` records `{ type:"conversation", tag, label: outcome, source: npcName }` into `journalEntries` (deduped by tag)
+- "Journal" tray button toggles `LegacyDemoJournal` overlay; mutually exclusive with Satchel
 
-- `gameHour` — `useState(8)`, local (not persisted). Advances on every `handleMapMove` call via `advanceGameHour(h)`.
-- `activeNpcId` — `useState<string | null>(null)`. Set by `handleNpcInteract(npcId)`, cleared by `handleNpcDialogueClose()`.
-- `npcInteractionCount` — `useState(0)`. Incremented by every `handleNpcOutcome()` call.
-- Trait gains from dialogue → `setState(prev => { traits = {...prev.traits, [trait]: prev+delta}; persist({...prev, traits}); })`.
+## LegacyDemoJournal (`src/components/legacy-demo-journal.tsx`)
+Props: `entries`, `traits`, `phase`, `onClose`
+Sections: Life Skills bars · Available Quests · Memory Log · Discoveries
 
-## NPC rendering (legacy-living-world.tsx)
+## LegacyGameHud prop contract
+```typescript
+interface LegacyGameHudProps {
+  phase: DemoPhase; season: DemoSeason; worldVersion: number; gameHour: number;
+  skills: LifeSkill[];  // deriveLifeSkills()
+  traits: Record<string, number>;
+  activeQuest: QuestDefinition | null;
+  questObjectiveIdx: number;
+  nearbyNpcs: Array<{ name: string; activity: string }>;
+}
+```
 
-- `LegacyLivingWorld` has `gameHour?: number` and `onNpcInteract?: (npcId: string) => void` props — passes through to `HouseOfMensahMap`.
-- `HouseOfMensahMap` computes `phaseNpcs = getPhaseNpcs(phase, gameHour)` and renders emoji avatar buttons in the tile grid at `z-[8]`, above echoes but below player.
+## LegacyNpcDialogue prop contract
+```typescript
+interface LegacyNpcDialogueProps {
+  npc: NpcDefinition; season: DemoSeason; traits: Record<string, number>;
+  playerMemoryTags: string[]; onClose: () => void;
+  onOutcome: (outcome: string, memoryTag?: string, discoversId?: string, traitGain?: { trait: string; value: number }) => void;
+}
+```
 
-## Known gaps (next steps)
-
-1. `activeQuest` is hardcoded `null` in HUD — wire `LegacyQuestSystem` to show and track active quests.
-2. `nearbyNpcs` is `[]` — compute proximity from `phaseNpcs` vs `state.mapPosition`.
-3. `playerMemoryTags` is `[]` — wire to `state.npcMemory` for NPCs to reference past choices.
-4. `npcInteractionCount` and `questsCompleted` are not persisted — add to `DemoState` if persistent skill tracking matters.
-
-**Why:** gameHour is local (not persisted) because it resets naturally; the schedule loop is idempotent. Don't add it to DemoState without a reason.
+## NpcScheduleEntry position type
+- Uses `col: number, row: number` (not `column`)
+- DemoMapPosition uses `row: number, column: number` (note: `column` not `col`)
+- Proximity: `Math.abs(row - mapPosition.row) + Math.abs(col - mapPosition.column) <= 2`
