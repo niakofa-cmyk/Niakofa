@@ -10,7 +10,7 @@
  * Progress is stored in localStorage so the demo can be resumed or reset.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -81,7 +81,12 @@ import { LegacyCinematicDialogue } from "@/components/legacy-cinematic-dialogue"
 import { LegacyChapterEnvironment } from "@/components/legacy-chapter-environment";
 import { LegacyGameHud, deriveLifeSkills } from "@/components/legacy-game-hud";
 import { LegacyNpcDialogue } from "@/components/legacy-npc-dialogue";
-import { NPC_REGISTRY, advanceGameHour } from "@/lib/legacy-npc-system";
+import { NPC_REGISTRY, advanceGameHour, getPhaseNpcs } from "@/lib/legacy-npc-system";
+import { getAvailableQuests, type QuestDefinition } from "@/lib/legacy-quest-system";
+import {
+  LegacyDemoJournal,
+  type DemoJournalEntry,
+} from "@/components/legacy-demo-journal";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -1713,6 +1718,8 @@ export default function LegacyDemoPage() {
   const [gameHour, setGameHour] = useState(8);
   const [activeNpcId, setActiveNpcId] = useState<string | null>(null);
   const [npcInteractionCount, setNpcInteractionCount] = useState(0);
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [journalEntries, setJournalEntries] = useState<DemoJournalEntry[]>([]);
   const storageRef = useRef<DemoStorage>(sessionOnlyDemoStorage);
   const storageAvailableRef = useRef(false);
 
@@ -1814,8 +1821,8 @@ export default function LegacyDemoPage() {
   }, []);
 
   const handleNpcOutcome = useCallback((
-    _outcome: string,
-    _memoryTag?: string,
+    outcome: string,
+    memoryTag?: string,
     _discoversId?: string,
     traitGain?: { trait: string; value: number },
   ) => {
@@ -1826,7 +1833,52 @@ export default function LegacyDemoPage() {
         return persist({ ...prev, traits });
       });
     }
-  }, [persist]);
+    // Record the memory in the journal — skip duplicates by tag
+    if (memoryTag && outcome) {
+      const npcName = activeNpcId ? (NPC_REGISTRY[activeNpcId]?.name ?? "Ancestor") : "Ancestor";
+      setJournalEntries(prev =>
+        prev.some(e => e.tag === memoryTag)
+          ? prev
+          : [
+              ...prev,
+              {
+                type: "conversation",
+                tag: memoryTag,
+                label: outcome,
+                source: npcName,
+                timestamp: Date.now(),
+              } satisfies DemoJournalEntry,
+            ],
+      );
+    }
+  }, [persist, activeNpcId]);
+
+  // ── Derived state ─────────────────────────────────────────────────────────
+
+  /** Flat list of memory tags to pass to NPC dialogue (deduplication guard) */
+  const npcMemoryTags = useMemo(
+    () => journalEntries.filter((e) => e.type === "conversation").map((e) => e.tag),
+    [journalEntries],
+  );
+
+  /** NPCs within Manhattan distance ≤ 2 of the player's current tile */
+  const nearbyNpcs = useMemo(
+    () =>
+      getPhaseNpcs(state.phase, gameHour)
+        .filter(({ col, row }) => {
+          const dr = Math.abs(row - state.mapPosition.row);
+          const dc = Math.abs(col - state.mapPosition.column);
+          return dr + dc <= 2;
+        })
+        .map(({ npc, activity }) => ({ name: npc.name, activity })),
+    [state.phase, state.mapPosition, gameHour],
+  );
+
+  /** First quest available in this phase (no completed prereqs needed) */
+  const activeQuestDef = useMemo<QuestDefinition | null>(
+    () => getAvailableQuests(state.phase, []).at(0) ?? null,
+    [state.phase],
+  );
 
   const handleLandmarkInspect = useCallback((artifactId: string) => {
     setState(prev => {
@@ -1956,9 +2008,9 @@ export default function LegacyDemoPage() {
                 gameHour={gameHour}
                 skills={deriveLifeSkills(state.traits, npcInteractionCount, 0, state.placedArtifacts.length)}
                 traits={state.traits}
-                activeQuest={null}
+                activeQuest={activeQuestDef}
                 questObjectiveIdx={0}
-                nearbyNpcs={[]}
+                nearbyNpcs={nearbyNpcs}
               />
             )}
             <LegacyLivingWorld
@@ -2044,37 +2096,56 @@ export default function LegacyDemoPage() {
             {[
               { icon: Package, label: "Satchel" },
               { icon: TreePine, label: "Family Tree" },
-              { icon: ScrollText, label: "Vault" },
+              { icon: ScrollText, label: "Journal" },
               { icon: UtensilsCrossed, label: "Kitchen" },
               { icon: Briefcase, label: "Business" },
               { icon: Search, label: "Mysteries" },
               { icon: Landmark, label: "Map" },
               { icon: Mic, label: "Stories" },
               { icon: Sparkles, label: "AI" },
-            ].map(({ icon: Icon, label }) => label === "Satchel" ? (
-              <button
-                key={label}
-                type="button"
-                onClick={() => setSatchelOpen((open) => !open)}
-                className="flex shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-0.5 hover:bg-amber-950/40"
-                aria-label={`${satchelOpen ? "Close" : "Open"} Legacy Satchel`}
-                aria-pressed={satchelOpen}
-              >
-                <div className={`flex h-7 w-7 items-center justify-center rounded-lg border ${
-                  satchelOpen ? "border-emerald-300/50 bg-emerald-950/40" : "border-amber-900/30 bg-amber-950/40"
-                }`}>
-                  <Icon className={`h-3.5 w-3.5 ${satchelOpen ? "text-emerald-300" : "text-amber-600"}`} />
+            ].map(({ icon: Icon, label }) => {
+              const isActive =
+                label === "Satchel" ? satchelOpen : label === "Journal" ? journalOpen : false;
+              const isInteractive = label === "Satchel" || label === "Journal";
+              const handleTrayClick = () => {
+                if (label === "Satchel") {
+                  setSatchelOpen((open) => !open);
+                  if (journalOpen) setJournalOpen(false);
+                } else if (label === "Journal") {
+                  setJournalOpen((open) => !open);
+                  if (satchelOpen) setSatchelOpen(false);
+                }
+              };
+              if (isInteractive) {
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={handleTrayClick}
+                    className="flex shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-0.5 hover:bg-amber-950/40"
+                    aria-label={`${isActive ? "Close" : "Open"} ${label}`}
+                    aria-pressed={isActive}
+                  >
+                    <div className={`flex h-7 w-7 items-center justify-center rounded-lg border ${
+                      isActive ? "border-emerald-300/50 bg-emerald-950/40" : "border-amber-900/30 bg-amber-950/40"
+                    }`}>
+                      <Icon className={`h-3.5 w-3.5 ${isActive ? "text-emerald-300" : "text-amber-600"}`} />
+                    </div>
+                    <span className={`text-[8px] font-bold uppercase tracking-wide ${isActive ? "text-emerald-300" : "text-amber-800"}`}>
+                      {label}
+                    </span>
+                  </button>
+                );
+              }
+              return (
+                <div key={label} className="flex shrink-0 flex-col items-center gap-1">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-900/30 bg-amber-950/40">
+                    <Icon className="h-3.5 w-3.5 text-amber-600" />
+                  </div>
+                  <span className="text-[8px] font-bold uppercase tracking-wide text-amber-800">{label}</span>
                 </div>
-                <span className={`text-[8px] font-bold uppercase tracking-wide ${satchelOpen ? "text-emerald-300" : "text-amber-800"}`}>{label}</span>
-              </button>
-            ) : (
-              <div key={label} className="flex shrink-0 flex-col items-center gap-1">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-900/30 bg-amber-950/40">
-                  <Icon className="h-3.5 w-3.5 text-amber-600" />
-                </div>
-                <span className="text-[8px] font-bold uppercase tracking-wide text-amber-800">{label}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -2088,13 +2159,22 @@ export default function LegacyDemoPage() {
         />
       )}
 
+      {journalOpen && state.baobabEntered && state.phase !== "prologue" && state.phase !== "finale" && (
+        <LegacyDemoJournal
+          entries={journalEntries}
+          traits={state.traits}
+          phase={state.phase}
+          onClose={() => setJournalOpen(false)}
+        />
+      )}
+
       {/* NPC Dialogue overlay — fixed bottom sheet, renders above everything */}
       {activeNpcId && NPC_REGISTRY[activeNpcId] && (
         <LegacyNpcDialogue
           npc={NPC_REGISTRY[activeNpcId]}
           season={state.season}
           traits={state.traits}
-          playerMemoryTags={[]}
+          playerMemoryTags={npcMemoryTags}
           onClose={handleNpcDialogueClose}
           onOutcome={handleNpcOutcome}
         />
