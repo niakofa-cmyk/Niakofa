@@ -494,7 +494,7 @@ export default function ActiveRequestScreen() {
       } catch {}
     }, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [currentUser?.id, isArrived]);
+  }, [currentUser?.id, isArrived, isCompleted]);
 
   // WebSocket updates
   useWebSocket(useCallback((event) => {

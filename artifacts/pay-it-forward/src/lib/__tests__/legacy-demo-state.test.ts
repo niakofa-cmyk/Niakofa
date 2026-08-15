@@ -522,3 +522,68 @@ describe("Co-op quest", () => {
     expect(state.coopTasks[1].questId).toBe("elder-interview");
   });
 });
+
+describe("Journal sanitizer resilience (Task 9)", () => {
+  function makeEntry(type: "conversation" | "trait-gain" | "discovery", index: number) {
+    return {
+      type,
+      tag: `${type}-${index}`,
+      label: `${type} label ${index}`,
+      source: `source-${index}`,
+      timestamp: 1_000_000 + index,
+    };
+  }
+
+  it("drops malformed journal entries (missing tag, bad type) and keeps valid ones", () => {
+    const valid = makeEntry("conversation", 1);
+    const stored: Record<string, string> = {};
+    writeDemoState(
+      { setItem: (k, v) => { stored[k] = v; } },
+      { ...resetDemo(), journalEntries: [valid] },
+    );
+    const raw = JSON.parse(stored["niakofa:demo:v2"]);
+    raw.journalEntries = [
+      valid,
+      { type: "bad-type", tag: "x", label: "y", source: "z", timestamp: 1 },
+      { type: "conversation", tag: null, label: "y", source: "z", timestamp: 2 },
+    ];
+    stored["niakofa:demo:v2"] = JSON.stringify(raw);
+    const result = readDemoState({ getItem: k => stored[k] ?? null });
+    expect(result.journalEntries).toHaveLength(1);
+    expect(result.journalEntries[0].tag).toBe(valid.tag);
+  });
+
+  it("caps at 200 entries total, preferring conversation over trait-gain", () => {
+    // Build 250 entries: 100 trait-gain then 150 conversation (newest at end)
+    const entries = [
+      ...Array.from({ length: 100 }, (_, i) => makeEntry("trait-gain", i)),
+      ...Array.from({ length: 150 }, (_, i) => makeEntry("conversation", 100 + i)),
+    ];
+    const stored: Record<string, string> = {};
+    const state = { ...resetDemo(), journalEntries: [] as typeof entries };
+    writeDemoState({ setItem: (k, v) => { stored[k] = v; } }, state);
+    const raw = JSON.parse(stored["niakofa:demo:v2"]);
+    raw.journalEntries = entries;
+    stored["niakofa:demo:v2"] = JSON.stringify(raw);
+
+    const result = readDemoState({ getItem: k => stored[k] ?? null });
+    expect(result.journalEntries.length).toBeLessThanOrEqual(200);
+    const convCount = result.journalEntries.filter(e => e.type === "conversation").length;
+    const traitCount = result.journalEntries.filter(e => e.type === "trait-gain").length;
+    // All 150 conversations must be kept; trait-gain fills remaining budget (50).
+    expect(convCount).toBe(150);
+    expect(traitCount).toBe(50);
+  });
+
+  it("preserves journal entries through a storage round-trip unchanged when under 200", () => {
+    const entries = Array.from({ length: 10 }, (_, i) => makeEntry("conversation", i));
+    const stored: Record<string, string> = {};
+    writeDemoState(
+      { setItem: (k, v) => { stored[k] = v; } },
+      { ...resetDemo(), journalEntries: entries },
+    );
+    const result = readDemoState({ getItem: k => stored[k] ?? null });
+    expect(result.journalEntries).toHaveLength(10);
+    expect(result.journalEntries.map(e => e.tag)).toEqual(entries.map(e => e.tag));
+  });
+});

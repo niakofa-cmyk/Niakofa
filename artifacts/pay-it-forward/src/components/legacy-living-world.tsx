@@ -34,6 +34,12 @@ import {
   type LegacyWorldLandmarkIcon,
   type LegacyWorldTile,
 } from "@/lib/legacy-world-layout";
+import {
+  WORLD_REGION_REGISTRY,
+  getAvailableConnections,
+  getWorldRegion,
+  type RegionId,
+} from "@/lib/legacy-world-regions";
 import { LegacyFishingEncounter } from "@/components/legacy-fishing-encounter";
 import type { FishingJournal } from "@/lib/legacy-demo-state";
 import { LegacyVillageAtmosphere } from "@/components/legacy-village-atmosphere";
@@ -280,6 +286,224 @@ const WORLD_MEMORY_ECHOES = [
     },
   },
 ] as const;
+
+// ── RegionMap — renders a WorldRegion's tile grid with portal overlays ────────
+
+function RegionMap({
+  regionId,
+  phase,
+  mapPosition,
+  mapFacing,
+  onMapMove,
+  onRegionChange,
+  character,
+  worldVersion,
+}: {
+  regionId: RegionId;
+  phase: DemoPhase;
+  mapPosition: DemoMapPosition;
+  mapFacing: DemoFacing;
+  onMapMove: (position: DemoMapPosition, facing: DemoFacing) => void;
+  onRegionChange?: (regionId: RegionId) => void;
+  character: WorldScene["character"];
+  worldVersion: number;
+}) {
+  const region = getWorldRegion(regionId);
+  const portals = getAvailableConnections(regionId, phase);
+  const [motion, setMotion] = useState<"idle" | "walk">("idle");
+
+  // Clamp player to valid region bounds
+  const player: PlayerPosition =
+    mapPosition.row >= 0 && mapPosition.row < 6 &&
+    mapPosition.column >= 0 && mapPosition.column < 9
+      ? mapPosition
+      : region.defaultSpawn;
+
+  useEffect(() => {
+    if (motion === "idle") return;
+    const timeout = window.setTimeout(() => setMotion("idle"), 180);
+    return () => window.clearTimeout(timeout);
+  }, [motion]);
+
+  const move = (rowDelta: number, columnDelta: number, facing: DemoFacing) => {
+    const row = player.row + rowDelta;
+    const column = player.column + columnDelta;
+    // Check portal exits first
+    const portal = portals.find(p => p.exitRow === row && p.exitColumn === column);
+    if (portal && onRegionChange) {
+      onRegionChange(portal.targetRegionId);
+      onMapMove({ row: portal.entryRow, column: portal.entryColumn }, facing);
+      return;
+    }
+    const nextTile = region.map[row]?.[column];
+    if (!nextTile) { onMapMove(player, facing); return; }
+    onMapMove({ row, column }, facing);
+    setMotion("walk");
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const key = event.key.toLowerCase();
+    const movement: Record<string, [number, number, DemoFacing]> = {
+      arrowup: [-1, 0, "up"], w: [-1, 0, "up"],
+      arrowdown: [1, 0, "down"], s: [1, 0, "down"],
+      arrowleft: [0, -1, "left"], a: [0, -1, "left"],
+      arrowright: [0, 1, "right"], d: [0, 1, "right"],
+    };
+    const direction = movement[key];
+    if (!direction) return;
+    event.preventDefault();
+    move(direction[0], direction[1], direction[2]);
+  };
+
+  return (
+    <div className="relative z-[1] mt-4 rounded-2xl border border-amber-300/20 bg-[#120904]/80 p-3 shadow-inner shadow-black/30">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Compass className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+          <div className="min-w-0">
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-300">
+              {region.name} · {region.era}
+            </p>
+            <p className="truncate text-[9px] text-amber-100/60">{region.subtitle}</p>
+          </div>
+        </div>
+        <span className="flex shrink-0 items-center gap-1 text-[9px] font-bold text-amber-100/55">
+          <Gamepad2 className="h-3 w-3" /> explore
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+        <div
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onClick={(event) => event.currentTarget.focus()}
+          className="relative aspect-[3/2] w-full overflow-hidden rounded-xl border border-amber-400/20 bg-[#201207] outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70"
+          aria-label={`${region.name} map. Use arrow keys or W A S D to move.`}
+          style={{ background: region.atmosphereGradient }}
+        >
+          {/* Tile grid */}
+          <div className="absolute inset-0 grid grid-cols-9 grid-rows-6">
+            {region.map.flatMap((row, rowIndex) =>
+              row.map((tileName, columnIndex) => (
+                <img
+                  key={`${rowIndex}-${columnIndex}`}
+                  src={`${TILE_ROOT}/${tileName}.png`}
+                  alt=""
+                  draggable={false}
+                  className="h-full w-full select-none object-cover"
+                  style={{ imageRendering: "pixelated" }}
+                />
+              )),
+            )}
+          </div>
+
+          {/* Portal exits */}
+          {portals.map((portal) => (
+            <button
+              key={`${portal.direction}-${portal.targetRegionId}`}
+              type="button"
+              onClick={() => { onRegionChange?.(portal.targetRegionId); onMapMove({ row: portal.entryRow, column: portal.entryColumn }, portal.direction === "north" ? "up" : portal.direction === "south" ? "down" : portal.direction === "west" ? "left" : "right"); }}
+              aria-label={`Portal: ${portal.label}`}
+              title={portal.label}
+              className="absolute z-[6] flex items-center justify-center rounded-lg border border-violet-400/70 bg-violet-950/60 shadow-[0_0_12px_rgba(139,92,246,0.75)] hover:bg-violet-900/80 transition-all text-[8px] font-black text-violet-200 uppercase tracking-wide"
+              style={{
+                width: `${100 / 9}%`,
+                height: `${100 / 6}%`,
+                left: `${(portal.exitColumn * 100) / 9}%`,
+                top: `${(portal.exitRow * 100) / 6}%`,
+              }}
+            >
+              <span className="rotate-90 select-none" aria-hidden="true">⬡</span>
+            </button>
+          ))}
+
+          {/* Story event markers */}
+          {region.storyEvents.map((event) => (
+            <div
+              key={event.id}
+              role="img"
+              aria-label={`${event.label}: ${event.description}`}
+              title={`${event.label} — ${event.description}`}
+              className="pointer-events-none absolute z-[4] flex items-center justify-center rounded-full border border-amber-400/70 bg-amber-950/60 shadow-[0_0_8px_rgba(245,200,66,0.55)]"
+              style={{
+                width: `${100 / 9}%`,
+                height: `${100 / 6}%`,
+                left: `${(event.column * 100) / 9}%`,
+                top: `${(event.row * 100) / 6}%`,
+              }}
+            >
+              <Sparkles className="h-3 w-3 text-amber-300" />
+            </div>
+          ))}
+
+          {/* Player */}
+          <div
+            className="absolute z-10 flex items-end justify-center transition-[left,top] duration-150 ease-out"
+            style={{
+              width: `${100 / 9}%`,
+              height: `${100 / 6}%`,
+              left: `${(player.column * 100) / 9}%`,
+              top: `${(player.row * 100) / 6}%`,
+            }}
+            aria-hidden="true"
+          >
+            <LegacyCharacterSprite
+              {...character}
+              appearanceSeed={`region-player-${worldVersion}`}
+              libraryId="niakofa-original-art-demo-v1"
+              size={32}
+              facing={mapFacing}
+              motion={motion}
+              className="mb-0.5 border-amber-200/70 bg-amber-950/30 shadow-[0_0_12px_rgba(245,200,66,0.7)]"
+            />
+          </div>
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-white/5" />
+        </div>
+
+        <div className="flex items-center justify-center gap-1" aria-label="Map movement controls">
+          <div className="grid grid-cols-3 gap-1">
+            <span />
+            <button type="button" onClick={() => move(-1, 0, "up")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move north"><ArrowUp className="h-3.5 w-3.5" /></button>
+            <span />
+            <button type="button" onClick={() => move(0, -1, "left")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move west"><ArrowLeft className="h-3.5 w-3.5" /></button>
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-[9px] font-black text-amber-300">MOVE</span>
+            <button type="button" onClick={() => move(0, 1, "right")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move east"><ArrowRight className="h-3.5 w-3.5" /></button>
+            <span />
+            <button type="button" onClick={() => move(1, 0, "down")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-700/40 bg-amber-950/70 text-amber-300 active:bg-amber-400/20" aria-label="Move south"><ArrowDown className="h-3.5 w-3.5" /></button>
+            <span />
+          </div>
+        </div>
+      </div>
+
+      {portals.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {portals.map((portal) => (
+            <button
+              key={portal.targetRegionId}
+              type="button"
+              onClick={() => {
+                onRegionChange?.(portal.targetRegionId);
+                onMapMove({ row: portal.entryRow, column: portal.entryColumn }, "down");
+              }}
+              className="rounded-lg border border-violet-500/35 bg-violet-950/25 px-2.5 py-1 text-[9px] font-black uppercase tracking-wide text-violet-300 hover:bg-violet-900/30 transition-all"
+            >
+              {portal.label} →
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="mt-2 text-center text-[9px] text-amber-100/50">
+        Arrow keys / W A S D · {portals.length > 0 ? "⬡ portal exits shown in violet" : "no portal exits in this phase"}
+      </p>
+      {region.ambience && (
+        <p className="mt-1 text-center text-[9px] italic text-amber-100/35">{region.ambience.slice(0, 120)}{region.ambience.length > 120 ? "…" : ""}</p>
+      )}
+    </div>
+  );
+}
+
+// ── HouseOfMensahMap ──────────────────────────────────────────────────────────
 
 function HouseOfMensahMap({
   character,
@@ -627,6 +851,8 @@ export function LegacyLivingWorld({
   onFishingCast,
   gameHour,
   onNpcInteract,
+  activeRegionId,
+  onRegionChange,
 }: {
   phase: DemoPhase;
   season: DemoSeason;
@@ -642,6 +868,10 @@ export function LegacyLivingWorld({
   onFishingCast: (power: number) => void;
   gameHour?: number;
   onNpcInteract?: (npcId: string) => void;
+  /** When set, renders the named world region's tile map instead of the default HouseOfMensahMap. */
+  activeRegionId?: RegionId;
+  /** Called when the player steps through a portal exit into another region. */
+  onRegionChange?: (regionId: RegionId) => void;
 }) {
   const scene = WORLD_SCENES[phase];
   const SceneIcon = scene.icon;
@@ -706,19 +936,32 @@ export function LegacyLivingWorld({
           season={season}
           worldVersion={worldVersion}
         />
-        <HouseOfMensahMap
-          character={scene.character}
-          worldVersion={worldVersion}
-          placedArtifacts={placedArtifacts}
-          discoveredLandmarks={discoveredLandmarks}
-          mapPosition={mapPosition}
-          mapFacing={mapFacing}
-          onMapMove={onMapMove}
-          onLandmarkInspect={onLandmarkInspect}
-          phase={phase}
-          gameHour={gameHour}
-          onNpcInteract={onNpcInteract}
-        />
+        {activeRegionId ? (
+          <RegionMap
+            regionId={activeRegionId}
+            phase={phase}
+            mapPosition={mapPosition}
+            mapFacing={mapFacing}
+            onMapMove={onMapMove}
+            onRegionChange={onRegionChange}
+            character={scene.character}
+            worldVersion={worldVersion}
+          />
+        ) : (
+          <HouseOfMensahMap
+            character={scene.character}
+            worldVersion={worldVersion}
+            placedArtifacts={placedArtifacts}
+            discoveredLandmarks={discoveredLandmarks}
+            mapPosition={mapPosition}
+            mapFacing={mapFacing}
+            onMapMove={onMapMove}
+            onLandmarkInspect={onLandmarkInspect}
+            phase={phase}
+            gameHour={gameHour}
+            onNpcInteract={onNpcInteract}
+          />
+        )}
         <LegacyFishingEncounter fishing={fishing} onCast={onFishingCast} />
 
         {hasRegenerated && (

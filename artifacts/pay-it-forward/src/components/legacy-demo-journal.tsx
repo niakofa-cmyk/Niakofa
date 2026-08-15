@@ -9,9 +9,11 @@
  * is one node of future graph data.
  */
 
-import { BookOpen, MapPin, MessageSquare, Star, TrendingUp, X } from "lucide-react";
+import { BookOpen, MapPin, MessageSquare, Star, TrendingUp, User, X } from "lucide-react";
+import { useState } from "react";
 import { getAvailableQuests } from "@/lib/legacy-quest-system";
 import type { DemoPhase, DemoJournalEntry } from "@/lib/legacy-demo-state";
+import { LegacyCharacterProfile } from "@/components/legacy-character-profile";
 
 // DemoJournalEntry is now canonical in legacy-demo-state.ts — re-exported here
 // for any components that still import it from this module.
@@ -45,6 +47,7 @@ interface LegacyDemoJournalProps {
   entries: readonly DemoJournalEntry[];
   traits: Record<string, number>;
   phase: DemoPhase;
+  characterId?: string;
   onClose: () => void;
 }
 
@@ -52,8 +55,10 @@ export function LegacyDemoJournal({
   entries,
   traits,
   phase,
+  characterId = "kwame-mensah",
   onClose,
 }: LegacyDemoJournalProps) {
+  const [activeTab, setActiveTab] = useState<"journal" | "character">("journal");
   const availableQuests = getAvailableQuests(phase, []);
 
   const conversations = entries.filter((e) => e.type === "conversation");
@@ -67,38 +72,83 @@ export function LegacyDemoJournal({
       className="fixed inset-x-3 bottom-[4.75rem] z-30 mx-auto max-w-lg overflow-hidden rounded-2xl border border-amber-300/35 bg-[#0e0a06]/[.98] shadow-[0_18px_55px_rgba(0,0,0,.65)]"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-amber-300/20 bg-[#1a0d04]/90 px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <BookOpen
-            className="h-4 w-4 shrink-0 text-amber-300"
-            aria-hidden="true"
-          />
-          <div className="min-w-0">
-            <h2
-              id="legacy-journal-title"
-              className="truncate text-[10px] font-black uppercase tracking-[0.2em] text-amber-200"
-            >
-              Memory Journal
-            </h2>
-            <p className="text-[9px] text-amber-100/60">
-              {conversations.length} conversation
-              {conversations.length !== 1 ? "s" : ""} ·{" "}
-              {discoveries.length} discover
-              {discoveries.length !== 1 ? "ies" : "y"}
-            </p>
+      <div className="border-b border-amber-300/20 bg-[#1a0d04]/90">
+        <div className="flex items-center justify-between px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <BookOpen
+              className="h-4 w-4 shrink-0 text-amber-300"
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <h2
+                id="legacy-journal-title"
+                className="truncate text-[10px] font-black uppercase tracking-[0.2em] text-amber-200"
+              >
+                Memory Journal
+              </h2>
+              <p className="text-[9px] text-amber-100/60">
+                {conversations.length} conversation
+                {conversations.length !== 1 ? "s" : ""} ·{" "}
+                {discoveries.length} discover
+                {discoveries.length !== 1 ? "ies" : "y"}
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-amber-200/20 bg-black/20 text-amber-200 hover:bg-amber-200/10"
+            aria-label="Close Memory Journal"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-amber-200/20 bg-black/20 text-amber-200 hover:bg-amber-200/10"
-          aria-label="Close Memory Journal"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        {/* Tabs */}
+        <div className="flex gap-1 px-3 pb-2" role="tablist" aria-label="Journal sections">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "journal"}
+            onClick={() => setActiveTab("journal")}
+            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.15em] transition-all ${
+              activeTab === "journal"
+                ? "bg-amber-700/35 text-amber-200 border border-amber-600/40"
+                : "text-amber-600 hover:text-amber-400"
+            }`}
+          >
+            <MessageSquare className="h-2.5 w-2.5" aria-hidden="true" />
+            Journal
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "character"}
+            onClick={() => setActiveTab("character")}
+            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.15em] transition-all ${
+              activeTab === "character"
+                ? "bg-amber-700/35 text-amber-200 border border-amber-600/40"
+                : "text-amber-600 hover:text-amber-400"
+            }`}
+          >
+            <User className="h-2.5 w-2.5" aria-hidden="true" />
+            Character
+          </button>
+        </div>
       </div>
 
-      {/* Scrollable body */}
+      {/* Character tab */}
+      {activeTab === "character" && (
+        <div className="max-h-[60vh] overflow-y-auto p-3">
+          <LegacyCharacterProfile
+            characterId={characterId}
+            phase={phase}
+            traits={traits}
+          />
+        </div>
+      )}
+
+      {/* Scrollable body — Journal tab */}
+      {activeTab === "journal" && (
       <div className="max-h-[60vh] space-y-3 overflow-y-auto p-3">
 
         {/* ── Life Skills ───────────────────────────────────────────────── */}
@@ -250,6 +300,7 @@ export function LegacyDemoJournal({
           </div>
         )}
       </div>
+      )}
 
       {/* Footer */}
       <div className="border-t border-amber-300/15 bg-black/20 px-3 py-2">

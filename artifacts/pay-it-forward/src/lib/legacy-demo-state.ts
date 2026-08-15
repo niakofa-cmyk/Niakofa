@@ -942,20 +942,42 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
           }
         : { ...fresh.fishing, catches: [] },
       // ── Journal entries (Feature 4) ────────────────────────────────────────
-      journalEntries: Array.isArray(parsed.journalEntries)
-        ? (parsed.journalEntries as DemoJournalEntry[])
-            .filter(e =>
-              e
-              && typeof e === "object"
-              && (e.type === "conversation" || e.type === "trait-gain" || e.type === "discovery")
-              && typeof e.tag === "string" && e.tag.length <= 128
-              && typeof e.label === "string" && e.label.length <= 256
-              && typeof e.source === "string" && e.source.length <= 64
-              && typeof e.timestamp === "number" && Number.isFinite(e.timestamp),
-            )
-            // Keep the most recent 200 entries; older entries are already in world-changes
-            .slice(-200)
-        : [],
+      journalEntries: (() => {
+        if (!Array.isArray(parsed.journalEntries)) return [];
+        const raw = parsed.journalEntries as unknown[];
+        const validated = raw.filter((e): e is DemoJournalEntry =>
+          !!e
+          && typeof e === "object"
+          && ((e as DemoJournalEntry).type === "conversation"
+            || (e as DemoJournalEntry).type === "trait-gain"
+            || (e as DemoJournalEntry).type === "discovery")
+          && typeof (e as DemoJournalEntry).tag === "string" && (e as DemoJournalEntry).tag.length <= 128
+          && typeof (e as DemoJournalEntry).label === "string" && (e as DemoJournalEntry).label.length <= 256
+          && typeof (e as DemoJournalEntry).source === "string" && (e as DemoJournalEntry).source.length <= 64
+          && typeof (e as DemoJournalEntry).timestamp === "number" && Number.isFinite((e as DemoJournalEntry).timestamp),
+        );
+        const droppedCount = raw.length - validated.length;
+        if (droppedCount > 0 && typeof process !== "undefined" && process.env.NODE_ENV !== "production") {
+          // Surface malformed entries in dev rather than silently discarding them.
+          // biome-ignore lint/suspicious/noConsole: dev-only diagnostic intentionally surfaced here
+          console.warn(`[readDemoState] dropped ${droppedCount} malformed journal entry/entries`);
+        }
+        if (validated.length <= 200) return validated;
+        // Over cap: prefer conversation > discovery > trait-gain so NPC memories
+        // survive longer than passive skill-point records.
+        const conversations = validated.filter(e => e.type === "conversation");
+        const discoveries = validated.filter(e => e.type === "discovery");
+        const traitGains = validated.filter(e => e.type === "trait-gain");
+        const byNewest = (arr: DemoJournalEntry[]) =>
+          [...arr].sort((a, b) => b.timestamp - a.timestamp);
+        const result: DemoJournalEntry[] = [];
+        const add = (entries: DemoJournalEntry[]) =>
+          result.push(...byNewest(entries).slice(0, 200 - result.length));
+        add(conversations);
+        add(discoveries);
+        add(traitGains);
+        return result.sort((a, b) => a.timestamp - b.timestamp);
+      })(),
       // ── Quest progress (Feature 4) ─────────────────────────────────────────
       questProgress: Array.isArray(parsed.questProgress)
         ? (parsed.questProgress as PersistedQuestProgress[])

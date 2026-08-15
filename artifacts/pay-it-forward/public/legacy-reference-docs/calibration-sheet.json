@@ -1,0 +1,74 @@
+{
+  "_purpose": "NIAKOFA CHARACTER + WORLD CALIBRATION SHEET v1 — numbers extracted directly from the Hand_Drawn_Kwame_Mensah.zip and Hand_Drawn_Envirnonment_Assets.zip concept boards' own on-image annotations. This is the standard every future hand-drawn character and environment asset should be validated against before it's accepted into the runtime.",
+  "calibrationCharacter": {
+    "name": "Kwame Mensah",
+    "age": 16,
+    "year": 1912,
+    "location": "Cape Coast, Gold Coast",
+    "realWorldHeightCm": 165,
+    "realWorldHeightLabel": "~1.65m (scale reference board)"
+  },
+  "spriteGrid": {
+    "gridSizePx": [64, 64],
+    "frameRateFps": 12,
+    "format": "PNG with transparency",
+    "characterFootprintPx": [32, 48],
+    "note": "Two of the six Kwame boards state 64x64; one states 'Grid: 64px, Isometric Offset: 32px'. Treat 64x64 as canonical and confirm isometric offset with the artist producing final frames."
+  },
+  "animationSet": {
+    "directions": 4,
+    "states": ["Idle", "Walk", "Run", "Interact", "Talk", "Examine", "Emote", "Attack", "Jump", "Push", "Pull", "Dodge"],
+    "recommendedFrameCounts": {
+      "idle": "4-8",
+      "walk": "6-8",
+      "run": "6-8",
+      "talk": "2-4",
+      "interact": "4-8",
+      "inspect": "4-6",
+      "pickUp": "6-8",
+      "hurt": "4-6"
+    },
+    "recommendedFps": {
+      "idle": "6-10",
+      "walk": "8-12",
+      "run": "10-14",
+      "cinematicAction": "variable"
+    }
+  },
+  "worldUnit": {
+    "tileSizePx": [64, 64],
+    "resolutionTarget": [1920, 1080],
+    "aspectRatio": "16:9",
+    "cameraPerspective": "semi-top-down, 2.5D"
+  },
+  "artStyle": {
+    "label": "Hand-drawn 2.5D, African-heritage / anime-influenced silhouettes, painterly environments",
+    "inspiration": "Aurion-inspired, African anime, hand-painted",
+    "paletteMood": "warm earth tones, natural greens, ocean blues",
+    "paletteSwatchesObserved": [
+      "#7a3b1e", "#b5651d", "#c9a876", "#8a7b5c",
+      "#6b7a4f", "#4a6b7a", "#3d5a6b", "#8fa8b5"
+    ],
+    "paletteNote": "Sampled by eye from the concept boards' color-palette strips — re-sample precisely once source PSDs/layers exist. Do not treat as final hex values."
+  },
+  "sceneCoverage": {
+    "locations": ["Ancestral Village", "Market Square", "Coastal Town", "Colonial Town", "Mission School", "Coastal Port", "Cocoa Farm", "Forest Path", "Cliffside Trail", "Cave Entrance"],
+    "buildingTypes": ["Family Compound", "Hut", "Trading House", "Market Stall", "Mission School", "Church/Chapel", "Cocoa Storage", "Workshop", "Elder's House", "Well", "Storehouse", "Colonial Office", "Train Station", "Dock Warehouse", "Lighthouse", "Watch Tower", "Grave Site"],
+    "vegetation": ["Acacia", "Palm Tree", "Mango Tree", "Cocoa Tree", "Banana Tree", "Bushes", "Flowers", "Baobab"],
+    "vehicles": ["Oxcart", "Horse Cart", "Train", "Sail Ship"],
+    "lightingStates": ["Morning", "Afternoon", "Evening", "Night", "Rainy Day"],
+    "weatherEffects": ["Rain", "Fog/overcast", "Clear", "Storm"]
+  },
+  "provenance": {
+    "sourceFiles": [
+      "Hand Drawn Kwame Mensah/ChatGPT Image Aug 14, 2026 at 01_42_20 PM.png",
+      "Hand Drawn Kwame Mensah/ChatGPT Image Aug 14, 2026 at 01_48_45 PM.png",
+      "Hand Drawn Kwame Mensah/ChatGPT Image Aug 14, 2026, 04_21_53 PM (2).png",
+      "Hand Drawn Kwame Mensah/ChatGPT Image Aug 14, 2026, 02_17_08 PM (1).png",
+      "Hand Drawn Envirnonment Assets/ChatGPT Image Aug 14, 2026, 02_27_04 PM.png",
+      "Hand Drawn Envirnonment Assets/ChatGPT Image Aug 14, 2026 at 04_14_32 PM.png"
+    ],
+    "assetType": "AI-generated concept/pitch boards, NOT production-sliceable sprite/tile assets",
+    "status": "art-direction-brief-only — see HAND_DRAWN_ASSET_ASSESSMENT.md"
+  }
+}

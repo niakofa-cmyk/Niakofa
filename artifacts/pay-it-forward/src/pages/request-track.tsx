@@ -115,7 +115,7 @@ export default function RequesterTrackingScreen() {
       [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
       { padding: 100, duration: 1000, maxZoom: 16 }
     );
-  }, [helperLocation, request?.lat]);
+  }, [helperLocation, request]);
 
   // WebSocket — live helper location + request status updates
   useWebSocket(useCallback((event) => {
