@@ -11,25 +11,11 @@
 
 import { BookOpen, MapPin, MessageSquare, Star, TrendingUp, X } from "lucide-react";
 import { getAvailableQuests } from "@/lib/legacy-quest-system";
-import type { DemoPhase } from "@/lib/legacy-demo-state";
+import type { DemoPhase, DemoJournalEntry } from "@/lib/legacy-demo-state";
 
-// ── Public types ─────────────────────────────────────────────────────────────
-
-export interface DemoJournalEntry {
-  type: "conversation" | "trait-gain" | "discovery";
-  /** Unique memory tag (e.g. "heard-betrayal-story", "found-journal") */
-  tag: string;
-  /** Human-readable description of the outcome */
-  label: string;
-  /** Who or what produced this entry (NPC name, landmark name, etc.) */
-  source: string;
-  /**
-   * NPC ID — present on "conversation" entries so the quest system can check
-   * requiresNpcInteraction completion without re-matching by name.
-   */
-  npcId?: string;
-  timestamp: number;
-}
+// DemoJournalEntry is now canonical in legacy-demo-state.ts — re-exported here
+// for any components that still import it from this module.
+export type { DemoJournalEntry };
 
 // ── Style maps ───────────────────────────────────────────────────────────────
 

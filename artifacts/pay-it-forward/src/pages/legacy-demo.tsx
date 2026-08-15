@@ -83,10 +83,11 @@ import { LegacyGameHud, deriveLifeSkills } from "@/components/legacy-game-hud";
 import { LegacyNpcDialogue } from "@/components/legacy-npc-dialogue";
 import { NPC_REGISTRY, advanceGameHour, getPhaseNpcs } from "@/lib/legacy-npc-system";
 import { getAvailableQuests, type QuestDefinition } from "@/lib/legacy-quest-system";
-import {
-  LegacyDemoJournal,
-  type DemoJournalEntry,
-} from "@/components/legacy-demo-journal";
+import { LegacyDemoJournal } from "@/components/legacy-demo-journal";
+import { LegacyWorldMap } from "@/components/legacy-world-map";
+import type { RegionId } from "@/lib/legacy-world-regions";
+import { getStartingRegion } from "@/lib/legacy-world-regions";
+import type { DemoJournalEntry } from "@/lib/legacy-demo-state";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -1719,7 +1720,11 @@ export default function LegacyDemoPage() {
   const [activeNpcId, setActiveNpcId] = useState<string | null>(null);
   const [npcInteractionCount, setNpcInteractionCount] = useState(0);
   const [journalOpen, setJournalOpen] = useState(false);
-  const [journalEntries, setJournalEntries] = useState<DemoJournalEntry[]>([]);
+  // journalEntries are now stored in state.journalEntries (Feature 4 — persisted)
+  const [worldMapOpen, setWorldMapOpen] = useState(false);
+  const [activeRegionId, setActiveRegionId] = useState<RegionId>(
+    () => getStartingRegion("prologue"),
+  );
   const storageRef = useRef<DemoStorage>(sessionOnlyDemoStorage);
   const storageAvailableRef = useRef(false);
 
@@ -1834,89 +1839,82 @@ export default function LegacyDemoPage() {
 
     setNpcInteractionCount(c => c + 1);
 
-    // ── Trait gain ──────────────────────────────────────────────────────────
-    if (traitGain) {
-      // 1. Persist to demo state
-      setState(prev => {
-        const traits = {
-          ...prev.traits,
-          [traitGain.trait]: (prev.traits[traitGain.trait] ?? 0) + traitGain.value,
+    // ── Single setState call — combines trait update + journal persistence ────
+    // (Feature 4: journalEntries now live in DemoState, not local useState)
+    setState(prev => {
+      let traits = prev.traits;
+      let journalEntries = prev.journalEntries;
+      const now = Date.now();
+
+      // ── Trait gain ────────────────────────────────────────────────────────
+      if (traitGain) {
+        traits = {
+          ...traits,
+          [traitGain.trait]: (traits[traitGain.trait] ?? 0) + traitGain.value,
         };
-        return persist({ ...prev, traits });
-      });
-      // 2. Record in journal so the player sees the reward
-      setJournalEntries(prev => [
-        ...prev,
-        {
+        const traitTag = `trait-${traitGain.trait}-${capturedNpcId ?? "x"}-${now}`;
+        const traitEntry: DemoJournalEntry = {
           type: "trait-gain",
-          tag: `trait-${traitGain.trait}-${capturedNpcId ?? "x"}-${Date.now()}`,
+          tag: traitTag,
           label: `+${traitGain.value} ${traitGain.trait} — earned through conversation`,
           source: npcName,
           npcId: capturedNpcId ?? undefined,
-          timestamp: Date.now(),
-        } satisfies DemoJournalEntry,
-      ]);
-      // "trait-gained" outcomes have no additional narrative text — done
-      if (outcome === "trait-gained") return;
-    }
+          timestamp: now,
+        };
+        journalEntries = [...journalEntries, traitEntry];
+      }
 
-    // ── Conversation/memory entries ─────────────────────────────────────────
-    if (memoryTag) {
-      // Choice-driven memory tag.
-      // "memory-tagged" is a system flag — convert the kebab-case tag to a
-      // readable title for the journal ("heard-betrayal-story" → "Heard Betrayal Story")
-      const displayLabel =
-        outcome === "memory-tagged"
-          ? memoryTag
-              .split("-")
-              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-              .join(" ")
-          : outcome;
-      setJournalEntries(prev =>
-        prev.some(e => e.tag === memoryTag)
-          ? prev
-          : [
-              ...prev,
-              {
-                type: "conversation",
-                tag: memoryTag,
-                label: displayLabel,
-                source: npcName,
-                npcId: capturedNpcId ?? undefined,
-                timestamp: Date.now(),
-              } satisfies DemoJournalEntry,
-            ],
-      );
-    } else if (outcome && outcome !== "memory-tagged") {
-      // Terminal conversation ending: no explicit memoryTag, but the outcome
-      // text IS the meaningful narrative. Auto-tag so we can deduplicate.
-      const autoTag = `outcome-${capturedNpcId ?? "x"}-${
-        outcome.slice(0, 32).replace(/\W+/g, "-").toLowerCase()
-      }`;
-      setJournalEntries(prev =>
-        prev.some(e => e.tag === autoTag)
-          ? prev
-          : [
-              ...prev,
-              {
-                type: "conversation",
-                tag: autoTag,
-                label: outcome,
-                source: npcName,
-                npcId: capturedNpcId ?? undefined,
-                timestamp: Date.now(),
-              } satisfies DemoJournalEntry,
-            ],
-      );
-    }
+      // ── Conversation/memory entries ───────────────────────────────────────
+      if (!traitGain || outcome !== "trait-gained") {
+        if (memoryTag) {
+          // Choice-driven memory tag: deduplicate by tag
+          if (!journalEntries.some(e => e.tag === memoryTag)) {
+            const displayLabel =
+              outcome === "memory-tagged"
+                ? memoryTag
+                    .split("-")
+                    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                    .join(" ")
+                : outcome;
+            const convEntry: DemoJournalEntry = {
+              type: "conversation",
+              tag: memoryTag,
+              label: displayLabel,
+              source: npcName,
+              npcId: capturedNpcId ?? undefined,
+              timestamp: now,
+            };
+            journalEntries = [...journalEntries, convEntry];
+          }
+        } else if (outcome && outcome !== "memory-tagged") {
+          // Terminal conversation ending — auto-tag for deduplication
+          const autoTag = `outcome-${capturedNpcId ?? "x"}-${
+            outcome.slice(0, 32).replace(/\W+/g, "-").toLowerCase()
+          }`;
+          if (!journalEntries.some(e => e.tag === autoTag)) {
+            const terminalEntry: DemoJournalEntry = {
+              type: "conversation",
+              tag: autoTag,
+              label: outcome,
+              source: npcName,
+              npcId: capturedNpcId ?? undefined,
+              timestamp: now,
+            };
+            journalEntries = [...journalEntries, terminalEntry];
+          }
+        }
+      }
+
+      return persist({ ...prev, traits, journalEntries });
+    });
   }, [persist, activeNpcId]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
   /** Flat list of memory tags to pass to NPC dialogue (deduplication guard) */
   const npcMemoryTags = useMemo(
-    () => journalEntries.filter((e) => e.type === "conversation").map((e) => e.tag),
-    [journalEntries],
+    () => state.journalEntries.filter((e) => e.type === "conversation").map((e) => e.tag),
+    [state.journalEntries],
   );
 
   /** NPCs within Manhattan distance ≤ 2 of the player's current tile */
@@ -1945,11 +1943,11 @@ export default function LegacyDemoPage() {
   const completedNpcIds = useMemo(
     () =>
       new Set(
-        journalEntries
+        state.journalEntries
           .filter((e) => e.type === "conversation" && e.npcId)
           .map((e) => e.npcId as string),
       ),
-    [journalEntries],
+    [state.journalEntries],
   );
 
   /**
@@ -1972,27 +1970,25 @@ export default function LegacyDemoPage() {
   }, [activeQuestDef, completedNpcIds, state.placedArtifacts]);
 
   const handleLandmarkInspect = useCallback((artifactId: string) => {
-    setState(prev => {
-      return persist(inspectDemoLandmark(prev, artifactId));
-    });
-    // Record landmark discovery in the Memory Journal
+    // Feature 4: journal entry written inside setState so it persists with the landmark state
     const item = SATCHEL_ITEMS.find(i => i.id === artifactId);
-    if (item) {
-      setJournalEntries(prev =>
-        prev.some(e => e.tag === `discovery-${artifactId}`)
-          ? prev
-          : [
-              ...prev,
-              {
-                type: "discovery",
-                tag: `discovery-${artifactId}`,
-                label: `${item.label} — ${item.description}`,
-                source: item.source,
-                timestamp: Date.now(),
-              } satisfies DemoJournalEntry,
-            ],
-      );
-    }
+    setState(prev => {
+      const inspected = inspectDemoLandmark(prev, artifactId);
+      if (!item) return persist(inspected);
+      const tag = `discovery-${artifactId}`;
+      if (inspected.journalEntries.some(e => e.tag === tag)) return persist(inspected);
+      const discoveryEntry: DemoJournalEntry = {
+        type: "discovery",
+        tag,
+        label: `${item.label} — ${item.description}`,
+        source: item.source,
+        timestamp: Date.now(),
+      };
+      return persist({
+        ...inspected,
+        journalEntries: [...inspected.journalEntries, discoveryEntry],
+      });
+    });
   }, [persist]);
 
   const handleFishingCast = useCallback((power: number) => {
@@ -2214,15 +2210,24 @@ export default function LegacyDemoPage() {
               { icon: Sparkles, label: "AI" },
             ].map(({ icon: Icon, label }) => {
               const isActive =
-                label === "Satchel" ? satchelOpen : label === "Journal" ? journalOpen : false;
-              const isInteractive = label === "Satchel" || label === "Journal";
+                label === "Satchel" ? satchelOpen
+                : label === "Journal" ? journalOpen
+                : label === "Map" ? worldMapOpen
+                : false;
+              const isInteractive = label === "Satchel" || label === "Journal" || label === "Map";
               const handleTrayClick = () => {
                 if (label === "Satchel") {
                   setSatchelOpen((open) => !open);
                   if (journalOpen) setJournalOpen(false);
+                  if (worldMapOpen) setWorldMapOpen(false);
                 } else if (label === "Journal") {
                   setJournalOpen((open) => !open);
                   if (satchelOpen) setSatchelOpen(false);
+                  if (worldMapOpen) setWorldMapOpen(false);
+                } else if (label === "Map") {
+                  setWorldMapOpen((open) => !open);
+                  if (satchelOpen) setSatchelOpen(false);
+                  if (journalOpen) setJournalOpen(false);
                 }
               };
               if (isInteractive) {
@@ -2270,10 +2275,23 @@ export default function LegacyDemoPage() {
 
       {journalOpen && state.baobabEntered && state.phase !== "prologue" && state.phase !== "finale" && (
         <LegacyDemoJournal
-          entries={journalEntries}
+          entries={state.journalEntries}
           traits={state.traits}
           phase={state.phase}
           onClose={() => setJournalOpen(false)}
+        />
+      )}
+
+      {/* World Map overlay (Feature 3 — 12-region scaffold) */}
+      {worldMapOpen && state.baobabEntered && state.phase !== "prologue" && state.phase !== "finale" && (
+        <LegacyWorldMap
+          currentPhase={state.phase}
+          currentRegionId={activeRegionId}
+          onNavigate={(regionId) => {
+            setActiveRegionId(regionId);
+            setWorldMapOpen(false);
+          }}
+          onClose={() => setWorldMapOpen(false)}
         />
       )}
 

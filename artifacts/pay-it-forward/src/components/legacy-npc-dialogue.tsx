@@ -11,16 +11,18 @@
  * - Discovery flash when new artifact/knowledge is revealed
  */
 
-import { useState, useEffect, useRef } from "react";
-import { X, ChevronRight, Sparkles, Lock } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { X, ChevronRight, Sparkles, Lock, Brain } from "lucide-react";
 import type {
   NpcDefinition,
   DialogueLine,
   DialogueOption,
+  NpcLorebookEntry,
 } from "@/lib/legacy-npc-system";
 import {
   resolveDialogueLine,
   filterAvailableOptions,
+  getActiveLorebook,
 } from "@/lib/legacy-npc-system";
 import type { DemoSeason } from "@/lib/legacy-demo-state";
 
@@ -162,6 +164,32 @@ export function LegacyNpcDialogue({
 
   const currentLine = resolveDialogueLine(npc, currentLineId, playerMemoryTags);
 
+  // availableOptions must be declared before the lorebook memos that reference it
+  const availableOptions = currentLine?.options
+    ? filterAvailableOptions(currentLine.options, traits, playerMemoryTags)
+    : [];
+
+  // ── Lorebook activation (Feature 1) ────────────────────────────────────────
+  // Checks whether any of this NPC's lorebook entries activate given the player's
+  // accumulated memory tags. Active entries surface a "Memory Active" banner.
+  const activeLorebook: NpcLorebookEntry[] = useMemo(
+    () => getActiveLorebook(npc, playerMemoryTags),
+    [npc, playerMemoryTags],
+  );
+
+  // Memory-gated options: options whose `requiresMemoryTag` the player doesn't yet have
+  const memoryGatedLockedOptions = useMemo(
+    () =>
+      currentLine?.options?.filter(
+        o => !availableOptions.find(a => a.id === o.id)
+          && o.requiresMemoryTag
+          && !o.requires
+          && !playerMemoryTags.includes(o.requiresMemoryTag),
+      ) ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentLine?.options, playerMemoryTags],
+  );
+
   const { displayed, done } = useTypewriter(
     currentLine?.text ?? "",
     17,
@@ -174,10 +202,6 @@ export function LegacyNpcDialogue({
     const t = setTimeout(() => setPendingDiscovery(currentLine.discoversId ?? null), 300);
     return () => clearTimeout(t);
   }, [currentLine?.discoversId, done]);
-
-  const availableOptions = currentLine?.options
-    ? filterAvailableOptions(currentLine.options, traits, playerMemoryTags)
-    : [];
 
   const handleOption = (opt: DialogueOption, idx: number) => {
     setChosenOptionIdx(idx);
@@ -328,6 +352,23 @@ export function LegacyNpcDialogue({
             <DiscoveryFlash label={DISCOVERY_LABELS[pendingDiscovery] ?? pendingDiscovery} />
           )}
 
+          {/* ── Lorebook "Memory Active" banner (Feature 1) ────────────────── */}
+          {activeLorebook.length > 0 && (
+            <div className="rounded-xl border border-violet-700/30 bg-violet-950/25 px-3 py-2.5 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <Brain className="h-3 w-3 text-violet-400 shrink-0" aria-hidden="true" />
+                <p className="text-[8px] font-black uppercase tracking-widest text-violet-400">
+                  Memory Echo Active
+                </p>
+              </div>
+              {activeLorebook.map((entry, i) => (
+                <p key={i} className="text-[9px] leading-relaxed text-violet-300/80 pl-4">
+                  {entry.content}
+                </p>
+              ))}
+            </div>
+          )}
+
           {/* Trait pills (active traits) */}
           {done && availableOptions.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -382,11 +423,10 @@ export function LegacyNpcDialogue({
                 );
               })}
 
-              {/* Locked options (if any) */}
+              {/* Trait-gated locked options */}
               {currentLine?.options
-                ?.filter(o => !availableOptions.includes(o) && o.requires)
+                ?.filter(o => !availableOptions.find(a => a.id === o.id) && o.requires)
                 .map(opt => {
-                  const _meta = opt.trait ? TRAIT_META[opt.trait] : null;
                   return (
                     <div
                       key={opt.id}
@@ -405,6 +445,24 @@ export function LegacyNpcDialogue({
                     </div>
                   );
                 })}
+
+              {/* Memory-gated locked options (Feature 1) */}
+              {memoryGatedLockedOptions.map(opt => (
+                <div
+                  key={opt.id}
+                  className="w-full text-left rounded-xl border border-violet-900/30 bg-violet-950/15 px-3.5 py-3 flex items-start gap-3 opacity-60"
+                >
+                  <Brain className="h-3.5 w-3.5 shrink-0 mt-0.5 text-violet-700" aria-hidden="true" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-violet-600/70 line-through leading-snug">{opt.label}</p>
+                    <p className="mt-0.5 text-[9px] text-violet-700">
+                      Requires memory: <span className="font-bold text-violet-600">
+                        {opt.requiresMemoryTag?.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 

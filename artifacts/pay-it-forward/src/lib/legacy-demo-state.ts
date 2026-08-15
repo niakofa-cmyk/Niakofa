@@ -94,6 +94,37 @@ export interface FishingJournal {
   lastCatch: string | null;
 }
 
+/**
+ * A single entry in the Memory Journal.
+ * Defined here so DemoState can persist it and both legacy-demo.tsx
+ * and legacy-demo-journal.tsx share the canonical type.
+ */
+export interface DemoJournalEntry {
+  /** Conversation = NPC exchange; trait-gain = skill earned; discovery = landmark/artifact */
+  type: "conversation" | "trait-gain" | "discovery";
+  /** Deduplication key — must be unique per entry */
+  tag: string;
+  /** Human-readable label shown in the journal UI */
+  label: string;
+  /** NPC name or landmark that generated this entry */
+  source: string;
+  /** NPC ID for quest objective matching */
+  npcId?: string;
+  timestamp: number;
+}
+
+/**
+ * Persisted quest progress for a single legacy quest.
+ * Mirrors QuestProgress from legacy-quest-system to avoid circular imports.
+ */
+export interface PersistedQuestProgress {
+  questId: string;
+  status: "locked" | "available" | "active" | "completed" | "failed";
+  objectiveProgress: Record<string, boolean>;
+  startedAt?: string;
+  completedAt?: string;
+}
+
 export interface DemoState {
   phase: DemoPhase;
   baobabEntered: boolean;
@@ -117,6 +148,10 @@ export interface DemoState {
   discoveredLandmarks: string[];
   fishing: FishingJournal;
   memoryEncounterCompleted: boolean;
+  /** Memory Journal entries — NPC conversations, trait gains, discoveries */
+  journalEntries: DemoJournalEntry[];
+  /** Quest progress for legacy quests (separate from coop quest completedQuests) */
+  questProgress: PersistedQuestProgress[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -371,6 +406,8 @@ export const DEFAULT_DEMO_STATE: DemoState = {
   discoveredLandmarks: [],
   fishing: { castCount: 0, catches: [], lastCatch: null },
   memoryEncounterCompleted: false,
+  journalEntries: [],
+  questProgress: [],
 };
 
 // ─── Phase helpers ────────────────────────────────────────────────────────────
@@ -904,6 +941,34 @@ export function readDemoState(storage: Pick<Storage, "getItem">): DemoState {
               : null,
           }
         : { ...fresh.fishing, catches: [] },
+      // ── Journal entries (Feature 4) ────────────────────────────────────────
+      journalEntries: Array.isArray(parsed.journalEntries)
+        ? (parsed.journalEntries as DemoJournalEntry[])
+            .filter(e =>
+              e
+              && typeof e === "object"
+              && (e.type === "conversation" || e.type === "trait-gain" || e.type === "discovery")
+              && typeof e.tag === "string" && e.tag.length <= 128
+              && typeof e.label === "string" && e.label.length <= 256
+              && typeof e.source === "string" && e.source.length <= 64
+              && typeof e.timestamp === "number" && Number.isFinite(e.timestamp),
+            )
+            // Keep the most recent 200 entries; older entries are already in world-changes
+            .slice(-200)
+        : [],
+      // ── Quest progress (Feature 4) ─────────────────────────────────────────
+      questProgress: Array.isArray(parsed.questProgress)
+        ? (parsed.questProgress as PersistedQuestProgress[])
+            .filter(p =>
+              p
+              && typeof p === "object"
+              && typeof p.questId === "string"
+              && (["locked", "available", "active", "completed", "failed"] as string[]).includes(p.status)
+              && p.objectiveProgress !== null
+              && typeof p.objectiveProgress === "object",
+            )
+            .slice(0, 50)
+        : [],
     };
   } catch {
     return resetDemo();
