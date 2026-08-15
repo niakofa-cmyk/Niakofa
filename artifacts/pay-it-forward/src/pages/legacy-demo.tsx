@@ -1826,17 +1826,52 @@ export default function LegacyDemoPage() {
     _discoversId?: string,
     traitGain?: { trait: string; value: number },
   ) => {
+    // Snapshot NPC identity once — all journal entries share the same source
+    const capturedNpcId = activeNpcId;
+    const npcName = capturedNpcId
+      ? (NPC_REGISTRY[capturedNpcId]?.name ?? "Ancestor")
+      : "Ancestor";
+
     setNpcInteractionCount(c => c + 1);
+
+    // ── Trait gain ──────────────────────────────────────────────────────────
     if (traitGain) {
+      // 1. Persist to demo state
       setState(prev => {
-        const traits = { ...prev.traits, [traitGain.trait]: (prev.traits[traitGain.trait] ?? 0) + traitGain.value };
+        const traits = {
+          ...prev.traits,
+          [traitGain.trait]: (prev.traits[traitGain.trait] ?? 0) + traitGain.value,
+        };
         return persist({ ...prev, traits });
       });
+      // 2. Record in journal so the player sees the reward
+      setJournalEntries(prev => [
+        ...prev,
+        {
+          type: "trait-gain",
+          tag: `trait-${traitGain.trait}-${capturedNpcId ?? "x"}-${Date.now()}`,
+          label: `+${traitGain.value} ${traitGain.trait} — earned through conversation`,
+          source: npcName,
+          npcId: capturedNpcId ?? undefined,
+          timestamp: Date.now(),
+        } satisfies DemoJournalEntry,
+      ]);
+      // "trait-gained" outcomes have no additional narrative text — done
+      if (outcome === "trait-gained") return;
     }
-    // Record the memory in the journal — skip duplicates by tag
-    if (memoryTag && outcome) {
-      const npcName = activeNpcId ? (NPC_REGISTRY[activeNpcId]?.name ?? "Ancestor") : "Ancestor";
-      const capturedNpcId = activeNpcId;
+
+    // ── Conversation/memory entries ─────────────────────────────────────────
+    if (memoryTag) {
+      // Choice-driven memory tag.
+      // "memory-tagged" is a system flag — convert the kebab-case tag to a
+      // readable title for the journal ("heard-betrayal-story" → "Heard Betrayal Story")
+      const displayLabel =
+        outcome === "memory-tagged"
+          ? memoryTag
+              .split("-")
+              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(" ")
+          : outcome;
       setJournalEntries(prev =>
         prev.some(e => e.tag === memoryTag)
           ? prev
@@ -1845,6 +1880,27 @@ export default function LegacyDemoPage() {
               {
                 type: "conversation",
                 tag: memoryTag,
+                label: displayLabel,
+                source: npcName,
+                npcId: capturedNpcId ?? undefined,
+                timestamp: Date.now(),
+              } satisfies DemoJournalEntry,
+            ],
+      );
+    } else if (outcome && outcome !== "memory-tagged") {
+      // Terminal conversation ending: no explicit memoryTag, but the outcome
+      // text IS the meaningful narrative. Auto-tag so we can deduplicate.
+      const autoTag = `outcome-${capturedNpcId ?? "x"}-${
+        outcome.slice(0, 32).replace(/\W+/g, "-").toLowerCase()
+      }`;
+      setJournalEntries(prev =>
+        prev.some(e => e.tag === autoTag)
+          ? prev
+          : [
+              ...prev,
+              {
+                type: "conversation",
+                tag: autoTag,
                 label: outcome,
                 source: npcName,
                 npcId: capturedNpcId ?? undefined,
