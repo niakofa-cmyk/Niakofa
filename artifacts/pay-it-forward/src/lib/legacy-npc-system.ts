@@ -31,6 +31,12 @@ export interface DialogueOption {
   traitDelta?: number;
   /** Required minimum trait value to unlock this option */
   requires?: { trait: string; min: number };
+  /**
+   * Lorebook gate — this option only appears when the player already holds
+   * this memory tag. Implements the Character Card V3 keyword-activation concept:
+   * past events the player witnessed unlock deeper dialogue branches.
+   */
+  requiresMemoryTag?: string;
   /** Leads to this line id */
   nextId: string;
   /** Memory tag stored after this choice */
@@ -50,6 +56,26 @@ export interface DialogueLine {
   discoversId?: string;
 }
 
+/**
+ * Lorebook entry — inspired by Character Card V3 character_book spec.
+ * When any of the `keys` appear in the player's memory tags, the `content`
+ * is made available to the NPC's dialogue system (e.g. unlocks options,
+ * adds context to dialogue resolution). This is the keyword-activation
+ * layer that allows NPCs to reference past events the player revealed.
+ */
+export interface NpcLorebookEntry {
+  /** Memory tags that trigger this entry */
+  keys: string[];
+  /** Content surfaced when a key matches (narrative context or option unlock) */
+  content: string;
+  /** Lower = checked / injected first. Default 10. */
+  insertionOrder?: number;
+  /** If true, always active regardless of keys */
+  constant?: boolean;
+  /** Dialogue node IDs that become available when this entry activates */
+  unlocksDialogueIds?: string[];
+}
+
 export interface NpcDefinition {
   id: string;
   name: string;
@@ -61,6 +87,31 @@ export interface NpcDefinition {
   phases: string[];
   emotion: NpcEmotion;
   personality: string[];
+  /**
+   * Opening line on first encounter (maps to Character Card V3 `first_mes`).
+   * Used as a fallback greeting when the player has no prior memory of this NPC.
+   */
+  openingLine?: string;
+  /**
+   * Example interaction format (Character Card V3 `mes_example`).
+   * Shows how this NPC speaks — tone, vocabulary, cultural references.
+   */
+  exampleDialogue?: string;
+  /**
+   * NPC behavioral identity for future AI generation (Character Card V3 `system_prompt`).
+   * Describes who this NPC is, what they know, what they will/won't share.
+   */
+  systemPrompt?: string;
+  /**
+   * Internal design notes — not shown in-game (Character Card V3 `creator_notes`).
+   */
+  creatorNotes?: string;
+  /**
+   * Lorebook entries — Character Card V3 `character_book` concept.
+   * Memory-tag-keyed context that activates when the player has witnessed
+   * specific events. Enables NPCs to reference the player's journey.
+   */
+  lorebook?: NpcLorebookEntry[];
   /** NPC sprite config forwarded to LegacyCharacterSprite */
   sprite: {
     ageGroup: "kid" | "teen" | "adult" | "elder";
@@ -94,12 +145,36 @@ export function resolveDialogueLine(
 export function filterAvailableOptions(
   options: DialogueOption[],
   traits: Record<string, number>,
-  _memoryTags: string[],
+  memoryTags: string[],
 ): DialogueOption[] {
   return options.filter(opt => {
-    if (!opt.requires) return true;
-    const val = traits[opt.requires.trait] ?? 0;
-    return val >= opt.requires.min;
+    // Trait gate: requires a minimum trait value
+    if (opt.requires) {
+      const val = traits[opt.requires.trait] ?? 0;
+      if (val < opt.requires.min) return false;
+    }
+    // Lorebook gate (Character Card V3 concept): requires a specific memory tag
+    // This is how past events unlock deeper dialogue branches.
+    if (opt.requiresMemoryTag && !memoryTags.includes(opt.requiresMemoryTag)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Resolve which lorebook entries are active given the player's current memory tags.
+ * Active entries' `unlocksDialogueIds` are merged into the NPC's available options.
+ * This implements the Character Card V3 `character_book` keyword-activation pattern.
+ */
+export function getActiveLorebook(
+  npc: NpcDefinition,
+  memoryTags: string[],
+): NpcLorebookEntry[] {
+  if (!npc.lorebook?.length) return [];
+  return npc.lorebook.filter(entry => {
+    if (entry.constant) return true;
+    return entry.keys.some(key => memoryTags.includes(key));
   });
 }
 
@@ -133,6 +208,35 @@ const grandmaAma: NpcDefinition = {
     { hour: 20, col: 4, row: 2, activity: "Evening prayers" },
   ],
   dialogueRootId: "ama-greet",
+  openingLine: "Ah, there you are. Come — sit by me. Before you do anything else today, let me tell you about your great-grandfather.",
+  systemPrompt: "Grandma Ama is the Mensah family memory keeper. She is warm but strategic — she reveals stories in layers, waiting to see if the young person is truly listening. She speaks in proverbs, follows up on things previously shared, and guards the most painful family truths until trust is earned. She knows about the 1912 trading house betrayal but will only share it with someone who has proven they can carry that weight.",
+  creatorNotes: "Gateway NPC. Always feels like she knows MORE than she is saying. Lorebook entries activate the deepest dialogue branches after the player witnesses key family events.",
+  lorebook: [
+    {
+      keys: ["asked-about-kwame", "heard-about-kwame"],
+      content: "The player has asked about Kwame. Ama can share the next layer — the trading house and the competitor who changed everything.",
+      insertionOrder: 1,
+      unlocksDialogueIds: ["ama-trading-house"],
+    },
+    {
+      keys: ["promised-find-journal"],
+      content: "The player promised to find the family journal. Ama trusts them — she shares the lantern story as a reward for commitment.",
+      insertionOrder: 2,
+      unlocksDialogueIds: ["ama-lantern"],
+    },
+    {
+      keys: ["started-competitor-investigation"],
+      content: "The player is investigating the competitor (via Kofi). Ama recognizes this and can confirm the betrayal story.",
+      insertionOrder: 3,
+      unlocksDialogueIds: ["ama-betrayal-confirm"],
+    },
+    {
+      keys: ["found-journal"],
+      content: "Player actually found the journal. Highest-trust unlock — Ama shares the full land dispute story.",
+      insertionOrder: 4,
+      unlocksDialogueIds: ["ama-land-dispute"],
+    },
+  ],
   greetings: [
     "Come, sit with me. I have stories.",
     "You look just like your grandfather, you know.",
@@ -339,6 +443,27 @@ const kofiTrader: NpcDefinition = {
     { hour: 19, col: 7, row: 1, activity: "Closing the warehouse" },
   ],
   dialogueRootId: "kofi-greet",
+  openingLine: "Ah — good timing. There's something in this week's manifest your father needs to know about.",
+  systemPrompt: "Kofi is a market trader and business mentor. He speaks practically, values directness, and respects hard work. He shares trade intelligence freely — prices, competitors, market movements — but guards the specific names of those who wronged the Mensah family until the player demonstrates real investigation intent. He witnessed something suspicious in 1912 but has never spoken it to the family directly.",
+  creatorNotes: "Street intelligence NPC. Provides market-layer context that Grandma Ama doesn't have. His lorebook links to Ama's deepest secrets — when the player knows what Kofi knows, they can unlock Ama's betrayal confirmation.",
+  lorebook: [
+    {
+      keys: ["started-competitor-investigation"],
+      content: "The player is investigating the competitor. Kofi will share the name and give the next concrete step.",
+      insertionOrder: 1,
+      unlocksDialogueIds: ["kofi-investigation-start"],
+    },
+    {
+      keys: ["heard-betrayal-story", "heard-about-kwame"],
+      content: "The player has heard the family history. Kofi connects the trading house story to current market conditions.",
+      insertionOrder: 2,
+    },
+    {
+      keys: ["witnessed-cocoa-grading"],
+      content: "Player watched cocoa grading. Kofi unlocks a deeper lesson about colonial price suppression.",
+      insertionOrder: 3,
+    },
+  ],
   greetings: [
     "Kwame! You're late — the market doesn't wait.",
     "Good. You're here. I need a strong back today.",
@@ -486,6 +611,26 @@ const yawFarmer: NpcDefinition = {
     { hour: 18, col: 3, row: 4, activity: "Walking home" },
   ],
   dialogueRootId: "yaw-greet",
+  openingLine: "Kwame! Good morning. The east grove is ready — I need another pair of hands before sundown. You came at the right time.",
+  systemPrompt: "Yaw is a practical farmer who has worked the Mensah cocoa groves for two decades. He is not a storyteller — he carries physical memory, in his hands and in the land. He teaches through doing. He notices things others miss: tree health, pod quality, whether land has been disturbed. He knows which fields were taken without permission, and he remembers the day the colonial surveyors came.",
+  creatorNotes: "Land memory NPC. He doesn't know family politics but he knows the physical story of the land. After time with him, the player should understand what the land meant to the family viscerally, not just historically.",
+  lorebook: [
+    {
+      keys: ["helped-with-harvest", "harvested-cocoa"],
+      content: "Player helped Yaw harvest. He trusts them now and will show the eastern boundary — where the land claim dispute began.",
+      insertionOrder: 1,
+    },
+    {
+      keys: ["heard-betrayal-story"],
+      content: "Player knows about the betrayal. Yaw can confirm from a physical perspective — he remembers the day the colonial agents surveyed 'their' land.",
+      insertionOrder: 2,
+    },
+    {
+      keys: ["witnessed-cocoa-ceremony"],
+      content: "Player witnessed the cocoa ceremony. Yaw opens up about the spiritual relationship between the Mensah family and the land.",
+      insertionOrder: 3,
+    },
+  ],
   greetings: [
     "Hard day's work ahead. Good to have help.",
     "The pods are ready. Your father will be pleased.",
@@ -605,6 +750,39 @@ const elderNana: NpcDefinition = {
     { hour: 20, col: 4, row: 1, activity: "Night prayers" },
   ],
   dialogueRootId: "elder-greet",
+  openingLine: "The baobab sees everything. It was here before your grandfather, and it will be here long after us — sit, and I will tell you why.",
+  systemPrompt: "Elder Nana is the village's oldest living keeper of oral history. He speaks in slow, deliberate layers. Every answer he gives opens a new question. He knows the full arc of the Mensah family story — including what Grandma Ama has never told anyone — but he will only share it with someone who has first listened to others. He respects the player's journey and will confirm or deepen what other NPCs have shared.",
+  creatorNotes: "Summit NPC — the final truth-keeper. Rewards players who have talked to all other NPCs before coming to him. His lorebook is the most powerful: when the player has experienced multiple other NPC threads, Elder Nana can weave them all into the full family narrative.",
+  lorebook: [
+    {
+      keys: ["heard-betrayal-story", "started-competitor-investigation"],
+      content: "Player knows about the 1912 betrayal thread. Elder Nana can now confirm and expand the full political context — colonial land policy, community impact, and what was done to resist.",
+      insertionOrder: 1,
+      unlocksDialogueIds: ["elder-difficult-years"],
+    },
+    {
+      keys: ["found-journal", "promised-find-journal"],
+      content: "Player has engaged with the family journal. Elder Nana recognizes this as the sign of a true memory-seeker and shares the deepest archive entry — the oral history of the original Mensah land grant.",
+      insertionOrder: 2,
+    },
+    {
+      keys: ["helped-with-harvest", "harvested-cocoa"],
+      content: "Player worked the land with Yaw. Elder Nana honors this — physical relationship with the land is the most ancient form of family connection in Akan culture.",
+      insertionOrder: 3,
+    },
+    {
+      keys: ["heard-about-kwame", "asked-about-kwame"],
+      content: "Player has been asking about Kwame from multiple sources. Elder Nana can now tell them what Kwame meant to the village — not just to the family.",
+      insertionOrder: 4,
+      unlocksDialogueIds: ["elder-mensah-history"],
+    },
+    {
+      constant: true,
+      keys: [],
+      content: "Elder Nana always asks what the player has learned before answering. He is the only NPC who explicitly references other NPC conversations.",
+      insertionOrder: 10,
+    },
+  ],
   greetings: [
     "The tree remembers. Do you?",
     "Every family has a wound. Every wound has a lesson.",
