@@ -1,6 +1,6 @@
 ---
 name: Legacy NPC + HUD wiring
-description: Prop contracts, state location, wiring status, journal outcome logic for NPC dialogue and game HUD in legacy-demo.tsx
+description: Prop contracts, state location, wiring status, journal outcome logic, lorebook system for NPC dialogue and game HUD in legacy-demo.tsx
 ---
 
 ## State location (legacy-demo.tsx)
@@ -12,7 +12,7 @@ description: Prop contracts, state location, wiring status, journal outcome logi
 
 None persisted to DemoState; all reset naturally each session.
 
-## Wired as of commit 2085ec6a (Aug 2026)
+## Wired as of commit fbb02bc2 (Aug 2026)
 - `activeQuest` → `getAvailableQuests(state.phase, []).at(0) ?? null` via `useMemo`
 - `nearbyNpcs` → `getPhaseNpcs(state.phase, gameHour).filter(Manhattan ≤ 2)` via `useMemo`
 - `playerMemoryTags` → derived from `journalEntries` (type=conversation) via `useMemo`
@@ -59,3 +59,27 @@ interface LegacyGameHudProps {
 - Uses `col: number, row: number`
 - DemoMapPosition uses `row: number, column: number` (note: `column` not `col`)
 - Proximity: `Math.abs(row - mapPosition.row) + Math.abs(col - mapPosition.column) <= 2`
+
+## NpcDefinition — Character Card V3 fields (added fbb02bc2)
+- `openingLine?: string` — first_mes equivalent; opening line on first encounter
+- `exampleDialogue?: string` — mes_example equivalent; tone/vocabulary reference  
+- `systemPrompt?: string` — NPC behavioral identity for future AI generation
+- `creatorNotes?: string` — internal design notes, not shown in-game
+- `lorebook?: NpcLorebookEntry[]` — character_book equivalent; keyword-activated memory context
+
+## NpcLorebookEntry — lorebook keyword activation
+```typescript
+interface NpcLorebookEntry {
+  keys: string[];           // memory tags that activate this entry
+  content: string;          // context surfaced when a key matches
+  insertionOrder?: number;  // lower = higher priority (default 10)
+  constant?: boolean;       // if true, always active regardless of keys
+  unlocksDialogueIds?: string[];  // dialogue nodes that become available
+}
+```
+Usage: `getActiveLorebook(npc, playerMemoryTags)` → `NpcLorebookEntry[]`
+
+## DialogueOption — lorebook gate (added fbb02bc2)
+- `requiresMemoryTag?: string` — option only shown if player holds this memory tag
+- `filterAvailableOptions(options, traits, memoryTags)` now actually uses memoryTags
+  (previously `_memoryTags` was a dead parameter — this was a bug, now fixed)

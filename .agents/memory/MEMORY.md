@@ -12,4 +12,5 @@
 - [Legacy type declaration boundary](legacy-type-declaration-boundary.md) — all Window extensions (openNia, webkitAudioContext, SpeechRecognition) live in one file: src/speech-recognition.d.ts; never split again.
 - [Kwame Canonical Spec](kwame-canonical-spec.md) — color palette, art asset paths, 4-direction type, animation states, evolution timeline; "up"=back view, "back" is not a valid LegacySpriteFacing value.
 - [Niakofa Canonical Source](niakofa-canonical-source.md) — artifacts/ is canonical; niakofa-repo/ is stale archived mirror with CANONICAL_SOURCE.md; never edit niakofa-repo/artifacts/.
-- [Legacy NPC + HUD wiring](legacy-npc-hud-wiring.md) — prop contracts, state location (gameHour/activeNpcId local), known gaps: activeQuest null, nearbyNpcs empty, playerMemoryTags empty.
+- [Legacy NPC + HUD wiring](legacy-npc-hud-wiring.md) — prop contracts, lorebook gate on DialogueOption, outcome labelling rules, NpcDefinition V3 fields.
+- [Legacy Character Evolution](legacy-character-evolution.md) — CharacterDNA, KWAME_DNA (youth/young_adult/mature), LPC spritesheet spec (CC-BY-SA gate), phase→stage mapping.
