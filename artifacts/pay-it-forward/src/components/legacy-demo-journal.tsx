@@ -23,6 +23,11 @@ export interface DemoJournalEntry {
   label: string;
   /** Who or what produced this entry (NPC name, landmark name, etc.) */
   source: string;
+  /**
+   * NPC ID — present on "conversation" entries so the quest system can check
+   * requiresNpcInteraction completion without re-matching by name.
+   */
+  npcId?: string;
   timestamp: number;
 }
 

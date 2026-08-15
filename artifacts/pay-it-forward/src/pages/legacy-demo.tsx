@@ -1836,6 +1836,7 @@ export default function LegacyDemoPage() {
     // Record the memory in the journal — skip duplicates by tag
     if (memoryTag && outcome) {
       const npcName = activeNpcId ? (NPC_REGISTRY[activeNpcId]?.name ?? "Ancestor") : "Ancestor";
+      const capturedNpcId = activeNpcId;
       setJournalEntries(prev =>
         prev.some(e => e.tag === memoryTag)
           ? prev
@@ -1846,6 +1847,7 @@ export default function LegacyDemoPage() {
                 tag: memoryTag,
                 label: outcome,
                 source: npcName,
+                npcId: capturedNpcId ?? undefined,
                 timestamp: Date.now(),
               } satisfies DemoJournalEntry,
             ],
@@ -1880,10 +1882,61 @@ export default function LegacyDemoPage() {
     [state.phase],
   );
 
+  /**
+   * NPC IDs whose conversations have been fully recorded in the journal.
+   * Used to check quest objective completion (requiresNpcInteraction).
+   */
+  const completedNpcIds = useMemo(
+    () =>
+      new Set(
+        journalEntries
+          .filter((e) => e.type === "conversation" && e.npcId)
+          .map((e) => e.npcId as string),
+      ),
+    [journalEntries],
+  );
+
+  /**
+   * Index of the first incomplete objective in the active quest.
+   * Drives the HUD quest panel to always show what to do next.
+   */
+  const questObjectiveIdx = useMemo(() => {
+    if (!activeQuestDef) return 0;
+    for (let i = 0; i < activeQuestDef.objectives.length; i++) {
+      const obj = activeQuestDef.objectives[i];
+      const npcDone =
+        !obj.requiresNpcInteraction ||
+        completedNpcIds.has(obj.requiresNpcInteraction);
+      const artifactDone =
+        !obj.requiresArtifact ||
+        state.placedArtifacts.includes(obj.requiresArtifact);
+      if (!npcDone || !artifactDone) return i;
+    }
+    return activeQuestDef.objectives.length - 1;
+  }, [activeQuestDef, completedNpcIds, state.placedArtifacts]);
+
   const handleLandmarkInspect = useCallback((artifactId: string) => {
     setState(prev => {
       return persist(inspectDemoLandmark(prev, artifactId));
     });
+    // Record landmark discovery in the Memory Journal
+    const item = SATCHEL_ITEMS.find(i => i.id === artifactId);
+    if (item) {
+      setJournalEntries(prev =>
+        prev.some(e => e.tag === `discovery-${artifactId}`)
+          ? prev
+          : [
+              ...prev,
+              {
+                type: "discovery",
+                tag: `discovery-${artifactId}`,
+                label: `${item.label} — ${item.description}`,
+                source: item.source,
+                timestamp: Date.now(),
+              } satisfies DemoJournalEntry,
+            ],
+      );
+    }
   }, [persist]);
 
   const handleFishingCast = useCallback((power: number) => {
@@ -2009,7 +2062,7 @@ export default function LegacyDemoPage() {
                 skills={deriveLifeSkills(state.traits, npcInteractionCount, 0, state.placedArtifacts.length)}
                 traits={state.traits}
                 activeQuest={activeQuestDef}
-                questObjectiveIdx={0}
+                questObjectiveIdx={questObjectiveIdx}
                 nearbyNpcs={nearbyNpcs}
               />
             )}
