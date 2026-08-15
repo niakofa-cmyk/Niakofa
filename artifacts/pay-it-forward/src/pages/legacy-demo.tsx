@@ -79,6 +79,9 @@ import { LegacyMemoryEncounter } from "@/components/legacy-memory-encounter";
 import { LegacySatchel, type LegacySatchelItem } from "@/components/legacy-satchel";
 import { LegacyCinematicDialogue } from "@/components/legacy-cinematic-dialogue";
 import { LegacyChapterEnvironment } from "@/components/legacy-chapter-environment";
+import { LegacyGameHud, deriveLifeSkills } from "@/components/legacy-game-hud";
+import { LegacyNpcDialogue } from "@/components/legacy-npc-dialogue";
+import { NPC_REGISTRY, advanceGameHour } from "@/lib/legacy-npc-system";
 
 // ─── Chapter definitions ──────────────────────────────────────────────────────
 
@@ -1707,6 +1710,9 @@ export default function LegacyDemoPage() {
   const [loaded, setLoaded] = useState(false);
   const [persistenceWarning, setPersistenceWarning] = useState(false);
   const [satchelOpen, setSatchelOpen] = useState(false);
+  const [gameHour, setGameHour] = useState(8);
+  const [activeNpcId, setActiveNpcId] = useState<string | null>(null);
+  const [npcInteractionCount, setNpcInteractionCount] = useState(0);
   const storageRef = useRef<DemoStorage>(sessionOnlyDemoStorage);
   const storageAvailableRef = useRef(false);
 
@@ -1796,6 +1802,30 @@ export default function LegacyDemoPage() {
     setState(prev => {
       return persist(updateDemoMapPosition(prev, position, facing));
     });
+    setGameHour(h => advanceGameHour(h));
+  }, [persist]);
+
+  const handleNpcInteract = useCallback((npcId: string) => {
+    setActiveNpcId(npcId);
+  }, []);
+
+  const handleNpcDialogueClose = useCallback(() => {
+    setActiveNpcId(null);
+  }, []);
+
+  const handleNpcOutcome = useCallback((
+    _outcome: string,
+    _memoryTag?: string,
+    _discoversId?: string,
+    traitGain?: { trait: string; value: number },
+  ) => {
+    setNpcInteractionCount(c => c + 1);
+    if (traitGain) {
+      setState(prev => {
+        const traits = { ...prev.traits, [traitGain.trait]: (prev.traits[traitGain.trait] ?? 0) + traitGain.value };
+        return persist({ ...prev, traits });
+      });
+    }
   }, [persist]);
 
   const handleLandmarkInspect = useCallback((artifactId: string) => {
@@ -1917,20 +1947,37 @@ export default function LegacyDemoPage() {
         {showBaobab ? (
           <LegacyLivingBaobab worldVersion={state.worldVersion} onEnter={handleEnterBaobab} />
         ) : (
-          <LegacyLivingWorld
-            phase={state.phase}
-            season={state.season}
-            worldVersion={state.worldVersion}
-            placedArtifacts={state.placedArtifacts}
-            discoveredLandmarks={state.discoveredLandmarks}
-            businessLevel={state.businessLevel}
-            mapPosition={state.mapPosition}
-            mapFacing={state.mapFacing}
-            onMapMove={handleMapMove}
-            onLandmarkInspect={handleLandmarkInspect}
-            fishing={state.fishing}
-            onFishingCast={handleFishingCast}
-          />
+          <div className="relative">
+            {state.baobabEntered && (
+              <LegacyGameHud
+                phase={state.phase}
+                season={state.season}
+                worldVersion={state.worldVersion}
+                gameHour={gameHour}
+                skills={deriveLifeSkills(state.traits, npcInteractionCount, 0, state.placedArtifacts.length)}
+                traits={state.traits}
+                activeQuest={null}
+                questObjectiveIdx={0}
+                nearbyNpcs={[]}
+              />
+            )}
+            <LegacyLivingWorld
+              phase={state.phase}
+              season={state.season}
+              worldVersion={state.worldVersion}
+              placedArtifacts={state.placedArtifacts}
+              discoveredLandmarks={state.discoveredLandmarks}
+              businessLevel={state.businessLevel}
+              mapPosition={state.mapPosition}
+              mapFacing={state.mapFacing}
+              onMapMove={handleMapMove}
+              onLandmarkInspect={handleLandmarkInspect}
+              fishing={state.fishing}
+              onFishingCast={handleFishingCast}
+              gameHour={gameHour}
+              onNpcInteract={handleNpcInteract}
+            />
+          </div>
         )}
 
         {state.baobabEntered && state.phase !== "finale" && (
@@ -2038,6 +2085,18 @@ export default function LegacyDemoPage() {
           discoveredLandmarks={state.discoveredLandmarks}
           worldVersion={state.worldVersion}
           onClose={() => setSatchelOpen(false)}
+        />
+      )}
+
+      {/* NPC Dialogue overlay — fixed bottom sheet, renders above everything */}
+      {activeNpcId && NPC_REGISTRY[activeNpcId] && (
+        <LegacyNpcDialogue
+          npc={NPC_REGISTRY[activeNpcId]}
+          season={state.season}
+          traits={state.traits}
+          playerMemoryTags={[]}
+          onClose={handleNpcDialogueClose}
+          onOutcome={handleNpcOutcome}
         />
       )}
     </div>

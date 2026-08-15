@@ -37,6 +37,7 @@ import {
 import { LegacyFishingEncounter } from "@/components/legacy-fishing-encounter";
 import type { FishingJournal } from "@/lib/legacy-demo-state";
 import { LegacyVillageAtmosphere } from "@/components/legacy-village-atmosphere";
+import { getPhaseNpcs } from "@/lib/legacy-npc-system";
 
 type WorldScene = {
   title: string;
@@ -289,6 +290,9 @@ function HouseOfMensahMap({
   mapFacing,
   onMapMove,
   onLandmarkInspect,
+  phase,
+  gameHour = 8,
+  onNpcInteract,
 }: {
   character: WorldScene["character"];
   worldVersion: number;
@@ -298,6 +302,9 @@ function HouseOfMensahMap({
   mapFacing: DemoFacing;
   onMapMove: (position: DemoMapPosition, facing: DemoFacing) => void;
   onLandmarkInspect: (artifactId: string) => void;
+  phase: DemoPhase;
+  gameHour?: number;
+  onNpcInteract?: (npcId: string) => void;
 }) {
   const layout = getLegacyWorldLayout(worldVersion, placedArtifacts);
   const worldMap = layout.map;
@@ -315,6 +322,7 @@ function HouseOfMensahMap({
     : [];
   const activeLandmark = getLegacyWorldLandmarkAt(layout, player);
   const [selectedEchoId, setSelectedEchoId] = useState<string | null>(null);
+  const phaseNpcs = getPhaseNpcs(phase, gameHour);
   const selectedEcho = visibleEchoes.find(({ artifactId }) => artifactId === selectedEchoId);
 
   useEffect(() => {
@@ -482,6 +490,38 @@ function HouseOfMensahMap({
               </button>
             );
           })}
+          {/* NPC sprites on the map */}
+          {phaseNpcs.map(({ npc, col, row, activity }) => (
+            <button
+              key={npc.id}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onNpcInteract?.(npc.id); }}
+              aria-label={`Talk to ${npc.name} — ${activity}`}
+              title={`${npc.name} · ${activity}`}
+              className="absolute z-[8] flex flex-col items-center justify-end cursor-pointer hover:scale-110 active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+              style={{
+                width: `${100 / 9}%`,
+                height: `${100 / 6}%`,
+                left: `${(col * 100) / 9}%`,
+                top: `${(row * 100) / 6}%`,
+              }}
+            >
+              <span
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-base shadow-[0_0_8px_rgba(245,200,66,0.45)]"
+                style={{ borderColor: "rgba(245,200,66,0.55)", background: "rgba(20,10,4,0.82)" }}
+                aria-hidden="true"
+              >
+                {npc.relationship === "grandmother" ? "👵🏾"
+                  : npc.relationship === "elder" ? "🧓🏾"
+                  : npc.relationship === "farmer" ? "🌿"
+                  : "🧑🏾"}
+              </span>
+              <span className="mt-px rounded-full border border-amber-700/45 bg-amber-950/90 px-1 py-px text-[6px] font-black uppercase tracking-wide text-amber-400 whitespace-nowrap">
+                {npc.name.split(" ")[0]}
+              </span>
+            </button>
+          ))}
+
           <div
             className="absolute z-10 flex items-end justify-center transition-[left,top] duration-150 ease-out"
             style={{
@@ -585,6 +625,8 @@ export function LegacyLivingWorld({
   onLandmarkInspect,
   fishing,
   onFishingCast,
+  gameHour,
+  onNpcInteract,
 }: {
   phase: DemoPhase;
   season: DemoSeason;
@@ -598,6 +640,8 @@ export function LegacyLivingWorld({
   onLandmarkInspect: (artifactId: string) => void;
   fishing: FishingJournal;
   onFishingCast: (power: number) => void;
+  gameHour?: number;
+  onNpcInteract?: (npcId: string) => void;
 }) {
   const scene = WORLD_SCENES[phase];
   const SceneIcon = scene.icon;
@@ -671,6 +715,9 @@ export function LegacyLivingWorld({
           mapFacing={mapFacing}
           onMapMove={onMapMove}
           onLandmarkInspect={onLandmarkInspect}
+          phase={phase}
+          gameHour={gameHour}
+          onNpcInteract={onNpcInteract}
         />
         <LegacyFishingEncounter fishing={fishing} onCast={onFishingCast} />
 
