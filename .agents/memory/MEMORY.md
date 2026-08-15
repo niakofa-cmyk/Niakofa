@@ -15,4 +15,6 @@
 - [Legacy NPC + HUD wiring](legacy-npc-hud-wiring.md) — prop contracts, lorebook gate on DialogueOption, outcome labelling rules, NpcDefinition V3 fields.
 - [Legacy Character Evolution](legacy-character-evolution.md) — CharacterDNA, KWAME_DNA (youth/young_adult/mature), LPC spritesheet spec (CC-BY-SA gate), phase→stage mapping.
 - [Feature 4 Journal Persistence](feature-4-journal-persistence.md) — DemoJournalEntry canonical in demo-state.ts; all journal writes inside setState+persist; never use local journalEntries state.
-- [Legacy World Regions](legacy-world-regions.md) — 12-region scaffold in legacy-world-regions.ts; LegacyWorldMap component; activeRegionId in demo page; region map NOT yet wired to tile renderer.
+- [Legacy World Regions](legacy-world-regions.md) — 12-region scaffold in legacy-world-regions.ts; LegacyWorldMap component; activeRegionId now wired to RegionMap tile renderer in LegacyLivingWorld.
+- [Legacy Combat System](legacy-combat-system.md) — real-time + aerial combat, limb-based hit resolution, Kwame atlas manifest, KwameHeroSprite renderer; 330 atlas PNGs in public/; no attack/jump art yet.
+- [Legacy Journal + Region Features](legacy-journal-region-features.md) — Task 7 RegionMap+portals, Task 8 Character journal tab, Task 9 sanitizer conversation-preference cap + dev warnings.
