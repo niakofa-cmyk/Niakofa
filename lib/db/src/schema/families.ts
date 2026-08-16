@@ -62,6 +62,14 @@ export const familyMembersTable = pgTable("family_members", {
   // Birth/death years for timeline and character profile (added in migration 0105)
   birth_year:    integer("birth_year"),
   death_year:    integer("death_year"),
+  // Explicit, optional, never-inferred gender for character appearance
+  // resolution (added in migration 0106). NULL by default — a member's
+  // Legacy Mode walking-character appearance stays a neutral "pending"
+  // placeholder until someone explicitly sets this, exactly like
+  // birth_year/death_year are opt-in rather than guessed. Constrained at
+  // the DB level to the same set legacy-character-asset-engine.ts's
+  // GeneratedCharacterGender currently supports.
+  gender:        text("gender", { enum: ["male", "female"] }),
   created_at:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   // Added in migration 0095. Bumped explicitly by application code (no DB
   // trigger, matching this codebase's convention elsewhere) whenever a

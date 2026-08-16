@@ -21,6 +21,9 @@ import {
 } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import LegacyCoreLoop, { buildWorldChanges, type WorldChange } from "@/components/legacy-core-loop";
+import { LegacyJournalPanel } from "@/components/legacy-journal-panel";
+import LegacyMapPage from "@/pages/legacy-map";
+import { LegacyChapterWorld } from "@/components/legacy-chapter-world";
 
 // Ambient background gradient shifts based on the day-cycle position.
 // Morning → warm amber, midday → bright gold, evening → deep amber, night → dark with stars.
@@ -69,6 +72,23 @@ interface SceneResponse {
     events: Array<{ id: number; title: string; description?: string }>;
     memories: Array<{ id: number; title?: string; description?: string }>;
   };
+  ancestorMemberId?: number | null;
+  ancestorName?: string | null;
+  /**
+   * Real walking-character appearance for this chapter's ancestor, resolved
+   * server-side (GET /legacy/chapters/:id/scenes → resolveFamilyMemberAppearance
+   * in legacy-character-asset-engine.ts). Null when the ancestor's gender
+   * hasn't been set on their family_members row, or their age during this
+   * chapter's era can't be computed — never guessed. LegacyChapterWorld
+   * falls back to a neutral placeholder sprite in that case.
+   */
+  ancestorAppearance?: {
+    ageGroup: "adult" | "kid";
+    gender: "male" | "female";
+    lifeStage: "youth" | "adult" | "mature" | "elder";
+    era: string;
+    appearanceSeed: string;
+  } | null;
 }
 
 interface Choice {
@@ -201,6 +221,36 @@ export default function LegacyChapterPlay() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+
+  // In-runtime overlays — the Journal and Map used to be full-page
+  // navigations (navigate("/legacy/journal"), navigate("/legacy/map")),
+  // which yanked the player out of the running chapter every time they
+  // wanted to check something. They now render as slide-over sheets on
+  // top of the live scene instead, exactly like LegacyCoreLoop already
+  // does below. Nothing about the world is paused or unmounted while a
+  // sheet is open — closing it returns you to the exact scene you left.
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [placeSheetOpen, setPlaceSheetOpen] = useState(false);
+
+  // World view — the chapter now opens into a walkable grid built from its
+  // real scenes/places (legacy-dynamic-world-layout.ts) instead of jumping
+  // straight to scene text. Walking onto a scene's landmark tile opens that
+  // scene's reading/dialogue/choice UI (unchanged below); finishing a scene
+  // returns to the world so the player walks to the next landmark rather
+  // than being auto-advanced through a list.
+  const [worldViewOpen, setWorldViewOpen] = useState(true);
+
+  const handleEnterScene = useCallback((sceneNumber: number) => {
+    if (!sceneData) return;
+    const idx = sceneData.scenes.findIndex((s) => s.sceneNumber === sceneNumber);
+    if (idx === -1) return;
+    setShowConsequence(false);
+    setSelectedChoice(null);
+    setCurrentSceneIdx(idx);
+    setSceneFadeKey((k) => k + 1);
+    setWorldViewOpen(false);
+  }, [sceneData]);
 
   // Stop audio when navigating between scenes
   useEffect(() => {
@@ -539,10 +589,12 @@ export default function LegacyChapterPlay() {
         setTransitioning(false);
       }
     } else {
-      // Cinematic scene transition: fade out, change scene, fade in
+      // Return to the walkable world so the player walks to the next
+      // landmark, instead of auto-advancing straight into the next scene's
+      // text. handleEnterScene (triggered by stepping onto that landmark)
+      // is what actually sets currentSceneIdx from here on.
       triggerSceneTransition(() => {
-        setCurrentSceneIdx(currentSceneIdx + 1);
-        setSceneFadeKey(k => k + 1);
+        setWorldViewOpen(true);
       });
     }
   };
@@ -679,7 +731,7 @@ export default function LegacyChapterPlay() {
               Begin a New Journey
             </button>
             <button
-              onClick={() => navigate("/legacy/journal")}
+              onClick={() => setJournalOpen(true)}
               className="text-amber-400 font-medium rounded-xl px-6 py-3 text-sm border border-amber-700/30"
             >
               Read Your Journal
@@ -845,6 +897,39 @@ export default function LegacyChapterPlay() {
         )}
       </div>
 
+      {/* World view vs. scene-reading view. Opening a chapter (or finishing
+          a non-final scene) shows the walkable world; walking onto a scene's
+          landmark shows that scene's reading/dialogue/choice UI below,
+          unchanged in behavior from before — it now just opens *because you
+          walked somewhere* instead of always being the only thing on screen. */}
+      {worldViewOpen ? (
+        <div className="flex-1 min-h-0">
+          <LegacyChapterWorld
+            chapterId={sceneData.chapterId}
+            scenes={sceneData.scenes.map((s) => ({
+              sceneNumber: s.sceneNumber,
+              title: s.title,
+              type: s.type,
+              placeId: s.placeId,
+            }))}
+            activeSceneNumber={
+              sceneData.scenes.find((s) => !completedScenes.has(s.sceneNumber))?.sceneNumber
+                ?? sceneData.scenes[currentSceneIdx]?.sceneNumber
+                ?? sceneData.scenes[0].sceneNumber
+            }
+            completedSceneNumbers={completedScenes}
+            ageGroup={sceneData.ancestorAppearance?.ageGroup ?? "adult"}
+            gender={sceneData.ancestorAppearance?.gender ?? "unspecified"}
+            characterId={sceneData.ancestorMemberId ? `ancestor-${sceneData.familyId}-${sceneData.ancestorMemberId}` : undefined}
+            lifeStage={sceneData.ancestorAppearance?.lifeStage}
+            era={sceneData.ancestorAppearance?.era}
+            appearanceSeed={sceneData.ancestorAppearance?.appearanceSeed}
+            characterName={sceneData.ancestorName}
+            onEnterScene={handleEnterScene}
+          />
+        </div>
+      ) : (
+      <>
       {/* Day-Cycle Progression Bar — Living Game Session */}
       <div className="px-4 py-2 border-b border-stone-800/30 bg-stone-900/20">
         <div className="flex items-center justify-between gap-1">
@@ -925,7 +1010,7 @@ export default function LegacyChapterPlay() {
           <div className="flex flex-wrap gap-2 mb-5">
             {place && (
               <button
-                onClick={() => navigate(`/legacy/map?place=${place.id}`)}
+                onClick={() => setPlaceSheetOpen(true)}
                 className="flex items-center gap-2 text-sm text-amber-300 bg-amber-400/10 border border-amber-400/20 rounded-xl px-4 py-2.5 hover:bg-amber-400/20 hover:border-amber-400/40 transition-all active:scale-95 group"
               >
                 <Footprints className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
@@ -1220,12 +1305,22 @@ export default function LegacyChapterPlay() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Scene dots + floating action buttons */}
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-stone-800/50">
-        {/* Journal button */}
+        {!worldViewOpen && (
+          <button
+            onClick={() => setWorldViewOpen(true)}
+            className="flex items-center gap-1.5 text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 active:opacity-70 transition-all"
+          >
+            <Footprints className="w-3.5 h-3.5" /> Back to World
+          </button>
+        )}
+        {/* Journal button — opens in place, never leaves the running chapter */}
         <button
-          onClick={() => navigate("/legacy/journal")}
+          onClick={() => setJournalOpen(true)}
           className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-stone-800/60 border border-stone-700/50 rounded-xl px-3 py-2 active:opacity-70 hover:border-amber-500/30 hover:text-amber-400 transition-all"
         >
           <BookOpen className="w-3.5 h-3.5" /> Journal
@@ -1247,11 +1342,9 @@ export default function LegacyChapterPlay() {
           ))}
         </div>
 
-        {/* Map button */}
+        {/* Map button — opens as an overlay on top of the running chapter */}
         <button
-          onClick={() => sceneData.familyId
-            ? navigate(`/legacy/map/${sceneData.familyId}`)
-            : navigate("/legacy/map")}
+          onClick={() => setMapOpen(true)}
           className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-stone-800/60 border border-stone-700/50 rounded-xl px-3 py-2 active:opacity-70 hover:border-amber-500/30 hover:text-amber-400 transition-all"
         >
           <MapIcon className="w-3.5 h-3.5" /> Map
@@ -1264,6 +1357,77 @@ export default function LegacyChapterPlay() {
           changes={worldChanges}
           onComplete={() => setShowCoreLoop(false)}
         />
+      )}
+
+      {/* Place sheet — "Walk to {place}" used to navigate away to /legacy/map
+          and abandon the scene. It now surfaces the same vault place info
+          in place, over the running chapter, using data already loaded with
+          the scene (sceneData.vaultContext.places) — no extra fetch, no exit. */}
+      {placeSheetOpen && place && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 animate-[fadeIn_0.2s_ease-out]">
+          <div className="w-full max-w-lg bg-[#171310] border-t border-amber-900/40 rounded-t-2xl p-5 pb-8 animate-[slideUp_0.25s_ease-out]">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="text-[10px] text-amber-600 uppercase tracking-widest font-bold mb-1">Family Place</p>
+                <h3 className="text-lg font-black text-stone-100">{place.label}</h3>
+                {place.country && <p className="text-xs text-stone-500 mt-0.5">{place.country}</p>}
+              </div>
+              <button
+                onClick={() => setPlaceSheetOpen(false)}
+                className="p-2 -mr-2 -mt-1 rounded-lg hover:bg-stone-800/50 text-stone-500"
+              >
+                <ArrowLeft className="w-4 h-4 rotate-45" />
+              </button>
+            </div>
+            <p className="text-sm text-stone-400 leading-relaxed mb-5">
+              This place is part of your family's living world. Open the full map to see it
+              alongside every other place your family has discovered, or stay here and
+              continue the scene.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { setPlaceSheetOpen(false); setMapOpen(true); }}
+                className="bg-amber-500 text-stone-900 font-bold rounded-xl px-6 py-3 text-sm flex items-center justify-center gap-2"
+              >
+                <MapIcon className="w-4 h-4" /> Open Full Map
+              </button>
+              <button
+                onClick={() => setPlaceSheetOpen(false)}
+                className="text-stone-400 font-medium rounded-xl px-6 py-3 text-sm border border-stone-700"
+              >
+                Continue the Scene
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Journal overlay — slide-over sheet, the running scene stays mounted underneath */}
+      {journalOpen && (
+        <div className="fixed inset-0 z-50 bg-[#0e1111] animate-[fadeIn_0.2s_ease-out]">
+          <LegacyJournalPanel
+            familyId={sceneData.familyId ?? null}
+            embedded
+            onClose={() => setJournalOpen(false)}
+            onRevisitChapter={(chapterId) => {
+              setJournalOpen(false);
+              // Only actually navigate if it's a different chapter than the one
+              // already running underneath the sheet — revisiting the current
+              // chapter just closes the journal and resumes where you were.
+              if (chapterId !== sceneData.chapterId) {
+                navigate(`/legacy/chapter/${chapterId}`);
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {/* Map overlay — same real per-family map used by the standalone /legacy/map
+          route, now mounted in place so checking the map doesn't exit the chapter. */}
+      {mapOpen && (
+        <div className="fixed inset-0 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <LegacyMapPage onClose={() => setMapOpen(false)} />
+        </div>
       )}
     </div>
   );

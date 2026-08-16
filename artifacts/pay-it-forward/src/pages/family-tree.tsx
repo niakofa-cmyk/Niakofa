@@ -27,6 +27,8 @@ interface TreeNode {
   role: string;
   relation: string | null;
   birth_year: string | null;
+  death_year: string | null;
+  gender: "male" | "female" | null;
   is_linked_user: boolean;
   status?: string;
 }
@@ -97,6 +99,17 @@ export default function FamilyTreePage() {
   const [showRelationModal, setShowRelationModal] = useState(false);
   const [showExplorer, setShowExplorer] = useState(false);
 
+  // Editing a person's gender/birth/death year — used by Legacy Mode's
+  // character appearance resolver (resolveFamilyMemberAppearance), which
+  // requires these to be explicitly set and never guesses them. Curator/owner
+  // only, matching PATCH /family/:id/members/:memberId's existing permission
+  // check on the backend.
+  const [editingPerson, setEditingPerson] = useState(false);
+  const [editGender, setEditGender] = useState<"male" | "female" | "">("");
+  const [editBirthYear, setEditBirthYear] = useState("");
+  const [editDeathYear, setEditDeathYear] = useState("");
+  const [savingPerson, setSavingPerson] = useState(false);
+
   useEffect(() => {
     if (!currentUser) return;
     loadFamilies();
@@ -105,6 +118,13 @@ export default function FamilyTreePage() {
   useEffect(() => {
     if (selectedFamilyId) loadTree(selectedFamilyId);
   }, [selectedFamilyId]);
+
+  // Selecting a different person always exits edit mode — prevents an
+  // in-progress, unsaved edit for one person silently carrying over (and
+  // potentially getting saved against) whoever gets selected next.
+  useEffect(() => {
+    setEditingPerson(false);
+  }, [selectedPerson?.id]);
 
   const loadFamilies = useCallback(async () => {
     try {
@@ -172,6 +192,56 @@ export default function FamilyTreePage() {
       toast.error("Failed to remove relation");
     }
   }
+
+  function startEditingPerson(person: TreeNode) {
+    setEditGender(person.gender ?? "");
+    setEditBirthYear(person.birth_year ?? "");
+    setEditDeathYear(person.death_year ?? "");
+    setEditingPerson(true);
+  }
+
+  async function savePersonDetails() {
+    if (!selectedFamilyId || !selectedPerson) return;
+    setSavingPerson(true);
+    try {
+      const body: Record<string, unknown> = {};
+      if (editGender) body.gender = editGender;
+      if (editBirthYear.trim()) {
+        const y = parseInt(editBirthYear, 10);
+        if (!Number.isNaN(y)) body.birth_year = y;
+      }
+      if (editDeathYear.trim()) {
+        const y = parseInt(editDeathYear, 10);
+        if (!Number.isNaN(y)) body.death_year = y;
+      }
+      const res = await fetch(`/api/family/${selectedFamilyId}/members/${selectedPerson.id}`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to save");
+      }
+      toast.success(`${selectedPerson.name} updated`);
+      setEditingPerson(false);
+      loadTree(selectedFamilyId);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSavingPerson(false);
+    }
+  }
+
+  // Mirrors the backend's CAN_MANAGE_ROLES check on PATCH
+  // /family/:id/members/:memberId — owner/curator only. Kept in sync
+  // manually since this is a UI-only gate; the backend re-checks
+  // regardless, so a stale role here just hides the button, it can't
+  // grant unauthorized access.
+  const canManagePeople = (() => {
+    const fam = families.find(f => f.id === selectedFamilyId);
+    return fam?.my_role === "owner" || fam?.my_role === "curator";
+  })();
 
   if (!currentUser) {
     return (
@@ -380,6 +450,7 @@ export default function FamilyTreePage() {
                             {selectedPerson.birth_year && (
                               <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                                 <Calendar className="w-3 h-3" /> Born {selectedPerson.birth_year}
+                                {selectedPerson.death_year ? ` — Died ${selectedPerson.death_year}` : ""}
                               </p>
                             )}
                             {selectedPerson.relation && (
@@ -391,10 +462,89 @@ export default function FamilyTreePage() {
                               </p>
                             )}
                           </div>
+                          {canManagePeople && !editingPerson && (
+                            <button
+                              onClick={() => startEditingPerson(selectedPerson)}
+                              className="text-xs font-medium text-primary border border-primary/30 rounded-lg px-2.5 py-1.5 active:opacity-70"
+                            >
+                              Edit
+                            </button>
+                          )}
                           <button onClick={() => setSelectedPerson(null)} className="p-1">
                             <X className="w-4 h-4 text-muted-foreground" />
                           </button>
                         </div>
+
+                        {/* Edit form — gender/birth/death year. These feed
+                            Legacy Mode's character appearance resolver
+                            (resolveFamilyMemberAppearance): a chapter's
+                            ancestor only gets a real walking sprite instead
+                            of a placeholder once both gender and a usable
+                            birth year are set here. Curator/owner only. */}
+                        {editingPerson && (
+                          <div className="mt-3 pt-3 border-t border-border space-y-3">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Gender</label>
+                              <div className="flex gap-2 mt-1.5">
+                                {(["male", "female"] as const).map((g) => (
+                                  <button
+                                    key={g}
+                                    type="button"
+                                    onClick={() => setEditGender(g)}
+                                    className={`flex-1 text-sm rounded-lg px-3 py-2 border capitalize ${
+                                      editGender === g
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : "border-border text-muted-foreground"
+                                    }`}
+                                  >
+                                    {g}
+                                  </button>
+                                ))}
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                Optional. Only used so this person can appear as a real walking
+                                character in Legacy Mode — never guessed or required.
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Birth year</label>
+                                <input
+                                  type="number"
+                                  value={editBirthYear}
+                                  onChange={(e) => setEditBirthYear(e.target.value)}
+                                  placeholder="e.g. 1890"
+                                  className="w-full mt-1.5 bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Death year</label>
+                                <input
+                                  type="number"
+                                  value={editDeathYear}
+                                  onChange={(e) => setEditDeathYear(e.target.value)}
+                                  placeholder="Leave blank if living"
+                                  className="w-full mt-1.5 bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                onClick={savePersonDetails}
+                                disabled={savingPerson}
+                                className="flex-1 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60"
+                              >
+                                {savingPerson ? "Saving..." : "Save"}
+                              </button>
+                              <button
+                                onClick={() => setEditingPerson(false)}
+                                className="flex-1 border border-border rounded-lg px-3 py-2 text-sm font-medium"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Relations section */}
                         {(() => {

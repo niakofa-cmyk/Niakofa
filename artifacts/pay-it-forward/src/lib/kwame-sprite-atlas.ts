@@ -103,14 +103,70 @@ export type KwameClipName =
   | "land-up"
 ;
 
+/**
+ * v2 note (Aug 2026): KWAME_FULL_BUILD_MANIFEST_v2.json introduced a 13th
+ * atlas directory (DOWN_LEFT / down-left-master) that fills the last major
+ * direction gap — idle/walk down and idle/walk left. Those four clips were
+ * typed but unresolved before v2. All HURT / INSPECT / PICK_UP / RUN_DOWN_LEFT
+ * / TALK / TALK_DOWN_LEFT atlases were also re-extracted with fixed geometry
+ * (32 v2 frames per dir, named _rN_cN.png) alongside the existing v1 frames.
+ * RPG Maker MV prototype frames (70 frames, artTier "prototypePixel") are in
+ * RPG_MAKER_MV_PROTOTYPE/ — enforcement gate prevents them from rendering for
+ * Kwame (protagonist requires handDrawn) but they are available for background
+ * NPCs and combat-pipeline reference.
+ */
+
 /** Which of the above clips have real extracted frames today. */
 export const KWAME_ATLAS_FRAMES: Partial<Record<KwameClipName, string[]>> = {
+  // ── DOWN_LEFT v2 (down-left-master, 4 rows × 8 cols) ────────────────────
+  // Row 0 = idle-down, Row 1 = walk-down, Row 2 = idle-left, Row 3 = walk-left
+  "idle-down": [
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r0_c0.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r0_c1.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r0_c2.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r0_c3.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r0_c4.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r0_c5.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r0_c6.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r0_c7.png",
+  ],
+  "walk-down": [
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r1_c0.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r1_c1.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r1_c2.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r1_c3.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r1_c4.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r1_c5.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r1_c6.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r1_c7.png",
+  ],
+  "idle-left": [
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r2_c0.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r2_c1.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r2_c2.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r2_c3.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r2_c4.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r2_c5.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r2_c6.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r2_c7.png",
+  ],
+  "walk-left": [
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r3_c0.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r3_c1.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r3_c2.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r3_c3.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r3_c4.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r3_c5.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r3_c6.png",
+    "/legacy-character-assets/kwame-mensah/atlas/DOWN_LEFT/down-left-master_r3_c7.png",
+  ],
+  // ── v1 hand-drawn clips (HURT, UP_Direction, RIGHT_Direction, etc.) ──────
   "hurt-down": ["/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-down-1.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-down-2.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-down-3.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-down-4.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-down-5.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-down-6.png"],
   "hurt-left": ["/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-left-1.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-left-2.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-left-3.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-left-4.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-left-5.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-left-6.png"],
   "hurt-right": ["/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-right-1.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-right-2.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-right-3.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-right-4.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-right-5.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-right-6.png"],
   "hurt-up": ["/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-up-1.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-up-2.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-up-3.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-up-4.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-up-5.png", "/legacy-character-assets/kwame-mensah/atlas/HURT/hurt-up-6.png"],
-  "idle-down": ["/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-down-1.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-down-2.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-down-3.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-down-4.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-down-5.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-down-6.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-down-7.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-down-8.png"],
-  "idle-left": ["/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-left-1.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-left-2.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-left-3.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-left-4.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-left-5.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-left-6.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-left-7.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/idle-left-8.png"],
+  // idle-down and idle-left are sourced from DOWN_LEFT (v2) above — Hand-Drawn_Base v1 entries removed.
+  // idle-right, idle-up, etc. remain v1 below:
   "idle-right": ["/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/idle-right-1.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/idle-right-2.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/idle-right-3.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/idle-right-4.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/idle-right-5.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/idle-right-6.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/idle-right-7.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/idle-right-8.png"],
   "idle-up": ["/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-1.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-2.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-3.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-4.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-5.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-6.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-7.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-8.png"],
   "idle-up-left": ["/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-left-1.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-left-2.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-left-3.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-left-4.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-left-5.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-left-6.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-left-7.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/idle-up-left-8.png"],
@@ -146,8 +202,7 @@ export const KWAME_ATLAS_FRAMES: Partial<Record<KwameClipName, string[]>> = {
   "talk-up-alt": ["/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-alt-1.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-alt-2.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-alt-3.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-alt-4.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-alt-5.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-alt-6.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-alt-7.png"],
   "talk-up-left": ["/legacy-character-assets/kwame-mensah/atlas/TALK_DOWN_LEFT/talk-up-left-1.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_DOWN_LEFT/talk-up-left-2.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_DOWN_LEFT/talk-up-left-3.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_DOWN_LEFT/talk-up-left-4.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_DOWN_LEFT/talk-up-left-5.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_DOWN_LEFT/talk-up-left-6.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_DOWN_LEFT/talk-up-left-7.png"],
   "talk-up-right": ["/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-right-1.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-right-2.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-right-3.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-right-4.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-right-5.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-right-6.png", "/legacy-character-assets/kwame-mensah/atlas/TALK_UP_RIGHT/talk-up-right-7.png"],
-  "walk-down": ["/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-down-1.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-down-2.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-down-3.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-down-4.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-down-5.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-down-6.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-down-7.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-down-8.png"],
-  "walk-left": ["/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-left-1.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-left-2.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-left-3.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-left-4.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-left-5.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-left-6.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-left-7.png", "/legacy-character-assets/kwame-mensah/atlas/Hand-Drawn_Base/walk-left-8.png"],
+  // walk-down and walk-left are sourced from DOWN_LEFT (v2) above.
   "walk-right": ["/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/walk-right-1.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/walk-right-2.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/walk-right-3.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/walk-right-4.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/walk-right-5.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/walk-right-6.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/walk-right-7.png", "/legacy-character-assets/kwame-mensah/atlas/RIGHT_Direction/walk-right-8.png"],
   "walk-up": ["/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-1.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-2.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-3.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-4.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-5.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-6.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-7.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-8.png"],
   "walk-up-left": ["/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-left-1.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-left-2.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-left-3.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-left-4.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-left-5.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-left-6.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-left-7.png", "/legacy-character-assets/kwame-mensah/atlas/UP_Direction/walk-up-left-8.png"],

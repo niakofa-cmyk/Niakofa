@@ -252,9 +252,23 @@ function AddPlaceModal({
   );
 }
 
-export default function LegacyMapPage() {
+interface LegacyMapPageProps {
+  /**
+   * When provided, the map runs embedded inside another screen (e.g. the
+   * live chapter runtime) instead of as its own route. Back/close actions
+   * call this instead of navigating away, so the player never leaves the
+   * running world just to check the map.
+   */
+  onClose?: () => void;
+}
+
+export default function LegacyMapPage({ onClose }: LegacyMapPageProps = {}) {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
+  // In embedded mode, "back"/"close" dismiss the overlay instead of routing
+  // to /legacy. In standalone route mode (no onClose passed) it behaves
+  // exactly as before.
+  const closeOrNavigate = onClose ?? (() => navigate("/legacy"));
   const [data, setData] = useState<MapResponse | null>(null);
   const [familyId, setFamilyId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -438,7 +452,7 @@ export default function LegacyMapPage() {
     return (
       <div className="min-h-screen bg-[#1A0F08] flex flex-col items-center justify-center gap-4 p-6">
         <p className="text-amber-400 text-sm text-center">{error}</p>
-        <button onClick={() => navigate("/legacy")} className="text-amber-500 text-xs underline">Back to map</button>
+        <button onClick={closeOrNavigate} className="text-amber-500 text-xs underline">Back to map</button>
       </div>
     );
   }
@@ -463,7 +477,7 @@ export default function LegacyMapPage() {
   return (
     <div className="min-h-screen bg-[#1A0F08] flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-amber-900/30">
-        <button onClick={() => navigate("/legacy")} className="flex items-center gap-1 text-amber-500 text-xs font-semibold">
+        <button onClick={closeOrNavigate} className="flex items-center gap-1 text-amber-500 text-xs font-semibold">
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>

@@ -292,6 +292,9 @@ router.get("/family/:id/tree", requireAuth, generalApiLimiter, async (req, res) 
         relation_note: familyMembersTable.relation_note,
         user_id: familyMembersTable.user_id,
         status: familyMembersTable.status,
+        birth_year: familyMembersTable.birth_year,
+        death_year: familyMembersTable.death_year,
+        gender: familyMembersTable.gender,
       })
       .from(familyMembersTable)
       .where(eq(familyMembersTable.family_id, familyId))
@@ -314,6 +317,15 @@ router.get("/family/:id/tree", requireAuth, generalApiLimiter, async (req, res) 
       relation: m.relation_note,
       is_linked_user: !!m.user_id,
       status: m.status,
+      // These three were previously missing from this endpoint's SELECT
+      // entirely — the frontend TreeNode type has referenced birth_year
+      // for sorting/living-status display since this route existed, but
+      // it was always undefined at runtime because the query never
+      // fetched it. Fixed alongside adding death_year/gender (the latter
+      // added in migration 0106 for Legacy Mode character appearance).
+      birth_year: m.birth_year !== null ? String(m.birth_year) : null,
+      death_year: m.death_year !== null ? String(m.death_year) : null,
+      gender: m.gender,
     }));
 
     const edges = relations.map(r => ({

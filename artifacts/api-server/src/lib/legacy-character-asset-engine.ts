@@ -129,7 +129,7 @@ export function buildCatalogPortraitReference(
   };
 }
 
-function buildAppearance(
+export function buildAppearance(
   person: ExtractedPerson,
   characterId: string,
   appearanceSeed: string,
@@ -196,4 +196,50 @@ export function buildGeneratedCharacters(input: {
         portrait: buildCatalogPortraitReference(characterId, appearanceSeed),
       };
     });
+}
+
+/**
+ * Resolves a walking-character appearance for a chapter's actual ancestor
+ * (a real family_members row), reusing the exact same buildAppearance logic
+ * used for AI-extracted interview NPCs above.
+ *
+ * This intentionally mirrors buildGeneratedCharacters's "no guessing" rule:
+ * gender must be explicitly set on the member (migration 0106 — nullable,
+ * opt-in, never inferred from a name), and age is only computed when both
+ * birth_year is known AND the chapter's era string contains a parseable
+ * year. Either gap and this returns null — the caller (GET
+ * /legacy/chapters/:id/scenes) surfaces that as "pending" and the chapter
+ * runtime renders a neutral placeholder sprite rather than a guess.
+ */
+export interface FamilyMemberForAppearance {
+  id: number;
+  display_name: string;
+  gender: string | null;
+  birth_year: number | null;
+  death_year: number | null;
+}
+
+function yearFromEra(era: string | null | undefined): number | null {
+  const match = era?.match(/\b(1[5-9]\d{2}|20\d{2})\b/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+export function resolveFamilyMemberAppearance(
+  familyId: number,
+  member: FamilyMemberForAppearance,
+  chapterEra: string | null | undefined,
+): GeneratedCharacterAppearance | null {
+  const eraYear = yearFromEra(chapterEra);
+  const age = eraYear !== null && member.birth_year !== null
+    ? eraYear - member.birth_year
+    : null;
+
+  const characterId = `ancestor-${familyId}-${member.id}`;
+  const appearanceSeed = `family:${familyId}:member:${member.id}`;
+
+  return buildAppearance(
+    { name: member.display_name, age, gender: member.gender, era: chapterEra ?? null },
+    characterId,
+    appearanceSeed,
+  );
 }

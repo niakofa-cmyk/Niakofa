@@ -43,6 +43,7 @@ import { logger } from "../lib/logger";
 import { calculateCompleteness, CHAPTER_UNLOCK_THRESHOLD } from "./legacy-completeness";
 import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
 import { getHistoricalContext } from "../lib/historical-context";
+import { resolveFamilyMemberAppearance } from "../lib/legacy-character-asset-engine";
 import { legacyAI } from "../lib/legacy-ai-gateway";
 import { getAssetUrl } from "../lib/storage";
 
@@ -937,6 +938,31 @@ router.get(
 
       const { scenes, vaultContext } = await buildChapterScenes(chapter);
 
+      // Resolve the playing ancestor's real walking-character appearance
+      // (see legacy-character-asset-engine.ts: requires an explicit gender
+      // on the member row — migration 0106 — and a parseable year in the
+      // chapter's era; either gap and this is null, never guessed). The
+      // chapter runtime (LegacyChapterWorld) falls back to a neutral
+      // placeholder sprite when this is null, rather than fabricating one.
+      let ancestorAppearance = null as ReturnType<typeof resolveFamilyMemberAppearance>;
+      let ancestorName: string | null = null;
+      if (chapter.ancestor_member_id) {
+        const [ancestorMember] = await db
+          .select()
+          .from(familyMembersTable)
+          .where(eq(familyMembersTable.id, chapter.ancestor_member_id))
+          .limit(1);
+        if (ancestorMember) {
+          ancestorName = ancestorMember.display_name;
+          const data = chapter.chapter_data as Record<string, unknown>;
+          ancestorAppearance = resolveFamilyMemberAppearance(
+            chapter.family_id,
+            ancestorMember,
+            (data.era as string | undefined) ?? null,
+          );
+        }
+      }
+
       return res.json({
         chapterId,
         familyId: chapter.family_id,
@@ -944,6 +970,9 @@ router.get(
         chapterStatus: chapter.status,
         scenes,
         vaultContext,
+        ancestorMemberId: chapter.ancestor_member_id,
+        ancestorName,
+        ancestorAppearance,
       });
     } catch (err) {
       logger.error({ err, chapterId }, "legacy-chapters: scenes failed");

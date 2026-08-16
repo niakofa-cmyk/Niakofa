@@ -282,8 +282,8 @@ function AppShell() {
             <Route path="/legacy/ai-director" component={LegacyAiDirectorPage} />
             <Route path="/legacy/mysteries" component={LegacyMemoryMysteriesPage} />
             <Route path="/legacy/characters" component={LegacyCharacterEvolutionPage} />
-            <Route path="/legacy/map/:familyId" component={LegacyMapPage} />
-            <Route path="/legacy/map" component={LegacyMapPage} />
+            <Route path="/legacy/map/:familyId" component={() => <LegacyMapPage />} />
+            <Route path="/legacy/map" component={() => <LegacyMapPage />} />
             <Route path="/legacy/play/:sessionId" component={LegacyPlayPage} />
             <Route path="/legacy/play" component={LegacyPlayPage} />
             <Route path="/legacy/interview-quest" component={LegacyInterviewQuestPage} />

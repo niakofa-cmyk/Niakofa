@@ -153,6 +153,18 @@ const InviteMemberSchema = z.object({
 const UpdateMemberSchema = z.object({
   role:   z.enum(["owner", "curator", "contributor", "viewer"]).optional(),
   status: z.enum(["active", "removed"]).optional(),
+  // Explicit, optional, never-inferred fields used by Legacy Mode's
+  // character appearance resolver (legacy-character-asset-engine.ts).
+  // birth_year/death_year existed on the table since migration 0105 but
+  // this endpoint never accepted them — nothing in the app could actually
+  // set them. gender was added in migration 0106 for the same reason:
+  // resolveFamilyMemberAppearance() requires it explicitly and refuses to
+  // guess, so without a way to set it every chapter ancestor stayed a
+  // placeholder sprite forever. All three are optional and nullable by
+  // omission — a curator can set what they know and leave the rest blank.
+  gender:     z.enum(["male", "female"]).optional(),
+  birth_year: z.number().int().min(1500).max(2100).optional(),
+  death_year: z.number().int().min(1500).max(2100).optional(),
 });
 
 const CreateMemorySchema = z.object({
@@ -538,6 +550,9 @@ router.patch("/family/:id/members/:memberId", generalApiLimiter, requireAuth, as
     updates.status = parsed.data.status;
     if (parsed.data.status === "active") updates.joined_at = new Date();
   }
+  if (parsed.data.gender !== undefined) updates.gender = parsed.data.gender;
+  if (parsed.data.birth_year !== undefined) updates.birth_year = parsed.data.birth_year;
+  if (parsed.data.death_year !== undefined) updates.death_year = parsed.data.death_year;
   if (Object.keys(updates).length > 0) updates.updated_at = new Date();
 
   const [updated] = await db

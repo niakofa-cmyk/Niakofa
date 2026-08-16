@@ -1,0 +1,357 @@
+{
+  "frameCount": 70,
+  "frames": [
+    {
+      "file": "rpgmv_r0_c0.png",
+      "row": 0,
+      "col": 0
+    },
+    {
+      "file": "rpgmv_r0_c1.png",
+      "row": 0,
+      "col": 1
+    },
+    {
+      "file": "rpgmv_r0_c2.png",
+      "row": 0,
+      "col": 2
+    },
+    {
+      "file": "rpgmv_r0_c3.png",
+      "row": 0,
+      "col": 3
+    },
+    {
+      "file": "rpgmv_r0_c4.png",
+      "row": 0,
+      "col": 4
+    },
+    {
+      "file": "rpgmv_r0_c5.png",
+      "row": 0,
+      "col": 5
+    },
+    {
+      "file": "rpgmv_r0_c6.png",
+      "row": 0,
+      "col": 6
+    },
+    {
+      "file": "rpgmv_r0_c7.png",
+      "row": 0,
+      "col": 7
+    },
+    {
+      "file": "rpgmv_r0_c8.png",
+      "row": 0,
+      "col": 8
+    },
+    {
+      "file": "rpgmv_r0_c9.png",
+      "row": 0,
+      "col": 9
+    },
+    {
+      "file": "rpgmv_r1_c0.png",
+      "row": 1,
+      "col": 0
+    },
+    {
+      "file": "rpgmv_r1_c1.png",
+      "row": 1,
+      "col": 1
+    },
+    {
+      "file": "rpgmv_r1_c2.png",
+      "row": 1,
+      "col": 2
+    },
+    {
+      "file": "rpgmv_r1_c3.png",
+      "row": 1,
+      "col": 3
+    },
+    {
+      "file": "rpgmv_r1_c4.png",
+      "row": 1,
+      "col": 4
+    },
+    {
+      "file": "rpgmv_r1_c5.png",
+      "row": 1,
+      "col": 5
+    },
+    {
+      "file": "rpgmv_r1_c6.png",
+      "row": 1,
+      "col": 6
+    },
+    {
+      "file": "rpgmv_r1_c7.png",
+      "row": 1,
+      "col": 7
+    },
+    {
+      "file": "rpgmv_r1_c8.png",
+      "row": 1,
+      "col": 8
+    },
+    {
+      "file": "rpgmv_r1_c9.png",
+      "row": 1,
+      "col": 9
+    },
+    {
+      "file": "rpgmv_r2_c0.png",
+      "row": 2,
+      "col": 0
+    },
+    {
+      "file": "rpgmv_r2_c1.png",
+      "row": 2,
+      "col": 1
+    },
+    {
+      "file": "rpgmv_r2_c2.png",
+      "row": 2,
+      "col": 2
+    },
+    {
+      "file": "rpgmv_r2_c3.png",
+      "row": 2,
+      "col": 3
+    },
+    {
+      "file": "rpgmv_r2_c4.png",
+      "row": 2,
+      "col": 4
+    },
+    {
+      "file": "rpgmv_r2_c5.png",
+      "row": 2,
+      "col": 5
+    },
+    {
+      "file": "rpgmv_r2_c6.png",
+      "row": 2,
+      "col": 6
+    },
+    {
+      "file": "rpgmv_r2_c7.png",
+      "row": 2,
+      "col": 7
+    },
+    {
+      "file": "rpgmv_r2_c8.png",
+      "row": 2,
+      "col": 8
+    },
+    {
+      "file": "rpgmv_r2_c9.png",
+      "row": 2,
+      "col": 9
+    },
+    {
+      "file": "rpgmv_r3_c0.png",
+      "row": 3,
+      "col": 0
+    },
+    {
+      "file": "rpgmv_r3_c1.png",
+      "row": 3,
+      "col": 1
+    },
+    {
+      "file": "rpgmv_r3_c2.png",
+      "row": 3,
+      "col": 2
+    },
+    {
+      "file": "rpgmv_r3_c3.png",
+      "row": 3,
+      "col": 3
+    },
+    {
+      "file": "rpgmv_r3_c4.png",
+      "row": 3,
+      "col": 4
+    },
+    {
+      "file": "rpgmv_r3_c5.png",
+      "row": 3,
+      "col": 5
+    },
+    {
+      "file": "rpgmv_r3_c6.png",
+      "row": 3,
+      "col": 6
+    },
+    {
+      "file": "rpgmv_r3_c7.png",
+      "row": 3,
+      "col": 7
+    },
+    {
+      "file": "rpgmv_r3_c8.png",
+      "row": 3,
+      "col": 8
+    },
+    {
+      "file": "rpgmv_r3_c9.png",
+      "row": 3,
+      "col": 9
+    },
+    {
+      "file": "rpgmv_r4_c0.png",
+      "row": 4,
+      "col": 0
+    },
+    {
+      "file": "rpgmv_r4_c1.png",
+      "row": 4,
+      "col": 1
+    },
+    {
+      "file": "rpgmv_r4_c2.png",
+      "row": 4,
+      "col": 2
+    },
+    {
+      "file": "rpgmv_r4_c3.png",
+      "row": 4,
+      "col": 3
+    },
+    {
+      "file": "rpgmv_r4_c4.png",
+      "row": 4,
+      "col": 4
+    },
+    {
+      "file": "rpgmv_r4_c5.png",
+      "row": 4,
+      "col": 5
+    },
+    {
+      "file": "rpgmv_r4_c6.png",
+      "row": 4,
+      "col": 6
+    },
+    {
+      "file": "rpgmv_r4_c7.png",
+      "row": 4,
+      "col": 7
+    },
+    {
+      "file": "rpgmv_r4_c8.png",
+      "row": 4,
+      "col": 8
+    },
+    {
+      "file": "rpgmv_r4_c9.png",
+      "row": 4,
+      "col": 9
+    },
+    {
+      "file": "rpgmv_r5_c0.png",
+      "row": 5,
+      "col": 0
+    },
+    {
+      "file": "rpgmv_r5_c1.png",
+      "row": 5,
+      "col": 1
+    },
+    {
+      "file": "rpgmv_r5_c2.png",
+      "row": 5,
+      "col": 2
+    },
+    {
+      "file": "rpgmv_r5_c3.png",
+      "row": 5,
+      "col": 3
+    },
+    {
+      "file": "rpgmv_r5_c4.png",
+      "row": 5,
+      "col": 4
+    },
+    {
+      "file": "rpgmv_r5_c5.png",
+      "row": 5,
+      "col": 5
+    },
+    {
+      "file": "rpgmv_r5_c6.png",
+      "row": 5,
+      "col": 6
+    },
+    {
+      "file": "rpgmv_r5_c7.png",
+      "row": 5,
+      "col": 7
+    },
+    {
+      "file": "rpgmv_r5_c8.png",
+      "row": 5,
+      "col": 8
+    },
+    {
+      "file": "rpgmv_r5_c9.png",
+      "row": 5,
+      "col": 9
+    },
+    {
+      "file": "rpgmv_r6_c0.png",
+      "row": 6,
+      "col": 0
+    },
+    {
+      "file": "rpgmv_r6_c1.png",
+      "row": 6,
+      "col": 1
+    },
+    {
+      "file": "rpgmv_r6_c2.png",
+      "row": 6,
+      "col": 2
+    },
+    {
+      "file": "rpgmv_r6_c3.png",
+      "row": 6,
+      "col": 3
+    },
+    {
+      "file": "rpgmv_r6_c4.png",
+      "row": 6,
+      "col": 4
+    },
+    {
+      "file": "rpgmv_r6_c5.png",
+      "row": 6,
+      "col": 5
+    },
+    {
+      "file": "rpgmv_r6_c6.png",
+      "row": 6,
+      "col": 6
+    },
+    {
+      "file": "rpgmv_r6_c7.png",
+      "row": 6,
+      "col": 7
+    },
+    {
+      "file": "rpgmv_r6_c8.png",
+      "row": 6,
+      "col": 8
+    },
+    {
+      "file": "rpgmv_r6_c9.png",
+      "row": 6,
+      "col": 9
+    }
+  ],
+  "artTier": "prototypePixel",
+  "note": "Auto-detected via background-gutter analysis, not a verified hand-authored template like the atlas files. Directions per row not confirmed -- visually spot-check before use."
+}
