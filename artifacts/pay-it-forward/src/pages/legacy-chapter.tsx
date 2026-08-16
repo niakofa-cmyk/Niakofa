@@ -17,7 +17,7 @@ import {
   CheckCircle2, ChevronRight, Sparkles, AlertCircle,
   Sunrise, MessageSquare, Compass, Map as MapIcon,
   Moon, BookMarked, Save,
-  Footprints,
+  Footprints, Sword, Scroll,
 } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import LegacyCoreLoop, { buildWorldChanges, type WorldChange } from "@/components/legacy-core-loop";
@@ -27,6 +27,10 @@ import { LegacyChapterWorld } from "@/components/legacy-chapter-world";
 import { LegacyWeatherOverlay, deriveChapterWeather } from "@/components/legacy-weather-overlay";
 import { LegacySceneRenderer } from "@/components/legacy-scene-renderer";
 import { getMapScene } from "@/lib/legacy-map-scenes";
+import { LegacyQuestsPanel } from "@/components/legacy-quests-panel";
+import { LegacyGameCanvas } from "@/legacy-runtime/LegacyGameCanvas";
+import { kwameHandDrawnManifest } from "@/legacy-runtime/kwame-manifest";
+import { capeCoastCompoundScene, capeCoastCompoundAssets, environmentBaseUrl } from "@/legacy-runtime/scene-cape-coast-compound";
 
 // Ambient background gradient shifts based on the day-cycle position.
 // Morning → warm amber, midday → bright gold, evening → deep amber, night → dark with stars.
@@ -250,6 +254,9 @@ export default function LegacyChapterPlay() {
   const [journalOpen, setJournalOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [placeSheetOpen, setPlaceSheetOpen] = useState(false);
+  // In-session overlays added per RUNTIME_ARCHITECTURE_UPDATE.md rollout:
+  const [questsOpen, setQuestsOpen] = useState(false);
+  const [gameCanvasOpen, setGameCanvasOpen] = useState(false);
 
   // World view — the chapter now opens into a walkable grid built from its
   // real scenes/places (legacy-dynamic-world-layout.ts) instead of jumping
@@ -1393,6 +1400,14 @@ export default function LegacyChapterPlay() {
           <BookOpen className="w-3.5 h-3.5" /> Journal
         </button>
 
+        {/* Quests button — opens character + quest sheet without leaving chapter */}
+        <button
+          onClick={() => setQuestsOpen(true)}
+          className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-stone-800/60 border border-stone-700/50 rounded-xl px-3 py-2 active:opacity-70 hover:border-amber-500/30 hover:text-amber-400 transition-all"
+        >
+          <Scroll className="w-3.5 h-3.5" /> Quests
+        </button>
+
         {/* Scene progress dots */}
         <div className="flex items-center gap-1.5 flex-1 justify-center">
           {sceneData.scenes.map((s, i) => (
@@ -1415,6 +1430,14 @@ export default function LegacyChapterPlay() {
           className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-stone-800/60 border border-stone-700/50 rounded-xl px-3 py-2 active:opacity-70 hover:border-amber-500/30 hover:text-amber-400 transition-all"
         >
           <MapIcon className="w-3.5 h-3.5" /> Map
+        </button>
+
+        {/* Live World — opens the real PixiJS game canvas (RUNTIME_ARCHITECTURE_UPDATE.md step 2) */}
+        <button
+          onClick={() => setGameCanvasOpen(true)}
+          className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-stone-800/60 border border-stone-700/50 rounded-xl px-3 py-2 active:opacity-70 hover:border-amber-500/30 hover:text-amber-400 transition-all"
+        >
+          <Sword className="w-3.5 h-3.5" /> World
         </button>
       </div>
 
@@ -1494,6 +1517,68 @@ export default function LegacyChapterPlay() {
       {mapOpen && (
         <div className="fixed inset-0 z-50 animate-[fadeIn_0.2s_ease-out]">
           <LegacyMapPage onClose={() => setMapOpen(false)} />
+        </div>
+      )}
+
+      {/* Quests + Character overlay — shows active mystery quests, chapter objectives,
+          and accumulated stat gains without leaving the running chapter.
+          Pattern: same slide-over approach as Journal and Map above. */}
+      {questsOpen && (
+        <LegacyQuestsPanel
+          familyId={sceneData.familyId ?? null}
+          chapterId={sceneData.chapterId}
+          chapterTitle={sceneData.chapterTitle}
+          ancestorName={sceneData.ancestorName}
+          sessionStats={sessionStats}
+          scenes={sceneData.scenes.map(s => ({ sceneNumber: s.sceneNumber, title: s.title, type: s.type }))}
+          completedSceneNumbers={completedScenes}
+          onClose={() => setQuestsOpen(false)}
+        />
+      )}
+
+      {/* Live World Canvas — real PixiJS game canvas per RUNTIME_ARCHITECTURE_UPDATE.md
+          rollout step 2: proves the rendering pipeline with real hand-drawn art before
+          wiring movement into the chapter-scene system. Opens as a full-screen overlay.
+          Uses the Cape Coast Compound 1890 scene (the first complete hand-authored
+          LegacyMapScene) and Kwame's hand-drawn character manifest (384 frames). */}
+      {gameCanvasOpen && (
+        <div className="fixed inset-0 z-50 bg-[#1a0f08] flex flex-col animate-[fadeIn_0.2s_ease-out]">
+          <div
+            className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+            style={{ borderBottom: "1px solid rgba(214,158,46,0.2)" }}
+          >
+            <button
+              onClick={() => setGameCanvasOpen(false)}
+              className="flex items-center gap-2 text-sm font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 active:opacity-70 transition-all"
+            >
+              <ArrowLeft className="w-4 h-4" /> Return to Chapter
+            </button>
+            <div className="text-center">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-600">Living World</p>
+              <p className="text-xs text-stone-500 font-semibold">Cape Coast Compound · 1890</p>
+            </div>
+            <div className="w-28 flex justify-end">
+              <span className="text-[9px] text-amber-800 bg-amber-900/20 border border-amber-900/30 rounded-full px-2 py-1 font-bold uppercase tracking-wide">
+                PixiJS · WebGL
+              </span>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0">
+            <LegacyGameCanvas
+              scene={capeCoastCompoundScene}
+              environmentAssets={capeCoastCompoundAssets}
+              environmentBaseUrl={environmentBaseUrl}
+              characterManifest={kwameHandDrawnManifest}
+            />
+          </div>
+          <div className="flex-shrink-0 px-4 py-2 flex items-center gap-4 text-[10px] text-stone-600"
+               style={{ borderTop: "1px solid rgba(214,158,46,0.1)" }}>
+            <span>Arrow keys / WASD — move</span>
+            <span>Shift — run</span>
+            <span>Space — interact</span>
+            <span>J/K — attack (no art yet)</span>
+            <span>L — jump</span>
+          </div>
         </div>
       )}
     </div>
