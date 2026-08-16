@@ -20,3 +20,4 @@
 - [Legacy Journal + Region Features](legacy-journal-region-features.md) — Task 7 RegionMap+portals, Task 8 Character journal tab, Task 9 sanitizer conversation-preference cap + dev warnings.
 - [Niakofa ARPG Architecture](niakofa-arpg-architecture.md) — pixel movement, WorldEntitySpawner, CharacterAssetLibrary; ARPG/OCC licensing boundary; no RPG Maker code in runtime.
 - [Kwame Atlas v2 + Walkable Chapter](kwame-v2-walkable-chapter.md) — DOWN_LEFT fills idle/walk-down/left; duplicate key rule for atlas; App.tsx wraps LegacyMapPage; DB migration 0106 applied; DarkNinja as combat reference only.
+- [Railway Python Detection Trap](railway-python-detection-trap.md) — committing main.py/pyproject.toml/uv.lock to repo root breaks Railway; railpack.json now locks provider:node + exclude list.
