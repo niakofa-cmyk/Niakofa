@@ -2133,6 +2133,8 @@ export default function LegacyDemoPage() {
               onFishingCast={handleFishingCast}
               gameHour={gameHour}
               onNpcInteract={handleNpcInteract}
+              activeRegionId={activeRegionId}
+              onRegionChange={setActiveRegionId}
             />
           </div>
         )}
@@ -2278,6 +2280,7 @@ export default function LegacyDemoPage() {
           entries={state.journalEntries}
           traits={state.traits}
           phase={state.phase}
+          characterId="kwame-mensah"
           onClose={() => setJournalOpen(false)}
         />
       )}
