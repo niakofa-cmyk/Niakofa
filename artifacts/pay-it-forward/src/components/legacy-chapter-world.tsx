@@ -32,10 +32,16 @@ import {
   type ChapterWorldLandmark,
 } from "@/lib/legacy-dynamic-world-layout";
 import { LegacyCharacterSprite, type LegacySpriteFacing } from "@/components/legacy-character-sprite";
+import {
+  WORLD_TILE_VISUAL,
+  getEnvAsset,
+  type LegacyWorldTileId,
+} from "@/lib/legacy-environment-assets";
 
 const TILE_PX = 44;
 
-const TILE_STYLE: Record<string, string> = {
+/** CSS fallback colors — still used when the PNG is unavailable. */
+const TILE_CSS_FALLBACK: Record<string, string> = {
   grass_01: "#2f4a1e",
   grass_02: "#35521f",
   dirt_path: "#8a6a3a",
@@ -162,17 +168,25 @@ export function LegacyChapterWorld({
           }}
         >
           {layout.map.map((rowTiles, r) =>
-            rowTiles.map((tile, c) => (
-              <div
-                key={`${r}-${c}`}
-                style={{
-                  width: TILE_PX,
-                  height: TILE_PX,
-                  background: TILE_STYLE[tile] ?? "#222",
-                  boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.15)",
-                }}
-              />
-            )),
+            rowTiles.map((tile, c) => {
+              const visual = WORLD_TILE_VISUAL[tile as LegacyWorldTileId]?.(r, c);
+              const asset = visual?.assetId ? getEnvAsset(visual.assetId) : undefined;
+              const fallback = TILE_CSS_FALLBACK[tile] ?? "#222";
+              return (
+                <div
+                  key={`${r}-${c}`}
+                  style={{
+                    width: TILE_PX,
+                    height: TILE_PX,
+                    background: fallback,
+                    backgroundImage: asset ? `url(${asset.src})` : undefined,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.10)",
+                  }}
+                />
+              );
+            }),
           )}
 
           {/* Landmarks */}

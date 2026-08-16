@@ -1,0 +1,665 @@
+{
+  "frameCount": 132,
+  "frames": [
+    {
+      "file": "building-compound-01.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 1
+    },
+    {
+      "file": "building-compound-02.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 2
+    },
+    {
+      "file": "building-compound-03.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 3
+    },
+    {
+      "file": "building-compound-04.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 4
+    },
+    {
+      "file": "building-compound-05.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 5
+    },
+    {
+      "file": "building-compound-06.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 6
+    },
+    {
+      "file": "building-compound-07.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 7
+    },
+    {
+      "file": "building-compound-08.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 8
+    },
+    {
+      "file": "building-compound-09.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 9
+    },
+    {
+      "file": "building-compound-10.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 10
+    },
+    {
+      "file": "building-compound-11.png",
+      "label": "BUILDING-COMPOUND",
+      "variant": 11
+    },
+    {
+      "file": "building-hut-01.png",
+      "label": "BUILDING-HUT",
+      "variant": 1
+    },
+    {
+      "file": "building-hut-02.png",
+      "label": "BUILDING-HUT",
+      "variant": 2
+    },
+    {
+      "file": "building-hut-03.png",
+      "label": "BUILDING-HUT",
+      "variant": 3
+    },
+    {
+      "file": "building-hut-04.png",
+      "label": "BUILDING-HUT",
+      "variant": 4
+    },
+    {
+      "file": "building-hut-05.png",
+      "label": "BUILDING-HUT",
+      "variant": 5
+    },
+    {
+      "file": "building-hut-06.png",
+      "label": "BUILDING-HUT",
+      "variant": 6
+    },
+    {
+      "file": "building-hut-07.png",
+      "label": "BUILDING-HUT",
+      "variant": 7
+    },
+    {
+      "file": "building-hut-08.png",
+      "label": "BUILDING-HUT",
+      "variant": 8
+    },
+    {
+      "file": "building-hut-09.png",
+      "label": "BUILDING-HUT",
+      "variant": 9
+    },
+    {
+      "file": "building-hut-10.png",
+      "label": "BUILDING-HUT",
+      "variant": 10
+    },
+    {
+      "file": "building-hut-11.png",
+      "label": "BUILDING-HUT",
+      "variant": 11
+    },
+    {
+      "file": "building-trading-house-01.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 1
+    },
+    {
+      "file": "building-trading-house-02.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 2
+    },
+    {
+      "file": "building-trading-house-03.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 3
+    },
+    {
+      "file": "building-trading-house-04.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 4
+    },
+    {
+      "file": "building-trading-house-05.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 5
+    },
+    {
+      "file": "building-trading-house-06.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 6
+    },
+    {
+      "file": "building-trading-house-07.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 7
+    },
+    {
+      "file": "building-trading-house-08.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 8
+    },
+    {
+      "file": "building-trading-house-09.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 9
+    },
+    {
+      "file": "building-trading-house-10.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 10
+    },
+    {
+      "file": "building-trading-house-11.png",
+      "label": "BUILDING-TRADING-HOUSE",
+      "variant": 11
+    },
+    {
+      "file": "building-church-01.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 1
+    },
+    {
+      "file": "building-church-02.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 2
+    },
+    {
+      "file": "building-church-03.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 3
+    },
+    {
+      "file": "building-church-04.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 4
+    },
+    {
+      "file": "building-church-05.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 5
+    },
+    {
+      "file": "building-church-06.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 6
+    },
+    {
+      "file": "building-church-07.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 7
+    },
+    {
+      "file": "building-church-08.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 8
+    },
+    {
+      "file": "building-church-09.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 9
+    },
+    {
+      "file": "building-church-10.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 10
+    },
+    {
+      "file": "building-church-11.png",
+      "label": "BUILDING-CHURCH",
+      "variant": 11
+    },
+    {
+      "file": "building-mission-school-01.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 1
+    },
+    {
+      "file": "building-mission-school-02.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 2
+    },
+    {
+      "file": "building-mission-school-03.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 3
+    },
+    {
+      "file": "building-mission-school-04.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 4
+    },
+    {
+      "file": "building-mission-school-05.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 5
+    },
+    {
+      "file": "building-mission-school-06.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 6
+    },
+    {
+      "file": "building-mission-school-07.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 7
+    },
+    {
+      "file": "building-mission-school-08.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 8
+    },
+    {
+      "file": "building-mission-school-09.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 9
+    },
+    {
+      "file": "building-mission-school-10.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 10
+    },
+    {
+      "file": "building-mission-school-11.png",
+      "label": "BUILDING-MISSION-SCHOOL",
+      "variant": 11
+    },
+    {
+      "file": "building-colonial-admin-01.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 1
+    },
+    {
+      "file": "building-colonial-admin-02.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 2
+    },
+    {
+      "file": "building-colonial-admin-03.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 3
+    },
+    {
+      "file": "building-colonial-admin-04.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 4
+    },
+    {
+      "file": "building-colonial-admin-05.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 5
+    },
+    {
+      "file": "building-colonial-admin-06.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 6
+    },
+    {
+      "file": "building-colonial-admin-07.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 7
+    },
+    {
+      "file": "building-colonial-admin-08.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 8
+    },
+    {
+      "file": "building-colonial-admin-09.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 9
+    },
+    {
+      "file": "building-colonial-admin-10.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 10
+    },
+    {
+      "file": "building-colonial-admin-11.png",
+      "label": "BUILDING-COLONIAL-ADMIN",
+      "variant": 11
+    },
+    {
+      "file": "structure-fence-01.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 1
+    },
+    {
+      "file": "structure-fence-02.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 2
+    },
+    {
+      "file": "structure-fence-03.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 3
+    },
+    {
+      "file": "structure-fence-04.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 4
+    },
+    {
+      "file": "structure-fence-05.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 5
+    },
+    {
+      "file": "structure-fence-06.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 6
+    },
+    {
+      "file": "structure-fence-07.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 7
+    },
+    {
+      "file": "structure-fence-08.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 8
+    },
+    {
+      "file": "structure-fence-09.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 9
+    },
+    {
+      "file": "structure-fence-10.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 10
+    },
+    {
+      "file": "structure-fence-11.png",
+      "label": "STRUCTURE-FENCE",
+      "variant": 11
+    },
+    {
+      "file": "structure-gate-01.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 1
+    },
+    {
+      "file": "structure-gate-02.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 2
+    },
+    {
+      "file": "structure-gate-03.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 3
+    },
+    {
+      "file": "structure-gate-04.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 4
+    },
+    {
+      "file": "structure-gate-05.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 5
+    },
+    {
+      "file": "structure-gate-06.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 6
+    },
+    {
+      "file": "structure-gate-07.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 7
+    },
+    {
+      "file": "structure-gate-08.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 8
+    },
+    {
+      "file": "structure-gate-09.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 9
+    },
+    {
+      "file": "structure-gate-10.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 10
+    },
+    {
+      "file": "structure-gate-11.png",
+      "label": "STRUCTURE-GATE",
+      "variant": 11
+    },
+    {
+      "file": "structure-wall-01.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 1
+    },
+    {
+      "file": "structure-wall-02.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 2
+    },
+    {
+      "file": "structure-wall-03.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 3
+    },
+    {
+      "file": "structure-wall-04.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 4
+    },
+    {
+      "file": "structure-wall-05.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 5
+    },
+    {
+      "file": "structure-wall-06.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 6
+    },
+    {
+      "file": "structure-wall-07.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 7
+    },
+    {
+      "file": "structure-wall-08.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 8
+    },
+    {
+      "file": "structure-wall-09.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 9
+    },
+    {
+      "file": "structure-wall-10.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 10
+    },
+    {
+      "file": "structure-wall-11.png",
+      "label": "STRUCTURE-WALL",
+      "variant": 11
+    },
+    {
+      "file": "prop-well-01.png",
+      "label": "PROP-WELL",
+      "variant": 1
+    },
+    {
+      "file": "prop-well-02.png",
+      "label": "PROP-WELL",
+      "variant": 2
+    },
+    {
+      "file": "prop-well-03.png",
+      "label": "PROP-WELL",
+      "variant": 3
+    },
+    {
+      "file": "prop-well-04.png",
+      "label": "PROP-WELL",
+      "variant": 4
+    },
+    {
+      "file": "prop-well-05.png",
+      "label": "PROP-WELL",
+      "variant": 5
+    },
+    {
+      "file": "prop-well-06.png",
+      "label": "PROP-WELL",
+      "variant": 6
+    },
+    {
+      "file": "prop-well-07.png",
+      "label": "PROP-WELL",
+      "variant": 7
+    },
+    {
+      "file": "prop-well-08.png",
+      "label": "PROP-WELL",
+      "variant": 8
+    },
+    {
+      "file": "prop-well-09.png",
+      "label": "PROP-WELL",
+      "variant": 9
+    },
+    {
+      "file": "prop-well-10.png",
+      "label": "PROP-WELL",
+      "variant": 10
+    },
+    {
+      "file": "prop-well-11.png",
+      "label": "PROP-WELL",
+      "variant": 11
+    },
+    {
+      "file": "prop-chest-01.png",
+      "label": "PROP-CHEST",
+      "variant": 1
+    },
+    {
+      "file": "prop-chest-02.png",
+      "label": "PROP-CHEST",
+      "variant": 2
+    },
+    {
+      "file": "prop-chest-03.png",
+      "label": "PROP-CHEST",
+      "variant": 3
+    },
+    {
+      "file": "prop-chest-04.png",
+      "label": "PROP-CHEST",
+      "variant": 4
+    },
+    {
+      "file": "prop-chest-05.png",
+      "label": "PROP-CHEST",
+      "variant": 5
+    },
+    {
+      "file": "prop-chest-06.png",
+      "label": "PROP-CHEST",
+      "variant": 6
+    },
+    {
+      "file": "prop-chest-07.png",
+      "label": "PROP-CHEST",
+      "variant": 7
+    },
+    {
+      "file": "prop-chest-08.png",
+      "label": "PROP-CHEST",
+      "variant": 8
+    },
+    {
+      "file": "prop-chest-09.png",
+      "label": "PROP-CHEST",
+      "variant": 9
+    },
+    {
+      "file": "prop-chest-10.png",
+      "label": "PROP-CHEST",
+      "variant": 10
+    },
+    {
+      "file": "prop-chest-11.png",
+      "label": "PROP-CHEST",
+      "variant": 11
+    },
+    {
+      "file": "prop-market-stall-01.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 1
+    },
+    {
+      "file": "prop-market-stall-02.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 2
+    },
+    {
+      "file": "prop-market-stall-03.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 3
+    },
+    {
+      "file": "prop-market-stall-04.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 4
+    },
+    {
+      "file": "prop-market-stall-05.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 5
+    },
+    {
+      "file": "prop-market-stall-06.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 6
+    },
+    {
+      "file": "prop-market-stall-07.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 7
+    },
+    {
+      "file": "prop-market-stall-08.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 8
+    },
+    {
+      "file": "prop-market-stall-09.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 9
+    },
+    {
+      "file": "prop-market-stall-10.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 10
+    },
+    {
+      "file": "prop-market-stall-11.png",
+      "label": "PROP-MARKET-STALL",
+      "variant": 11
+    }
+  ]
+}

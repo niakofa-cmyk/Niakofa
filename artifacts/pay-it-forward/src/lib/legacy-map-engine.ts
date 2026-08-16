@@ -17,6 +17,7 @@ export type LegacyMapLayerKind =
   | "ground"
   | "decoration"
   | "building"
+  | "structure"  // fences, gates, walls — between ground and buildings
   | "prop"
   | "foreground"; // renders in front of the player — porches, tree canopies, arches
 
