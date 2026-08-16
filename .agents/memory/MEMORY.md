@@ -24,3 +24,4 @@
 - [Legacy World-Always-Running Fix](legacy-world-always-running.md) — LegacyChapterWorld now always runs as backdrop; scene content is absolute bottom-0 overlay (68% max-height). Fixes the "two games" split.
 - [Legacy Weather Overlay](legacy-weather-overlay.md) — LegacyWeatherOverlay + deriveChapterWeather(); 8 weather types; wired to chapter era/scene progress and demo season/phase.
 - [Legacy World Map Pins](legacy-world-map-pins.md) — LegacyWorldMapPins macro overworld; LegacyWorldMapPin interface with xPct/yPct; MENSAH_DEFAULT_PINS 6-pin arc; procedural SVG bezier route lines.
+- [Legacy Environment Assets v1](legacy-environment-assets.md) — 180 hand-drawn PNGs in public/environment-assets/; asset registry, scene data, scene renderer, and era→scene wiring in chapter page.
