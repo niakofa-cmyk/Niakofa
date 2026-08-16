@@ -1,34 +1,46 @@
 ---
 name: Niakofa ARPG Architecture
-description: Decision record from the ARPG/OCC evaluation; what to build, what to study, what not to copy.
+description: PixiJS runtime location, game canvas wiring, combat FSM, and package decoupling decision.
 ---
 
-## Decision (August 2026)
+## Runtime location
+`artifacts/pay-it-forward/src/legacy-runtime/` — 10 files, all passing typecheck.
 
-ARPG Plugin Set (DotMoveSystem, ARPG_Core, CharacterCollisionEx) studied as reference only.
-OCC Winner Pack studied for pipeline structure only — images NOT licensed for non-RPG Maker use.
-No RPG Maker code copied into the Niakofa runtime.
+## Files in the runtime package
+| File | Role |
+|---|---|
+| `LegacyGameCanvas.tsx` | React host: mounts PixiJS app, 60fps ticker, keyboard input (arrows/WASD/Shift/Space/J/K/L) |
+| `legacy-animation-fsm.ts` | LegacyActorController — movement, facing, anim state, frame advance |
+| `legacy-combat-fsm.ts` | LegacyCombatController — dash/jump/parry/guard/combo window/invuln/stamina |
+| `legacy-hand-drawn-assets.ts` | Art-tier enforcement (handDrawn vs prototypePixel); imports from `@/lib/legacy-character-engine` |
+| `legacy-map-engine.ts` | LegacyMapScene types, TILE_SIZE_PX=64, LegacyMapLayer/Collision/InteractionPoint/NpcSpawn |
+| `legacy-asset-loader.ts` | loadCharacterFrameSet / loadEnvironmentTextures → PixiJS Textures; frame key = `${animState}:${facing}` |
+| `legacy-scene-renderer.ts` | buildSceneContainers / renderStaticLayers / depthSortActors — full layer stack |
+| `legacy-actor-sprite.ts` | LegacyActorSprite bridges FSM → AnimatedSprite; warns on fallback frames |
+| `kwame-manifest.ts` | Kwame's real 384-frame manifest — idle/walk/run/talk/interact/knockback covered; combat unregistered pending art |
+| `scene-cape-coast-compound.ts` | First real LegacyMapScene (14×10 tiles, Cape Coast Compound 1890, using v1 PNG filenames) |
 
-## Three original systems implemented
+## Import fix (permanent rule)
+`legacy-hand-drawn-assets.ts` imports from `@/lib/legacy-character-engine` (the real engine), NOT from `./legacy-character-engine` (the deleted stub). This was the one import that needed changing when copying from the zip.
 
-| System | File | Replaces |
-|---|---|---|
-| NiakofaMovementSystem | niakofa-movement-system.ts | Grid snap → pixel movement |
-| NiakofaWorldEntitySpawner | niakofa-world-entity-spawner.ts | Static NPCs → Family Memory → dynamic entities |
-| NiakofaCharacterAssetLibrary | niakofa-character-asset-library.ts | Single sprite → multi-rep pipeline |
+## Integration in legacy-chapter.tsx
+- "World" button in action bar opens `gameCanvasOpen` overlay
+- `LegacyGameCanvas` receives `capeCoastCompoundScene + capeCoastCompoundAssets + environmentBaseUrl + kwameHandDrawnManifest`
+- "Return to Chapter" button closes the overlay; chapter world stays mounted underneath
 
-## Key rules
+## Layer stack (RUNTIME_ARCHITECTURE_UPDATE.md)
+`sky → background (parallax) → far vegetation → buildings → structures → ground → props → NPCs → player → foreground → lighting → weather → particles → UI`
 
-**Why:** Pixel movement (slide-on-corner, AABB, interaction radius) replaces grid snap so Kwame feels physical. The DotMoveSystem pattern was the inspiration — do not revert to tile snapping.
+Currently implemented: ground → decoration → building → prop → actorLayer → foreground
 
-**How to apply:** Use `NiakofaMovementController` in any scene that needs player movement. Wire `WorldSpawnContext.alreadySpawned` as a Set to avoid duplicate NPCs across region changes.
+## Package decoupling decision (GAME_PACKAGE_ARCHITECTURE.md)
+**Decision:** Keep in monorepo, start in `src/legacy-runtime/`, promote to `packages/legacy-game` once the continuous living slice is stable. React shell talks to game via `createLegacyGameRuntime({ container, initialState, onQuestCompleted, onCombatOutcome, onWorldMutation })`.
 
-**Art tier gate:** `enforceCharacterArtTier` throws for protagonist/antagonist with non-handDrawn tier. Kwame's portrait/bust/face are pending commission (marked missing in `auditCharacterAssets()`).
+**Why:** PixiJS + large tile/animation assets bloat the community app; the monorepo already uses pnpm workspaces; the game grows quickly once combat + NPC AI + map streaming land.
 
-**World Regen bridge:** `payloadToAncestor()` converts backend API JSON → AncestorRecord → `batchSpawn()`. This is the Family Vault → RPG World connection point.
-
-## Licensing
-
-- Do NOT put ARPG plugin JS or OCC PNGs in the public GitHub repo.
-- If distributing with ARPG-derived code: `© 2023 unagiootoro © Gotcha Gotcha Games Inc.`
-- Reference docs saved in `public/legacy-reference-docs/ARPG-ARCHITECTURE-RECOMMENDATION.md`.
+## Known gaps (next art pack needed)
+- Combat frames: lightAttack1/2, heavyAttack, aerialAttack, dash, airDash, jump, doubleJump, fall, guard, parry — all registered as placeholder in kwame-manifest.ts with comment
+- Partial occlusion (walking behind tree canopy) — needs split-sprite tree (trunk in prop, canopy in foreground)
+- NPC AI movement — npcSpawns defined in scene but nothing drives them
+- Interaction → dialogue/vault wiring — tryInteract() logs to console; needs host-page wiring
+- Parallax sky/background — layer stack supports it but not yet rendered
