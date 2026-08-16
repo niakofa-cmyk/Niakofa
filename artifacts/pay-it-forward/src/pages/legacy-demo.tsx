@@ -85,6 +85,8 @@ import { NPC_REGISTRY, advanceGameHour, getPhaseNpcs } from "@/lib/legacy-npc-sy
 import { getAvailableQuests, type QuestDefinition } from "@/lib/legacy-quest-system";
 import { LegacyDemoJournal } from "@/components/legacy-demo-journal";
 import { LegacyWorldMap } from "@/components/legacy-world-map";
+import { LegacyWeatherOverlay, type LegacyWeatherType } from "@/components/legacy-weather-overlay";
+import { LegacyWorldMapPins, MENSAH_DEFAULT_PINS } from "@/components/legacy-world-map-pins";
 import type { RegionId } from "@/lib/legacy-world-regions";
 import { getStartingRegion } from "@/lib/legacy-world-regions";
 import type { DemoJournalEntry } from "@/lib/legacy-demo-state";
@@ -1722,6 +1724,7 @@ export default function LegacyDemoPage() {
   const [journalOpen, setJournalOpen] = useState(false);
   // journalEntries are now stored in state.journalEntries (Feature 4 — persisted)
   const [worldMapOpen, setWorldMapOpen] = useState(false);
+  const [worldMapPinsOpen, setWorldMapPinsOpen] = useState(false);
   const [activeRegionId, setActiveRegionId] = useState<RegionId>(
     () => getStartingRegion("prologue"),
   );
@@ -2021,6 +2024,20 @@ export default function LegacyDemoPage() {
   const { label: seasonLabel, accent } = getSeasonStyle(state.season);
   const showBaobab = !state.baobabEntered && state.phase === "prologue";
 
+  /** Map current season + phase to a narrative weather type for the overlay. */
+  const worldWeather: LegacyWeatherType = (() => {
+    // Phase overrides take precedence
+    if (state.phase === "chapter4" || state.phase === "world-regen") return "rain";
+    if (state.phase === "chapter5") return "fog";
+    if (state.phase === "finale") return "golden";
+    // Season baseline
+    if (state.season === "rain") return "rain";
+    if (state.season === "dry") return "dust";
+    if (state.season === "harvest") return "golden";
+    if (state.season === "celebration") return "clear";
+    return "clear";
+  })();
+
   return (
     <div
       className="min-h-dvh w-full"
@@ -2105,6 +2122,10 @@ export default function LegacyDemoPage() {
           <LegacyLivingBaobab worldVersion={state.worldVersion} onEnter={handleEnterBaobab} />
         ) : (
           <div className="relative">
+            {/* Narrative weather overlay — season/phase driven atmosphere */}
+            {state.baobabEntered && worldWeather !== "clear" && (
+              <LegacyWeatherOverlay weather={worldWeather} intensity={0.7} />
+            )}
             {state.baobabEntered && (
               <LegacyGameHud
                 phase={state.phase}
@@ -2295,6 +2316,19 @@ export default function LegacyDemoPage() {
             setWorldMapOpen(false);
           }}
           onClose={() => setWorldMapOpen(false)}
+        />
+      )}
+
+      {/* Macro Living World Map — pins-based overworld (Ghana → diaspora arc) */}
+      {worldMapPinsOpen && state.baobabEntered && (
+        <LegacyWorldMapPins
+          pins={MENSAH_DEFAULT_PINS}
+          onClose={() => setWorldMapPinsOpen(false)}
+          onSelectPin={(pin) => {
+            // Close pins overlay and open the region map at the matching place
+            setWorldMapPinsOpen(false);
+            setWorldMapOpen(true);
+          }}
         />
       )}
 

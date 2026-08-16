@@ -24,6 +24,11 @@ import LegacyCoreLoop, { buildWorldChanges, type WorldChange } from "@/component
 import { LegacyJournalPanel } from "@/components/legacy-journal-panel";
 import LegacyMapPage from "@/pages/legacy-map";
 import { LegacyChapterWorld } from "@/components/legacy-chapter-world";
+import { LegacyWeatherOverlay, deriveChapterWeather } from "@/components/legacy-weather-overlay";
+// LegacyWorldMapPins is used in the demo page (legacy-demo.tsx); imported here
+// for potential future chapter-level macro map overlay.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { LegacyWorldMapPins as _LegacyWorldMapPins, MENSAH_DEFAULT_PINS as _MENSAH_DEFAULT_PINS } from "@/components/legacy-world-map-pins";
 
 // Ambient background gradient shifts based on the day-cycle position.
 // Morning → warm amber, midday → bright gold, evening → deep amber, night → dark with stars.
@@ -897,41 +902,64 @@ export default function LegacyChapterPlay() {
         )}
       </div>
 
-      {/* World view vs. scene-reading view. Opening a chapter (or finishing
-          a non-final scene) shows the walkable world; walking onto a scene's
-          landmark shows that scene's reading/dialogue/choice UI below,
-          unchanged in behavior from before — it now just opens *because you
-          walked somewhere* instead of always being the only thing on screen. */}
-      {worldViewOpen ? (
-        <div className="flex-1 min-h-0">
-          <LegacyChapterWorld
-            chapterId={sceneData.chapterId}
-            scenes={sceneData.scenes.map((s) => ({
-              sceneNumber: s.sceneNumber,
-              title: s.title,
-              type: s.type,
-              placeId: s.placeId,
-            }))}
-            activeSceneNumber={
-              sceneData.scenes.find((s) => !completedScenes.has(s.sceneNumber))?.sceneNumber
-                ?? sceneData.scenes[currentSceneIdx]?.sceneNumber
-                ?? sceneData.scenes[0].sceneNumber
-            }
-            completedSceneNumbers={completedScenes}
-            ageGroup={sceneData.ancestorAppearance?.ageGroup ?? "adult"}
-            gender={sceneData.ancestorAppearance?.gender ?? "unspecified"}
-            characterId={sceneData.ancestorMemberId ? `ancestor-${sceneData.familyId}-${sceneData.ancestorMemberId}` : undefined}
-            lifeStage={sceneData.ancestorAppearance?.lifeStage}
-            era={sceneData.ancestorAppearance?.era}
-            appearanceSeed={sceneData.ancestorAppearance?.appearanceSeed}
-            characterName={sceneData.ancestorName}
-            onEnterScene={handleEnterScene}
-          />
+      {/* ── World always running ────────────────────────────────────────────
+          The chapter world is the persistent game backdrop. Scene content
+          slides up as a bottom overlay when the player enters a landmark tile,
+          keeping the world visible and alive underneath.
+          Architecture decision: ROOT_CAUSE_TWO_GAMES.md. */}
+
+      {/* Chapter-driven weather — narrative phase maps to atmosphere */}
+      <LegacyWeatherOverlay
+        weather={deriveChapterWeather(
+          currentSceneIdx / Math.max(sceneData.scenes.length - 1, 1),
+          sceneData.ancestorAppearance?.era,
+        )}
+      />
+
+      {/* World viewport — always mounted, never unmounted during scene reading */}
+      <div className="flex-1 min-h-0 relative">
+        <LegacyChapterWorld
+          chapterId={sceneData.chapterId}
+          scenes={sceneData.scenes.map((s) => ({
+            sceneNumber: s.sceneNumber,
+            title: s.title,
+            type: s.type,
+            placeId: s.placeId,
+          }))}
+          activeSceneNumber={
+            sceneData.scenes.find((s) => !completedScenes.has(s.sceneNumber))?.sceneNumber
+              ?? sceneData.scenes[currentSceneIdx]?.sceneNumber
+              ?? sceneData.scenes[0].sceneNumber
+          }
+          completedSceneNumbers={completedScenes}
+          ageGroup={sceneData.ancestorAppearance?.ageGroup ?? "adult"}
+          gender={sceneData.ancestorAppearance?.gender ?? "unspecified"}
+          characterId={sceneData.ancestorMemberId ? `ancestor-${sceneData.familyId}-${sceneData.ancestorMemberId}` : undefined}
+          lifeStage={sceneData.ancestorAppearance?.lifeStage}
+          era={sceneData.ancestorAppearance?.era}
+          appearanceSeed={sceneData.ancestorAppearance?.appearanceSeed}
+          characterName={sceneData.ancestorName}
+          onEnterScene={handleEnterScene}
+        />
+
+        {/* Scene content — absolute overlay inside world viewport.
+            Slides up from bottom when a landmark is entered. The world
+            continues running in the top portion of the screen. */}
+        {!worldViewOpen && (
+        <div
+          className="absolute bottom-0 left-0 right-0 flex flex-col overflow-hidden animate-[slideUp_0.3s_ease-out]"
+          style={{
+            maxHeight: "68%",
+            background: "linear-gradient(180deg, rgba(8,8,6,0) 0%, rgba(10,9,7,0.96) 8%, #0a0907 100%)",
+            backdropFilter: "blur(2px)",
+          }}
+        >
+        {/* Drag handle + scene indicator */}
+        <div className="flex items-center justify-center pt-2 pb-1 shrink-0">
+          <div className="w-10 h-1 rounded-full bg-amber-900/50" />
         </div>
-      ) : (
-      <>
       {/* Day-Cycle Progression Bar — Living Game Session */}
-      <div className="px-4 py-2 border-b border-stone-800/30 bg-stone-900/20">
+      <div className="px-4 py-2 border-b border-stone-800/30 bg-transparent shrink-0">
         <div className="flex items-center justify-between gap-1">
           {(() => {
             const totalScenes = sceneData.scenes.length;
@@ -980,10 +1008,11 @@ export default function LegacyChapterPlay() {
         </div>
       </div>
 
-      {/* Scene content */}
+      {/* Scene content — scrollable within the overlay panel */}
       <div
         key={sceneFadeKey}
-        className="flex-1 overflow-y-auto px-5 py-6 animate-[fadeIn_0.6s_ease-out]"
+        className="overflow-y-auto px-5 py-4 animate-[fadeIn_0.6s_ease-out]"
+        style={{ maxHeight: "42vh" }}
       >
         {/* Scene type badge */}
         <div className="flex items-center gap-2 mb-4">
@@ -1305,11 +1334,12 @@ export default function LegacyChapterPlay() {
           </div>
         )}
       </div>
-      </>
-      )}
+        </div>
+        )}
+      </div>
 
-      {/* Scene dots + floating action buttons */}
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-stone-800/50">
+      {/* Scene dots + floating action buttons — always visible at bottom */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-stone-800/50 bg-stone-950/80 shrink-0">
         {!worldViewOpen && (
           <button
             onClick={() => setWorldViewOpen(true)}
