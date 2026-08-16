@@ -9,6 +9,13 @@
  * TypeScript state machine that can drive DOM sprites (current
  * LegacyCharacterSprite approach), a <canvas>, or PixiJS later without
  * rewriting the state logic — only the render step changes.
+ *
+ * Aug 2026 extension: `state.anim` is now `string` (not the narrow
+ * `LegacyAnimState` union) so that combat extensions (LegacyCombatController
+ * in legacy-combat-fsm.ts) can inject their own animation names without a
+ * type cast. The `actionPlaying` flag prevents `tick()` from overwriting
+ * a mid-play action animation with a movement state, which was a real bug
+ * before this fix.
  */
 
 export type LegacyAnimState =
@@ -28,10 +35,22 @@ export interface LegacyActorState {
   x: number;
   y: number;
   facing: LegacyFacing;
-  anim: LegacyAnimState;
+  /**
+   * Current animation name. Typed as `string` so combat/extension state
+   * machines can inject names beyond `LegacyAnimState` without casting.
+   * Renderers that switch on this value should always have a default branch.
+   */
+  anim: string;
   animFrame: number;
   animElapsedMs: number;
   speedTilesPerSec: number;
+  /**
+   * True while `playAction` is running a non-looping clip.
+   * `tick()` will not override the current animation when this is true —
+   * movement can still update `facing`, but the rendered clip stays locked
+   * until the action completes or `interruptAction()` is called.
+   */
+  actionPlaying: boolean;
 }
 
 /** Per docs/calibration-sheet.json animationSet.recommendedFrameCounts / recommendedFps */
@@ -39,15 +58,15 @@ export const ANIM_SPEC: Record<
   LegacyAnimState,
   { frameCount: number; fps: number; loops: boolean }
 > = {
-  idle: { frameCount: 6, fps: 8, loops: true },
-  walk: { frameCount: 8, fps: 10, loops: true },
-  run: { frameCount: 8, fps: 12, loops: true },
-  interact: { frameCount: 6, fps: 8, loops: false },
-  talk: { frameCount: 4, fps: 6, loops: true },
-  examine: { frameCount: 5, fps: 8, loops: false },
-  emote: { frameCount: 4, fps: 6, loops: false },
-  attack: { frameCount: 10, fps: 14, loops: false },
-  hurt: { frameCount: 5, fps: 10, loops: false },
+  idle:     { frameCount: 6,  fps: 8,  loops: true  },
+  walk:     { frameCount: 8,  fps: 10, loops: true  },
+  run:      { frameCount: 8,  fps: 12, loops: true  },
+  interact: { frameCount: 6,  fps: 8,  loops: false },
+  talk:     { frameCount: 4,  fps: 6,  loops: true  },
+  examine:  { frameCount: 5,  fps: 8,  loops: false },
+  emote:    { frameCount: 4,  fps: 6,  loops: false },
+  attack:   { frameCount: 10, fps: 14, loops: false },
+  hurt:     { frameCount: 5,  fps: 10, loops: false },
 };
 
 export interface LegacyCollisionQuery {
@@ -61,6 +80,9 @@ export interface LegacyInteractable {
   radiusTiles: number;
   onInteract: () => void;
 }
+
+/** Spec used when `playAction` is called with an unknown (extension) animation name. */
+const FALLBACK_ACTION_SPEC = { frameCount: 6, fps: 12, loops: false };
 
 /**
  * One actor's movement + animation state, advanced per tick. Doesn't know
@@ -77,6 +99,7 @@ export class LegacyActorController {
       animFrame: 0,
       animElapsedMs: 0,
       speedTilesPerSec: 3,
+      actionPlaying: false,
     };
   }
 
@@ -87,9 +110,9 @@ export class LegacyActorController {
     collision: LegacyCollisionQuery
   ) {
     const moving = input.dx !== 0 || input.dy !== 0;
-    const nextAnim: LegacyAnimState = moving ? (input.running ? "run" : "walk") : "idle";
 
     if (moving) {
+      // Facing updates even during an action clip (player can change direction mid-attack)
       this.state.facing = this.facingFromInput(input);
       const speed = this.state.speedTilesPerSec * (input.running ? 1.6 : 1);
       const nextX = this.state.x + input.dx * speed * (deltaMs / 1000);
@@ -98,17 +121,64 @@ export class LegacyActorController {
       if (collision.canOccupy(this.state.x, nextY)) this.state.y = nextY;
     }
 
-    this.setAnim(nextAnim, deltaMs);
+    if (this.state.actionPlaying) {
+      // An action clip is running — advance its frame timer and do NOT override
+      // with a movement animation. This was a bug before Aug 2026.
+      this.advanceActionAnim(deltaMs);
+    } else {
+      const nextAnim: LegacyAnimState = moving
+        ? input.running ? "run" : "walk"
+        : "idle";
+      this.setMovementAnim(nextAnim, deltaMs);
+    }
   }
 
-  /** Non-movement actions (talk/interact/attack/etc) interrupt the movement anim. */
-  playAction(anim: LegacyAnimState, onComplete?: () => void) {
+  /**
+   * Play a non-movement action (talk/interact/attack/hurt/combat…).
+   * Accepts any animation name string so that LegacyCombatController can
+   * inject combat state names without a type cast.
+   *
+   * @param anim     - Animation name to play.
+   * @param onComplete - Called once when a non-looping clip finishes.
+   * @param spec     - Optional frame spec. Falls back to ANIM_SPEC[anim], then
+   *                   FALLBACK_ACTION_SPEC. Pass the combat module's own spec
+   *                   for correct frame counts on combat animations.
+   */
+  playAction(
+    anim: string,
+    onComplete?: () => void,
+    spec?: { frameCount: number; fps: number; loops: boolean }
+  ) {
     this.state.anim = anim;
     this.state.animFrame = 0;
     this.state.animElapsedMs = 0;
-    if (!ANIM_SPEC[anim].loops && onComplete) {
-      this._pendingActionComplete = onComplete;
+    const resolved =
+      spec ??
+      ANIM_SPEC[anim as LegacyAnimState] ??
+      FALLBACK_ACTION_SPEC;
+
+    if (!resolved.loops) {
+      this.state.actionPlaying = true;
+      if (onComplete) {
+        this._pendingActionComplete = onComplete;
+      }
+    } else {
+      // Looping action (e.g. "talk", "guard") — never locks actionPlaying
+      this._pendingLoopSpec = resolved;
     }
+  }
+
+  /**
+   * Immediately cancels any running action and returns to idle.
+   * Use when a hit interrupts an attack, or when exiting combat.
+   */
+  interruptAction() {
+    this.state.actionPlaying = false;
+    this._pendingActionComplete = undefined;
+    this._pendingLoopSpec = undefined;
+    this.state.anim = "idle";
+    this.state.animFrame = 0;
+    this.state.animElapsedMs = 0;
   }
 
   /** World-response hook: find the nearest interactable in range and trigger it. */
@@ -124,6 +194,7 @@ export class LegacyActorController {
   }
 
   private _pendingActionComplete?: () => void;
+  private _pendingLoopSpec?: { frameCount: number; fps: number; loops: boolean };
 
   private facingFromInput(input: { dx: number; dy: number }): LegacyFacing {
     if (Math.abs(input.dx) > Math.abs(input.dy)) {
@@ -132,7 +203,29 @@ export class LegacyActorController {
     return input.dy > 0 ? "down" : "up";
   }
 
-  private setAnim(anim: LegacyAnimState, deltaMs: number) {
+  /** Advances a non-looping action clip and fires onComplete when done. */
+  private advanceActionAnim(deltaMs: number) {
+    const spec =
+      ANIM_SPEC[this.state.anim as LegacyAnimState] ?? FALLBACK_ACTION_SPEC;
+    this.state.animElapsedMs += deltaMs;
+    const msPerFrame = 1000 / spec.fps;
+    if (this.state.animElapsedMs >= msPerFrame) {
+      this.state.animElapsedMs -= msPerFrame;
+      const next = this.state.animFrame + 1;
+      if (next >= spec.frameCount) {
+        // Action finished
+        this.state.animFrame = spec.frameCount - 1;
+        this.state.actionPlaying = false;
+        this._pendingActionComplete?.();
+        this._pendingActionComplete = undefined;
+      } else {
+        this.state.animFrame = next;
+      }
+    }
+  }
+
+  /** Drives looping movement animations (idle / walk / run). */
+  private setMovementAnim(anim: LegacyAnimState, deltaMs: number) {
     const spec = ANIM_SPEC[anim];
     if (this.state.anim !== anim) {
       this.state.anim = anim;
@@ -144,17 +237,7 @@ export class LegacyActorController {
     if (this.state.animElapsedMs >= msPerFrame) {
       this.state.animElapsedMs -= msPerFrame;
       const next = this.state.animFrame + 1;
-      if (next >= spec.frameCount) {
-        if (spec.loops) {
-          this.state.animFrame = 0;
-        } else {
-          this.state.animFrame = spec.frameCount - 1;
-          this._pendingActionComplete?.();
-          this._pendingActionComplete = undefined;
-        }
-      } else {
-        this.state.animFrame = next;
-      }
+      this.state.animFrame = next >= spec.frameCount ? 0 : next;
     }
   }
 }

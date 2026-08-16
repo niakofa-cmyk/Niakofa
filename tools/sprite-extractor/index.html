@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprite Extractor</title>
+    
+    <meta name="description" content="Extract individual sprites from sprite sheets with ease. Upload PNG, JPG, WEBP, GIF, BMP, TIFF, SVG images or ZIP archives and automatically segment them into individual sprites with customizable alpha threshold and size filtering.">
+    <meta name="keywords" content="sprite sheet, segmenter, game development, pixel art, image processing, sprite extraction">
+    <meta name="author" content="Sprite Extractor">
+    
+    <meta property="og:title" content="Sprite Extractor - Extract Sprites Automatically">
+    <meta property="og:description" content="Extract individual sprites from sprite sheets with ease. Upload PNG, JPG, WEBP, GIF, BMP, TIFF, SVG images or ZIP archives and automatically segment them into individual sprites with customizable alpha threshold and size filtering.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="">
+    <meta property="og:image" content="">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:site_name" content="Sprite Extractor">
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Sprite Extractor - Extract Sprites Automatically">
+    <meta name="twitter:description" content="Extract individual sprites from sprite sheets with ease. Upload PNG, JPG, WEBP, GIF, BMP, TIFF, SVG images or ZIP archives and automatically segment them into individual sprites.">
+    <meta name="twitter:image" content="">
+    
+    <meta name="theme-color" content="#111827">
+    <meta name="robots" content="index, follow">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        html {
+            font-size: 80%;
+        }
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #111827; /* Dark Gray */
+            word-spacing: -0.1em !important; /* Reduce space between words */
+        }
+        span, label, header{
+            word-spacing: -0.4em !important; /* Reduce space between words */
+        }
+        main{
+            max-width: 1200px;
+            margin: auto;
+        }
+        .container {
+            margin: auto;
+        }
+        .glass-card {
+            background: rgba(31, 41, 55, 0.6); /* Semi-transparent dark gray */
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* Wrapper for each sprite to create a uniform grid cell */
+        .sprite-wrapper {
+            position: relative; /* Needed for positioning the download button */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 8px; /* Give some space around the canvas */
+            aspect-ratio: 1 / 1; /* Enforce a square aspect ratio for the grid cell */
+            border-radius: 0.5rem; /* 8px */
+            border: 1px solid #4B5563; /* Gray border */
+            background-color: #1F2937; /* Darker Gray */
+            background-image:
+                linear-gradient(45deg, #374151 25%, transparent 25%),
+                linear-gradient(-45deg, #374151 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #374151 75%),
+                linear-gradient(-45deg, transparent 75%, #374151 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .sprite-wrapper:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+        }
+        
+        /* Individual download button */
+        .download-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 9999px; /* A large value to ensure it's a circle */
+            padding: 6px;
+            cursor: pointer;
+            opacity: 0; /* Hidden by default */
+            transition: opacity 0.2s, background-color 0.2s;
+            z-index: 10;
+        }
+        .sprite-wrapper:hover .download-btn {
+            opacity: 0.8; /* Show on hover of the wrapper */
+        }
+        .download-btn:hover {
+            opacity: 1;
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        .download-btn svg {
+            width: 16px;
+            height: 16px;
+            color: white;
+            display: block; /* Fixes tiny alignment issues */
+        }
+
+        /* The canvas itself just needs to scale within the wrapper */
+        .sprite-canvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .loader {
+            border: 4px solid #4B5563;
+            border-top: 4px solid #3B82F6; /* Blue */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Drag-over effect */
+        .drag-over {
+            border-color: #3B82F6;
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        
+        /* Color picker modal */
+        .color-picker-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .color-picker-content {
+            background: #1F2937;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow: auto;
+            border: 1px solid #374151;
+        }
+        
+        .color-picker-image {
+            max-width: 100%;
+            max-height: 60vh;
+            cursor: crosshair;
+            border: 2px solid #4B5563;
+            border-radius: 8px;
+        }
+        
+        .color-preview {
+            width: 40px;
+            height: 40px;
+            border: 2px solid #6B7280;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        
+        .status-warning {
+            color: #FB923C; /* Orange color */
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+            display: block;
+        }
+    </style>
+</head>
+<body class="text-gray-200">
+
+    <div class="container p-2 md:p-8">
+
+        <main class="glass-card rounded-xl p-6 md:p-8 shadow-2xl">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-2xl md:text-3xl font-bold text-white">Sprite Extractor</h2>
+                    <a href="https://discord.com/invite/zB6TrHTwAb" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center w-8 h-8 hover:bg-gray-700/50 rounded-lg transition-colors group text-white" title="Join our Discord">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="opacity-70 group-hover:opacity-100 transition-opacity" viewBox="0 0 16 16">
+                            <path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/>
+                        </svg>
+                    </a>
+                </div>
+                <div class="flex-shrink-0">
+                    <button id="settings-toggle" class="flex items-center gap-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600 hover:bg-gray-700/50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 20px; height: 20px;" class="text-gray-400">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span class="text-sm font-medium text-gray-300">
+                            Settings <span id="threshold-display" class="text-blue-400 font-semibold">(Alpha: 10%, Min: 30x30)</span>
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="drop-zone" class="relative flex flex-col items-center justify-center border-2 border-dashed border-gray-600 rounded-lg p-8 md:p-12 mb-6 text-center transition-colors cursor-pointer hover:border-blue-500 hover:bg-gray-800/30">
+                 <input type="file" id="fileInput" accept="image/png, image/webp, image/jpeg, image/jpg, image/gif, image/bmp, image/tiff, image/svg+xml, .zip, application/zip" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                 
+                 <div id="upload-prompt" class="text-center pointer-events-none">
+                    <svg style="width: 48px; height: 48px;" class="mx-auto text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3.75 3.75M12 9.75l3.75 3.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p class="mt-4 text-lg text-gray-300">
+                        <span class="font-semibold text-blue-400">Click to upload</span> or drag and drop
+                    </p>
+                     <p class="text-sm text-gray-400 mt-1">Supports PNG, JPG, WEBP, GIF, BMP, TIFF, SVG, and ZIP archives</p>
+                 </div>
+                 
+                 <div id="preview-container" class="hidden w-full pointer-events-none">
+                    <div id="preview-images" class="flex flex-wrap gap-4 justify-center mb-4"></div>
+                    <p id="file-count-indicator" class="text-sm text-gray-400 hidden"></p>
+                 </div>
+                 
+                 <p id="status" class="text-sm text-gray-500 mt-2">Ready! Select images or a ZIP file.</p>
+            </div>
+
+            <div id="loader" class="hidden mx-auto my-8 loader"></div>
+
+            <div id="output-container" class="hidden">
+                 <div class="flex flex-col sm:flex-row justify-between items-center border-b-2 border-gray-700 pb-2 mb-6 gap-4">
+                    <h3 class="text-2xl font-semibold text-white text-center sm:text-left">Extracted Sprites (<span id="sprite-count">0</span>)</h3>
+                    <div id="action-buttons" class="hidden flex items-center gap-3">
+                        <a href="https://fyrean.itch.io/sprite-extractor/donate" target="_blank" rel="noopener noreferrer" class="bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-lg transition-colors inline-flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width: 20px; height: 20px;">
+                                <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
+                            </svg>
+                            Support
+                        </a>
+                        <button id="download-all-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+                              <path d="M12 3v6"/>
+                              <path d="M16.76 3a2 2 0 0 1 1.8 1.1l2.23 4.479a2 2 0 0 1 .21.891V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.472a2 2 0 0 1 .211-.894L5.45 4.1A2 2 0 0 1 7.24 3z"/>
+                              <path d="M3.054 9.013h17.893"/>
+                            </svg>
+                            Download All (.zip)
+                        </button>
+                    </div>
+                 </div>
+                 <div id="output" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+                    </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="settings-modal" class="color-picker-modal hidden">
+        <div class="color-picker-content" style="max-width: 500px;">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-semibold text-white">Settings</h3>
+                <button id="close-settings-modal-btn" class="text-gray-400 hover:text-white text-2xl font-bold">&times;</button>
+            </div>
+            
+            <div class="space-y-6">
+                <div id="alpha-threshold-section-modal">
+                    <label for="alpha-threshold-modal" class="block text-sm font-medium text-gray-300 mb-2">
+                        Alpha Threshold: <span id="threshold-value-modal" class="text-blue-400 font-semibold">10%</span>
+                    </label>
+                    <input type="range" id="alpha-threshold-modal" min="0" max="100" value="10" 
+                           class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>0% (all pixels)</span>
+                        <span>100% (opaque only)</span>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2">Pixels with alpha below this threshold will be considered transparent</p>
+                </div>
+                
+                <div id="background-color-section-modal" class="hidden">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">
+                        Background Color: <span id="bg-color-value-modal" class="text-blue-400 font-semibold">#000000</span>
+                    </label>
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-2">
+                            <input type="color" id="background-color-picker-modal" value="#000000" 
+                                   class="w-8 h-8 rounded border border-gray-600 cursor-pointer">
+                            <button id="pick-color-btn-modal" class="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 11.25l1.5 1.5.75-.75V8.758l2.276-.61a3 3 0 10-3.675-3.675l-.61 2.277H12l-.75.75 1.5 1.5M15 11.25l-8.47 8.47c-.34.34-.8.53-1.28.53s-.94-.19-1.28-.53l-.97-.97-.97-.97c-.34-.34-.53-.8-.53-1.28s.19-.94.53-1.28L10.75 9 15 11.25z" />
+                                </svg>
+                                Pick from Image
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2">Colors similar to this will be considered background and removed</p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">
+                        Extraction Mode:
+                    </label>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="extraction-mode-modal" value="shape" checked 
+                                   class="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500 focus:ring-2">
+                            <span class="ml-2 text-sm text-gray-300">Extract exact shape</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="extraction-mode-modal" value="bounding-box" 
+                                   class="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500 focus:ring-2">
+                            <span class="ml-2 text-sm text-gray-300">Use bounding box</span>
+                        </label>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2">Choose between shape-aware extraction or rectangular bounds</p>
+                </div>
+                
+                <div>
+                    <label for="min-size-modal" class="block text-sm font-medium text-gray-300 mb-2">
+                        Minimum Size: <span id="min-size-value-modal" class="text-blue-400 font-semibold">30x30</span>
+                    </label>
+                    <input type="range" id="min-size-modal" min="1" max="100" value="10" 
+                           class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>1x1 (Include all)</span>
+                        <span>100x100 (Large only)</span>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2">Sprites smaller than this size will be discarded</p>
+                </div>
+            </div>
+            
+            <div class="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-600">
+                <button id="cancel-settings-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors">Cancel</button>
+                <button id="apply-settings-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">Apply Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="color-picker-modal" class="color-picker-modal hidden">
+        <div class="color-picker-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold text-white">Pick Background Color</h3>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-white text-2xl font-bold">&times;</button>
+            </div>
+            <p class="text-gray-300 mb-4">Click on the image to select the background color:</p>
+            <div class="text-center mb-4">
+                <canvas id="color-picker-canvas" class="color-picker-image"></canvas>
+            </div>
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="text-gray-300">Selected Color:</span>
+                    <div id="color-preview" class="color-preview" style="background-color: #000000;"></div>
+                    <span id="selected-color-text" class="text-blue-400 font-semibold">#000000</span>
+                </div>
+                <div class="flex gap-2">
+                    <button id="cancel-color-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors">Cancel</button>
+                    <button id="confirm-color-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">Use This Color</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <script type="text/javascript">
+        // -----------------------------------------------------------------------------
+        // --- DOM Element Selectors ---
+        // -----------------------------------------------------------------------------
+        // Main UI elements
+        const statusEl = document.getElementById('status');
+        const fileInputEl = document.getElementById('fileInput');
+        const loaderEl = document.getElementById('loader');
+        const outputContainerEl = document.getElementById('output-container');
+        const outputEl = document.getElementById('output');
+        const spriteCountEl = document.getElementById('sprite-count');
+        const dropZoneEl = document.getElementById('drop-zone');
+        const downloadAllBtn = document.getElementById('download-all-btn');
+        const actionButtonsEl = document.getElementById('action-buttons');
+        const settingsToggle = document.getElementById('settings-toggle');
+        const thresholdDisplay = document.getElementById('threshold-display');
+        
+        // File preview elements within the drop zone
+        const uploadPromptEl = document.getElementById('upload-prompt');
+        const previewContainerEl = document.getElementById('preview-container');
+        const previewImagesEl = document.getElementById('preview-images');
+        const fileCountIndicatorEl = document.getElementById('file-count-indicator');
+        
+        // Settings Modal elements
+        const settingsModal = document.getElementById('settings-modal');
+        const closeSettingsModalBtn = document.getElementById('close-settings-modal-btn');
+        const cancelSettingsBtn = document.getElementById('cancel-settings-btn');
+        const applySettingsBtn = document.getElementById('apply-settings-btn');
+        const alphaThresholdSliderModal = document.getElementById('alpha-threshold-modal');
+        const thresholdValueModal = document.getElementById('threshold-value-modal');
+        const minSizeSliderModal = document.getElementById('min-size-modal');
+        const minSizeValueModal = document.getElementById('min-size-value-modal');
+        const backgroundColorPickerModal = document.getElementById('background-color-picker-modal');
+        const bgColorValueModal = document.getElementById('bg-color-value-modal');
+        const pickColorBtnModal = document.getElementById('pick-color-btn-modal');
+        const alphaThresholdSectionModal = document.getElementById('alpha-threshold-section-modal');
+        const backgroundColorSectionModal = document.getElementById('background-color-section-modal');
+        const extractionModeRadiosModal = document.querySelectorAll('input[name="extraction-mode-modal"]');
+        
+        // Color Picker Modal elements
+        const colorPickerModal = document.getElementById('color-picker-modal');
+        const colorPickerCanvas = document.getElementById('color-picker-canvas');
+        const colorPreview = document.getElementById('color-preview');
+        const selectedColorText = document.getElementById('selected-color-text');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const cancelColorBtn = document.getElementById('cancel-color-btn');
+        const confirmColorBtn = document.getElementById('confirm-color-btn');
+        
+
+        // -----------------------------------------------------------------------------
+        // --- Application State ---
+        // -----------------------------------------------------------------------------
+        // These variables hold the current settings for the extraction algorithm.
+        let alphaThreshold = 10;
+        let minSize = 30;
+        let backgroundColor = '#000000';
+        let extractionMode = 'shape'; // 'shape' or 'bounding-box'
+        
+        // Global variables to hold data about the currently processed image.
+        let extractedCanvases = [];    // Stores the <canvas> elements of extracted sprites for zipping.
+        let currentImageElement = null;  // The currently loaded <img> element for reprocessing.
+        let isImageOpaque = false;     // Flag to switch between alpha-based and color-based segmentation.
+        let selectedColor = '#000000'; // Temporary color selection in the color picker modal.
+
+        // Initialize the app status on page load.
+        statusEl.textContent = 'Ready! Select images or a ZIP file.';
+
+
+        // -----------------------------------------------------------------------------
+        // --- Settings Modal ---
+        // -----------------------------------------------------------------------------
+
+        /**
+         * Displays the settings modal and syncs its inputs with the current application state.
+         * It also intelligently shows/hides the alpha vs. background color sections based
+         * on whether the last processed image was opaque.
+         */
+        function showSettingsModal() {
+            // Sync modal input values with the current settings variables.
+            alphaThresholdSliderModal.value = alphaThreshold;
+            thresholdValueModal.textContent = `${alphaThreshold}%`;
+            minSizeSliderModal.value = minSize;
+            minSizeValueModal.textContent = `${minSize}x${minSize}`;
+            backgroundColorPickerModal.value = backgroundColor;
+            bgColorValueModal.textContent = backgroundColor;
+            
+            // Set the correct radio button for extraction mode.
+            extractionModeRadiosModal.forEach(radio => {
+                radio.checked = radio.value === extractionMode;
+            });
+            
+            // Show the relevant setting section based on the image type.
+            if (isImageOpaque) {
+                alphaThresholdSectionModal.classList.add('hidden');
+                backgroundColorSectionModal.classList.remove('hidden');
+            } else {
+                alphaThresholdSectionModal.classList.remove('hidden');
+                backgroundColorSectionModal.classList.add('hidden');
+            }
+            
+            settingsModal.classList.remove('hidden');
+        }
+
+        /** Hides the settings modal. */
+        function hideSettingsModal() {
+            settingsModal.classList.add('hidden');
+        }
+
+        /** Updates the summary display of settings in the main UI header. */
+        function updateSettingsDisplay() {
+            if (isImageOpaque) {
+                thresholdDisplay.textContent = `(BG: ${backgroundColor}, Min: ${minSize}x${minSize})`;
+            } else {
+                thresholdDisplay.textContent = `(Alpha: ${alphaThreshold}%, Min: ${minSize}x${minSize})`;
+            }
+        }
+
+        /** Returns the currently selected extraction mode ('shape' or 'bounding-box'). */
+        function getExtractionMode() {
+            return extractionMode;
+        }
+
+        // --- Event Listeners for Settings Modal ---
+        settingsToggle.addEventListener('click', showSettingsModal);
+        closeSettingsModalBtn.addEventListener('click', hideSettingsModal);
+        cancelSettingsBtn.addEventListener('click', hideSettingsModal);
+        settingsModal.addEventListener('click', (e) => { // Close if clicked outside the content area.
+            if (e.target === settingsModal) hideSettingsModal();
+        });
+
+        // Update display text as sliders are moved.
+        alphaThresholdSliderModal.addEventListener('input', (e) => {
+            thresholdValueModal.textContent = `${e.target.value}%`;
+        });
+        minSizeSliderModal.addEventListener('input', (e) => {
+            minSizeValueModal.textContent = `${e.target.value}x${e.target.value}`;
+        });
+        backgroundColorPickerModal.addEventListener('input', (e) => {
+            bgColorValueModal.textContent = e.target.value;
+        });
+
+        // Button to open the color picker from within the settings modal.
+        pickColorBtnModal.addEventListener('click', () => {
+            if (!currentImageElement) return;
+            hideSettingsModal();
+            showColorPickerModal();
+        });
+
+        // "Apply" button saves settings and retriggers processing if an image is loaded.
+        applySettingsBtn.addEventListener('click', () => {
+            // Update global state from modal inputs.
+            alphaThreshold = parseInt(alphaThresholdSliderModal.value);
+            minSize = parseInt(minSizeSliderModal.value);
+            backgroundColor = backgroundColorPickerModal.value;
+            extractionMode = document.querySelector('input[name="extraction-mode-modal"]:checked').value || 'shape';
+            
+            updateSettingsDisplay();
+            hideSettingsModal();
+            
+            // If an image is already loaded, re-process it with the new settings.
+            if (currentImageElement) {
+                reprocessCurrentImage();
+            }
+        });
+
+
+        // -----------------------------------------------------------------------------
+        // --- Color Picker Modal ---
+        // -----------------------------------------------------------------------------
+
+        /** Displays a modal with the current image on a canvas to allow color picking. */
+        function showColorPickerModal() {
+            // Draw the current image onto the modal's canvas.
+            const ctx = colorPickerCanvas.getContext('2d');
+            colorPickerCanvas.width = currentImageElement.naturalWidth;
+            colorPickerCanvas.height = currentImageElement.naturalHeight;
+            ctx.drawImage(currentImageElement, 0, 0);
+            
+            // Initialize with the current background color.
+            selectedColor = backgroundColor;
+            updateColorPreview(selectedColor);
+            
+            colorPickerModal.classList.remove('hidden');
+        }
+
+        /** Hides the color picker modal. */
+        function hideColorPickerModal() {
+            colorPickerModal.classList.add('hidden');
+        }
+
+        /** Updates the color preview swatch and hex code text in the modal. */
+        function updateColorPreview(color) {
+            colorPreview.style.backgroundColor = color;
+            selectedColorText.textContent = color;
+        }
+
+        // --- Event Listeners for Color Picker ---
+        colorPickerCanvas.addEventListener('click', (e) => {
+            // Calculate the click coordinates relative to the canvas.
+            const rect = colorPickerCanvas.getBoundingClientRect();
+            const scaleX = colorPickerCanvas.width / rect.width;
+            const scaleY = colorPickerCanvas.height / rect.height;
+            const x = Math.floor((e.clientX - rect.left) * scaleX);
+            const y = Math.floor((e.clientY - rect.top) * scaleY);
+            
+            // Get the color data for the single pixel that was clicked.
+            const ctx = colorPickerCanvas.getContext('2d');
+            const pixel = ctx.getImageData(x, y, 1, 1).data;
+            const r = pixel[0], g = pixel[1], b = pixel[2];
+            
+            // Convert RGB to hex and update the preview.
+            selectedColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+            updateColorPreview(selectedColor);
+        });
+
+        closeModalBtn.addEventListener('click', hideColorPickerModal);
+        cancelColorBtn.addEventListener('click', hideColorPickerModal);
+        colorPickerModal.addEventListener('click', (e) => { // Close if clicked outside the content area.
+            if (e.target === colorPickerModal) hideColorPickerModal();
+        });
+
+        // "Use This Color" button confirms the selection.
+        confirmColorBtn.addEventListener('click', () => {
+            // Update the main background color state with the picked color.
+            backgroundColor = selectedColor;
+            
+            // Sync the settings modal's color input with this new color.
+            backgroundColorPickerModal.value = selectedColor;
+            bgColorValueModal.textContent = selectedColor;
+            
+            updateSettingsDisplay();
+            hideColorPickerModal();
+            showSettingsModal(); // Re-open the settings modal to show the change.
+        });
+
+
+        // -----------------------------------------------------------------------------
+        // --- UI and State Management Helpers ---
+        // -----------------------------------------------------------------------------
+
+        /** Updates the status text, adding a helpful tip for opaque images on completion. */
+        function updateStatusWithWarning(message) {
+            if (isImageOpaque && message.includes('complete!')) {
+                statusEl.innerHTML = `${message}<span class="status-warning">Tip: For better results with opaque images, remove the background first!</span>`;
+            } else {
+                statusEl.textContent = message;
+            }
+        }
+
+        /** Clears existing results and re-runs the segmentation on the current image. */
+        function reprocessCurrentImage() {
+            if (!currentImageElement) return;
+            
+            // Reset the UI.
+            outputEl.innerHTML = '';
+            extractedCanvases = [];
+            loaderEl.classList.remove('hidden');
+            outputContainerEl.classList.add('hidden');
+            actionButtonsEl.classList.add('hidden');
+            statusEl.textContent = 'Reprocessing image with new settings...';
+            
+            // Use a timeout to ensure the UI updates before the heavy processing begins.
+            setTimeout(() => {
+                const spriteCount = segmentImage(currentImageElement);
+                
+                // Update UI with new results.
+                spriteCountEl.textContent = spriteCount;
+                loaderEl.classList.add('hidden');
+                if (spriteCount > 0) {
+                    outputContainerEl.classList.remove('hidden');
+                    actionButtonsEl.classList.remove('hidden');
+                    updateStatusWithWarning(`Reprocessing complete! Found ${spriteCount} sprites.`);
+                } else {
+                    statusEl.textContent = 'No sprites found with current settings.';
+                }
+            }, 50); // Small delay for UI refresh.
+        }
+
+
+        // -----------------------------------------------------------------------------
+        // --- Main Event Listeners (File Input) ---
+        // -----------------------------------------------------------------------------
+        fileInputEl.addEventListener('change', (e) => {
+            e.target.files.length > 0 ? handleFiles(e.target.files) : clearPreviews();
+        });
+        dropZoneEl.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZoneEl.classList.add('drag-over');
+        });
+        dropZoneEl.addEventListener('dragleave', () => dropZoneEl.classList.remove('drag-over'));
+        dropZoneEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZoneEl.classList.remove('drag-over');
+            handleFiles(e.dataTransfer.files);
+        });
+        downloadAllBtn.addEventListener('click', downloadAllAsZip);
+
+
+        // -----------------------------------------------------------------------------
+        // --- File Processing and Orchestration ---
+        // -----------------------------------------------------------------------------
+
+        /**
+         * The main entry point for processing uploaded files. It orchestrates the entire
+         * process from showing previews to handling ZIPs and images.
+         * @param {FileList} files - The files selected by the user.
+         */
+        async function handleFiles(files) {
+            if (files.length === 0) return;
+            // A quick check to ensure the JSZip library has loaded.
+            if (typeof JSZip === 'undefined') {
+                statusEl.textContent = "Error: JSZip library is not loaded. Please wait and try again.";
+                return;
+            }
+
+            // Reset the application for a new set of files.
+            showImagePreviews(files);
+            loaderEl.classList.remove('hidden');
+            outputContainerEl.classList.add('hidden');
+            actionButtonsEl.classList.add('hidden');
+            outputEl.innerHTML = '';
+            extractedCanvases = [];
+            
+            let totalSprites = 0;
+            // Process each file sequentially.
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                statusEl.textContent = `Processing file ${i + 1} of ${files.length}: ${file.name}`;
+                
+                if (file.type.startsWith('image/')) {
+                    totalSprites += await processImageFile(file);
+                } else if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
+                    totalSprites += await processZipFile(file);
+                }
+            }
+
+            // Update the UI with the final results.
+            spriteCountEl.textContent = totalSprites;
+            loaderEl.classList.add('hidden');
+            if (totalSprites > 0) {
+                 outputContainerEl.classList.remove('hidden');
+                 actionButtonsEl.classList.remove('hidden');
+            }
+            updateStatusWithWarning(`Processing complete! Found ${totalSprites} sprites across ${files.length} file(s).`);
+        }
+        
+        /**
+         * Displays thumbnail previews of the uploaded images in the drop zone.
+         * @param {FileList} files - The files selected by the user.
+         */
+        function showImagePreviews(files) {
+            previewImagesEl.innerHTML = '';
+            const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+            
+            if (imageFiles.length === 0) {
+                // If no images (e.g., only a ZIP file), keep the default prompt.
+                uploadPromptEl.classList.remove('hidden');
+                previewContainerEl.classList.add('hidden');
+                return;
+            }
+            
+            // Hide the default prompt and show the preview area.
+            uploadPromptEl.classList.add('hidden');
+            previewContainerEl.classList.remove('hidden');
+            
+            // Use larger thumbnails if only one image is selected.
+            const isSingleImage = imageFiles.length === 1;
+            imageFiles.forEach((file) => {
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                img.className = `${isSingleImage ? 'max-w-[600px] max-h-[600px]' : 'max-w-24 max-h-24'} rounded-md shadow-md border border-gray-600`;
+                img.alt = `Preview of ${file.name}`;
+                previewImagesEl.appendChild(img);
+            });
+            
+            fileCountIndicatorEl.classList.add('hidden');
+        }
+        
+        /** Clears the image previews and restores the default upload prompt. */
+        function clearPreviews() {
+            uploadPromptEl.classList.remove('hidden');
+            previewContainerEl.classList.add('hidden');
+            previewImagesEl.innerHTML = '';
+            fileCountIndicatorEl.classList.add('hidden');
+        }
+
+        /**
+         * Unpacks a ZIP archive and processes each valid image file found inside.
+         * @param {File} zipFile - The ZIP file to process.
+         * @returns {Promise<number>} A promise that resolves to the total number of sprites found in the ZIP.
+         */
+        async function processZipFile(zipFile) {
+            statusEl.textContent = `Unpacking ${zipFile.name}...`;
+            try {
+                const zip = await JSZip.loadAsync(zipFile);
+                const imagePromises = [];
+
+                // Find all image files within the ZIP, skipping directories.
+                zip.forEach((relativePath, zipEntry) => {
+                    const isImage = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)$/i.test(zipEntry.name) && !zipEntry.dir;
+                    if (isImage) {
+                        // Create a promise to process each image file.
+                        const promise = zipEntry.async('blob').then(blob => {
+                            const imageFile = new File([blob], zipEntry.name, { type: blob.type });
+                            return processImageFile(imageFile); // Delegate to the standard image processor.
+                        });
+                        imagePromises.push(promise);
+                    }
+                });
+                
+                // Wait for all images in the ZIP to be processed and sum the results.
+                const spriteCounts = await Promise.all(imagePromises);
+                return spriteCounts.reduce((total, count) => total + count, 0);
+            } catch (error) {
+                console.error("Error processing ZIP file:", error);
+                statusEl.textContent = `Could not process ${zipFile.name}. Is it a valid ZIP?`;
+                return 0;
+            }
+        }
+
+        /**
+         * Reads an image file, loads it into an <img> element, and passes it to the segmentation function.
+         * @param {File} file - The image file to process.
+         * @returns {Promise<number>} A promise that resolves to the number of sprites found.
+         */
+        function processImageFile(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        // Before segmenting, analyze the image to see if it has transparency.
+                        checkImageTransparency(img);
+                        resolve(segmentImage(img));
+                    };
+                    img.onerror = () => resolve(0); // If the image fails to load, resolve with 0 sprites.
+                };
+                reader.onerror = () => resolve(0);
+                reader.readAsDataURL(file);
+            });
+        }
+        
+
+        // -----------------------------------------------------------------------------
+        // --- Core Image Segmentation Algorithm ---
+        // -----------------------------------------------------------------------------
+
+        /**
+         * Analyzes an image to determine if it contains any transparent pixels.
+         * This sets the `isImageOpaque` flag, which dictates the segmentation strategy.
+         * For opaque images, it also sets a default background color from the top-left pixel.
+         * @param {HTMLImageElement} imgElement - The image to analyze.
+         */
+        function checkImageTransparency(imgElement) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            canvas.width = imgElement.width;
+            canvas.height = imgElement.height;
+            ctx.drawImage(imgElement, 0, 0);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+            
+            // Store the image and its data for potential reprocessing or color picking.
+            currentImageElement = imgElement;
+            
+            // Check if any pixel has an alpha value less than 255.
+            let hasTransparency = false;
+            for (let i = 3; i < pixels.length; i += 4) { // Iterate through alpha channels
+                if (pixels[i] < 255) {
+                    hasTransparency = true;
+                    break;
+                }
+            }
+            
+            isImageOpaque = !hasTransparency;
+            
+            // For opaque images, assume the top-left pixel is the background color.
+            if (isImageOpaque) {
+                const r = pixels[0], g = pixels[1], b = pixels[2];
+                backgroundColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+            }
+            
+            updateSettingsDisplay(); // Update the settings summary in the UI.
+        }
+
+        /**
+         * The core function that segments an image into individual sprites.
+         * Pipeline:
+         * 1. Create a binary map (foreground/background) based on alpha or color.
+         * 2. Use a flood fill algorithm to find contiguous regions (sprites).
+         * 3. Filter sprites by minimum size.
+         * 4. Extract each valid sprite to a new canvas and display it.
+         * @param {HTMLImageElement} imgElement - The source image to segment.
+         * @returns {number} The number of valid sprites found and rendered.
+         */
+        function segmentImage(imgElement) {
+            try {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                canvas.width = imgElement.width;
+                canvas.height = imgElement.height;
+                ctx.drawImage(imgElement, 0, 0);
+                
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                
+                // Step 1: Create a segmentation map. This is a 1D array where 1 means
+                // foreground (part of a sprite) and 0 means background.
+                let segmentationMap;
+                if (isImageOpaque) {
+                    segmentationMap = createColorBasedSegmentationMap(imageData.data, canvas.width, canvas.height);
+                } else {
+                    const alphaThresholdValue = Math.floor((alphaThreshold / 100) * 255);
+                    segmentationMap = createAlphaBasedSegmentationMap(imageData.data, alphaThresholdValue);
+                }
+                
+                // If no pixels are considered foreground, there's nothing to extract.
+                if (!segmentationMap.some(pixel => pixel === 1)) {
+                    return 0;
+                }
+                
+                // Step 2: Find connected components using flood fill.
+                const visited = new Uint8Array(canvas.width * canvas.height); // Tracks visited pixels.
+                const sprites = [];
+                for (let y = 0; y < canvas.height; y++) {
+                    for (let x = 0; x < canvas.width; x++) {
+                        const idx = y * canvas.width + x;
+                        if (segmentationMap[idx] && !visited[idx]) {
+                            const bounds = floodFill(segmentationMap, visited, x, y, canvas.width, canvas.height);
+                            sprites.push(bounds);
+                        }
+                    }
+                }
+                
+                // Step 3 & 4: Filter by size and extract valid sprites.
+                let validSpriteCount = 0;
+                sprites.forEach((bounds) => {
+                    if (bounds.width >= minSize && bounds.height >= minSize) {
+                        const spriteCanvas = document.createElement('canvas');
+                        spriteCanvas.className = 'sprite-canvas';
+                        spriteCanvas.width = bounds.width;
+                        spriteCanvas.height = bounds.height;
+                        
+                        // Extract the sprite using the selected mode (shape vs. box).
+                        if (extractionMode === 'shape') {
+                            extractSpriteWithShape(canvas, spriteCanvas, bounds, canvas.width);
+                        } else {
+                            extractSpriteWithBoundingBox(canvas, spriteCanvas, bounds);
+                        }
+                        
+                        // Add the new canvas to the list for the "Download All" zip function.
+                        extractedCanvases.push(spriteCanvas);
+                        
+                        // Create the DOM elements to display the sprite and its download button.
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'sprite-wrapper';
+                        const downloadLink = document.createElement('a');
+                        downloadLink.className = 'download-btn';
+                        downloadLink.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>`;
+                        downloadLink.href = spriteCanvas.toDataURL('image/png');
+                        downloadLink.download = `sprite_${extractedCanvases.length}.png`;
+                        
+                        wrapper.appendChild(spriteCanvas);
+                        wrapper.appendChild(downloadLink);
+                        outputEl.appendChild(wrapper);
+                        validSpriteCount++;
+                    }
+                });
+                
+                return validSpriteCount;
+            } catch (error) {
+                console.error("Segmentation Error:", error);
+                statusEl.textContent = `An error occurred during processing.`;
+                return 0;
+            }
+        }
+
+        /** Creates a segmentation map based on an alpha threshold. */
+        function createAlphaBasedSegmentationMap(pixels, alphaThresholdValue) {
+            const map = new Uint8Array(pixels.length / 4);
+            for (let i = 0; i < pixels.length; i += 4) {
+                map[i / 4] = pixels[i + 3] > alphaThresholdValue ? 1 : 0;
+            }
+            return map;
+        }
+
+        /** Creates a segmentation map based on distance from a background color. */
+        function createColorBasedSegmentationMap(pixels, width, height) {
+            const map = new Uint8Array(width * height);
+            const bgColor = hexToRgb(backgroundColor);
+            const colorTolerance = 30; // How different a color must be from the background to be considered foreground.
+            
+            for (let i = 0; i < pixels.length; i += 4) {
+                const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+                
+                // Using Euclidean distance to check color similarity.
+                const distance = Math.sqrt(
+                    Math.pow(r - bgColor.r, 2) + 
+                    Math.pow(g - bgColor.g, 2) + 
+                    Math.pow(b - bgColor.b, 2)
+                );
+                
+                map[i / 4] = distance > colorTolerance ? 1 : 0;
+            }
+            return map;
+        }
+
+        /** Simple hex color string to RGB object converter. */
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : null;
+        }
+
+        /**
+         * Performs a flood fill on the segmentation map to find a single connected component.
+         * @returns An object containing the component's bounding box and a Set of its pixel indices.
+         */
+        function floodFill(segmentationMap, visited, startX, startY, width, height) {
+            const stack = [[startX, startY]];
+            let minX = startX, maxX = startX, minY = startY, maxY = startY;
+            const spritePixels = new Set(); // Stores indices of pixels belonging to this shape.
+            
+            while (stack.length > 0) {
+                const [x, y] = stack.pop();
+                const idx = y * width + x;
+                
+                if (x < 0 || x >= width || y < 0 || y >= height || visited[idx] || !segmentationMap[idx]) {
+                    continue;
+                }
+                
+                visited[idx] = 1;
+                spritePixels.add(idx);
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minY = Math.min(minY, y);
+                maxY = Math.max(maxY, y);
+                
+                // Check 4-way neighbors.
+                stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+            }
+            
+            return {
+                x: minX, y: minY,
+                width: maxX - minX + 1, height: maxY - minY + 1,
+                pixels: spritePixels
+            };
+        }
+
+        /**
+         * Extracts a sprite by copying only the pixels that are part of its exact shape,
+         * leaving the rest of the bounding box transparent.
+         */
+        function extractSpriteWithShape(sourceCanvas, targetCanvas, bounds, sourceWidth) {
+            const sourceCtx = sourceCanvas.getContext('2d');
+            const targetCtx = targetCanvas.getContext('2d');
+            
+            const sourceImageData = sourceCtx.getImageData(bounds.x, bounds.y, bounds.width, bounds.height);
+            const targetImageData = targetCtx.createImageData(bounds.width, bounds.height);
+            
+            // Iterate through the bounding box area.
+            for (let y = 0; y < bounds.height; y++) {
+                for (let x = 0; x < bounds.width; x++) {
+                    // Check if this specific pixel is part of the sprite's shape.
+                    const sourceIdx = (bounds.y + y) * sourceWidth + (bounds.x + x);
+                    if (bounds.pixels.has(sourceIdx)) {
+                        const pixelIdx = (y * bounds.width + x) * 4;
+                        // If it is, copy the pixel data (R, G, B, A).
+                        targetImageData.data[pixelIdx] = sourceImageData.data[pixelIdx];
+                        targetImageData.data[pixelIdx + 1] = sourceImageData.data[pixelIdx + 1];
+                        targetImageData.data[pixelIdx + 2] = sourceImageData.data[pixelIdx + 2];
+                        targetImageData.data[pixelIdx + 3] = sourceImageData.data[pixelIdx + 3];
+                    }
+                }
+            }
+            
+            targetCtx.putImageData(targetImageData, 0, 0);
+        }
+
+        /**
+         * Extracts a sprite by simply copying the entire rectangular bounding box from the source.
+         */
+        function extractSpriteWithBoundingBox(sourceCanvas, targetCanvas, bounds) {
+            const targetCtx = targetCanvas.getContext('2d');
+            targetCtx.drawImage(sourceCanvas, 
+                bounds.x, bounds.y, bounds.width, bounds.height, // Source rectangle
+                0, 0, bounds.width, bounds.height               // Destination rectangle
+            );
+        }
+
+
+        // -----------------------------------------------------------------------------
+        // --- Download Functionality ---
+        // -----------------------------------------------------------------------------
+
+        /**
+         * Compiles all extracted sprite canvases into a single ZIP file and initiates download.
+         */
+        function downloadAllAsZip() {
+            if (extractedCanvases.length === 0) return;
+
+            statusEl.textContent = "Zipping files, please wait...";
+            const zip = new JSZip();
+            
+            // Add each canvas to the zip as a PNG file.
+            extractedCanvases.forEach((canvas, index) => {
+                const imageData = canvas.toDataURL('image/png').split(',')[1];
+                zip.file(`sprite_${index + 1}.png`, imageData, {base64: true});
+            });
+
+            // Generate the ZIP file as a blob and create a download link.
+            zip.generateAsync({type: "blob"}).then(content => {
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                link.download = `sprites_${timestamp}.zip`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href); // Clean up the object URL.
+                statusEl.textContent = "Download complete!";
+            }).catch(err => {
+                console.error("Zipping error:", err);
+                statusEl.textContent = "Error creating zip file.";
+            });
+        }
+    </script>
+</body>
+</html>
