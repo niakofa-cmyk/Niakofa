@@ -21,3 +21,6 @@
 - [Niakofa ARPG Architecture](niakofa-arpg-architecture.md) — pixel movement, WorldEntitySpawner, CharacterAssetLibrary; ARPG/OCC licensing boundary; no RPG Maker code in runtime.
 - [Kwame Atlas v2 + Walkable Chapter](kwame-v2-walkable-chapter.md) — DOWN_LEFT fills idle/walk-down/left; duplicate key rule for atlas; App.tsx wraps LegacyMapPage; DB migration 0106 applied; DarkNinja as combat reference only.
 - [Railway Python Detection Trap](railway-python-detection-trap.md) — committing main.py/pyproject.toml/uv.lock to repo root breaks Railway; railpack.json now locks provider:node + exclude list.
+- [Legacy World-Always-Running Fix](legacy-world-always-running.md) — LegacyChapterWorld now always runs as backdrop; scene content is absolute bottom-0 overlay (68% max-height). Fixes the "two games" split.
+- [Legacy Weather Overlay](legacy-weather-overlay.md) — LegacyWeatherOverlay + deriveChapterWeather(); 8 weather types; wired to chapter era/scene progress and demo season/phase.
+- [Legacy World Map Pins](legacy-world-map-pins.md) — LegacyWorldMapPins macro overworld; LegacyWorldMapPin interface with xPct/yPct; MENSAH_DEFAULT_PINS 6-pin arc; procedural SVG bezier route lines.
