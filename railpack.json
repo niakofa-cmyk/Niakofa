@@ -1,7 +1,19 @@
 {
   "$schema": "https://schema.railpack.com",
+  "provider": "node",
   "cache": [
     { "id": "pnpm-store", "paths": ["/root/.local/share/pnpm/store"] }
+  ],
+  "exclude": [
+    "main.py",
+    "pyproject.toml",
+    "uv.lock",
+    ".agents/outputs",
+    ".agents/scripts",
+    "niakofa-repo",
+    "attached_assets",
+    "screenshots",
+    "reference"
   ],
   "steps": {
     "build": {
