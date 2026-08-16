@@ -25,13 +25,26 @@ import { LegacyJournalPanel } from "@/components/legacy-journal-panel";
 import LegacyMapPage from "@/pages/legacy-map";
 import { LegacyChapterWorld } from "@/components/legacy-chapter-world";
 import { LegacyWeatherOverlay, deriveChapterWeather } from "@/components/legacy-weather-overlay";
-// LegacyWorldMapPins is used in the demo page (legacy-demo.tsx); imported here
-// for potential future chapter-level macro map overlay.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { LegacyWorldMapPins as _LegacyWorldMapPins, MENSAH_DEFAULT_PINS as _MENSAH_DEFAULT_PINS } from "@/components/legacy-world-map-pins";
+import { LegacySceneRenderer } from "@/components/legacy-scene-renderer";
+import { getMapScene } from "@/lib/legacy-map-scenes";
 
 // Ambient background gradient shifts based on the day-cycle position.
 // Morning → warm amber, midday → bright gold, evening → deep amber, night → dark with stars.
+/**
+ * Maps a chapter era string to a known LegacyMapScene ID.
+ * When a match is found, LegacySceneRenderer shows the location's real hand-drawn
+ * art as the background when the player enters a landmark and reads a scene.
+ */
+function sceneIdForEra(era: string | undefined | null): string | undefined {
+  if (!era) return undefined;
+  const e = era.toLowerCase();
+  if (e.includes("1890") || e.includes("1895")) return "cape-coast-compound-1890";
+  if (e.includes("1905") || e.includes("1900") || e.includes("trade") || e.includes("market")) return "cape-coast-market-1905";
+  if (e.includes("1912") || e.includes("harbour") || e.includes("harbor") || e.includes("coast")) return "cape-coast-harbour-1912";
+  if (e.includes("compound") || e.includes("village")) return "cape-coast-compound-1890";
+  return undefined;
+}
+
 function ambientGradient(sceneIdx: number, totalScenes: number): string {
   const pct = totalScenes > 1 ? sceneIdx / (totalScenes - 1) : 0;
   if (pct < 0.25) return "radial-gradient(ellipse at top, #1a1308 0%, #0e1111 70%)";
@@ -918,6 +931,30 @@ export default function LegacyChapterPlay() {
 
       {/* World viewport — always mounted, never unmounted during scene reading */}
       <div className="flex-1 min-h-0 relative">
+        {/* Location art backdrop — shows real hand-drawn scene art when a
+            LegacyMapScene matches the chapter era. Rendered beneath the
+            walkable chapter world so the transition from navigation → scene
+            reading reveals actual location art. Hidden when worldViewOpen
+            (player navigating the grid). */}
+        {(() => {
+          const mapSceneId = sceneIdForEra(sceneData.ancestorAppearance?.era);
+          const mapScene = mapSceneId ? getMapScene(mapSceneId) : undefined;
+          if (!mapScene || worldViewOpen) return null;
+          return (
+            <div className="absolute inset-0 z-0 overflow-hidden opacity-75">
+              <LegacySceneRenderer
+                scene={mapScene}
+                tileSizePx={52}
+                className="w-full h-full"
+              />
+              {/* Gradient fade at bottom so scene content overlay reads cleanly */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{ background: "linear-gradient(to bottom, rgba(14,17,17,0) 30%, rgba(14,17,17,0.85) 70%, rgba(14,17,17,1) 100%)" }}
+              />
+            </div>
+          );
+        })()}
         <LegacyChapterWorld
           chapterId={sceneData.chapterId}
           scenes={sceneData.scenes.map((s) => ({
