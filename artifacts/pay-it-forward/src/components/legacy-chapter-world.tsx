@@ -1,27 +1,27 @@
 /**
- * LegacyChapterWorld — real, walkable chapter exploration.
+ * LegacyChapterWorld — real, walkable chapter exploration, PixiJS renderer.
  *
- * This replaces the "read scene → tap Next → read next scene" flow that
- * previously WAS legacy-chapter.tsx with actual movement: the player sees
- * a grid world generated from their chapter's real scenes/places
- * (legacy-dynamic-world-layout.ts), walks a character around it with
- * arrow keys / on-screen d-pad, and opens a scene by walking onto its
- * landmark tile. Scenes before the player's current progress are visible
- * as visited landmarks they can revisit; the scene at their current
- * progress glows as the active destination; later scenes are dimmed
- * (visible, so the world doesn't feel truncated, but not yet "walkable
- * into" narratively — walking onto them simply re-opens them early,
- * which is fine, this isn't a puzzle gate).
+ * Same public component/props as before (legacy-chapter.tsx mounts this
+ * with zero changes) — this swap is purely the internals: real WebGL canvas
+ * rendering via PixiJS instead of a CSS-grid of <div> tiles. That's what
+ * unlocks the things a grid of colored divs can't do — smooth camera,
+ * proper animated sprite frames, and later, weather/lighting/parallax
+ * layers without a rewrite.
  *
- * Movement/collision/rendering here is intentionally independent of
- * legacy-living-world.tsx (the House-of-Mensah demo world), which is
- * hardcoded to one fictional family's fixed 12-region map and isn't a fit
- * for an arbitrary real family's generated chapter. This component is the
- * per-family equivalent, built on real data.
+ * Character rendering loads the SAME real spritesheet assets the CSS
+ * version used (via resolveWalkingAppearance / legacy-character-engine.ts)
+ * as PixiJS Textures, cropped to the correct 48×48 frame per facing
+ * direction — same visual result, real texture-cropped sprite this time
+ * instead of a background-position hack.
+ *
+ * World movement/collision/keyboard input is UNCHANGED from the CSS
+ * version — that logic never depended on how tiles were drawn, only on
+ * the layout data from legacy-dynamic-world-layout.ts.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, MessageSquare, BookOpen, Sparkles, ScrollText } from "lucide-react";
+import { Application, Container, Graphics, Sprite, Texture, Rectangle, Assets, Text } from "pixi.js";
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from "lucide-react";
 import {
   buildChapterWorldLayout,
   isChapterWorldPositionWalkable,
@@ -31,45 +31,54 @@ import {
   type ChapterWorldSceneInput,
   type ChapterWorldLandmark,
 } from "@/lib/legacy-dynamic-world-layout";
-import { LegacyCharacterSprite, type LegacySpriteFacing } from "@/components/legacy-character-sprite";
-import {
-  WORLD_TILE_VISUAL,
-  getEnvAsset,
-  type LegacyWorldTileId,
-} from "@/lib/legacy-environment-assets";
+import { resolveWalkingAppearance, type LegacyWalkingLayer } from "@/lib/legacy-character-engine";
 
 const TILE_PX = 44;
 
-/** CSS fallback colors — still used when the PNG is unavailable. */
-const TILE_CSS_FALLBACK: Record<string, string> = {
-  grass_01: "#2f4a1e",
-  grass_02: "#35521f",
-  dirt_path: "#8a6a3a",
-  tree_canopy: "#16240f",
-  water: "#1c3a52",
-  compound_wall: "#4a3624",
-  fence: "#5a4530",
-  sand: "#c7ad7a",
-  red_earth: "#7a4a26",
-  thatch_roof: "#6b5024",
-  baobab_trunk: "#5a3d1f",
-  market_stall: "#8a5a2a",
-  cocoa_row: "#3a2a14",
+const TILE_COLOR: Record<string, number> = {
+  grass_01: 0x2f4a1e,
+  grass_02: 0x35521f,
+  dirt_path: 0x8a6a3a,
+  red_earth: 0x7a4a26,
+  water: 0x1c3a52,
+  sand: 0xc7ad7a,
+  compound_wall: 0x4a3624,
+  thatch_roof: 0x6b5024,
+  tree_canopy: 0x16240f,
+  baobab_trunk: 0x5a3d1f,
+  market_stall: 0x8a5a2a,
+  fence: 0x5a4530,
+  cocoa_row: 0x3a2a14,
 };
 
-const SCENE_ICON: Record<ChapterWorldSceneInput["type"], typeof MessageSquare> = {
-  narration: ScrollText,
-  dialogue: MessageSquare,
-  reflection: Sparkles,
-  context: BookOpen,
+const SCENE_ICON_GLYPH: Record<ChapterWorldSceneInput["type"], string> = {
+  narration: "\u{1F4DC}", // scroll
+  dialogue: "\u{1F4AC}",  // speech balloon
+  reflection: "\u{2728}", // sparkles
+  context: "\u{1F4D6}",   // open book
 };
+
+// Module-level texture cache — same source spritesheet gets reused across
+// mounts/characters instead of re-fetching every time this component remounts.
+const textureCache = new Map<string, Promise<Texture>>();
+function loadBaseTexture(url: string): Promise<Texture> {
+  let cached = textureCache.get(url);
+  if (!cached) {
+    cached = Assets.load(url);
+    textureCache.set(url, cached);
+  }
+  return cached;
+}
+
+type Facing = "down" | "left" | "right" | "up";
+const FACING_ROW: Record<Facing, number> = { down: 0, left: 1, right: 2, up: 3 };
 
 export interface LegacyChapterWorldProps {
   chapterId: number;
   scenes: readonly ChapterWorldSceneInput[];
   /** Scene number the player has reached — landmarks past this are dimmed but still walkable. */
   activeSceneNumber: number;
-  /** Which scenes are already completed (for the "visited" checkmark ring). */
+  /** Which scenes are already completed (for the "visited" ring). */
   completedSceneNumbers: ReadonlySet<number>;
   ageGroup: "adult" | "kid";
   gender: "male" | "female" | "unspecified";
@@ -77,7 +86,7 @@ export interface LegacyChapterWorldProps {
   lifeStage?: "youth" | "adult" | "mature" | "elder";
   era?: string;
   appearanceSeed?: string;
-  /** Display name for the small "Walking as ___" badge. Optional — omitted when no ancestor is resolved. */
+  /** Display name for the "Walking as ___" badge. Omitted when no ancestor is resolved. */
   characterName?: string | null;
   /** Fired when the player walks onto a scene's landmark tile. */
   onEnterScene: (sceneNumber: number) => void;
@@ -98,33 +107,181 @@ export function LegacyChapterWorld({
   onEnterScene,
 }: LegacyChapterWorldProps) {
   const layout: ChapterWorldLayout = buildChapterWorldLayout(chapterId, scenes);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const appRef = useRef<Application | null>(null);
+  const worldLayerRef = useRef<Container | null>(null);
+  const landmarkLayerRef = useRef<Container | null>(null);
+  const characterContainerRef = useRef<Container | null>(null);
+  const characterSpritesRef = useRef<Sprite[]>([]);
+
   const [position, setPosition] = useState<ChapterWorldPosition>(layout.spawn);
-  const [facing, setFacing] = useState<LegacySpriteFacing>("down");
+  const [facing, setFacing] = useState<Facing>("down");
   const [motion, setMotion] = useState<"idle" | "walk">("idle");
+  const [ready, setReady] = useState(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enteredRef = useRef<number | null>(null);
 
-  // Re-spawn if the chapter identity changes (new chapter, different layout).
+  // ── Pixi application lifecycle ────────────────────────────────────────
+  useEffect(() => {
+    let destroyed = false;
+    const app = new Application();
+    appRef.current = app;
+
+    (async () => {
+      await app.init({
+        width: layout.columns * TILE_PX,
+        height: layout.rows * TILE_PX,
+        backgroundAlpha: 0,
+        antialias: false,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        autoDensity: true,
+      });
+      if (destroyed || !containerRef.current) {
+        app.destroy(true, { children: true });
+        return;
+      }
+      containerRef.current.appendChild(app.canvas);
+
+      // Static terrain layer — drawn once per layout, never redrawn per frame.
+      const worldLayer = new Container();
+      const tiles = new Graphics();
+      layout.map.forEach((rowTiles, r) => {
+        rowTiles.forEach((tile, c) => {
+          tiles.rect(c * TILE_PX, r * TILE_PX, TILE_PX, TILE_PX)
+            .fill(TILE_COLOR[tile] ?? 0x222222);
+        });
+      });
+      worldLayer.addChild(tiles);
+      app.stage.addChild(worldLayer);
+      worldLayerRef.current = worldLayer;
+
+      const landmarkLayer = new Container();
+      app.stage.addChild(landmarkLayer);
+      landmarkLayerRef.current = landmarkLayer;
+
+      const characterContainer = new Container();
+      app.stage.addChild(characterContainer);
+      characterContainerRef.current = characterContainer;
+
+      setReady(true);
+    })();
+
+    return () => {
+      destroyed = true;
+      idleTimerRef.current && clearTimeout(idleTimerRef.current);
+      const app = appRef.current;
+      appRef.current = null;
+      if (app) {
+        try { app.destroy(true, { children: true }); } catch { /* already gone */ }
+      }
+    };
+    // Re-create the whole canvas only when the chapter's grid dimensions change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterId, layout.rows, layout.columns]);
+
+  // Re-spawn on chapter change.
   useEffect(() => {
     setPosition(layout.spawn);
     enteredRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId, scenes.length]);
 
-  const tryMove = useCallback((dRow: number, dCol: number, nextFacing: LegacySpriteFacing) => {
+  // ── Landmarks — redrawn whenever progress changes, not every frame ─────
+  useEffect(() => {
+    if (!ready || !landmarkLayerRef.current) return;
+    const layer = landmarkLayerRef.current;
+    layer.removeChildren();
+
+    for (const landmark of layout.landmarks) {
+      const isActive = landmark.sceneNumber === activeSceneNumber;
+      const isDone = completedSceneNumbers.has(landmark.sceneNumber);
+      const color = isActive ? 0xfbbf24 : isDone ? 0x10b981 : 0x57534e;
+      const alpha = isActive || isDone ? 0.85 : 0.45;
+
+      const marker = new Graphics()
+        .circle(0, 0, TILE_PX / 2 - 4)
+        .fill({ color, alpha: 0.18 })
+        .stroke({ color, width: 2, alpha });
+      marker.x = landmark.column * TILE_PX + TILE_PX / 2;
+      marker.y = landmark.row * TILE_PX + TILE_PX / 2;
+      layer.addChild(marker);
+
+      const glyph = new Text({
+        text: SCENE_ICON_GLYPH[landmark.type],
+        style: { fontSize: 18 },
+      });
+      glyph.anchor.set(0.5);
+      glyph.x = marker.x;
+      glyph.y = marker.y;
+      glyph.alpha = isActive ? 1 : isDone ? 0.9 : 0.5;
+      layer.addChild(glyph);
+    }
+  }, [ready, layout.landmarks, activeSceneNumber, completedSceneNumbers]);
+
+  // ── Character sprite — load/rebuild layers when appearance inputs change ──
+  useEffect(() => {
+    if (!ready || !characterContainerRef.current) return;
+    let cancelled = false;
+    const appearance = resolveWalkingAppearance({
+      ageGroup, gender, characterId, lifeStage, era, appearanceSeed,
+    });
+    if (!appearance) return;
+
+    (async () => {
+      const textures = await Promise.all(
+        appearance.layers.map((l: LegacyWalkingLayer) => loadBaseTexture(l.file)),
+      );
+      if (cancelled || !characterContainerRef.current) return;
+
+      characterContainerRef.current.removeChildren();
+      characterSpritesRef.current = textures.map((baseTexture) => {
+        const sprite = new Sprite(baseTexture);
+        sprite.width = TILE_PX;
+        sprite.height = TILE_PX;
+        characterContainerRef.current!.addChild(sprite);
+        return sprite;
+      });
+      applyFacingFrame(characterSpritesRef.current, facing);
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, ageGroup, gender, characterId, lifeStage, era, appearanceSeed]);
+
+  function applyFacingFrame(sprites: Sprite[], f: Facing) {
+    const row = FACING_ROW[f];
+    for (const sprite of sprites) {
+      const base = sprite.texture;
+      // Column 1 (the sheet's idle-facing frame), row = facing — mirrors
+      // the CSS version's backgroundPosition math exactly, just as a
+      // texture-frame crop instead of a background offset.
+      const frame = new Rectangle(48, row * 48, 48, 48);
+      sprite.texture = new Texture({ source: base.source, frame });
+    }
+  }
+
+  // Keep sprite position/frame in sync with movement state every render.
+  useEffect(() => {
+    if (!characterContainerRef.current) return;
+    characterContainerRef.current.x = position.column * TILE_PX;
+    characterContainerRef.current.y = position.row * TILE_PX;
+    if (characterSpritesRef.current.length) applyFacingFrame(characterSpritesRef.current, facing);
+  }, [position, facing]);
+
+  // ── Movement / collision — identical logic to the CSS version ──────────
+  const tryMove = useCallback((dRow: number, dCol: number, nextFacing: Facing) => {
     setFacing(nextFacing);
     setMotion("walk");
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     idleTimerRef.current = setTimeout(() => setMotion("idle"), 220);
 
-    setPosition((prev) => {
+    setPosition((prev: ChapterWorldPosition) => {
       const next = { row: prev.row + dRow, column: prev.column + dCol };
       if (!isChapterWorldPositionWalkable(layout, next)) return prev;
       return next;
     });
   }, [layout]);
 
-  // Keyboard movement
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "ArrowUp" || e.key === "w") tryMove(-1, 0, "up");
@@ -136,8 +293,6 @@ export function LegacyChapterWorld({
     return () => window.removeEventListener("keydown", handler);
   }, [tryMove]);
 
-  // Landmark-entered detection — fires once per arrival, resets when the
-  // player steps off (so re-entering the same tile re-opens the scene).
   useEffect(() => {
     const landmark = getChapterWorldLandmarkAt(layout, position);
     if (landmark && enteredRef.current !== landmark.sceneNumber) {
@@ -155,93 +310,14 @@ export function LegacyChapterWorld({
           Walking as {characterName}
         </div>
       )}
-      {/* Grid world */}
+
+      {/* PixiJS canvas mounts here */}
       <div className="flex-1 overflow-auto flex items-center justify-center p-4">
         <div
-          className="relative rounded-2xl overflow-hidden border border-stone-800/60 shadow-2xl"
-          style={{
-            width: layout.columns * TILE_PX,
-            height: layout.rows * TILE_PX,
-            display: "grid",
-            gridTemplateColumns: `repeat(${layout.columns}, ${TILE_PX}px)`,
-            gridTemplateRows: `repeat(${layout.rows}, ${TILE_PX}px)`,
-          }}
-        >
-          {layout.map.map((rowTiles, r) =>
-            rowTiles.map((tile, c) => {
-              const visual = WORLD_TILE_VISUAL[tile as LegacyWorldTileId]?.(r, c);
-              const asset = visual?.assetId ? getEnvAsset(visual.assetId) : undefined;
-              const fallback = TILE_CSS_FALLBACK[tile] ?? "#222";
-              return (
-                <div
-                  key={`${r}-${c}`}
-                  style={{
-                    width: TILE_PX,
-                    height: TILE_PX,
-                    background: fallback,
-                    backgroundImage: asset ? `url(${asset.src})` : undefined,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                    boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.10)",
-                  }}
-                />
-              );
-            }),
-          )}
-
-          {/* Landmarks */}
-          {layout.landmarks.map((landmark: ChapterWorldLandmark) => {
-            const Icon = SCENE_ICON[landmark.type];
-            const isActive = landmark.sceneNumber === activeSceneNumber;
-            const isDone = completedSceneNumbers.has(landmark.sceneNumber);
-            return (
-              <div
-                key={landmark.sceneNumber}
-                className={`absolute flex items-center justify-center rounded-full transition-all ${
-                  isActive
-                    ? "ring-2 ring-amber-400 bg-amber-500/30 animate-pulse"
-                    : isDone
-                      ? "ring-1 ring-emerald-500/50 bg-emerald-500/10"
-                      : "ring-1 ring-stone-600/40 bg-stone-800/40 opacity-60"
-                }`}
-                style={{
-                  width: TILE_PX - 8,
-                  height: TILE_PX - 8,
-                  left: landmark.column * TILE_PX + 4,
-                  top: landmark.row * TILE_PX + 4,
-                  pointerEvents: "none",
-                }}
-                title={landmark.title}
-              >
-                <Icon className={`w-4 h-4 ${isActive ? "text-amber-300" : isDone ? "text-emerald-400" : "text-stone-500"}`} />
-              </div>
-            );
-          })}
-
-          {/* Player */}
-          <div
-            className="absolute transition-all duration-150 ease-out"
-            style={{
-              width: TILE_PX,
-              height: TILE_PX,
-              left: position.column * TILE_PX,
-              top: position.row * TILE_PX,
-              pointerEvents: "none",
-            }}
-          >
-            <LegacyCharacterSprite
-              ageGroup={ageGroup}
-              gender={gender}
-              characterId={characterId}
-              lifeStage={lifeStage}
-              era={era}
-              appearanceSeed={appearanceSeed}
-              size={TILE_PX}
-              facing={facing}
-              motion={motion}
-            />
-          </div>
-        </div>
+          ref={containerRef}
+          className="rounded-2xl overflow-hidden border border-stone-800/60 shadow-2xl"
+          style={{ width: layout.columns * TILE_PX, height: layout.rows * TILE_PX }}
+        />
       </div>
 
       {/* On-screen d-pad — keyboard also works, this is for touch */}

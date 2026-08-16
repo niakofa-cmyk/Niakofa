@@ -965,16 +965,6 @@ export default function LegacyHomePage() {
             currentChapterNumber={dailyWelcome?.newChapters?.[0]?.chapterNumber ?? null}
             currentChapterTitle={dailyWelcome?.newChapters?.[0]?.title ?? null}
             isAiUnlocked={isAiEnabled}
-            onLegacyMode={() => navigate("/legacy")}
-            onExploration={() => navigate("/legacy/map")}
-            onFamilyQuests={() => navigate("/legacy/challenges")}
-            onReunion={() => navigate("/legacy/achievements")}
-            onInventory={() => navigate("/legacy/journal")}
-            onJournal={() => navigate("/legacy/journal")}
-            onMap={() => navigate("/legacy/map")}
-            onFamily={() => navigate("/diaspora/tree")}
-            onQuests={() => navigate("/legacy/challenges")}
-            onSettings={() => navigate("/settings")}
           />
         </div>
         <div className="bg-gradient-to-b from-[#0A0604] to-[#1A0F08] px-4 pt-8 pb-6 text-center">
@@ -1106,16 +1096,6 @@ export default function LegacyHomePage() {
                 return chap?.title ?? dailyWelcome?.newChapters?.[0]?.title ?? null;
               })()}
               isAiUnlocked={isAiEnabled}
-              onLegacyMode={() => setActiveMode("legacy")}
-              onExploration={() => setActiveMode("exploration")}
-              onFamilyQuests={() => setActiveMode("quests")}
-              onReunion={() => setActiveMode("reunion")}
-              onInventory={() => setInventoryTab("items")}
-              onJournal={() => navigate("/legacy/journal")}
-              onMap={() => navigate("/legacy/map")}
-              onFamily={() => navigate("/diaspora/tree")}
-              onQuests={() => navigate("/legacy/challenges")}
-              onSettings={() => navigate("/settings")}
             />
           </div>
           <LegacyHouseDemo

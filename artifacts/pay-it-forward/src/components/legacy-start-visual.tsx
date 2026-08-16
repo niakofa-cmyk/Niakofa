@@ -17,45 +17,10 @@
 
 import {
   Compass,
-  Users,
-  Package,
-  BookOpen,
-  Map,
-  ClipboardList,
-  Settings,
   CheckCircle2,
-  Play,
   Sparkles,
-  ChevronRight,
   Clapperboard,
 } from "lucide-react";
-
-// ─── Mode icons ───────────────────────────────────────────────────────────────
-
-const MODE_ICON_LEGACY = () => (
-  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-  </svg>
-);
-
-const MODE_ICON_EXPLORATION = () => (
-  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-  </svg>
-);
-
-const MODE_ICON_QUESTS = () => (
-  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
-  </svg>
-);
-
-const MODE_ICON_REUNION = () => (
-  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
-  </svg>
-);
 
 // ─── Niakofa "N" Emblem (CSS/SVG recreation of the gold logo) ─────────────────
 
@@ -149,18 +114,6 @@ interface LegacyStartVisualProps {
   currentChapterNumber?: number | null;
   currentChapterTitle?: string | null;
   isAiUnlocked?: boolean;
-  // Navigation callbacks for mode grid
-  onLegacyMode?: () => void;
-  onExploration?: () => void;
-  onFamilyQuests?: () => void;
-  onReunion?: () => void;
-  // Bottom nav callbacks
-  onInventory?: () => void;
-  onJournal?: () => void;
-  onMap?: () => void;
-  onFamily?: () => void;
-  onQuests?: () => void;
-  onSettings?: () => void;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -179,16 +132,6 @@ export function LegacyStartVisual({
   currentChapterNumber,
   currentChapterTitle,
   isAiUnlocked = false,
-  onLegacyMode,
-  onExploration,
-  onFamilyQuests,
-  onReunion,
-  onInventory,
-  onJournal,
-  onMap,
-  onFamily,
-  onQuests,
-  onSettings,
 }: LegacyStartVisualProps) {
   const worldLabel = familyName?.trim() || "Your Family World";
 
@@ -329,73 +272,15 @@ export function LegacyStartVisual({
         )}
       </div>
 
-      {/* ── Mode selector grid ──────────────────────────────────────────────── */}
-      <div className="relative z-10 px-4 pt-5">
-        <div className="grid grid-cols-4 gap-2">
-          {[
-            { label: "Legacy Mode",    Icon: MODE_ICON_LEGACY,      onClick: onLegacyMode   },
-            { label: "Exploration",    Icon: MODE_ICON_EXPLORATION,  onClick: onExploration  },
-            { label: "Family Quests",  Icon: MODE_ICON_QUESTS,       onClick: onFamilyQuests },
-            { label: "Reunion",        Icon: MODE_ICON_REUNION,       onClick: onReunion      },
-          ].map(({ label, Icon, onClick }) => (
-            <button
-              key={label}
-              type="button"
-              onClick={onClick}
-              className="flex flex-col items-center gap-1.5 rounded-xl py-3 px-1.5 transition-all active:scale-95"
-              style={{
-                background: "rgba(20, 12, 4, 0.85)",
-                border: "1px solid rgba(214,158,46,0.22)",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
-              }}
-            >
-              <span className="text-amber-400">
-                <Icon />
-              </span>
-              <span className="text-[9px] font-bold uppercase tracking-wide text-amber-300/80 text-center leading-tight">
-                {label}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Bottom icon nav row ─────────────────────────────────────────────── */}
-      <div className="relative z-10 px-4 pt-4 pb-2">
-        <div className="flex items-center justify-around">
-          {[
-            { label: "Inventory", Icon: Package,       onClick: onInventory },
-            { label: "Journal",   Icon: BookOpen,      onClick: onJournal   },
-            { label: "Map",       Icon: Map,           onClick: onMap       },
-            { label: "Family",    Icon: Users,         onClick: onFamily    },
-            { label: "Quests",    Icon: ClipboardList, onClick: onQuests    },
-            { label: "Settings",  Icon: Settings,      onClick: onSettings  },
-          ].map(({ label, Icon, onClick }) => (
-            <button
-              key={label}
-              type="button"
-              onClick={onClick}
-              className="flex flex-col items-center gap-1 transition-all active:scale-90"
-            >
-              <div
-                className="w-9 h-9 rounded-full flex items-center justify-center"
-                style={{
-                  background: "rgba(20, 12, 4, 0.85)",
-                  border: "1px solid rgba(214,158,46,0.2)",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
-                }}
-              >
-                <Icon className="w-4 h-4 text-amber-400" aria-hidden="true" />
-              </div>
-              <span className="text-[8px] font-bold uppercase tracking-wide text-amber-500/70">
-                {label}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── YOUR FAMILY WORLD section (replaces Button States) ─────────────── */}
+      {/* Mode-selector grid and bottom icon nav intentionally removed (Aug 2026).
+          They duplicated the hero CTAs above with a 10-button settings-style grid
+          sitting directly between "Play Demo" and "Your Family World" — the actual
+          reported cause of the hub feeling like a settings menu instead of a game
+          entry point. Per ROOT_CAUSE_TWO_GAMES.md, Journal/Map/Quests/Reunion/etc.
+          belong inside a live session as overlays (already true for Journal + Map
+          in legacy-chapter.tsx, and Reunion in legacy-demo.tsx), not as a pre-game
+          navigation grid. See LegacyChapterWorld / LegacyLivingWorld for the
+          correct in-session overlay pattern. */}
       <div className="relative z-10 px-4 pt-4 pb-6">
         {/* Top divider */}
         <div
@@ -478,42 +363,6 @@ export function LegacyStartVisual({
             </div>
           )}
 
-          {/* Divider */}
-          <div
-            className="mx-4 h-px mb-3"
-            style={{ background: "linear-gradient(to right, transparent, rgba(214,158,46,0.2), transparent)" }}
-          />
-
-          {/* Continue Journey CTA */}
-          <div className="px-4 pb-4">
-            <button
-              type="button"
-              onClick={hasJourney ? onContinue : onStartBuilding}
-              className="w-full flex items-center justify-center gap-2 rounded-xl py-3.5 transition-all active:scale-[0.98]"
-              style={{
-                background: hasJourney
-                  ? "linear-gradient(135deg, #c8900a 0%, #d6a020 50%, #f5c842 100%)"
-                  : "rgba(214,158,46,0.12)",
-                border: hasJourney
-                  ? "1px solid rgba(245,200,66,0.4)"
-                  : "1px solid rgba(214,158,46,0.3)",
-                boxShadow: hasJourney
-                  ? "0 4px 20px rgba(214,158,46,0.3)"
-                  : "none",
-              }}
-            >
-              {hasJourney
-                ? <Play className="w-4 h-4" style={{ color: "#1A0A00" }} />
-                : <ChevronRight className="w-4 h-4 text-amber-400" />
-              }
-              <span
-                className="text-xs font-black uppercase tracking-[0.18em]"
-                style={{ color: hasJourney ? "#1A0A00" : "rgba(214,158,46,0.8)" }}
-              >
-                {hasJourney ? "Continue Journey" : isReady ? "Begin Journey" : "Build Your World"}
-              </span>
-            </button>
-          </div>
         </div>
 
         {/* Bottom divider */}
