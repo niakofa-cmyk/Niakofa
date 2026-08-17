@@ -65,5 +65,24 @@ Key files: LivingWorld.ts (composition root), GameLoop (fixed-step), WorldState,
 ## Master reference doc
 `public/legacy-reference-docs/NIAKOFA_LEGACY_REFERENCE.md` — comprehensive spec covering runtime stack, Kwame spec, world locations, fishing, combat, engine-2, scene data, asset categories, key rules.
 
+## NPC system (Layer 6) — August 2026
+legacy-npc.ts: NPCController with schedule-driven pathfinding + dialogue gating + relationship levels.
+4 Cape Coast NPCs: AMA_SERWAA, KOFI_ASANTE, ELDER_NANA_AKUA, ABENA_MANU — all in CAPE_COAST_NPCS array.
+NPCs render as colored PIXI.Graphics rects (feet-anchored) until sprite sheets ship.
+Eldiron collision_world.rs + entity.rs are architecture references (MIT) — no Rust code in Niakofa.
+
+## Attribute system (Layer 10) — August 2026
+legacy-attributes.ts: KwameAttributeSystem — 6 independent XP tracks (strength/endurance/wisdom/legacy/kinship/river_lore).
+MMOCore is design reference ONLY (commercial license) — all code is original TypeScript.
+processEvent(AttributeEvent) routes XP to correct attributes. serialize/deserialize for Vault persistence.
+getCombatModifiers() / getFishingModifiers() / getDialogueDepth() power all game system scaling.
+
+## Reference docs committed
+ELDIRON_ARCHITECTURE_REFERENCE.md, MMOCORE_DESIGN_REFERENCE.md, MATERIAL_MAKER_PIPELINE.md
+All in public/legacy-reference-docs/
+
+## 10-Layer status (all layers active)
+L1✅ L2✅ L3✅ L4✅ L5✅ L6✅(NPCs) L7✅(combat) L8✅(world quests) L9✅(fishing/weather) L10✅(attributes)
+
 ## Outstanding combat art gaps
 lightAttack1/2, heavyAttack, aerialAttack, dash, jump, guard — all unregistered in kwame-manifest.ts pending art delivery.
