@@ -8,11 +8,13 @@
  *
  * Caching strategy:
  *  - Navigation requests  : network-first → cache → offline.html fallback
+ *    (Legacy routes are network-only so old HTML cannot reference deleted
+ *     hashed chunks after a deployment.)
  *  - Static assets        : cache-first → network (stale-while-revalidate feel)
  *  - API requests (/api/) : network-only — never cache, let the app handle errors
  */
 
-const CACHE_NAME = "niakofa-v5";
+const CACHE_NAME = "niakofa-v6";
 
 // Assets to pre-cache during install — ensures core app shell works offline
 const PRECACHE_ASSETS = [
@@ -68,13 +70,31 @@ self.addEventListener("fetch", (event) => {
   if (request.headers.get("upgrade") === "websocket") return;
 
   if (request.mode === "navigate") {
-    // Navigation (HTML page loads): network-first → offline.html fallback
+    const isLegacyNavigation = /^\/legacy(?:\/|$)/i.test(url.pathname);
+
+    // Legacy is the public, deep-linked game entry point. Never serve a
+    // cached HTML document for it: a previous deployment may have removed the
+    // hashed lazy chunks referenced by that document, which otherwise turns a
+    // healthy route into a blank screen or a cascade of 404s.
+    if (isLegacyNavigation) {
+      event.respondWith(
+        fetch(new Request(request, { cache: "reload" })).catch(() =>
+          caches.match("/offline.html")
+        )
+      );
+      return;
+    }
+
+    // Other navigation (HTML page loads): network-first → cache → offline page.
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Clone and cache a fresh copy of the page for next time
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          // Never cache an error document (including a Railway 429/5xx
+          // response) as the next navigation's app shell.
+          if (response.ok && response.headers.get("content-type")?.includes("text/html")) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
           return response;
         })
         .catch(() =>
