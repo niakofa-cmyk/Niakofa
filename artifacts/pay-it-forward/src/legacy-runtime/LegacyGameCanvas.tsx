@@ -21,9 +21,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Application, Graphics, Texture } from "pixi.js";
-import { LegacyActorController } from "./legacy-animation-fsm";
-import { LegacyCombatController, type LegacyCombatTarget } from "./legacy-combat-fsm";
-import type { LegacyMapScene } from "./legacy-map-engine";
+import { LegacyActorController } from "@/lib/legacy-animation-fsm";
+import { LegacyCombatController, type LegacyCombatTarget } from "@/lib/legacy-combat-fsm";
+import type { LegacyMapScene } from "@/lib/legacy-map-engine";
+import { TILE_SIZE_PX } from "@/lib/legacy-map-engine";
 import { buildSceneContainers, renderStaticLayers, depthSortActors } from "./legacy-scene-renderer";
 import { LegacyActorSprite } from "./legacy-actor-sprite";
 import {
@@ -61,7 +62,7 @@ export interface LegacyGameCanvasProps {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const TILE_PX = 64;         // Must match legacy-map-engine.ts TILE_SIZE_PX
+// TILE_SIZE_PX imported from @/lib/legacy-map-engine — single source of truth.
 
 const KEY_TO_VECTOR: Record<string, { dx: number; dy: number }> = {
   ArrowUp:    { dx:  0, dy: -1 },
@@ -122,6 +123,12 @@ export function LegacyGameCanvas({
 
     // ─── Input handlers ────────────────────────────────────────────────────
     const onKeyDown = (e: KeyboardEvent) => {
+      // Prevent Space from scrolling the page while the game canvas is active
+      if (e.key === " " || e.key === "ArrowUp" || e.key === "ArrowDown" ||
+          e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+      }
+
       pressedKeys.add(e.key);
       if (e.key === "Shift") pressedKeys.add("running");
 
@@ -307,12 +314,41 @@ export function LegacyGameCanvas({
           // Focused mode: world renders, movement stops (fishing minigame etc.)
           updateFishingRuntime(deltaMs);
         } else {
+          // ── NPC ticks FIRST (Layer 6) so collision query uses current-frame
+          //    NPC positions when the player moves (eliminates one-frame stale).
+          for (const ctrl of npcControllers) {
+            ctrl.tick(
+              deltaMs,
+              { x: player.state.x, y: player.state.y },
+              gameHourRef.current,
+              collisionQuery.canOccupy.bind(collisionQuery)
+            );
+
+            // Sync NPC placeholder graphics to world position
+            const gfx = npcGfxMap.get(ctrl.definition.id);
+            if (gfx) {
+              gfx.x = ctrl.state.x * TILE_SIZE_PX + TILE_SIZE_PX / 2;
+              gfx.y = ctrl.state.y * TILE_SIZE_PX + TILE_SIZE_PX;
+              // Dim sleeping NPCs; highlight nearby ones
+              gfx.alpha = ctrl.state.behaviorState === "sleeping" ? 0.35
+                : ctrl.state.isNearPlayer ? 1.0
+                : 0.85;
+            }
+          }
+
           // ── Player movement (Layer 3, 4, 5) ──────────────────────────────
           let dx = 0, dy = 0;
           for (const [key, vec] of Object.entries(KEY_TO_VECTOR)) {
             if (pressedKeys.has(key)) { dx += vec.dx; dy += vec.dy; }
           }
           const len = Math.hypot(dx, dy) || 1;
+
+          // Clamp player to world bounds before ticking movement
+          const worldMaxX = scene.widthTiles  - 1;
+          const worldMaxY = scene.heightTiles - 1;
+          player.state.x = Math.max(0, Math.min(worldMaxX, player.state.x));
+          player.state.y = Math.max(0, Math.min(worldMaxY, player.state.y));
+
           player.tick(deltaMs, { dx: dx / len, dy: dy / len, running: pressedKeys.has("running") }, collisionQuery);
           combat.tick(deltaMs);
 
@@ -334,36 +370,15 @@ export function LegacyGameCanvas({
           playerSprite.sync(player, animState as any, player.state.facing);
         }
 
-        // ── NPC ticks (Layer 6 — Eldiron behavior schedule pattern) ─────────
-        for (const ctrl of npcControllers) {
-          ctrl.tick(
-            deltaMs,
-            { x: player.state.x, y: player.state.y },
-            gameHourRef.current,
-            collisionQuery.canOccupy.bind(collisionQuery)
-          );
-
-          // Sync NPC placeholder graphics to world position
-          const gfx = npcGfxMap.get(ctrl.definition.id);
-          if (gfx) {
-            gfx.x = ctrl.state.x * TILE_PX + TILE_PX / 2;
-            gfx.y = ctrl.state.y * TILE_PX + TILE_PX;
-            // Dim sleeping NPCs; highlight nearby ones
-            gfx.alpha = ctrl.state.behaviorState === "sleeping" ? 0.35
-              : ctrl.state.isNearPlayer ? 1.0
-              : 0.85;
-          }
-        }
-
         // ── Camera follow with world-boundary clamping ────────────────────────
         // 1. Compute ideal centered-on-player target
-        const px = player.state.x * TILE_PX + TILE_PX / 2;
-        const py = player.state.y * TILE_PX + TILE_PX / 2;
+        const px = player.state.x * TILE_SIZE_PX + TILE_SIZE_PX / 2;
+        const py = player.state.y * TILE_SIZE_PX + TILE_SIZE_PX / 2;
         const targetX = app.screen.width  / 2 - px;
         const targetY = app.screen.height / 2 - py;
         // 2. Clamp so camera never scrolls past world edges
-        const worldW = scene.widthTiles  * TILE_PX;
-        const worldH = scene.heightTiles * TILE_PX;
+        const worldW = scene.widthTiles  * TILE_SIZE_PX;
+        const worldH = scene.heightTiles * TILE_SIZE_PX;
         const minCamX = Math.min(0, app.screen.width  - worldW);
         const minCamY = Math.min(0, app.screen.height - worldH);
         const clampedX = Math.min(0, Math.max(minCamX, targetX));

@@ -12,11 +12,23 @@
  */
 
 import { Container, Sprite, Texture, TilingSprite, Graphics } from "pixi.js";
-import type { LegacyMapScene, LegacyMapLayer, LegacyMapLayerKind } from "./legacy-map-engine";
-import { TILE_SIZE_PX } from "./legacy-map-engine";
+import type { LegacyMapScene, LegacyMapLayer, LegacyMapLayerKind } from "@/lib/legacy-map-engine";
+import { TILE_SIZE_PX } from "@/lib/legacy-map-engine";
 
-/** Render order for static layer kinds. NPCs/player are inserted dynamically at their own depth, see sortActorDepth(). */
-const LAYER_KIND_ORDER: LegacyMapLayerKind[] = ["ground", "decoration", "building", "prop", "foreground"];
+/**
+ * Render order for static layer kinds. NPCs/player are inserted dynamically
+ * at their own depth, see sortActorDepth().
+ * "structure" (fences, gates, walls) sits between "building" and "prop"
+ * and MUST be listed here or renderStaticLayers() crashes with undefined container.
+ */
+const LAYER_KIND_ORDER: LegacyMapLayerKind[] = [
+  "ground",
+  "decoration",
+  "building",
+  "structure",
+  "prop",
+  "foreground",
+];
 
 export interface RenderedScene {
   root: Container;

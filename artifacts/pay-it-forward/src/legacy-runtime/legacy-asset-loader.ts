@@ -10,8 +10,8 @@
  */
 
 import { Assets, Texture } from "pixi.js";
-import type { LegacyFullAnimState } from "./legacy-combat-fsm";
-import type { LegacyFacing } from "./legacy-animation-fsm";
+import type { LegacyFullAnimState } from "@/lib/legacy-combat-fsm";
+import type { LegacyFacing } from "@/lib/legacy-animation-fsm";
 
 export interface CharacterFrameSet {
   [key: string]: Texture[]; // key = `${animState}:${facing}`

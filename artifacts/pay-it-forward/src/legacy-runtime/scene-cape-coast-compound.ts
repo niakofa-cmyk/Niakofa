@@ -9,7 +9,7 @@
  * environmentBaseUrl below) before this scene will render anything.
  */
 
-import type { LegacyMapScene } from "./legacy-map-engine";
+import type { LegacyMapScene } from "@/lib/legacy-map-engine";
 import type { EnvironmentManifestEntry } from "./legacy-asset-loader";
 
 export const environmentBaseUrl = "/legacy-character-assets/hand-drawn/environment/";

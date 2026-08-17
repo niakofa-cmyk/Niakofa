@@ -29,7 +29,15 @@ export type LegacyAnimState =
   | "attack"
   | "hurt";
 
-export type LegacyFacing = "up" | "down" | "left" | "right";
+/**
+ * Widened to six directions to match the real Kwame sprite atlas —
+ * the extracted art covers down/left/right/up plus two "up" diagonals
+ * (up_left/up_right). facingFromInput() below still only ever produces
+ * the four cardinal values; up_left/up_right are set by the game canvas
+ * via directionFromVector(). Kept as one shared type so both producers
+ * write into the same field without a cast.
+ */
+export type LegacyFacing = "up" | "down" | "left" | "right" | "up_left" | "up_right";
 
 export interface LegacyActorState {
   x: number;

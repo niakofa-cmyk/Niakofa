@@ -258,7 +258,10 @@ export default function LegacyChapterPlay() {
   const [placeSheetOpen, setPlaceSheetOpen] = useState(false);
   // In-session overlays added per RUNTIME_ARCHITECTURE_UPDATE.md rollout:
   const [questsOpen, setQuestsOpen] = useState(false);
-  const [gameCanvasOpen, setGameCanvasOpen] = useState(false);
+  // Default true — the Living World PixiJS canvas is now the primary entry
+  // point for each chapter. The scene reading / choice UI opens over it via
+  // the "Return to Chapter" button (or by walking into a landmark tile).
+  const [gameCanvasOpen, setGameCanvasOpen] = useState(true);
   // Path A side-view combat — opens over exploration world on Training Ground landmark
   const [battleOpen, setBattleOpen] = useState(false);
   // Shared attribute system — bridges battle combat hits to Layer 10 XP tracking.

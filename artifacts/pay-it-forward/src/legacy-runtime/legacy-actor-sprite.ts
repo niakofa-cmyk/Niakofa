@@ -6,11 +6,11 @@
  */
 
 import { AnimatedSprite, Texture } from "pixi.js";
-import { LegacyActorController } from "./legacy-animation-fsm";
-import type { LegacyFacing } from "./legacy-animation-fsm";
-import type { LegacyFullAnimState } from "./legacy-combat-fsm";
+import { LegacyActorController } from "@/lib/legacy-animation-fsm";
+import type { LegacyFacing } from "@/lib/legacy-animation-fsm";
+import type { LegacyFullAnimState } from "@/lib/legacy-combat-fsm";
 import { CharacterFrameSet, resolveFrames } from "./legacy-asset-loader";
-import { TILE_SIZE_PX } from "./legacy-map-engine";
+import { TILE_SIZE_PX } from "@/lib/legacy-map-engine";
 
 export class LegacyActorSprite {
   readonly view: AnimatedSprite;
