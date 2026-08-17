@@ -11,6 +11,10 @@ import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useServiceWorkerUpdate } from "@/hooks/useServiceWorkerUpdate";
 import { useAnimationPreference } from "@/hooks/useAnimationPreference";
+import {
+  isLegacyPathname,
+  normalizeLegacyPathname,
+} from "@/lib/legacy-public-route";
 
 import MapScreen from "@/pages/map";
 
@@ -323,8 +327,26 @@ function AppContent() {
 
   const pathname =
     typeof window !== "undefined" ? window.location.pathname : "";
-  const normalizedPathname =
-    pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  const normalizedPathname = normalizeLegacyPathname(pathname);
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !isLegacyPathname(pathname) ||
+      normalizedPathname === pathname
+    ) {
+      return;
+    }
+
+    const nextUrl = `${normalizedPathname}${window.location.search}${
+      window.location.hash
+    }`;
+    window.history.replaceState(window.history.state, "", nextUrl);
+
+    // Wouter listens for popstate. replaceState does not emit one, so notify
+    // it after canonicalizing a nested Legacy route such as /Legacy/Start.
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, [normalizedPathname, pathname]);
 
   if (normalizedPathname === "/status" || normalizedPathname.endsWith("/status")) {
     return (
