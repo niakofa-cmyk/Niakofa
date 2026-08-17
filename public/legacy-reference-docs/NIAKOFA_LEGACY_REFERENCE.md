@@ -275,3 +275,42 @@ The `LegacyActorSprite` will fall back to the idle clip and log a warning messag
 5. **Never invent family history.** The Training Ground trigger is a dedicated practice spot generated client-side, deliberately not tied to any family scene data. Combat encounters don't appear inside real family history moments.
 6. **World grows, never regenerates.** `WorldState.mergeContentSeed()` only ever adds NPCs/landmarks/quests — never deletes or overwrites existing world content.
 7. **Canonical source is `artifacts/pay-it-forward/`.** `niakofa-repo/` was deleted (1,349 stale tracked files) in Aug 2026. Never edit from a mirror.
+
+---
+
+## Appendix: Eldiron + MMOCore + Material Maker Analysis (August 2026)
+
+### Three Uploaded Reference Tools
+
+| Tool | License | Role in Niakofa |
+|---|---|---|
+| Eldiron (ZIP, 1,673 files, ~130MB) | MIT | Architecture reference — entity, collision, region, NPC schedule, procedural tilegraph |
+| MMOCore (ZIP, Java/Bukkit) | COMMERCIAL — do NOT copy code | Design reference — attribute system, event-driven XP, fishing, quests |
+| Material Maker 1.7 (DMG) | MIT | Art pipeline tool — procedural ground/wall/surface materials → PNG export |
+
+### Systems Delivered from This Analysis
+
+| Layer | Gap Before | Delivered |
+|---|---|---|
+| Layer 6 — NPC AI | World felt dead | 4 schedule-driven NPCs (Ama Serwaa, Kofi Asante, Nana Akua, Abena Manu) with dawn/morning/afternoon/evening/night behavior, pathfinding, relationship levels, dialogue gating |
+| Layer 10 — Legacy Engine | No progression | 6-attribute system (strength/endurance/wisdom/legacy/kinship/river_lore), event-driven XP from every world action, level-up callbacks, combat/fishing modifiers |
+
+### 10-Layer Status After This Session
+
+| Layer | Status |
+|---|---|
+| L1 Renderer | ✅ PixiJS WebGL, 6-layer stack |
+| L2 World | ✅ Continuous Cape Coast map |
+| L3 Character | ✅ Kwame 6-direction movement |
+| L4 Animation | ✅ idle/walk/hurt/talk (136 PNGs) |
+| L5 Collision | ✅ Wall-sliding AABB (FSM lines 98-99) |
+| L6 NPC AI | ✅ 4 NPCs with schedules, dialogue, relationships |
+| L7 Combat | ✅ Real-time side-view LegacyBattleScene |
+| L8 Quest runtime | ✅ World-embedded via WorldActivity + NPC dialogue triggers |
+| L9 Living systems | ✅ Fishing FSM, weather, time-of-day, relationships |
+| L10 Legacy engine | ✅ KwameAttributeSystem — 6 attrs, typed events, persistence |
+
+### Remaining Art Gaps
+- Combat animation frames (attack/dash/jump/guard) — no art yet; engine registered
+- NPC sprite sheets — using colored PIXI.Graphics placeholders until art ships
+- Additional scene tiles beyond Cape Coast Compound (river bank, market, ruins)
