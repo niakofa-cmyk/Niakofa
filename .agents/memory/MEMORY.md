@@ -23,6 +23,7 @@
 - [Railway Python Detection Trap](railway-python-detection-trap.md) — committing main.py/pyproject.toml/uv.lock to repo root breaks Railway; railpack.json now locks provider:node + exclude list.
 - [Legacy World-Always-Running Fix](legacy-world-always-running.md) — LegacyChapterWorld now always runs as backdrop; scene content is absolute bottom-0 overlay (68% max-height). Fixes the "two games" split.
 - [Legacy Weather Overlay](legacy-weather-overlay.md) — LegacyWeatherOverlay + deriveChapterWeather(); 8 weather types; wired to chapter era/scene progress and demo season/phase.
+- [Legacy Demo Cache Boundary](legacy-demo-cache-boundary.md) — public Legacy navigation must bypass stale service-worker HTML after hashed chunks roll forward.
 - [Legacy World Map Pins](legacy-world-map-pins.md) — LegacyWorldMapPins macro overworld; LegacyWorldMapPin interface with xPct/yPct; MENSAH_DEFAULT_PINS 6-pin arc; procedural SVG bezier route lines.
 - [Legacy Environment Assets v1](legacy-environment-assets.md) — 180 hand-drawn PNGs in public/environment-assets/; asset registry, scene data, scene renderer, and era→scene wiring in chapter page.
 - [Legacy Hub Declutter](legacy-hub-declutter.md) — removed 10-button mode-selector grid + duplicate CTA from LegacyStartVisual; dead prop callbacks removed from legacy-home.tsx both call sites.

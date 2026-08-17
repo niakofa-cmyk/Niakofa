@@ -46,7 +46,11 @@ jobs:
         run: |
           set -euo pipefail
           expected_commit="${GITHUB_SHA}"
-          for attempt in $(seq 1 12); do
+          # Railway can take several minutes to build, roll out, and switch
+          # the public service even after the health endpoint remains available
+          # on the previous revision. Keep the check bounded, but allow a
+          # normal production rollout to converge before declaring it stale.
+          for attempt in $(seq 1 30); do
             actual_commit="$(
               curl --fail --silent --show-error --max-time 15 \
                 "${PRODUCTION_URL}/api/healthz" \
@@ -57,7 +61,7 @@ jobs:
               echo "Railway is serving the commit that triggered this workflow."
               exit 0
             fi
-            if [ "${attempt}" -lt 12 ]; then
+            if [ "${attempt}" -lt 30 ]; then
               sleep 10
             fi
           done
