@@ -42,6 +42,28 @@ jobs:
             done
           done
 
+      - name: Confirm Railway serves this commit
+        run: |
+          set -euo pipefail
+          expected_commit="${GITHUB_SHA}"
+          for attempt in $(seq 1 12); do
+            actual_commit="$(
+              curl --fail --silent --show-error --max-time 15 \
+                "${PRODUCTION_URL}/api/healthz" \
+                | jq -r '.commit // empty'
+            )"
+            echo "Attempt ${attempt}: expected ${expected_commit}, served ${actual_commit:-unknown}"
+            if [ "${actual_commit}" = "${expected_commit}" ]; then
+              echo "Railway is serving the commit that triggered this workflow."
+              exit 0
+            fi
+            if [ "${attempt}" -lt 12 ]; then
+              sleep 10
+            fi
+          done
+          echo "Railway did not converge to ${expected_commit} within the verification window."
+          exit 1
+
       - name: Inspect bounded Nia compatibility health
         run: |
           set -euo pipefail
