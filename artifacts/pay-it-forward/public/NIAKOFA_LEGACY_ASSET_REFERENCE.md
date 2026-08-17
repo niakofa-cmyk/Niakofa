@@ -237,3 +237,67 @@ Implementation target: `src/components/legacy-character-sprite.tsx`
 ---
 
 *Last updated: August 2026 — Session 2 (6 additional assets assessed)*
+
+---
+
+## Session 5 Assets (Aug 17, 2026 — Hand-Drawn Kwame Mensah ZIP)
+
+### ✅ Hand_Drawn_Kwame_Mensah_1786982519711.zip
+- **Files (22 PNGs):**
+  - `Kwame Mensah 32-Frame Hand-Drawn Animation Atlas.png` — base/idle master atlas
+  - `Kwame Mensah HURT 32-Frame Animation Atlas.png`
+  - `Kwame Mensah INSPECT 32-Frame Animation Atlas.png`
+  - `Kwame Mensah INTERACT 32-Frame Animation Atlas.png`
+  - `Kwame Mensah PICK UP 32-Frame Animation Atlas.png`
+  - `Kwame Mensah RIGHT Direction 32-Frame Animation Atlas.png`
+  - `Kwame Mensah RPG Maker MV Final Sprite Sheet.png`
+  - `Kwame Mensah RUN DOWN LEFT 32-Frame Animation Atlas.png`
+  - `Kwame Mensah RUN UP RIGHT 32-Frame Animation Atlas.png`
+  - `Kwame Mensah TALK 32-Frame Animation Atlas.png`
+  - `Kwame Mensah TALK DOWN LEFT 32-Frame Animation Atlas.png`
+  - `Kwame Mensah TALK UP RIGHT 32-Frame Animation Atlas.png`
+  - `Kwame Mensah UP Direction 32-Frame Animation Atlas.png`
+  - `kwame_mensah_hand_drawn_4direction_atlas_blueprint.png` — production blueprint spec
+  - `kwame_mensah_hand_drawn_character_production_spec.png` — character spec doc
+  - 7× `ChatGPT Image Aug 14-15, 2026…png` — reference concept images
+- **Verdict:** ✅ APPROVED — These are the source atlas sheets for all 784 extracted
+  per-frame PNGs already in `kwame-mensah/atlas/`. Saved to:
+  `public/legacy-character-assets/kwame-mensah/source-sheets/`
+- **Animation types with real art (now fully wired in kwame-manifest.ts):**
+  - INTERACT (8 frames × 4 dir) — `kwame-manifest.ts` entry: `animState: "interact"`
+  - PICK_UP (8 frames × 4 dir) — `kwame-manifest.ts` entry: `animState: "pick_up"` (NEW)
+  - INSPECT (6 frames × 4 dir) — `kwame-manifest.ts` entry: `animState: "inspect"` (NEW)
+  - HURT (6 frames × 4 dir) — both `hurt` and `knockback` anim states now use these
+  - TALK diagonal variants (7 frames each) — `talk:up_right`, `talk:up_left` now wired
+  - RUN multi-dir (6–7 frames per dir) — `run:down/left/right/up/up_right` now wired
+  - RIGHT_Direction: idle/walk right + up_right (8 frames each)
+  - UP_Direction: idle/walk up + up_left (9 frames each)
+
+---
+
+## Session 5 Assets (Aug 17, 2026 — Hand-Drawn Environment Assets ZIP)
+
+### ✅ Hand_Drawn_Envirnonment_Assets_1786982515665.zip
+- **Files (6 PNGs):**
+  - `NIAKOFA-BUILDINGS-STRUCTURES-ATLAS-v1.png` — 2752×1536 buildings/structures atlas
+  - `NIAKOFA-GROUND-TILES-ATLAS-v1.png` — 2048×1024 ground tiles atlas
+  - 4× `ChatGPT Image Aug 14-15, 2026…png` — environment concept references
+- **Verdict:** ✅ APPROVED — Source atlas sheets for the 180 extracted environment frames
+  already in `public/environment-assets/buildings-structures/` and `ground-tiles/`.
+  Saved to: `public/environment-assets/source-sheets/`
+- **What these unlock:** Cape Coast Compound 1890 scene hand-authoring with real art
+
+---
+
+## Code changes applied in Session 5
+
+| Change | File | Effect |
+|---|---|---|
+| ANIM_SPEC: added pick_up, inspect | `lib/legacy-animation-fsm.ts` | pick_up (8fps, 10fps, no loop), inspect (6fps, 8fps, no loop) |
+| LegacyAnimState: added pick_up, inspect | `lib/legacy-animation-fsm.ts` | Type-safe animation state names |
+| Full manifest rebuild | `legacy-runtime/kwame-manifest.ts` | All 784 frames registered; baseUrl → `/legacy-character-assets/`; 6 new anim types |
+| 'e' key → inspect action | `legacy-runtime/LegacyGameCanvas.tsx` | Plays 6-frame INSPECT atlas |
+| 'f' key → pick_up action | `legacy-runtime/LegacyGameCanvas.tsx` | Plays 8-frame PICK_UP atlas |
+| Control legend updated | `legacy-runtime/LegacyGameCanvas.tsx` | Shows E=inspect, F=pick up |
+| ANIM_SPEC frame counts corrected | `lib/legacy-animation-fsm.ts` | idle 8 (was 6), interact 8 (was 6), run fps 14 (was 12), hurt 6 (was 5) |
+

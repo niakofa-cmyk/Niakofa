@@ -142,6 +142,16 @@ export function LegacyGameCanvas({
       }
 
       if (e.key === " ") tryInteractOrTalk();
+      // 'e' — inspect: examine nearby object or landmark (hand-drawn INSPECT atlas, 6 frames)
+      if (e.key === "e" || e.key === "E") {
+        player.playAction("inspect");
+        attrs.processEvent({ type: "quest_objective", objectiveType: "inspect" });
+      }
+      // 'f' — pick up: collect item near player (hand-drawn PICK_UP atlas, 8 frames)
+      if (e.key === "f" || e.key === "F") {
+        player.playAction("pick_up");
+        attrs.processEvent({ type: "quest_objective", objectiveType: "pick_up" });
+      }
       if (e.key === "j") combat.lightAttack(currentCombatTargets);
       if (e.key === "k") combat.heavyAttack(currentCombatTargets);
       if (e.key === "l") combat.jump();
@@ -444,7 +454,9 @@ export function LegacyGameCanvas({
         <span>↑↓←→ / WASD — move</span>
         <span>Shift — run</span>
         <span>Space — interact / talk</span>
-        <span>J/K — attack (no art yet)</span>
+        <span>E — inspect</span>
+        <span>F — pick up</span>
+        <span>J/K — attack</span>
         <span>L — jump</span>
       </div>
     </div>

@@ -27,7 +27,9 @@ export type LegacyAnimState =
   | "examine"
   | "emote"
   | "attack"
-  | "hurt";
+  | "hurt"
+  | "pick_up"    // Hand-drawn PICK_UP atlas: 8 frames × 4 directions
+  | "inspect";   // Hand-drawn INSPECT atlas:  6 frames × 4 directions
 
 /**
  * Widened to six directions to match the real Kwame sprite atlas —
@@ -66,15 +68,17 @@ export const ANIM_SPEC: Record<
   LegacyAnimState,
   { frameCount: number; fps: number; loops: boolean }
 > = {
-  idle:     { frameCount: 6,  fps: 8,  loops: true  },
+  idle:     { frameCount: 8,  fps: 8,  loops: true  },
   walk:     { frameCount: 8,  fps: 10, loops: true  },
-  run:      { frameCount: 8,  fps: 12, loops: true  },
-  interact: { frameCount: 6,  fps: 8,  loops: false },
+  run:      { frameCount: 7,  fps: 14, loops: true  },
+  interact: { frameCount: 8,  fps: 10, loops: false },
   talk:     { frameCount: 4,  fps: 6,  loops: true  },
   examine:  { frameCount: 5,  fps: 8,  loops: false },
   emote:    { frameCount: 4,  fps: 6,  loops: false },
   attack:   { frameCount: 10, fps: 14, loops: false },
-  hurt:     { frameCount: 5,  fps: 10, loops: false },
+  hurt:     { frameCount: 6,  fps: 10, loops: false },
+  pick_up:  { frameCount: 8,  fps: 10, loops: false },
+  inspect:  { frameCount: 6,  fps: 8,  loops: false },
 };
 
 export interface LegacyCollisionQuery {
