@@ -28,6 +28,7 @@ import { LegacyWeatherOverlay, deriveChapterWeather } from "@/components/legacy-
 import { LegacySceneRenderer } from "@/components/legacy-scene-renderer";
 import { getMapScene } from "@/lib/legacy-map-scenes";
 import { LegacyQuestsPanel } from "@/components/legacy-quests-panel";
+import { LegacyBattleScene } from "@/components/legacy-battle-scene";
 import { LegacyGameCanvas } from "@/legacy-runtime/LegacyGameCanvas";
 import { kwameHandDrawnManifest } from "@/legacy-runtime/kwame-manifest";
 import { capeCoastCompoundScene, capeCoastCompoundAssets, environmentBaseUrl } from "@/legacy-runtime/scene-cape-coast-compound";
@@ -257,6 +258,8 @@ export default function LegacyChapterPlay() {
   // In-session overlays added per RUNTIME_ARCHITECTURE_UPDATE.md rollout:
   const [questsOpen, setQuestsOpen] = useState(false);
   const [gameCanvasOpen, setGameCanvasOpen] = useState(false);
+  // Path A side-view combat — opens over exploration world on Training Ground landmark
+  const [battleOpen, setBattleOpen] = useState(false);
 
   // World view — the chapter now opens into a walkable grid built from its
   // real scenes/places (legacy-dynamic-world-layout.ts) instead of jumping
@@ -984,6 +987,8 @@ export default function LegacyChapterPlay() {
           appearanceSeed={sceneData.ancestorAppearance?.appearanceSeed}
           characterName={sceneData.ancestorName}
           onEnterScene={handleEnterScene}
+          onEnterBattle={() => setBattleOpen(true)}
+          inputEnabled={!battleOpen && !journalOpen && !mapOpen && !placeSheetOpen && !questsOpen && !gameCanvasOpen}
         />
 
         {/* Scene content — absolute overlay inside world viewport.
@@ -1534,6 +1539,23 @@ export default function LegacyChapterPlay() {
           completedSceneNumbers={completedScenes}
           onClose={() => setQuestsOpen(false)}
         />
+      )}
+
+      {/* Battle overlay — Path A real-time combat (COMBAT_PATCH_README.md).
+          LegacyBattleScene is a full-screen PixiJS side-view arena with real
+          gravity/jump, 3-hit ground combo, aerial combo, dash i-frames, and a
+          Legacy Burst skill. Input leak fixed: LegacyChapterWorld receives
+          inputEnabled=false while this is open, so arrow keys don't move the
+          hidden exploration character at the same time as the fighter. */}
+      {battleOpen && (
+        <div className="fixed inset-0 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <LegacyBattleScene
+            enemyName="Rival Guard"
+            onVictory={() => setBattleOpen(false)}
+            onDefeat={() => setBattleOpen(false)}
+            onFlee={() => setBattleOpen(false)}
+          />
+        </div>
       )}
 
       {/* Live World Canvas — real PixiJS game canvas per RUNTIME_ARCHITECTURE_UPDATE.md

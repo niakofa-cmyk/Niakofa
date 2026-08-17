@@ -1,0 +1,57 @@
+{
+  "characterId": "kwame",
+  "pixelsPerUnit": 32,
+  "clips": {
+    "kwame_idle": {
+      "id": "kwame_idle",
+      "frameCount": 6,
+      "frameDurationMs": 140,
+      "loop": true,
+      "atlasPrefix": "kwame_idle_{n}.png"
+    },
+    "kwame_walk": {
+      "id": "kwame_walk",
+      "frameCount": 8,
+      "frameDurationMs": 100,
+      "loop": true,
+      "atlasPrefix": "kwame_walk_{n}.png"
+    },
+    "kwame_attack_01": {
+      "id": "kwame_attack_01",
+      "frameCount": 12,
+      "frameDurationMs": 60,
+      "loop": false,
+      "hitFrames": [6, 7, 8],
+      "hitbox": { "x": 18, "y": -12, "width": 42, "height": 30, "damage": 12, "knockback": 140 },
+      "atlasPrefix": "kwame_attack_01_{n}.png"
+    },
+    "kwame_hurt": {
+      "id": "kwame_hurt",
+      "frameCount": 5,
+      "frameDurationMs": 70,
+      "loop": false,
+      "atlasPrefix": "kwame_hurt_{n}.png"
+    },
+    "kwame_stagger": {
+      "id": "kwame_stagger",
+      "frameCount": 8,
+      "frameDurationMs": 90,
+      "loop": false,
+      "atlasPrefix": "kwame_stagger_{n}.png"
+    },
+    "kwame_recovery": {
+      "id": "kwame_recovery",
+      "frameCount": 4,
+      "frameDurationMs": 80,
+      "loop": false,
+      "atlasPrefix": "kwame_recovery_{n}.png"
+    },
+    "kwame_dodge": {
+      "id": "kwame_dodge",
+      "frameCount": 6,
+      "frameDurationMs": 55,
+      "loop": false,
+      "atlasPrefix": "kwame_dodge_{n}.png"
+    }
+  }
+}

@@ -88,8 +88,50 @@ export interface LegacyChapterWorldProps {
   appearanceSeed?: string;
   /** Display name for the "Walking as ___" badge. Omitted when no ancestor is resolved. */
   characterName?: string | null;
+  /**
+   * Fired when the player walks onto the always-present Training Ground
+   * landmark — this is the Path A mode-switch trigger: the exploration
+   * world hands off to LegacyBattleScene for real-time combat, then hands
+   * back. Deliberately a fixed practice location generated client-side,
+   * not derived from real family scene data — inventing a "combat
+   * encounter" tied to someone's actual family history isn't something
+   * this world should do implicitly. Optional so existing callers don't
+   * need to add it immediately.
+   */
+  onEnterBattle?: () => void;
   /** Fired when the player walks onto a scene's landmark tile. */
   onEnterScene: (sceneNumber: number) => void;
+  /**
+   * When false, keyboard movement is ignored entirely — used while a
+   * full-screen overlay (LegacyBattleScene, Journal, Map) is open on top
+   * of this world, so the same arrow keys don't move both the hidden
+   * explorer underneath AND whatever's on top of it. Defaults to true.
+   */
+  inputEnabled?: boolean;
+}
+
+// Sentinel scene number for the synthetic Training Ground landmark —
+// guaranteed distinct from real scene numbers, which start at 1.
+const TRAINING_GROUND_SCENE_NUMBER = -1;
+
+/**
+ * Picks a walkable path cell for the Training Ground landmark that doesn't
+ * collide with any real scene landmark, starting near spawn and expanding
+ * outward if needed. Deterministic (no randomness) given a fixed layout.
+ */
+function pickTrainingGroundCell(layout: ChapterWorldLayout): ChapterWorldPosition {
+  const used = new Set(layout.landmarks.map((l) => `${l.row},${l.column}`));
+  for (let c = layout.spawn.column + 1; c < layout.columns - 1; c += 1) {
+    const key = `${layout.spawn.row},${c}`;
+    if (!used.has(key)) return { row: layout.spawn.row, column: c };
+  }
+  for (let r = 1; r < layout.rows - 1; r += 1) {
+    for (let c = 1; c < layout.columns - 1; c += 1) {
+      const key = `${r},${c}`;
+      if (!used.has(key) && layout.map[r]?.[c] !== undefined) return { row: r, column: c };
+    }
+  }
+  return layout.spawn;
 }
 
 export function LegacyChapterWorld({
@@ -104,9 +146,12 @@ export function LegacyChapterWorld({
   era,
   appearanceSeed,
   characterName,
+  onEnterBattle,
   onEnterScene,
+  inputEnabled = true,
 }: LegacyChapterWorldProps) {
   const layout: ChapterWorldLayout = buildChapterWorldLayout(chapterId, scenes);
+  const trainingGroundCell = pickTrainingGroundCell(layout);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<Application | null>(null);
   const worldLayerRef = useRef<Container | null>(null);
@@ -216,7 +261,26 @@ export function LegacyChapterWorld({
       glyph.alpha = isActive ? 1 : isDone ? 0.9 : 0.5;
       layer.addChild(glyph);
     }
-  }, [ready, layout.landmarks, activeSceneNumber, completedSceneNumbers]);
+
+    // Training Ground — always present, always walkable, not tied to
+    // chapter progress (no active/done styling), so it reads as an
+    // optional side activity rather than part of the story sequence.
+    if (onEnterBattle) {
+      const marker = new Graphics()
+        .circle(0, 0, TILE_PX / 2 - 4)
+        .fill({ color: 0xdc2626, alpha: 0.18 })
+        .stroke({ color: 0xdc2626, width: 2, alpha: 0.7 });
+      marker.x = trainingGroundCell.column * TILE_PX + TILE_PX / 2;
+      marker.y = trainingGroundCell.row * TILE_PX + TILE_PX / 2;
+      layer.addChild(marker);
+
+      const glyph = new Text({ text: "\u2694\uFE0F", style: { fontSize: 16 } }); // crossed swords
+      glyph.anchor.set(0.5);
+      glyph.x = marker.x;
+      glyph.y = marker.y;
+      layer.addChild(glyph);
+    }
+  }, [ready, layout.landmarks, activeSceneNumber, completedSceneNumbers, onEnterBattle, trainingGroundCell.row, trainingGroundCell.column]);
 
   // ── Character sprite — load/rebuild layers when appearance inputs change ──
   useEffect(() => {
@@ -284,6 +348,7 @@ export function LegacyChapterWorld({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (!inputEnabled) return;
       if (e.key === "ArrowUp" || e.key === "w") tryMove(-1, 0, "up");
       else if (e.key === "ArrowDown" || e.key === "s") tryMove(1, 0, "down");
       else if (e.key === "ArrowLeft" || e.key === "a") tryMove(0, -1, "left");
@@ -291,9 +356,19 @@ export function LegacyChapterWorld({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [tryMove]);
+  }, [tryMove, inputEnabled]);
 
   useEffect(() => {
+    const isTrainingGround = onEnterBattle
+      && position.row === trainingGroundCell.row
+      && position.column === trainingGroundCell.column;
+    if (isTrainingGround) {
+      if (enteredRef.current !== TRAINING_GROUND_SCENE_NUMBER) {
+        enteredRef.current = TRAINING_GROUND_SCENE_NUMBER;
+        onEnterBattle!();
+      }
+      return;
+    }
     const landmark = getChapterWorldLandmarkAt(layout, position);
     if (landmark && enteredRef.current !== landmark.sceneNumber) {
       enteredRef.current = landmark.sceneNumber;
@@ -301,7 +376,7 @@ export function LegacyChapterWorld({
     } else if (!landmark) {
       enteredRef.current = null;
     }
-  }, [position, layout, onEnterScene]);
+  }, [position, layout, onEnterScene, onEnterBattle, trainingGroundCell.row, trainingGroundCell.column]);
 
   return (
     <div className="relative w-full h-full flex flex-col bg-[#0e1111]">

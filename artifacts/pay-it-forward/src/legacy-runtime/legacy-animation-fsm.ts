@@ -22,7 +22,8 @@ export type LegacyAnimState =
   | "attack"
   | "hurt";
 
-export type LegacyFacing = "up" | "down" | "left" | "right";
+/** Six directions matching the Kwame sprite atlas (engine-2 / kwame-locomotion.json). */
+export type LegacyFacing = "up" | "down" | "left" | "right" | "up_left" | "up_right";
 
 export interface LegacyActorState {
   x: number;

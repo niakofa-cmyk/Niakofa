@@ -1,0 +1,29 @@
+{
+  "_source": "Extracted from Hand_Drawn_Envirnonment_Assets_2.zip via tools/sprite-extractor. Ground tiles are seamless-ish 128x128 textures (8 variants each) meant for tiling a Pixi TilingSprite or per-tile Sprite grid. Buildings/structures/props are isolated objects (real alpha) meant to be placed as one-off Sprites on top of the ground layer.",
+  "groundTiles": {
+    "grass": { "variantCount": 8, "dir": "environment/ground_grass" },
+    "dirt": { "variantCount": 8, "dir": "environment/ground_dirt" },
+    "path": { "variantCount": 8, "dir": "environment/ground_path" },
+    "cobble": { "variantCount": 8, "dir": "environment/ground_cobble" },
+    "sand": { "variantCount": 8, "dir": "environment/ground_sand" },
+    "water_edge": { "variantCount": 8, "dir": "environment/ground_water_edge" }
+  },
+  "buildings": {
+    "compound": { "variantCount": 11, "dir": "environment/building_compound" },
+    "hut": { "variantCount": 11, "dir": "environment/building_hut" },
+    "trading_house": { "variantCount": 11, "dir": "environment/building_trading_house" },
+    "church": { "variantCount": 11, "dir": "environment/building_church" },
+    "mission_school": { "variantCount": 11, "dir": "environment/building_mission_school" },
+    "colonial_admin": { "variantCount": 11, "dir": "environment/building_colonial_admin" }
+  },
+  "structures": {
+    "fence": { "variantCount": 11, "dir": "environment/structure_fence" },
+    "gate": { "variantCount": 11, "dir": "environment/structure_gate" },
+    "wall": { "variantCount": 11, "dir": "environment/structure_wall" }
+  },
+  "props": {
+    "well": { "variantCount": 11, "dir": "environment/prop_well" },
+    "chest": { "variantCount": 11, "dir": "environment/prop_chest" },
+    "market_stall": { "variantCount": 11, "dir": "environment/prop_market_stall" }
+  }
+}
