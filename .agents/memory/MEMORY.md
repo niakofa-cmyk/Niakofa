@@ -18,7 +18,7 @@
 - [Legacy World Regions](legacy-world-regions.md) — 12-region scaffold in legacy-world-regions.ts; LegacyWorldMap component; activeRegionId now wired to RegionMap tile renderer in LegacyLivingWorld.
 - [Legacy Combat System](legacy-combat-system.md) — real-time + aerial combat, limb-based hit resolution, Kwame atlas manifest, KwameHeroSprite renderer; 330 atlas PNGs in public/; no attack/jump art yet.
 - [Legacy Journal + Region Features](legacy-journal-region-features.md) — Task 7 RegionMap+portals, Task 8 Character journal tab, Task 9 sanitizer conversation-preference cap + dev warnings.
-- [Niakofa ARPG Architecture](niakofa-arpg-architecture.md) — src/legacy-runtime/ 10-file PixiJS runtime; LegacyGameCanvas wired in chapter; game package decoupling decision; combat/art gaps.
+- [Niakofa ARPG Architecture](niakofa-arpg-architecture.md) — src/legacy-runtime/ + legacy-world/ OneWorld sub-pkg; LegacyGameCanvas+fishing wired; packages/legacy-engine engine-2; combat/art gaps.
 - [Kwame Atlas v2 + Walkable Chapter](kwame-v2-walkable-chapter.md) — DOWN_LEFT fills idle/walk-down/left; duplicate key rule for atlas; App.tsx wraps LegacyMapPage; DB migration 0106 applied; DarkNinja as combat reference only.
 - [Railway Python Detection Trap](railway-python-detection-trap.md) — committing main.py/pyproject.toml/uv.lock to repo root breaks Railway; railpack.json now locks provider:node + exclude list.
 - [Legacy World-Always-Running Fix](legacy-world-always-running.md) — LegacyChapterWorld now always runs as backdrop; scene content is absolute bottom-0 overlay (68% max-height). Fixes the "two games" split.
