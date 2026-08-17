@@ -57,8 +57,6 @@ export interface LegacyGameCanvasProps {
   gameHour?: number;
   /** Called each frame with the player's world position. */
   onPlayerPositionChange?: (x: number, y: number) => void;
-  /** Called when Kwame's attributes change (XP gain, level-up). */
-  onAttributeUpdate?: (attrs: ReturnType<KwameAttributeSystem["attributes"]["strength"]["id"] extends string ? typeof KwameAttributeSystem.prototype["attributes"]["strength"]["id"] extends string ? any : never : never>) => void;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -152,25 +150,57 @@ export function LegacyGameCanvas({
     const combat = new LegacyCombatController(player);
     const currentCombatTargets: LegacyCombatTarget[] = [];
 
-    // ─── Collision query (Layer 5) — wall-sliding handled in FSM tick ────────
+    // ─── Multi-line NPC dialogue state ────────────────────────────────────────
+    // Tracks how far into each NPC's dialogue array the player has progressed.
+    const npcLineIndex = new Map<string, number>();
+
+    // ─── Collision query (Layer 5 + 6) ────────────────────────────────────────
+    // Checks both wall AABB (scene.collision) and NPC body occupancy.
+    // NPCs act as soft obstacles — sleeping NPCs are always passable.
+    const NPC_BLOCK_RADIUS = 0.62;  // tiles — half-body width of an NPC placeholder
     const collisionQuery = {
       canOccupy(x: number, y: number): boolean {
-        return !scene.collision.some(
+        // Wall check (Eldiron AABB style)
+        const wallBlocked = scene.collision.some(
           c => c.solid && x >= c.x && x < c.x + c.widthTiles && y >= c.y && y < c.y + c.heightTiles
         );
+        if (wallBlocked) return false;
+        // NPC body check — block player if an active NPC occupies that tile
+        for (const ctrl of npcControllers) {
+          if (ctrl.state.behaviorState === "sleeping") continue;
+          const d = Math.hypot(x - ctrl.state.x, y - ctrl.state.y);
+          if (d < NPC_BLOCK_RADIUS) return false;
+        }
+        return true;
       },
     };
 
     // ─── Interaction + dialogue (Layer 6 + 8) ────────────────────────────────
+    // Multi-line dialogue: Space advances through each line; after the last
+    // line one more Space press ends the conversation (Eldiron dialogue flow).
     function tryInteractOrTalk() {
-      // If already talking — end conversation
+      // Currently in a conversation — advance or close
       if (talkingNpcId) {
         const ctrl = npcControllers.find(c => c.definition.id === talkingNpcId);
-        ctrl?.endTalking();
-        ctrl?.improveRelationship(5);
-        attrs.processEvent({ type: "npc_talked", npcId: talkingNpcId });
-        talkingNpcId = null;
-        setNpcPrompt(null);
+        if (!ctrl) { talkingNpcId = null; setNpcPrompt(null); return; }
+
+        const lines = ctrl.definition.dialogueLines;
+        const currentIdx = npcLineIndex.get(talkingNpcId) ?? 0;
+        const nextIdx = currentIdx + 1;
+
+        if (nextIdx < lines.length) {
+          // Advance to next line
+          npcLineIndex.set(talkingNpcId, nextIdx);
+          setNpcPrompt(`${ctrl.definition.name}: "${lines[nextIdx]}"`);
+        } else {
+          // Reached end — close dialogue
+          ctrl.endTalking();
+          ctrl.improveRelationship(5);
+          attrs.processEvent({ type: "npc_talked", npcId: talkingNpcId });
+          npcLineIndex.delete(talkingNpcId);
+          talkingNpcId = null;
+          setNpcPrompt(null);
+        }
         return;
       }
 
@@ -178,7 +208,8 @@ export function LegacyGameCanvas({
       const nearNpc = npcControllers.find(c => c.state.isNearPlayer && c.definition.talkable);
       if (nearNpc) {
         talkingNpcId = nearNpc.definition.id;
-        const line = nearNpc.startTalking();
+        npcLineIndex.set(nearNpc.definition.id, 0);
+        const line = nearNpc.startTalking();  // returns line[0] already
         setNpcPrompt(`${nearNpc.definition.name}: "${line}"`);
         return;
       }
@@ -324,14 +355,22 @@ export function LegacyGameCanvas({
           }
         }
 
-        // ── Camera follow: keep player centered on canvas ─────────────────────
+        // ── Camera follow with world-boundary clamping ────────────────────────
+        // 1. Compute ideal centered-on-player target
         const px = player.state.x * TILE_PX + TILE_PX / 2;
         const py = player.state.y * TILE_PX + TILE_PX / 2;
         const targetX = app.screen.width  / 2 - px;
         const targetY = app.screen.height / 2 - py;
-        // Lerp toward target (smooth camera)
-        root.x += (targetX - root.x) * 0.12;
-        root.y += (targetY - root.y) * 0.12;
+        // 2. Clamp so camera never scrolls past world edges
+        const worldW = scene.widthTiles  * TILE_PX;
+        const worldH = scene.heightTiles * TILE_PX;
+        const minCamX = Math.min(0, app.screen.width  - worldW);
+        const minCamY = Math.min(0, app.screen.height - worldH);
+        const clampedX = Math.min(0, Math.max(minCamX, targetX));
+        const clampedY = Math.min(0, Math.max(minCamY, targetY));
+        // 3. Smooth lerp toward clamped position
+        root.x += (clampedX - root.x) * 0.12;
+        root.y += (clampedY - root.y) * 0.12;
 
         // ── Depth-sort all actors (player + NPCs) ─────────────────────────────
         depthSortActors(actorLayer);

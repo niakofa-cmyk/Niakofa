@@ -30,6 +30,7 @@ import { getMapScene } from "@/lib/legacy-map-scenes";
 import { LegacyQuestsPanel } from "@/components/legacy-quests-panel";
 import { LegacyBattleScene } from "@/components/legacy-battle-scene";
 import { LegacyGameCanvas } from "@/legacy-runtime/LegacyGameCanvas";
+import { KwameAttributeSystem } from "@/legacy-runtime/legacy-attributes";
 import { kwameHandDrawnManifest } from "@/legacy-runtime/kwame-manifest";
 import { capeCoastCompoundScene, capeCoastCompoundAssets, environmentBaseUrl } from "@/legacy-runtime/scene-cape-coast-compound";
 
@@ -260,6 +261,10 @@ export default function LegacyChapterPlay() {
   const [gameCanvasOpen, setGameCanvasOpen] = useState(false);
   // Path A side-view combat — opens over exploration world on Training Ground landmark
   const [battleOpen, setBattleOpen] = useState(false);
+  // Shared attribute system — bridges battle combat hits to Layer 10 XP tracking.
+  // Kept at page level so both LegacyBattleScene and LegacyGameCanvas can share one
+  // KwameAttributeSystem instance once the latter accepts it via prop (future wiring).
+  const pageAttrSystem = useRef(new KwameAttributeSystem());
 
   // World view — the chapter now opens into a walkable grid built from its
   // real scenes/places (legacy-dynamic-world-layout.ts) instead of jumping
@@ -1554,6 +1559,9 @@ export default function LegacyChapterPlay() {
             onVictory={() => setBattleOpen(false)}
             onDefeat={() => setBattleOpen(false)}
             onFlee={() => setBattleOpen(false)}
+            onCombatHit={(dmg) =>
+              pageAttrSystem.current.processEvent({ type: "combat_hit", damage: dmg })
+            }
           />
         </div>
       )}

@@ -98,9 +98,11 @@ export interface LegacyBattleSceneProps {
   onVictory: () => void;
   onDefeat: () => void;
   onFlee: () => void;
+  /** Called each time the player's attack lands — fires Layer 10 attribute events. */
+  onCombatHit?: (damage: number) => void;
 }
 
-export function LegacyBattleScene({ enemyName = "Trial Guardian", onVictory, onDefeat, onFlee }: LegacyBattleSceneProps) {
+export function LegacyBattleScene({ enemyName = "Trial Guardian", onVictory, onDefeat, onFlee, onCombatHit }: LegacyBattleSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<Application | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
@@ -293,7 +295,7 @@ export function LegacyBattleScene({ enemyName = "Trial Guardian", onVictory, onD
 
         if (player.hurtFrames > 0) player.hurtFrames -= dt;
 
-        // Player attack vs enemy hurtbox
+        // Player attack vs enemy hurtbox — fires Layer 10 attribute event on hit
         const pBox = playerAttackbox();
         if (pBox && !player.attackHasHit && enemy.ai !== "dead" && overlap(pBox, enemyHurtbox())) {
           player.attackHasHit = true;
@@ -304,6 +306,8 @@ export function LegacyBattleScene({ enemyName = "Trial Guardian", onVictory, onD
           applyDamageToEnemy(dmg, kb);
           player.skillMeter = Math.min(SKILL_METER_MAX, player.skillMeter + SKILL_METER_PER_HIT);
           setUiSkillMeter(player.skillMeter);
+          // Notify attribute system (strength + endurance XP)
+          onCombatHit?.(dmg);
         }
 
         function applyDamageToEnemy(dmg: number, knockback: number) {

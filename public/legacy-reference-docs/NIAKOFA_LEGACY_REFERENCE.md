@@ -314,3 +314,48 @@ The `LegacyActorSprite` will fall back to the idle clip and log a warning messag
 - Combat animation frames (attack/dash/jump/guard) — no art yet; engine registered
 - NPC sprite sheets — using colored PIXI.Graphics placeholders until art ships
 - Additional scene tiles beyond Cape Coast Compound (river bank, market, ruins)
+
+---
+
+## Session: SpriteLoop + Godot + Handpainted Assets Analysis (August 2026)
+
+### Uploaded Files
+
+| File | Size | Role |
+|---|---|---|
+| `SpriteLoop_0.14.0_universal.dmg` | ~10 MB | Art pipeline tool — macOS sprite animation editor |
+| `handpainted-assets.zip` | ~79 MB | 100 PNG hand-painted textures + FBX source model |
+| `godot-osx-64-stable.zip` | ~169 MB compressed | Godot 4 engine — R&D lab only, no migration |
+
+See dedicated reference docs:
+- `SPRITELOOP_REFERENCE.md` — animation production pipeline, frame naming convention, art gaps
+- `GODOT_LAB_REFERENCE.md` — R&D use only, decision criteria for future migration
+- `HANDPAINTED_ASSETS_REFERENCE.md` — 53 curated textures, classification table, integration pipeline
+
+### Code Improvements Shipped
+
+| Fix | Description |
+|---|---|
+| **Camera clamping** | World boundary clamp added after lerp target — camera no longer scrolls past scene edges |
+| **Multi-line NPC dialogue** | Space now advances line-by-line through all NPC dialogue lines; last-line press closes |
+| **NPC-player collision** | `collisionQuery.canOccupy()` now checks NPC body radius (0.62 tiles) — NPCs block movement |
+| **Battle → Layer 10 events** | `LegacyBattleScene.onCombatHit` callback dispatches `combat_hit` to `KwameAttributeSystem` |
+| **Prop type cleanup** | Removed malformed `onAttributeUpdate` prop type from `LegacyGameCanvas` |
+| **Shared attr system** | `pageAttrSystem` ref in `legacy-chapter.tsx` bridges battle hits to attribute XP |
+
+### Asset Catalog
+53 period-appropriate handpainted textures copied to:
+```
+artifacts/pay-it-forward/public/legacy-reference-docs/handpainted-textures/
+```
+Integration pipeline documented in `HANDPAINTED_ASSETS_REFERENCE.md`.
+License verification required before shipping in production.
+
+### Remaining Gaps (unchanged)
+
+| Gap | Notes |
+|---|---|
+| Combat art | `lightAttack/heavyAttack/aerialAttack/dash/jump/guard` frames — no art yet |
+| NPC sprites | Colored PIXI.Graphics placeholders until sheets ship |
+| Shared attr persistence | `LegacyGameCanvas` and `LegacyBattleScene` each have attr systems; unify in future via prop |
+| World tile art | House of Mensah interior — use handpainted assets as source after adaptation |
