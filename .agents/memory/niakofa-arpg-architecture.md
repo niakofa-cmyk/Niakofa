@@ -84,5 +84,17 @@ All in public/legacy-reference-docs/
 ## 10-Layer status (all layers active)
 L1✅ L2✅ L3✅ L4✅ L5✅ L6✅(NPCs) L7✅(combat) L8✅(world quests) L9✅(fishing/weather) L10✅(attributes)
 
+## Camera, NPC collision, dialogue — August 2026 fixes
+Camera: targetX/targetY now clamped to [screen.w - world.w, 0] before lerp — no edge scroll.
+NPC-player collision: collisionQuery.canOccupy() checks NPC body radius 0.62 tiles; sleeping NPCs passable.
+Multi-line dialogue: npcLineIndex Map per NPC; Space advances line-by-line; last line + Space closes.
+Battle→Layer 10: LegacyBattleScene.onCombatHit prop; wired in legacy-chapter.tsx via pageAttrSystem useRef.
+Prop cleanup: removed malformed onAttributeUpdate conditional-never type from LegacyGameCanvas props.
+
+## SpriteLoop / Godot / Handpainted asset references
+SPRITELOOP_REFERENCE.md, GODOT_LAB_REFERENCE.md, HANDPAINTED_ASSETS_REFERENCE.md in public/legacy-reference-docs/.
+53 curated period-appropriate handpainted PNGs in artifacts/pay-it-forward/public/legacy-reference-docs/handpainted-textures/.
+SpriteLoop and Godot are art/lab tools only — never add as npm deps or runtime code.
+
 ## Outstanding combat art gaps
 lightAttack1/2, heavyAttack, aerialAttack, dash, jump, guard — all unregistered in kwame-manifest.ts pending art delivery.
