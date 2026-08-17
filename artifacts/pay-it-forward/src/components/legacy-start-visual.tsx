@@ -19,7 +19,6 @@ import {
   Compass,
   CheckCircle2,
   Sparkles,
-  Clapperboard,
 } from "lucide-react";
 
 // ─── Niakofa "N" Emblem (CSS/SVG recreation of the gold logo) ─────────────────
@@ -106,8 +105,6 @@ interface LegacyStartVisualProps {
   hasJourney: boolean;
   onContinue: () => void;
   onStartBuilding: () => void;
-  /** Optional: navigate to the public end-to-end demo */
-  onDemo?: () => void;
   // World-state (shown in YOUR FAMILY WORLD card)
   worldVersion?: number | null;
   recentActivities?: string[];
@@ -126,7 +123,6 @@ export function LegacyStartVisual({
   hasJourney,
   onContinue,
   onStartBuilding,
-  onDemo,
   worldVersion,
   recentActivities = [],
   currentChapterNumber,
@@ -252,24 +248,9 @@ export function LegacyStartVisual({
           </span>
         </button>
 
-        {/* PLAY DEMO — amber outline button, always visible */}
-        {onDemo && (
-          <button
-            type="button"
-            onClick={onDemo}
-            className="w-full flex items-center justify-center gap-2.5 rounded-2xl py-3 px-5 transition-all active:scale-[0.98]"
-            style={{
-              background: "transparent",
-              border: "1px solid rgba(214,158,46,0.45)",
-              boxShadow: "0 0 12px rgba(214,158,46,0.08)",
-            }}
-          >
-            <Clapperboard className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            <span className="text-xs font-black uppercase tracking-[0.2em] text-amber-500/90">
-              Play Demo · House of Mensah
-            </span>
-          </button>
-        )}
+        {/* Demo button removed — /legacy/demo is still accessible via direct URL
+            for developer/showcase use but is no longer surfaced in the main nav.
+            The production flow is: Continue → /legacy/play → LegacyGameCanvas. */}
       </div>
 
       {/* Mode-selector grid and bottom icon nav intentionally removed (Aug 2026).

@@ -290,7 +290,7 @@ export default function LegacyKwamePage() {
       <div className="sticky top-0 z-30 bg-[#0e0b06]/90 backdrop-blur-sm border-b border-amber-900/30">
         <div className="max-w-2xl mx-auto px-4 h-12 flex items-center justify-between">
           <button
-            onClick={() => navigate("/legacy/demo")}
+            onClick={() => navigate("/legacy")}
             className="flex items-center gap-2 text-amber-600 active:opacity-50"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -298,10 +298,10 @@ export default function LegacyKwamePage() {
           </button>
           <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.25em]">Character Sheet</span>
           <button
-            onClick={() => navigate("/legacy/demo")}
+            onClick={() => navigate("/legacy/play")}
             className="flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-amber-300 font-bold active:opacity-70"
           >
-            Play Demo <ChevronRight className="w-3 h-3" />
+            Play <ChevronRight className="w-3 h-3" />
           </button>
         </div>
       </div>
@@ -689,10 +689,10 @@ export default function LegacyKwamePage() {
         {/* ── CTA ── */}
         <div className="flex gap-3 pb-4">
           <button
-            onClick={() => navigate("/legacy/demo")}
+            onClick={() => navigate("/legacy/play")}
             className="flex-1 bg-amber-500 text-black rounded-xl py-3.5 font-black text-sm uppercase tracking-wider active:opacity-80 flex items-center justify-center gap-2"
           >
-            <Sparkles className="w-4 h-4" /> Play Legacy Demo
+            <Sparkles className="w-4 h-4" /> Enter Living World
           </button>
           <button
             onClick={() => navigate("/legacy")}
