@@ -94,6 +94,10 @@ export function LegacyGameCanvas({
   const [focusedActivity, setFocusedActivity] = useState<WorldActivity | null>(null);
   const [npcPrompt, setNpcPrompt] = useState<string | null>(null);
   const [attributeNotice, setAttributeNotice] = useState<string | null>(null);
+  // Brief flash when J/K/L combat keys are pressed before art ships — gives
+  // visible feedback instead of silent no-op. Auto-clears after 900ms.
+  const [combatFlash, setCombatFlash] = useState<string | null>(null);
+  const combatFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const worldStateRef = useRef<MinimalWorldState>(createEmptyWorldState());
   const gameHourRef   = useRef<number>(gameHour);
@@ -120,6 +124,15 @@ export function LegacyGameCanvas({
 
     // ── Layer 10: Attribute system (MMOCore design reference) ────────────────
     const attrs = attrSystemRef.current;
+
+    // ─── Combat flash helper ──────────────────────────────────────────────
+    // Shows a brief amber toast when J/K/L combat keys are pressed before
+    // hand-drawn attack art ships — gives visible feedback instead of silence.
+    function showCombatFlash(msg: string) {
+      if (combatFlashTimer.current) clearTimeout(combatFlashTimer.current);
+      setCombatFlash(msg);
+      combatFlashTimer.current = setTimeout(() => setCombatFlash(null), 900);
+    }
 
     // ─── Input handlers ────────────────────────────────────────────────────
     const onKeyDown = (e: KeyboardEvent) => {
@@ -152,9 +165,18 @@ export function LegacyGameCanvas({
         player.playAction("pick_up");
         attrs.processEvent({ type: "quest_objective", objectiveType: "pick_up" });
       }
-      if (e.key === "j") combat.lightAttack(currentCombatTargets);
-      if (e.key === "k") combat.heavyAttack(currentCombatTargets);
-      if (e.key === "l") combat.jump();
+      if (e.key === "j") {
+        combat.lightAttack(currentCombatTargets);
+        showCombatFlash("⚔ Light Attack!");
+      }
+      if (e.key === "k") {
+        combat.heavyAttack(currentCombatTargets);
+        showCombatFlash("⚔ Heavy Attack!");
+      }
+      if (e.key === "l") {
+        combat.jump();
+        showCombatFlash("↑ Jump!");
+      }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
@@ -410,6 +432,7 @@ export function LegacyGameCanvas({
       running   = false;
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup",   onKeyUp);
+      if (combatFlashTimer.current) clearTimeout(combatFlashTimer.current);
       app.destroy(true, { children: true });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -439,6 +462,13 @@ export function LegacyGameCanvas({
         <div style={NPC_DIALOGUE_STYLE}>
           <div style={{ fontSize: 13, lineHeight: 1.5, color: "#f0d9a8" }}>{npcPrompt}</div>
           <div style={{ fontSize: 11, opacity: 0.55, marginTop: 6 }}>[Space] to continue</div>
+        </div>
+      )}
+
+      {/* Combat action flash — shown when J/K/L pressed (art placeholder period) */}
+      {combatFlash && (
+        <div style={COMBAT_FLASH_STYLE}>
+          {combatFlash}
         </div>
       )}
 
@@ -509,6 +539,23 @@ const ATTR_NOTICE_STYLE: React.CSSProperties = {
   letterSpacing: "0.03em",
   pointerEvents: "none",
   animation: "fadeIn 0.3s ease-out",
+};
+
+// Combat action flash — amber-red, smaller than the attribute notice, sits below it
+const COMBAT_FLASH_STYLE: React.CSSProperties = {
+  position: "absolute",
+  top: 60,
+  left: "50%",
+  transform: "translateX(-50%)",
+  background: "rgba(20,8,4,0.88)",
+  border: "1px solid rgba(220,100,40,0.6)",
+  color: "#e06030",
+  padding: "6px 16px",
+  borderRadius: 6,
+  fontSize: 12,
+  fontWeight: 700,
+  letterSpacing: "0.05em",
+  pointerEvents: "none",
 };
 
 const CONTROL_LEGEND_STYLE: React.CSSProperties = {
