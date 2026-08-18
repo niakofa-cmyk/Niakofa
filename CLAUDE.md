@@ -808,3 +808,25 @@ Added a "Start Co-op Chapter Together" button in the Reunion mode Live Co-op pan
 - Highest migration: `0104_legacy_indexes.sql`
 - Total migration files: 105 (0000–0104)
 - `healthcheckTimeout`: 120s — sufficient. Bump to 180s if count exceeds 115.
+
+## Session Note — Aug 18 2026: Legacy Pixi boot resilience
+
+### What was accomplished
+
+- Audited the synchronized `origin/main` Legacy runtime, master reference, memory index, uploaded reference corpus, and all 47 Legacy ZIP archives.
+- Preserved the existing runtime boundary: unresolved uploaded RPG art remains reference-only; the playable world continues to use the reviewed hand-drawn environment and Kwame assets.
+- Hardened `LegacyGameCanvas` boot lifecycle with visible loading/error states, a bounded 20-second timeout, retry behavior, cancellation guards, and safe Pixi cleanup.
+- Verified the public `/legacy/world?branch=ancestor` route in the Replit preview with the real environment art, Kwame sprite, scene HUD, and no browser boot errors.
+
+### Verification
+
+- `pnpm run typecheck` — passed.
+- `pnpm --filter @workspace/pay-it-forward run test` — 631 tests passed.
+- `pnpm --filter @workspace/pay-it-forward run build` — passed.
+- `pnpm run audit:legacy-assets` — passed.
+- `pnpm run boundary-check` — passed.
+- Local API `/api/healthz` and `/api/status` — HTTP 200; database connected.
+
+### Not addressed in this session
+
+- Existing unrelated ESLint errors remain in `artifacts/pay-it-forward/packages/legacy-engine` (`AnimationController.ts` declaration merging and `TimeManager.ts` const preference). They were not changed because they are outside the boot failure fix.

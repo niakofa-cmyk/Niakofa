@@ -168,3 +168,4 @@ progression, while `/legacy/chapter/demo` is the public compatibility alias.
 4. **Back button season desync** — `legacy-demo.tsx` back button set phase without updating season. Now calls `seasonForPhase(prev)` to sync.
 5. **NiakofahEmblem typo** — `legacy-start-visual.tsx` had extra "h" in component name. Fixed to `NiakofaEmblem`.
 6. **CI verification script stale asset count** — `verify-legacy-demo-deployment.mjs` expected 8 village assets but catalog grew to 11. Updated count.
+7. **Pixi world silent boot failure** — `LegacyGameCanvas.tsx` now reports loading and asset errors, aborts after a 20-second boot timeout, prevents late asset resolutions from mounting after timeout/unmount, and provides a retry action.

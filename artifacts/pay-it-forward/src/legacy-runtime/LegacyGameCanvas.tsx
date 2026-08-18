@@ -78,6 +78,9 @@ const KEY_TO_VECTOR: Record<string, { dx: number; dy: number }> = {
 // NPC placeholder rectangle: 24×36px, feet at tile center
 const NPC_WIDTH_PX  = 24;
 const NPC_HEIGHT_PX = 36;
+const BOOT_TIMEOUT_MS = 20_000;
+
+type BootPhase = "loading" | "ready" | "error";
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -94,6 +97,9 @@ export function LegacyGameCanvas({
   const [focusedActivity, setFocusedActivity] = useState<WorldActivity | null>(null);
   const [npcPrompt, setNpcPrompt] = useState<string | null>(null);
   const [attributeNotice, setAttributeNotice] = useState<string | null>(null);
+  const [bootPhase, setBootPhase] = useState<BootPhase>("loading");
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
   // Brief flash when J/K/L combat keys are pressed before art ships — gives
   // visible feedback instead of silent no-op. Auto-clears after 900ms.
   const [combatFlash, setCombatFlash] = useState<string | null>(null);
@@ -113,11 +119,25 @@ export function LegacyGameCanvas({
 
   useEffect(() => {
     let destroyed = false;
+    let timedOut = false;
+    let appInitialized = false;
+    let appDestroyed = false;
+    let bootTimer: ReturnType<typeof setTimeout> | null = null;
     const app = new Application();
     const pressedKeys = new Set<string>();
     let running = false;
     let focusedActivityLocal: WorldActivity | null = null;
     let talkingNpcId: string | null = null;
+
+    setBootPhase("loading");
+    setBootError(null);
+
+    function destroyApp() {
+      if (appInitialized && !appDestroyed) {
+        appDestroyed = true;
+        app.destroy(true, { children: true });
+      }
+    }
 
     // ── Layer 6: NPC controllers (Eldiron entity.rs pattern) ──────────────────
     const npcControllers = CAPE_COAST_NPCS.map(def => new NPCController(def));
@@ -298,18 +318,28 @@ export function LegacyGameCanvas({
 
     // ─── Boot ─────────────────────────────────────────────────────────────────
     async function boot() {
-      await app.init({ background: "#1a0f08", resizeTo: hostRef.current ?? undefined, antialias: true });
-      if (destroyed || !hostRef.current) return;
-      hostRef.current.appendChild(app.canvas);
+      try {
+        const bootWork = (async () => {
+          await app.init({ background: "#1a0f08", resizeTo: hostRef.current ?? undefined, antialias: true });
+          appInitialized = true;
+          if (destroyed || timedOut || !hostRef.current) {
+            destroyApp();
+            return;
+          }
+          hostRef.current.appendChild(app.canvas);
 
-      const [envTextures, frameSet] = await Promise.all([
-        loadEnvironmentTextures(environmentBaseUrl, environmentAssets),
-        loadCharacterFrameSet(characterManifest),
-      ]);
+          const [envTextures, frameSet] = await Promise.all([
+            loadEnvironmentTextures(environmentBaseUrl, environmentAssets),
+            loadCharacterFrameSet(characterManifest),
+          ]);
+          if (destroyed || timedOut || !hostRef.current) {
+            destroyApp();
+            return;
+          }
 
-      const { root, layerContainers, actorLayer } = buildSceneContainers();
-      renderStaticLayers(scene, layerContainers, envTextures);
-      app.stage.addChild(root);
+          const { root, layerContainers, actorLayer } = buildSceneContainers();
+          renderStaticLayers(scene, layerContainers, envTextures);
+          app.stage.addChild(root);
 
       // ── Player sprite ───────────────────────────────────────────────────
       const playerSprite = new LegacyActorSprite(frameSet, frameSet["idle:down"] ?? [Texture.WHITE]);
@@ -338,7 +368,7 @@ export function LegacyGameCanvas({
       running = true;
 
       // ─── Game ticker (60fps) ──────────────────────────────────────────────
-      app.ticker.add((ticker) => {
+          app.ticker.add((ticker) => {
         if (!running) return;
         const deltaMs = ticker.deltaMS;
 
@@ -422,10 +452,32 @@ export function LegacyGameCanvas({
         // ── Depth-sort all actors (player + NPCs) ─────────────────────────────
         depthSortActors(actorLayer);
         onPlayerPositionChange?.(player.state.x, player.state.y);
-      });
+          });
+        })();
+
+        const timeout = new Promise<never>((_, reject) => {
+          bootTimer = setTimeout(() => {
+            timedOut = true;
+            running = false;
+            reject(new Error("The Legacy world took too long to load. Check the runtime assets and try again."));
+          }, BOOT_TIMEOUT_MS);
+        });
+
+        await Promise.race([bootWork, timeout]);
+        if (!destroyed && !timedOut) setBootPhase("ready");
+      } catch (error) {
+        running = false;
+        destroyApp();
+        if (!destroyed) {
+          setBootPhase("error");
+          setBootError(error instanceof Error ? error.message : "The Legacy world could not be loaded.");
+        }
+      } finally {
+        if (bootTimer) clearTimeout(bootTimer);
+      }
     }
 
-    boot();
+    void boot();
 
     return () => {
       destroyed = true;
@@ -433,15 +485,41 @@ export function LegacyGameCanvas({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup",   onKeyUp);
       if (combatFlashTimer.current) clearTimeout(combatFlashTimer.current);
-      app.destroy(true, { children: true });
+      if (bootTimer) clearTimeout(bootTimer);
+      destroyApp();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryToken]);
 
   // ─── HUD overlays (React layer over PixiJS canvas) ────────────────────────
 
   return (
     <div ref={hostRef} style={{ width: "100%", height: "100%", position: "relative" }}>
+      {bootPhase === "loading" && (
+        <div role="status" aria-live="polite" style={BOOT_OVERLAY_STYLE}>
+          <div style={BOOT_CARD_STYLE}>
+            <div style={BOOT_SPINNER_STYLE} aria-hidden="true" />
+            <strong>Opening the living family archive…</strong>
+            <span>Loading the Cape Coast world and Kwame’s memory.</span>
+          </div>
+        </div>
+      )}
+
+      {bootPhase === "error" && (
+        <div role="alert" style={BOOT_OVERLAY_STYLE}>
+          <div style={BOOT_CARD_STYLE}>
+            <strong>We couldn’t open the Legacy world</strong>
+            <span>{bootError ?? "The world assets did not finish loading."}</span>
+            <button
+              type="button"
+              onClick={() => setRetryToken((current) => current + 1)}
+              style={BOOT_RETRY_STYLE}
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* World interaction prompt (Layer 8) */}
       {prompt && !focusedActivity && !npcPrompt && (
@@ -494,6 +572,52 @@ export function LegacyGameCanvas({
 }
 
 // ─── HUD styles ──────────────────────────────────────────────────────────────
+
+const BOOT_OVERLAY_STYLE: React.CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  zIndex: 10,
+  display: "grid",
+  placeItems: "center",
+  background: "rgba(18,11,7,0.92)",
+  color: "#f0d9a8",
+  padding: 24,
+};
+
+const BOOT_CARD_STYLE: React.CSSProperties = {
+  display: "grid",
+  justifyItems: "center",
+  gap: 10,
+  width: "min(420px, 100%)",
+  padding: "24px 22px",
+  border: "1px solid rgba(214,158,46,0.35)",
+  borderRadius: 14,
+  background: "rgba(30,17,9,0.96)",
+  boxShadow: "0 16px 50px rgba(0,0,0,0.35)",
+  textAlign: "center",
+  lineHeight: 1.5,
+};
+
+const BOOT_SPINNER_STYLE: React.CSSProperties = {
+  width: 24,
+  height: 24,
+  border: "3px solid rgba(240,217,168,0.25)",
+  borderTopColor: "#d6a02e",
+  borderRadius: "50%",
+  animation: "spin 0.9s linear infinite",
+};
+
+const BOOT_RETRY_STYLE: React.CSSProperties = {
+  marginTop: 6,
+  border: "1px solid rgba(214,158,46,0.7)",
+  borderRadius: 8,
+  background: "#d6a02e",
+  color: "#201006",
+  padding: "8px 18px",
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+};
 
 const HUD_PROMPT_STYLE: React.CSSProperties = {
   position: "absolute",
