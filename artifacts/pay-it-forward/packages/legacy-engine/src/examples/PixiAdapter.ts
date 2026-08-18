@@ -21,6 +21,8 @@
  *     adapter.sync();
  *   });
  */
+import "pixi.js/unsafe-eval";
+
 import { AnimatedSprite, Assets, Container, Graphics, Texture } from "pixi.js";
 import type { Actor } from "../actors/Actor.js";
 

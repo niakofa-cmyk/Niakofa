@@ -11,6 +11,8 @@
  * the first thing that actually reads them and draws pixels.
  */
 
+import "pixi.js/unsafe-eval";
+
 import { Container, Sprite, Texture, TilingSprite, Graphics } from "pixi.js";
 import type { LegacyMapScene, LegacyMapLayer, LegacyMapLayerKind } from "@/lib/legacy-map-engine";
 import { TILE_SIZE_PX } from "@/lib/legacy-map-engine";

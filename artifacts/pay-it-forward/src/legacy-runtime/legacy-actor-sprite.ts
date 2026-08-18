@@ -5,6 +5,8 @@
  * art rather than an asset library" from the runtime update doc.
  */
 
+import "pixi.js/unsafe-eval";
+
 import { AnimatedSprite, Texture } from "pixi.js";
 import { LegacyActorController } from "@/lib/legacy-animation-fsm";
 import type { LegacyFacing } from "@/lib/legacy-animation-fsm";

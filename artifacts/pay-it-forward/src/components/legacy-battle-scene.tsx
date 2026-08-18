@@ -30,6 +30,9 @@
  *    player has a real read-and-react loop, not a static punching bag
  */
 
+// Must run before any PixiJS import so the combat canvas is CSP-safe too.
+import "pixi.js/unsafe-eval";
+
 import { useEffect, useRef, useState } from "react";
 import { Application, Graphics, Text, Ticker } from "pixi.js";
 
@@ -129,6 +132,7 @@ export function LegacyBattleScene({ enemyName = "Trial Guardian", onVictory, onD
         height: HEIGHT,
         backgroundColor: 0x1a1410,
         antialias: false,
+        preference: "webgl",
         resolution: Math.min(window.devicePixelRatio || 1, 2),
         autoDensity: true,
       });

@@ -19,6 +19,10 @@
  * the layout data from legacy-dynamic-world-layout.ts.
  */
 
+// Must run before any PixiJS import so this chapter canvas remains compatible
+// with strict production Content-Security-Policy headers.
+import "pixi.js/unsafe-eval";
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Application, Container, Graphics, Sprite, Texture, Rectangle, Assets, Text } from "pixi.js";
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from "lucide-react";
@@ -178,6 +182,7 @@ export function LegacyChapterWorld({
         height: layout.rows * TILE_PX,
         backgroundAlpha: 0,
         antialias: false,
+        preference: "webgl",
         resolution: Math.min(window.devicePixelRatio || 1, 2),
         autoDensity: true,
       });

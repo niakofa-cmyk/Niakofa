@@ -129,6 +129,20 @@ story timeline visible without creating a second runtime:
 - the Retro Tree living/dead sheets switch with pressure and world regeneration;
 - the UI labels all of this as presentation art, never as family evidence.
 
+## Workspace continuation uploads — August 18, 2026
+
+The current production-readiness handoff is preserved under
+`uploads/continuation-2026-08-18/`:
+
+| Upload | Review result |
+|---|---|
+| `Pasted-Diagnosis-Fix-The-error-Current-environment-does-not-al_1787065868104.txt` | Read in full: identifies CSP-safe `pixi.js/unsafe-eval` loading as the required first import and calls for a single continuously mounted runtime. |
+| `Pasted--LegacyGameCanvas-tsx-PixiJS-living-world-host-componen_1787065856566.txt` | Read in full: reviewed against the canonical runtime; its boot, NPC, activity, combat, and HUD guidance informed the current CSP and resume-state hardening. |
+
+The exact SHA-256 values are recorded in
+`source-manifests/continuation-2026-08-18.sha256`. No ZIP archive was present
+in the uploaded workspace for this continuation.
+
 ## Workspace continuation uploads — August 12, 2026
 
 The four files supplied for this continuation are preserved byte-for-byte in

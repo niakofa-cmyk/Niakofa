@@ -1,0 +1,125 @@
+Diagnosis & Fix
+The error
+Current environment does not allow unsafe-eval, please use pixi.js/unsafe-eval module to enable support
+is the standard PixiJS v8 + Content-Security-Policy failure. Your production host (or browser extension / strict CSP) blocks new Function / eval. PixiJS v8 requires an explicit import of its CSP-safe path.
+Recent commits already improved boot resilience (LegacyGameCanvas timeout + retry), but the unsafe-eval import is still missing (or not first).
+
+1. Immediate Fix (do this first)
+In artifacts/pay-it-forward/src/legacy-runtime/LegacyGameCanvas.tsx (or wherever new Application() lives), make the very first Pixi-related lines:
+TypeScript
+
+// MUST be the first pixi import in this module (and ideally the app entry that loads the game)
+import "pixi.js/unsafe-eval";
+
+import { Application, Texture /* other pixi imports */ } from "pixi.js";
+
+
+Then keep your existing boot:
+TypeScript
+
+const app = new Application();
+await app.init({
+  background: "#1a0f08",
+  resizeTo: hostRef.current ?? undefined,
+  antialias: true,
+  // optional: preference: "webgl"  // force WebGL if WebGPU causes issues
+});
+
+
+Order is critical. The side-effect import must run before any Application / Renderer construction.
+Also add it at the top of any other file that creates a Pixi Application (scene renderer, package entry, etc.).
+After deploying this single change, the “We couldn’t open the Legacy world” error should disappear on CSP-restricted environments.
+
+2. Harden Runtime Separation (App vs Game)
+Keep the Niakofa community app and the Legacy Game cleanly separated while still sharing Family Vault data.
+Recommended structure (already partially present):
+text
+
+artifacts/pay-it-forward/
+  src/
+    legacy-runtime/          ← game-only (Pixi, movement, combat, fishing, world)
+      LegacyGameCanvas.tsx
+      ...
+    lib/legacy-world/        ← pure data (locations, activities, mutations)
+    pages/legacy-*.tsx       ← thin React shells only
+
+
+Rules
+Layer	Owns	Must NOT own
+React shell (pages/, journal UI, Family Vault UI)	Auth, journal display, quest list, high-level events	requestAnimationFrame, hitboxes, Pixi ticker, collision
+legacy-runtime/ (Pixi)	Continuous world, movement, camera, weather, fishing runtime, combat, NPCs	Direct Family Vault writes, React state
+Bridge	onQuestCompleted, onCombatOutcome, onWorldMutation, player position	Simulation logic
+
+Export a tiny public API from the runtime:
+TypeScript
+
+// legacy-runtime/index.ts
+export { LegacyGameCanvas } from "./LegacyGameCanvas";
+export type { LegacyGameBridge } from "./bridge-types";
+
+
+React pages only mount <LegacyGameCanvas bridge={...} /> and react to bridge callbacks. Never put game-loop code in React components.
+
+3. Make the Demo Continuously Playable
+You already have the pieces (movement, scene layers, NPCs, hand-drawn assets, boot hardening). Finish the continuous loop:
+1. Pixi never unloads while the player is on /legacy/demo or /legacy/world.
+2. Player position + worldVersion persist in legacy-demo-state / localStorage.
+3. Fishing, dialogue, and rites are WorldActivitys triggered by location bounds (the system we defined earlier).
+4. Hand-drawn environment textures + Kwame atlas load once at boot and stay in GPU memory.
+The recent LegacyGameCanvas changes (20 s timeout, retry, visible error) are correct — just pair them with the unsafe-eval import.
+
+4. What I verified from the public repo & live demo
+* Live URL https://niakofa.com/legacy/demo currently shows the loading shell (“Opening the living family archive…”) and requires JS — consistent with a boot failure before the canvas mounts.
+* LegacyGameCanvas.tsx creates new Application() and calls app.init(...) without the pixi.js/unsafe-eval side-effect import → exact match for the error message.
+* Hand-drawn environment assets and Kwame atlas registration exist and are the intended production art path.
+* Boot resilience (timeout + retry + cleanup) was added 2026-08-18; the CSP fix is the missing piece.
+I cannot execute a full browser play-session against the live production CSP from this environment, but the failure mode and the official PixiJS v8 remedy are unambiguous.
+
+5. Drop-in code you can apply immediately
+A. Top of LegacyGameCanvas.tsx
+TypeScript
+
+import "pixi.js/unsafe-eval";   // ← add this line first
+
+import { Application, Texture, /* ... */ } from "pixi.js";
+// ... rest of existing imports
+
+
+B. Optional safety wrapper (if you want belt-and-suspenders)
+TypeScript
+
+async function createSafePixiApp(options: Parameters<Application["init"]>[0]) {
+  // Ensure the patch is present even if tree-shaken elsewhere
+  await import("pixi.js/unsafe-eval");
+  const app = new Application();
+  await app.init(options);
+  return app;
+}
+
+
+Then replace new Application() + app.init with await createSafePixiApp({...}).
+C. package.json (already has pixi.js; no extra package needed for v8)
+JSON
+
+"dependencies": {
+  "pixi.js": "^8.6.0"
+}
+
+
+pixi.js/unsafe-eval is shipped inside the main package in v8 — you only import the subpath.
+
+6. After the fix — verification checklist
+1. Hard-refresh https://niakofa.com/legacy/demo (or your preview).
+2. Canvas should appear with the hand-drawn Cape Coast / environment art.
+3. Kwame sprite should be controllable.
+4. No console error containing unsafe-eval.
+5. Retry button (from the recent boot fix) should recover from network/asset failures.
+
+Summary
+Action	Priority	Effort
+Add import "pixi.js/unsafe-eval" before any Application	Critical	1 line
+Keep React as shell only; Pixi owns the continuous loop	High	Already mostly done
+Persist player position + worldVersion across reloads	High	Small
+Convert remaining panel features into in-world locations/activities	Medium	Ongoing
+
+Apply the one-line import first, redeploy, and the Legacy world should open. Once that is stable we can continue wiring fishing, relationships, and “What Remains” as true in-world activities inside the same continuous runtime.

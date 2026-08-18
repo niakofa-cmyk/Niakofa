@@ -9,6 +9,8 @@
  * hand-drawn/... per docs/ATLAS_INTEGRATION_GUIDE.md from the combat pack).
  */
 
+import "pixi.js/unsafe-eval";
+
 import { Assets, Texture } from "pixi.js";
 import type { LegacyFullAnimState } from "@/lib/legacy-combat-fsm";
 import type { LegacyFacing } from "@/lib/legacy-animation-fsm";
