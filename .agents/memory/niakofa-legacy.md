@@ -19,10 +19,27 @@ An **Advanced Gameplay Style RPG** built on family history.
 
 ## Demo Route
 - **Public URL**: `/legacy/demo` — bypasses auth (handled in `AppContent` before `AppShell`)
-- **Page file**: `artifacts/pay-it-forward/src/pages/legacy-demo.tsx`
-- **Phases**: prologue → chapter1-6 → world-regen → coop-quest → finale
-- **Persistence**: `localStorage` key `niakofa:demo:v2`
-- **End CTA**: "Continue Your Journey" → `/legacy`
+- **Page file**: `artifacts/pay-it-forward/src/pages/legacy-demo-launcher.tsx`
+- **Purpose**: Living Baobab branch selection, then direct navigation to `/legacy/world`
+- **Playable world**: `legacy-public-world.tsx` hosts the existing `LegacyGameCanvas` and Kwame hand-drawn manifest
+- **Compatibility alias**: `/legacy/chapter/demo` opens the same public world
+- **Authenticated progression**: `/legacy/play` and numeric `/legacy/chapter/:id` remain the server-backed session flow
+
+### Public entry decision
+
+The Baobab is launcher chrome, not a second game runtime. Every public branch
+must enter the same PixiJS Cape Coast world so movement, collision, NPC
+dialogue, memory/quest interactions, fishing, attributes, and combat stay
+consistent.
+
+**Why:** The former public demo presented a dashboard-style narrative runtime
+while the actual PixiJS world lived behind a separate chapter/session path.
+That split made the Legacy experience feel like two competing games and made
+the public Play links unreliable for unauthenticated visitors.
+
+**How to apply:** Keep `/legacy/demo` and `/legacy/kwame` before the auth shell.
+Point new public Legacy CTAs to `/legacy/world` (optionally with a `branch`
+query), and do not create another renderer or public game loop.
 
 ## House of Mensah Demo Component
 - File: `artifacts/pay-it-forward/src/components/legacy-house-demo.tsx`

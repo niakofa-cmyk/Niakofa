@@ -76,11 +76,14 @@ All of the above are wired via `logWorldEvolution()` in `artifacts/api-server/sr
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/legacy` | legacy-home.tsx | Hub — Continue Journey, quests, world state |
+| `/legacy/demo` | legacy-demo-launcher.tsx | **Public Living Baobab launcher — no auth required** |
+| `/legacy/world` | legacy-public-world.tsx | **Public playable PixiJS House of Mensah world — no auth required** |
+| `/legacy/chapter/demo` | legacy-public-world.tsx | Public compatibility alias for the playable world |
 | `/legacy/onboarding` | legacy-onboarding.tsx | Chapter 0: Awaken the Legacy (first-run) |
 | `/legacy/play` | **legacy-play.tsx** | **Continue Journey router — enters active RPG scene directly** |
 | `/legacy/play/:sessionId` | **legacy-play.tsx** | Resume specific session → active chapter |
 | `/legacy/start` | legacy-start.tsx | Cinematic ancestor selection + chapter init |
-| `/legacy/chapter/:id` | legacy-chapter.tsx | **Living RPG gameplay scene** |
+| `/legacy/chapter/:id` | legacy-chapter.tsx | **Authenticated, persisted Living RPG gameplay scene** |
 | `/legacy/map/:familyId` | legacy-map.tsx | World map with family migration routes |
 | `/legacy/journal` | legacy-journal.tsx | Family journal — auto-written by play sessions |
 | `/legacy/character/:memberId` | legacy-character.tsx | Ancestor character sheet |
@@ -92,6 +95,31 @@ All of the above are wired via `logWorldEvolution()` in `artifacts/api-server/sr
 | `/legacy/challenges` | legacy-challenges.tsx | Family challenges (co-op) |
 | `/legacy/seasonal-events` | legacy-seasonal-events.tsx | Seasonal / emotional calendar events |
 | `/legacy/interview-quest` | legacy-interview-quest.tsx | Microphone as gameplay |
+
+---
+
+## Public Gameplay Entry (August 2026)
+
+The public Legacy experience has one clear path instead of a dashboard and a
+separate game competing for attention:
+
+```
+/legacy/demo
+  → Living Baobab branch selection
+  → /legacy/world?branch=<branch>
+  → LegacyGameCanvas (PixiJS, Cape Coast Compound 1890)
+```
+
+The public world uses the existing runtime as its source of truth. It includes
+Kwame locomotion and camera follow, scene collision, scheduled NPC movement,
+multi-line dialogue, memory/quest interactions, fishing, attribute progression,
+and the existing real-time combat controls. `/legacy/chapter/demo` is a public
+compatibility alias; numeric `/legacy/chapter/:id` routes continue to serve the
+authenticated, server-backed chapter flow.
+
+The old `legacy-demo.tsx` narrative/state implementation remains supporting
+code for its state and component contracts, but it is no longer mounted as the
+primary `/legacy/demo` page.
 
 ---
 

@@ -298,7 +298,7 @@ export default function LegacyKwamePage() {
           </button>
           <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.25em]">Character Sheet</span>
           <button
-            onClick={() => navigate("/legacy/play")}
+            onClick={() => navigate("/legacy/world?branch=ancestor")}
             className="flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-amber-300 font-bold active:opacity-70"
           >
             Play <ChevronRight className="w-3 h-3" />
@@ -689,7 +689,7 @@ export default function LegacyKwamePage() {
         {/* ── CTA ── */}
         <div className="flex gap-3 pb-4">
           <button
-            onClick={() => navigate("/legacy/play")}
+            onClick={() => navigate("/legacy/world?branch=ancestor")}
             className="flex-1 bg-amber-500 text-black rounded-xl py-3.5 font-black text-sm uppercase tracking-wider active:opacity-80 flex items-center justify-center gap-2"
           >
             <Sparkles className="w-4 h-4" /> Enter Living World

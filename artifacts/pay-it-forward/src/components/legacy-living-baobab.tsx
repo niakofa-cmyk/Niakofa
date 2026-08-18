@@ -3,7 +3,7 @@ import { ArrowRight, BookOpen, HeartHandshake, MapPin, Sparkles, TreePine } from
 
 interface LegacyLivingBaobabProps {
   worldVersion: number;
-  onEnter: () => void;
+  onEnter: (branchId?: string) => void;
 }
 
 type LivingBranch = {
@@ -293,10 +293,11 @@ export function LegacyLivingBaobab({ worldVersion, onEnter }: LegacyLivingBaobab
 
         <button
           type="button"
-          onClick={onEnter}
+          onClick={() => onEnter(selectedBranch.id)}
           className="group flex w-full items-center justify-center gap-2 rounded-xl border border-amber-400/70 bg-gradient-to-r from-amber-500 to-yellow-400 px-5 py-3.5 text-sm font-black text-[#241205] shadow-[0_8px_24px_rgba(214,158,46,0.2)] transition-all hover:from-amber-400 hover:to-yellow-300 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-[#0A0604]"
         >
-          Live Their Story
+          <span>Live Their Story</span>
+          <span className="text-[10px] font-bold opacity-70">· {selectedBranch.member}</span>
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </button>
         <p className="text-center text-[10px] text-amber-700">

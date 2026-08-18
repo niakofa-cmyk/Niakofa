@@ -77,7 +77,8 @@ const LegacyCharacterEvolutionPage = lazy(() => import("@/pages/legacy-character
 const LegacyOnboardingPage      = lazy(() => import("@/pages/legacy-onboarding"));
 const LegacyPlayPage            = lazy(() => import("@/pages/legacy-play"));
 const LegacyInterviewQuestPage = lazy(() => import("@/pages/legacy-interview-quest"));
-const LegacyDemoPage           = lazy(() => import("@/pages/legacy-demo"));
+const LegacyDemoPage           = lazy(() => import("@/pages/legacy-demo-launcher"));
+const LegacyPublicWorldPage    = lazy(() => import("@/pages/legacy-public-world"));
 const LegacyKwamePage          = lazy(() => import("@/pages/legacy-kwame"));
 
 function PageFallback() {
@@ -374,6 +375,17 @@ function AppContent() {
     return (
       <Suspense fallback={<PageFallback />}>
         <LegacyDemoPage />
+      </Suspense>
+    );
+  }
+  // Public playable world — no account or chapter session is required.
+  if (
+    normalizedPathname === "/legacy/world" ||
+    normalizedPathname === "/legacy/chapter/demo"
+  ) {
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <LegacyPublicWorldPage />
       </Suspense>
     );
   }

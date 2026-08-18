@@ -5,7 +5,9 @@
 ## Repository
 - GitHub: https://github.com/niakofa-cmyk/Niakofa
 - Railway: `zesty-ambition-production-f6a1.up.railway.app`
-- Demo URL: `/legacy/demo` (public, no auth required)
+- Public launcher: `/legacy/demo` (Living Baobab, no auth required)
+- Public playable world: `/legacy/world` or `/legacy/chapter/demo` (PixiJS House of Mensah scene, no auth required)
+- Authenticated chapter flow: `/legacy/play` → `/legacy/chapter/:id` (persisted family/session progression)
 
 ---
 
@@ -105,7 +107,9 @@ reviewed world changes, and visible provenance disclosures.
 13. **Character Evolution** (`legacy-character-evolution.tsx`) — generational trait inheritance
 14. **Co-op Challenges** (`legacy-challenges.tsx`) — multi-family-member quests
 15. **Timeline** (`legacy-timeline.tsx`) — historical event visualization
-16. **Demo Mode** (`legacy-demo.tsx`) — end-to-end playable demo, public, localStorage-persisted
+16. **Living Baobab Launcher** (`legacy-demo-launcher.tsx`) — public branch selection into the playable world
+17. **PixiJS Public World** (`legacy-public-world.tsx` + `LegacyGameCanvas.tsx`) — walkable Cape Coast scene with collision, camera follow, NPC schedules/dialogue, activities, fishing, memory interactions, weather-ready overlays, and combat input
+18. **Legacy Demo State** (`legacy-demo.tsx`, `legacy-demo-state.ts`) — supporting narrative/state components retained for authenticated and regression-tested flows; no longer the primary public entry
 
 ### Supporting Components
 - `legacy-living-world.tsx` — tile grid with character sprite, memory echoes, season overlays
@@ -117,6 +121,24 @@ reviewed world changes, and visible provenance disclosures.
 - `legacy-memory-encounter.tsx` — NPC memory encounter with choice cards
 - `legacy-fishing-encounter.tsx` — fishing mini-game encounter
 - `legacy-core-loop.tsx` — core gameplay loop wrapper
+
+### Public gameplay boundary
+
+The public route has one continuous gameplay path:
+
+```
+/legacy/demo
+  → Living Baobab branch selection
+  → /legacy/world?branch=<branch>
+  → LegacyGameCanvas (PixiJS, Cape Coast Compound 1890)
+```
+
+`LegacyGameCanvas` is the source of truth for movement, wall/NPC collision,
+camera follow, Kwame animation, scheduled NPCs, multi-line dialogue, world
+activities, fishing, attribute XP, and combat input. The Baobab is launcher
+chrome only; it must not become a second game runtime. The authenticated
+`/legacy/chapter/:id` path remains available for server-backed chapter
+progression, while `/legacy/chapter/demo` is the public compatibility alias.
 
 ### State Engine
 - `legacy-demo-state.ts` — idempotency guards, trait validation, coopTasks sanitizer, worldVersion trigger
