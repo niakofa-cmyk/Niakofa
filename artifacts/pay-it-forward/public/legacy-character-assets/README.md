@@ -1,17 +1,11 @@
 # Niakofa Character Asset Library
 
-This directory contains a curated runtime sample from the uploaded generator
-archive. It is deliberately not the complete archive. Use `catalog.json` as
-the stable registry; game data should store `assetId` references, never raw
-generator filenames.
+This directory contains reference and original hand-drawn character material.
+The uploaded generator archive is not a browser runtime and is not served from
+this directory. Its source bundle remains archived under
+`docs/legacy-reference/` for provenance review.
 
-The curated sample contains 144x192 RPG Maker TV sheets (48x48 frames) for
-body, clothing, rear-hair, and front-hair layers across the explicit
-male/female/kid runtime profiles. The engine composites these layers in a
-stable order. The curated variants are used for deterministic life-stage
-rendering; they are visual vocabulary only and must not be treated as evidence
-about a real family member.
-
-The catalog intentionally records provenance without asserting a license
-decision. Confirm the upstream license before adding more files or distributing
-this library.
+Production character resolution uses the original procedural library under
+`/legacy-world-assets/tv/`, documented by
+`/legacy-world-assets/catalog-original.json`. Game data stores stable `assetId`
+references, never raw generator filenames.

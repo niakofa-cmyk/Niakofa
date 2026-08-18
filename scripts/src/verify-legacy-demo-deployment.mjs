@@ -138,36 +138,20 @@ try {
   }
 
   assert(
-    rpgCatalogData?.runtime === "react-presentation-only"
+    rpgCatalogData?.runtime === "catalog-only"
       && rpgCatalogData?.historicalEvidence === false
       && rpgCatalogData?.familyLikeness === "prohibited"
-      && rpgCatalogData?.licenseStatus === "review-required",
-    "Curated RPG asset catalog is missing its presentation-only safety boundary",
+      && rpgCatalogData?.licenseStatus === "blocked-pending-provenance",
+    "RPG asset catalog is missing its blocked reference-only safety boundary",
   );
 
   const curatedRpgAssets = Array.isArray(rpgCatalogData?.assets)
     ? rpgCatalogData.assets
     : [];
   assert(
-    curatedRpgAssets.length === 6,
-    `Curated RPG asset catalog must contain exactly six approved files, found ${curatedRpgAssets.length}`,
+    curatedRpgAssets.length === 0,
+    `Blocked RPG asset catalog must not publish runtime files, found ${curatedRpgAssets.length}`,
   );
-
-  for (const asset of curatedRpgAssets) {
-    assert(
-      typeof asset?.file === "string"
-        && asset.file.startsWith("/legacy-rpg-assets/")
-        && asset.runtime === "approved"
-        && asset.role !== "family-portrait"
-        && !/(?:rpg_core|rpg_objects|LinearMotionBattleSystem)/i.test(asset.file),
-      `Curated RPG asset has an unsafe runtime or identity declaration: ${asset?.file ?? "unknown"}`,
-    );
-    const servedAsset = await get(asset.file);
-    assert(
-      servedAsset.response.ok && /^image\/png\b/i.test(servedAsset.contentType),
-      `Curated RPG asset is not a served PNG: ${asset.file} (HTTP ${servedAsset.response.status}, ${servedAsset.contentType})`,
-    );
-  }
 
   const villageCatalog = await get("/legacy-village-assets/catalog.json");
   assert(

@@ -3,11 +3,11 @@ name: Legacy RPG art boundary
 description: Durable rule for using supplied RPG Maker-style art in the Niakofa Legacy experience
 ---
 
-Supplied RPG art may support atmosphere, visual command cues, and world-state contrast in the React/Vite Legacy demo, but it must remain a curated presentation layer. Do not import a second RPG runtime or present supplied sprites, portraits, or scenes as verified family records or real family likenesses.
+Supplied RPG art may support atmosphere, visual command cues, and world-state contrast in the React/Vite Legacy demo, but it must remain a curated presentation layer. Unresolved uploads are archive-only; the production runtime uses original/provenance-cleared art. Do not import a second RPG runtime or present supplied sprites, portraits, or scenes as verified family records or real family likenesses.
 
-**Why:** The Legacy product is grounded in Family Vault evidence and family contribution; generic combat-first RPG behavior would undermine that boundary, and the uploaded files did not include license or provenance grants.
+**Why:** The Legacy product is grounded in Family Vault evidence and family contribution; generic combat-first RPG behavior would undermine that boundary, and the uploaded files did not include license or provenance grants. A release guard is needed because an accidental catalog or path change can silently promote blocked art.
 
-**How to apply:** Promote only the smallest useful asset subset, keep the full uploads under the durable reference bundle, use non-combat verbs such as listen/inspect/connect, and confirm licensing before public commercial launch.
+**How to apply:** Promote only original or provenance-cleared assets, keep unresolved uploads under the durable reference bundle, run the asset provenance audit in release validation, use non-combat verbs such as listen/inspect/connect, and confirm licensing before public commercial launch.
 
 Village environment art can be promoted as a separate, hashed presentation
 catalog when it makes a story-state transition visible (for example,

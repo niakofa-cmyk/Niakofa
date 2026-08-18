@@ -5,10 +5,11 @@
  * Runs pre-deployment checks before any release goes to production:
  *   1. TypeScript typecheck passes
  *   2. No `any` types in source (excluding tests/generated)
- *   3. App/AI boundary check passes
- *   4. No console.log in production source
- *   5. All required environment variables are documented
- *   6. No TODO/FIXME/HACK markers in critical paths
+ *   3. Legacy asset provenance boundary passes
+ *   4. App/AI boundary check passes
+ *   5. No console.log in production source
+ *   6. All required environment variables are documented
+ *   7. No TODO/FIXME/HACK markers in critical paths
  *
  * Run: node scripts/src/release-validate.js
  * Exit 0 = ready for release, exit 1 = blocking issues found.
@@ -85,8 +86,17 @@ for (const dir of sourceDirs) {
 if (anyCount === 0) pass("no explicit `any` types in source");
 else fail(`${anyCount} explicit any type(s) found`);
 
-// 3. App/AI boundary check
-console.log("3. App/AI boundary check...");
+// 3. Legacy asset provenance boundary
+console.log("3. Legacy asset provenance boundary...");
+try {
+  execSync("node scripts/src/audit-legacy-assets.mjs", { cwd: ROOT, stdio: "pipe" });
+  pass("Legacy asset provenance boundary passes");
+} catch {
+  fail("Legacy asset provenance boundary failed");
+}
+
+// 4. App/AI boundary check
+console.log("4. App/AI boundary check...");
 try {
   execSync("node scripts/src/check-app-ai-boundary.js", { cwd: ROOT, stdio: "pipe" });
   pass("App/AI boundary check passes");
@@ -94,8 +104,8 @@ try {
   fail("App/AI boundary check failed");
 }
 
-// 4. No console.log in production source
-console.log("4. Checking for console.log in production source...");
+// 5. No console.log in production source
+console.log("5. Checking for console.log in production source...");
 let consoleCount = 0;
 for (const dir of sourceDirs.slice(0, 2)) {
   try {
@@ -120,8 +130,8 @@ for (const dir of sourceDirs.slice(0, 2)) {
 if (consoleCount === 0) pass("no console.log in production source");
 else fail(`${consoleCount} file(s) with console.log found`);
 
-// 5. Check for TODO/FIXME/HACK in critical paths
-console.log("5. Checking for TODO/FIXME/HACK markers...");
+// 6. Check for TODO/FIXME/HACK in critical paths
+console.log("6. Checking for TODO/FIXME/HACK markers...");
 const criticalPaths = [
   join(ROOT, "artifacts", "api-server", "src", "middlewares"),
   join(ROOT, "artifacts", "api-server", "src", "routes", "stripe.ts"),
@@ -147,8 +157,8 @@ for (const path of criticalPaths) {
 if (markerCount === 0) pass("no TODO/FIXME/HACK in critical paths");
 else fail(`${markerCount} TODO/FIXME/HACK marker(s) in critical paths`);
 
-// 6. tsconfig strict mode verification
-console.log("6. Verifying TypeScript strict mode...");
+// 7. tsconfig strict mode verification
+console.log("7. Verifying TypeScript strict mode...");
 try {
   const tsconfig = JSON.parse(readFileSync(join(ROOT, "tsconfig.base.json"), "utf8"));
   if (tsconfig.compilerOptions?.strict === true) pass("strict mode enabled in tsconfig.base.json");

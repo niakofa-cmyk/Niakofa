@@ -87,8 +87,8 @@ describe("Legacy demo navigation contract", () => {
     expect(encounterSource).toContain("The ledger remembers");
     expect(encounterSource).toContain("Listen to the memory");
     expect(encounterSource).toContain("Preserve this discovery");
-    expect(encounterSource).toContain("/legacy-rpg-assets/encounter/grassland.png");
-    expect(encounterSource).toContain("/legacy-rpg-assets/encounter/brick.png");
+    expect(encounterSource).toContain("/legacy-world-assets/tiles/grass_01.png");
+    expect(encounterSource).toContain("/legacy-world-assets/tiles/red_earth.png");
     expect(stateSource).toContain("completeMemoryEncounter");
     expect(stateSource).toContain("memoryEncounterCompleted");
   });

@@ -60,6 +60,13 @@ zipFile.zip
 # User-uploaded chat assets — may contain sensitive data
 attached_assets/
 
+# Unverified third-party/reference art must never be reintroduced into the
+# public Legacy runtime. Keep source archives under docs/legacy-reference/.
+/artifacts/pay-it-forward/public/legacy-character-assets/tv/
+/artifacts/pay-it-forward/public/legacy-rpg-assets/encounter/
+/artifacts/pay-it-forward/public/legacy-rpg-assets/animations/
+/artifacts/pay-it-forward/public/legacy-reference-docs/animation-reference/darkninja/
+
 # Agent temp outputs and audit scripts — never commit
 .agents/outputs/
 .agents/scripts/

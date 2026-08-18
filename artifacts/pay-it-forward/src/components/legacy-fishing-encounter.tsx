@@ -8,15 +8,15 @@ import {
 const CATCH_ART: Record<string, { image: string; effect: string }> = {
   "river-tilapia": {
     image: "/legacy-rpg-assets/fishing/green.png",
-    effect: "/legacy-rpg-assets/animations/StateUp1.png",
+    effect: "/legacy-rpg-assets/fishing/splash.png",
   },
   "golden-fish": {
     image: "/legacy-rpg-assets/fishing/purple.png",
-    effect: "/legacy-rpg-assets/animations/Fire1.png",
+    effect: "/legacy-rpg-assets/fishing/splash.png",
   },
   "river-spirit": {
     image: "/legacy-rpg-assets/fishing/devil.png",
-    effect: "/legacy-rpg-assets/animations/Revival1.png",
+    effect: "/legacy-rpg-assets/fishing/splash.png",
   },
 };
 

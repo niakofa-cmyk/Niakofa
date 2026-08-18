@@ -5,7 +5,6 @@ type EncounterChoice = {
   id: "listen" | "inspect" | "connect";
   label: string;
   detail: string;
-  icon: string;
   Icon: typeof Headphones;
 };
 
@@ -14,21 +13,18 @@ const ENCOUNTER_CHOICES: EncounterChoice[] = [
     id: "listen",
     label: "Listen to the memory",
     detail: "Hear what the preserved story says before drawing conclusions.",
-    icon: "/legacy-rpg-assets/encounter/command-summon.png",
     Icon: Headphones,
   },
   {
     id: "inspect",
     label: "Inspect the evidence",
     detail: "Study the recovered clue and separate family fact from reconstruction.",
-    icon: "/legacy-rpg-assets/encounter/command-item.png",
     Icon: Search,
   },
   {
     id: "connect",
     label: "Connect the story",
     detail: "Link the clue to a person, place, and next question for the family.",
-    icon: "/legacy-rpg-assets/encounter/command-summon.png",
     Icon: Link2,
   },
 ];
@@ -50,8 +46,8 @@ export function LegacyMemoryEncounter({
   const [selectedId, setSelectedId] = useState<EncounterChoice["id"] | null>(null);
   const selected = ENCOUNTER_CHOICES.find(choice => choice.id === selectedId);
   const background = worldVersion > 1
-    ? "/legacy-rpg-assets/encounter/brick.png"
-    : "/legacy-rpg-assets/encounter/grassland.png";
+    ? "/legacy-world-assets/tiles/red_earth.png"
+    : "/legacy-world-assets/tiles/grass_01.png";
 
   return (
     <section
@@ -77,16 +73,11 @@ export function LegacyMemoryEncounter({
             </p>
           </div>
           <div className="flex shrink-0 items-end gap-3">
-            <img
-              src="/legacy-rpg-assets/encounter/face-3.png"
-              alt="Stylized encounter portrait used as a visual reference"
-              width={178}
-              height={67}
-              className="h-auto w-36 rounded-lg border border-amber-200/20 bg-black/30 object-contain p-1 sm:w-44"
-            />
-            <span
-              className="hidden h-8 w-7 rounded border border-amber-200/30 bg-amber-300/10 bg-contain bg-center bg-no-repeat sm:block"
-              style={{ backgroundImage: 'url("/legacy-rpg-assets/encounter/cursor.png")' }}
+            <div className="flex h-16 w-36 items-center justify-center rounded-lg border border-amber-200/20 bg-amber-300/10 sm:w-44">
+              <Eye className="h-8 w-8 text-amber-200/80" aria-hidden="true" />
+            </div>
+            <Sparkles
+              className="hidden h-7 w-7 text-amber-300 sm:block"
               aria-hidden="true"
             />
           </div>
@@ -121,7 +112,7 @@ export function LegacyMemoryEncounter({
                 }`}
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-300/20 bg-black/20">
-                  <img src={choice.icon} alt="" width={32} height={32} aria-hidden="true" />
+                  <Icon className="h-4 w-4 text-amber-400" aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5 text-xs font-black">

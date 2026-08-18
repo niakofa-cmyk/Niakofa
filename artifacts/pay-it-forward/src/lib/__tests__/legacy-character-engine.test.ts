@@ -11,10 +11,10 @@ import {
 } from "../legacy-character-engine";
 
 describe("Legacy character engine", () => {
-  it("resolves stable runtime asset IDs instead of raw generator paths", () => {
+  it("resolves stable original-art asset IDs instead of raw generator paths", () => {
     expect(resolveWalkingAsset({ ageGroup: "adult", gender: "female" })).toMatchObject({
-      assetId: "tv_body_female_base",
-      file: "/legacy-character-assets/tv/TV_Body_p01-female.png",
+      assetId: "tv_body_adult_female_base",
+      file: "/legacy-world-assets/tv/TV_Body_p01-adult_female.png",
       width: 144,
       height: 192,
     });
@@ -29,10 +29,10 @@ describe("Legacy character engine", () => {
       width: 144,
       height: 192,
       layers: [
-        { assetId: "tv_body_female_base", layer: "body" },
-        { assetId: "tv_clothing_female_default", layer: "clothing" },
-        { assetId: "tv_rear_hair_female_default", layer: "rearHair" },
-        { assetId: "tv_front_hair_female_default", layer: "frontHair" },
+        { assetId: "tv_body_adult_female_base", layer: "body" },
+        { assetId: "tv_clothing_adult_female_p01", layer: "clothing" },
+        { assetId: "tv_rear_hair_adult_female_p01_afro", layer: "rearHair" },
+        { assetId: "tv_front_hair_adult_female_p01_afro", layer: "frontHair" },
       ],
     });
   });
@@ -50,10 +50,10 @@ describe("Legacy character engine", () => {
     const second = resolveCharacterAppearance(input);
     expect(first).toEqual(second);
     expect(first?.layers.map((layer) => layer.assetId)).toEqual([
-      "tv_body_male_base",
-      expect.stringMatching(/^tv_clothing_male_p0[234]$/),
-      expect.stringMatching(/^tv_rear_hair_male_p0[234]$/),
-      expect.stringMatching(/^tv_front_hair_male_p0[234]$/),
+      "tv_body_adult_male_base",
+      expect.stringMatching(/^tv_clothing_adult_male_p0[123]$/),
+      expect.stringMatching(/^tv_rear_hair_adult_male_p0[1-5]_(afro|coils|braids|bun|locs)$/),
+      expect.stringMatching(/^tv_front_hair_adult_male_p0[1-5]_(afro|coils|braids|bun|locs)$/),
     ]);
   });
 
@@ -77,8 +77,8 @@ describe("Legacy character engine", () => {
     expect(youth?.characterId).toBe("kwame-mensah");
     expect(youth?.lifeStage).toBe("youth");
     expect(elder?.lifeStage).toBe("elder");
-    expect(resolveWalkingAppearance(youth!)?.layers[1].assetId).toMatch(/^tv_clothing_kid_p0[234]$/);
-    expect(resolveWalkingAppearance(elder!)?.layers[1].assetId).toMatch(/^tv_clothing_male_p0[234]$/);
+    expect(resolveWalkingAppearance(youth!)?.layers[1].assetId).toMatch(/^tv_clothing_kid_p0[123]$/);
+    expect(resolveWalkingAppearance(elder!)?.layers[1].assetId).toMatch(/^tv_clothing_adult_male_p0[123]$/);
   });
 
   it("ignores unknown or catalog-only selections instead of constructing raw paths", () => {
@@ -86,7 +86,7 @@ describe("Legacy character engine", () => {
       ageGroup: "adult",
       gender: "male",
       layers: { clothing: "not-a-real-asset" },
-    })?.layers.map((layer) => layer.assetId)).toContain("tv_clothing_male_default");
+    })?.layers.map((layer) => layer.assetId)).toContain("tv_clothing_adult_male_p01");
   });
 
   it("uses kid assets without inventing gender", () => {
@@ -222,9 +222,9 @@ describe("Original-art library (niakofa-original-art-demo-v1)", () => {
     }
   });
 
-  it("is opt-in only - default library is unchanged", () => {
+  it("uses the license-clean original-art library by default", () => {
     expect(resolveWalkingAsset({ ageGroup: "adult", gender: "female" })?.file)
-      .toBe("/legacy-character-assets/tv/TV_Body_p01-female.png");
+      .toBe("/legacy-world-assets/tv/TV_Body_p01-adult_female.png");
   });
 
   it("resolves a full layered appearance from the original-art library", () => {
