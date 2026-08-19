@@ -25,7 +25,7 @@
 import "pixi.js/unsafe-eval";
 
 import { useEffect, useRef, useState } from "react";
-import { Application, Graphics, Texture } from "pixi.js";
+import { AnimatedSprite, Application, Graphics, Texture } from "pixi.js";
 import { LegacyActorController } from "@/lib/legacy-animation-fsm";
 import { LegacyCombatController, type LegacyCombatTarget, type LegacyFullAnimState } from "@/lib/legacy-combat-fsm";
 import type { LegacyMapScene } from "@/lib/legacy-map-engine";
@@ -36,6 +36,8 @@ import {
   loadCharacterFrameSet,
   loadCharacterFrameSetFromSheets,
   loadEnvironmentTextures,
+  resolveFrames,
+  type CharacterFrameSet,
   type CharacterManifest,
   type SheetBasedCharacterManifest,
   type EnvironmentManifestEntry,
@@ -84,9 +86,6 @@ const KEY_TO_VECTOR: Record<string, { dx: number; dy: number }> = {
   d: { dx:  1, dy:  0 },
 };
 
-// NPC placeholder rectangle: 24×36px, feet at tile center
-const NPC_WIDTH_PX  = 24;
-const NPC_HEIGHT_PX = 36;
 const BOOT_TIMEOUT_MS = 20_000;
 const RUNTIME_STATE_VERSION = 1;
 const RUNTIME_STATE_KEY_PREFIX = "niakofa:legacy-runtime:";
@@ -446,22 +445,28 @@ export function LegacyGameCanvas({
       const playerSprite = new LegacyActorSprite(frameSet, frameSet["idle:down"] ?? [Texture.WHITE]);
       actorLayer.addChild(playerSprite.view);
 
-      // ── NPC placeholder graphics (Layer 6 — Eldiron entity pattern) ────
-      // Each NPC gets a colored Graphics rect and a name label until real
-      // sprite sheets are delivered. Feet are anchored to the tile center.
-      const npcGfxMap: Map<string, Graphics> = new Map();
+      // ── NPC character visuals (Layer 6) ─────────────────────────────────
+      // NPCs use the same hand-drawn directional cells as Kwame until their
+      // bespoke character atlases arrive. Tinting keeps identities distinct
+      // while preserving the authored silhouettes, animation, and baseline.
+      // This is deliberately a visible art bridge, not a silent rectangle
+      // placeholder or a second rendering system.
+      const npcGfxMap: Map<string, AnimatedSprite> = new Map();
+      const npcFrameKeyMap = new Map<string, string>();
       for (const ctrl of npcControllers) {
-        const gfx = new Graphics();
-        gfx.rect(
-          -NPC_WIDTH_PX  / 2,
-          -NPC_HEIGHT_PX,
-          NPC_WIDTH_PX,
-          NPC_HEIGHT_PX
-        ).fill({ color: ctrl.definition.placeholderColor, alpha: 0.92 });
-        // Name label (simple text via Graphics label string — Canvas 2D fallback)
-        gfx.label = ctrl.definition.name;
-        actorLayer.addChild(gfx);
-        npcGfxMap.set(ctrl.definition.id, gfx);
+        const initialFacing = ctrl.state.facing;
+        const initialFrames = resolveFrames(frameSet, "idle", initialFacing).frames;
+        const sprite = new AnimatedSprite(initialFrames.length ? initialFrames : [Texture.WHITE]);
+        sprite.anchor.set(0.5, initialFrames[0]?.height === 256 ? 224 / 256 : 1);
+        sprite.scale.set(0.58);
+        sprite.tint = ctrl.definition.placeholderColor;
+        sprite.animationSpeed = 0.08;
+        sprite.loop = true;
+        sprite.play();
+        sprite.label = `npc:${ctrl.definition.name}`;
+        actorLayer.addChild(sprite);
+        npcGfxMap.set(ctrl.definition.id, sprite);
+        npcFrameKeyMap.set(ctrl.definition.id, `idle:${initialFacing}`);
       }
 
       window.addEventListener("keydown", onKeyDown);
@@ -487,11 +492,21 @@ export function LegacyGameCanvas({
               collisionQuery.canOccupy.bind(collisionQuery)
             );
 
-            // Sync NPC placeholder graphics to world position
+            // Sync directional hand-drawn NPC visuals to world position.
             const gfx = npcGfxMap.get(ctrl.definition.id);
             if (gfx) {
-              gfx.x = ctrl.state.x * TILE_SIZE_PX + TILE_SIZE_PX / 2;
-              gfx.y = ctrl.state.y * TILE_SIZE_PX + TILE_SIZE_PX;
+              const frameKey = `idle:${ctrl.state.facing}`;
+              if (npcFrameKeyMap.get(ctrl.definition.id) !== frameKey) {
+                const frames = resolveFrames(frameSet, "idle", ctrl.state.facing).frames;
+                if (frames.length) {
+                  gfx.textures = frames;
+                  gfx.gotoAndStop(0);
+                  gfx.play();
+                }
+                npcFrameKeyMap.set(ctrl.definition.id, frameKey);
+              }
+              gfx.x = ctrl.state.x * TILE_SIZE_PX;
+              gfx.y = ctrl.state.y * TILE_SIZE_PX;
               // Dim sleeping NPCs; highlight nearby ones
               gfx.alpha = ctrl.state.behaviorState === "sleeping" ? 0.35
                 : ctrl.state.isNearPlayer ? 1.0
