@@ -27,7 +27,7 @@ import "pixi.js/unsafe-eval";
 import { useEffect, useRef, useState } from "react";
 import { Application, Graphics, Texture } from "pixi.js";
 import { LegacyActorController } from "@/lib/legacy-animation-fsm";
-import { LegacyCombatController, type LegacyCombatTarget } from "@/lib/legacy-combat-fsm";
+import { LegacyCombatController, type LegacyCombatTarget, type LegacyFullAnimState } from "@/lib/legacy-combat-fsm";
 import type { LegacyMapScene } from "@/lib/legacy-map-engine";
 import { TILE_SIZE_PX } from "@/lib/legacy-map-engine";
 import { buildSceneContainers, renderStaticLayers, depthSortActors } from "./legacy-scene-renderer";
@@ -48,6 +48,7 @@ import {
   fishingLand,
   cancelFishing,
   getFishingState,
+  type FishingResult,
 } from "./legacy-world/fishing-runtime";
 import { applyWorldMutations, createEmptyWorldState, type MinimalWorldState } from "./legacy-world/mutations";
 import type { WorldActivity } from "./legacy-world/types";
@@ -374,9 +375,15 @@ export function LegacyGameCanvas({
           (result, mutations) => {
             // Layer 9 + 10: fishing results → attribute XP
             if (result && "fish" in result) {
-              attrs.processEvent({ type: "fish_caught", fishRarity: (result as any).rarity ?? 1 });
+              const fishingResult = result as FishingResult;
+              const fishRarity = fishingResult.rarity === "rare"
+                ? 3
+                : fishingResult.rarity === "uncommon"
+                  ? 2
+                  : 1;
+              attrs.processEvent({ type: "fish_caught", fishRarity });
             }
-            if (result && "memoryEcho" in result && (result as any).memoryEcho) {
+            if (result && "isMemoryCatch" in result && result.isMemoryCatch) {
               attrs.processEvent({ type: "river_memory", depth: 1 });
             }
             worldStateRef.current = applyWorldMutations(mutations, worldStateRef.current);
@@ -524,7 +531,7 @@ export function LegacyGameCanvas({
           const animState = combat.airborne
             ? (player.state.anim === "idle" ? "fall" : player.state.anim)
             : player.state.anim;
-          playerSprite.sync(player, animState as any, player.state.facing);
+          playerSprite.sync(player, animState as LegacyFullAnimState, player.state.facing);
         }
 
         // ── Camera follow with world-boundary clamping ────────────────────────
@@ -693,7 +700,7 @@ export function LegacyGameCanvas({
             onPointerUp={() => { touchDirectionRef.current = null; }}
             onPointerCancel={() => { touchDirectionRef.current = null; }}
             onPointerLeave={() => { touchDirectionRef.current = null; }}
-            style={TOUCH_BUTTON_STYLE}
+            style={{ ...TOUCH_BUTTON_STYLE, gridArea: direction }}
           >
             {glyph}
           </button>

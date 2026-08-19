@@ -1,9 +1,8 @@
 /**
  * Public Living Baobab launcher.
  *
- * The old dashboard demo remains available as supporting legacy code for its
- * state/component contracts, but it is no longer mounted at /legacy/demo.
- * This page has one job: choose a branch, then enter the real PixiJS world.
+ * The public entry screen has one job: choose a branch, then enter the
+ * canonical PixiJS world.
  */
 
 import { ArrowLeft } from "lucide-react";

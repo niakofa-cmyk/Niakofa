@@ -43,6 +43,7 @@ export interface FishingResult {
   success: boolean;
   fishId?: string;
   fishName?: string;
+  rarity?: FishSpecies["rarity"];
   isMemoryCatch?: boolean;
   memoryId?: string;
   memoryText?: string;
@@ -193,6 +194,7 @@ function finishFishing(success: boolean, tensionPeak?: number) {
     const fish = pickFish();
     result.fishId = fish.id;
     result.fishName = fish.name;
+    result.rarity = fish.rarity;
     result.itemId = fish.itemId;
 
     if (Math.random() < CONFIG.memoryCatchChance) {
