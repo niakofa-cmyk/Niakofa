@@ -13,10 +13,11 @@ import { ArrowLeft, BookOpen, CircleHelp, Compass, Sparkles } from "lucide-react
 import { useLocation } from "wouter";
 import { LegacyGameCanvas } from "@/legacy-runtime/LegacyGameCanvas";
 import {
-  capeCoastCompoundAssets,
-  capeCoastCompoundScene,
-  environmentBaseUrl,
-} from "@/legacy-runtime/scene-cape-coast-compound";
+  mensahCompoundAssets,
+  mensahCompoundScene,
+  mensahCompoundBaseUrl,
+  MENSAH_COMPOUND_SPAWN,
+} from "@/legacy-runtime/scene-mensah-compound";
 import { KWAME_SHEET_MANIFEST } from "@/legacy-runtime/kwame-sheet-manifest";
 
 const BRANCH_CONTEXT: Record<string, { label: string; detail: string }> = {
@@ -50,10 +51,11 @@ export default function LegacyPublicWorldPage() {
     <main className="fixed inset-0 overflow-hidden bg-[#120b07] text-amber-100">
       <div className="absolute inset-0">
         <LegacyGameCanvas
-          scene={capeCoastCompoundScene}
-          environmentAssets={capeCoastCompoundAssets}
-          environmentBaseUrl={environmentBaseUrl}
+          scene={mensahCompoundScene}
+          environmentAssets={mensahCompoundAssets}
+          environmentBaseUrl={mensahCompoundBaseUrl}
           characterManifest={KWAME_SHEET_MANIFEST}
+          initialSpawn={MENSAH_COMPOUND_SPAWN}
         />
       </div>
 

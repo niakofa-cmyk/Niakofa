@@ -66,6 +66,7 @@ export interface LegacyGameCanvasProps {
   gameHour?: number;
   /** Called each frame with the player's world position. */
   onPlayerPositionChange?: (x: number, y: number) => void;
+  initialSpawn?: { x: number; y: number; facing: "up" | "down" | "left" | "right" };
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -166,6 +167,7 @@ export function LegacyGameCanvas({
   characterManifest,
   gameHour = 9,
   onPlayerPositionChange,
+  initialSpawn,
 }: LegacyGameCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [prompt, setPrompt] = useState<string | null>(null);
@@ -286,9 +288,9 @@ export function LegacyGameCanvas({
     // ─── Player + combat controllers ────────────────────────────────────────
     const savedPlayerPosition = savedState?.player;
     const player = new LegacyActorController({
-      x: savedPlayerPosition?.x ?? 5,
-      y: savedPlayerPosition?.y ?? 5,
-      facing: "down",
+      x: savedPlayerPosition?.x ?? initialSpawn?.x ?? 5,
+      y: savedPlayerPosition?.y ?? initialSpawn?.y ?? 5,
+      facing: initialSpawn?.facing ?? "down",
     });
     const combat = new LegacyCombatController(player);
     const currentCombatTargets: LegacyCombatTarget[] = [];
@@ -598,7 +600,7 @@ export function LegacyGameCanvas({
       destroyApp();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [retryToken, scene.id]);
+  }, [retryToken, scene.id, initialSpawn]);
 
   // ─── HUD overlays (React layer over PixiJS canvas) ────────────────────────
 
