@@ -1,0 +1,777 @@
+Those files are either missing or being rate-limited (HTTP 429).
+Your ZIPs contain the correct source material: full 32-frame atlas sheets, not the exploded individual frames:
+* Kwame Mensah PICK UP 32-Frame Animation Atlas.png
+* Kwame Mensah HURT 32-Frame Animation Atlas.png
+* Kwame Mensah RUN …, TALK …, INSPECT …, direction sheets, etc.
+* Environment: NIAKOFA-GROUND-TILES-ATLAS-v1.png, NIAKOFA-BUILDINGS-STRUCTURES-ATLAS-v1.png
+Loading dozens/hundreds of separate images is fragile and triggers 429s. The correct path is to load the atlas sheets and slice frames from them (or ship a small set of pre-sliced sheets with retries + graceful fallbacks).
+
+1. Immediate resilience fix (stop the hard crash)
+Replace legacy-asset-loader.ts with a version that:
+* Retries on 429 / network errors
+* Never fails the whole boot if one optional animation is missing
+* Falls back to idle / white texture so the world still opens
+TypeScript
+
+/**
+ * legacy-asset-loader.ts — resilient loader for hand-drawn Kwame + environment.
+ *
+ * - Retries on 429 / transient network errors
+ * - Never aborts the whole world if one optional animation is missing
+ * - Prefers atlas sheets when available; still supports individual frames
+ */
+
+import "pixi.js/unsafe-eval";
+
+import { Assets, Texture, Rectangle } from "pixi.js";
+import type { LegacyFullAnimState } from "@/lib/legacy-combat-fsm";
+import type { LegacyFacing } from "@/lib/legacy-animation-fsm";
+
+export interface CharacterFrameSet {
+  [key: string]: Texture[]; // key = `${animState}:${facing}`
+}
+
+export interface CharacterFrameManifestEntry {
+  animState: LegacyFullAnimState;
+  facing: LegacyFacing;
+  /** Ordered frame file paths, relative to baseUrl */
+  frameFiles: string[];
+}
+
+export interface CharacterManifest {
+  characterId: string;
+  baseUrl: string;
+  frames: CharacterFrameManifestEntry[];
+}
+
+const frameSetCache = new Map<string, CharacterFrameSet>();
+
+const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 400;
+
+async function loadWithRetry(urls: string[]): Promise<Texture[]> {
+  const results: Texture[] = [];
+
+  for (const url of urls) {
+    let lastError: unknown = null;
+    let loaded: Texture | null = null;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        loaded = await Assets.load<Texture>(url);
+        break;
+      } catch (err) {
+        lastError = err;
+        const msg = String(err);
+        const isRateLimit = msg.includes("429") || msg.includes("Too Many Requests");
+        const isMissing = msg.includes("404") || msg.includes("Failed to fetch");
+
+        if (isMissing) {
+          // Don't retry hard 404s forever
+          console.warn(`[legacy-asset-loader] missing frame (skip): ${url}`);
+          break;
+        }
+
+        // Back-off on 429 / transient errors
+        const delay = RETRY_BASE_MS * Math.pow(2, attempt) + Math.random() * 200;
+        console.warn(`[legacy-asset-loader] retry ${attempt + 1}/${MAX_RETRIES} for ${url} (${isRateLimit ? "429" : "error"})`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+
+    results.push(loaded ?? Texture.WHITE);
+  }
+
+  return results;
+}
+
+export async function loadCharacterFrameSet(manifest: CharacterManifest): Promise<CharacterFrameSet> {
+  const cached = frameSetCache.get(manifest.characterId);
+  if (cached) return cached;
+
+  const result: CharacterFrameSet = {};
+
+  // Load each animation group with resilience — one missing group must not kill the world
+  for (const entry of manifest.frames) {
+    const urls = entry.frameFiles.map((f) => manifest.baseUrl + f);
+    try {
+      const ordered = await loadWithRetry(urls);
+      // Keep only real textures; if everything failed, leave empty so resolveFrames can fall back
+      const valid = ordered.filter((t) => t && t !== Texture.WHITE);
+      if (valid.length > 0) {
+        result[frameKey(entry.animState, entry.facing)] = valid;
+      } else {
+        console.warn(
+          `[legacy-asset-loader] no valid frames for ${entry.animState}:${entry.facing} — will fall back at runtime`
+        );
+      }
+    } catch (err) {
+      console.warn(`[legacy-asset-loader] failed group ${entry.animState}:${entry.facing}`, err);
+    }
+  }
+
+  // Guarantee at least an idle:down so the character always appears
+  if (!result["idle:down"]?.length) {
+    result["idle:down"] = [Texture.WHITE];
+  }
+
+  frameSetCache.set(manifest.characterId, result);
+  return result;
+}
+
+export function frameKey(animState: LegacyFullAnimState, facing: LegacyFacing): string {
+  return `${animState}:${facing}`;
+}
+
+export function resolveFrames(
+  frameSet: CharacterFrameSet,
+  animState: LegacyFullAnimState,
+  facing: LegacyFacing
+): { frames: Texture[]; isFallback: boolean } {
+  const exact = frameSet[frameKey(animState, facing)];
+  if (exact?.length) return { frames: exact, isFallback: false };
+
+  const downFallback = frameSet[frameKey(animState, "down")];
+  if (downFallback?.length) return { frames: downFallback, isFallback: true };
+
+  const idleFallback = frameSet[frameKey("idle", facing)] ?? frameSet[frameKey("idle", "down")];
+  return { frames: idleFallback?.length ? idleFallback : [Texture.WHITE], isFallback: true };
+}
+
+// ─── Environment ─────────────────────────────────────────────────────────────
+
+export interface EnvironmentManifestEntry {
+  assetId: string;
+  file: string;
+}
+
+export async function loadEnvironmentTextures(
+  baseUrl: string,
+  entries: EnvironmentManifestEntry[]
+): Promise<Map<string, Texture>> {
+  const byAssetId = new Map<string, Texture>();
+  const urls = entries.map((e) => baseUrl + e.file);
+
+  // Load in small batches to reduce 429 pressure
+  const BATCH = 6;
+  for (let i = 0; i < urls.length; i += BATCH) {
+    const batchUrls = urls.slice(i, i + BATCH);
+    const batchEntries = entries.slice(i, i + BATCH);
+
+    try {
+      const loaded = await loadWithRetry(batchUrls);
+      batchEntries.forEach((e, idx) => {
+        byAssetId.set(e.assetId, loaded[idx] ?? Texture.WHITE);
+      });
+    } catch (err) {
+      console.warn("[legacy-asset-loader] environment batch failed", err);
+      batchEntries.forEach((e) => byAssetId.set(e.assetId, Texture.WHITE));
+    }
+
+    // Small pause between batches under rate-limit pressure
+    if (i + BATCH < urls.length) {
+      await new Promise((r) => setTimeout(r, 120));
+    }
+  }
+
+  return byAssetId;
+}
+
+
+This alone should stop the world from refusing to open when a few PICK_UP frames 429 or 404.
+
+2. Correct way to use your ZIPs (recommended long-term)
+The ZIPs are atlas sheets, not the exploded atlas/PICK_UP/pick-up-left-2.png tree the current manifest expects.
+Do this:
+1. Unzip both archives.
+2. Copy the useful atlas PNGs into public/:
+Bash
+
+# Character atlases
+mkdir -p artifacts/pay-it-forward/public/legacy-character-assets/kwame-mensah/sheets
+# copy these (rename cleanly):
+#   Kwame Mensah PICK UP 32-Frame Animation Atlas.png          → pick-up-sheet.png
+#   Kwame Mensah HURT 32-Frame Animation Atlas.png             → hurt-sheet.png
+#   Kwame Mensah RUN DOWN LEFT 32-Frame Animation Atlas.png    → run-down-left-sheet.png
+#   … etc for IDLE / WALK / TALK / INSPECT / direction sheets
+#   Kwame Mensah RPG Maker MV Final Sprite Sheet.png           → rpg-maker-sheet.png  (useful fallback)
+
+# Environment
+mkdir -p artifacts/pay-it-forward/public/legacy-environment-assets/sheets
+#   NIAKOFA-GROUND-TILES-ATLAS-v1.png
+#   NIAKOFA-BUILDINGS-STRUCTURES-ATLAS-v1.png
+
+
+3. Prefer loading whole sheets and slicing frames with Texture + Rectangle instead of hundreds of HTTP requests.
+Example helper you can add later:
+TypeScript
+
+/** Slice a uniform grid atlas into frames (left→right, top→bottom) */
+export function sliceSheet(
+  sheet: Texture,
+  frameWidth: number,
+  frameHeight: number,
+  frameCount: number
+): Texture[] {
+  const frames: Texture[] = [];
+  const cols = Math.floor(sheet.width / frameWidth);
+  for (let i = 0; i < frameCount; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    frames.push(
+      new Texture({
+        source: sheet.source,
+        frame: new Rectangle(col * frameWidth, row * frameHeight, frameWidth, frameHeight),
+      })
+    );
+  }
+  return frames;
+}
+
+
+Then a manifest entry becomes one sheet URL instead of 6–32 individual files.
+
+3. Quick operational checklist (stop 429s today)
+1. Replace legacy-asset-loader.ts with the resilient version above.
+2. Deploy the atlas sheets from the two ZIPs into public/legacy-character-assets/ and public/legacy-environment-assets/ (or the paths your baseUrl / manifest already point at).
+3. Temporarily trim the character manifest to only the animations you actually have on disk (idle + walk are enough for a playable world). Comment out or remove PICK_UP, INSPECT, etc. until their sheets are properly registered.
+4. Hard-refresh the demo. The world should open even if some frames are missing.
+5. Later: switch the manifest to sheet-based loading so you never request 200+ individual PNGs again.
+
+4. Why you saw this specific error
+text
+
+Failed to load …/PICK_UP/pick-up-left-2.png … 429
+
+
+* The loader requested many individual frames in a short time.
+* The host (or CDN / Railway) rate-limited the requests.
+* One failed load previously aborted the whole Promise.all / boot path → “We couldn’t open the Legacy world”.
+The new loader isolates failures, retries 429s with backoff, and always leaves at least an idle:down so the continuous world can start.
+
+What you should do right now
+1. Paste the new legacy-asset-loader.ts.
+2. Unzip the two hand-drawn ZIPs and copy the atlas sheets into the public asset folders the game already expects.
+3. Reduce the Kwame manifest to only animations that actually exist on the server (or point them at the new sheet files).
+4. Redeploy and test /legacy/demo.
+After that the living world should open with the hand-drawn art instead of dying on a single 429.
+
+
+
+Here is the complete next step: a sheet-based character system that uses the exact atlas files inside your two ZIPs, plus the supporting loader helpers and a ready-to-use manifest.
+This removes the hundreds of individual PNG requests that were causing the 429s.
+
+1. Add sheet-slicing helpers to legacy-asset-loader.ts
+Append (or merge) these functions into the resilient loader from the previous step:
+TypeScript
+
+import { Assets, Texture, Rectangle } from "pixi.js";
+
+/** Slice a uniform grid atlas into ordered frames (left→right, top→bottom). */
+export function sliceSheet(
+  sheet: Texture,
+  frameWidth: number,
+  frameHeight: number,
+  frameCount: number
+): Texture[] {
+  const frames: Texture[] = [];
+  const cols = Math.max(1, Math.floor(sheet.width / frameWidth));
+
+  for (let i = 0; i < frameCount; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = col * frameWidth;
+    const y = row * frameHeight;
+
+    // Guard against reading past the sheet edge
+    if (x + frameWidth > sheet.width + 1 || y + frameHeight > sheet.height + 1) {
+      break;
+    }
+
+    frames.push(
+      new Texture({
+        source: sheet.source,
+        frame: new Rectangle(x, y, frameWidth, frameHeight),
+      })
+    );
+  }
+
+  return frames.length > 0 ? frames : [Texture.WHITE];
+}
+
+export interface SheetManifestEntry {
+  animState: LegacyFullAnimState;
+  facing: LegacyFacing;
+  /** Path relative to baseUrl, e.g. "sheets/pick-up-sheet.png" */
+  sheetFile: string;
+  frameWidth: number;
+  frameHeight: number;
+  frameCount: number;
+  /** Optional: start frame index if the sheet contains multiple animations */
+  startFrame?: number;
+}
+
+export interface SheetBasedCharacterManifest {
+  characterId: string;
+  baseUrl: string; // e.g. "/legacy-character-assets/kwame-mensah/"
+  sheets: SheetManifestEntry[];
+}
+
+/**
+ * Load character animations from whole atlas sheets (the format your ZIPs actually contain).
+ * One HTTP request per animation instead of 6–32.
+ */
+export async function loadCharacterFrameSetFromSheets(
+  manifest: SheetBasedCharacterManifest
+): Promise<CharacterFrameSet> {
+  const cached = frameSetCache.get(manifest.characterId);
+  if (cached) return cached;
+
+  const result: CharacterFrameSet = {};
+
+  for (const entry of manifest.sheets) {
+    const url = manifest.baseUrl + entry.sheetFile;
+    try {
+      const sheet = await Assets.load<Texture>(url);
+      const allFrames = sliceSheet(
+        sheet,
+        entry.frameWidth,
+        entry.frameHeight,
+        entry.frameCount + (entry.startFrame ?? 0)
+      );
+
+      const start = entry.startFrame ?? 0;
+      const frames = allFrames.slice(start, start + entry.frameCount);
+
+      if (frames.length > 0) {
+        result[frameKey(entry.animState, entry.facing)] = frames;
+      } else {
+        console.warn(`[sheet-loader] empty slice for ${entry.animState}:${entry.facing}`);
+      }
+    } catch (err) {
+      console.warn(`[sheet-loader] failed to load sheet ${url}`, err);
+      // continue — other animations still load
+    }
+  }
+
+  // Guarantee a visible character
+  if (!result["idle:down"]?.length) {
+    result["idle:down"] = [Texture.WHITE];
+  }
+
+  frameSetCache.set(manifest.characterId, result);
+  return result;
+}
+
+
+Keep the previous loadCharacterFrameSet (individual frames) and resolveFrames so nothing else breaks while you migrate.
+
+2. Ready-to-use manifest matching your Kwame ZIP
+Create src/legacy-runtime/kwame-sheet-manifest.ts:
+TypeScript
+
+import type { SheetBasedCharacterManifest } from "./legacy-asset-loader";
+
+/**
+ * Sheet-based manifest that matches the files inside
+ * "Hand Drawn Kwame Mensah.zip".
+ *
+ * After unzipping, place the renamed sheets under:
+ *   public/legacy-character-assets/kwame-mensah/sheets/
+ *
+ * Frame sizes below are the production defaults from the art bible
+ * (adjust if your actual sheet grid is different).
+ */
+export const KWAME_SHEET_MANIFEST: SheetBasedCharacterManifest = {
+  characterId: "kwame-mensah",
+  baseUrl: "/legacy-character-assets/kwame-mensah/",
+
+  sheets: [
+    // ── Core locomotion (highest priority) ──────────────────────────────
+    {
+      animState: "idle",
+      facing: "down",
+      sheetFile: "sheets/idle-down-sheet.png",          // from direction / main atlas
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 4,
+    },
+    {
+      animState: "idle",
+      facing: "up",
+      sheetFile: "sheets/idle-up-sheet.png",
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 4,
+    },
+    {
+      animState: "idle",
+      facing: "left",
+      sheetFile: "sheets/idle-left-sheet.png",
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 4,
+    },
+    {
+      animState: "idle",
+      facing: "right",
+      sheetFile: "sheets/idle-right-sheet.png",
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 4,
+    },
+
+    // Walk / Run – use the direction sheets or the RUN sheets from the ZIP
+    {
+      animState: "walk",
+      facing: "down",
+      sheetFile: "sheets/walk-down-sheet.png",
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 6,
+    },
+    {
+      animState: "walk",
+      facing: "up",
+      sheetFile: "sheets/walk-up-sheet.png",
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 6,
+    },
+    {
+      animState: "walk",
+      facing: "left",
+      sheetFile: "sheets/walk-left-sheet.png",
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 6,
+    },
+    {
+      animState: "walk",
+      facing: "right",
+      sheetFile: "sheets/walk-right-sheet.png",
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 6,
+    },
+
+    // ── Actions that exist as dedicated 32-frame atlases in the ZIP ─────
+    {
+      animState: "pick_up",
+      facing: "down",
+      sheetFile: "sheets/pick-up-sheet.png",             // ← Kwame Mensah PICK UP 32-Frame…
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 8,                                    // use first 8 of the 32
+    },
+    {
+      animState: "inspect",
+      facing: "down",
+      sheetFile: "sheets/inspect-sheet.png",             // ← Kwame Mensah INSPECT…
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 6,
+    },
+    {
+      animState: "hurt",
+      facing: "down",
+      sheetFile: "sheets/hurt-sheet.png",                // ← Kwame Mensah HURT…
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 6,
+    },
+    {
+      animState: "talk",
+      facing: "down",
+      sheetFile: "sheets/talk-sheet.png",                // ← Kwame Mensah TALK…
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 4,
+    },
+
+    // Optional richer direction sheets (from the ZIP)
+    {
+      animState: "run",
+      facing: "down",
+      sheetFile: "sheets/run-down-left-sheet.png",        // or dedicated down sheet if you split it
+      frameWidth: 64,
+      frameHeight: 96,
+      frameCount: 8,
+    },
+  ],
+};
+
+
+Rename map (ZIP → public folder)
+File inside ZIP	Copy to
+Kwame Mensah PICK UP 32-Frame Animation Atlas.png	sheets/pick-up-sheet.png
+Kwame Mensah HURT 32-Frame Animation Atlas.png	sheets/hurt-sheet.png
+Kwame Mensah INSPECT 32-Frame Animation Atlas.png	sheets/inspect-sheet.png
+Kwame Mensah TALK 32-Frame Animation Atlas.png	sheets/talk-sheet.png
+Kwame Mensah RUN DOWN LEFT 32-Frame…	sheets/run-down-left-sheet.png
+Kwame Mensah UP Direction 32-Frame…	sheets/idle-up-sheet.png + walk variants (or slice later)
+Kwame Mensah RIGHT Direction 32-Frame…	sheets/idle-right-sheet.png etc.
+Kwame Mensah RPG Maker MV Final Sprite Sheet.png	sheets/rpg-maker-fallback.png (great emergency fallback)
+NIAKOFA-GROUND-TILES-ATLAS-v1.png	legacy-environment-assets/sheets/ground-tiles.png
+NIAKOFA-BUILDINGS-STRUCTURES-ATLAS-v1.png	legacy-environment-assets/sheets/buildings.png
+
+
+3. Wire it into LegacyGameCanvas
+In the boot path, switch from the old individual-frame loader to the sheet loader:
+TypeScript
+
+import { loadCharacterFrameSetFromSheets } from "./legacy-asset-loader";
+import { KWAME_SHEET_MANIFEST } from "./kwame-sheet-manifest";
+
+// inside bootWork(), replace the old loadCharacterFrameSet call:
+
+const [envTextures, frameSet] = await Promise.all([
+  loadEnvironmentTextures(environmentBaseUrl, environmentAssets),
+  loadCharacterFrameSetFromSheets(KWAME_SHEET_MANIFEST),   // ← new
+]);
+
+
+You can keep the old characterManifest prop for a transition period; just stop using it for the primary path.
+
+4. Environment sheets (same idea)
+For the environment ZIP you already have clean atlas names. Point your environment manifest at:
+TypeScript
+
+[
+  { assetId: "ground-tiles", file: "sheets/ground-tiles.png" },
+  { assetId: "buildings",    file: "sheets/buildings.png" },
+  // … any other single-file atlases
+]
+
+
+and load them with the existing (now resilient) loadEnvironmentTextures.
+
+5. Deployment steps (do these in order)
+1. Unzip both hand-drawn ZIPs.
+2. Create the folders:Bash   mkdir -p artifacts/pay-it-forward/public/legacy-character-assets/kwame-mensah/sheets
+3. mkdir -p artifacts/pay-it-forward/public/legacy-environment-assets/sheets      
+4. Copy + rename the atlas PNGs as shown in the table above.
+5. Add the sheet helpers + kwame-sheet-manifest.ts.
+6. Switch LegacyGameCanvas to loadCharacterFrameSetFromSheets.
+7. Keep the resilient individual-frame loader as a fallback for any remaining old manifests.
+8. Deploy and hard-refresh /legacy/demo.
+
+Result
+* One network request per animation instead of 6–32.
+* No more 429 storms on pick-up-left-2.png.
+* World still boots even if a sheet is temporarily missing (falls back to idle / white).
+* You are now using the exact hand-drawn art that lives in the ZIPs you supplied.
+Once this is live and stable, the next polish pass is measuring the real frame width/height of each sheet (open one in an image editor) and adjusting frameWidth / frameHeight / frameCount so the slices are pixel-perfect.
+
+
+
+
+Here is a ready-to-run Node script that unpacks both ZIPs, renames the atlas sheets cleanly, and copies them into the correct public/ folders.
+Script: scripts/install-hand-drawn-assets.mjs
+Create this file in the repo root (or run it from wherever the two ZIPs live):
+JavaScript
+
+#!/usr/bin/env node
+/**
+ * install-hand-drawn-assets.mjs
+ *
+ * Unzips the two hand-drawn art packs and copies the atlas sheets into:
+ *   artifacts/pay-it-forward/public/legacy-character-assets/kwame-mensah/sheets/
+ *   artifacts/pay-it-forward/public/legacy-environment-assets/sheets/
+ *
+ * Usage:
+ *   node scripts/install-hand-drawn-assets.mjs
+ *   node scripts/install-hand-drawn-assets.mjs --src /path/to/zips
+ *   node scripts/install-hand-drawn-assets.mjs --dry-run
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, "..");
+
+// ── CLI flags ──────────────────────────────────────────────────────────────
+const args = process.argv.slice(2);
+const dryRun = args.includes("--dry-run");
+const srcIdx = args.indexOf("--src");
+const SRC_DIR = srcIdx >= 0 && args[srcIdx + 1]
+  ? path.resolve(args[srcIdx + 1])
+  : path.resolve(REPO_ROOT, "attached_assets"); // fallback; change if your ZIPs are elsewhere
+
+const KWAME_ZIP = path.join(SRC_DIR, "Hand Drawn Kwame Mensah.zip");
+const ENV_ZIP   = path.join(SRC_DIR, "Hand Drawn Envirnonment Assets.zip"); // note the spelling in the filename
+
+const OUT_KWAME = path.join(
+  REPO_ROOT,
+  "artifacts/pay-it-forward/public/legacy-character-assets/kwame-mensah/sheets"
+);
+const OUT_ENV = path.join(
+  REPO_ROOT,
+  "artifacts/pay-it-forward/public/legacy-environment-assets/sheets"
+);
+
+// ── Rename maps (ZIP internal name → clean public name) ────────────────────
+const KWAME_MAP = {
+  "Kwame Mensah PICK UP 32-Frame Animation Atlas.png":          "pick-up-sheet.png",
+  "Kwame Mensah HURT 32-Frame Animation Atlas.png":             "hurt-sheet.png",
+  "Kwame Mensah INSPECT 32-Frame Animation Atlas.png":          "inspect-sheet.png",
+  "Kwame Mensah TALK 32-Frame Animation Atlas.png":             "talk-sheet.png",
+  "Kwame Mensah TALK UP RIGHT 32-Frame Animation Atlas.png":    "talk-up-right-sheet.png",
+  "Kwame Mensah RUN DOWN LEFT 32-Frame Animation Atlas.png":    "run-down-left-sheet.png",
+  "Kwame Mensah RUN UP RIGHT 32-Frame Animation Atlas.png":     "run-up-right-sheet.png",
+  "Kwame Mensah UP Direction 32-Frame Animation Atlas.png":     "up-direction-sheet.png",
+  "Kwame Mensah RIGHT Direction 32-Frame Animation Atlas.png":  "right-direction-sheet.png",
+  "Kwame Mensah 32-Frame Hand-Drawn Animation Atlas.png":       "main-animation-sheet.png",
+  "Kwame Mensah INTERACT 32-Frame Animation Atlas.png":         "interact-sheet.png",
+  "Kwame Mensah RPG Maker MV Final Sprite Sheet.png":           "rpg-maker-fallback.png",
+  "kwame_mensah_hand_drawn_4direction_atlas_blueprint.png":     "4direction-blueprint.png",
+  "kwame_mensah_hand_drawn_character_production_spec.png":      "production-spec.png",
+};
+
+const ENV_MAP = {
+  "NIAKOFA-GROUND-TILES-ATLAS-v1.png":              "ground-tiles.png",
+  "NIAKOFA-BUILDINGS-STRUCTURES-ATLAS-v1.png":       "buildings.png",
+  // Optional concept / reference images (kept for art team, not required at runtime)
+  "ChatGPT Image Aug 15, 2026, 05_44_54 PM.png":    "ref-environment-01.png",
+  "ChatGPT Image Aug 14, 2026, 02_27_04 PM.png":    "ref-environment-02.png",
+  "ChatGPT Image Aug 14, 2026 at 04_14_32 PM.png":  "ref-environment-03.png",
+  "ChatGPT Image Aug 15, 2026 at 05_52_03 PM.png":  "ref-environment-04.png",
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) {
+    if (dryRun) console.log(`[dry-run] mkdir -p ${dir}`);
+    else fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+function unzipToTemp(zipPath, label) {
+  if (!fs.existsSync(zipPath)) {
+    console.error(`✖ Missing ZIP: ${zipPath}`);
+    process.exit(1);
+  }
+  const tmp = path.join("/tmp", `niakofa-${label}-${Date.now()}`);
+  ensureDir(tmp);
+  console.log(`→ Unzipping ${path.basename(zipPath)} …`);
+  execSync(`unzip -q -o "${zipPath}" -d "${tmp}"`, { stdio: "inherit" });
+  return tmp;
+}
+
+function findFiles(dir, filterFn) {
+  const results = [];
+  function walk(d) {
+    for (const name of fs.readdirSync(d)) {
+      if (name === "__MACOSX" || name === ".DS_Store") continue;
+      const full = path.join(d, name);
+      const st = fs.statSync(full);
+      if (st.isDirectory()) walk(full);
+      else if (filterFn(name)) results.push(full);
+    }
+  }
+  walk(dir);
+  return results;
+}
+
+function copyMapped(files, map, outDir, label) {
+  ensureDir(outDir);
+  let copied = 0;
+  let skipped = 0;
+
+  for (const file of files) {
+    const base = path.basename(file);
+    const targetName = map[base];
+    if (!targetName) {
+      skipped++;
+      continue;
+    }
+    const dest = path.join(outDir, targetName);
+    if (dryRun) {
+      console.log(`[dry-run] ${label}: ${base}  →  ${targetName}`);
+    } else {
+      fs.copyFileSync(file, dest);
+      console.log(`  ✓ ${label}: ${targetName}`);
+    }
+    copied++;
+  }
+
+  console.log(`  ${label}: ${copied} copied, ${skipped} ignored (not in map)`);
+  return copied;
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────
+console.log("Niakofa hand-drawn asset installer");
+console.log(`  source : ${SRC_DIR}`);
+console.log(`  dry-run: ${dryRun}`);
+console.log("");
+
+const kwameTmp = unzipToTemp(KWAME_ZIP, "kwame");
+const envTmp   = unzipToTemp(ENV_ZIP, "env");
+
+const kwamePngs = findFiles(kwameTmp, (n) => n.toLowerCase().endsWith(".png"));
+const envPngs   = findFiles(envTmp,   (n) => n.toLowerCase().endsWith(".png"));
+
+console.log(`\nFound ${kwamePngs.length} Kwame PNGs, ${envPngs.length} environment PNGs\n`);
+
+const c1 = copyMapped(kwamePngs, KWAME_MAP, OUT_KWAME, "kwame");
+const c2 = copyMapped(envPngs,   ENV_MAP,   OUT_ENV,   "env");
+
+console.log("\nDone.");
+console.log(`  Character sheets → ${OUT_KWAME}`);
+console.log(`  Environment sheets → ${OUT_ENV}`);
+console.log(`  Total installed: ${c1 + c2}`);
+
+if (!dryRun) {
+  console.log("\nNext:");
+  console.log("  1. Confirm files exist under public/…/sheets/");
+  console.log("  2. Use KWAME_SHEET_MANIFEST + loadCharacterFrameSetFromSheets");
+  console.log("  3. Redeploy and hard-refresh /legacy/demo");
+}
+
+
+
+How to run it
+Option A – ZIPs already in the repo attached_assets/ folder
+Bash
+
+# from repo root
+node scripts/install-hand-drawn-assets.mjs
+
+
+Option B – ZIPs are somewhere else (e.g. Downloads or the attachments path you used)
+Bash
+
+node scripts/install-hand-drawn-assets.mjs --src "/home/workdir/attachments"
+# or
+node scripts/install-hand-drawn-assets.mjs --src "/path/to/your/zips"
+
+
+Dry-run first (recommended)
+Bash
+
+node scripts/install-hand-drawn-assets.mjs --src "/home/workdir/attachments" --dry-run
+
+
+
+What the script does
+1. Unzips both archives into temporary folders.
+2. Finds every .png (ignores __MACOSX and .DS_Store).
+3. Renames only the known atlas sheets to the clean names expected by KWAME_SHEET_MANIFEST.
+4. Copies them into:
+    * artifacts/pay-it-forward/public/legacy-character-assets/kwame-mensah/sheets/
+    * artifacts/pay-it-forward/public/legacy-environment-assets/sheets/
+5. Leaves concept / ChatGPT reference images out of the runtime path (or copies them with ref- names if you want them available).
+
+After the script finishes
+1. Confirm the sheets exist:Bash   ls artifacts/pay-it-forward/public/legacy-character-assets/kwame-mensah/sheets/
+2. ls artifacts/pay-it-forward/public/legacy-environment-assets/sheets/      
+3. Make sure LegacyGameCanvas uses:TypeScript   loadCharacterFrameSetFromSheets(KWAME_SHEET_MANIFEST)      
+4. Deploy and hard-refresh the demo.
+The 429 errors from individual frame URLs should stop, and the living world will load the real hand-drawn atlas sheets instead.
+
+
+
+If any sheet name in the ZIP differs slightly from the map (typo, extra space, etc.), the dry-run output will show which files were ignored so you can add them to KWAME_MAP / ENV_MAP.

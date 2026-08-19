@@ -23,7 +23,10 @@ export class LegacyActorSprite {
   constructor(frameSet: CharacterFrameSet, initialTextures: Texture[]) {
     this.frameSet = frameSet;
     this.view = new AnimatedSprite(initialTextures.length ? initialTextures : [Texture.WHITE]);
-    this.view.anchor.set(0.5, 1); // feet-anchored, matches scene renderer's building/prop convention
+    // The hand-drawn production cells keep the feet baseline at Y=224 inside
+    // a 256px cell. Preserve that baseline when the runtime uses the supplied
+    // sheet art, while retaining the old bottom anchor for custom frame sizes.
+    this.view.anchor.set(0.5, initialTextures[0]?.height === 256 ? 224 / 256 : 1);
     this.view.animationSpeed = 0; // we drive frames manually from ANIM_SPEC-derived timing, not Pixi's built-in ticker speed
     this.view.loop = true;
   }

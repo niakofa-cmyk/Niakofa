@@ -17,7 +17,7 @@ import {
   capeCoastCompoundScene,
   environmentBaseUrl,
 } from "@/legacy-runtime/scene-cape-coast-compound";
-import { kwameHandDrawnManifest } from "@/legacy-runtime/kwame-manifest";
+import { KWAME_SHEET_MANIFEST } from "@/legacy-runtime/kwame-sheet-manifest";
 
 const BRANCH_CONTEXT: Record<string, { label: string; detail: string }> = {
   ancestor: {
@@ -53,7 +53,7 @@ export default function LegacyPublicWorldPage() {
           scene={capeCoastCompoundScene}
           environmentAssets={capeCoastCompoundAssets}
           environmentBaseUrl={environmentBaseUrl}
-          characterManifest={kwameHandDrawnManifest}
+          characterManifest={KWAME_SHEET_MANIFEST}
         />
       </div>
 

@@ -5,7 +5,7 @@ description: baseUrl, directory layout, and frame-naming conventions for all 784
 
 # Kwame Atlas Manifest (current as of Aug 2026)
 
-## Two source trees — one unified manifest
+## Source and runtime trees — one unified manifest
 
 `kwame-manifest.ts` baseUrl is **`/legacy-character-assets/`** (common root, changed Aug 17 2026).
 
@@ -13,6 +13,7 @@ description: baseUrl, directory layout, and frame-naming conventions for all 784
 |---|---|---|
 | Old hand-drawn | `hand-drawn/kwame/kwame_{anim}_{dir}/kwame_{anim}_{dir}_{N}.png` | `kwame_idle_down_1.png` |
 | New atlas | `kwame-mensah/atlas/{DIR}/{stem}-{dir}-{N}.png` | `interact-down-1.png` |
+| Production sheet runtime | `kwame-mensah/runtime-sheets/{atlas}.png` | one transparent 2048×1024 sheet, sliced in memory |
 
 ## Registered animation states (kwame-manifest.ts)
 
@@ -35,8 +36,8 @@ lightAttack1, lightAttack2, heavyAttack, dash, jump, guard, aerial — fall back
 - UP_Direction walk-up-left has 9 frames (not 8) — do not truncate to 8
 - talk-up-right in TALK_UP_RIGHT: exactly 7 files (`talk-up-right-1..7.png`)
 - The old hand-drawn/kwame path still exists with 20 dirs; it provides idle/walk 4-cardinal
-- Source sheets (full 32-frame atlas PNGs) saved to `kwame-mensah/source-sheets/`
+- RGB source sheets (full 32-frame atlas PNGs) stay in `kwame-mensah/source-sheets/`; the live Legacy world uses derived transparent sheets in `runtime-sheets/`
 
-**Why:** The manifest path change (hand-drawn/kwame → unified root) lets both old and new frames share one `CharacterManifest` object without duplicating the interface or forking the loader.
+**Why:** The supplied source boards include baked checkerboard/guide pixels rather than alpha. Keeping them as provenance and deriving transparent runtime sheets preserves the art contract while avoiding both visual artifacts and hundreds of rate-limited frame requests.
 
-**How to apply:** When adding a new animation, check which atlas directory it belongs to, use `atlasFrames(dir, stem, count)` helper, verify exact frame count from `ls | wc -l` before committing.
+**How to apply:** When adding a new animation, prefer one transparent runtime sheet and an in-memory slice manifest. Keep raw source boards separate; only use the exploded-frame manifest for migration/custom packs.

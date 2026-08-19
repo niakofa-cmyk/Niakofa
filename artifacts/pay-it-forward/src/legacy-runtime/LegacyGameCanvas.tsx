@@ -34,8 +34,10 @@ import { buildSceneContainers, renderStaticLayers, depthSortActors } from "./leg
 import { LegacyActorSprite } from "./legacy-actor-sprite";
 import {
   loadCharacterFrameSet,
+  loadCharacterFrameSetFromSheets,
   loadEnvironmentTextures,
   type CharacterManifest,
+  type SheetBasedCharacterManifest,
   type EnvironmentManifestEntry,
 } from "./legacy-asset-loader";
 import { evaluateInteraction } from "./legacy-world/runtime-interaction";
@@ -58,7 +60,8 @@ export interface LegacyGameCanvasProps {
   scene: LegacyMapScene;
   environmentAssets: EnvironmentManifestEntry[];
   environmentBaseUrl: string;
-  characterManifest: CharacterManifest;
+  /** Sheet manifest is preferred; the individual-frame shape remains supported for migration. */
+  characterManifest: CharacterManifest | SheetBasedCharacterManifest;
   /** Game hour 0–23, controlled externally (weather/day-night cycle). Defaults to 9 (morning). */
   gameHour?: number;
   /** Called each frame with the player's world position. */
@@ -415,7 +418,9 @@ export function LegacyGameCanvas({
 
           const [envTextures, frameSet] = await Promise.all([
             loadEnvironmentTextures(environmentBaseUrl, environmentAssets),
-            loadCharacterFrameSet(characterManifest),
+            "sheets" in characterManifest
+              ? loadCharacterFrameSetFromSheets(characterManifest)
+              : loadCharacterFrameSet(characterManifest),
           ]);
           if (destroyed || timedOut || !hostRef.current) {
             destroyApp();

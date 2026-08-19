@@ -31,7 +31,7 @@ import { LegacyQuestsPanel } from "@/components/legacy-quests-panel";
 import { LegacyBattleScene } from "@/components/legacy-battle-scene";
 import { LegacyGameCanvas } from "@/legacy-runtime/LegacyGameCanvas";
 import { KwameAttributeSystem } from "@/legacy-runtime/legacy-attributes";
-import { kwameHandDrawnManifest } from "@/legacy-runtime/kwame-manifest";
+import { KWAME_SHEET_MANIFEST } from "@/legacy-runtime/kwame-sheet-manifest";
 import { capeCoastCompoundScene, capeCoastCompoundAssets, environmentBaseUrl } from "@/legacy-runtime/scene-cape-coast-compound";
 
 // Ambient background gradient shifts based on the day-cycle position.
@@ -1601,7 +1601,7 @@ export default function LegacyChapterPlay() {
               scene={capeCoastCompoundScene}
               environmentAssets={capeCoastCompoundAssets}
               environmentBaseUrl={environmentBaseUrl}
-              characterManifest={kwameHandDrawnManifest}
+              characterManifest={KWAME_SHEET_MANIFEST}
             />
           </div>
           <div className="flex-shrink-0 px-4 py-2 flex items-center gap-4 text-[10px] text-stone-600"
