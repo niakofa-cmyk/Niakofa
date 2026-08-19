@@ -179,6 +179,7 @@ export function LegacyGameCanvas({
   // visible feedback instead of silent no-op. Auto-clears after 900ms.
   const [combatFlash, setCombatFlash] = useState<string | null>(null);
   const combatFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchDirectionRef = useRef<{ dx: number; dy: number } | null>(null);
 
   const worldStateRef = useRef<MinimalWorldState>(createEmptyWorldState());
   const gameHourRef   = useRef<number>(gameHour);
@@ -493,6 +494,10 @@ export function LegacyGameCanvas({
           for (const [key, vec] of Object.entries(KEY_TO_VECTOR)) {
             if (pressedKeys.has(key)) { dx += vec.dx; dy += vec.dy; }
           }
+          if (touchDirectionRef.current) {
+            dx += touchDirectionRef.current.dx;
+            dy += touchDirectionRef.current.dy;
+          }
           const len = Math.hypot(dx, dy) || 1;
 
           // Clamp player to world bounds before ticking movement
@@ -666,6 +671,34 @@ export function LegacyGameCanvas({
         <span>J/K — attack</span>
         <span>L — jump</span>
       </div>
+
+      {/* Touch movement keeps the single Pixi runtime playable on phones.
+          Buttons write to the same per-frame input vector as keyboard input. */}
+      <div style={TOUCH_CONTROLS_STYLE} aria-label="Touch movement controls">
+        {([
+          ["up", 0, -1, "Move up", "↑"],
+          ["left", -1, 0, "Move left", "←"],
+          ["down", 0, 1, "Move down", "↓"],
+          ["right", 1, 0, "Move right", "→"],
+        ] as const).map(([direction, dx, dy, label, glyph]) => (
+          <button
+            key={direction}
+            type="button"
+            aria-label={label}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              touchDirectionRef.current = { dx, dy };
+            }}
+            onPointerUp={() => { touchDirectionRef.current = null; }}
+            onPointerCancel={() => { touchDirectionRef.current = null; }}
+            onPointerLeave={() => { touchDirectionRef.current = null; }}
+            style={TOUCH_BUTTON_STYLE}
+          >
+            {glyph}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -790,4 +823,30 @@ const CONTROL_LEGEND_STYLE: React.CSSProperties = {
   fontSize: 10,
   color: "rgba(240,217,168,0.35)",
   pointerEvents: "none",
+};
+
+const TOUCH_CONTROLS_STYLE: React.CSSProperties = {
+  position: "absolute",
+  left: 12,
+  bottom: 12,
+  zIndex: 20,
+  display: "grid",
+  gridTemplateColumns: "repeat(3, 38px)",
+  gridTemplateRows: "repeat(3, 38px)",
+  gap: 4,
+  gridTemplateAreas: '". up ." "left . right" ". down ."',
+  pointerEvents: "auto",
+};
+
+const TOUCH_BUTTON_STYLE: React.CSSProperties = {
+  width: 38,
+  height: 38,
+  border: "1px solid rgba(240,217,168,0.38)",
+  borderRadius: 9,
+  background: "rgba(26,15,8,0.88)",
+  color: "#f0d9a8",
+  fontSize: 20,
+  lineHeight: 1,
+  touchAction: "none",
+  cursor: "pointer",
 };
