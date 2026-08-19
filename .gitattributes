@@ -11,3 +11,4 @@ attached_assets/Niakofa-main-audited-v15_(1)_1783901083104.zip filter=lfs diff=l
 attached_assets/Niakofa-main-admin-redesign_(1)_1783904823019.zip filter=lfs diff=lfs merge=lfs -text
 attached_assets/Niakofa-main-uber-declutter_1783954769493.zip filter=lfs diff=lfs merge=lfs -text
 reference/niakofa-legacy-rpg/uploads/animations_1786528522105.zip filter=lfs diff=lfs merge=lfs -text
+docs/references/niakofa-legacy/Hand_Drawn_Kwame_Mensah_1787175168008.zip filter=lfs diff=lfs merge=lfs -text
