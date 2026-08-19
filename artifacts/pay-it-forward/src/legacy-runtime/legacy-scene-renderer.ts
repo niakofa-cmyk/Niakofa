@@ -87,6 +87,16 @@ export function renderStaticLayers(
 
     sprite.x = layer.x * TILE_SIZE_PX;
     sprite.y = layer.y * TILE_SIZE_PX;
+    if (isTileableGround) {
+      // Runtime ground slices preserve their source-board dimensions
+      // (currently 213×150), while the world grid is 64×64. Scale the
+      // repeated texture to one canonical tile before filling the layer;
+      // otherwise transparent atlas padding becomes black seams in-world.
+      (sprite as TilingSprite).tileScale.set(
+        TILE_SIZE_PX / texture.width,
+        TILE_SIZE_PX / texture.height,
+      );
+    }
     if (!isTileableGround) {
       // anchor bottom-center so a building's "position" is its footprint
       // origin, matching how LegacyCollisionShape/LegacyInteractionPoint

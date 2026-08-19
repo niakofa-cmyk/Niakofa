@@ -26,7 +26,7 @@ describe("Canonical Legacy demo navigation contract", () => {
     );
 
     expect(worldSource).toContain("LegacyGameCanvas");
-    expect(worldSource).toContain("capeCoastCompoundScene");
+    expect(worldSource).toContain("mensahCompoundScene");
     expect(worldSource).toContain("KWAME_SHEET_MANIFEST");
     expect(canvasSource).toContain("renderStaticLayers(scene, layerContainers, envTextures)");
     expect(canvasSource).toContain("loadEnvironmentTextures(environmentBaseUrl, environmentAssets)");

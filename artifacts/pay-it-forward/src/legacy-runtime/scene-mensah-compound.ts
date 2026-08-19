@@ -12,13 +12,13 @@ import type { EnvironmentManifestEntry } from "./legacy-asset-loader";
 export const mensahCompoundBaseUrl = "/environment-assets/";
 
 export const mensahCompoundAssets: EnvironmentManifestEntry[] = [
-  { assetId: "ground-grass-01", file: "ground-tiles/ground-grass-01.png" },
-  { assetId: "ground-grass-03", file: "ground-tiles/ground-grass-03.png" },
-  { assetId: "ground-grass-05", file: "ground-tiles/ground-grass-05.png" },
-  { assetId: "ground-path-02", file: "ground-tiles/ground-path-02.png" },
-  { assetId: "ground-path-04", file: "ground-tiles/ground-path-04.png" },
-  { assetId: "ground-sand-01", file: "ground-tiles/ground-sand-01.png" },
-  { assetId: "ground-sand-03", file: "ground-tiles/ground-sand-03.png" },
+  { assetId: "ground-grass-01", file: "ground-tiles-runtime/ground-grass-01.png" },
+  { assetId: "ground-grass-03", file: "ground-tiles-runtime/ground-grass-03.png" },
+  { assetId: "ground-grass-05", file: "ground-tiles-runtime/ground-grass-05.png" },
+  { assetId: "ground-path-02", file: "ground-tiles-runtime/ground-path-02.png" },
+  { assetId: "ground-path-04", file: "ground-tiles-runtime/ground-path-04.png" },
+  { assetId: "ground-sand-01", file: "ground-tiles-runtime/ground-sand-01.png" },
+  { assetId: "ground-sand-03", file: "ground-tiles-runtime/ground-sand-03.png" },
   { assetId: "building-compound-01", file: "buildings-structures/building-compound-01.png" },
   { assetId: "building-compound-02", file: "buildings-structures/building-compound-02.png" },
   { assetId: "building-compound-03", file: "buildings-structures/building-compound-03.png" },
