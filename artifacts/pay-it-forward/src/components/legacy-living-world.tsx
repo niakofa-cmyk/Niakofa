@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -199,6 +199,18 @@ const SEASON_OVERLAYS: Record<DemoSeason, string> = {
 
 type TileName = LegacyWorldTile;
 type PlayerPosition = { row: number; column: number };
+type SwipeDirection = "up" | "down" | "left" | "right";
+
+function getSwipeDirection(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): SwipeDirection | null {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return null;
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "right" : "left";
+  return dy > 0 ? "down" : "up";
+}
 
 const WORLD_LANDMARK_ICONS: Record<LegacyWorldLandmarkIcon, typeof Camera> = {
   photo: Camera,
@@ -310,6 +322,7 @@ function RegionMap({
   const region = getWorldRegion(regionId);
   const portals = getAvailableConnections(regionId, phase);
   const [motion, setMotion] = useState<"idle" | "walk">("idle");
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Clamp player to valid region bounds
   const player: PlayerPosition =
@@ -354,6 +367,26 @@ function RegionMap({
     move(direction[0], direction[1], direction[2]);
   };
 
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    swipeStartRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const direction = getSwipeDirection(start, { x: event.clientX, y: event.clientY });
+    if (!direction) return;
+    const movement: Record<SwipeDirection, [number, number, DemoFacing]> = {
+      up: [-1, 0, "up"],
+      down: [1, 0, "down"],
+      left: [0, -1, "left"],
+      right: [0, 1, "right"],
+    };
+    const [rowDelta, columnDelta, facing] = movement[direction];
+    move(rowDelta, columnDelta, facing);
+  };
+
   return (
     <div className="relative z-[1] mt-4 rounded-2xl border border-amber-300/20 bg-[#120904]/80 p-3 shadow-inner shadow-black/30">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -375,8 +408,11 @@ function RegionMap({
         <div
           tabIndex={0}
           onKeyDown={handleKeyDown}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={() => { swipeStartRef.current = null; }}
           onClick={(event) => event.currentTarget.focus()}
-          className="relative aspect-[3/2] w-full overflow-hidden rounded-xl border border-amber-400/20 bg-[#201207] outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70"
+          className="relative aspect-[3/2] w-full touch-none overflow-hidden rounded-xl border border-amber-400/20 bg-[#201207] outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70"
           aria-label={`${region.name} map. Use arrow keys or W A S D to move.`}
           style={{ background: region.atmosphereGradient }}
         >
@@ -531,6 +567,7 @@ function HouseOfMensahMap({
   const worldMap = layout.map;
   const [motion, setMotion] = useState<"idle" | "walk">("idle");
   const [actionState, setActionState] = useState<"idle" | "interacting">("idle");
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const player: PlayerPosition = !isLegacyWorldPositionWalkable(layout, mapPosition)
     ? getLegacyWorldSpawn(worldVersion, placedArtifacts)
     : mapPosition;
@@ -599,6 +636,26 @@ function HouseOfMensahMap({
     move(direction[0], direction[1], direction[2]);
   };
 
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    swipeStartRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const direction = getSwipeDirection(start, { x: event.clientX, y: event.clientY });
+    if (!direction) return;
+    const movement: Record<SwipeDirection, [number, number, DemoFacing]> = {
+      up: [-1, 0, "up"],
+      down: [1, 0, "down"],
+      left: [0, -1, "left"],
+      right: [0, 1, "right"],
+    };
+    const [rowDelta, columnDelta, facing] = movement[direction];
+    move(rowDelta, columnDelta, facing);
+  };
+
   return (
     <div className="relative z-[1] mt-4 rounded-2xl border border-amber-300/20 bg-[#120904]/80 p-3 shadow-inner shadow-black/30">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -618,8 +675,11 @@ function HouseOfMensahMap({
         <div
           tabIndex={0}
           onKeyDown={handleKeyDown}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={() => { swipeStartRef.current = null; }}
           onClick={(event) => event.currentTarget.focus()}
-          className="relative aspect-[3/2] w-full overflow-hidden rounded-xl border border-amber-400/20 bg-[#201207] outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70"
+          className="relative aspect-[3/2] w-full touch-none overflow-hidden rounded-xl border border-amber-400/20 bg-[#201207] outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70"
           aria-label={`House of Mensah map. You are on ${TILE_LABELS[tile]}. Use arrow keys or W A S D to move.`}
         >
           <div className="absolute inset-0 grid grid-cols-9 grid-rows-6">
