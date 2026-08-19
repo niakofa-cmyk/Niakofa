@@ -97,13 +97,16 @@ export class NPCController {
   readonly definition: NPCDefinition;
   readonly state: NPCState;
 
-  constructor(definition: NPCDefinition) {
+  constructor(
+    definition: NPCDefinition,
+    spawn?: { x: number; y: number; facing: NPCFacing },
+  ) {
     this.definition = definition;
     this.state = {
       definitionId: definition.id,
-      x: definition.homeTile.x,
-      y: definition.homeTile.y,
-      facing: "down",
+      x: spawn?.x ?? definition.homeTile.x,
+      y: spawn?.y ?? definition.homeTile.y,
+      facing: spawn?.facing ?? "down",
       behaviorState: "sleeping",
       relationshipLevel: definition.relationshipLevel,
       health: 100,

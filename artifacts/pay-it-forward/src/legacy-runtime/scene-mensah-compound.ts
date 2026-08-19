@@ -107,7 +107,10 @@ export const mensahCompoundScene: LegacyMapScene = {
     { id: "storage-room", x: 18, y: 6, triggers: { type: "dialogue", nodeId: "storage-inspect" } },
     { id: "grandma-ama-room", x: 22, y: 6, triggers: { type: "dialogue", nodeId: "visit-ama" } },
     { id: "kwame-room", x: 24, y: 11, triggers: { type: "dialogue", nodeId: "kwame-room-rest" } },
-    { id: "inner-courtyard", x: 15, y: 12, triggers: { type: "dialogue", nodeId: "courtyard-observe" } },
+    // Keep the courtyard point distinct from the well. Both used to occupy
+    // (15, 12), so nearest-point tie breaking made the well memory
+    // unreachable through Space.
+    { id: "inner-courtyard", x: 16, y: 13, triggers: { type: "dialogue", nodeId: "courtyard-observe" } },
     { id: "family-shrine", x: 8, y: 10, triggers: { type: "vaultArtifact", artifactId: "family-shrine-memory" } },
     { id: "well", x: 15, y: 12, triggers: { type: "vaultArtifact", artifactId: "family-well-memory" } },
     { id: "cooking-area", x: 19, y: 12, triggers: { type: "dialogue", nodeId: "cooking-fire-talk" } },

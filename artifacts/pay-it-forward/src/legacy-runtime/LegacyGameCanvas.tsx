@@ -25,7 +25,7 @@
 import "pixi.js/unsafe-eval";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatedSprite, Application, Graphics, Texture } from "pixi.js";
+import { AnimatedSprite, Application, Texture } from "pixi.js";
 import { LegacyActorController } from "@/lib/legacy-animation-fsm";
 import { LegacyCombatController, type LegacyCombatTarget, type LegacyFullAnimState } from "@/lib/legacy-combat-fsm";
 import type { LegacyMapScene } from "@/lib/legacy-map-engine";
@@ -37,7 +37,6 @@ import {
   loadCharacterFrameSetFromSheets,
   loadEnvironmentTextures,
   resolveFrames,
-  type CharacterFrameSet,
   type CharacterManifest,
   type SheetBasedCharacterManifest,
   type EnvironmentManifestEntry,
@@ -220,7 +219,10 @@ export function LegacyGameCanvas({
     }
 
     // ── Layer 6: NPC controllers (Eldiron entity.rs pattern) ──────────────────
-    const npcControllers = CAPE_COAST_NPCS.map(def => new NPCController(def));
+    const npcControllers = CAPE_COAST_NPCS.map((def) => {
+      const spawn = scene.npcSpawns.find((candidate) => candidate.characterId === def.id);
+      return new NPCController(def, spawn);
+    });
 
     // ── Layer 10: Attribute system (MMOCore design reference) ────────────────
     const attrs = attrSystemRef.current;

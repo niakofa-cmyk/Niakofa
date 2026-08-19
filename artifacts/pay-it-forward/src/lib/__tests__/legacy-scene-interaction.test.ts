@@ -17,3 +17,18 @@ test("every Mensah Compound interaction point resolves to a live activity", () =
     assert.match(frame.location?.id ?? "", /^scene:mensah-compound:/);
   }
 });
+
+test("compound interaction points do not shadow each other", () => {
+  const coordinates = mensahCompoundScene.interactionPoints.map(({ x, y }) => `${x}:${y}`);
+  assert.equal(new Set(coordinates).size, coordinates.length);
+});
+
+test("the well resolves to the family memory activity", () => {
+  const frame = evaluateInteraction(
+    { x: 15, y: 12 },
+    { scene: mensahCompoundScene, padding: 0.01 },
+  );
+
+  assert.equal(frame.location?.id, "scene:mensah-compound:well");
+  assert.equal(frame.activity?.type, "memory-echo");
+});
