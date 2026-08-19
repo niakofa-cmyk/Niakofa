@@ -33,6 +33,8 @@ export const COMBAT_ANIM_SPEC: Record<
   LegacyCombatAnimState,
   { frameCount: number; fps: number; loops: boolean; artStatus: "handDrawn" | "placeholder" }
 > = {
+  // Combat atlases remain reference-only until they pass the production art
+  // review boundary; these timings are kept for the placeholder-safe FSM.
   lightAttack1: { frameCount: 5,  fps: 14, loops: false, artStatus: "placeholder" },
   lightAttack2: { frameCount: 6,  fps: 14, loops: false, artStatus: "placeholder" },
   heavyAttack:  { frameCount: 9,  fps: 12, loops: false, artStatus: "placeholder" },

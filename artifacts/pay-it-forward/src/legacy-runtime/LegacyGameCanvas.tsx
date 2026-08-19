@@ -219,7 +219,8 @@ export function LegacyGameCanvas({
     }
 
     // ── Layer 6: NPC controllers (Eldiron entity.rs pattern) ──────────────────
-    const npcControllers = CAPE_COAST_NPCS.map((def) => {
+    const sceneNpcDefinitions = scene.npcDefinitions ?? CAPE_COAST_NPCS;
+    const npcControllers = sceneNpcDefinitions.map((def) => {
       const spawn = scene.npcSpawns.find((candidate) => candidate.characterId === def.id);
       return new NPCController(def, spawn);
     });
@@ -478,7 +479,10 @@ export function LegacyGameCanvas({
       // ─── Game ticker (60fps) ──────────────────────────────────────────────
           app.ticker.add((ticker) => {
         if (!running) return;
-        const deltaMs = ticker.deltaMS;
+        // A throttled/background tab can deliver a very large delta. Clamping
+        // keeps movement and animation from teleporting on resume while still
+        // letting Pixi catch up naturally over subsequent frames.
+        const deltaMs = Math.min(ticker.deltaMS, 50);
 
         if (focusedActivityLocal) {
           // Focused mode: world renders, movement stops (fishing minigame etc.)
@@ -568,8 +572,11 @@ export function LegacyGameCanvas({
         const clampedX = Math.min(0, Math.max(minCamX, targetX));
         const clampedY = Math.min(0, Math.max(minCamY, targetY));
         // 3. Smooth lerp toward clamped position
-        root.x += (clampedX - root.x) * 0.12;
-        root.y += (clampedY - root.y) * 0.12;
+        // Exponential smoothing is frame-rate independent: the same camera
+        // response is preserved at 30fps, 60fps, and variable mobile rates.
+        const cameraAlpha = 1 - Math.exp(-12 * (deltaMs / 1000));
+        root.x += (clampedX - root.x) * cameraAlpha;
+        root.y += (clampedY - root.y) * cameraAlpha;
 
         // ── Depth-sort all actors (player + NPCs) ─────────────────────────────
         depthSortActors(actorLayer);

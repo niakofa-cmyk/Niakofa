@@ -8,6 +8,7 @@
 
 import type { LegacyMapScene } from "@/lib/legacy-map-engine";
 import type { EnvironmentManifestEntry } from "./legacy-asset-loader";
+import { MENSAH_COMPOUND_NPCS } from "./mensah-compound-npcs";
 
 export const mensahCompoundBaseUrl = "/environment-assets/";
 
@@ -129,6 +130,7 @@ export const mensahCompoundScene: LegacyMapScene = {
     { characterId: "efua-cook", role: "namedNPC", x: 20, y: 12, facing: "left" },
     { characterId: "kofi-carpenter", role: "namedNPC", x: 13, y: 15, facing: "down" },
   ],
+  npcDefinitions: MENSAH_COMPOUND_NPCS,
 };
 
 export const MENSAH_COMPOUND_SPAWN = { x: 15, y: 19, facing: "up" as const };

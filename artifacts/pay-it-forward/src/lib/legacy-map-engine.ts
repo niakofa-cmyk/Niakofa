@@ -10,6 +10,7 @@
  */
 
 import type { LegacyArtTier } from "./legacy-hand-drawn-assets";
+import type { NPCDefinition } from "@/legacy-runtime/legacy-npc";
 
 export const TILE_SIZE_PX = 64;
 
@@ -79,6 +80,8 @@ export interface LegacyMapScene {
   collision: LegacyCollisionShape[];
   interactionPoints: LegacyInteractionPoint[];
   npcSpawns: LegacyNpcSpawn[];
+  /** Scene-owned roster. When present, only these definitions may spawn here. */
+  npcDefinitions?: NPCDefinition[];
   worldStateVariant: string; // e.g. "1912-prosperous" | "1920-collapse" | "1948-present"
   lighting: LegacyLightingState;
   weather?: "clear" | "rain" | "fog";
