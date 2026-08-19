@@ -364,7 +364,7 @@ export function LegacyGameCanvas({
     }
 
     function tryWorldInteract() {
-      const interaction = evaluateInteraction({ x: player.state.x, y: player.state.y });
+      const interaction = evaluateInteraction({ x: player.state.x, y: player.state.y }, { scene });
       if (!interaction.activity) return;
 
       if (interaction.activity.type === "fishing") {
@@ -518,7 +518,7 @@ export function LegacyGameCanvas({
 
           // ── World interaction prompt (Layer 8) ────────────────────────────
           if (!talkingNpcId) {
-            const interaction = evaluateInteraction({ x: player.state.x, y: player.state.y });
+            const interaction = evaluateInteraction({ x: player.state.x, y: player.state.y }, { scene });
             const nearNpc = npcControllers.find(c => c.state.isNearPlayer && c.definition.talkable);
             if (nearNpc) {
               setPrompt(`Talk to ${nearNpc.definition.name}`);
