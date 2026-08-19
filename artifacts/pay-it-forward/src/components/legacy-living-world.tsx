@@ -20,6 +20,7 @@ import {
   Waves,
 } from "lucide-react";
 import { LegacyCharacterSprite } from "@/components/legacy-character-sprite";
+import { LegacyWorldTileCell } from "@/components/legacy-world-tile-cell";
 import type {
   DemoFacing,
   DemoMapPosition,
@@ -197,7 +198,6 @@ const SEASON_OVERLAYS: Record<DemoSeason, string> = {
   celebration: "radial-gradient(circle at 72% 18%, rgba(255,159,67,0.32), transparent 34%)",
 };
 
-const TILE_ROOT = "/legacy-world-assets/tiles";
 type TileName = LegacyWorldTile;
 type PlayerPosition = { row: number; column: number };
 
@@ -385,13 +385,11 @@ function RegionMap({
           <div className="absolute inset-0 grid grid-cols-9 grid-rows-6">
             {region.map.flatMap((row, rowIndex) =>
               row.map((tileName, columnIndex) => (
-                <img
+                <LegacyWorldTileCell
                   key={`${rowIndex}-${columnIndex}`}
-                  src={`${TILE_ROOT}/${tileName}.png`}
-                  alt=""
-                  draggable={false}
-                  className="h-full w-full select-none object-cover"
-                  style={{ imageRendering: "pixelated" }}
+                  tile={tileName}
+                  row={rowIndex}
+                  column={columnIndex}
                 />
               )),
             )}
@@ -628,13 +626,11 @@ function HouseOfMensahMap({
           <div className="absolute inset-0 grid grid-cols-9 grid-rows-6">
             {worldMap.flatMap((row, rowIndex) =>
               row.map((tileName, columnIndex) => (
-                <img
+                <LegacyWorldTileCell
                   key={`${rowIndex}-${columnIndex}`}
-                  src={`${TILE_ROOT}/${tileName}.png`}
-                  alt=""
-                  draggable={false}
-                  className="h-full w-full select-none object-cover"
-                  style={{ imageRendering: "pixelated" }}
+                  tile={tileName}
+                  row={rowIndex}
+                  column={columnIndex}
                 />
               )),
             )}
