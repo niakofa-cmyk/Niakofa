@@ -36,7 +36,6 @@ import {
   type LegacyWorldTile,
 } from "@/lib/legacy-world-layout";
 import {
-  WORLD_REGION_REGISTRY,
   getAvailableConnections,
   getWorldRegion,
   type RegionId,
