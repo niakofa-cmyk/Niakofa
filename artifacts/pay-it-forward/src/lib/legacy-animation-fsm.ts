@@ -171,6 +171,7 @@ export class LegacyActorController {
 
     if (!resolved.loops) {
       this.state.actionPlaying = true;
+      this._activeActionSpec = resolved;
       if (onComplete) {
         this._pendingActionComplete = onComplete;
       }
@@ -188,6 +189,7 @@ export class LegacyActorController {
     this.state.actionPlaying = false;
     this._pendingActionComplete = undefined;
     this._pendingLoopSpec = undefined;
+    this._activeActionSpec = undefined;
     this.state.anim = "idle";
     this.state.animFrame = 0;
     this.state.animElapsedMs = 0;
@@ -207,6 +209,7 @@ export class LegacyActorController {
 
   private _pendingActionComplete?: () => void;
   private _pendingLoopSpec?: { frameCount: number; fps: number; loops: boolean };
+  private _activeActionSpec?: { frameCount: number; fps: number; loops: boolean };
 
   private facingFromInput(input: { dx: number; dy: number }): LegacyFacing {
     if (Math.abs(input.dx) > Math.abs(input.dy)) {
@@ -218,7 +221,9 @@ export class LegacyActorController {
   /** Advances a non-looping action clip and fires onComplete when done. */
   private advanceActionAnim(deltaMs: number) {
     const spec =
-      ANIM_SPEC[this.state.anim as LegacyAnimState] ?? FALLBACK_ACTION_SPEC;
+      this._activeActionSpec ??
+      ANIM_SPEC[this.state.anim as LegacyAnimState] ??
+      FALLBACK_ACTION_SPEC;
     this.state.animElapsedMs += deltaMs;
     const msPerFrame = 1000 / spec.fps;
     if (this.state.animElapsedMs >= msPerFrame) {
@@ -228,6 +233,7 @@ export class LegacyActorController {
         // Action finished
         this.state.animFrame = spec.frameCount - 1;
         this.state.actionPlaying = false;
+        this._activeActionSpec = undefined;
         this._pendingActionComplete?.();
         this._pendingActionComplete = undefined;
       } else {

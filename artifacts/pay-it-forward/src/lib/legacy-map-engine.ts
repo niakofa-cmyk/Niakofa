@@ -63,6 +63,17 @@ export interface LegacyNpcSpawn {
   facing: "up" | "down" | "left" | "right";
 }
 
+/** A deliberately authored hostile encounter, separate from family NPCs. */
+export interface LegacyCombatEncounter {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  hp: number;
+  rewardItemId: string;
+  rewardQuestId: string;
+}
+
 /**
  * One playable location. `worldStateVariant` lets the SAME location render
  * differently across the family's timeline (prosperous compound → collapsed
@@ -82,6 +93,8 @@ export interface LegacyMapScene {
   npcSpawns: LegacyNpcSpawn[];
   /** Scene-owned roster. When present, only these definitions may spawn here. */
   npcDefinitions?: NPCDefinition[];
+  /** Optional hostile targets owned by this scene; never inferred from family NPCs. */
+  combatEncounters?: LegacyCombatEncounter[];
   worldStateVariant: string; // e.g. "1912-prosperous" | "1920-collapse" | "1948-present"
   lighting: LegacyLightingState;
   weather?: "clear" | "rain" | "fog";

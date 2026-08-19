@@ -131,6 +131,17 @@ export const mensahCompoundScene: LegacyMapScene = {
     { characterId: "kofi-carpenter", role: "namedNPC", x: 13, y: 15, facing: "down" },
   ],
   npcDefinitions: MENSAH_COMPOUND_NPCS,
+  combatEncounters: [
+    {
+      id: "road-raider-front-gate",
+      name: "Road Raider",
+      x: 17.5,
+      y: 19,
+      hp: 64,
+      rewardItemId: "front-gate-memory-token",
+      rewardQuestId: "mensah-compound-road-encounter",
+    },
+  ],
 };
 
 export const MENSAH_COMPOUND_SPAWN = { x: 15, y: 19, facing: "up" as const };

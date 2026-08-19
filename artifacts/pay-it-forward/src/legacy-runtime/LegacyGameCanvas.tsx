@@ -25,7 +25,7 @@
 import "pixi.js/unsafe-eval";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatedSprite, Application, Texture } from "pixi.js";
+import { AnimatedSprite, Application, Graphics, Texture } from "pixi.js";
 import { LegacyActorController } from "@/lib/legacy-animation-fsm";
 import { LegacyCombatController, type LegacyCombatTarget, type LegacyFullAnimState } from "@/lib/legacy-combat-fsm";
 import type { LegacyMapScene } from "@/lib/legacy-map-engine";
@@ -280,11 +280,20 @@ export function LegacyGameCanvas({
         combat.jump();
         showCombatFlash("↑ Jump!");
       }
+      if (e.key === "g" || e.key === "G") combat.startGuard();
+      if (e.key === "Shift") {
+        const facing = player.state.facing;
+        const dx = facing === "left" ? -1 : facing === "right" ? 1 : 0;
+        const dy = facing === "up" ? -1 : facing === "down" ? 1 : 0;
+        combat.dash(dx, dy);
+        showCombatFlash("⇢ Dash");
+      }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
       pressedKeys.delete(e.key);
       if (e.key === "Shift") pressedKeys.delete("running");
+      if (e.key === "g" || e.key === "G") combat.releaseGuard();
     };
 
     // ─── Player + combat controllers ────────────────────────────────────────
@@ -295,7 +304,34 @@ export function LegacyGameCanvas({
       facing: initialSpawn?.facing ?? "down",
     });
     const combat = new LegacyCombatController(player);
-    const currentCombatTargets: LegacyCombatTarget[] = [];
+    const encounter = scene.combatEncounters?.[0];
+    let encounterRewarded = false;
+    const currentCombatTargets: LegacyCombatTarget[] = encounter
+      ? [{
+          id: encounter.id,
+          x: encounter.x,
+          y: encounter.y,
+          hp: encounter.hp,
+          applyDamage: (amount, knockback) => {
+            if (encounterTarget.hp <= 0) return;
+            encounterTarget.hp = Math.max(0, encounterTarget.hp - amount);
+            encounterTarget.x += knockback.dx * 0.08;
+            showCombatFlash(
+              encounterTarget.hp > 0
+                ? `⚔ ${encounter.name} −${amount} HP`
+                : `✓ ${encounter.name} defeated — memory token recovered`,
+            );
+            if (encounterTarget.hp <= 0 && !encounterRewarded) {
+              encounterRewarded = true;
+              worldStateRef.current = applyWorldMutations([
+                { type: "grant-item", itemId: encounter.rewardItemId },
+                { type: "quest-echo", questId: encounter.rewardQuestId },
+              ], worldStateRef.current);
+            }
+          },
+        }]
+      : [];
+    const encounterTarget = currentCombatTargets[0]!;
 
     // ─── Multi-line NPC dialogue state ────────────────────────────────────────
     // Tracks how far into each NPC's dialogue array the player has progressed.
@@ -471,6 +507,13 @@ export function LegacyGameCanvas({
         npcGfxMap.set(ctrl.definition.id, sprite);
         npcFrameKeyMap.set(ctrl.definition.id, `idle:${initialFacing}`);
       }
+      const encounterGfx = encounter
+        ? new Graphics()
+        : null;
+      if (encounterGfx) {
+        encounterGfx.label = `encounter:${encounter!.id}`;
+        actorLayer.addChild(encounterGfx);
+      }
 
       window.addEventListener("keydown", onKeyDown);
       window.addEventListener("keyup",   onKeyUp);
@@ -539,6 +582,21 @@ export function LegacyGameCanvas({
 
           player.tick(deltaMs, { dx: dx / len, dy: dy / len, running: pressedKeys.has("running") }, collisionQuery);
           combat.tick(deltaMs);
+           if (encounterGfx && encounterTarget) {
+             encounterGfx.clear();
+             if (encounterTarget.hp > 0) {
+               encounterGfx
+                 .roundRect(encounterTarget.x * TILE_SIZE_PX - 18, encounterTarget.y * TILE_SIZE_PX - 46, 36, 46, 8)
+                 .fill(0x8f2d2d)
+                 .stroke({ color: 0xfca5a5, width: 2, alpha: 0.8 });
+               encounterGfx
+                 .rect(encounterTarget.x * TILE_SIZE_PX - 18, encounterTarget.y * TILE_SIZE_PX - 54, 36, 4)
+                 .fill(0x2b1111);
+               encounterGfx
+                 .rect(encounterTarget.x * TILE_SIZE_PX - 18, encounterTarget.y * TILE_SIZE_PX - 54, 36 * (encounterTarget.hp / encounter!.hp), 4)
+                 .fill(0xef4444);
+             }
+           }
 
           // ── World interaction prompt (Layer 8) ────────────────────────────
           if (!talkingNpcId) {
@@ -702,8 +760,10 @@ export function LegacyGameCanvas({
         <span>Space — interact / talk</span>
         <span>E — inspect</span>
         <span>F — pick up</span>
-        <span>J/K — attack</span>
-        <span>L — jump</span>
+           <span>J/K — attack</span>
+           <span>L — jump</span>
+           <span>G — guard</span>
+           <span>Shift — dash</span>
       </div>
 
       {/* Touch movement keeps the single Pixi runtime playable on phones.
