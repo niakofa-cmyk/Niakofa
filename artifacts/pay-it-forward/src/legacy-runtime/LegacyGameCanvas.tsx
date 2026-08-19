@@ -48,7 +48,6 @@ import {
   fishingLand,
   cancelFishing,
   getFishingState,
-  type FishingResult,
 } from "./legacy-world/fishing-runtime";
 import { applyWorldMutations, createEmptyWorldState, type MinimalWorldState } from "./legacy-world/mutations";
 import type { WorldActivity } from "./legacy-world/types";
@@ -374,16 +373,15 @@ export function LegacyGameCanvas({
           { playerId: "kwame-mensah", locationId: interaction.location!.id, worldVersion: worldStateRef.current.worldVersion },
           (result, mutations) => {
             // Layer 9 + 10: fishing results → attribute XP
-            if (result && "fish" in result) {
-              const fishingResult = result as FishingResult;
-              const fishRarity = fishingResult.rarity === "rare"
+            if (result.success && result.fishId) {
+              const fishRarity = result.rarity === "rare"
                 ? 3
-                : fishingResult.rarity === "uncommon"
+                : result.rarity === "uncommon"
                   ? 2
                   : 1;
               attrs.processEvent({ type: "fish_caught", fishRarity });
             }
-            if (result && "isMemoryCatch" in result && result.isMemoryCatch) {
+            if (result.isMemoryCatch) {
               attrs.processEvent({ type: "river_memory", depth: 1 });
             }
             worldStateRef.current = applyWorldMutations(mutations, worldStateRef.current);
