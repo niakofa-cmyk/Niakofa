@@ -414,7 +414,10 @@ export function LegacyGameCanvas({
           await app.init({
             background: "#1a0f08",
             resizeTo: hostRef.current ?? undefined,
-            antialias: true,
+            // Pixel-authored ground and character frames must not be linearly
+            // sampled at tile boundaries; antialiasing turns transparent/
+            // low-alpha atlas edges into a visible grid across the compound.
+            antialias: false,
             preference: "webgl",
           });
           appInitialized = true;

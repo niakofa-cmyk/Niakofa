@@ -27,6 +27,7 @@
 - [Legacy Demo Cache Boundary](legacy-demo-cache-boundary.md) — public Legacy navigation must bypass stale service-worker HTML after hashed chunks roll forward.
 - [Legacy World Map Pins](legacy-world-map-pins.md) — LegacyWorldMapPins macro overworld; LegacyWorldMapPin interface with xPct/yPct; MENSAH_DEFAULT_PINS 6-pin arc; procedural SVG bezier route lines.
 - [Legacy Environment Assets v1](legacy-environment-assets.md) — 180 hand-drawn PNGs in public/environment-assets/; asset registry, scene data, scene renderer, and era→scene wiring in chapter page.
+- [Legacy scene interaction runtime](legacy-scene-interaction-runtime.md) — authored scene points must resolve through evaluateInteraction and WorldMutation, not remain metadata-only.
 - [Legacy Hub Declutter](legacy-hub-declutter.md) — removed 10-button mode-selector grid + duplicate CTA from LegacyStartVisual; dead prop callbacks removed from legacy-home.tsx both call sites.
 - [Legacy PixiJS Renderer](legacy-pixi-renderer.md) — pixi.js ^8.6.0 added; LegacyChapterWorld now WebGL canvas; module-scope textureCache; PIXI.Rectangle 48×48 frame crop replaces CSS background-position.
 - [Kwame Atlas Manifest](kwame-atlas-manifest.md) — two source trees (hand-drawn/kwame + kwame-mensah/atlas), baseUrl=/legacy-character-assets/, 784 frames, 9 animStates registered; pick_up+inspect added Aug 17 2026.

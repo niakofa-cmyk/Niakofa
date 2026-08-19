@@ -5,23 +5,24 @@ Mensah Compound playable region. The files are references and provenance
 records; they are not family-history evidence and do not create a second game
 runtime.
 
-## Supplied materials
+## Materials retained in this checkout
 
-- `ChatGPT_Image_Aug_19_2026_12_44_57_AM.png` — Mensah Compound board with
-  19 numbered locations, Cape Coast, 1890.
-- `mensah-compound-build-notes.txt` — environment-pack audit and recommended
-  ground, structure, collision, interaction, and portal layers.
-- `niakofa-legacy-continuation-notes.txt` — session continuation and delivery
-  requirements.
-- `mensah-compound-scene-spec.txt` — authored 32×24 scene specification and
-  location mapping.
-- `Hand_Drawn_Environment_Assets.zip` — supplied source archive, retained
-  unchanged for future asset audits.
+- `available-reference-image.png` — the reference image available after the
+  repository was synchronized.
+- `NIAKOFA-BUILDINGS-STRUCTURES-ATLAS-v1.png` — source atlas used for the
+  building and prop slices.
+- `NIAKOFA-GROUND-TILES-ATLAS-v1.png` — source atlas used for ground slices.
+
+The three August 19 text notes, the numbered compound board, and the original
+ZIP were inspected before synchronization but were transient upload files and
+were no longer present in the workspace after the checkout moved to the
+current GitHub `main`. The scene and runtime assets remain in the repository;
+this note intentionally does not claim those unavailable uploads were copied.
 
 The runtime uses the measured, curated files under
-`artifacts/pay-it-forward/public/environment-assets/`. The archive is retained
-here so future slicing or provenance review can be compared against the exact
-source used for this edition.
+`artifacts/pay-it-forward/public/environment-assets/`. The retained atlases
+allow future slicing or provenance review to be compared against the source
+used for this edition.
 
 ## Runtime contract
 
