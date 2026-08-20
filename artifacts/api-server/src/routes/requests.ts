@@ -806,7 +806,7 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   // Emergency requests bypass this check by design (consistent with the
   // rest of the urgency-based bypass pattern used elsewhere in this file).
   const [existingFull] = await db
-    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, category: requestsTable.category, requester_id: requestsTable.requester_id })
+    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, category: requestsTable.category, requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id, status: requestsTable.status })
     .from(requestsTable)
     .where(eq(requestsTable.id, pParsed.data.id))
     .limit(1);
@@ -814,6 +814,13 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   // A requester cannot claim their own request as a helper.
   if (existingFull && existingFull.requester_id === helperId) {
     return res.status(403).json({ error: "You cannot claim your own request." });
+  }
+  // A timed-out client may replay a claim after the first request committed.
+  // Returning the committed row is safe and keeps a successful operation from
+  // appearing as a failure to the helper.
+  if (existingFull?.status === "claimed" && existingFull.helper_id === helperId) {
+    const [claimed] = await db.select().from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+    return res.json({ ...claimed, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null });
   }
 
   // Sensitive categories (childcare, senior_care, medical) involve vulnerable
@@ -893,6 +900,8 @@ router.post("/requests/:id/en-route", requireAuth, requireApproved, async (req, 
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+  const [current] = await db.select().from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (current?.status === "en_route" && current.helper_id === helperId) return res.json(current);
   // Include status = 'claimed' in WHERE to make the transition atomic.
   // Without it, a concurrent cancellation or admin reassignment between the
   // caller's ownership check and this UPDATE could leave the row in an
@@ -916,6 +925,8 @@ router.post("/requests/:id/arrived", requireAuth, requireApproved, async (req, r
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+  const [current] = await db.select().from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if ((current?.status === "arrived" || current?.status === "completed") && current.helper_id === helperId) return res.json(current);
   // Include status = 'en_route' to make the transition atomic — same pattern
   // as en-route above. A concurrent cancellation between check and write is
   // caught by the missing row, returning 409 not 404.
@@ -1099,6 +1110,15 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
       return res.status(400).json({ error: "Invalid request body", details: bParsed.error?.issues });
     }
   }
+
+  // Completion triggers wallet, pool, trust, and payout side effects below.
+  // Never replay those effects when a mobile client retries after a timeout.
+  const [alreadyCompleted] = await db
+    .select()
+    .from(requestsTable)
+    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, helperId), eq(requestsTable.status, "completed")))
+    .limit(1);
+  if (alreadyCompleted) return res.json(alreadyCompleted);
 
   // Status guard makes completion idempotent: a request can only transition to
   // completed ONCE, so every side effect below (help_count, pool front,
@@ -2039,6 +2059,32 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
   const requesterId = req.authenticatedUserId!;
   const requestId = parseInt(String(req.params.id), 10);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+  const idempotencyKey = String(req.header("Idempotency-Key") ?? "").trim();
+  if (idempotencyKey.length > 128) return res.status(400).json({ error: "Idempotency-Key must be 128 characters or fewer." });
+  // Check the durable ledger before validating the current pledge state. A
+  // successful full repayment changes the pledge to `repaid`; a replay of
+  // that same operation must still return success rather than a misleading
+  // "already resolved" conflict.
+  if (idempotencyKey) {
+    const [priorTransaction] = await db
+      .select({ amount: transactionsTable.amount })
+      .from(transactionsTable)
+      .where(and(
+        eq(transactionsTable.user_id, requesterId),
+        eq(transactionsTable.idempotency_key, idempotencyKey),
+      ))
+      .limit(1);
+    if (priorTransaction) {
+      const [currentRequest] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+      return res.status(200).json({
+        success: true,
+        amount_paid: Math.abs(priorTransaction.amount),
+        new_pledge_paid: currentRequest?.pledge_paid ?? null,
+        pledge_status: currentRequest?.pledge_status ?? "repaid",
+        message: "Repayment already recorded.",
+      });
+    }
+  }
 
   const { amount } = req.body as { amount?: unknown };
   const amountNum = typeof amount === "number" ? amount : parseFloat(String(amount ?? ""));
@@ -2079,6 +2125,21 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
   let updated: { pledge_paid: number | null; pledge_status: string | null; pledge_amount: number | null } | undefined;
   try {
     [updated] = await db.transaction(async (tx) => {
+      // Reserve the operation before touching the wallet. The unique index
+      // makes concurrent retries collapse to one ledger debit.
+      if (idempotencyKey) {
+        const [reserved] = await tx.insert(transactionsTable).values({
+          user_id: requesterId,
+          type: "pledge_repayment",
+          amount: -safeAmount,
+          description: `Pledge repayment for request #${requestId}`,
+          request_id: requestId,
+          idempotency_key: idempotencyKey,
+        }).onConflictDoNothing({
+          target: [transactionsTable.user_id, transactionsTable.idempotency_key],
+        }).returning({ id: transactionsTable.id });
+        if (!reserved) throw Object.assign(new Error("already_processed"), { status: 200 });
+      }
       // Verify the user has sufficient wallet balance (funded via Stripe webhook)
       const [requesterRow] = await tx.select({ wallet: usersTable.benevolence_wallet })
         .from(usersTable).where(eq(usersTable.id, requesterId)).limit(1);
@@ -2149,13 +2210,15 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
       const amountActuallyApplied = Math.min(safeAmount, (row.pledge_amount ?? 0) - ((row.pledge_paid ?? 0) - safeAmount));
 
       // Record the wallet debit as a transaction for the audit trail.
-      await tx.insert(transactionsTable).values({
-        user_id: requesterId,
-        type: "pledge_repayment",
-        amount: -safeAmount,
-        description: `Pledge repayment for request #${requestId}`,
-        request_id: requestId,
-      });
+      if (!idempotencyKey) {
+        await tx.insert(transactionsTable).values({
+          user_id: requesterId,
+          type: "pledge_repayment",
+          amount: -safeAmount,
+          description: `Pledge repayment for request #${requestId}`,
+          request_id: requestId,
+        });
+      }
 
       // Record the repayment in the pool ledger for the audit trail.
       await tx.insert(communityPoolLedgerTable).values({
@@ -2169,6 +2232,16 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
       return rows;
     });
   } catch (err) {
+    if (err instanceof Error && err.message === "already_processed") {
+      const [replayed] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+      return res.status(200).json({
+        success: true,
+        amount_paid: safeAmount,
+        new_pledge_paid: replayed?.pledge_paid ?? request.pledge_paid,
+        pledge_status: replayed?.pledge_status ?? request.pledge_status,
+        message: "Repayment already recorded.",
+      });
+    }
     if (err instanceof Error && err.message === "already_paid") {
       return res.status(409).json({ error: "This pledge is already fully paid or resolved." });
     }

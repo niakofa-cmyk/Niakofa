@@ -34,6 +34,7 @@ import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { motion, AnimatePresence } from "framer-motion";
 import { haversineMeters, isNearbyUser } from "@/lib/geo-utils";
+import { newOperationKey } from "@/lib/retryableMutation";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -137,6 +138,11 @@ export default function ActiveRequestScreen() {
   const requestActivityLevel = Math.min(1, Math.sqrt(openRequestCount / 10));
   const queryClient = useQueryClient();
   const requestId = parseInt(params?.id || "0", 10);
+  const operationKeys = useRef<Record<string, string>>({});
+  const operationKey = useCallback((name: string) => {
+    operationKeys.current[name] ??= newOperationKey(name, requestId);
+    return operationKeys.current[name];
+  }, [requestId]);
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [autoArrived, setAutoArrived] = useState(false);
@@ -289,9 +295,15 @@ export default function ActiveRequestScreen() {
     }
   });
 
-  const completeMutation = useCompleteRequest();
-  const enRouteMutation = useMarkEnRoute();
-  const arrivedMutation = useMarkArrived();
+  const completeMutation = useCompleteRequest({
+    request: { headers: { "Idempotency-Key": operationKey("complete") } },
+  });
+  const enRouteMutation = useMarkEnRoute({
+    request: { headers: { "Idempotency-Key": operationKey("en-route") } },
+  });
+  const arrivedMutation = useMarkArrived({
+    request: { headers: { "Idempotency-Key": operationKey("arrived") } },
+  });
 
   // Trip timer
   useEffect(() => {
@@ -356,7 +368,7 @@ export default function ActiveRequestScreen() {
         }
       );
     }
-  }, [myLocation, request, autoArrived, currentUser, arrivedMutation, queryClient, requestId]);
+  }, [myLocation, request, autoArrived, currentUser, arrivedMutation, queryClient, requestId, operationKey]);
 
   // Off-route detection
   useEffect(() => {
@@ -523,7 +535,7 @@ export default function ActiveRequestScreen() {
     if (!currentUser || !request) return;
     completeMutation.mutate(
       { id: requestId, data: { helper_id: currentUser.id } },
-      {
+        {
         onSuccess: () => {
           const earned = request.payment_type === "immediate" && request.pay_it_forward_amount
             ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
@@ -535,7 +547,7 @@ export default function ActiveRequestScreen() {
           setTimeout(() => setShowRating(true), 900);
         },
         onError: () => toast({ title: "Failed to complete", variant: "destructive" })
-      }
+     }
     );
   };
 

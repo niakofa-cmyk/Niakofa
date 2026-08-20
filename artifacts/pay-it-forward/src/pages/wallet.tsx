@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
+import { newOperationKey, retryableMutation } from "@/lib/retryableMutation";
 import { KindnessImpactRing } from "@/components/KindnessImpactRing";
 import { PayItForwardBadge } from "@/components/PayItForwardBadge";
 import { RepaymentSchedulerModal } from "@/components/RepaymentSchedulerModal";
@@ -211,11 +212,11 @@ export default function WalletScreen() {
     setRepayLoading(true);
     try {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-      const res = await fetch(`${base}/api/requests/${requestId}/pledge-repay`, {
+      const res = await retryableMutation(`${base}/api/requests/${requestId}/pledge-repay`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ amount: amt }),
-      });
+      }, newOperationKey("pledge-repay", requestId));
       const data = await res.json() as { success?: boolean; message?: string; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to record repayment");
       toast({ title: data.message ?? "Repayment recorded! 💙" });

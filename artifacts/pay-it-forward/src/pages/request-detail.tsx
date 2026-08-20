@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { ChevronLeft, MapPin, Clock, DollarSign, Heart, Gift, AlertTriangle, Share2, Users, CheckCircle2, Navigation2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
 import { isSensitiveCategory, getRequesterTier, REQUESTER_TIER_LABEL, REQUESTER_TIER_EMOJI } from "@workspace/trust-tiers";
 import { TipModal } from "@/components/TipModal";
+import { newOperationKey } from "@/lib/retryableMutation";
 
 const URGENCY_CONFIG = {
   emergency: { label: "Emergency", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/30", icon: AlertTriangle },
@@ -40,8 +41,11 @@ export default function RequestDetailScreen() {
     query: { enabled: !!requestId, queryKey: getGetRequestQueryKey(requestId), refetchInterval: 15000 }
   });
 
-  const claimMutation = useClaimRequest();
   const [showTip, setShowTip] = useState(false);
+  const claimOperationKey = useRef(newOperationKey("claim-request", requestId));
+  const claimMutation = useClaimRequest({
+    request: { headers: { "Idempotency-Key": claimOperationKey.current } },
+  });
 
   const handleShare = async () => {
     const url = window.location.href;
