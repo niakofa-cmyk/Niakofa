@@ -33,3 +33,4 @@
 - [Kwame Atlas Manifest](kwame-atlas-manifest.md) — two source trees (hand-drawn/kwame + kwame-mensah/atlas), baseUrl=/legacy-character-assets/, 784 frames, 9 animStates registered; pick_up+inspect added Aug 17 2026.
 - [Managed artifact preview ports](managed-artifact-preview-ports.md) — managed web artifacts may use assigned preview ports; verify with the workflow's actual port instead of overriding them.
 - [Preview workflow toolchain](niakofa-preview-workflow-toolchain.md) — managed workflows must avoid pnpm's cross-version bootstrap; invoke installed artifact binaries directly.
+- [Database worker readiness](niakofa-db-worker-readiness.md) — API workers require both a reachable Postgres connection and the migrated help_requests schema before startup.
