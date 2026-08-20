@@ -273,7 +273,7 @@ export default function RecurringScreen() {
     } finally {
       setLoading(false);
     }
-  }, [base, authHeader]);
+  }, [base, authHeader, t]);
 
   useEffect(() => { load(); }, [load]);
 

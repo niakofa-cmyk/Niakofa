@@ -140,6 +140,61 @@ router.get("/health", async (_req, res) => {
   });
 });
 
+// ── GET /readiness — machine-readable dependency readiness ────────────────────
+// /healthz answers whether Railway can send traffic to the API. This endpoint
+// gives operators and clients the complete bounded dependency picture without
+// making optional services a deployment gate.
+router.get("/readiness", async (_req, res) => {
+  const dbStart = Date.now();
+  let database: "ready" | "unavailable" = "unavailable";
+  try {
+    await db.execute(sql`SELECT 1`);
+    database = "ready";
+  } catch (err) {
+    logger.warn({ err }, "readiness: database unavailable");
+  }
+
+  const nia = await checkNiaService();
+  const redisConfigured = isRedisConfigured();
+  const mapConfigured = Boolean(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+  const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY);
+  const dependencies = {
+    database: { required: true, status: database },
+    nia: {
+      required: false,
+      status: nia.status === "ok" ? "ready" : "degraded",
+      detail: nia.status === "ok" ? "available" : "unavailable",
+    },
+    redis: {
+      required: false,
+      status: redisConfigured ? "ready" : "degraded",
+      detail: redisConfigured ? "queue-backed" : "durable scheduler fallback",
+    },
+    stripe: {
+      required: false,
+      status: stripeConfigured ? "ready" : "degraded",
+      detail: stripeConfigured ? "configured" : "payments remain pending",
+    },
+    mapbox: {
+      required: false,
+      status: mapConfigured ? "ready" : "degraded",
+      detail: mapConfigured ? "configured" : "map/address fallback",
+    },
+  } as const;
+  const ready = database === "ready";
+  const degraded = Object.values(dependencies).some((dependency) => dependency.status === "degraded");
+
+  res.status(ready ? 200 : 503).json({
+    status: ready ? (degraded ? "degraded" : "ready") : "unready",
+    ready,
+    required: { database: ready },
+    dependencies,
+    database_latency_ms: Date.now() - dbStart,
+    commit: GIT_COMMIT,
+    started_at: PROCESS_STARTED_AT,
+  });
+});
+
 // ── GET /version — build metadata for ops tooling ────────────────────────────
 router.get("/version", (_req, res) => {
   res.json({

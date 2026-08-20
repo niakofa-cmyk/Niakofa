@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
 import type { MapRef } from "react-map-gl/mapbox";
@@ -153,6 +153,8 @@ export default function ActiveRequestScreen() {
   const [showRating, setShowRating] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [showCancelReasonPicker, setShowCancelReasonPicker] = useState(false);
+  const hasEtaCountdown = etaCountdown > 0;
+  const currentUserId = currentUser?.id;
 
   // ── SankofaBird micro-reactions ────────────────────────────────────────
   // celebrating:      bird glows teal + feather shimmer when request is completed
@@ -264,7 +266,7 @@ export default function ActiveRequestScreen() {
   const birdNearbyUser = !isArrived && !isCompleted && myLocation != null && request != null
     && isNearbyUser(myLocation.lat, myLocation.lng, request.lat, request.lng);
 
-  const routeParams = {
+  const routeParams = useMemo(() => ({
     // Use ?? (null coalescing) not || so that lat/lng = 0 (equatorial cities
     // like Kampala UG at 0.3°N, Libreville GA at 0.4°N) are treated as valid
     // coordinates rather than being replaced with a fallback of 0,0 (Gulf of Guinea).
@@ -278,7 +280,7 @@ export default function ActiveRequestScreen() {
     // helpers in London get miles + English voice.
     lang: detectMapLanguage(),
     units: detectUnits(),
-  };
+  }), [myLocation?.lat, myLocation?.lng, request?.lat, request?.lng, routingProfile]);
   const { data: routeData } = useGetRoute(routeParams, {
     query: {
       enabled: !!myLocation && !!request,
@@ -324,10 +326,10 @@ export default function ActiveRequestScreen() {
     if (routeData?.eta_text) setEtaCountdown(parseEtaSeconds(routeData.eta_text));
   }, [routeData?.eta_text]);
   useEffect(() => {
-    if (etaCountdown <= 0) return;
+    if (!hasEtaCountdown) return;
     const id = setInterval(() => setEtaCountdown(p => Math.max(0, p - 1)), 1000);
     return () => clearInterval(id);
-  }, [etaCountdown > 0]);
+  }, [hasEtaCountdown]);
 
   // Mark en_route once
   useEffect(() => {
@@ -335,7 +337,7 @@ export default function ActiveRequestScreen() {
       enRouteRef.current = true;
       enRouteMutation.mutate({ id: requestId, data: { helper_id: currentUser.id } });
     }
-  }, [request?.status]);
+  }, [request?.status, currentUser, enRouteMutation, requestId]);
 
   // Auto-detect arrival
   useEffect(() => {
@@ -354,7 +356,7 @@ export default function ActiveRequestScreen() {
         }
       );
     }
-  }, [myLocation, request, autoArrived, currentUser]);
+  }, [myLocation, request, autoArrived, currentUser, arrivedMutation, queryClient, requestId]);
 
   // Off-route detection
   useEffect(() => {
@@ -380,7 +382,7 @@ export default function ActiveRequestScreen() {
     } else {
       setIsOffRoute(false);
     }
-  }, [myLocation, routeData]);
+  }, [myLocation, routeData, autoArrived, queryClient, routeParams]);
 
   // Step advancement
   useEffect(() => {
@@ -423,7 +425,7 @@ export default function ActiveRequestScreen() {
     if (lastSpokenStepRef.current === currentStepIndex) return;
     lastSpokenStepRef.current = currentStepIndex;
     speakInstruction(step.voice_announcement ?? step.instruction);
-  }, [currentStepIndex, routeData?.steps, isArrived, isHelper, speakInstruction]);
+  }, [currentStepIndex, routeData, isArrived, isHelper, speakInstruction]);
 
   // Announce arrival — helpers only
   useEffect(() => {
@@ -483,18 +485,18 @@ export default function ActiveRequestScreen() {
       duration: 600,
       zoom: 16,
     });
-  }, [tweenedPosition?.lat, tweenedPosition?.lng, myLocation?.lat, myLocation?.lng]);
+  }, [tweenedPosition, myLocation, isArrived, autoArrived]);
 
   // Passive safety check-in
   useEffect(() => {
-    if (!currentUser || isArrived || isCompleted) return;
+    if (!currentUserId || isArrived || isCompleted) return;
     const id = setInterval(async () => {
       try {
-        await fetch(`/api/verification/safety-checkin/${currentUser.id}`, { method: "POST", headers: authHeaders() });
+        await fetch(`/api/verification/safety-checkin/${currentUserId}`, { method: "POST", headers: authHeaders() });
       } catch {}
     }, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [currentUser?.id, isArrived, isCompleted]);
+  }, [currentUserId, isArrived, isCompleted]);
 
   // WebSocket updates
   useWebSocket(useCallback((event) => {

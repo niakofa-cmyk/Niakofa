@@ -719,7 +719,7 @@ export function NiaDrawer({
   open,
   onClose,
   initialMessage,
-  userId = null,
+  userId: _userId = null,
   userName = null,
   userLocation = null,
   userCity = null,
@@ -1130,7 +1130,7 @@ export function NiaDrawer({
         }
       }
     }
-  }, [loading, sessionId, userCoords, userId, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext, userLang, speakNiaResponse]);
+  }, [loading, sessionId, userCoords, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext, userLang, speakNiaResponse, resolvedCity, resolvedCounty, resolvedState]);
 
   const handleReset = () => {
     localStorage.removeItem("nia_session_id");

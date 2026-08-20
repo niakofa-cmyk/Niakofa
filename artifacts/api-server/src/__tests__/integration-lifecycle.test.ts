@@ -590,6 +590,41 @@ describe("Health Endpoint", () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it("reports optional dependency degradation without blocking core readiness", async () => {
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Nia unavailable"));
+
+    try {
+      const res = await request(app).get("/api/readiness");
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("degraded");
+      expect(res.body.ready).toBe(true);
+      expect(res.body.required.database).toBe(true);
+      expect(res.body.dependencies.nia.status).toBe("degraded");
+      expect(res.body.dependencies.redis.detail).toBe("durable scheduler fallback");
+      expect(res.body.dependencies.stripe.detail).toBe("payments remain pending");
+      expect(res.body.dependencies.mapbox.detail).toBe("map/address fallback");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("returns 503 when the required database is unavailable", async () => {
+    (db.execute as jest.Mock).mockRejectedValueOnce(new Error("Connection refused"));
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Nia unavailable"));
+
+    try {
+      const res = await request(app).get("/api/readiness");
+
+      expect(res.status).toBe(503);
+      expect(res.body.status).toBe("unready");
+      expect(res.body.ready).toBe(false);
+      expect(res.body.required.database).toBe(false);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
 
 // ── Pagination Tests ──────────────────────────────────────────────────────────

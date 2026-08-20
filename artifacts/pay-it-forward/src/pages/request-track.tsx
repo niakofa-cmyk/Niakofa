@@ -54,6 +54,7 @@ export default function RequesterTrackingScreen() {
   const [helperLocation, setHelperLocation] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [etaCountdown, setEtaCountdown] = useState(0);
   const [showChat, setShowChat] = useState(false);
+  const hasEtaCountdown = etaCountdown > 0;
   // Initialise to true (= error state) when the Mapbox token is absent so the
   // <Map> component is never mounted with empty credentials. Without this guard
   // Mapbox fires auth-failure requests and logs console errors before onError
@@ -89,10 +90,10 @@ export default function RequesterTrackingScreen() {
   }, [routeData?.eta_text]);
 
   useEffect(() => {
-    if (etaCountdown <= 0) return;
+    if (!hasEtaCountdown) return;
     const id = setInterval(() => setEtaCountdown(p => Math.max(0, p - 1)), 1000);
     return () => clearInterval(id);
-  }, [etaCountdown > 0]);
+  }, [hasEtaCountdown]);
 
   // "X helpers online near you" — shown only while waiting for a claim, so
   // requesters watching an unclaimed request see it's not sitting in a dead

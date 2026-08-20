@@ -136,10 +136,15 @@ The migration runner auto-creates the `postgis` extension when it's available. I
 |---|---|---|
 | `GET /api/healthz` | None | Lightweight DB connectivity check — **Railway deploy probe** |
 | `GET /api/status` | None | Public status page — DB ping, Nia AI state, map key |
+| `GET /api/readiness` | None | Machine-readable required/optional dependency readiness |
 | `GET /api/admin/worker-health` | Admin token | BullMQ/cron worker statuses |
 | `GET /api/admin/global-ops` | Admin token | GPS health, region buckets, config status |
 
 Railway health check (`railway.toml`: `healthcheckPath`) is set to `GET /api/healthz` — this is a lightweight DB ping that always returns 200 when the server and database are up. `/api/status` is the richer status page used by the frontend; it returns 200 even when optional features (Nia AI, Mapbox) are degraded so it does **not** block deploys.
+
+`/api/readiness` makes the same boundary explicit for operators and clients:
+the database is required, while Nia, Redis, Stripe, and Mapbox report
+capability-level `degraded` states with safe fallback descriptions.
 
 ---
 
