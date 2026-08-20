@@ -34,3 +34,4 @@
 - [Managed artifact preview ports](managed-artifact-preview-ports.md) — managed web artifacts may use assigned preview ports; verify with the workflow's actual port instead of overriding them.
 - [Preview workflow toolchain](niakofa-preview-workflow-toolchain.md) — managed workflows must avoid pnpm's cross-version bootstrap; invoke installed artifact binaries directly.
 - [Database worker readiness](niakofa-db-worker-readiness.md) — API workers require both a reachable Postgres connection and the migrated help_requests schema before startup.
+- [Production fail-closed boundaries](niakofa-production-fail-closed.md) — production CORS and migration startup must fail closed; development may retain explicit fallbacks.
