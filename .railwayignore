@@ -1,3 +1,15 @@
 node_modules
 **/node_modules
 **/.git
+
+# Non-runtime source archives and uploaded reference material. These are kept
+# in Git for provenance, but must not inflate the Railway build context.
+*.zip
+*.tar
+*.tar.gz
+reference
+docs
+niakofa-repo
+attached_assets
+.agents
+.local
