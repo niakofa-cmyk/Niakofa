@@ -15,8 +15,8 @@ pnpm install
 # Run the API server (port 8080)
 pnpm --filter @workspace/api-server run dev
 
-# Run the frontend (port 18848 in Replit, 3000 locally)
-pnpm --filter @workspace/pay-it-forward run dev
+# Run the frontend (port 5000 in the managed Replit preview)
+cd artifacts/pay-it-forward && pnpm exec vite --config vite.config.ts --host 0.0.0.0 --port 5000
 ```
 
 ### Required Environment Variables

@@ -12,10 +12,15 @@ Both workflows are managed as Replit artifacts:
 
 | Workflow | Command | Port |
 |---|---|---|
-| `artifacts/pay-it-forward: web` | `pnpm --filter @workspace/pay-it-forward run dev` | 18848 |
-| `artifacts/api-server: API Server` | `pnpm --filter @workspace/api-server run dev` | 8080 |
+| `artifacts/pay-it-forward: web` | `cd artifacts/pay-it-forward && ./node_modules/.bin/vite --config vite.config.ts --host 0.0.0.0` | 5000 |
+| `artifacts/api-server: API Server` | `cd artifacts/api-server && node build.mjs && node --enable-source-maps dist/index.mjs` | 8080 |
 
 After any fresh import: run `pnpm install` first (esbuild postinstall needs it).
+
+The web artifact does not define a `dev` script, so the managed workflow invokes its
+installed Vite binary directly. The API preview workflow builds and starts the
+compiled server directly; Railway continues to use `scripts/start.sh`, which runs
+migrations and supervises both production services.
 
 **DO NOT** use the old root-level "Start application" / "Start API server" workflows — they are stale and fail. Use the `artifacts/*` workflows only.
 
