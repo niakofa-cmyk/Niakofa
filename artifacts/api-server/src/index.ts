@@ -73,11 +73,19 @@ server.listen(port, async () => {
   // dependency failure behind dozens of unrelated "relation does not exist"
   // errors. Production deploys still fail readiness until the DB is reachable.
   try {
-    await db.execute(sql`SELECT 1`);
+    const schemaResult = await db.execute<{ table_name: string | null }>(
+      sql`SELECT to_regclass('public.help_requests') AS table_name`,
+    );
+    const schemaCheck = schemaResult.rows[0];
+    if (!schemaCheck?.table_name) {
+      throw new Error(
+        "database schema is not migrated: public.help_requests is missing",
+      );
+    }
   } catch (err) {
     logger.error(
       { err },
-      "database: unavailable at startup — background workers are paused; readiness will remain unready",
+      "database: unavailable or schema is not migrated — background workers are paused; readiness will remain unready",
     );
     return;
   }
