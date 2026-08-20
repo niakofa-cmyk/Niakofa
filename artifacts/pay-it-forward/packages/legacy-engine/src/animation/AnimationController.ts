@@ -2,7 +2,7 @@ import type { SpriteAtlas } from "./SpriteAtlas.js";
 import type { AnimationClip } from "./types.js";
 import { clipPhaseAtFrame } from "./types.js";
 
-export interface AnimationController {
+export interface AnimationControllerContract {
   onFrameChanged(cb: (frame: number) => void): () => void;
   onClipComplete(cb: (clipId: string) => void): () => void;
 }
@@ -17,7 +17,7 @@ export interface AnimationController {
  * fixed fps derived from clip.frameDurationMs so it's identical whether
  * the game renders at 30fps or 144fps.
  */
-export class AnimationController {
+export class AnimationController implements AnimationControllerContract {
   private atlas: SpriteAtlas;
   private clip: AnimationClip;
   private currentFrame = 1; // 1-based, matches the design doc's frame numbering

@@ -10,7 +10,6 @@ import {
   GROUND_ACTIONS,
   AERIAL_ACTIONS,
   NO_INPUT,
-  GRAVITY,
   JUMP_IMPULSE,
   type CombatInput,
 } from "../legacy-combat-system";

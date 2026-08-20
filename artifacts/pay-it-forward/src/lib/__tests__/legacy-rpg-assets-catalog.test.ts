@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { expect } from "expect";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 type AssetCatalog = {

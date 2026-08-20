@@ -77,8 +77,6 @@ export function LegacySceneRenderer({
               <TileCell
                 key={`${r}-${c}`}
                 layer={authored ?? null}
-                row={r}
-                col={c}
                 tileSizePx={TS}
                 fallbackColor="#2f4a1e"
               />
@@ -144,14 +142,10 @@ export function LegacySceneRenderer({
 
 function TileCell({
   layer,
-  row,
-  col,
   tileSizePx,
   fallbackColor,
 }: {
   layer: LegacyMapLayer | null;
-  row: number;
-  col: number;
   tileSizePx: number;
   fallbackColor: string;
 }) {

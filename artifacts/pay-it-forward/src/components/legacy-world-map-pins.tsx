@@ -260,7 +260,6 @@ function RouteLines({
 
 export function LegacyWorldMapPins({
   pins,
-  familyId,
   onClose,
   onSelectPin,
 }: LegacyWorldMapPinsProps) {

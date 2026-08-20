@@ -33,7 +33,6 @@ import {
   type ChapterWorldLayout,
   type ChapterWorldPosition,
   type ChapterWorldSceneInput,
-  type ChapterWorldLandmark,
 } from "@/lib/legacy-dynamic-world-layout";
 import { resolveWalkingAppearance, type LegacyWalkingLayer } from "@/lib/legacy-character-engine";
 
@@ -165,7 +164,6 @@ export function LegacyChapterWorld({
 
   const [position, setPosition] = useState<ChapterWorldPosition>(layout.spawn);
   const [facing, setFacing] = useState<Facing>("down");
-  const [motion, setMotion] = useState<"idle" | "walk">("idle");
   const [ready, setReady] = useState(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enteredRef = useRef<number | null>(null);
@@ -218,7 +216,7 @@ export function LegacyChapterWorld({
 
     return () => {
       destroyed = true;
-      idleTimerRef.current && clearTimeout(idleTimerRef.current);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       const app = appRef.current;
       appRef.current = null;
       if (app) {
@@ -340,9 +338,10 @@ export function LegacyChapterWorld({
   // ── Movement / collision — identical logic to the CSS version ──────────
   const tryMove = useCallback((dRow: number, dCol: number, nextFacing: Facing) => {
     setFacing(nextFacing);
-    setMotion("walk");
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    idleTimerRef.current = setTimeout(() => setMotion("idle"), 220);
+    idleTimerRef.current = setTimeout(() => {
+      idleTimerRef.current = null;
+    }, 220);
 
     setPosition((prev: ChapterWorldPosition) => {
       const next = { row: prev.row + dRow, column: prev.column + dCol };

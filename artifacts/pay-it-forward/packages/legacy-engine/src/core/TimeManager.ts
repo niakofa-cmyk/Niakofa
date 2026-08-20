@@ -73,7 +73,8 @@ export class TimeManager {
     const wholeMinutes = Math.floor(this.accumulatedMinutes);
     this.accumulatedMinutes -= wholeMinutes;
 
-    let { day, time, year } = this.world.snapshot;
+    let { day, time } = this.world.snapshot;
+    const { year } = this.world.snapshot;
     time += wholeMinutes;
     while (time >= MINUTES_PER_DAY) {
       time -= MINUTES_PER_DAY;

@@ -117,7 +117,8 @@ export function stepMovement(
   bounds: EntityBounds = DEFAULT_BOUNDS,
 ): NiakofaMovementState {
   let { x, y } = state.pos;
-  let { facing, speed, knockbackFrames, knockbackDx, knockbackDy } = state;
+  let { facing, knockbackFrames } = state;
+  const { speed, knockbackDx, knockbackDy } = state;
   let moving = false;
 
   // ── Knockback phase ────────────────────────────────────────────────────────

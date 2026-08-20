@@ -430,8 +430,6 @@ export function LegacyBattleScene({ enemyName = "Trial Guardian", onVictory, onD
   );
 }
 
-function DASH_FRAMES_DEFAULT() { return DASH_DURATION; }
-
 function HpBar({ label, pct, color, align = "left" }: { label: string; pct: number; color: string; align?: "left" | "right" }) {
   return (
     <div className={`flex flex-col ${align === "right" ? "items-end" : "items-start"}`}>
