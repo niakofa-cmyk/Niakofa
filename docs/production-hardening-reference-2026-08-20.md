@@ -20,6 +20,14 @@ to improve the existing platform without rewriting it:
 - production validation for routes, auth, APIs, data, deep links, refresh,
   mobile behavior, payouts, push, media, offline use, and operations.
 
+The follow-up infrastructure brief is also preserved at:
+
+`attached_assets/Pasted--Fortify-The-Structure-and-Infrastructure-To-Be-able-to_1787239587417.txt`
+
+Its concrete P0 findings are now addressed: production CORS fails closed when
+`ALLOWED_ORIGIN` is missing, and the Railway start script refuses to boot
+services after all migration retries fail.
+
 ## Verified implementation boundary
 
 - `artifacts/pay-it-forward/` is the canonical web application.

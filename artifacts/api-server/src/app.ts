@@ -106,12 +106,18 @@ const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? "")
   .map((s) => s.trim())
   .filter(Boolean);
 
+if (process.env.NODE_ENV === "production" && allowedOrigins.length === 0) {
+  throw new Error(
+    "ALLOWED_ORIGIN must be set in production. Refusing to start with an open CORS policy.",
+  );
+}
+
 const corsOptions: cors.CorsOptions = {
   origin(origin, cb) {
     // Allow same-origin requests (no Origin header) and tools like curl
     if (!origin) return cb(null, true);
     if (allowedOrigins.length === 0) {
-      // No allowlist configured — allow all (dev mode)
+      // Development-only fallback. Production fails fast above.
       return cb(null, true);
     }
     if (allowedOrigins.includes(origin)) {

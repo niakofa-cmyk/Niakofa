@@ -20,11 +20,8 @@ trap 'rm -f "$NIA_PID_FILE"' EXIT
 # ── Migrations ────────────────────────────────────────────────────────────────
 # Migrations run before the server starts. If they fail, we retry up to 2
 # times (Railway PG connections can be transiently dropped during deploys).
-# If all retries fail, we log the error and continue — the healthz endpoint
-# will report 503 if the DB is truly unreachable, which is the correct signal
-# to Railway. Blocking the entire deploy on a transient migration error
-# prevents the healthz endpoint from ever starting, which means Railway's
-# probe never gets a response and the deploy always fails.
+# If all retries fail, exit non-zero: never start services against an unknown
+# schema. Railway will keep the previous healthy version serving traffic.
 MIGRATE_MAX_RETRIES=3
 MIGRATE_ATTEMPT=0
 MIGRATE_OK=false
@@ -41,8 +38,8 @@ while [ "$MIGRATE_ATTEMPT" -lt "$MIGRATE_MAX_RETRIES" ]; do
 done
 
 if [ "$MIGRATE_OK" = "false" ]; then
-  echo "[start] WARNING: all migration attempts failed — starting server anyway"
-  echo "[start] the /api/healthz endpoint will report 503 if the DB is unreachable"
+  echo "[start] ERROR: all migration attempts failed — refusing to start services"
+  exit 1
 fi
 
 # ── Signal handler — forward SIGTERM/SIGINT to current nia-service PID ────────
