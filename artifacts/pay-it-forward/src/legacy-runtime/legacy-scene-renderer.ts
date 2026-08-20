@@ -41,6 +41,8 @@ export interface RenderedScene {
 export function buildSceneContainers(): RenderedScene {
   const root = new Container();
   const layerContainers = {} as Record<LegacyMapLayerKind, Container>;
+  const actorLayer = new Container();
+  actorLayer.label = "layer:actors";
 
   for (const kind of LAYER_KIND_ORDER) {
     const c = new Container();
@@ -51,14 +53,10 @@ export function buildSceneContainers(): RenderedScene {
     // actor layer right after "prop" so NPCs/player can walk in front of
     // props but still be occluded by "foreground" (tree canopies, roofs)
     if (kind === "prop") {
-      const actorLayer = new Container();
-      actorLayer.label = "layer:actors";
       root.addChild(actorLayer);
-      (layerContainers as any).__actorLayer = actorLayer;
     }
   }
 
-  const actorLayer: Container = (layerContainers as any).__actorLayer;
   return { root, layerContainers, actorLayer };
 }
 
