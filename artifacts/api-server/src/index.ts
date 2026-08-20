@@ -22,6 +22,8 @@ import { startNiaPushQueueWorker } from "./workers/nia-push-queue-worker";
 import { startPoolMinimumsWorker } from "./workers/pool-minimums-worker";
 import { startDailyKindnessWorker } from "./workers/daily-kindness-worker";
 import { processRecurringRequests } from "./routes/recurring";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
 const RECURRING_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 
@@ -64,6 +66,21 @@ server.listen(port, async () => {
   // Running an auto-approve job on every boot would silently undo this policy
   // on every deploy/restart, defeating the entire account-approval system.
   // See: routes/users.ts registration handler for the new policy.
+
+  // The HTTP server must stay available so /healthz and /readiness can explain
+  // the failure, but no worker should query or mutate an unavailable database.
+  // Starting them anyway creates a noisy retry storm and can hide the actual
+  // dependency failure behind dozens of unrelated "relation does not exist"
+  // errors. Production deploys still fail readiness until the DB is reachable.
+  try {
+    await db.execute(sql`SELECT 1`);
+  } catch (err) {
+    logger.error(
+      { err },
+      "database: unavailable at startup — background workers are paused; readiness will remain unready",
+    );
+    return;
+  }
 
   if (process.env["NODE_ENV"] === "production" && !isRedisConfigured()) {
     const redisStatus = getRedisUrlStatus();
