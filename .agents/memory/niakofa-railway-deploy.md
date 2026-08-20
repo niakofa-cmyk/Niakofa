@@ -10,6 +10,16 @@ NODE_ENV=production BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run buil
 ```
 Without it, Vite may not apply production optimisations and Replit-only plugins might activate.
 
+The repository toolchain is pinned to pnpm 11.22.0. CI and Railway installs must
+use that version; pnpm 9 can download the workspace packages but leave the
+hoisted root toolchain unlinked, causing false missing `tsc`/Jest failures.
+
+**Why:** The lockfile was valid under pnpm 9, but the actual workspace commands
+failed because the hoisted linker did not expose the root binaries.
+
+**How to apply:** Keep `packageManager` and CI setup aligned at pnpm 11.22.0;
+reproduce CI with `CI=true` and a serialized frozen install.
+
 ## Static serving in production
 `app.ts` serves the SPA when `NODE_ENV=production && SERVE_FRONTEND=true`.
 Path: `path.join(import.meta.dirname, "..", "..", "pay-it-forward", "dist", "public")`
