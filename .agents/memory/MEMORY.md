@@ -31,3 +31,4 @@
 - [Legacy Hub Declutter](legacy-hub-declutter.md) — removed 10-button mode-selector grid + duplicate CTA from LegacyStartVisual; dead prop callbacks removed from legacy-home.tsx both call sites.
 - [Legacy PixiJS Renderer](legacy-pixi-renderer.md) — pixi.js ^8.6.0 added; LegacyChapterWorld now WebGL canvas; module-scope textureCache; PIXI.Rectangle 48×48 frame crop replaces CSS background-position.
 - [Kwame Atlas Manifest](kwame-atlas-manifest.md) — two source trees (hand-drawn/kwame + kwame-mensah/atlas), baseUrl=/legacy-character-assets/, 784 frames, 9 animStates registered; pick_up+inspect added Aug 17 2026.
+- [Managed artifact preview ports](managed-artifact-preview-ports.md) — managed web artifacts may use assigned preview ports; verify with the workflow's actual port instead of overriding them.

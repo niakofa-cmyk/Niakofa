@@ -10,6 +10,7 @@
  *   5. No console.log in production source
  *   6. All required environment variables are documented
  *   7. No TODO/FIXME/HACK markers in critical paths
+ *   8. Frontend route/page contract is intact
  *
  * Run: node scripts/src/release-validate.js
  * Exit 0 = ready for release, exit 1 = blocking issues found.
@@ -130,8 +131,17 @@ for (const dir of sourceDirs.slice(0, 2)) {
 if (consoleCount === 0) pass("no console.log in production source");
 else fail(`${consoleCount} file(s) with console.log found`);
 
-// 6. Check for TODO/FIXME/HACK in critical paths
-console.log("6. Checking for TODO/FIXME/HACK markers...");
+// 6. Frontend route/page contract
+console.log("6. Frontend route/page contract...");
+try {
+  execSync("node scripts/src/audit-routes.mjs", { cwd: ROOT, stdio: "pipe" });
+  pass("frontend route/page contract passes");
+} catch {
+  fail("frontend route/page contract failed");
+}
+
+// 7. Check for TODO/FIXME/HACK in critical paths
+console.log("7. Checking for TODO/FIXME/HACK markers...");
 const criticalPaths = [
   join(ROOT, "artifacts", "api-server", "src", "middlewares"),
   join(ROOT, "artifacts", "api-server", "src", "routes", "stripe.ts"),
@@ -157,8 +167,8 @@ for (const path of criticalPaths) {
 if (markerCount === 0) pass("no TODO/FIXME/HACK in critical paths");
 else fail(`${markerCount} TODO/FIXME/HACK marker(s) in critical paths`);
 
-// 7. tsconfig strict mode verification
-console.log("7. Verifying TypeScript strict mode...");
+// 8. tsconfig strict mode verification
+console.log("8. Verifying TypeScript strict mode...");
 try {
   const tsconfig = JSON.parse(readFileSync(join(ROOT, "tsconfig.base.json"), "utf8"));
   if (tsconfig.compilerOptions?.strict === true) pass("strict mode enabled in tsconfig.base.json");
