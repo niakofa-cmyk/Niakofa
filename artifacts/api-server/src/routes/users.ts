@@ -533,15 +533,19 @@ router.post("/users/:id/scheduled-payments/:spId/pay-from-wallet", requireAuth, 
 
   // Atomic transaction: deduct wallet → mark paid → credit pledge_paid
   await db.transaction(async (tx) => {
-    await tx
+    const [debited] = await tx
       .update(usersTable)
       .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} - ${sp.amount}` })
-      .where(eq(usersTable.id, userId));
+      .where(and(eq(usersTable.id, userId), sql`${usersTable.benevolence_wallet} >= ${sp.amount}`))
+      .returning({ id: usersTable.id });
+    if (!debited) throw new Error("Wallet balance changed; retry the payment.");
 
-    await tx
+    const [paid] = await tx
       .update(scheduledPaymentsTable)
       .set({ status: "paid" })
-      .where(and(eq(scheduledPaymentsTable.id, spId), eq(scheduledPaymentsTable.status, "pending")));
+      .where(and(eq(scheduledPaymentsTable.id, spId), eq(scheduledPaymentsTable.status, "pending")))
+      .returning({ id: scheduledPaymentsTable.id });
+    if (!paid) throw new Error("This payment was already processed; retry the read.");
 
     if (sp.request_id) {
       await tx

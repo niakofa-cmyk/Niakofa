@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { useCreateRequest, getGetRequestsQueryKey, getGetNearbyRequestsQueryKey } from "@workspace/api-client-react";
+import { createRequest, useCreateRequest, getGetRequestsQueryKey, getGetNearbyRequestsQueryKey } from "@workspace/api-client-react";
+import { newOperationKey } from "@/lib/retryableMutation";
 import { useAppContext } from "@/lib/AppContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
@@ -524,8 +525,8 @@ export default function NewRequestScreen() {
 
     // Build the mutation call as a closure so it can be deferred through the
     // WaiverModal without re-running the submit pipeline.
-    const executePost = () => createMutation.mutate({
-      data: {
+    const operationKey = newOperationKey("create-request");
+    const executePost = () => createRequest({
         title: values.title,
         description: fullDescription || undefined,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -545,9 +546,9 @@ export default function NewRequestScreen() {
         ...(photoDataUrl ? { photo_url: photoDataUrl } as any : {}),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(selectedBusinessId !== null ? { business_id: selectedBusinessId } as any : {}),
-      }
-    }, {
-      onSuccess: async (request) => {
+      }, {
+        headers: { "Idempotency-Key": operationKey },
+      }).then(async (request) => {
         localStorage.removeItem(DRAFT_KEY);
 
         // Staff posts under a business go to the owner approval queue first.
@@ -618,11 +619,9 @@ export default function NewRequestScreen() {
         }
 
         finishAndNavigate();
-      },
-      onError: (err) => {
+      }).catch((err: unknown) => {
         toast({ title: "Failed to post request", description: String(err), variant: "destructive" });
-      }
-    });
+      });
 
     // Waiver categories (childcare, senior_care, medical, home_repair, moving_labor) require
     // the user to accept the liability / community ToS before the request goes live.

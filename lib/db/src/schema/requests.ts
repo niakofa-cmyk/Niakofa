@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, real, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, real, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import type { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -68,6 +68,9 @@ export const requestsTable = pgTable("help_requests", {
   // status-changing lifecycle endpoint (claimed, en_route, arrived, completed, cancelled).
   // Lets the admin dashboard query "last seen live" and lets the frontend detect stale data.
   updated_at: timestamp("updated_at"),
+  // Client-generated operation key. A retry of request creation returns the
+  // original row instead of creating a second help request.
+  client_request_id: text("client_request_id"),
   // Expiry nudge dedupe marker (migration 0065) — set once cleanup-worker sends the
   // "no one's claimed this yet" push at ~50% of the urgency's expiry threshold, so the
   // nudge never fires twice for the same request.
@@ -91,6 +94,7 @@ export const requestsTable = pgTable("help_requests", {
   index("help_requests_moderation_idx").on(t.moderation_status, t.created_at),
   // Hub-scoped requests (migration 0057)
   index("help_requests_hub_id_idx").on(t.hub_id),
+  uniqueIndex("help_requests_requester_client_request_idx").on(t.requester_id, t.client_request_id),
 ]);
 
 export const insertRequestSchema = createInsertSchema(requestsTable).omit({

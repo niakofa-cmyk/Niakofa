@@ -172,6 +172,7 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
 
   try {
     if (_stripe) {
+      const idempotencyKey = String(req.header("Idempotency-Key") ?? "").trim() || `pool-contribution-${userId}-${Math.round(amount * 100)}`;
       const intent = await _stripe.paymentIntents.create({
         amount: Math.round(amount * 100),
         currency: "usd",
@@ -180,7 +181,7 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
           pool_contribution: "true",
           user_id: String(userId),
         },
-      });
+      }, { idempotencyKey });
       return res.json({
         mode: "stripe",
         client_secret: intent.client_secret,
@@ -231,6 +232,7 @@ router.post("/pool/donate", paymentLimiter, async (req, res) => {
   }
 
   try {
+    const idempotencyKey = String(req.header("Idempotency-Key") ?? "").trim() || `anonymous-pool-donation-${Math.round(amount * 100)}`;
     const intent = await _stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency: "usd",
@@ -241,7 +243,7 @@ router.post("/pool/donate", paymentLimiter, async (req, res) => {
         // user_id intentionally omitted — anonymous contribution
         // The webhook handles this: parseInt("") || null → records userId as null
       },
-    });
+    }, { idempotencyKey });
 
     logger.info({ amount, anonymous: true }, "Anonymous pool donation PaymentIntent created");
 

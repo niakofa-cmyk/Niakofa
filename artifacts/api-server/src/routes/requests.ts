@@ -340,6 +340,23 @@ router.get("/requests", requireAuth, async (req, res) => {
 router.post("/requests", requireAuth, requireApproved, requestCreationLimiter, async (req, res) => {
   const parsed = CreateRequestBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+  const clientRequestId = String(req.header("Idempotency-Key") ?? "").trim();
+  if (clientRequestId.length > 128) {
+    return res.status(400).json({ error: "Idempotency-Key must be 128 characters or fewer." });
+  }
+  // Resolve a timed-out/replayed create before any side effects (notifications,
+  // moderation, or pool work). The unique index is the final race-safe guard.
+  if (clientRequestId) {
+    const [existing] = await db
+      .select()
+      .from(requestsTable)
+      .where(and(
+        eq(requestsTable.requester_id, req.authenticatedUserId!),
+        eq(requestsTable.client_request_id, clientRequestId),
+      ))
+      .limit(1);
+    if (existing) return res.status(200).json(existing);
+  }
 
   // Sensitive categories (childcare, senior_care, medical) involve vulnerable
   // people. The requester must explicitly acknowledge that Niakofa is not a
@@ -626,6 +643,7 @@ router.post("/requests", requireAuth, requireApproved, requestCreationLimiter, a
     moderation_status: modStatus,
     moderation_reason: modReason,
     estimated_hours: estimatedHours,
+    client_request_id: clientRequestId || null,
   }).returning();
 
   // ── Livable-wage floor transparency ────────────────────────────────────────
