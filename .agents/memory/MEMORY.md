@@ -36,3 +36,4 @@
 - [Database worker readiness](niakofa-db-worker-readiness.md) — API workers require both a reachable Postgres connection and the migrated help_requests schema before startup.
 - [Production fail-closed boundaries](niakofa-production-fail-closed.md) — production CORS and migration startup must fail closed; development may retain explicit fallbacks.
 - [Production queue boundary](niakofa-production-queues.md) — durable Redis-backed workers are required before production API startup; interval fallbacks remain development-only.
+- [Workspace dependency linking](niakofa-workspace-dependency-linking.md) — this checkout can lose pnpm worker/bin links during managed installs; standalone checks may need isolated cached Node tooling.
