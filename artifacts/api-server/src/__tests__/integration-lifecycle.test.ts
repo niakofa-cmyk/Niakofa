@@ -358,6 +358,7 @@ describe("Full Request Lifecycle", () => {
 
     (db.limit as jest.Mock)
       .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]) // requireApproved
+      .mockResolvedValueOnce([]) // retry-safety preflight: not already completed
       .mockResolvedValueOnce([helperBefore]); // helperBefore lookup
 
     (db.returning as jest.Mock)

@@ -335,7 +335,9 @@ describe("POST /api/requests/:id/complete", () => {
     (db.returning as jest.Mock)
       .mockResolvedValueOnce([completedReq]) // the completion UPDATE
       .mockResolvedValueOnce([{ id: 20, help_count: 1, goodwill_score: 10 }]); // goodwill_score increment
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ help_count: 0, trust_score: 50, name: "Helper" }]); // helperBefore
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([]) // retry-safety preflight: not already completed
+      .mockResolvedValueOnce([{ help_count: 0, trust_score: 50, name: "Helper" }]); // helperBefore
     const res = await request(app)
       .post("/api/requests/2/complete")
       .set("Authorization", bearerToken(20))
