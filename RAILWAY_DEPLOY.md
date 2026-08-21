@@ -98,7 +98,7 @@ Set all of these in Railway → Service → Variables:
 | `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key baked into frontend at build time |
 | `CHECKR_API_KEY` | Background check integration |
 | `CHECKR_WEBHOOK_SECRET` | Checkr webhook HMAC |
-| `REDIS_URL` | BullMQ job queues (workers degrade to simple setInterval without Redis) |
+| `REDIS_URL` | **Required in production.** Durable BullMQ job queues for payouts, cashouts, notifications, and reconciliation. Development-only interval fallbacks are not used by production startup. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Email (pledge reminders, receipts) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web push notifications |
 | `NIA_SERVICE_URL` | Override nia-service URL (defaults to `http://localhost:3001`) |

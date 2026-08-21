@@ -3,7 +3,11 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
 import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startLedgerDriftMonitor, startNet30InvoiceReminderWorker } from "./lib/scheduler";
-import { isRedisConfigured, getRedisUrlStatus, closeRedis } from "./lib/queue";
+import {
+  isRedisConfigured,
+  assertProductionRedisReady,
+  closeRedis,
+} from "./lib/queue";
 import {
   workerStarted,
   workerNoRedis,
@@ -41,6 +45,12 @@ if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
     "All authenticated requests will fail without it. Set this in Railway Variables."
   );
 }
+
+// Critical background work is part of the production correctness boundary.
+// Do this before creating/listening on the HTTP server so a deployment cannot
+// appear healthy while payout, cashout, notification, and reconciliation jobs
+// are silently disabled.
+assertProductionRedisReady();
 
 const server = http.createServer(app);
 
@@ -88,24 +98,6 @@ server.listen(port, async () => {
       "database: unavailable or schema is not migrated — background workers are paused; readiness will remain unready",
     );
     return;
-  }
-
-  if (process.env["NODE_ENV"] === "production" && !isRedisConfigured()) {
-    const redisStatus = getRedisUrlStatus();
-    logger.error(
-      { redis_url_status: redisStatus },
-      redisStatus === "invalid_format"
-        ? "FATAL: REDIS_URL is set in production but is NOT a valid redis:// or rediss:// URL — " +
-          "it will be silently ignored. BullMQ workers handle push notifications, payout retries, " +
-          "and pledge reconciliation. Check the exact value in your production environment (Railway " +
-          "dashboard → Variables) — a common cause is an unresolved template placeholder like " +
-          "\"${{Redis.REDIS_URL}}\" or a bare hostname. The server will continue but background jobs " +
-          "will NOT run — this is unsafe for production."
-        : "FATAL: REDIS_URL is required in production. " +
-          "BullMQ workers handle push notifications, payout retries, and pledge reconciliation. " +
-          "Set REDIS_URL in your environment variables. " +
-          "The server will continue but background jobs will NOT run — this is unsafe for production."
-    );
   }
 
   // Register all workers in the health registry before starting them.

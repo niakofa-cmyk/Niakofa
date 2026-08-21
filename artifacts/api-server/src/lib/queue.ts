@@ -2,8 +2,9 @@
  * Niakofa — BullMQ Queue Infrastructure
  *
  * Provides a shared Redis connection (via ioredis) and queue factories.
- * All queues degrade gracefully when REDIS_URL is unset — the server
- * starts normally and workers simply don't register.
+ * Development can degrade gracefully when REDIS_URL is unset. Production
+ * startup must reject that configuration because money-moving and notification
+ * work cannot safely depend on interval fallbacks.
  *
  * Environment:
  *   REDIS_URL — Redis connection string (redis://user:pass@host:6379)
@@ -80,6 +81,39 @@ export function getRedisUrlStatus(): "not_set" | "invalid_format" | "valid" {
   const raw = (process.env["REDIS_URL"] ?? "").trim();
   if (!raw) return "not_set";
   return REDIS_URL ? "valid" : "invalid_format";
+}
+
+/**
+ * Returns the startup error for an unsafe production queue configuration.
+ * Keeping this pure makes the fail-closed boundary easy to regression-test
+ * without opening a Redis connection or importing the HTTP server.
+ */
+export function productionRedisRequirementError(
+  nodeEnv: string | undefined,
+  redisStatus: "not_set" | "invalid_format" | "valid",
+): string | undefined {
+  if (nodeEnv !== "production" || redisStatus === "valid") return undefined;
+
+  if (redisStatus === "invalid_format") {
+    return (
+      "REDIS_URL is set in production but is not a valid redis:// or rediss:// URL. " +
+      "Set a resolved Redis connection URL before starting the API."
+    );
+  }
+
+  return (
+    "REDIS_URL is required in production. " +
+    "Set a durable Redis connection URL before starting the API."
+  );
+}
+
+/** Fail closed before the API can accept production traffic. */
+export function assertProductionRedisReady(): void {
+  const error = productionRedisRequirementError(
+    process.env["NODE_ENV"],
+    getRedisUrlStatus(),
+  );
+  if (error) throw new Error(error);
 }
 
 let _connection: IORedis | null = null;

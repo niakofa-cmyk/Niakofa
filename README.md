@@ -33,7 +33,7 @@ cd artifacts/pay-it-forward && pnpm exec vite --config vite.config.ts --host 0.0
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `VAPID_PUBLIC_KEY` | Web Push VAPID public key |
 | `VAPID_PRIVATE_KEY` | Web Push VAPID private key |
-| `REDIS_URL` | *(Optional)* Redis for BullMQ background workers |
+| `REDIS_URL` | Redis for BullMQ background workers *(required in production; development may use the explicit fallback)* |
 | `INTERNAL_SECRET` | Shared secret for api-server ↔ nia-service internal calls (`x-internal-secret` header) |
 | `NIA_SERVICE_URL` | URL of the Nia AI service (default: `http://localhost:3001`) |
 | `ALLOWED_ORIGIN` | Comma-separated CORS allowed origins for production (e.g. `https://app.niakofa.com`) |
@@ -156,7 +156,7 @@ pnpm --filter @workspace/api-server run test
 - **Single Railway service:** Both api-server and nia-service run in the same container. `scripts/start.sh` runs migrations, starts nia-service (supervised, port 3001), then starts api-server in the foreground. Nia-service is proxied via `/api/nia/*` — callers never talk to port 3001 directly.
 - **Civic resources:** Seeded in the DB — 19 Tarrant County organizations across 8 categories.
 - **WebSocket hub** (`/ws`): Broadcasts live events — new requests, helper location updates, new reports, report reviews.
-- **BullMQ workers:** Handle payouts, pledges, and notification delivery when `REDIS_URL` is set; falls back to setInterval-based scheduler otherwise.
+- **BullMQ workers:** Handle payouts, pledges, and notification delivery. Production refuses to start without `REDIS_URL`; development retains the explicit interval fallback.
 - **Legacy account passwords:** Users with `password_hash = null` get `password_reset_required: true` on login. The frontend shows an inline "Set Password" prompt that calls `PATCH /api/users/:id` with `new_password`.
 
 ---

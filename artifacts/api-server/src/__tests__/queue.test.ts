@@ -16,7 +16,10 @@
  *   from ever reaching production undetected.
  */
 
-import { parseRedisUrl } from "../lib/queue.js";
+import {
+  parseRedisUrl,
+  productionRedisRequirementError,
+} from "../lib/queue.js";
 
 describe("parseRedisUrl", () => {
   it("returns undefined for an empty string", () => {
@@ -96,5 +99,28 @@ describe("parseRedisUrl", () => {
   it("accepts a valid rediss:// URL whose password contains a literal $ character", () => {
     const input = "rediss://user:pa$word@host:6380";
     expect(parseRedisUrl(input)).toBe(input);
+  });
+});
+
+describe("productionRedisRequirementError", () => {
+  it("does not gate development when Redis is unavailable", () => {
+    expect(productionRedisRequirementError("development", "not_set")).toBeUndefined();
+    expect(productionRedisRequirementError("test", "invalid_format")).toBeUndefined();
+  });
+
+  it("allows production when Redis is valid", () => {
+    expect(productionRedisRequirementError("production", "valid")).toBeUndefined();
+  });
+
+  it("fails closed when production Redis is missing", () => {
+    expect(productionRedisRequirementError("production", "not_set")).toMatch(
+      /REDIS_URL is required in production/,
+    );
+  });
+
+  it("fails closed when production Redis is malformed", () => {
+    expect(productionRedisRequirementError("production", "invalid_format")).toMatch(
+      /not a valid redis/,
+    );
   });
 });
