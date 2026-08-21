@@ -43,22 +43,22 @@ jest.unstable_mockModule("drizzle-orm", () => ({
   sql: jest.fn(),
 }));
 
-jest.unstable_mockModule("../middlewares/auth.js", () => ({
+jest.unstable_mockModule("../middlewares/auth", () => ({
   requireAuth: (req: unknown, _res: unknown, next: unknown) => {
     req.authenticatedUserId = 42;
     next();
   },
 }));
 
-jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
+jest.unstable_mockModule("../middlewares/rate-limit", () => ({
   generalApiLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
-jest.unstable_mockModule("../lib/ws-hub.js", () => ({
+jest.unstable_mockModule("../lib/ws-hub", () => ({
   sendToCircleParticipants,
 }));
 
-jest.unstable_mockModule("../lib/logger.js", () => ({
+jest.unstable_mockModule("../lib/logger", () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
@@ -93,10 +93,23 @@ describe("POST /api/audio-circle-sessions/:id/heartbeat", () => {
       .send({ active_speaker_id: 7 });
 
     expect(response.status).toBe(204);
-    expect(sendToCircleParticipants).toHaveBeenCalledWith([42, 7], {
+    expect(sendToCircleParticipants).toHaveBeenCalledWith([7], {
       type: "circle_active_speaker",
       payload: { session_id: 9, user_id: 7, reporter_id: 42 },
     });
+  });
+
+  it("does not fan out when the reporter is the only active participant", async () => {
+    selectThen.mockImplementationOnce((resolve: (value: unknown) => void) => {
+      resolve([{ user_id: 42 }]);
+    });
+
+    const response = await request(app)
+      .post("/api/audio-circle-sessions/9/heartbeat")
+      .send({ active_speaker_id: 42 });
+
+    expect(response.status).toBe(204);
+    expect(sendToCircleParticipants).not.toHaveBeenCalled();
   });
 
   it("does not broadcast a speaker outside the current session", async () => {

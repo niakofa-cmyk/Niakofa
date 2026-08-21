@@ -47,7 +47,7 @@ jest.unstable_mockModule("stripe", () => ({
   },
 }));
 
-jest.unstable_mockModule("../middlewares/auth.js", () => ({
+jest.unstable_mockModule("../middlewares/auth", () => ({
   requireAuth: (req: unknown, _res: unknown, next: unknown) => {
     req.authenticatedUserId = 42;
     req.authenticatedTokenVersion = 0;
@@ -56,23 +56,23 @@ jest.unstable_mockModule("../middlewares/auth.js", () => ({
   requireApproved: jest.fn((req: unknown, _res: unknown, next: unknown) => next()),
 }));
 
-jest.unstable_mockModule("../middlewares/authz.js", () => ({
+jest.unstable_mockModule("../middlewares/authz", () => ({
   requireOwnership: (_field: string) => (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
-jest.unstable_mockModule("../middlewares/rate-limit.js", () => ({
+jest.unstable_mockModule("../middlewares/rate-limit", () => ({
   paymentLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
-jest.unstable_mockModule("../lib/ws-hub.js", () => ({
+jest.unstable_mockModule("../lib/ws-hub", () => ({
   broadcast: jest.fn(),
 }));
 
-jest.unstable_mockModule("../routes/push.js", () => ({
+jest.unstable_mockModule("../routes/push", () => ({
   sendPushToUser: jest.fn(),
 }));
 
-jest.unstable_mockModule("../lib/community-pool.js", () => ({
+jest.unstable_mockModule("../lib/community-pool", () => ({
   wasRequestFronted: jest.fn(),
   recordPoolContribution: jest.fn(),
   getPoolBalance: jest.fn(),
@@ -80,7 +80,7 @@ jest.unstable_mockModule("../lib/community-pool.js", () => ({
   syncHubReservedBalance: jest.fn(),
 }));
 
-jest.unstable_mockModule("../lib/logger.js", () => ({
+jest.unstable_mockModule("../lib/logger", () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
@@ -90,9 +90,9 @@ let requireApproved: jest.Mock;
 beforeAll(async () => {
   process.env.STRIPE_SECRET_KEY = "offline-test-key";
   process.env.STRIPE_WEBHOOK_SECRET = "offline-webhook-secret";
-  const auth = await import("../middlewares/auth.js");
+  const auth = await import("../middlewares/auth");
   requireApproved = auth.requireApproved as unknown as jest.Mock;
-  const { default: stripeRouter } = await import("../routes/stripe.js");
+  const { default: stripeRouter } = await import("../routes/stripe");
   app = express();
   app.use(express.json());
   app.use("/api", stripeRouter);

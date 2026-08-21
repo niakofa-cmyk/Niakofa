@@ -69,10 +69,18 @@ router.post("/audio-circle-sessions/:id/heartbeat", requireAuth, generalApiLimit
         isNull(audioCircleParticipantsTable.left_at),
       ));
     if (allActive.some(p => p.user_id === activeSpeakerId)) {
-      sendToCircleParticipants(allActive.map(p => p.user_id), {
-        type: "circle_active_speaker",
-        payload: { session_id: sessionId, user_id: activeSpeakerId, reporter_id: userId },
-      });
+      // The reporter already knows which peer it hears most loudly. Exclude
+      // it from the fanout so the event is only useful work for other tiles
+      // and so the client cannot accidentally re-apply its own local state.
+      const otherParticipantIds = allActive
+        .map(p => p.user_id)
+        .filter(participantId => participantId !== userId);
+      if (otherParticipantIds.length > 0) {
+        sendToCircleParticipants(otherParticipantIds, {
+          type: "circle_active_speaker",
+          payload: { session_id: sessionId, user_id: activeSpeakerId, reporter_id: userId },
+        });
+      }
     } else {
       logger.warn(
         { session_id: sessionId, reporter_id: userId, active_speaker_id: activeSpeakerId },
