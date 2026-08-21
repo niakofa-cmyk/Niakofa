@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 3,
+  "libraryId": "niakofa-original-art-demo-v1",
+  "runtime": "catalog-only",
+  "licenseStatus": "see-legacy-world-assets-catalog",
+  "historicalEvidence": false,
+  "familyLikeness": "prohibited",
+  "sourceNote": "The uploaded generator archive is reference-only and is not served from this directory. The production resolver uses the original procedural library documented at /legacy-world-assets/catalog-original.json.",
+  "assets": []
+}

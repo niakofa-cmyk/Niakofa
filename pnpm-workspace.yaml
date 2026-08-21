@@ -36,6 +36,9 @@ minimumReleaseAgeExclude:
   - orval
 
 packages:
+  - "apps/*"
+  - "packages/*"
+  - "services/*"
   - artifacts/*
   - lib/*
   - lib/integrations/*

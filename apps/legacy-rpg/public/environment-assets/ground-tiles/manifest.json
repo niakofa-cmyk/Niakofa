@@ -1,0 +1,245 @@
+{
+  "frameCount": 48,
+  "frames": [
+    {
+      "file": "ground-grass-01.png",
+      "label": "GROUND-GRASS",
+      "variant": 1
+    },
+    {
+      "file": "ground-grass-02.png",
+      "label": "GROUND-GRASS",
+      "variant": 2
+    },
+    {
+      "file": "ground-grass-03.png",
+      "label": "GROUND-GRASS",
+      "variant": 3
+    },
+    {
+      "file": "ground-grass-04.png",
+      "label": "GROUND-GRASS",
+      "variant": 4
+    },
+    {
+      "file": "ground-grass-05.png",
+      "label": "GROUND-GRASS",
+      "variant": 5
+    },
+    {
+      "file": "ground-grass-06.png",
+      "label": "GROUND-GRASS",
+      "variant": 6
+    },
+    {
+      "file": "ground-grass-07.png",
+      "label": "GROUND-GRASS",
+      "variant": 7
+    },
+    {
+      "file": "ground-grass-08.png",
+      "label": "GROUND-GRASS",
+      "variant": 8
+    },
+    {
+      "file": "ground-dirt-01.png",
+      "label": "GROUND-DIRT",
+      "variant": 1
+    },
+    {
+      "file": "ground-dirt-02.png",
+      "label": "GROUND-DIRT",
+      "variant": 2
+    },
+    {
+      "file": "ground-dirt-03.png",
+      "label": "GROUND-DIRT",
+      "variant": 3
+    },
+    {
+      "file": "ground-dirt-04.png",
+      "label": "GROUND-DIRT",
+      "variant": 4
+    },
+    {
+      "file": "ground-dirt-05.png",
+      "label": "GROUND-DIRT",
+      "variant": 5
+    },
+    {
+      "file": "ground-dirt-06.png",
+      "label": "GROUND-DIRT",
+      "variant": 6
+    },
+    {
+      "file": "ground-dirt-07.png",
+      "label": "GROUND-DIRT",
+      "variant": 7
+    },
+    {
+      "file": "ground-dirt-08.png",
+      "label": "GROUND-DIRT",
+      "variant": 8
+    },
+    {
+      "file": "ground-path-01.png",
+      "label": "GROUND-PATH",
+      "variant": 1
+    },
+    {
+      "file": "ground-path-02.png",
+      "label": "GROUND-PATH",
+      "variant": 2
+    },
+    {
+      "file": "ground-path-03.png",
+      "label": "GROUND-PATH",
+      "variant": 3
+    },
+    {
+      "file": "ground-path-04.png",
+      "label": "GROUND-PATH",
+      "variant": 4
+    },
+    {
+      "file": "ground-path-05.png",
+      "label": "GROUND-PATH",
+      "variant": 5
+    },
+    {
+      "file": "ground-path-06.png",
+      "label": "GROUND-PATH",
+      "variant": 6
+    },
+    {
+      "file": "ground-path-07.png",
+      "label": "GROUND-PATH",
+      "variant": 7
+    },
+    {
+      "file": "ground-path-08.png",
+      "label": "GROUND-PATH",
+      "variant": 8
+    },
+    {
+      "file": "ground-cobble-01.png",
+      "label": "GROUND-COBBLE",
+      "variant": 1
+    },
+    {
+      "file": "ground-cobble-02.png",
+      "label": "GROUND-COBBLE",
+      "variant": 2
+    },
+    {
+      "file": "ground-cobble-03.png",
+      "label": "GROUND-COBBLE",
+      "variant": 3
+    },
+    {
+      "file": "ground-cobble-04.png",
+      "label": "GROUND-COBBLE",
+      "variant": 4
+    },
+    {
+      "file": "ground-cobble-05.png",
+      "label": "GROUND-COBBLE",
+      "variant": 5
+    },
+    {
+      "file": "ground-cobble-06.png",
+      "label": "GROUND-COBBLE",
+      "variant": 6
+    },
+    {
+      "file": "ground-cobble-07.png",
+      "label": "GROUND-COBBLE",
+      "variant": 7
+    },
+    {
+      "file": "ground-cobble-08.png",
+      "label": "GROUND-COBBLE",
+      "variant": 8
+    },
+    {
+      "file": "ground-sand-01.png",
+      "label": "GROUND-SAND",
+      "variant": 1
+    },
+    {
+      "file": "ground-sand-02.png",
+      "label": "GROUND-SAND",
+      "variant": 2
+    },
+    {
+      "file": "ground-sand-03.png",
+      "label": "GROUND-SAND",
+      "variant": 3
+    },
+    {
+      "file": "ground-sand-04.png",
+      "label": "GROUND-SAND",
+      "variant": 4
+    },
+    {
+      "file": "ground-sand-05.png",
+      "label": "GROUND-SAND",
+      "variant": 5
+    },
+    {
+      "file": "ground-sand-06.png",
+      "label": "GROUND-SAND",
+      "variant": 6
+    },
+    {
+      "file": "ground-sand-07.png",
+      "label": "GROUND-SAND",
+      "variant": 7
+    },
+    {
+      "file": "ground-sand-08.png",
+      "label": "GROUND-SAND",
+      "variant": 8
+    },
+    {
+      "file": "water-edge-01.png",
+      "label": "WATER-EDGE",
+      "variant": 1
+    },
+    {
+      "file": "water-edge-02.png",
+      "label": "WATER-EDGE",
+      "variant": 2
+    },
+    {
+      "file": "water-edge-03.png",
+      "label": "WATER-EDGE",
+      "variant": 3
+    },
+    {
+      "file": "water-edge-04.png",
+      "label": "WATER-EDGE",
+      "variant": 4
+    },
+    {
+      "file": "water-edge-05.png",
+      "label": "WATER-EDGE",
+      "variant": 5
+    },
+    {
+      "file": "water-edge-06.png",
+      "label": "WATER-EDGE",
+      "variant": 6
+    },
+    {
+      "file": "water-edge-07.png",
+      "label": "WATER-EDGE",
+      "variant": 7
+    },
+    {
+      "file": "water-edge-08.png",
+      "label": "WATER-EDGE",
+      "variant": 8
+    }
+  ]
+}
