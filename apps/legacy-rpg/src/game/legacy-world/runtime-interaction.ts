@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { getPrimaryLocationAt, getLocationsAt, type Point, type DetectorOptions } from "./geometry";
 import { getActivitiesForLocation } from "./activities";
 import type { WorldLocation, WorldActivity } from "./types";
-import type { LegacyMapScene } from "../lib/legacy-map-engine";
+import type { LegacyMapScene } from "../../lib/legacy-map-engine";
 
 export interface InteractionFrame {
   location: WorldLocation | null;

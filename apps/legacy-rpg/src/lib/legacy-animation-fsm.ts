@@ -175,9 +175,6 @@ export class LegacyActorController {
       if (onComplete) {
         this._pendingActionComplete = onComplete;
       }
-    } else {
-      // Looping action (e.g. "talk", "guard") — never locks actionPlaying
-      this._pendingLoopSpec = resolved;
     }
   }
 
@@ -188,7 +185,6 @@ export class LegacyActorController {
   interruptAction() {
     this.state.actionPlaying = false;
     this._pendingActionComplete = undefined;
-    this._pendingLoopSpec = undefined;
     this._activeActionSpec = undefined;
     this.state.anim = "idle";
     this.state.animFrame = 0;
@@ -208,7 +204,6 @@ export class LegacyActorController {
   }
 
   private _pendingActionComplete?: () => void;
-  private _pendingLoopSpec?: { frameCount: number; fps: number; loops: boolean };
   private _activeActionSpec?: { frameCount: number; fps: number; loops: boolean };
 
   private facingFromInput(input: { dx: number; dy: number }): LegacyFacing {

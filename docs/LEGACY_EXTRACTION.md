@@ -1,7 +1,7 @@
 # Legacy RPG extraction contract
 
-Status: **Phase 1 — interface freeze**  
-Last verified against: `origin/main` at commit `264e2edd`  
+Status: **Phase 2/3 — controlled standalone copy verified**
+Last verified against: `origin/main` at commit `96c718d6`
 Canonical source: `artifacts/pay-it-forward`
 
 This document freezes the boundary between Niakofa's family platform and the
@@ -164,6 +164,26 @@ behavior.
    package or host.
 7. Remove duplicate in-app runtime code only after the launch path and fallback
    are verified.
+
+## Current implementation checkpoint
+
+The controlled copy now lives at `apps/legacy-rpg`. It has its own Vite entry,
+mock-first launch bridge, plain-CSS boundary, copied Pixi runtime, and the
+production environment and character-sheet asset roots. Shared launch/save
+contracts live in `packages/shared-types`, and the future generation boundary
+is stubbed in `services/world-engine`.
+
+Verified on 2026-08-21:
+
+- `tsc -p apps/legacy-rpg/tsconfig.json --noEmit`
+- standalone `vite build`
+- standalone landing HTML response on port 5174
+- representative `environment-assets` PNG response on port 5174
+
+The original `artifacts/pay-it-forward` runtime remains untouched and is still
+the in-app fallback. The `/legacy/world` launch has not been redirected yet;
+that is intentionally gated on interactive parity checks for movement,
+collision, NPCs, interactions, fishing, and local resume.
 
 ## Explicit non-goals
 
