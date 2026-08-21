@@ -1,3 +1,4 @@
+- [Package manager bootstrap](package-manager-bootstrap.md) — temporary pnpm version override can be needed for constrained local validation; restore it before commits.
 - [Workspace validation](workspace-validation.md) — use Corepack pnpm and distinguish the RPG's 5174 dev contract from Replit's 5000 webview port.
 - [Legacy RPG art boundary](legacy-rpg-art-boundary.md) — unresolved uploaded art stays archive-only; original/provenance-cleared assets are the production runtime boundary.
 - [Legacy Demo State Rules](legacy-demo-state-rules.md) — idempotency guards, trait validation, coopTasks storage sanitizer, worldVersion trigger, test journey pattern.
