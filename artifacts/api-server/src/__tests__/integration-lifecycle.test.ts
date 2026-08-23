@@ -532,6 +532,7 @@ describe("Leaderboard Recalculation", () => {
 
 describe("Health Endpoint", () => {
   // GET /healthz uses db.execute(sql`SELECT 1`) — not db.select().limit().
+  // GET /readiness additionally verifies the canonical help_requests table.
   // The response field is "db" (not "database"); see health.ts for the shape.
 
   it("returns 200 when database is connected", async () => {
@@ -593,6 +594,9 @@ describe("Health Endpoint", () => {
   });
 
   it("reports optional dependency degradation without blocking core readiness", async () => {
+    (db.execute as jest.Mock)
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ exists: true }] });
     const fetchSpy = jest.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Nia unavailable"));
 
     try {
@@ -602,10 +606,35 @@ describe("Health Endpoint", () => {
       expect(res.body.status).toBe("degraded");
       expect(res.body.ready).toBe(true);
       expect(res.body.required.database).toBe(true);
+      expect(res.body.dependencies.schema.status).toBe("ready");
       expect(res.body.dependencies.nia.status).toBe("degraded");
       expect(res.body.dependencies.redis.detail).toBe("durable scheduler fallback");
       expect(res.body.dependencies.stripe.detail).toBe("payments remain pending");
       expect(res.body.dependencies.mapbox.detail).toBe("map/address fallback");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("blocks readiness when the database is connected but the canonical schema is missing", async () => {
+    (db.execute as jest.Mock)
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] });
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Nia unavailable"));
+
+    try {
+      const res = await request(app).get("/api/readiness");
+
+      expect(res.status).toBe(503);
+      expect(res.body.status).toBe("unready");
+      expect(res.body.ready).toBe(false);
+      expect(res.body.required.database).toBe(false);
+      expect(res.body.dependencies.database.detail).toContain("schema unavailable");
+      expect(res.body.dependencies.schema).toEqual({
+        required: true,
+        status: "unavailable",
+        detail: "public.help_requests has not been migrated",
+      });
     } finally {
       fetchSpy.mockRestore();
     }

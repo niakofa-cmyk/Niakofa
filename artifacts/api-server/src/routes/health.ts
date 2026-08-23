@@ -147,9 +147,23 @@ router.get("/health", async (_req, res) => {
 router.get("/readiness", async (_req, res) => {
   const dbStart = Date.now();
   let database: "ready" | "unavailable" = "unavailable";
+  let schema: "ready" | "unavailable" = "unavailable";
   try {
     await db.execute(sql`SELECT 1`);
-    database = "ready";
+    const schemaCheck = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'help_requests'
+      ) AS exists
+    `);
+    const tableExists = Boolean((schemaCheck as { rows?: Array<{ exists?: boolean }> }).rows?.[0]?.exists);
+    schema = tableExists ? "ready" : "unavailable";
+    database = tableExists ? "ready" : "unavailable";
+    if (!tableExists) {
+      logger.warn("readiness: public.help_requests is not migrated; database workers remain paused");
+    }
   } catch (err) {
     logger.warn({ err }, "readiness: database unavailable");
   }
@@ -159,7 +173,18 @@ router.get("/readiness", async (_req, res) => {
   const mapConfigured = Boolean(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
   const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY);
   const dependencies = {
-    database: { required: true, status: database },
+    database: {
+      required: true,
+      status: database,
+      detail: database === "ready" ? "connected and migrated" : "connection or schema unavailable",
+    },
+    schema: {
+      required: true,
+      status: schema,
+      detail: schema === "ready"
+        ? "public.help_requests is available"
+        : "public.help_requests has not been migrated",
+    },
     nia: {
       required: false,
       status: nia.status === "ok" ? "ready" : "degraded",
@@ -181,7 +206,7 @@ router.get("/readiness", async (_req, res) => {
       detail: mapConfigured ? "configured" : "map/address fallback",
     },
   } as const;
-  const ready = database === "ready";
+  const ready = database === "ready" && schema === "ready";
   const degraded = Object.values(dependencies).some((dependency) => dependency.status === "degraded");
 
   res.status(ready ? 200 : 503).json({
