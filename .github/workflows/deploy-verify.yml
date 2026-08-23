@@ -84,18 +84,18 @@ jobs:
           curl --fail --silent --show-error --max-time 10 "${PRODUCTION_URL}/api/readiness" \
             | jq -e '(.status == "ready" or .status == "degraded") and .ready == true and .required.database == true and (.dependencies | has("nia") and has("redis") and has("stripe") and has("mapbox"))'
 
-      - name: Verify public Legacy demo asset graph
+      - name: Verify public Niakofa platform asset graph
         run: |
           set -euo pipefail
           for attempt in $(seq 1 6); do
-            if PRODUCTION_URL="${PRODUCTION_URL}" node scripts/src/verify-legacy-demo-deployment.mjs; then
-              echo "Legacy demo verification passed."
+            if PRODUCTION_URL="${PRODUCTION_URL}" node scripts/src/verify-platform-deployment.mjs; then
+              echo "Niakofa platform verification passed."
               exit 0
             fi
             if [ "$attempt" -eq 6 ]; then
-              echo "Legacy demo asset graph verification failed after $attempt attempts."
+              echo "Niakofa platform asset graph verification failed after $attempt attempts."
               exit 1
             fi
-            echo "Legacy demo verification attempt $attempt failed — waiting for rollout convergence..."
+            echo "Niakofa platform verification attempt $attempt failed — waiting for rollout convergence..."
             sleep 10
           done
