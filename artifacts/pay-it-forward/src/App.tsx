@@ -11,10 +11,6 @@ import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useServiceWorkerUpdate } from "@/hooks/useServiceWorkerUpdate";
 import { useAnimationPreference } from "@/hooks/useAnimationPreference";
-import {
-  isLegacyPathname,
-  normalizeLegacyPathname,
-} from "@/lib/legacy-public-route";
 
 import MapScreen from "@/pages/map";
 
@@ -60,26 +56,6 @@ const DnaConnectionsPage   = lazy(() => import("@/pages/dna-connections"));
 const HeritageCollectionsPage = lazy(() => import("@/pages/heritage-collections"));
 const ResearchCenterPage    = lazy(() => import("@/pages/research-center"));
 const PreserveCulturePage   = lazy(() => import("@/pages/preserve-culture"));
-const LegacyTimelinePage    = lazy(() => import("@/pages/legacy-timeline"));
-const LegacyHomePage        = lazy(() => import("@/pages/legacy-home"));
-const LegacyAchievementsPage = lazy(() => import("@/pages/legacy-achievements"));
-const LegacyStartPage       = lazy(() => import("@/pages/legacy-start"));
-const LegacyChapterPage      = lazy(() => import("@/pages/legacy-chapter"));
-const LegacyMapPage          = lazy(() => import("@/pages/legacy-map"));
-const LegacyChallengesPage   = lazy(() => import("@/pages/legacy-challenges"));
-const LegacySeasonalEventsPage = lazy(() => import("@/pages/legacy-seasonal-events"));
-const LegacyWorldEvolutionPage = lazy(() => import("@/pages/legacy-world-evolution"));
-const LegacyJournalPage       = lazy(() => import("@/pages/legacy-journal"));
-const LegacyCharacterPage     = lazy(() => import("@/pages/legacy-character"));
-const LegacyAiDirectorPage     = lazy(() => import("@/pages/legacy-ai-director"));
-const LegacyMemoryMysteriesPage = lazy(() => import("@/pages/legacy-memory-mysteries"));
-const LegacyCharacterEvolutionPage = lazy(() => import("@/pages/legacy-character-evolution"));
-const LegacyOnboardingPage      = lazy(() => import("@/pages/legacy-onboarding"));
-const LegacyPlayPage            = lazy(() => import("@/pages/legacy-play"));
-const LegacyInterviewQuestPage = lazy(() => import("@/pages/legacy-interview-quest"));
-const LegacyDemoPage           = lazy(() => import("@/pages/legacy-demo-launcher"));
-const LegacyPublicWorldPage    = lazy(() => import("@/pages/legacy-public-world"));
-const LegacyKwamePage          = lazy(() => import("@/pages/legacy-kwame"));
 
 function PageFallback() {
   return (
@@ -273,26 +249,6 @@ function AppShell() {
             <Route path="/diaspora/heritage/globe" component={GlobePage} />
             <Route path="/diaspora/research" component={ResearchCenterPage} />
             <Route path="/diaspora/preserve" component={PreserveCulturePage} />
-            <Route path="/diaspora/timeline" component={LegacyTimelinePage} />
-            <Route path="/legacy/onboarding" component={LegacyOnboardingPage} />
-            <Route path="/legacy/achievements" component={LegacyAchievementsPage} />
-            <Route path="/legacy/start" component={LegacyStartPage} />
-            <Route path="/legacy/chapter/:chapterId" component={LegacyChapterPage} />
-            <Route path="/legacy/journal" component={LegacyJournalPage} />
-            <Route path="/legacy/journal/:familyId" component={LegacyJournalPage} />
-            <Route path="/legacy/character/:memberId" component={LegacyCharacterPage} />
-            <Route path="/legacy/challenges" component={LegacyChallengesPage} />
-            <Route path="/legacy/seasonal-events" component={LegacySeasonalEventsPage} />
-            <Route path="/legacy/world-evolution" component={LegacyWorldEvolutionPage} />
-            <Route path="/legacy/ai-director" component={LegacyAiDirectorPage} />
-            <Route path="/legacy/mysteries" component={LegacyMemoryMysteriesPage} />
-            <Route path="/legacy/characters" component={LegacyCharacterEvolutionPage} />
-            <Route path="/legacy/map/:familyId" component={() => <LegacyMapPage />} />
-            <Route path="/legacy/map" component={() => <LegacyMapPage />} />
-            <Route path="/legacy/play/:sessionId" component={LegacyPlayPage} />
-            <Route path="/legacy/play" component={LegacyPlayPage} />
-            <Route path="/legacy/interview-quest" component={LegacyInterviewQuestPage} />
-            <Route path="/legacy" component={LegacyHomePage} />
             <Route path="/diaspora" component={DiasporaDashboardPage} />
             <Route component={NotFound} />
           </Switch>
@@ -328,12 +284,12 @@ function AppContent() {
 
   const pathname =
     typeof window !== "undefined" ? window.location.pathname : "";
-  const normalizedPathname = normalizeLegacyPathname(pathname);
+  const normalizedPathname = pathname;
 
   useEffect(() => {
     if (
       typeof window === "undefined" ||
-      !isLegacyPathname(pathname) ||
+      true ||
       normalizedPathname === pathname
     ) {
       return;
@@ -345,7 +301,7 @@ function AppContent() {
     window.history.replaceState(window.history.state, "", nextUrl);
 
     // Wouter listens for popstate. replaceState does not emit one, so notify
-    // it after canonicalizing a nested Legacy route such as /Legacy/Start.
+    // Normalize nested routes before resolving the page.
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, [normalizedPathname, pathname]);
 
@@ -371,32 +327,8 @@ function AppContent() {
     );
   }
   // Public demo — no auth required
-  if (normalizedPathname === "/legacy/demo") {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <LegacyDemoPage />
-      </Suspense>
-    );
-  }
   // Public playable world — no account or chapter session is required.
-  if (
-    normalizedPathname === "/legacy/world" ||
-    normalizedPathname === "/legacy/chapter/demo"
-  ) {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <LegacyPublicWorldPage />
-      </Suspense>
-    );
-  }
   // Public character sheet — no auth required
-  if (normalizedPathname === "/legacy/kwame") {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <LegacyKwamePage />
-      </Suspense>
-    );
-  }
   return (
     <>
       <FocusRefresh />

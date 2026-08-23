@@ -99,7 +99,7 @@ export default function FamilyTreePage() {
   const [showRelationModal, setShowRelationModal] = useState(false);
   const [showExplorer, setShowExplorer] = useState(false);
 
-  // Editing a person's gender/birth/death year — used by Legacy Mode's
+  // Editing a person's gender/birth/death year — used by optional character presentation
   // character appearance resolver (resolveFamilyMemberAppearance), which
   // requires these to be explicitly set and never guesses them. Curator/owner
   // only, matching PATCH /family/:id/members/:memberId's existing permission
@@ -476,7 +476,7 @@ export default function FamilyTreePage() {
                         </div>
 
                         {/* Edit form — gender/birth/death year. These feed
-                            Legacy Mode's character appearance resolver
+                            optional character presentation character appearance resolver
                             (resolveFamilyMemberAppearance): a chapter's
                             ancestor only gets a real walking sprite instead
                             of a placeholder once both gender and a usable
@@ -503,7 +503,7 @@ export default function FamilyTreePage() {
                               </div>
                               <p className="text-[11px] text-muted-foreground mt-1">
                                 Optional. Only used so this person can appear as a real walking
-                                character in Legacy Mode — never guessed or required.
+                                character in character presentation — never guessed or required.
                               </p>
                             </div>
                             <div className="grid grid-cols-2 gap-3">

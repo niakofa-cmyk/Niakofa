@@ -14,10 +14,9 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --workspace-concurrency=1 --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "boundary-check": "node scripts/src/check-app-ai-boundary.js",
-    "audit:legacy-assets": "node scripts/src/audit-legacy-assets.mjs",
     "release-validate": "node scripts/src/release-validate.js",
     "audit:routes": "node scripts/src/audit-routes.mjs",
-    "verify:legacy-demo": "node scripts/src/verify-legacy-demo-deployment.mjs"
+    "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js"
   },
   "private": true,
   "devDependencies": {

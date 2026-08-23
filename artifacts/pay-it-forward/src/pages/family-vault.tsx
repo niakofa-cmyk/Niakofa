@@ -569,28 +569,6 @@ export default function FamilyVaultPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-4">
-        {/* ── Legacy Journey Banner — connect Family Vault to actual gameplay session ── */}
-        <div
-          className="mb-4 rounded-xl overflow-hidden relative"
-          style={{ background: "linear-gradient(135deg, #1A0F08 0%, #2A1A0F 100%)", border: "1px solid rgba(180,120,40,0.3)" }}
-        >
-          <div className="px-4 py-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
-              <BookHeart className="w-4.5 h-4.5 text-amber-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-black text-amber-300 uppercase tracking-widest">Legacy Mode</p>
-              <p className="text-xs text-amber-700 truncate">Every memory enriches your family's RPG world</p>
-            </div>
-            <button
-              onClick={() => navigate("/legacy")}
-              className="flex-shrink-0 bg-amber-500 text-amber-950 font-black text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg active:opacity-80 flex items-center gap-1"
-            >
-              Play →
-            </button>
-          </div>
-        </div>
-
         {/* Pending upload retry banner */}
         {pendingUpload && (
           <div className="mb-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-3 flex items-center gap-3">
@@ -1331,10 +1309,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
         body: JSON.stringify({ status: "published", resulting_memory_id: memory.id }),
       });
 
-      // 6. Invalidate legacy world cache so quests regenerate with the new transcript
-      fetch(`/api/legacy/reservoir/${familyId}/invalidate`, {
-        method: "POST", headers: authHeaders(),
-      }).catch(() => {});
+      // legacy game reservoir invalidate removed with RPG extraction
 
       setDoneCount(prev => prev + 1);
       setPhase("done");

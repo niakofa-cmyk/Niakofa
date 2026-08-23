@@ -286,18 +286,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   //   /status    — public unauthenticated status page
   //   /bird-test — SankofaBird visual QA harness, intentionally public (dev tool)
   //   /impact    — public county-impact dashboard
-  //   /legacy/demo and /legacy/world — public Legacy RPG experience
-  const NO_REDIRECT_PATHS = [
+    const NO_REDIRECT_PATHS = [
   "/login",
   "/admin",
   "/admin/analytics",
   "/status",
   "/bird-test",
   "/impact",
-  "/legacy/demo",
-  "/legacy/world",
-  "/legacy/chapter/demo",
-];
+      ];
   useEffect(() => {
     if (!currentUser && !NO_REDIRECT_PATHS.some(p => location === p || location.startsWith(p + "/"))) {
       setLocation("/login");

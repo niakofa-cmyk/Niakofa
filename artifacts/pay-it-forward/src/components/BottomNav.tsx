@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, DollarSign, Radio, Navigation2, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu, BookHeart } from "lucide-react";
+import { Map, Users, DollarSign, Radio, Navigation2, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu } from "lucide-react";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,7 +28,6 @@ const BASE_TABS: Tab[] = [
   { path: "/",              icon: Map,        labelKey: "nav.map"       },
   { path: "/diaspora",      icon: Globe2,     labelKey: "nav.diaspora"  },
   { path: "/audio-circles", icon: Radio,      labelKey: "nav.circles"   },
-  { path: "/legacy",        icon: BookHeart,  labelKey: "nav.legacy"    },
 ];
 
 // Helper Mode ON — helper-facing nav: Active Job (center, most important
@@ -278,7 +277,7 @@ export function BottomNav() {
                   </button>
 
                   {/* More — opens the full nav drawer (Dashboard, Resources,
-                      Civic Engagement, Legacy, Nia, and everything else that
+                      Civic Engagement, Nia, and everything else that
                       doesn't fit in the tab bar below) */}
                   <button
                     onClick={() => { setNavDrawerOpen(true); setMapNavOpen(false); }}
@@ -427,7 +426,7 @@ export function BottomNav() {
     <>
       {/* Floating menu trigger — non-map pages have no TopBar of their own,
           so this is the one predictable place to reach Dashboard, Resources,
-          Civic Engagement, Legacy, Nia, Notifications & Settings from here. */}
+          Civic Engagement, Nia, Notifications & Settings from here. */}
       <button
         onClick={() => setNavDrawerOpen(true)}
         aria-label="Open navigation menu"

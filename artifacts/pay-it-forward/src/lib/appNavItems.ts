@@ -36,8 +36,6 @@ export function getAppNavItems(opts: { openNotifications: () => void }): AppNavI
       isActive: (l) =>
         (l.startsWith("/diaspora") && !l.startsWith("/diaspora/timeline")) ||
         l.startsWith("/family") },
-    { key: "legacy", label: "Legacy", icon: History, href: "/legacy",
-      isActive: (l) => l.startsWith("/legacy") || l.startsWith("/diaspora/timeline") },
     { key: "circles", label: "Circles", icon: Radio, href: "/audio-circles",
       isActive: (l) => l.startsWith("/audio-circle") },
     { key: "wallet", label: "Wallet", icon: Wallet, href: "/wallet",

@@ -24,9 +24,6 @@ args = "artifacts/pay-it-forward: web"
 task = "workflow.run"
 args = "artifacts/api-server: API Server"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "apps/legacy-rpg: web"
 
 [[workflows.workflow]]
 name = "artifacts/pay-it-forward: web"
@@ -52,17 +49,6 @@ task = "shell.exec"
 args = "cd artifacts/api-server && NODE_ENV=development node build.mjs && node --enable-source-maps dist/index.mjs"
 waitForPort = 8080
 
-[[workflows.workflow]]
-name = "apps/legacy-rpg: web"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd apps/legacy-rpg && ./node_modules/.bin/vite --host 0.0.0.0 --port 5000"
-waitForPort = 5000
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
