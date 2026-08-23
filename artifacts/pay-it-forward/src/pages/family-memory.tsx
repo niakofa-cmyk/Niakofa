@@ -204,6 +204,8 @@ export default function FamilyMemoryPage() {
   useEffect(() => {
     if (!currentUser || !familyId || !memId) return;
     loadMemory();
+  // loadMemory is intentionally local; these are the page's reload boundaries.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, familyId, memId]);
 
   async function loadMemory() {

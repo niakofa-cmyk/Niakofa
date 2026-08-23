@@ -8,6 +8,7 @@
  * the pattern established in lifecycle.test.ts / app-ai-boundary.test.ts.
  */
 import { jest, describe, it, expect, beforeEach } from "@jest/globals";
+import type * as HistoricalContextModule from "../lib/historical-context.js";
 
 const mockCacheGet = jest.fn();
 const mockCacheSet = jest.fn();
@@ -28,8 +29,7 @@ jest.unstable_mockModule("@anthropic-ai/sdk", () => ({
   })),
 }));
 
-type HistoricalContextModule = typeof import("../lib/historical-context.js");
-let getHistoricalContext: HistoricalContextModule["getHistoricalContext"];
+let getHistoricalContext: typeof HistoricalContextModule["getHistoricalContext"];
 
 beforeEach(async () => {
   jest.clearAllMocks();

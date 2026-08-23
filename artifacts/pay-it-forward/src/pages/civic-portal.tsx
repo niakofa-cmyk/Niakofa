@@ -144,7 +144,7 @@ export default function CivicPortalPage() {
       .then(data => { setRequests(data); requestsLoadedRef.current = true; })
       .catch(() => { /* network error — keep last-known-good list on screen */ })
       .finally(() => setLoadingRequests(false));
-  }, [sponsor]);
+  }, [sponsor, setRequests]);
 
   useEffect(() => { loadRequests(); }, [loadRequests]);
 

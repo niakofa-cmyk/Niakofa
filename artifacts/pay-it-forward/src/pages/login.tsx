@@ -450,7 +450,7 @@ export default function LoginScreen() {
       setGreetingIndex(i => (i + 1) % CULTURAL_GREETINGS.length);
     }, 4000);
     return () => clearInterval(timer);
-  }, []);
+  }, [CULTURAL_GREETINGS.length]);
 
   const currentGreeting = CULTURAL_GREETINGS[greetingIndex];
 

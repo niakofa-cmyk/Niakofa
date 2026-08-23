@@ -3,12 +3,13 @@ import type * as mapboxgl from "mapbox-gl";
 
 export function useTerrain(mapRef: RefObject<mapboxgl.Map | null>): void {
   useEffect(() => {
+    const mapAtEffectStart = mapRef.current;
     let removed = false;
     let pollId: ReturnType<typeof setInterval> | null = null;
 
     function setup() {
       if (removed) return;
-      const m = mapRef.current;
+      const m = mapAtEffectStart;
       if (!m) return;
 
       if (!m.getSource("mapbox-dem")) {
@@ -76,7 +77,7 @@ export function useTerrain(mapRef: RefObject<mapboxgl.Map | null>): void {
     return () => {
       removed = true;
       if (pollId) clearInterval(pollId);
-      const m = mapRef.current;
+      const m = mapAtEffectStart;
       if (!m || !m.isStyleLoaded()) return;
       try {
         if (m.getLayer("niakofa-3d-buildings")) m.removeLayer("niakofa-3d-buildings");

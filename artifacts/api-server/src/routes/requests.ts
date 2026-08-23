@@ -30,6 +30,7 @@ import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
 import { moderateRequestText } from "../lib/post-moderation";
 import Stripe from "stripe";
+import type { repaymentPlansTable as RepaymentPlansTable } from "@workspace/db";
 
 // Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
 const _STRIPE_SK = process.env["STRIPE_SECRET_KEY"] ?? "";
@@ -2497,12 +2498,11 @@ router.post("/requests/:id/repayment-plan", requireAuth, requestCreationLimiter,
 
   // Dynamic import for repaymentPlansTable (graceful degradation if migration 0058
   // has not yet been applied on older DB instances)
-  type DbModule = typeof import("@workspace/db");
-  let repaymentPlansTable: DbModule["repaymentPlansTable"] | undefined;
+  let repaymentPlansTable: typeof RepaymentPlansTable | undefined;
   try {
     const dbModule = await import("@workspace/db");
     repaymentPlansTable = (dbModule as Record<string, unknown>)["repaymentPlansTable"] as
-      DbModule["repaymentPlansTable"] | undefined;
+      typeof RepaymentPlansTable | undefined;
   } catch {
     // Fall back to plain scheduled_payments without a plan row
   }

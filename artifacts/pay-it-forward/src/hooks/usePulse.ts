@@ -36,6 +36,7 @@ export function usePulse(trigger: boolean, durationMs: number): boolean {
 
   // Run on every render so we catch every leading edge immediately,
   // even when the parent batches state updates aggressively.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const wasActive = prevRef.current;
     prevRef.current = trigger;

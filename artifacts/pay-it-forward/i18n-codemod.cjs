@@ -151,14 +151,14 @@ if (!result.includes('from "react-i18next"')) {
   result = result.slice(0, lastImportEnd) + 'import { useTranslation } from "react-i18next";\n' + result.slice(lastImportEnd);
 }
 
-console.log(`Found ${edits.filter(e => !e.replacement.startsWith("\n  const")).length} translatable strings, injected hook into ${topLevelComponents.filter(c => c.hasEdit).length} component(s), namespace "${namespace}"`);
-console.log(JSON.stringify(keyMap, null, 2));
+console.warn(`Found ${edits.filter(e => !e.replacement.startsWith("\n  const")).length} translatable strings, injected hook into ${topLevelComponents.filter(c => c.hasEdit).length} component(s), namespace "${namespace}"`);
+console.warn(JSON.stringify(keyMap, null, 2));
 
 if (dryRun) {
   fs.writeFileSync(filePath + ".preview.tsx", result);
-  console.log(`\nDry run: wrote preview to ${filePath}.preview.tsx`);
+  console.warn(`\nDry run: wrote preview to ${filePath}.preview.tsx`);
 } else {
   fs.writeFileSync(filePath, result);
   fs.writeFileSync(path.join(path.dirname(filePath), `${namespace}.i18n-keys.json`), JSON.stringify(keyMap, null, 2));
-  console.log(`\nApplied. Key map saved.`);
+  console.warn(`\nApplied. Key map saved.`);
 }

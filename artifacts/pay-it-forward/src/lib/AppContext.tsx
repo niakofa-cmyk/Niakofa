@@ -466,7 +466,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } else {
       wsUnregister();
     }
-  }, [currentUser?.id]);
+  }, [currentUser]);
 
   // Startup token validation — runs once on mount.
   // Without this, a user whose JWT has expired appears "logged in" (the stored

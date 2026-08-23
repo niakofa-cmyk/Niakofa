@@ -199,6 +199,8 @@ export default function FamilyVaultPage() {
     if (!currentUser || !familyId) return;
     loadFamily();
     loadMemories();
+  // These local loaders intentionally share the authentication/family lifecycle.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, familyId]);
 
   async function loadFamily() {
@@ -1478,7 +1480,10 @@ function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boo
   const [loading, setLoading]         = useState(true);
   const [showRecord, setShowRecord]   = useState(false);
 
-  useEffect(() => { loadInterviews(); }, []);
+  // Interview loading is scoped to this tab's mount; familyId is stable here.
+  useEffect(() => { loadInterviews();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadInterviews() {
     setLoading(true);

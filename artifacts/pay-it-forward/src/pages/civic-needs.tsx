@@ -160,7 +160,7 @@ export default function CivicNeedsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setOpenNeeds]);
 
   const fetchClaimed = useCallback(async () => {
     if (!currentUser) return;
@@ -175,7 +175,7 @@ export default function CivicNeedsPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentUser]);
+  }, [currentUser, setClaimedNeeds]);
 
   const fetchMine = useCallback(async () => {
     if (!sponsor) return;
@@ -186,7 +186,7 @@ export default function CivicNeedsPage() {
     } finally {
       setLoading(false);
     }
-  }, [sponsor]);
+  }, [sponsor, setMyPosted]);
 
   useEffect(() => {
     if (mainTab === "browse") { fetchOpen(); fetchClaimed(); }

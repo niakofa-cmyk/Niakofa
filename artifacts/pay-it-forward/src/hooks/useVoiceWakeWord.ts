@@ -55,7 +55,7 @@ export function useVoiceWakeWord({
     return () => {
       engine.stop();
     };
-  }, [enabled]);
+  }, [enabled, continuous, onWakeWordDetected]);
 
   return {
     listening: listeningState === "listening",

@@ -64,7 +64,10 @@ export default function RequestsBrowsePage() {
     { query: { queryKey: getGetRequestsQueryKey({ status: "open" }), staleTime: 20000, placeholderData: keepPreviousData } }
   );
 
-  const requests = Array.isArray(rawRequests) ? rawRequests : [];
+  const requests = useMemo(
+    () => (Array.isArray(rawRequests) ? rawRequests : []),
+    [rawRequests],
+  );
 
   const filtered = useMemo(() => {
     let list = [...requests];

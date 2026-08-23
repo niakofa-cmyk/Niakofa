@@ -781,7 +781,7 @@ export default function CommunityScreen() {
         setPostsLoading(false);
       })
       .catch(() => setPostsLoading(false));
-  }, []);
+  }, [base]);
 
   // Real-time: new gratitude post arrives
   useWebSocket("new_gratitude", (event) => {

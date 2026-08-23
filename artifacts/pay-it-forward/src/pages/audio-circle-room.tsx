@@ -679,7 +679,7 @@ export default function AudioCircleRoomScreen() {
       setSettingsDesc(session.description ?? "");
       setSettingsSpeakerLimit(session.max_speakers);
     }
-  }, [showSettingsModal, session?.id]);
+  }, [showSettingsModal, session]);
 
   // ── Connection status ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -807,13 +807,14 @@ export default function AudioCircleRoomScreen() {
       meshRef.current = mesh;
       setMeshReady(true);
     })();
+    const analyserCleanups = analyserCleanupsRef.current;
     return () => {
       cancelled = true;
       meshRef.current?.destroy();
       meshRef.current = null;
       setMeshReady(false);
-      for (const cleanup of analyserCleanupsRef.current.values()) cleanup();
-      analyserCleanupsRef.current.clear();
+      for (const cleanup of analyserCleanups.values()) cleanup();
+      analyserCleanups.clear();
       // Close the shared AudioContext when the session ends
       sharedAudioCtxRef.current?.close().catch(() => {});
       sharedAudioCtxRef.current = null;

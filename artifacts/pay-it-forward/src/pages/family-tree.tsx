@@ -113,10 +113,14 @@ export default function FamilyTreePage() {
   useEffect(() => {
     if (!currentUser) return;
     loadFamilies();
+  // Loader is intentionally invoked only when auth state changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
   useEffect(() => {
     if (selectedFamilyId) loadTree(selectedFamilyId);
+  // Loader is intentionally invoked only when the selected family changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFamilyId]);
 
   // Selecting a different person always exits edit mode — prevents an
@@ -139,7 +143,7 @@ export default function FamilyTreePage() {
     } catch {
       toast.error("Couldn't load family spaces");
     }
-  }, []);
+  }, [selectedFamilyId]);
 
   const loadTree = useCallback(async (id: number) => {
     setLoading(true);
@@ -1236,6 +1240,8 @@ function FamilyTimelineTab({ familyId }: { familyId: number }) {
 
   useEffect(() => {
     loadTimeline();
+  // Timeline loader is intentionally local to this tab's family lifecycle.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familyId]);
 
   async function loadTimeline() {
