@@ -1,3 +1,4 @@
+- [Circles release certification](niakofa-release-certification.md) — automated smoke checks and real-browser WebRTC evidence are separate release gates.
 - [Platform deployment boundary](platform-deployment-boundary.md) — deployment smoke checks cover Niakofa SPA/API contracts, never the separate Legacy RPG runtime.
 - [ESLint hook warning policy](eslint-hook-warning-policy.md) — preserve intentional effect lifecycles with narrow, explained dependency exceptions only when real dependencies are unsafe.
 - [Package manager bootstrap](package-manager-bootstrap.md) — temporary pnpm version override can be needed for constrained local validation; restore it before commits.

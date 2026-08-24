@@ -36,6 +36,8 @@ const protectedApiJourneys = [
   ["/api/requests", "Mutual Aid requests"],
   ["/api/family/mine", "Family"],
   ["/api/audio-circles/followed", "Circles"],
+  ["/api/audio-circle-sessions/1", "Circle session resync"],
+  ["/api/webrtc-ice-servers", "WebRTC ICE credentials"],
   ["/api/nia/context", "Nia"],
   ["/api/wallet/cashout/history", "wallet"],
 ];
