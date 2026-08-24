@@ -60,6 +60,13 @@ The Circle room must not mark media connected just because the REST session load
 **Why:** Presence and REST session state can remain healthy while every audio/video peer is disconnected; hiding that split makes a live Circle appear functional when it is not.
 
 **How to apply:** Keep the UI subscribed to the mesh callback, keep local/remote track `onended` observable, and keep retry timers inside the media-session owner so React re-renders cannot recreate or orphan the session.
+
+## Mesh startup ordering
+The room's role/media effect must rerun when the asynchronously-created mesh becomes ready; participant state can arrive before the WebRTC session owner exists.
+
+**Why:** A speaker could be successfully joined in REST state but never publish local media when the initial role effect ran during mesh construction.
+
+**How to apply:** Include the mesh readiness signal in the peer connection/media effect dependencies, while keeping the mesh instance itself owned by the session lifecycle effect.
 ## Heartbeat active-speaker reports are untrusted
 The browser may report the loudest peer in a heartbeat, but the server must verify that ID is an active participant in the same session before broadcasting `circle_active_speaker`.
 
