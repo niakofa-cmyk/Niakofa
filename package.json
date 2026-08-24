@@ -16,6 +16,7 @@
     "boundary-check": "node scripts/src/check-app-ai-boundary.js",
     "release-validate": "node scripts/src/release-validate.js",
     "audit:routes": "node scripts/src/audit-routes.mjs",
+    "release-smoke": "node scripts/src/release-smoke.mjs",
     "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js"
   },
   "private": true,
