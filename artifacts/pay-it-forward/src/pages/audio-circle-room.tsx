@@ -699,7 +699,9 @@ export default function AudioCircleRoomScreen() {
       const data = await res.json();
       setSession(data.session);
       setParticipants(data.participants ?? []);
-      setConnectionStatus("connected");
+      // REST presence is not media health. The mesh owns connectionStatus and
+      // will report connected only after a peer connection reaches that state.
+      // A successful resync only means the room API is reachable.
     } catch {
       // Next reconnect will retry
     }
@@ -1226,7 +1228,9 @@ export default function AudioCircleRoomScreen() {
   useWebSocket("circle_host_reconnected", (e) => {
     const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
-    setConnectionStatus("connected");
+    // Host presence recovery does not prove that this browser's WebRTC peers
+    // recovered. Keep the media indicator honest until the mesh reports it.
+    setConnectionStatus("reconnecting");
     toast({ title: "Host is back" });
   });
 
@@ -2068,7 +2072,18 @@ export default function AudioCircleRoomScreen() {
         {/* Media status warning */}
         {mediaCapabilities && (!mediaCapabilities.microphone || !mediaCapabilities.recording || mediaError) && (
           <div className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
-            <div className="font-bold">Media status</div>
+            <div className="flex items-center gap-2">
+              <div className="font-bold">Media status</div>
+              {connectionStatus === "lost" && (
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="ml-auto rounded-lg border border-amber-400/40 px-2 py-1 text-[10px] font-bold text-amber-200 hover:bg-amber-400/10"
+                >
+                  Rejoin media
+                </button>
+              )}
+            </div>
             <div className="mt-0.5 text-amber-200/80">
               {!mediaCapabilities.microphone && "This browser cannot access a microphone. "}
               {!mediaCapabilities.recording && "Recording is unavailable in this browser. "}
