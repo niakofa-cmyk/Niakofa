@@ -892,9 +892,17 @@ export default function AudioCircleRoomScreen() {
       return;
     }
     const startMuted = me?.muted ?? false;
-    meshRef.current.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
+    const wantsVideo = !!session?.video_enabled && videoOn;
+    meshRef.current.publishLocalMedia({ video: wantsVideo })
       .then((stream) => {
-        setMediaError(null);
+        const cameraUnavailable = wantsVideo && stream.getVideoTracks().length === 0;
+        if (cameraUnavailable) {
+          setVideoOn(false);
+          setMediaError("Camera unavailable. Continuing with audio only.");
+          toast({ title: "Camera unavailable", description: "You are still connected with audio only." });
+        } else {
+          setMediaError(null);
+        }
         if (startMuted) {
           meshRef.current?.setMicEnabled(false);
           setMicOn(false);
@@ -2088,7 +2096,7 @@ export default function AudioCircleRoomScreen() {
         )}
 
         {/* Media status warning */}
-        {mediaCapabilities && (preJoinStatus !== "ready" || !mediaCapabilities.microphone || !mediaCapabilities.recording || mediaError) && (
+        {mediaCapabilities && (preJoinStatus !== "ready" || !mediaCapabilities.microphone || (isHost && !mediaCapabilities.recording) || mediaError) && (
           <div className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
             <div className="flex items-center gap-2">
               <div className="font-bold">
@@ -2115,7 +2123,7 @@ export default function AudioCircleRoomScreen() {
             </div>
             <div className="mt-0.5 text-amber-200/80">
               {!mediaCapabilities.microphone && "This browser cannot access a microphone. "}
-              {!mediaCapabilities.recording && "Recording is unavailable in this browser. "}
+              {isHost && !mediaCapabilities.recording && "Recording is unavailable in this browser. "}
               {mediaError}
             </div>
           </div>
@@ -3505,7 +3513,7 @@ export default function AudioCircleRoomScreen() {
           {isHost && (
             <button
               onClick={toggleRecording}
-              disabled={uploading || mediaCapabilities?.recording === false}
+              disabled={uploading || (isHost && mediaCapabilities?.recording === false)}
               className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border transition-all min-w-[56px] disabled:opacity-40 ${
                 session.is_recording
                   ? "border-red-500/40 bg-red-500/10 text-red-400"

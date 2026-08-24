@@ -154,10 +154,29 @@ export class AudioCircleMesh {
 
   /** Speakers/hosts call this to publish their mic (and optionally camera). */
   async publishLocalMedia(opts: { video: boolean }): Promise<MediaStream> {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: opts.video ? { width: 320, height: 240 } : false,
-    });
+    const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: opts.video ? { width: 320, height: 240 } : false,
+      });
+    } catch (error) {
+      // Camera permission and camera availability must not take the
+      // microphone down with them. A/V rooms remain usable as audio-only
+      // rooms when a camera is blocked, unplugged, or already in use.
+      if (!opts.video) throw error;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints,
+          video: false,
+        });
+      } catch {
+        // Preserve the original error because it contains the useful
+        // permission/device failure when the audio-only retry also fails.
+        throw error;
+      }
+    }
     const previousStream = this.localStream;
     this.localStream = stream;
     for (const track of stream.getTracks()) {

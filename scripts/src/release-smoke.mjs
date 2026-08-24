@@ -23,6 +23,7 @@ const coreWebJourneys = [
   ["/helper-dashboard", "helper dashboard"],
   ["/community", "community"],
   ["/audio-circles", "Circles"],
+  ["/audio-circle/1", "Circle room"],
   ["/family/1", "Family Vault"],
   ["/diaspora/tree", "Family Tree"],
   ["/diaspora/family", "family spaces"],
@@ -36,7 +37,7 @@ const protectedApiJourneys = [
   ["/api/family/mine", "Family"],
   ["/api/audio-circles/followed", "Circles"],
   ["/api/nia/context", "Nia"],
-  ["/api/wallet", "wallet"],
+  ["/api/wallet/cashout/history", "wallet"],
 ];
 
 let failures = 0;

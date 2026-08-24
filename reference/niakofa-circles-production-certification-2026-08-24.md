@@ -7,7 +7,7 @@ It does not certify the separate Niakofa Legacy RPG runtime.
 
 The uploaded handoff specification is preserved at:
 
-`attached_assets/Pasted--We-need-a-formally-defined-real-time-media-system-Impo_1787581211466.txt`
+`attached_assets/Pasted--We-need-a-formally-defined-real-time-media-system-Impo_1787586192663.txt`
 
 ## State contract
 
