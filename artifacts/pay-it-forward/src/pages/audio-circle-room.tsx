@@ -75,6 +75,7 @@ interface SessionInfo {
 }
 
 type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "lost";
+type PreJoinStatus = "checking" | "ready" | "blocked";
 
 const REACTION_EMOJIS = ["👏", "❤️", "😂", "😮", "🤔", "🔥", "💯"];
 
@@ -545,6 +546,7 @@ export default function AudioCircleRoomScreen() {
   const [preJoinChecked, setPreJoinChecked] = useState(false);
   const [_preJoinMicReady, setPreJoinMicReady] = useState(false);
   const [_preJoinCameraReady, setPreJoinCameraReady] = useState(false);
+  const [preJoinStatus, setPreJoinStatus] = useState<PreJoinStatus>("checking");
 
   // ── New modal states ───────────────────────────────────────────────────────
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -875,7 +877,7 @@ export default function AudioCircleRoomScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participants.map(p => p.user_id).join(","), myUserId, canSpeak]);
+  }, [participants.map(p => p.user_id).join(","), myUserId, canSpeak, meshReady]);
 
   // Publish mic when promoted to speaker
   useEffect(() => {
@@ -1841,22 +1843,38 @@ export default function AudioCircleRoomScreen() {
   // guard prevents this from re-running on every re-render.
   const checkPreJoinDevices = async () => {
     setPreJoinChecked(true); // guard must be set before the async ops
+    setPreJoinStatus("checking");
+    setMediaError(null);
+    // Listeners only receive media and do not need to request local device
+    // permissions. Speakers should get an explicit, retryable preflight result.
+    if (!canSpeak) {
+      setPreJoinStatus("ready");
+      return;
+    }
+    let blocked = false;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
+      if (!stream) throw new Error("Media devices are unavailable in this browser.");
       stream.getTracks().forEach(t => t.stop());
       setPreJoinMicReady(true);
-    } catch {
+    } catch (error) {
       setPreJoinMicReady(false);
+      blocked = true;
+      setMediaError(mediaErrorMessage(error, "microphone"));
     }
     if (session?.video_enabled) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices?.getUserMedia({ video: true });
+        if (!stream) throw new Error("Media devices are unavailable in this browser.");
         stream.getTracks().forEach(t => t.stop());
         setPreJoinCameraReady(true);
-      } catch {
+      } catch (error) {
         setPreJoinCameraReady(false);
+        blocked = true;
+        setMediaError(mediaErrorMessage(error, "camera"));
       }
     }
+    setPreJoinStatus(blocked ? "blocked" : "ready");
   };
 
   useEffect(() => {
@@ -1864,7 +1882,7 @@ export default function AudioCircleRoomScreen() {
       void checkPreJoinDevices();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, session?.id, preJoinChecked]);
+  }, [loading, session?.id, preJoinChecked, canSpeak]);
 
   useEffect(() => {
     if (activeTab === "chat") chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2070,15 +2088,26 @@ export default function AudioCircleRoomScreen() {
         )}
 
         {/* Media status warning */}
-        {mediaCapabilities && (!mediaCapabilities.microphone || !mediaCapabilities.recording || mediaError) && (
+        {mediaCapabilities && (preJoinStatus !== "ready" || !mediaCapabilities.microphone || !mediaCapabilities.recording || mediaError) && (
           <div className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
             <div className="flex items-center gap-2">
-              <div className="font-bold">Media status</div>
+              <div className="font-bold">
+                {preJoinStatus === "checking" ? "Checking media…" : preJoinStatus === "blocked" ? "Media permission needed" : "Media status"}
+              </div>
+              {preJoinStatus !== "ready" && canSpeak && (
+                <button
+                  type="button"
+                  onClick={() => { void checkPreJoinDevices(); }}
+                  className="ml-auto rounded-lg border border-amber-400/40 px-2 py-1 text-[10px] font-bold text-amber-200 hover:bg-amber-400/10"
+                >
+                  Check again
+                </button>
+              )}
               {connectionStatus === "lost" && (
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="ml-auto rounded-lg border border-amber-400/40 px-2 py-1 text-[10px] font-bold text-amber-200 hover:bg-amber-400/10"
+                  className={`${preJoinStatus !== "ready" && canSpeak ? "" : "ml-auto"} rounded-lg border border-amber-400/40 px-2 py-1 text-[10px] font-bold text-amber-200 hover:bg-amber-400/10`}
                 >
                   Rejoin media
                 </button>
