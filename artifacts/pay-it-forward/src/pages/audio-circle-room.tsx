@@ -22,6 +22,7 @@ import {
   fetchIceServers,
   getAudioCircleMediaCapabilities,
   type AudioCircleMediaCapabilities,
+  type AudioCircleConnectionState,
   type RemoteStreamHandle,
 } from "@/lib/audioCircleWebRTC";
 
@@ -681,11 +682,6 @@ export default function AudioCircleRoomScreen() {
     }
   }, [showSettingsModal, session]);
 
-  // ── Connection status ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!loading && session) setConnectionStatus("connected");
-  }, [loading, session]);
-
   // Timeout: if still "connecting" after 12 s (WebSocket never established),
   // flip to "lost" so the UI shows a recoverable error instead of a spinner.
   useEffect(() => {
@@ -798,6 +794,14 @@ export default function AudioCircleRoomScreen() {
           setSpeakingLevels(prev => { const next = new Map(prev); next.delete(userId); return next; });
           const cleanup = analyserCleanupsRef.current.get(`remote:${userId}`);
           if (cleanup) { cleanup(); analyserCleanupsRef.current.delete(`remote:${userId}`); }
+        },
+        onConnectionStateChange: (state: AudioCircleConnectionState) => {
+          setConnectionStatus(state);
+          if (state === "lost") {
+            setMediaError("Media connection lost. Check your network or try rejoining the Circle.");
+          } else if (state === "connected") {
+            setMediaError(null);
+          }
         },
         subscribeToCircleSignal: (handler) => {
           const unsub = subscribeRaw("circle_signal", handler);

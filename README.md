@@ -1,6 +1,6 @@
 # Niakofa — Community Help Platform
 
-A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX. Residents can request help with groceries, rides, errands, and more; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map. Includes Nia AI (Claude-powered cultural assistant), Family Vault (legacy preservation), and Legacy Engine (RPG-style ancestor storytelling game).
+A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX. Residents can request help with groceries, rides, errands, and more; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map. Includes Nia AI (Claude-powered cultural assistant), Family Vault (family-history preservation), and live Circles for community conversation.
 
 > **Mission:** Help Today. Pay It Forward Tomorrow. Building community one act of kindness at a time in Fort Worth, TX.
 
@@ -143,7 +143,7 @@ pnpm --filter @workspace/api-server run test
 | `/wallet` | Benevolence wallet, scheduled payments, pay-it-forward pledges |
 | `/profile` | User profile, helper mode toggle, trust score |
 | `/family-vault` | Family Vault — preserve family memories, photos, stories |
-| `/legacy-home` | Legacy Engine — RPG-style ancestor storytelling game |
+| `/legacy-home` | Family legacy — preserved stories and family-history experiences |
 | `/admin` | Token-gated trust & safety report review queue |
 
 ---

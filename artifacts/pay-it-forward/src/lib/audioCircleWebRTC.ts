@@ -32,6 +32,8 @@ export interface RemoteStreamHandle {
   stream: MediaStream;
 }
 
+export type AudioCircleConnectionState = "connecting" | "connected" | "reconnecting" | "lost";
+
 interface CircleSignalPayload {
   session_id: number;
   from_user_id: number;
@@ -123,6 +125,11 @@ export class AudioCircleMesh {
   private mixSources = new Map<string, MediaStreamAudioSourceNode>();
   private videoExpected: boolean;
   private iceServers: RTCIceServer[];
+  private onConnectionStateChange: (state: AudioCircleConnectionState) => void;
+  private recoveryAttempts = new Map<number, number>();
+  private recoveryTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private peerStates = new Map<number, RTCPeerConnectionState>();
+  private destroyed = false;
 
   constructor(opts: {
     sessionId: number;
@@ -132,6 +139,7 @@ export class AudioCircleMesh {
     iceServers?: RTCIceServer[];
     onRemoteStream: (handle: RemoteStreamHandle) => void;
     onRemoteStreamEnded: (userId: number) => void;
+    onConnectionStateChange?: (state: AudioCircleConnectionState) => void;
     subscribeToCircleSignal: (handler: (event: WsEvent) => void) => () => void;
   }) {
     this.sessionId = opts.sessionId;
@@ -140,6 +148,7 @@ export class AudioCircleMesh {
     this.iceServers = opts.iceServers && opts.iceServers.length > 0 ? opts.iceServers : STUN_ONLY_FALLBACK;
     this.onRemoteStream = opts.onRemoteStream;
     this.onRemoteStreamEnded = opts.onRemoteStreamEnded;
+    this.onConnectionStateChange = opts.onConnectionStateChange ?? (() => {});
     this.wsUnsubscribe = opts.subscribeToCircleSignal((event) => this.handleSignal(event));
   }
 
@@ -151,6 +160,13 @@ export class AudioCircleMesh {
     });
     const previousStream = this.localStream;
     this.localStream = stream;
+    for (const track of stream.getTracks()) {
+      track.onended = () => {
+        if (this.localStream?.getTracks().includes(track)) {
+          this.onConnectionStateChange("lost");
+        }
+      };
+    }
     if (this.mediaRecorder) {
       this.addStreamToMix(stream, "local");
     }
@@ -189,8 +205,9 @@ export class AudioCircleMesh {
         if (sender.track) sender.replaceTrack(null).catch(() => {});
       }
     }
-    this.localStream?.getTracks().forEach(t => t.stop());
+    const stream = this.localStream;
     this.localStream = null;
+    stream?.getTracks().forEach(t => t.stop());
   }
 
   /** Mutes/unmutes the outgoing mic by disabling the track (cheaper than tearing down and re-publishing). */
@@ -231,8 +248,10 @@ export class AudioCircleMesh {
   /** Opens (or re-opens) a peer connection to another participant and starts signaling. */
   connectToPeer(remoteUserId: number): void {
     if (this.peers.has(remoteUserId)) return;
+    this.onConnectionStateChange("connecting");
     const pc = this.createPeerConnection(remoteUserId);
     this.peers.set(remoteUserId, pc);
+    this.peerStates.set(remoteUserId, pc.connectionState);
   }
 
   disconnectFromPeer(remoteUserId: number): void {
@@ -241,6 +260,11 @@ export class AudioCircleMesh {
       pc.close();
       this.peers.delete(remoteUserId);
     }
+    const timer = this.recoveryTimers.get(remoteUserId);
+    if (timer) clearTimeout(timer);
+    this.recoveryTimers.delete(remoteUserId);
+    this.recoveryAttempts.delete(remoteUserId);
+    this.peerStates.delete(remoteUserId);
     for (const sourceId of this.connectedSourceIds) {
       if (sourceId.startsWith(`remote:${remoteUserId}:`)) {
         this.connectedSourceIds.delete(sourceId);
@@ -254,6 +278,9 @@ export class AudioCircleMesh {
 
   /** Tears down every connection and local media — call on leaving the room. */
   destroy(): void {
+    this.destroyed = true;
+    for (const timer of this.recoveryTimers.values()) clearTimeout(timer);
+    this.recoveryTimers.clear();
     for (const userId of Array.from(this.peers.keys())) this.disconnectFromPeer(userId);
     this.stopLocalMedia();
     // stopRecording is async — fire and ignore on destroy (cleanup only, no upload)
@@ -265,6 +292,7 @@ export class AudioCircleMesh {
     this.audioContext = null;
     this.wsUnsubscribe?.();
     this.pendingIceCandidates.clear();
+    this.peerStates.clear();
     this.mixSources.clear();
   }
 
@@ -540,6 +568,9 @@ export class AudioCircleMesh {
 
     pc.ontrack = (e) => {
       const stream = e.streams[0] ?? new MediaStream([e.track]);
+      e.track.onended = () => {
+        if (!this.destroyed) this.onRemoteStreamEnded(remoteUserId);
+      };
       this.onRemoteStream({ userId: remoteUserId, stream });
       // Add tracks that arrive after REC was pressed, including newly promoted
       // speakers and renegotiated audio tracks.
@@ -549,23 +580,64 @@ export class AudioCircleMesh {
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed") {
-        // ICE restart: re-negotiate instead of tearing down. A transient
-        // network blip (switching from wifi to cellular, a brief NAT remap)
-        // shouldn't permanently kill the peer connection. Restart ICE by
-        // creating a new offer with iceRestart, which triggers onnegotiationneeded.
-        try {
-          pc.restartIce();
-        } catch {
-          // restartIce not supported on all browsers — fall back to teardown
-          this.disconnectFromPeer(remoteUserId);
-        }
+      this.peerStates.set(remoteUserId, pc.connectionState);
+      if (pc.connectionState === "connected") {
+        this.recoveryAttempts.delete(remoteUserId);
+        const timer = this.recoveryTimers.get(remoteUserId);
+        if (timer) clearTimeout(timer);
+        this.recoveryTimers.delete(remoteUserId);
+        this.emitAggregateConnectionState();
+      } else if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+        this.scheduleRecovery(remoteUserId, pc);
       } else if (pc.connectionState === "closed") {
         this.disconnectFromPeer(remoteUserId);
       }
     };
 
     return pc;
+  }
+
+  /**
+   * Recover a transient ICE failure without making the user leave and rejoin.
+   * Four bounded attempts keep a dead peer from creating an endless timer while
+   * still covering the common Wi-Fi ↔ cellular/NAT transition.
+   */
+  private scheduleRecovery(remoteUserId: number, pc: RTCPeerConnection): void {
+    if (this.destroyed || this.recoveryTimers.has(remoteUserId)) return;
+    const attempt = (this.recoveryAttempts.get(remoteUserId) ?? 0) + 1;
+    this.recoveryAttempts.set(remoteUserId, attempt);
+    if (attempt > 4) {
+      this.peerStates.set(remoteUserId, "failed");
+      this.emitAggregateConnectionState();
+      return;
+    }
+    this.peerStates.set(remoteUserId, "disconnected");
+    this.onConnectionStateChange("reconnecting");
+    const delay = 1000 * 2 ** (attempt - 1);
+    const timer = setTimeout(() => {
+      this.recoveryTimers.delete(remoteUserId);
+      if (this.destroyed || this.peers.get(remoteUserId) !== pc) return;
+      try {
+        pc.restartIce();
+      } catch {
+        this.peerStates.set(remoteUserId, "failed");
+        this.emitAggregateConnectionState();
+      }
+    }, delay);
+    this.recoveryTimers.set(remoteUserId, timer);
+  }
+
+  private emitAggregateConnectionState(): void {
+    const states = Array.from(this.peerStates.values());
+    if (states.some(state => state === "failed" || state === "closed")) {
+      this.onConnectionStateChange("lost");
+    } else if (states.some(state => state === "disconnected")) {
+      this.onConnectionStateChange("reconnecting");
+    } else if (states.some(state => state === "connecting" || state === "new")) {
+      this.onConnectionStateChange("connecting");
+    } else if (states.length > 0 && states.every(state => state === "connected")) {
+      this.onConnectionStateChange("connected");
+    }
   }
 
   private sendSignal(toUserId: number, signal: { kind: "offer" | "answer" | "ice"; data: unknown }): void {
@@ -584,6 +656,7 @@ export class AudioCircleMesh {
     if (!pc) {
       pc = this.createPeerConnection(from_user_id);
       this.peers.set(from_user_id, pc);
+      this.peerStates.set(from_user_id, pc.connectionState);
     }
 
     try {
