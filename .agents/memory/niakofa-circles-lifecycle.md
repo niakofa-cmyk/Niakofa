@@ -53,6 +53,13 @@ The room checks browser media capabilities before enabling controls and gives ac
 **Why:** Mobile browsers commonly deliver ICE out of order, and permission/device failures otherwise look like controls that do nothing. Leaving tracks live after demotion can keep publishing audio or the camera after the UI removes the speaker controls.
 
 **How to apply:** Keep `publishLocalMedia`, `stopLocalMedia`, `stopVideoTracks`, and the room's role/mute handlers aligned. Preserve explicit capability feedback rather than silently disabling media.
+
+## Media connection state must come from WebRTC
+The Circle room must not mark media connected just because the REST session loaded. The mesh owns peer state, reports aggregate `connecting`/`connected`/`reconnecting`/`lost` outcomes, and bounds ICE recovery at four attempts with exponential backoff.
+
+**Why:** Presence and REST session state can remain healthy while every audio/video peer is disconnected; hiding that split makes a live Circle appear functional when it is not.
+
+**How to apply:** Keep the UI subscribed to the mesh callback, keep local/remote track `onended` observable, and keep retry timers inside the media-session owner so React re-renders cannot recreate or orphan the session.
 ## Heartbeat active-speaker reports are untrusted
 The browser may report the loudest peer in a heartbeat, but the server must verify that ID is an active participant in the same session before broadcasting `circle_active_speaker`.
 
