@@ -635,6 +635,7 @@ export default function AudioCircleRoomScreen() {
   const meshRef = useRef<AudioCircleMesh | null>(null);
   const enduranceRef = useRef<CircleEnduranceCollector | null>(null);
   const enduranceStartedAtRef = useRef<number | null>(null);
+  const reconnectCountRef = useRef(0);
   const audioElsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
   const isRecordingRef = useRef(false);
   const recordingElapsedSecondsRef = useRef(0);
@@ -746,7 +747,7 @@ export default function AudioCircleRoomScreen() {
       getPeerConnections: () => meshRef.current?.getPeers() ?? new Map(),
       getLocalStream: () => meshRef.current?.getLocalStream(),
       getConnectionLabel: () => connectionStatusRef.current,
-      getReconnectCount: () => 0,
+      getReconnectCount: () => reconnectCountRef.current,
       expectAudio: () => true,
       expectVideo: () => !!session.video_enabled && videoOn,
       onSample: () => setEnduranceSampleCount(count => count + 1),
@@ -837,6 +838,7 @@ export default function AudioCircleRoomScreen() {
           if (cleanup) { cleanup(); analyserCleanupsRef.current.delete(`remote:${userId}`); }
         },
         onConnectionStateChange: (state: AudioCircleConnectionState) => {
+          if (state === "reconnecting") reconnectCountRef.current += 1;
           setConnectionStatus(state);
           if (state === "lost") {
             setMediaError("Media connection lost. Check your network or try rejoining the Circle.");
@@ -850,6 +852,7 @@ export default function AudioCircleRoomScreen() {
         },
       });
       meshRef.current = mesh;
+      reconnectCountRef.current = 0;
       setMeshReady(true);
     })();
     const analyserCleanups = analyserCleanupsRef.current;

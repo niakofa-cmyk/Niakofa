@@ -157,6 +157,11 @@ export class AudioCircleMesh {
     return this.peers;
   }
 
+  /** Expose the active local media for diagnostics and endurance sampling. */
+  getLocalStream(): MediaStream | null {
+    return this.localStream;
+  }
+
   /** Speakers/hosts call this to publish their mic (and optionally camera). */
   async publishLocalMedia(opts: { video: boolean }): Promise<MediaStream> {
     const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };

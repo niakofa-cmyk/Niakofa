@@ -90,7 +90,7 @@ export class CircleEnduranceCollector {
     this.timer = null; this.running = false;
     const endedAt = Date.now(); const audioExpected = this.samples.filter(() => this.opts.expectAudio?.() ?? true).length;
     const videoExpected = this.samples.filter(() => this.opts.expectVideo?.() ?? false).length;
-    const audioOk = this.samples.filter(s => (this.opts.expectAudio?.() ?? true) && (s.localAudioLive || s.remoteAudioPeers > 0 || s.health === "connected")).length;
+    const audioOk = this.samples.filter(s => (this.opts.expectAudio?.() ?? true) && (s.localAudioLive || s.remoteAudioPeers > 0)).length;
     const videoOk = this.samples.filter(s => (this.opts.expectVideo?.() ?? false) && (s.localVideoLive || s.remoteVideoPeers > 0)).length;
     const audioAvailabilityPct = audioExpected ? 100 * audioOk / audioExpected : 100;
     const videoAvailabilityPct = videoExpected ? 100 * videoOk / videoExpected : 100;
