@@ -73,3 +73,15 @@ The browser may report the loudest peer in a heartbeat, but the server must veri
 **Why:** A client can submit any positive integer; broadcasting it without membership validation lets one participant make an unrelated user appear to be speaking.
 
 **How to apply:** Treat heartbeat payloads as hints, not authoritative room state. Ignore invalid speaker IDs while still accepting the presence heartbeat.
+
+## Media publishing is separate from stage role
+An open Circle permits every active participant to intentionally publish a microphone or
+camera without listener-to-speaker promotion. Camera activation remains explicit, and
+host/co-host moderation remains authoritative. Moderated rooms retain stage approval.
+
+**Why:** The product requires listener camera access without sacrificing moderation, and
+the old role gate prevented the required open-video experience.
+
+**How to apply:** Keep the room-level publishing policy separate from `canSpeak`; use the
+policy for media controls and participant media connectivity, and use `canSpeak` for
+stage-only actions.
