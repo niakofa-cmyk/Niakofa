@@ -57,6 +57,10 @@ export const audioCircleSessionsTable = pgTable("audio_circle_sessions", {
   topic:           text("topic"),          // optional topic/category tag (e.g. "Safety", "Education")
   status:          text("status").notNull().default("live"), // live | ended
   video_enabled:   boolean("video_enabled").notNull().default(false),
+  // Media publishing policy is independent from the participant role:
+  // "open" lets any active participant publish mic/camera, while "moderated"
+  // preserves the stage approval workflow. Camera remains user-initiated.
+  media_publish_policy: text("media_publish_policy").notNull().default("open"),
   is_recording:    boolean("is_recording").notNull().default(false),
   recording_url:   text("recording_url"), // set once the host stops recording and it's uploaded
   // Recording lifecycle: none | recording | processing | ready | failed

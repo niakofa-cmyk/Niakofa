@@ -29,6 +29,7 @@ import {
   CircleEnduranceCollector,
   downloadEnduranceReport,
 } from "@/lib/circleEnduranceMetrics";
+import { canPublishCircleMedia } from "@/lib/circleMediaPolicy";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,7 @@ interface SessionInfo {
   title: string;
   status: string;
   video_enabled: boolean;
+  media_publish_policy?: "open" | "moderated";
   is_recording: boolean;
   max_speakers: number;
   topic?: string | null;
@@ -651,6 +653,7 @@ export default function AudioCircleRoomScreen() {
   const isHost = session?.host_id === myUserId;
   const isCohost = me?.role === "co_host";
   const canSpeak = me?.role === "host" || me?.role === "co_host" || me?.role === "speaker";
+  const canPublishMedia = canPublishCircleMedia(me?.role, session?.media_publish_policy ?? "open");
   const canMod = isHost || isCohost;
   const host = participants.find(p => p.role === "host");
   const cohosts = participants.filter(p => p.role === "co_host");
@@ -906,7 +909,14 @@ export default function AudioCircleRoomScreen() {
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh || !myUserId) return;
-    if (canSpeak) {
+    // In an open video room, every active participant needs a receive path
+    // because any of them may intentionally publish a camera. Audio-only
+    // listeners keep the smaller stage-only mesh.
+    if (canPublishMedia && session?.video_enabled) {
+      for (const p of participants) {
+        if (p.user_id !== myUserId) mesh.connectToPeer(p.user_id);
+      }
+    } else if (canSpeak) {
       for (const p of participants) {
         if (p.user_id !== myUserId) mesh.connectToPeer(p.user_id);
       }
@@ -917,7 +927,7 @@ export default function AudioCircleRoomScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participants.map(p => p.user_id).join(","), myUserId, canSpeak, meshReady]);
+  }, [participants.map(p => p.user_id).join(","), myUserId, canSpeak, canPublishMedia, session?.video_enabled, meshReady]);
 
   // Publish mic when promoted to speaker
   useEffect(() => {
@@ -1578,7 +1588,7 @@ export default function AudioCircleRoomScreen() {
   // the labels are populated (browsers hide labels until permission is granted).
   // Also re-enumerate when the OS reports a devicechange (plug/unplug).
   useEffect(() => {
-    if (!canSpeak || !localStream) return;
+    if (!canPublishMedia || !localStream) return;
     const refresh = () => {
       AudioCircleMesh.enumerateAudioDevices().then(devices => {
         setAudioDevices(devices);
@@ -1597,7 +1607,7 @@ export default function AudioCircleRoomScreen() {
     navigator.mediaDevices.addEventListener("devicechange", refresh);
     return () => navigator.mediaDevices.removeEventListener("devicechange", refresh);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canSpeak, !!localStream, session?.video_enabled]);
+  }, [canPublishMedia, !!localStream, session?.video_enabled]);
 
   // ── Presence heartbeat ────────────────────────────────────────────────────
   // Pings /heartbeat every 30s with the current loudest speaker so the server
@@ -3526,7 +3536,7 @@ export default function AudioCircleRoomScreen() {
               )}
             </div>
           )}
-          {canSpeak && session.video_enabled && (
+          {canPublishMedia && session.video_enabled && (
             <div className="relative">
               {/* Camera toggle + device-picker chevron */}
               <div className={`flex items-stretch rounded-xl border transition-all ${

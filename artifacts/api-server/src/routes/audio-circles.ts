@@ -394,6 +394,7 @@ const StartSessionBody = z.object({
   description: z.string().trim().max(MAX_DESC_LEN).optional(),
   topic: z.string().trim().max(MAX_TOPIC_LEN).optional(),
   video_enabled: z.boolean().optional(),
+  media_publish_policy: z.enum(["open", "moderated"]).optional(),
   max_speakers: z.number().int().refine(v => (VALID_SPEAKER_LIMITS as readonly number[]).includes(v), {
     message: `max_speakers must be one of ${VALID_SPEAKER_LIMITS.join(", ")}`,
   }).optional(),
@@ -424,6 +425,7 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
       description: parsed.data.description ?? null,
       topic: parsed.data.topic ?? null,
       video_enabled: parsed.data.video_enabled ?? false,
+      media_publish_policy: parsed.data.media_publish_policy ?? "open",
       max_speakers: parsed.data.max_speakers ?? 13,
       chat_enabled: parsed.data.chat_enabled ?? true,
       recording_allowed: parsed.data.recording_allowed ?? true,

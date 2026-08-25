@@ -250,11 +250,40 @@ export class AudioCircleMesh {
   }
 
   /** Acquires only a camera track and adds it to the existing local stream,
-   *  avoiding re-acquiring the mic (which causes a brief audio dropout). */
+   *  avoiding re-acquiring the mic (which causes a brief audio dropout).
+   *  When a listener has no local stream yet, it stays video-only rather than
+   *  silently opening the microphone as a side effect of pressing Camera. */
   async addVideoTrack(): Promise<MediaStream> {
     if (!this.localStream) {
-      // No existing stream — fall back to full publish.
-      return this.publishLocalMedia({ video: true });
+      const videoStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { width: 320, height: 240 },
+      });
+      this.localStream = videoStream;
+      for (const track of videoStream.getTracks()) {
+        track.onended = () => {
+          if (this.localStream?.getTracks().includes(track)) {
+            this.onConnectionStateChange("lost");
+          }
+        };
+        for (const pc of this.peers.values()) {
+          const sender = pc.getSenders().find(s => s.track?.kind === "video");
+          if (sender) {
+            await sender.replaceTrack(track);
+          } else {
+            const transceiver = pc.getTransceivers().find(
+              t => t.receiver.track?.kind === "video" || (!t.sender.track && t.direction === "recvonly"),
+            );
+            if (transceiver) {
+              transceiver.direction = "sendrecv";
+              await transceiver.sender.replaceTrack(track);
+            } else {
+              pc.addTrack(track, videoStream);
+            }
+          }
+        }
+      }
+      return videoStream;
     }
     const videoStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
