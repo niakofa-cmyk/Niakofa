@@ -152,6 +152,11 @@ export class AudioCircleMesh {
     this.wsUnsubscribe = opts.subscribeToCircleSignal((event) => this.handleSignal(event));
   }
 
+  /** Expose peer connections for diagnostics and endurance sampling. */
+  getPeers(): Map<number, RTCPeerConnection> {
+    return this.peers;
+  }
+
   /** Speakers/hosts call this to publish their mic (and optionally camera). */
   async publishLocalMedia(opts: { video: boolean }): Promise<MediaStream> {
     const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };

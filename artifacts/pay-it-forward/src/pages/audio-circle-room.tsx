@@ -25,6 +25,10 @@ import {
   type AudioCircleConnectionState,
   type RemoteStreamHandle,
 } from "@/lib/audioCircleWebRTC";
+import {
+  CircleEnduranceCollector,
+  downloadEnduranceReport,
+} from "@/lib/circleEnduranceMetrics";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -534,6 +538,8 @@ export default function AudioCircleRoomScreen() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [meshReady, setMeshReady] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
+  const [enduranceSampleCount, setEnduranceSampleCount] = useState(0);
+  const connectionStatusRef = useRef<ConnectionStatus>("connecting");
   const [mediaCapabilities, setMediaCapabilities] = useState<AudioCircleMediaCapabilities | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [speakingLevels, setSpeakingLevels] = useState<Map<number, number>>(new Map());
@@ -627,6 +633,8 @@ export default function AudioCircleRoomScreen() {
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const meshRef = useRef<AudioCircleMesh | null>(null);
+  const enduranceRef = useRef<CircleEnduranceCollector | null>(null);
+  const enduranceStartedAtRef = useRef<number | null>(null);
   const audioElsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
   const isRecordingRef = useRef(false);
   const recordingElapsedSecondsRef = useRef(0);
@@ -669,6 +677,7 @@ export default function AudioCircleRoomScreen() {
   const nearSpeakerLimit = session ? onStageCurrent >= session.max_speakers - 1 : false;
 
   useEffect(() => { setMediaCapabilities(getAudioCircleMediaCapabilities()); }, []);
+  useEffect(() => { connectionStatusRef.current = connectionStatus; }, [connectionStatus]);
 
   const [recordingTimer, recordingElapsedSeconds] = useRecordingTimer(!!session?.is_recording);
 
@@ -726,6 +735,34 @@ export default function AudioCircleRoomScreen() {
     return () => document.removeEventListener("visibilitychange", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, myUserId]);
+
+  // Start browser-side certification sampling once the mesh exists. This is
+  // intentionally local-only: media stats never pass through the API.
+  useEffect(() => {
+    if (!session || !meshReady || !meshRef.current) return;
+    const collector = new CircleEnduranceCollector({
+      sessionId,
+      intervalMs: 5000,
+      getPeerConnections: () => meshRef.current?.getPeers() ?? new Map(),
+      getLocalStream: () => meshRef.current?.getLocalStream(),
+      getConnectionLabel: () => connectionStatusRef.current,
+      getReconnectCount: () => 0,
+      expectAudio: () => true,
+      expectVideo: () => !!session.video_enabled && videoOn,
+      onSample: () => setEnduranceSampleCount(count => count + 1),
+    });
+    enduranceRef.current = collector;
+    enduranceStartedAtRef.current = Date.now();
+    setEnduranceSampleCount(0);
+    collector.start();
+    return () => {
+      if (enduranceRef.current === collector) enduranceRef.current = null;
+      collector.stop();
+      enduranceStartedAtRef.current = null;
+    };
+    // Sampling should follow the room/mesh lifecycle, not every media toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, meshReady]);
 
   // ── Load initial state + chat history ─────────────────────────────────────
   useEffect(() => {
@@ -1726,6 +1763,21 @@ export default function AudioCircleRoomScreen() {
     }
   };
 
+  const exportEnduranceReport = () => {
+    const collector = enduranceRef.current;
+    if (!collector) {
+      toast({ title: "Diagnostics not ready", description: "Media sampling starts when the Circle connects." });
+      return;
+    }
+    const report = collector.stop();
+    enduranceRef.current = null;
+    downloadEnduranceReport(report, `circle-${sessionId}-endurance.json`);
+    toast({
+      title: "Diagnostics exported",
+      description: `${report.sampleCount} samples over ${report.durationSec}s. Use this JSON for the 30–60 minute certification gate.`,
+    });
+  };
+
   const copyInviteLink = () => {
     const url = `${window.location.origin}/audio-circle/${sessionId}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -2026,6 +2078,14 @@ export default function AudioCircleRoomScreen() {
           <div className="flex items-center gap-1 shrink-0">
             <button onClick={shareCircle} className="p-2 rounded-full hover:bg-muted" title="Share this Circle">
               <Share2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); exportEnduranceReport(); }}
+              className="p-2 rounded-full hover:bg-muted"
+              title={`Export WebRTC diagnostics${enduranceSampleCount ? ` (${enduranceSampleCount} samples)` : ""}`}
+              aria-label="Export WebRTC diagnostics"
+            >
+              <BarChart3 className="w-4 h-4" />
             </button>
             {canMod && (
               <button
