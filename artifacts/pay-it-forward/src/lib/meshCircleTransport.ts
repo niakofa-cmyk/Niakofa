@@ -5,10 +5,15 @@ import type {
 
 export interface MeshLike {
   publishLocalMedia(opts: { video: boolean }): Promise<MediaStream>;
+  stopLocalMedia?(): void;
   setMicEnabled(enabled: boolean): void;
   setVideoEnabled(enabled: boolean): void;
   addVideoTrack(): Promise<MediaStream>;
   stopVideoTracks(): void;
+  switchAudioDevice?(deviceId: string): Promise<MediaStream>;
+  switchVideoDevice?(deviceId: string): Promise<MediaStream>;
+  startRecording?(): void;
+  stopRecording?(): Promise<Blob | null>;
   connectToPeer(remoteUserId: number): void;
   disconnectFromPeer(remoteUserId: number): void;
   destroy(): void;
@@ -62,6 +67,11 @@ export class MeshCircleTransport implements CircleMediaTransport {
     this.callbacks.onLocalStream?.(this.localStream);
     return this.localStream;
   }
+  stopLocalMedia(): void {
+    this.mesh?.stopLocalMedia?.();
+    this.localStream = null;
+    this.callbacks.onLocalStream?.(null);
+  }
   setMicEnabled(enabled: boolean): void { this.mesh?.setMicEnabled(enabled); }
   setVideoEnabled(enabled: boolean): void { this.mesh?.setVideoEnabled(enabled); }
   async addVideoTrack(): Promise<MediaStream> {
@@ -71,6 +81,26 @@ export class MeshCircleTransport implements CircleMediaTransport {
     return this.localStream;
   }
   stopVideoTracks(): void { this.mesh?.stopVideoTracks(); }
+  switchAudioDevice(deviceId: string): Promise<MediaStream> {
+    if (!this.mesh?.switchAudioDevice) return Promise.reject(new Error("Microphone switching is unavailable"));
+    return this.mesh.switchAudioDevice(deviceId).then((stream) => {
+      this.localStream = stream;
+      this.callbacks.onLocalStream?.(stream);
+      return stream;
+    });
+  }
+  switchVideoDevice(deviceId: string): Promise<MediaStream> {
+    if (!this.mesh?.switchVideoDevice) return Promise.reject(new Error("Camera switching is unavailable"));
+    return this.mesh.switchVideoDevice(deviceId).then((stream) => {
+      this.localStream = stream;
+      this.callbacks.onLocalStream?.(stream);
+      return stream;
+    });
+  }
+  startRecording(): void { this.mesh?.startRecording?.(); }
+  stopRecording(): Promise<Blob | null> {
+    return this.mesh?.stopRecording?.() ?? Promise.resolve(null);
+  }
   connectToPeer(id: string | number): void { this.mesh?.connectToPeer(Number(id)); }
   disconnectFromPeer(id: string | number): void { this.mesh?.disconnectFromPeer(Number(id)); }
   getPeerConnections(): Map<string | number, RTCPeerConnection> {

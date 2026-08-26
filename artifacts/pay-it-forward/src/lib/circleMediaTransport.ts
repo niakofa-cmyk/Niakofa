@@ -27,10 +27,15 @@ export interface CircleMediaTransport {
   readonly kind: MediaTransportKind;
   join(opts: JoinMediaSessionOptions, callbacks: MediaTransportCallbacks): Promise<void>;
   publishLocalMedia(opts: { video: boolean }): Promise<MediaStream>;
+  stopLocalMedia?(): void;
   setMicEnabled(enabled: boolean): void;
   setVideoEnabled(enabled: boolean): void;
   addVideoTrack?(): Promise<MediaStream>;
   stopVideoTracks?(): void;
+  switchAudioDevice?(deviceId: string): Promise<MediaStream>;
+  switchVideoDevice?(deviceId: string): Promise<MediaStream>;
+  startRecording?(): void;
+  stopRecording?(): Promise<Blob | null>;
   connectToPeer?(remoteUserId: string | number): void;
   disconnectFromPeer?(remoteUserId: string | number): void;
   getPeerConnections?(): Map<string | number, RTCPeerConnection>;

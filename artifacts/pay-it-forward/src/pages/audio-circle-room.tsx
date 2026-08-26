@@ -26,6 +26,13 @@ import {
   type RemoteStreamHandle,
 } from "@/lib/audioCircleWebRTC";
 import {
+  selectMediaTransportKind,
+  type CircleMediaTransport,
+  type MediaTransportCallbacks,
+} from "@/lib/circleMediaTransport";
+import { MeshCircleTransport } from "@/lib/meshCircleTransport";
+import { LiveKitCircleTransport } from "@/lib/livekitCircleTransport";
+import {
   CircleEnduranceCollector,
   downloadEnduranceReport,
 } from "@/lib/circleEnduranceMetrics";
@@ -634,7 +641,7 @@ export default function AudioCircleRoomScreen() {
   const [showCamPicker, setShowCamPicker] = useState(false);
 
   // ── Refs ───────────────────────────────────────────────────────────────────
-  const meshRef = useRef<AudioCircleMesh | null>(null);
+  const mediaTransportRef = useRef<CircleMediaTransport | null>(null);
   const enduranceRef = useRef<CircleEnduranceCollector | null>(null);
   const enduranceStartedAtRef = useRef<number | null>(null);
   const reconnectCountRef = useRef(0);
@@ -743,12 +750,12 @@ export default function AudioCircleRoomScreen() {
   // Start browser-side certification sampling once the mesh exists. This is
   // intentionally local-only: media stats never pass through the API.
   useEffect(() => {
-    if (!session || !meshReady || !meshRef.current) return;
+    if (!session || !meshReady || !mediaTransportRef.current) return;
     const collector = new CircleEnduranceCollector({
       sessionId,
       intervalMs: 5000,
-      getPeerConnections: () => meshRef.current?.getPeers() ?? new Map(),
-      getLocalStream: () => meshRef.current?.getLocalStream(),
+      getPeerConnections: () => mediaTransportRef.current?.getPeerConnections?.() ?? new Map(),
+      getLocalStream: () => mediaTransportRef.current?.getLocalStream?.() ?? null,
       getConnectionLabel: () => connectionStatusRef.current,
       getReconnectCount: () => reconnectCountRef.current,
       expectAudio: () => true,
@@ -819,50 +826,141 @@ export default function AudioCircleRoomScreen() {
     return () => { cancelled = true; };
   }, [sessionId, base, setLocation]);
 
-  // ── WebRTC mesh setup ──────────────────────────────────────────────────────
+  // ── Media transport setup ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!session || !myUserId) return;
+    // The token route requires an active REST participant. Waiting for `me`
+    // also prevents a race where the session GET finishes before join does.
+    if (!session || !myUserId || !me) return;
     let cancelled = false;
-    (async () => {
+    let createdTransport: CircleMediaTransport | null = null;
+
+    const callbacks: MediaTransportCallbacks = {
+      onRemoteStream: (userId, stream) => {
+        const numericUserId = Number(userId);
+        if (!Number.isFinite(numericUserId)) return;
+        setRemoteStreams(prev => new Map(prev).set(numericUserId, stream));
+      },
+      onRemoteStreamEnded: (userId) => {
+        const numericUserId = Number(userId);
+        if (!Number.isFinite(numericUserId)) return;
+        setRemoteStreams(prev => {
+          const next = new Map(prev);
+          next.delete(numericUserId);
+          return next;
+        });
+        setSpeakingLevels(prev => {
+          const next = new Map(prev);
+          next.delete(numericUserId);
+          return next;
+        });
+        const cleanup = analyserCleanupsRef.current.get(`remote:${numericUserId}`);
+        if (cleanup) {
+          cleanup();
+          analyserCleanupsRef.current.delete(`remote:${numericUserId}`);
+        }
+      },
+      onConnectionStateChange: (state) => {
+        if (state === "reconnecting") reconnectCountRef.current += 1;
+        if (state === "connecting" || state === "connected" || state === "reconnecting" || state === "lost") {
+          setConnectionStatus(state);
+        }
+        if (state === "lost") {
+          setMediaError("Media connection lost. Check your network or try rejoining the Circle.");
+        } else if (state === "connected") {
+          setMediaError(null);
+        }
+      },
+      onLocalStream: (stream) => setLocalStream(stream),
+    };
+
+    const createMeshTransport = async (): Promise<CircleMediaTransport> => {
       const iceServers = await fetchIceServers(authHeaders, base);
-      if (cancelled) return;
-      const mesh = new AudioCircleMesh({
-        sessionId,
+      const transport = new MeshCircleTransport(args => new AudioCircleMesh({
+        sessionId: args.sessionId,
+        selfUserId: args.selfUserId,
+        videoEnabled: args.videoEnabled,
+        iceServers: args.iceServers,
+        onRemoteStream: (handle: RemoteStreamHandle) => args.onRemoteStream(handle),
+        onRemoteStreamEnded: args.onRemoteStreamEnded,
+        onConnectionStateChange: args.onConnectionStateChange as (state: AudioCircleConnectionState) => void,
+        subscribeToCircleSignal: args.subscribeToCircleSignal as
+          (handler: (event: WsEvent) => void) => () => void,
+      }));
+      createdTransport = transport;
+      await transport.join({
+        circleSessionId: sessionId,
         selfUserId: myUserId,
         videoEnabled: session.video_enabled,
         iceServers,
-        onRemoteStream: (handle: RemoteStreamHandle) => {
-          setRemoteStreams(prev => new Map(prev).set(handle.userId, handle.stream));
-        },
-        onRemoteStreamEnded: (userId: number) => {
-          setRemoteStreams(prev => { const next = new Map(prev); next.delete(userId); return next; });
-          setSpeakingLevels(prev => { const next = new Map(prev); next.delete(userId); return next; });
-          const cleanup = analyserCleanupsRef.current.get(`remote:${userId}`);
-          if (cleanup) { cleanup(); analyserCleanupsRef.current.delete(`remote:${userId}`); }
-        },
-        onConnectionStateChange: (state: AudioCircleConnectionState) => {
-          if (state === "reconnecting") reconnectCountRef.current += 1;
-          setConnectionStatus(state);
-          if (state === "lost") {
-            setMediaError("Media connection lost. Check your network or try rejoining the Circle.");
-          } else if (state === "connected") {
-            setMediaError(null);
+        subscribeToSignal: (handler) => subscribeRaw("circle_signal", handler as (event: WsEvent) => void),
+      }, callbacks);
+      return transport;
+    };
+
+    (async () => {
+      try {
+        const selectedKind = selectMediaTransportKind({
+          expectedSpeakers: session.max_speakers,
+          expectedListeners: Math.max(0, participants.length - 1),
+          preferSfu: import.meta.env.VITE_CIRCLES_MEDIA_TRANSPORT === "livekit",
+        });
+
+        let transport: CircleMediaTransport;
+        if (selectedKind === "livekit") {
+          const tokenResponse = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/media-token`, {
+            method: "POST",
+            headers: authHeaders(),
+          });
+          if (tokenResponse.status === 503) {
+            // LiveKit is an optional scale-up path. A missing deployment
+            // configuration must not prevent a small Circle from joining.
+            transport = await createMeshTransport();
+          } else if (!tokenResponse.ok) {
+            const errorData = await tokenResponse.json().catch(() => ({}));
+            throw new Error(errorData.error ?? "Couldn't prepare the Circle media connection.");
+          } else {
+            const tokenData = await tokenResponse.json();
+            if (!tokenData.media_url || !tokenData.media_token) {
+              throw new Error("The media service returned an incomplete connection token.");
+            }
+            const livekit = new LiveKitCircleTransport();
+            createdTransport = livekit;
+            await livekit.join({
+              circleSessionId: sessionId,
+              selfUserId: myUserId,
+              mediaUrl: tokenData.media_url,
+              mediaToken: tokenData.media_token,
+              videoEnabled: session.video_enabled,
+            }, callbacks);
+            transport = livekit;
           }
-        },
-        subscribeToCircleSignal: (handler) => {
-          const unsub = subscribeRaw("circle_signal", handler);
-          return unsub;
-        },
-      });
-      meshRef.current = mesh;
-      reconnectCountRef.current = 0;
-      setMeshReady(true);
+        } else {
+          transport = await createMeshTransport();
+        }
+
+        if (cancelled) {
+          transport.destroy();
+          return;
+        }
+        mediaTransportRef.current = transport;
+        reconnectCountRef.current = 0;
+        setMeshReady(true);
+      } catch (error) {
+        if (createdTransport) createdTransport.destroy();
+        if (cancelled) return;
+        setMeshReady(false);
+        setConnectionStatus("lost");
+        const description = error instanceof Error ? error.message : "Couldn't connect to Circle media.";
+        setMediaError(description);
+        toast({ title: "Media connection failed", description, variant: "destructive" });
+      }
     })();
     const analyserCleanups = analyserCleanupsRef.current;
     return () => {
       cancelled = true;
-      meshRef.current?.destroy();
-      meshRef.current = null;
+      createdTransport?.destroy();
+      mediaTransportRef.current?.destroy();
+      mediaTransportRef.current = null;
       setMeshReady(false);
       for (const cleanup of analyserCleanups.values()) cleanup();
       analyserCleanups.clear();
@@ -871,7 +969,7 @@ export default function AudioCircleRoomScreen() {
       sharedAudioCtxRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, myUserId]);
+  }, [session?.id, myUserId, me?.role, session?.media_publish_policy]);
 
   function subscribeRaw(_type: string, handler: (e: WsEvent) => void): () => void {
     signalHandlerRef.current = handler;
@@ -907,23 +1005,23 @@ export default function AudioCircleRoomScreen() {
 
   // Connect mesh to peers
   useEffect(() => {
-    const mesh = meshRef.current;
-    if (!mesh || !myUserId) return;
+    const transport = mediaTransportRef.current;
+    if (!transport || !myUserId) return;
     // In an open video room, every active participant needs a receive path
     // because any of them may intentionally publish a camera. Audio-only
     // listeners keep the smaller stage-only mesh.
     if (canPublishMedia && session?.video_enabled) {
       for (const p of participants) {
-        if (p.user_id !== myUserId) mesh.connectToPeer(p.user_id);
+        if (p.user_id !== myUserId) transport.connectToPeer?.(p.user_id);
       }
     } else if (canSpeak) {
       for (const p of participants) {
-        if (p.user_id !== myUserId) mesh.connectToPeer(p.user_id);
+        if (p.user_id !== myUserId) transport.connectToPeer?.(p.user_id);
       }
     } else {
       const stageUsers = participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host");
       for (const s of stageUsers) {
-        if (s.user_id !== myUserId) mesh.connectToPeer(s.user_id);
+        if (s.user_id !== myUserId) transport.connectToPeer?.(s.user_id);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -931,9 +1029,10 @@ export default function AudioCircleRoomScreen() {
 
   // Publish mic when promoted to speaker
   useEffect(() => {
-    if (!meshRef.current) return;
+    const transport = mediaTransportRef.current;
+    if (!transport) return;
     if (!canSpeak) {
-      meshRef.current.stopLocalMedia();
+      transport.stopLocalMedia?.();
       setLocalStream(null);
       setMicOn(false);
       setVideoOn(false);
@@ -943,7 +1042,7 @@ export default function AudioCircleRoomScreen() {
     }
     const startMuted = me?.muted ?? false;
     const wantsVideo = !!session?.video_enabled && videoOn;
-    meshRef.current.publishLocalMedia({ video: wantsVideo })
+    transport.publishLocalMedia({ video: wantsVideo })
       .then((stream) => {
         const cameraUnavailable = wantsVideo && stream.getVideoTracks().length === 0;
         if (cameraUnavailable) {
@@ -954,7 +1053,7 @@ export default function AudioCircleRoomScreen() {
           setMediaError(null);
         }
         if (startMuted) {
-          meshRef.current?.setMicEnabled(false);
+          transport.setMicEnabled(false);
           setMicOn(false);
         } else {
           setMicOn(true);
@@ -1106,7 +1205,7 @@ export default function AudioCircleRoomScreen() {
     if (p.session_id !== sessionId) return;
     setParticipants(prev => prev.filter(x => x.user_id !== p.user_id));
     handRaisedAtRef.current.delete(p.user_id);
-    meshRef.current?.disconnectFromPeer(p.user_id);
+    mediaTransportRef.current?.disconnectFromPeer?.(p.user_id);
   });
 
   useWebSocket("circle_hand_raised", (e) => {
@@ -1124,7 +1223,7 @@ export default function AudioCircleRoomScreen() {
     const p = e.payload as { session_id: number; user_id: number; role: Participant["role"] };
     if (p.session_id !== sessionId) return;
     setParticipants(prev => prev.map(x => x.user_id === p.user_id ? { ...x, role: p.role, hand_raised: false } : x));
-    if (p.user_id !== myUserId && p.role === "listener") meshRef.current?.disconnectFromPeer(p.user_id);
+    if (p.user_id !== myUserId && p.role === "listener") mediaTransportRef.current?.disconnectFromPeer?.(p.user_id);
   });
 
   useWebSocket("circle_cohost_assigned", (e) => {
@@ -1148,14 +1247,14 @@ export default function AudioCircleRoomScreen() {
       setParticipants(prev => prev.map(x => x.role === "speaker" ? { ...x, muted: true } : x));
       if (me?.role === "speaker") {
         setMicOn(false);
-        meshRef.current?.setMicEnabled(false);
+        mediaTransportRef.current?.setMicEnabled(false);
         toast({ title: "The host muted everyone" });
       }
     } else if (p.user_id !== null) {
       setParticipants(prev => prev.map(x => x.user_id === p.user_id ? { ...x, muted: p.muted } : x));
       if (p.user_id === myUserId) {
         setMicOn(!p.muted);
-        meshRef.current?.setMicEnabled(!p.muted);
+        mediaTransportRef.current?.setMicEnabled(!p.muted);
         toast({ title: p.muted ? "The host muted you" : "The host unmuted you" });
       }
     }
@@ -1170,7 +1269,7 @@ export default function AudioCircleRoomScreen() {
       return;
     }
     setParticipants(prev => prev.filter(x => x.user_id !== p.user_id));
-    meshRef.current?.disconnectFromPeer(p.user_id);
+    mediaTransportRef.current?.disconnectFromPeer?.(p.user_id);
   });
 
   useWebSocket("circle_reaction", (e) => {
@@ -1218,10 +1317,10 @@ export default function AudioCircleRoomScreen() {
     if (isHost) {
       if (p.is_recording && !wasRecording) {
         recordingElapsedSecondsRef.current = 0;
-        meshRef.current?.startRecording();
+        mediaTransportRef.current?.startRecording?.();
       } else if (!p.is_recording && wasRecording) {
         const elapsed = recordingElapsedSecondsRef.current;
-        meshRef.current?.stopRecording().then((blob) => {
+        mediaTransportRef.current?.stopRecording?.().then((blob) => {
           if (blob && blob.size > 0) uploadRecording(blob, elapsed);
         });
       }
@@ -1229,10 +1328,10 @@ export default function AudioCircleRoomScreen() {
   });
 
   useEffect(() => {
-    if (!isHost || !session?.is_recording || !meshRef.current || isRecordingRef.current) return;
+    if (!isHost || !session?.is_recording || !mediaTransportRef.current || isRecordingRef.current) return;
     isRecordingRef.current = true;
     try {
-      meshRef.current.startRecording();
+      mediaTransportRef.current.startRecording?.();
     } catch {
       isRecordingRef.current = false;
     }
@@ -1738,9 +1837,10 @@ export default function AudioCircleRoomScreen() {
 
   // ── Device switching ─────────────────────────────────────────────────────────
   const switchAudioDevice = async (deviceId: string) => {
-    if (!meshRef.current) return;
+    const transport = mediaTransportRef.current;
+    if (!transport?.switchAudioDevice) return;
     try {
-      const stream = await meshRef.current.switchAudioDevice(deviceId);
+      const stream = await transport.switchAudioDevice(deviceId);
       setLocalStream(stream);
       setSelectedAudioDeviceId(deviceId);
       setShowMicPicker(false);
@@ -1754,9 +1854,10 @@ export default function AudioCircleRoomScreen() {
   };
 
   const switchVideoDevice = async (deviceId: string) => {
-    if (!meshRef.current) return;
+    const transport = mediaTransportRef.current;
+    if (!transport?.switchVideoDevice) return;
     try {
-      const stream = await meshRef.current.switchVideoDevice(deviceId);
+      const stream = await transport.switchVideoDevice(deviceId);
       setLocalStream(stream);
       setSelectedVideoDeviceId(deviceId);
       setShowCamPicker(false);
@@ -1819,16 +1920,16 @@ export default function AudioCircleRoomScreen() {
       return;
     }
     if (!next) {
-      meshRef.current?.setMicEnabled(false);
+      mediaTransportRef.current?.setMicEnabled(false);
       setMicOn(false);
       return;
     }
     if (localStream?.getAudioTracks().length) {
-      meshRef.current?.setMicEnabled(true);
+      mediaTransportRef.current?.setMicEnabled(true);
       setMicOn(true);
       return;
     }
-    meshRef.current?.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
+    mediaTransportRef.current?.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
       .then((stream) => {
         setLocalStream(stream);
         setMicOn(true);
@@ -1845,11 +1946,12 @@ export default function AudioCircleRoomScreen() {
   };
 
   const toggleVideo = async () => {
-    if (!meshRef.current || !session?.video_enabled) return;
+    const transport = mediaTransportRef.current;
+    if (!transport?.addVideoTrack || !session?.video_enabled) return;
     const next = !videoOn;
     if (next) {
       try {
-        const stream = await meshRef.current.addVideoTrack();
+        const stream = await transport.addVideoTrack();
         setLocalStream(stream);
         setVideoOn(true);
         setMediaError(null);
@@ -1859,7 +1961,7 @@ export default function AudioCircleRoomScreen() {
         toast({ title: "Camera unavailable", description, variant: "destructive" });
       }
     } else {
-      meshRef.current.stopVideoTracks();
+      mediaTransportRef.current?.stopVideoTracks?.();
       setLocalStream(prev => {
         if (!prev) return prev;
         const audioTracks = prev.getAudioTracks();
@@ -1884,7 +1986,7 @@ export default function AudioCircleRoomScreen() {
       recordingElapsedSecondsRef.current = 0;
       setSession(prev => prev ? { ...prev, is_recording: true } : prev);
       try {
-        meshRef.current?.startRecording();
+        mediaTransportRef.current?.startRecording?.();
       } catch {
         isRecordingRef.current = false;
         setSession(prev => prev ? { ...prev, is_recording: false } : prev);
@@ -1895,7 +1997,7 @@ export default function AudioCircleRoomScreen() {
       if (!ok) {
         isRecordingRef.current = false;
         setSession(prev => prev ? { ...prev, is_recording: false } : prev);
-        await meshRef.current?.stopRecording();
+        await mediaTransportRef.current?.stopRecording?.();
       }
       return;
     }
@@ -1907,7 +2009,7 @@ export default function AudioCircleRoomScreen() {
       setSession(prev => prev ? { ...prev, is_recording: true } : prev);
       return;
     }
-    const blob = await meshRef.current?.stopRecording();
+    const blob = await mediaTransportRef.current?.stopRecording?.();
     if (blob && blob.size > 0) await uploadRecording(blob, recordingElapsedSecondsRef.current);
   };
 
