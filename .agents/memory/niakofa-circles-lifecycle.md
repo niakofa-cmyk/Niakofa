@@ -54,6 +54,20 @@ The room checks browser media capabilities before enabling controls and gives ac
 
 **How to apply:** Keep `publishLocalMedia`, `stopLocalMedia`, `stopVideoTracks`, and the room's role/mute handlers aligned. Preserve explicit capability feedback rather than silently disabling media.
 
+## Device switching must share the media lifecycle boundary
+Microphone and camera device switches are asynchronous track restarts, so they must
+run through the same serialized operation queue and lifecycle/request checks as
+initial media acquisition. A switch that completes after teardown or a newer toggle
+must stop its stale track and must not emit a stream to the room.
+
+**Why:** Browser device restarts can outlive a React room transition, and stale
+completion callbacks otherwise resurrect hardware or overwrite the next device's
+stream.
+
+**How to apply:** Capture the current room, lifecycle, and request generation before
+the restart; validate all three after it resolves; surface a cancellation error
+without touching the other media publication.
+
 ## Media connection state must come from WebRTC
 The Circle room must not mark media connected just because the REST session loaded. The mesh owns peer state, reports aggregate `connecting`/`connected`/`reconnecting`/`lost` outcomes, and bounds ICE recovery at four attempts with exponential backoff.
 

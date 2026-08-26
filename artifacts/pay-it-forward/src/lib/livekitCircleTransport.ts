@@ -292,33 +292,77 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   }
 
   async switchAudioDevice(deviceId: string): Promise<MediaStream> {
-    const track = this.micTrack;
-    if (!track || track.kind !== Track.Kind.Audio) {
-      throw new Error("Microphone is not active");
-    }
-    const options: AudioCaptureOptions = {
-      deviceId: { exact: deviceId },
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    };
-    await track.restartTrack(options);
-    const stream = this.emitLocalStream();
-    this.addStreamToMix(stream, "local");
-    return stream;
+    const requestId = this.localMediaRequestId;
+    return this.runMediaOperation(async () => {
+      const room = this.room;
+      const lifecycleId = this.lifecycleId;
+      const track = this.micTrack;
+      if (!room || !track || track.kind !== Track.Kind.Audio) {
+        throw new Error("Microphone is not active");
+      }
+      const options: AudioCaptureOptions = {
+        deviceId: { exact: deviceId },
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      };
+      try {
+        await track.restartTrack(options);
+      } catch (error) {
+        if (!this.isCurrent(room, lifecycleId) || requestId !== this.localMediaRequestId) {
+          track.stop();
+          throw new Error("LiveKit media session ended while switching the microphone");
+        }
+        throw error;
+      }
+      if (!this.isCurrent(room, lifecycleId) || requestId !== this.localMediaRequestId || track !== this.micTrack) {
+        track.stop();
+        throw new Error("LiveKit media session ended while switching the microphone");
+      }
+      const stream = this.emitLocalStream();
+      this.addStreamToMix(stream, "local");
+      return stream;
+    });
   }
 
   async switchVideoDevice(deviceId: string): Promise<MediaStream> {
-    const track = this.camTrack;
-    if (!track || track.kind !== Track.Kind.Video) {
-      throw new Error("Camera is not active");
-    }
-    const options: VideoCaptureOptions = {
-      deviceId: { exact: deviceId },
-      resolution: { width: 320, height: 240 },
-    };
-    await track.restartTrack(options);
-    return this.emitLocalStream();
+    const requestId = this.localMediaRequestId;
+    const cameraRequestId = this.cameraRequestId;
+    return this.runMediaOperation(async () => {
+      const room = this.room;
+      const lifecycleId = this.lifecycleId;
+      const track = this.camTrack;
+      if (!room || !track || track.kind !== Track.Kind.Video) {
+        throw new Error("Camera is not active");
+      }
+      const options: VideoCaptureOptions = {
+        deviceId: { exact: deviceId },
+        resolution: { width: 320, height: 240 },
+      };
+      try {
+        await track.restartTrack(options);
+      } catch (error) {
+        if (
+          !this.isCurrent(room, lifecycleId) ||
+          requestId !== this.localMediaRequestId ||
+          cameraRequestId !== this.cameraRequestId
+        ) {
+          track.stop();
+          throw new Error("LiveKit media session ended while switching the camera");
+        }
+        throw error;
+      }
+      if (
+        !this.isCurrent(room, lifecycleId) ||
+        requestId !== this.localMediaRequestId ||
+        cameraRequestId !== this.cameraRequestId ||
+        track !== this.camTrack
+      ) {
+        track.stop();
+        throw new Error("LiveKit media session ended while switching the camera");
+      }
+      return this.emitLocalStream();
+    });
   }
 
   startRecording(): void {
