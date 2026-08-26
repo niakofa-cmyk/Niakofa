@@ -21,11 +21,17 @@ const db: unknown = {
 };
 
 const stripeConstructEvent = jest.fn();
+const stripeChargeRetrieve = jest.fn();
+const drizzleEq = jest.fn();
 
 jest.unstable_mockModule("@workspace/db", () => ({
   db,
   stripeAccountsTable: { user_id: "user_id", stripe_account_id: "stripe_account_id" },
-  paymentTransactionsTable: { stripe_payment_intent_id: "stripe_payment_intent_id", state: "state" },
+  paymentTransactionsTable: {
+    stripe_payment_intent_id: "stripe_payment_intent_id",
+    stripe_transfer_id: "stripe_transfer_id",
+    state: "state",
+  },
   usersTable: { id: "id" },
   requestsTable: { id: "id", title: "title" },
   transactionsTable: {},
@@ -37,13 +43,14 @@ jest.unstable_mockModule("@workspace/db", () => ({
 
 jest.unstable_mockModule("drizzle-orm", () => ({
   and: jest.fn(),
-  eq: jest.fn(),
+  eq: drizzleEq,
   sql: jest.fn(),
 }));
 
 jest.unstable_mockModule("stripe", () => ({
   default: class StripeMock {
     webhooks = { constructEvent: stripeConstructEvent };
+    charges = { retrieve: stripeChargeRetrieve };
   },
 }));
 
@@ -142,5 +149,32 @@ describe("POST /api/stripe/webhook", () => {
     expect(response.body).toEqual({ received: true });
     expect(db.update).toHaveBeenCalledTimes(1);
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("links an early transfer.created event through its source charge", async () => {
+    stripeConstructEvent.mockReturnValue({
+      type: "transfer.created",
+      data: {
+        object: {
+          id: "tr_early",
+          destination: "acct_helper",
+          source_transaction: "ch_source",
+          metadata: {},
+        },
+      },
+    });
+    stripeChargeRetrieve.mockResolvedValue({ payment_intent: "pi_source" });
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_transfer", type: "transfer.created" }));
+
+    expect(response.status).toBe(200);
+    expect(stripeChargeRetrieve).toHaveBeenCalledWith("ch_source");
+    expect(drizzleEq).toHaveBeenCalledWith("stripe_payment_intent_id", "pi_source");
+    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(db.where).toHaveBeenCalled();
   });
 });

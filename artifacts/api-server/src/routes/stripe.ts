@@ -404,7 +404,30 @@ router.post("/stripe/webhook", async (req, res) => {
       case "transfer.created": {
         const transfer = event.data.object as Stripe.Transfer;
         if (transfer.destination) {
-          // Sync paymentTransactionsTable for immediate-pay transfers
+          // Stripe may deliver transfer.created before the application has
+          // written stripe_transfer_id to payment_transactions. When the
+          // transfer was funded by a charge, resolve the source charge back to
+          // its PaymentIntent so the webhook can still link the payout row.
+          const sourceTransaction = transfer.source_transaction;
+          let paymentIntentId: string | null = null;
+
+          try {
+            const sourceCharge =
+              typeof sourceTransaction === "string"
+                ? await stripe!.charges.retrieve(sourceTransaction)
+                : sourceTransaction;
+            const paymentIntent = sourceCharge?.payment_intent;
+            paymentIntentId =
+              typeof paymentIntent === "string"
+                ? paymentIntent
+                : paymentIntent?.id ?? null;
+          } catch (err) {
+            logger.warn(
+              { err, transfer_id: transfer.id, source_transaction: sourceTransaction },
+              "transfer.created: source charge lookup failed — falling back to transfer ID",
+            );
+          }
+
           await db
             .update(paymentTransactionsTable)
             .set({
@@ -412,7 +435,14 @@ router.post("/stripe/webhook", async (req, res) => {
               state: "completed",
               updated_at: new Date(),
             })
-            .where(eq(paymentTransactionsTable.stripe_transfer_id, transfer.id));
+            .where(
+              eq(
+                paymentIntentId
+                  ? paymentTransactionsTable.stripe_payment_intent_id
+                  : paymentTransactionsTable.stripe_transfer_id,
+                paymentIntentId ?? transfer.id,
+              ),
+            );
 
           // NOTE: wallet_cashouts state transitions are handled exclusively by
           // the POST /wallet/cashout route (Phase 3) and cashout-worker.ts.

@@ -829,3 +829,12 @@ Three privacy / sustainability features shipped and confirmed running clean.
 - TypeScript builds clean (both api-server and pay-it-forward).
 - Both workflows running: API server on :8080, Vite frontend on :18848.
 - Nia AI "currently resting" confirmed on login screen.
+
+### Session: August 26, 2026 — Stripe transfer webhook ordering hardening
+
+The `transfer.created` webhook now resolves a source charge to its PaymentIntent
+before linking `payment_transactions`. Stripe can deliver that event before the
+application has persisted `stripe_transfer_id`, so matching only on the transfer
+ID could leave an otherwise successful payout unlinked. Transfers without a
+resolvable source charge retain the transfer-ID fallback for already-recorded
+rows. A regression test covers the early-delivery ordering case.
