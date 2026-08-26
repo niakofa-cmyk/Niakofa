@@ -7,6 +7,7 @@ import { authHeaders } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { useCachedList } from "@/hooks/useCachedList";
+import { acquireCircleDevice } from "@/lib/circleMediaReadiness";
 
 interface LiveSessionSummary {
   id: number;
@@ -128,34 +129,46 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
   const [maxSpeakers, setMaxSpeakers] = useState<number>(12);
   const [micReady, setMicReady] = useState<boolean | null>(null);
   const [camReady, setCamReady] = useState<boolean | null>(null);
+  const [micError, setMicError] = useState<string | null>(null);
+  const [camError, setCamError] = useState<string | null>(null);
   const checkedRef = useRef(false);
 
   useEffect(() => {
     if (checkedRef.current) return;
     checkedRef.current = true;
     (async () => {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-        s.getTracks().forEach(t => t.stop());
+      const result = await acquireCircleDevice("microphone");
+      if (result.ok) {
+        result.stream.getTracks().forEach(t => t.stop());
         setMicReady(true);
-      } catch { setMicReady(false); }
+      } else {
+        setMicReady(false);
+        setMicError(result.message);
+      }
     })();
   }, []);
 
   useEffect(() => {
-    if (format !== "video") { setCamReady(null); return; }
+    if (format !== "video") {
+      setCamReady(null);
+      setCamError(null);
+      return;
+    }
     (async () => {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: true });
-        s.getTracks().forEach(t => t.stop());
+      const result = await acquireCircleDevice("camera");
+      if (result.ok) {
+        result.stream.getTracks().forEach(t => t.stop());
         setCamReady(true);
-      } catch { setCamReady(false); }
+      } else {
+        setCamReady(false);
+        setCamError(result.message);
+      }
     })();
   }, [format]);
 
   const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`;
 
-  const canStart = title.trim().length > 0 && micReady !== false && (format !== "video" || camReady !== false) && maxSpeakers > 0;
+  const canStart = title.trim().length > 0 && micReady === true && (format !== "video" ? true : camReady === true) && maxSpeakers > 0;
 
   return (
     <motion.div
@@ -285,7 +298,12 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
           </div>
           {micReady === false && (
             <div className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-              Allow microphone access in your browser settings, then try again.
+              {micError ?? "Microphone is not available. Check your browser settings and try again."}
+            </div>
+          )}
+          {format === "video" && camReady === false && (
+            <div className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+              {camError ?? "Camera is not available. Check your browser settings and try again."}
             </div>
           )}
         </div>

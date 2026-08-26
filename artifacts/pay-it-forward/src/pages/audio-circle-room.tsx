@@ -33,6 +33,10 @@ import {
 import { MeshCircleTransport } from "@/lib/meshCircleTransport";
 import { LiveKitCircleTransport } from "@/lib/livekitCircleTransport";
 import {
+  acquireCircleDevice,
+  classifyMediaError,
+} from "@/lib/circleMediaReadiness";
+import {
   CircleEnduranceCollector,
   downloadEnduranceReport,
 } from "@/lib/circleEnduranceMetrics";
@@ -222,17 +226,7 @@ async function clearRecordingFromIdb(sessionId: number): Promise<void> {
 }
 
 function mediaErrorMessage(error: unknown, device: "microphone" | "camera"): string {
-  const name = error instanceof DOMException ? error.name : "";
-  if (name === "NotAllowedError" || name === "SecurityError") {
-    return `Allow ${device} access in your browser settings, then try again.`;
-  }
-  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-    return `No ${device} was found on this device.`;
-  }
-  if (name === "NotReadableError" || name === "TrackStartError") {
-    return `Your ${device} is already in use by another app.`;
-  }
-  return `Couldn't access your ${device}. Check browser permissions and try again.`;
+  return classifyMediaError(error, device).message;
 }
 
 // ── Live "Xm Ys" tick hook ───────────────────────────────────────────────────
@@ -2041,33 +2035,31 @@ export default function AudioCircleRoomScreen() {
     setPreJoinChecked(true); // guard must be set before the async ops
     setPreJoinStatus("checking");
     setMediaError(null);
-    // Listeners only receive media and do not need to request local device
-    // permissions. Speakers should get an explicit, retryable preflight result.
-    if (!canSpeak) {
+    // Participants who cannot publish media only receive remote tracks and do
+    // not need to request local device permissions.
+    if (!canPublishMedia) {
       setPreJoinStatus("ready");
       return;
     }
     let blocked = false;
-    try {
-      const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
-      if (!stream) throw new Error("Media devices are unavailable in this browser.");
-      stream.getTracks().forEach(t => t.stop());
+    const microphone = await acquireCircleDevice("microphone");
+    if (microphone.ok) {
+      microphone.stream.getTracks().forEach(t => t.stop());
       setPreJoinMicReady(true);
-    } catch (error) {
+    } else {
       setPreJoinMicReady(false);
       blocked = true;
-      setMediaError(mediaErrorMessage(error, "microphone"));
+      setMediaError(microphone.message);
     }
     if (session?.video_enabled) {
-      try {
-        const stream = await navigator.mediaDevices?.getUserMedia({ video: true });
-        if (!stream) throw new Error("Media devices are unavailable in this browser.");
-        stream.getTracks().forEach(t => t.stop());
+      const camera = await acquireCircleDevice("camera");
+      if (camera.ok) {
+        camera.stream.getTracks().forEach(t => t.stop());
         setPreJoinCameraReady(true);
-      } catch (error) {
+      } else {
         setPreJoinCameraReady(false);
         blocked = true;
-        setMediaError(mediaErrorMessage(error, "camera"));
+        setMediaError(camera.message);
       }
     }
     setPreJoinStatus(blocked ? "blocked" : "ready");
@@ -2298,7 +2290,7 @@ export default function AudioCircleRoomScreen() {
               <div className="font-bold">
                 {preJoinStatus === "checking" ? "Checking media…" : preJoinStatus === "blocked" ? "Media permission needed" : "Media status"}
               </div>
-              {preJoinStatus !== "ready" && canSpeak && (
+              {preJoinStatus !== "ready" && canPublishMedia && (
                 <button
                   type="button"
                   onClick={() => { void checkPreJoinDevices(); }}
@@ -2311,7 +2303,7 @@ export default function AudioCircleRoomScreen() {
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className={`${preJoinStatus !== "ready" && canSpeak ? "" : "ml-auto"} rounded-lg border border-amber-400/40 px-2 py-1 text-[10px] font-bold text-amber-200 hover:bg-amber-400/10`}
+                  className={`${preJoinStatus !== "ready" && canPublishMedia ? "" : "ml-auto"} rounded-lg border border-amber-400/40 px-2 py-1 text-[10px] font-bold text-amber-200 hover:bg-amber-400/10`}
                 >
                   Rejoin media
                 </button>

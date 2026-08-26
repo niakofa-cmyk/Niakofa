@@ -49,6 +49,6 @@ export function selectMediaTransportKind(input: {
   expectedListeners: number;
   preferSfu?: boolean;
 }): MediaTransportKind {
-  if (input.preferSfu || input.expectedSpeakers > 8 || input.expectedListeners > 40) return "livekit";
-  return "mesh";
+  void input;
+  return "livekit";
 }
