@@ -2,7 +2,13 @@
 export function isValidLiveKitUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return (url.protocol === "wss:" || url.protocol === "ws:") && Boolean(url.hostname);
+    if (url.username || url.password || !url.hostname) return false;
+    if (url.protocol === "wss:") return true;
+    // Plain WebSockets are useful for local development, but returning a
+    // remote ws:// endpoint from an HTTPS app would expose the media token and
+    // fail in browsers as mixed content.
+    return url.protocol === "ws:" &&
+      ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
   } catch {
     return false;
   }

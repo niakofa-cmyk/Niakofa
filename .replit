@@ -3,6 +3,8 @@ modules = ["python-3.12", "web", "nodejs-22"]
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+run = ["bash", "scripts/start.sh"]
+build = ["pnpm", "run", "build"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]

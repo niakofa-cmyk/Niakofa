@@ -1,0 +1,223 @@
+I’ll first inventory the current app and Git history without changing code, then read the uploaded report and archive completely. I’ll use that review to map gaps, preserve existing features, and only then implement, run the app, verify it in preview, and synchronize main with GitHub.
+
+
+
+
+
+
+5 actions
+The local checkout is currently only an initial placeholder, while the report describes a prior synchronization attempt and fixes that are not present in this workspace. I’m going to validate the live origin/main state directly, inspect the required platform guidance, and fully unpack/read the archive before making any edits.
+
+
+
+
+
+
+
+10 actions
+The archive is a focused LiveKit Circles integration, and its contents align with the latest GitHub commits rather than introducing a separate app. GitHub currently shows origin/main at 903767cc, with deployment verification passing and CI still running; I’m synchronizing the local baseline to that exact commit, then I’ll inspect the real source and reproduce the remaining gaps locally.
+
+
+
+
+
+
+
+25 actions
+The checkout is now exactly aligned with GitHub’s main at 903767cc, and the live source already contains the transport seam, LiveKit client, token route, and room-level fallback wiring described by the archive. I’m moving into verification now: checking the repository’s recorded implementation notes, dependency state, route mounting, and the exact local CI commands before deciding what still needs code changes.
+
+
+
+
+
+
+
+14 actions
+The repository memory confirms artifacts/ is the canonical app and niakofa-repo/ is a stale mirror; I will not edit the mirror. The main remaining production-risk area is now the LiveKit transport’s real runtime behavior (device switching, recording, reconnects, and cleanup), so I’m installing from the committed lockfile and running the same lint/typecheck/tests/build gates before touching that code.
+
+
+Show less
+
+Ran corepack
+Evaluating build processes
+
+Evaluating build processes
+
+Ran corepack
+
+Ran corepack
+
+Ran corepack
+
+Ran corepack
+The baseline gates are clean locally: lint, full typecheck, all 449 frontend tests, and all 265 backend tests pass. I also confirmed the LiveKit token route is mounted and the Circle room uses the transport seam. Before editing, I’m checking the production build and the room’s media-control paths for edge cases the existing tests do not cover, especially failed camera acquisition, duplicate cleanup, recording lifecycle, and reconnect state.
+
+
+
+
+
+
+
+8 actions
+The production build also passes, including the API bundle. The source review found two real hardening opportunities worth fixing before release: LiveKit’s async media operations can race with teardown or rapid toggles, and recording failures are currently too easy to swallow, leaving UI/session state out of sync. I’m first starting both managed artifact workflows and opening the actual app preview so the next changes are based on the rendered product, not just source inspection.
+
+
+Show less
+
+Restarted workflow artifacts/pay-it-forward: web
+
+Restarted workflow artifacts/api-server: API Server
+
+Refreshed logs
+
+Took a screenshot
+
+Took a screenshot
+Considering document management
+
+Considering document management
+
+Viewed a commit
+Assessing token route validation
+
+Assessing token route validation
+Checking recording function
+
+Checking recording function
+
+Searched for "uploadRecording|mediaCa…"
+Evaluating testing options
+
+Evaluating testing options
+The rendered baseline loads cleanly, but the API workflow correctly reports “not ready” because this workspace has no migrated Postgres schema; that is an environment prerequisite, not a source failure, and I won’t fabricate or change database credentials. I’m now applying targeted production hardening: cancellation-safe LiveKit media operations, idempotent teardown/recording cleanup, strict media URL/session ID validation, and a sanitized reference bundle for the uploaded materials.
+
+
+Show less
+
+Edited livekitCircleTransport.ts
+
+Edited livekitCircleTransport.ts
+
+Edited circle-media-token.ts
+The hardening patch is in place for the canonical app; the only non-code conflict was that this repository already has a similarly named reference document, so I’m merging into that existing reference rather than creating a duplicate. Next I’m running typecheck/lint/build again and adding the missing route-level regression coverage for malformed IDs and invalid LiveKit URLs.
+
+
+Show less
+
+Opened niakofa-circles-livekit-sfu.md
+
+Viewed code changes
+
+Ran corepack
+
+Ran corepack
+Continuing with document and testing
+
+Continuing with document and testing
+
+Processed text
+Working on the test setup
+
+Working on the test setup
+
+Edited circle-media-token.ts
+
+Created circleMediaConfig.ts
+
+Created circle-media-config.test.ts
+
+Edited niakofa-circles-livekit-sfu.md
+
+Searched for "^ (const|async functio…"
+Considering patching logic
+
+Considering patching logic
+
+Opened audio-circle-room.tsx
+
+Opened audio-circle-room.tsx
+Applying patch steps
+
+Applying patch steps
+
+Edited audio-circle-room.tsx
+Analyzing follow-up tasks
+
+Analyzing follow-up tasks
+
+Ran corepack
+
+Ran corepack
+
+Ran corepack
+
+Ran corepack
+Refining Function Definitions
+
+Refining Function Definitions
+
+Opened audio-circle-room.tsx
+
+Edited audio-circle-room.tsx
+
+Read pnpm-workspace.yaml
+Reviewing package adjustments
+
+Reviewing package adjustments
+Reviewing package adjustments
+I'm considering the importance of checking the actual pnpm-workspace overrides, as they may serve as the canonical source. It looks like the package JSON might have some duplicate and stale entries, so I should remove those for a cleaner installation. I plan to inspect lines 28 through 125 to get a clear view of what needs adjustments before proceeding with any further changes. I want everything to be neat and functional!
+
+Opened package.json
+Considering patch options
+
+Considering patch options
+Considering patch options
+I'm exploring options for adding a patch to the top. I could add "packageManagerConfig" and leave the ignored block, but that doesn't seem ideal. I'm considering using functions.apply_patch with a shell script, but I realize that the tool only allows diffs. I could rewrite the entire package.json by adding the file, but it might be easier to read the file fully and then add the desired content. I need to update it with all 129 lines.
+The new media configuration tests are added, and the second verification pass has no type errors or lint errors; one test command was malformed with an extra Jest separator, so I’m rerunning the backend suite with its exact repository script. I’m leaving the root package’s duplicate override block untouched for now because the canonical pnpm-workspace.yaml already owns those overrides; removing it safely would be a separate manifest cleanup, not required for the current feature.
+
+
+Show less
+
+Ran corepack
+
+Ran corepack
+
+Ran a Node.js script
+
+$ node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); console.log('package.json valid; root overrides=',Boolean(p.pnpm?.overrides)); console.log('workspace overrides=',fs.readFileSync('pnpm-workspace.yaml','utf8').includes('overrides:'))"
+
+
+
+Ran a Node.js script
+All source-level checks are green after the hardening changes: 267 backend tests, 449 frontend tests, full typecheck, lint, and production build. I’m at the release gate now: restarting both services so the running preview uses the new code, then I’ll run the repository release validation and smoke checks, inspect logs, and only then commit and push.
+
+
+Show less
+
+Restarted workflow artifacts/pay-it-forward: web
+
+Restarted workflow artifacts/api-server: API Server
+Continuing with scripts
+
+Continuing with scripts
+
+Refreshed logs
+
+Read package.json
+
+Viewed code changes
+
+Opened package.json
+Considering package patching
+
+Considering package patching
+Considering package patching
+I need to continue from the current state. Maybe a package override cleanup is necessary. I could apply a patch to the full block, but it might not be absolutely required. The user’s mission indicates it needs to be production-ready. There's a warning from pnpm about duplicate ignored config, but that's likely non-blocking and not broken due to the workspace config. While it might be fine to include it in the final, I think it's better to fix it. I'll patch the package JSON carefully and replace the whole file.
+
+Ran corepack
+
+Ran corepack
+
+Ran corepack
+
+Ran a Node.js script

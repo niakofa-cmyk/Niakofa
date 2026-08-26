@@ -37,6 +37,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   private audioContext: AudioContext | null = null;
   private mixDestination: MediaStreamAudioDestinationNode | null = null;
   private mediaRecorder: MediaRecorder | null = null;
+  private recordingStopPromise: Promise<Blob | null> | null = null;
   private recordedChunks: Blob[] = [];
   private mixSources = new Map<string, MediaStreamAudioSourceNode>();
 
@@ -321,66 +322,81 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   }
 
   startRecording(): void {
-    if (this.mediaRecorder) return;
+    if (this.mediaRecorder || this.recordingStopPromise) return;
     if (typeof AudioContext === "undefined" || typeof MediaRecorder === "undefined") {
       throw new Error("Recording is not supported in this browser");
     }
-    this.audioContext = new AudioContext();
-    this.mixDestination = this.audioContext.createMediaStreamDestination();
-    this.recordedChunks = [];
-    if (this.micTrack || this.camTrack) this.addStreamToMix(this.emitLocalStream(), "local");
-    for (const [userId, stream] of this.remoteStreams) {
-      this.addStreamToMix(stream, `remote:${userId}`);
+    const audioContext = new AudioContext();
+    try {
+      this.audioContext = audioContext;
+      this.mixDestination = audioContext.createMediaStreamDestination();
+      this.recordedChunks = [];
+      if (this.micTrack || this.camTrack) this.addStreamToMix(this.emitLocalStream(), "local");
+      for (const [userId, stream] of this.remoteStreams) {
+        this.addStreamToMix(stream, `remote:${userId}`);
+      }
+      const mimeType = LiveKitCircleTransport.recordingMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(this.mixDestination.stream, { mimeType })
+        : new MediaRecorder(this.mixDestination.stream);
+      recorder.ondataavailable = event => {
+        if (event.data.size > 0) this.recordedChunks.push(event.data);
+      };
+      recorder.start(1000);
+      this.mediaRecorder = recorder;
+    } catch (error) {
+      audioContext.close().catch(() => {});
+      this.audioContext = null;
+      this.mixDestination = null;
+      this.mixSources.clear();
+      this.recordedChunks = [];
+      throw error;
     }
-    const mimeType = LiveKitCircleTransport.recordingMimeType();
-    this.mediaRecorder = mimeType
-      ? new MediaRecorder(this.mixDestination.stream, { mimeType })
-      : new MediaRecorder(this.mixDestination.stream);
-    this.mediaRecorder.ondataavailable = event => {
-      if (event.data.size > 0) this.recordedChunks.push(event.data);
-    };
-    this.mediaRecorder.start(1000);
   }
 
   stopRecording(): Promise<Blob | null> {
-    return new Promise(resolve => {
-      const recorder = this.mediaRecorder;
-      if (!recorder) {
-        resolve(null);
-        return;
-      }
-      this.mediaRecorder = null;
-      let settled = false;
-      const finish = (blob: Blob | null) => {
-        if (settled) return;
-        settled = true;
-        this.audioContext?.close().catch(() => {});
-        this.audioContext = null;
-        this.mixDestination = null;
-        this.mixSources.clear();
-        this.recordedChunks = [];
-        resolve(blob);
-      };
-      recorder.onstop = () => {
+    if (this.recordingStopPromise) return this.recordingStopPromise;
+    const recorder = this.mediaRecorder;
+    if (!recorder) return Promise.resolve(null);
+
+    this.mediaRecorder = null;
+    let settled = false;
+    let resolveStop!: (blob: Blob | null) => void;
+    const stopPromise = new Promise<Blob | null>(resolve => {
+      resolveStop = resolve;
+    });
+    this.recordingStopPromise = stopPromise;
+    const finish = (blob: Blob | null) => {
+      if (settled) return;
+      settled = true;
+      this.audioContext?.close().catch(() => {});
+      this.audioContext = null;
+      this.mixDestination = null;
+      this.mixSources.clear();
+      this.recordedChunks = [];
+      this.recordingStopPromise = null;
+      resolveStop(blob);
+    };
+    recorder.onstop = () => {
+      const blob = this.recordedChunks.length > 0
+        ? new Blob(this.recordedChunks, { type: recorder.mimeType || "audio/webm" })
+        : null;
+      finish(blob);
+    };
+    recorder.onerror = () => finish(null);
+    try {
+      if (recorder.state === "inactive") {
         const blob = this.recordedChunks.length > 0
           ? new Blob(this.recordedChunks, { type: recorder.mimeType || "audio/webm" })
           : null;
         finish(blob);
-      };
-      recorder.onerror = () => finish(null);
-      try {
-        if (recorder.state === "inactive") {
-          const blob = this.recordedChunks.length > 0
-            ? new Blob(this.recordedChunks, { type: recorder.mimeType || "audio/webm" })
-            : null;
-          finish(blob);
-        } else {
-          recorder.stop();
-        }
-      } catch {
-        finish(null);
+      } else {
+        recorder.stop();
       }
-    });
+    } catch {
+      finish(null);
+    }
+    return stopPromise;
   }
 
   getLocalStream(): MediaStream | null {

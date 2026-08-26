@@ -5,8 +5,11 @@ describe("Circle media configuration", () => {
   it("accepts websocket LiveKit endpoints only", () => {
     expect(isValidLiveKitUrl("wss://media.example.com")).toBe(true);
     expect(isValidLiveKitUrl("ws://localhost:7880")).toBe(true);
+    expect(isValidLiveKitUrl("ws://127.0.0.1:7880")).toBe(true);
+    expect(isValidLiveKitUrl("ws://media.example.com")).toBe(false);
     expect(isValidLiveKitUrl("https://media.example.com")).toBe(false);
     expect(isValidLiveKitUrl("not-a-url")).toBe(false);
+    expect(isValidLiveKitUrl("wss://user:pass@media.example.com")).toBe(false);
   });
 
   it("parses only positive, exact session identifiers", () => {
