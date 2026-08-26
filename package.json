@@ -119,6 +119,10 @@
     }
   },
   "dependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.3.0",
+    "livekit-client": "^2.22.0",
+    "livekit-server-sdk": "^2.18.0",
     "pnpm": "^11.22.0",
     "tsx": "^4.23.12"
   }
