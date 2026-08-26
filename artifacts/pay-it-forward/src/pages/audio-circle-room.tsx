@@ -1317,12 +1317,26 @@ export default function AudioCircleRoomScreen() {
     if (isHost) {
       if (p.is_recording && !wasRecording) {
         recordingElapsedSecondsRef.current = 0;
-        mediaTransportRef.current?.startRecording?.();
+        try {
+          const transport = mediaTransportRef.current;
+          if (!transport?.startRecording) throw new Error("Recording is unavailable");
+          transport.startRecording();
+        } catch {
+          isRecordingRef.current = false;
+          setSession(prev => prev ? { ...prev, is_recording: false } : prev);
+          toast({ title: "Couldn't start recording", description: "Your media connection does not support recording.", variant: "destructive" });
+          void post("/recording", { is_recording: false });
+        }
       } else if (!p.is_recording && wasRecording) {
         const elapsed = recordingElapsedSecondsRef.current;
-        mediaTransportRef.current?.stopRecording?.().then((blob) => {
-          if (blob && blob.size > 0) uploadRecording(blob, elapsed);
-        });
+        const stopPromise = mediaTransportRef.current?.stopRecording?.();
+        if (stopPromise) {
+          void stopPromise.then((blob) => {
+            if (blob && blob.size > 0) void uploadRecording(blob, elapsed);
+          }).catch(() => {
+            toast({ title: "Recording could not be finalized", description: "The Circle has stopped recording, but no audio file was produced.", variant: "destructive" });
+          });
+        }
       }
     }
   });
@@ -1331,10 +1345,17 @@ export default function AudioCircleRoomScreen() {
     if (!isHost || !session?.is_recording || !mediaTransportRef.current || isRecordingRef.current) return;
     isRecordingRef.current = true;
     try {
-      mediaTransportRef.current.startRecording?.();
+      if (!mediaTransportRef.current.startRecording) throw new Error("Recording is unavailable");
+      mediaTransportRef.current.startRecording();
     } catch {
       isRecordingRef.current = false;
+      setSession(prev => prev ? { ...prev, is_recording: false } : prev);
+      setMediaError("Recording is unavailable on this media connection.");
+      void post("/recording", { is_recording: false });
     }
+    // `post` is declared in the actions section below; this effect is keyed to
+    // the room/media lifecycle so it must not rerun on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, session?.is_recording, session?.id, meshReady]);
 
   useWebSocket("circle_recording_available", (e) => {

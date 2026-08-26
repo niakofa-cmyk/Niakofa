@@ -9,6 +9,7 @@ import {
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { canPublishCircleMedia } from "../lib/circleMediaPolicy";
+import { isValidLiveKitUrl, parsePositiveSafeInteger } from "../lib/circleMediaConfig";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -27,12 +28,12 @@ router.post(
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const livekitUrl = process.env.LIVEKIT_URL;
-    if (!apiKey || !apiSecret || !livekitUrl) {
+    if (!apiKey || !apiSecret || !livekitUrl || !isValidLiveKitUrl(livekitUrl)) {
       return res.status(503).json({ error: "LiveKit is not configured on this environment" });
     }
 
-    const sessionId = Number.parseInt(String(req.params.id ?? ""), 10);
-    if (Number.isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+    const sessionId = parsePositiveSafeInteger(String(req.params.id ?? ""));
+    if (sessionId === null) return res.status(400).json({ error: "Invalid id" });
     const userId = req.authenticatedUserId!;
 
     const [session] = await db.select().from(audioCircleSessionsTable)
