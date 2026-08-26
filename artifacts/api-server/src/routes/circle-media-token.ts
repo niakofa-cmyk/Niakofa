@@ -56,16 +56,18 @@ router.post(
       (session.media_publish_policy as "open" | "moderated") ?? "open",
     );
     try {
-      const token = await new AccessToken(apiKey, apiSecret, {
+      const accessToken = new AccessToken(apiKey, apiSecret, {
         identity: String(userId),
         ttl: TOKEN_TTL_SECONDS,
-      }).addGrant({
+      });
+      accessToken.addGrant({
         room: roomNameForSession(sessionId),
         roomJoin: true,
         canPublish,
         canPublishData: true,
         canSubscribe: true,
-      }).toJwt();
+      });
+      const token = await accessToken.toJwt();
       return res.json({
         media_url: livekitUrl,
         media_token: token,

@@ -140,8 +140,19 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   }
 
   setVideoEnabled(enabled: boolean): void {
-    if (enabled) this.addVideoTrack().catch(() => {});
-    else this.camTrack?.mediaStreamTrack && (this.camTrack.mediaStreamTrack.enabled = false);
+    if (enabled) {
+      if (this.camTrack) {
+        this.camTrack.mediaStreamTrack.enabled = true;
+        this.emitLocalStream();
+      } else {
+        void this.addVideoTrack().catch(() => {});
+      }
+      return;
+    }
+    if (this.camTrack) {
+      this.camTrack.mediaStreamTrack.enabled = false;
+      this.emitLocalStream();
+    }
   }
 
   getLocalStream(): MediaStream | null {
