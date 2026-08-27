@@ -10,6 +10,8 @@ import {
   type RemoteTrackPublication,
   type AudioCaptureOptions,
   type VideoCaptureOptions,
+  type CreateLocalTracksOptions,
+  type RoomOptions,
 } from "livekit-client";
 import type {
   CircleMediaTransport,
@@ -17,6 +19,26 @@ import type {
   MediaConnectionState,
   MediaTransportCallbacks,
 } from "./circleMediaTransport";
+
+export interface LiveKitCircleTransportOptions {
+  /**
+   * Test seam for the SDK room. Production leaves this unset and uses the
+   * browser LiveKit Room implementation.
+   */
+  createRoom?: (options: RoomOptions) => Room;
+  /**
+   * Test seam for browser capture. Production leaves this unset and uses
+   * livekit-client's createLocalTracks implementation.
+   */
+  createLocalTracks?: (
+    options?: CreateLocalTracksOptions,
+  ) => Promise<LocalTrack[]>;
+  /**
+   * Test seam for MediaStream construction. This keeps transport integration
+   * tests runnable in Node without pretending to connect to a real cluster.
+   */
+  createMediaStream?: (tracks: MediaStreamTrack[]) => MediaStream;
+}
 
 /**
  * LiveKit media-plane transport. Mic and camera are independent publications:
@@ -40,6 +62,23 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   private recordingStopPromise: Promise<Blob | null> | null = null;
   private recordedChunks: Blob[] = [];
   private mixSources = new Map<string, MediaStreamAudioSourceNode>();
+  private readonly createRoom: (options: RoomOptions) => Room;
+  private readonly createLocalTracks: (
+    options?: CreateLocalTracksOptions,
+  ) => Promise<LocalTrack[]>;
+  private readonly createMediaStream: (
+    tracks: MediaStreamTrack[],
+  ) => MediaStream;
+
+  constructor(options: LiveKitCircleTransportOptions = {}) {
+    this.createRoom =
+      options.createRoom ?? ((roomOptions) => new Room(roomOptions));
+    this.createLocalTracks =
+      options.createLocalTracks ??
+      ((trackOptions) => createLocalTracks(trackOptions));
+    this.createMediaStream =
+      options.createMediaStream ?? ((tracks) => new MediaStream(tracks));
+  }
 
   private static recordingMimeType(): string | undefined {
     const candidates = [
@@ -48,8 +87,9 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       "audio/mp4",
       "audio/ogg;codecs=opus",
     ];
-    if (typeof MediaRecorder.isTypeSupported !== "function") return candidates[0];
-    return candidates.find(type => MediaRecorder.isTypeSupported(type));
+    if (typeof MediaRecorder.isTypeSupported !== "function")
+      return candidates[0];
+    return candidates.find((type) => MediaRecorder.isTypeSupported(type));
   }
 
   private setState(state: MediaConnectionState) {
@@ -63,27 +103,35 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
 
   private runMediaOperation<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.mediaOperation.then(operation, operation);
-    this.mediaOperation = next.then(() => undefined, () => undefined);
+    this.mediaOperation = next.then(
+      () => undefined,
+      () => undefined,
+    );
     return next;
   }
 
   private currentLocalStream(): MediaStream {
-    return new MediaStream(
+    return this.createMediaStream(
       [this.micTrack, this.camTrack]
         .filter((track): track is LocalTrack => !!track)
-        .map(track => track.mediaStreamTrack),
+        .map((track) => track.mediaStreamTrack),
     );
   }
 
-  async join(opts: JoinMediaSessionOptions, callbacks: MediaTransportCallbacks): Promise<void> {
+  async join(
+    opts: JoinMediaSessionOptions,
+    callbacks: MediaTransportCallbacks,
+  ): Promise<void> {
     if (this.room) throw new Error("LiveKit transport is already joined");
     this.callbacks = callbacks;
     if (!opts.mediaUrl || !opts.mediaToken) {
-      throw new Error("LiveKit requires a short-lived media URL and token (call /media-token first).");
+      throw new Error(
+        "LiveKit requires a short-lived media URL and token (call /media-token first).",
+      );
     }
 
     const lifecycleId = ++this.lifecycleId;
-    const room = new Room({
+    const room = this.createRoom({
       adaptiveStream: true,
       dynacast: true,
       publishDefaults: { simulcast: true, dtx: true },
@@ -92,10 +140,15 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
       if (!this.isCurrent(room, lifecycleId)) return;
       this.setState(
-        state === ConnectionState.Connected ? "connected" :
-        state === ConnectionState.Connecting ? "connecting" :
-        state === ConnectionState.Reconnecting ? "reconnecting" :
-        state === ConnectionState.Disconnected ? "lost" : "connecting",
+        state === ConnectionState.Connected
+          ? "connected"
+          : state === ConnectionState.Connecting
+            ? "connecting"
+            : state === ConnectionState.Reconnecting
+              ? "reconnecting"
+              : state === ConnectionState.Disconnected
+                ? "lost"
+                : "connecting",
       );
     });
     room.on(RoomEvent.Reconnecting, () => {
@@ -109,40 +162,51 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     });
     room.on(
       RoomEvent.TrackSubscribed,
-      (track: RemoteTrack, _publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+      (
+        track: RemoteTrack,
+        _publication: RemoteTrackPublication,
+        participant: RemoteParticipant,
+      ) => {
         if (!this.isCurrent(room, lifecycleId)) return;
         let stream = this.remoteStreams.get(participant.identity);
         if (!stream) {
-          stream = new MediaStream();
+          stream = this.createMediaStream([]);
           this.remoteStreams.set(participant.identity, stream);
         }
         stream.addTrack(track.mediaStreamTrack);
-         this.addStreamToMix(stream, `remote:${participant.identity}`);
+        this.addStreamToMix(stream, `remote:${participant.identity}`);
         callbacks.onRemoteStream?.(participant.identity, stream);
       },
     );
     room.on(
       RoomEvent.TrackUnsubscribed,
-      (track: RemoteTrack, _publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+      (
+        track: RemoteTrack,
+        _publication: RemoteTrackPublication,
+        participant: RemoteParticipant,
+      ) => {
         if (!this.isCurrent(room, lifecycleId)) return;
         const stream = this.remoteStreams.get(participant.identity);
         stream?.removeTrack(track.mediaStreamTrack);
         if (stream && stream.getTracks().length === 0) {
           this.remoteStreams.delete(participant.identity);
-           this.removeStreamFromMix(`remote:${participant.identity}`);
+          this.removeStreamFromMix(`remote:${participant.identity}`);
           callbacks.onRemoteStreamEnded?.(participant.identity);
         } else if (stream) {
-           this.addStreamToMix(stream, `remote:${participant.identity}`);
+          this.addStreamToMix(stream, `remote:${participant.identity}`);
           callbacks.onRemoteStream?.(participant.identity, stream);
         }
       },
     );
-    room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-      if (!this.isCurrent(room, lifecycleId)) return;
-      this.remoteStreams.delete(participant.identity);
-       this.removeStreamFromMix(`remote:${participant.identity}`);
-      callbacks.onRemoteStreamEnded?.(participant.identity);
-    });
+    room.on(
+      RoomEvent.ParticipantDisconnected,
+      (participant: RemoteParticipant) => {
+        if (!this.isCurrent(room, lifecycleId)) return;
+        this.remoteStreams.delete(participant.identity);
+        this.removeStreamFromMix(`remote:${participant.identity}`);
+        callbacks.onRemoteStreamEnded?.(participant.identity);
+      },
+    );
 
     this.setState("connecting");
     await room.connect(opts.mediaUrl, opts.mediaToken, { autoSubscribe: true });
@@ -160,30 +224,55 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       const lifecycleId = this.lifecycleId;
       if (!room) throw new Error("LiveKit transport not joined");
       if (!this.micTrack) {
-        const [mic] = await createLocalTracks({ audio: true, video: false });
+        const [mic] = await this.createLocalTracks({
+          audio: true,
+          video: false,
+        });
         if (!mic) throw new Error("Microphone unavailable");
-        if (!this.isCurrent(room, lifecycleId) || requestId !== this.localMediaRequestId) {
+        if (
+          !this.isCurrent(room, lifecycleId) ||
+          requestId !== this.localMediaRequestId
+        ) {
           mic.stop();
-          throw new Error("LiveKit media session ended while acquiring the microphone");
+          throw new Error(
+            "LiveKit media session ended while acquiring the microphone",
+          );
         }
         try {
-          await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone });
+          await room.localParticipant.publishTrack(mic, {
+            source: Track.Source.Microphone,
+          });
         } catch (error) {
           mic.stop();
           throw error;
         }
-        if (!this.isCurrent(room, lifecycleId) || requestId !== this.localMediaRequestId) {
+        if (
+          !this.isCurrent(room, lifecycleId) ||
+          requestId !== this.localMediaRequestId
+        ) {
           await this.unpublishAndStop(room, mic);
-          throw new Error("LiveKit media session ended while publishing the microphone");
+          throw new Error(
+            "LiveKit media session ended while publishing the microphone",
+          );
         }
         this.micTrack = mic;
       }
       if (opts.video && !this.camTrack) {
         const cameraRequestId = ++this.cameraRequestId;
-        await this.addVideoTrackInternal(room, lifecycleId, requestId, cameraRequestId);
+        await this.addVideoTrackInternal(
+          room,
+          lifecycleId,
+          requestId,
+          cameraRequestId,
+        );
       }
-      if (!this.isCurrent(room, lifecycleId) || requestId !== this.localMediaRequestId) {
-        throw new Error("LiveKit media session ended while publishing local media");
+      if (
+        !this.isCurrent(room, lifecycleId) ||
+        requestId !== this.localMediaRequestId
+      ) {
+        throw new Error(
+          "LiveKit media session ended while publishing local media",
+        );
       }
       const stream = this.emitLocalStream();
       this.addStreamToMix(stream, "local");
@@ -198,7 +287,12 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       const room = this.room;
       const lifecycleId = this.lifecycleId;
       if (!room) throw new Error("LiveKit transport not joined");
-      return this.addVideoTrackInternal(room, lifecycleId, requestId, cameraRequestId);
+      return this.addVideoTrackInternal(
+        room,
+        lifecycleId,
+        requestId,
+        cameraRequestId,
+      );
     });
   }
 
@@ -209,7 +303,10 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     cameraRequestId: number,
   ): Promise<MediaStream> {
     if (this.camTrack) return this.emitLocalStream();
-    const [camera] = await createLocalTracks({ audio: false, video: true });
+    const [camera] = await this.createLocalTracks({
+      audio: false,
+      video: true,
+    });
     if (!camera) throw new Error("Camera unavailable");
     if (
       !this.isCurrent(room, lifecycleId) ||
@@ -220,7 +317,9 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       throw new Error("LiveKit media session ended while acquiring the camera");
     }
     try {
-      await room.localParticipant.publishTrack(camera, { source: Track.Source.Camera });
+      await room.localParticipant.publishTrack(camera, {
+        source: Track.Source.Camera,
+      });
     } catch (error) {
       camera.stop();
       throw error;
@@ -231,17 +330,19 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       cameraRequestId !== this.cameraRequestId
     ) {
       await this.unpublishAndStop(room, camera);
-      throw new Error("LiveKit media session ended while publishing the camera");
+      throw new Error(
+        "LiveKit media session ended while publishing the camera",
+      );
     }
     this.camTrack = camera;
     return this.emitLocalStream();
   }
 
   private emitLocalStream(): MediaStream {
-    const stream = new MediaStream(
+    const stream = this.createMediaStream(
       [this.micTrack, this.camTrack]
         .filter((track): track is LocalTrack => !!track)
-        .map(track => track.mediaStreamTrack),
+        .map((track) => track.mediaStreamTrack),
     );
     this.callbacks.onLocalStream?.(stream);
     return stream;
@@ -309,15 +410,26 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       try {
         await track.restartTrack(options);
       } catch (error) {
-        if (!this.isCurrent(room, lifecycleId) || requestId !== this.localMediaRequestId) {
+        if (
+          !this.isCurrent(room, lifecycleId) ||
+          requestId !== this.localMediaRequestId
+        ) {
           track.stop();
-          throw new Error("LiveKit media session ended while switching the microphone");
+          throw new Error(
+            "LiveKit media session ended while switching the microphone",
+          );
         }
         throw error;
       }
-      if (!this.isCurrent(room, lifecycleId) || requestId !== this.localMediaRequestId || track !== this.micTrack) {
+      if (
+        !this.isCurrent(room, lifecycleId) ||
+        requestId !== this.localMediaRequestId ||
+        track !== this.micTrack
+      ) {
         track.stop();
-        throw new Error("LiveKit media session ended while switching the microphone");
+        throw new Error(
+          "LiveKit media session ended while switching the microphone",
+        );
       }
       const stream = this.emitLocalStream();
       this.addStreamToMix(stream, "local");
@@ -348,7 +460,9 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
           cameraRequestId !== this.cameraRequestId
         ) {
           track.stop();
-          throw new Error("LiveKit media session ended while switching the camera");
+          throw new Error(
+            "LiveKit media session ended while switching the camera",
+          );
         }
         throw error;
       }
@@ -359,7 +473,9 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
         track !== this.camTrack
       ) {
         track.stop();
-        throw new Error("LiveKit media session ended while switching the camera");
+        throw new Error(
+          "LiveKit media session ended while switching the camera",
+        );
       }
       return this.emitLocalStream();
     });
@@ -367,7 +483,10 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
 
   startRecording(): void {
     if (this.mediaRecorder || this.recordingStopPromise) return;
-    if (typeof AudioContext === "undefined" || typeof MediaRecorder === "undefined") {
+    if (
+      typeof AudioContext === "undefined" ||
+      typeof MediaRecorder === "undefined"
+    ) {
       throw new Error("Recording is not supported in this browser");
     }
     const audioContext = new AudioContext();
@@ -375,7 +494,8 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       this.audioContext = audioContext;
       this.mixDestination = audioContext.createMediaStreamDestination();
       this.recordedChunks = [];
-      if (this.micTrack || this.camTrack) this.addStreamToMix(this.emitLocalStream(), "local");
+      if (this.micTrack || this.camTrack)
+        this.addStreamToMix(this.emitLocalStream(), "local");
       for (const [userId, stream] of this.remoteStreams) {
         this.addStreamToMix(stream, `remote:${userId}`);
       }
@@ -383,7 +503,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       const recorder = mimeType
         ? new MediaRecorder(this.mixDestination.stream, { mimeType })
         : new MediaRecorder(this.mixDestination.stream);
-      recorder.ondataavailable = event => {
+      recorder.ondataavailable = (event) => {
         if (event.data.size > 0) this.recordedChunks.push(event.data);
       };
       recorder.start(1000);
@@ -406,7 +526,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     this.mediaRecorder = null;
     let settled = false;
     let resolveStop!: (blob: Blob | null) => void;
-    const stopPromise = new Promise<Blob | null>(resolve => {
+    const stopPromise = new Promise<Blob | null>((resolve) => {
       resolveStop = resolve;
     });
     this.recordingStopPromise = stopPromise;
@@ -422,17 +542,23 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       resolveStop(blob);
     };
     recorder.onstop = () => {
-      const blob = this.recordedChunks.length > 0
-        ? new Blob(this.recordedChunks, { type: recorder.mimeType || "audio/webm" })
-        : null;
+      const blob =
+        this.recordedChunks.length > 0
+          ? new Blob(this.recordedChunks, {
+              type: recorder.mimeType || "audio/webm",
+            })
+          : null;
       finish(blob);
     };
     recorder.onerror = () => finish(null);
     try {
       if (recorder.state === "inactive") {
-        const blob = this.recordedChunks.length > 0
-          ? new Blob(this.recordedChunks, { type: recorder.mimeType || "audio/webm" })
-          : null;
+        const blob =
+          this.recordedChunks.length > 0
+            ? new Blob(this.recordedChunks, {
+                type: recorder.mimeType || "audio/webm",
+              })
+            : null;
         finish(blob);
       } else {
         recorder.stop();
@@ -448,7 +574,9 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     return this.currentLocalStream();
   }
 
-  getConnectionState(): MediaConnectionState { return this.state; }
+  getConnectionState(): MediaConnectionState {
+    return this.state;
+  }
 
   destroy(): void {
     this.lifecycleId += 1;
@@ -484,7 +612,11 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   private removeStreamFromMix(sourceId: string): void {
     const source = this.mixSources.get(sourceId);
     if (!source) return;
-    try { source.disconnect(); } catch { /* already disconnected */ }
+    try {
+      source.disconnect();
+    } catch {
+      /* already disconnected */
+    }
     this.mixSources.delete(sourceId);
   }
 }

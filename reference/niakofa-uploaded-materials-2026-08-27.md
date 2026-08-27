@@ -22,3 +22,32 @@ non-idempotent network-error replay edge case.
 The original upload files remain alongside the repository assets for audit
 traceability. The maintained implementation notes are in
 `docs/RATE_LIMIT_HARDENING.md`.
+
+## Circles continuity handoff
+
+A second August 27, 2026 handoff was reviewed in full:
+
+- `attached_assets/Pasted-I-ll-first-audit-the-current-workspace-and-repository-w_1787850617508.txt`
+- `attached_assets/Pasted-build-the-CircleRealtimeSessionManager-connect-reconnec_1787850656839.txt`
+- `attached_assets/niakofa-circles-realtime-continuity_1787850719788.zip`
+
+The ZIP contains the Circles continuity specification, current-repository
+assessment, application notes, a first-pass session manager, and an invariant
+test. The invariant test was retained as design guidance only; the maintained
+test suite now exercises the production `LiveKitCircleTransport` adapter with
+an injectable SDK-room/capture seam.
+
+The current implementation evidence is:
+
+- `artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts`
+  orchestrates LiveKit connect, token retry/refresh, network and visibility
+  recovery, and independent microphone/camera state.
+- `artifacts/pay-it-forward/src/lib/livekitCircleTransport.ts` owns the
+  independent LiveKit publications and provides only test-only dependency
+  injection; production defaults to the actual SDK.
+- `artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.livekit.integration.test.ts`
+  covers continuity checks A–G in a deterministic two-participant harness.
+
+The ZIP and source notes remain in `attached_assets/` for audit traceability.
+Automated A–G coverage does not replace real-browser, TURN/NAT, and
+device-permission certification; see the certification runbook.

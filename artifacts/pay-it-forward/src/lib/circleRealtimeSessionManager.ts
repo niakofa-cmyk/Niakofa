@@ -44,7 +44,11 @@ export interface CircleRealtimeSessionOptions {
   onRemoteStream?: MediaTransportCallbacks["onRemoteStream"];
   onRemoteStreamEnded?: MediaTransportCallbacks["onRemoteStreamEnded"];
   onLocalStream?: MediaTransportCallbacks["onLocalStream"];
-  onMediaError?: (device: "microphone" | "camera", message: string, code: string) => void;
+  onMediaError?: (
+    device: "microphone" | "camera",
+    message: string,
+    code: string,
+  ) => void;
 }
 
 interface TokenPayload {
@@ -127,7 +131,11 @@ export class CircleRealtimeSessionManager {
       return stream;
     } catch (error) {
       const classified = classifyMediaError(error, "microphone");
-      this.opts.onMediaError?.("microphone", classified.message, classified.code);
+      this.opts.onMediaError?.(
+        "microphone",
+        classified.message,
+        classified.code,
+      );
       throw error;
     }
   }
@@ -137,7 +145,8 @@ export class CircleRealtimeSessionManager {
    */
   async enableCamera(): Promise<MediaStream> {
     const transport = this.transport;
-    if (!transport?.addVideoTrack) throw new Error("Camera is not supported on this transport");
+    if (!transport?.addVideoTrack)
+      throw new Error("Camera is not supported on this transport");
 
     try {
       const stream = await transport.addVideoTrack();
@@ -163,6 +172,38 @@ export class CircleRealtimeSessionManager {
   setVideoEnabled(enabled: boolean): void {
     if (enabled) void this.enableCamera().catch(() => {});
     else this.disableCamera();
+  }
+
+  async switchAudioDevice(deviceId: string): Promise<MediaStream> {
+    const transport = this.transport;
+    if (!transport?.switchAudioDevice) {
+      throw new Error("Microphone device switching is unavailable");
+    }
+    try {
+      return await transport.switchAudioDevice(deviceId);
+    } catch (error) {
+      const classified = classifyMediaError(error, "microphone");
+      this.opts.onMediaError?.(
+        "microphone",
+        classified.message,
+        classified.code,
+      );
+      throw error;
+    }
+  }
+
+  async switchVideoDevice(deviceId: string): Promise<MediaStream> {
+    const transport = this.transport;
+    if (!transport?.switchVideoDevice) {
+      throw new Error("Camera device switching is unavailable");
+    }
+    try {
+      return await transport.switchVideoDevice(deviceId);
+    } catch (error) {
+      const classified = classifyMediaError(error, "camera");
+      this.opts.onMediaError?.("camera", classified.message, classified.code);
+      throw error;
+    }
   }
 
   /**
@@ -215,9 +256,14 @@ export class CircleRealtimeSessionManager {
 
     const baseDelay = Math.max(0, this.opts.reconnectBaseDelayMs ?? 1000);
     const maxDelay = 15_000;
-    const delay = Math.min(maxDelay, baseDelay * 2 ** Math.min(this.reconnectAttempts - 1, 4));
+    const delay = Math.min(
+      maxDelay,
+      baseDelay * 2 ** Math.min(this.reconnectAttempts - 1, 4),
+    );
     const jitterMax = Math.max(0, this.opts.reconnectJitterMs ?? 300);
-    await sleep(delay + (jitterMax ? Math.floor(Math.random() * jitterMax) : 0));
+    await sleep(
+      delay + (jitterMax ? Math.floor(Math.random() * jitterMax) : 0),
+    );
     if (life !== this.lifecycle || this.destroyed) return;
 
     try {
@@ -266,7 +312,8 @@ export class CircleRealtimeSessionManager {
     const token = await this.fetchMediaToken();
     if (life !== this.lifecycle || this.destroyed) return;
 
-    const transport = this.opts.createTransport?.() ?? new LiveKitCircleTransport();
+    const transport =
+      this.opts.createTransport?.() ?? new LiveKitCircleTransport();
     const callbacks: MediaTransportCallbacks = {
       onRemoteStream: this.opts.onRemoteStream,
       onRemoteStreamEnded: this.opts.onRemoteStreamEnded,
@@ -361,7 +408,8 @@ export class CircleRealtimeSessionManager {
     this.healthTimer = setInterval(() => {
       if (this.destroyed || !this.transport) return;
       const state = this.transport.getConnectionState();
-      if (state === "lost" || state === "ended") void this.recover(`health:${state}`);
+      if (state === "lost" || state === "ended")
+        void this.recover(`health:${state}`);
     }, 10_000);
   }
 
@@ -389,15 +437,25 @@ export class CircleRealtimeSessionManager {
     if (typeof window === "undefined") return;
 
     this.onlineHandler = () => {
-      if (this.state === "lost" || this.state === "reconnecting") void this.recover("window.online");
+      if (this.state === "lost" || this.state === "reconnecting")
+        void this.recover("window.online");
     };
     this.offlineHandler = () => {
       if (this.state === "live") this.setState("reconnecting");
     };
     this.visibilityHandler = () => {
-      if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+      if (
+        typeof document === "undefined" ||
+        document.visibilityState !== "visible"
+      )
+        return;
       const state = this.transport?.getConnectionState();
-      if (!this.transport || state === "lost" || state === "ended" || state === "reconnecting") {
+      if (
+        !this.transport ||
+        state === "lost" ||
+        state === "ended" ||
+        state === "reconnecting"
+      ) {
         void this.recover("visibility-visible");
       }
     };
@@ -409,9 +467,12 @@ export class CircleRealtimeSessionManager {
 
   private unbindEnvironmentListeners(): void {
     if (typeof window === "undefined") return;
-    if (this.onlineHandler) window.removeEventListener("online", this.onlineHandler);
-    if (this.offlineHandler) window.removeEventListener("offline", this.offlineHandler);
-    if (this.visibilityHandler) document.removeEventListener("visibilitychange", this.visibilityHandler);
+    if (this.onlineHandler)
+      window.removeEventListener("online", this.onlineHandler);
+    if (this.offlineHandler)
+      window.removeEventListener("offline", this.offlineHandler);
+    if (this.visibilityHandler)
+      document.removeEventListener("visibilitychange", this.visibilityHandler);
     this.onlineHandler = null;
     this.offlineHandler = null;
     this.visibilityHandler = null;
@@ -419,7 +480,7 @@ export class CircleRealtimeSessionManager {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function parseRetryAfter(header: string | null): number | null {

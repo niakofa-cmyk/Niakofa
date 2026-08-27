@@ -11,6 +11,7 @@ Run these checks from the repository root:
 ```bash
 pnpm run typecheck
 pnpm run build
+pnpm --filter @workspace/pay-it-forward run test
 pnpm --filter @workspace/api-server run test
 node scripts/src/release-smoke.mjs
 ```
@@ -20,6 +21,23 @@ The smoke gate must be run with both the web and API workflows serving, or with
 It verifies the SPA shell, public health probes, and unauthenticated `401`
 boundaries for Circles session resync and WebRTC ICE credentials.
 
+The frontend test command includes the deterministic LiveKit transport
+continuity suite:
+
+| Check                                     | Automated result recorded on August 27, 2026 |
+| ----------------------------------------- | -------------------------------------------- |
+| A. Host audio to listener                 | Pass                                         |
+| B. Host camera without audio loss         | Pass                                         |
+| C. Open listener camera without approval  | Pass                                         |
+| D. Camera denial preserves audio          | Pass                                         |
+| E. Network interruption recovery          | Pass                                         |
+| F. Visibility lock/unlock recovery        | Pass                                         |
+| G. Device switch without audio disruption | Pass                                         |
+
+This suite uses the production transport adapter and a deterministic
+in-process LiveKit-shaped room seam. It does not claim that packets cross a
+real SFU, TURN server, NAT, browser permission prompt, or physical device.
+
 ## Real-browser certification matrix
 
 Automated route coverage cannot prove that media crosses a real NAT path. Run
@@ -27,17 +45,17 @@ the following with two current browsers on separate devices or profiles, using
 a provisioned TURN server when the networks are not directly reachable. Record
 the date, browser versions, network types, session ID, and evidence links.
 
-| Check | Expected result | Status | Evidence |
-| --- | --- | --- | --- |
-| Two-way audio | Host and participant hear each other | Not run | |
-| Two-way video | Host and participant receive each camera | Not run | |
-| Four-person room | Host plus three participants remain connected | Not run | |
-| Network recovery | Temporary Wi-Fi/cellular interruption recovers, or shows `lost` | Not run | |
-| Refresh and rejoin | Refresh restores room membership and media | Not run | |
-| Camera lifecycle | Camera on → off → on; hardware indicator turns off while off | Not run | |
-| Microphone lifecycle | Mic on → mute → unmute; remote audio follows state | Not run | |
-| Host failover | Co-host receives host role after disconnect grace period | Not run | |
-| Permission denial | Actionable microphone/camera guidance appears | Not run | |
+| Check                | Expected result                                                 | Status  | Evidence |
+| -------------------- | --------------------------------------------------------------- | ------- | -------- |
+| Two-way audio        | Host and participant hear each other                            | Not run |          |
+| Two-way video        | Host and participant receive each camera                        | Not run |          |
+| Four-person room     | Host plus three participants remain connected                   | Not run |          |
+| Network recovery     | Temporary Wi-Fi/cellular interruption recovers, or shows `lost` | Not run |          |
+| Refresh and rejoin   | Refresh restores room membership and media                      | Not run |          |
+| Camera lifecycle     | Camera on → off → on; hardware indicator turns off while off    | Not run |          |
+| Microphone lifecycle | Mic on → mute → unmute; remote audio follows state              | Not run |          |
+| Host failover        | Co-host receives host role after disconnect grace period        | Not run |          |
+| Permission denial    | Actionable microphone/camera guidance appears                   | Not run |          |
 
 ## Release decision
 
