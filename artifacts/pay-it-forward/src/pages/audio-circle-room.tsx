@@ -19,19 +19,17 @@ import { useWebSocket } from "@/lib/useWebSocket";
 import type { WsEvent } from "@/lib/wsClient";
 import {
   AudioCircleMesh,
-  fetchIceServers,
   getAudioCircleMediaCapabilities,
   type AudioCircleMediaCapabilities,
-  type AudioCircleConnectionState,
-  type RemoteStreamHandle,
 } from "@/lib/audioCircleWebRTC";
 import {
-  selectMediaTransportKind,
   type CircleMediaTransport,
   type MediaTransportCallbacks,
 } from "@/lib/circleMediaTransport";
-import { MeshCircleTransport } from "@/lib/meshCircleTransport";
-import { LiveKitCircleTransport } from "@/lib/livekitCircleTransport";
+import {
+  CircleRealtimeSessionManager,
+  type ContinuityState,
+} from "@/lib/circleRealtimeSessionManager";
 import {
   acquireCircleDevice,
   classifyMediaError,
@@ -636,6 +634,7 @@ export default function AudioCircleRoomScreen() {
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const mediaTransportRef = useRef<CircleMediaTransport | null>(null);
+  const sessionManagerRef = useRef<CircleRealtimeSessionManager | null>(null);
   const enduranceRef = useRef<CircleEnduranceCollector | null>(null);
   const enduranceStartedAtRef = useRef<number | null>(null);
   const reconnectCountRef = useRef(0);
@@ -826,7 +825,6 @@ export default function AudioCircleRoomScreen() {
     // also prevents a race where the session GET finishes before join does.
     if (!session || !myUserId || !me) return;
     let cancelled = false;
-    let createdTransport: CircleMediaTransport | null = null;
 
     const callbacks: MediaTransportCallbacks = {
       onRemoteStream: (userId, stream) => {
@@ -853,107 +851,65 @@ export default function AudioCircleRoomScreen() {
           analyserCleanupsRef.current.delete(`remote:${numericUserId}`);
         }
       },
-      onConnectionStateChange: (state) => {
-        if (state === "reconnecting") reconnectCountRef.current += 1;
-        if (state === "connecting" || state === "connected" || state === "reconnecting" || state === "lost") {
-          setConnectionStatus(state);
-        }
-        if (state === "lost") {
-          setMediaError("Media connection lost. Check your network or try rejoining the Circle.");
-        } else if (state === "connected") {
-          setMediaError(null);
-        }
-      },
       onLocalStream: (stream) => setLocalStream(stream),
     };
 
-    const createMeshTransport = async (): Promise<CircleMediaTransport> => {
-      const iceServers = await fetchIceServers(authHeaders, base);
-      const transport = new MeshCircleTransport(args => new AudioCircleMesh({
-        sessionId: args.sessionId,
-        selfUserId: args.selfUserId,
-        videoEnabled: args.videoEnabled,
-        iceServers: args.iceServers,
-        onRemoteStream: (handle: RemoteStreamHandle) => args.onRemoteStream(handle),
-        onRemoteStreamEnded: args.onRemoteStreamEnded,
-        onConnectionStateChange: args.onConnectionStateChange as (state: AudioCircleConnectionState) => void,
-        subscribeToCircleSignal: args.subscribeToCircleSignal as
-          (handler: (event: WsEvent) => void) => () => void,
-      }));
-      createdTransport = transport;
-      await transport.join({
-        circleSessionId: sessionId,
-        selfUserId: myUserId,
-        videoEnabled: session.video_enabled,
-        iceServers,
-        subscribeToSignal: (handler) => subscribeRaw("circle_signal", handler as (event: WsEvent) => void),
-      }, callbacks);
-      return transport;
-    };
-
-    (async () => {
-      try {
-        const selectedKind = selectMediaTransportKind({
-          expectedSpeakers: session.max_speakers,
-          expectedListeners: Math.max(0, participants.length - 1),
-          preferSfu: import.meta.env.VITE_CIRCLES_MEDIA_TRANSPORT === "livekit",
-        });
-
-        let transport: CircleMediaTransport;
-        if (selectedKind === "livekit") {
-          const tokenResponse = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/media-token`, {
-            method: "POST",
-            headers: authHeaders(),
-          });
-          if (tokenResponse.status === 503) {
-            // LiveKit is an optional scale-up path. A missing deployment
-            // configuration must not prevent a small Circle from joining.
-            transport = await createMeshTransport();
-          } else if (!tokenResponse.ok) {
-            const errorData = await tokenResponse.json().catch(() => ({}));
-            throw new Error(errorData.error ?? "Couldn't prepare the Circle media connection.");
-          } else {
-            const tokenData = await tokenResponse.json();
-            if (!tokenData.media_url || !tokenData.media_token) {
-              throw new Error("The media service returned an incomplete connection token.");
-            }
-            const livekit = new LiveKitCircleTransport();
-            createdTransport = livekit;
-            await livekit.join({
-              circleSessionId: sessionId,
-              selfUserId: myUserId,
-              mediaUrl: tokenData.media_url,
-              mediaToken: tokenData.media_token,
-              videoEnabled: session.video_enabled,
-            }, callbacks);
-            transport = livekit;
-          }
-        } else {
-          transport = await createMeshTransport();
-        }
-
-        if (cancelled) {
-          transport.destroy();
-          return;
-        }
-        mediaTransportRef.current = transport;
-        reconnectCountRef.current = 0;
-        setMeshReady(true);
-      } catch (error) {
-        if (createdTransport) createdTransport.destroy();
+    const manager = new CircleRealtimeSessionManager({
+      baseUrl: base,
+      sessionId,
+      selfUserId: myUserId,
+      authHeaders,
+      videoEnabled: session.video_enabled,
+      onTransportChange: (transport) => {
         if (cancelled) return;
-        setMeshReady(false);
-        setConnectionStatus("lost");
-        const description = error instanceof Error ? error.message : "Couldn't connect to Circle media.";
-        setMediaError(description);
-        toast({ title: "Media connection failed", description, variant: "destructive" });
-      }
-    })();
+        mediaTransportRef.current = transport;
+        setMeshReady(!!transport);
+      },
+      onStateChange: (state: ContinuityState) => {
+        if (cancelled) return;
+        switch (state) {
+          case "connecting":
+            setConnectionStatus("connecting");
+            break;
+          case "live":
+            setConnectionStatus("connected");
+            setMediaError(prev => prev?.startsWith("Media connection") ? null : prev);
+            break;
+          case "reconnecting":
+          case "token_refresh":
+            if (state === "reconnecting") reconnectCountRef.current += 1;
+            setConnectionStatus("reconnecting");
+            break;
+          case "lost":
+            setConnectionStatus("lost");
+            setMediaError("Media connection lost. Check your network or try rejoining the Circle.");
+            break;
+        }
+      },
+      onMediaError: (device, message) => {
+        if (cancelled) return;
+        if (device === "camera") setVideoOn(false);
+        if (device === "microphone") setMicOn(false);
+        setMediaError(message);
+      },
+      ...callbacks,
+    });
+    sessionManagerRef.current = manager;
+    reconnectCountRef.current = 0;
+    manager.start().catch((error) => {
+      if (cancelled) return;
+      setMeshReady(false);
+      setConnectionStatus("lost");
+      const description = error instanceof Error ? error.message : "Couldn't connect to Circle media.";
+      setMediaError(description);
+      toast({ title: "Media connection failed", description, variant: "destructive" });
+    });
+
     const analyserCleanups = analyserCleanupsRef.current;
     return () => {
       cancelled = true;
-      createdTransport?.destroy();
-      mediaTransportRef.current?.destroy();
+      sessionManagerRef.current = null;
+      manager.destroy();
       mediaTransportRef.current = null;
       setMeshReady(false);
       for (const cleanup of analyserCleanups.values()) cleanup();
@@ -963,7 +919,7 @@ export default function AudioCircleRoomScreen() {
       sharedAudioCtxRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, myUserId, me?.role, session?.media_publish_policy]);
+  }, [session?.id, session?.video_enabled, myUserId, me?.role, session?.media_publish_policy]);
 
   function subscribeRaw(_type: string, handler: (e: WsEvent) => void): () => void {
     signalHandlerRef.current = handler;
@@ -1023,9 +979,12 @@ export default function AudioCircleRoomScreen() {
 
   // Publish mic when promoted to speaker
   useEffect(() => {
-    const transport = mediaTransportRef.current;
-    if (!transport) return;
-    if (!canSpeak) {
+    const manager = sessionManagerRef.current;
+    if (!manager || !mediaTransportRef.current) return;
+    // Open Circles allow listeners to intentionally publish video. They do
+    // not auto-publish a microphone, and their camera must not be torn down.
+    if (!canSpeak && !canPublishMedia) {
+      const transport = mediaTransportRef.current;
       transport.stopLocalMedia?.();
       setLocalStream(null);
       setMicOn(false);
@@ -1034,20 +993,13 @@ export default function AudioCircleRoomScreen() {
       if (cleanup) { cleanup(); analyserCleanupsRef.current.delete("local"); }
       return;
     }
+    if (!canSpeak) return;
+
     const startMuted = me?.muted ?? false;
-    const wantsVideo = !!session?.video_enabled && videoOn;
-    transport.publishLocalMedia({ video: wantsVideo })
+    manager.ensureMicrophone()
       .then((stream) => {
-        const cameraUnavailable = wantsVideo && stream.getVideoTracks().length === 0;
-        if (cameraUnavailable) {
-          setVideoOn(false);
-          setMediaError("Camera unavailable. Continuing with audio only.");
-          toast({ title: "Camera unavailable", description: "You are still connected with audio only." });
-        } else {
-          setMediaError(null);
-        }
         if (startMuted) {
-          transport.setMicEnabled(false);
+          manager.setMicEnabled(false);
           setMicOn(false);
         } else {
           setMicOn(true);
@@ -1065,7 +1017,7 @@ export default function AudioCircleRoomScreen() {
         toast({ title: "Microphone unavailable", description: mediaErrorMessage(error, "microphone"), variant: "destructive" });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canSpeak]);
+  }, [canSpeak, canPublishMedia, meshReady]);
 
   // Remote audio element lifecycle
   useEffect(() => {
@@ -1935,16 +1887,16 @@ export default function AudioCircleRoomScreen() {
       return;
     }
     if (!next) {
-      mediaTransportRef.current?.setMicEnabled(false);
+      sessionManagerRef.current?.setMicEnabled(false);
       setMicOn(false);
       return;
     }
     if (localStream?.getAudioTracks().length) {
-      mediaTransportRef.current?.setMicEnabled(true);
+      sessionManagerRef.current?.setMicEnabled(true);
       setMicOn(true);
       return;
     }
-    mediaTransportRef.current?.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
+    sessionManagerRef.current?.ensureMicrophone()
       .then((stream) => {
         setLocalStream(stream);
         setMicOn(true);
@@ -1961,12 +1913,12 @@ export default function AudioCircleRoomScreen() {
   };
 
   const toggleVideo = async () => {
-    const transport = mediaTransportRef.current;
-    if (!transport?.addVideoTrack || !session?.video_enabled) return;
+    const manager = sessionManagerRef.current;
+    if (!manager || !session?.video_enabled) return;
     const next = !videoOn;
     if (next) {
       try {
-        const stream = await transport.addVideoTrack();
+        const stream = await manager.enableCamera();
         setLocalStream(stream);
         setVideoOn(true);
         setMediaError(null);
@@ -1976,7 +1928,7 @@ export default function AudioCircleRoomScreen() {
         toast({ title: "Camera unavailable", description, variant: "destructive" });
       }
     } else {
-      mediaTransportRef.current?.stopVideoTracks?.();
+      manager.disableCamera();
       setLocalStream(prev => {
         if (!prev) return prev;
         const audioTracks = prev.getAudioTracks();
@@ -2042,14 +1994,20 @@ export default function AudioCircleRoomScreen() {
       return;
     }
     let blocked = false;
-    const microphone = await acquireCircleDevice("microphone");
-    if (microphone.ok) {
-      microphone.stream.getTracks().forEach(t => t.stop());
-      setPreJoinMicReady(true);
+    // Listeners can join and enable their camera without granting microphone
+    // access. A speaker's microphone remains the only required device.
+    if (canSpeak) {
+      const microphone = await acquireCircleDevice("microphone");
+      if (microphone.ok) {
+        microphone.stream.getTracks().forEach(t => t.stop());
+        setPreJoinMicReady(true);
+      } else {
+        setPreJoinMicReady(false);
+        blocked = true;
+        setMediaError(microphone.message);
+      }
     } else {
-      setPreJoinMicReady(false);
-      blocked = true;
-      setMediaError(microphone.message);
+      setPreJoinMicReady(true);
     }
     if (session?.video_enabled) {
       const camera = await acquireCircleDevice("camera");
@@ -2058,7 +2016,8 @@ export default function AudioCircleRoomScreen() {
         setPreJoinCameraReady(true);
       } else {
         setPreJoinCameraReady(false);
-        blocked = true;
+        // Camera is an optional publication. Keep the Circle join/audio path
+        // available and report the actionable camera-only error instead.
         setMediaError(camera.message);
       }
     }
@@ -2302,7 +2261,7 @@ export default function AudioCircleRoomScreen() {
               {connectionStatus === "lost" && (
                 <button
                   type="button"
-                  onClick={() => window.location.reload()}
+                  onClick={() => { void sessionManagerRef.current?.retry("manual-rejoin"); }}
                   className={`${preJoinStatus !== "ready" && canPublishMedia ? "" : "ml-auto"} rounded-lg border border-amber-400/40 px-2 py-1 text-[10px] font-bold text-amber-200 hover:bg-amber-400/10`}
                 >
                   Rejoin media

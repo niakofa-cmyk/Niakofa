@@ -7,7 +7,7 @@ import {
   db,
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
-import { generalApiLimiter } from "../middlewares/rate-limit";
+import { circleMediaTokenLimiter } from "../middlewares/rate-limit.hardened";
 import { canPublishCircleMedia } from "../lib/circleMediaPolicy";
 import { isValidLiveKitUrl, parsePositiveSafeInteger } from "../lib/circleMediaConfig";
 import { logger } from "../lib/logger";
@@ -23,7 +23,7 @@ router.post(
   "/audio-circle-sessions/:id/media-token",
   requireAuth,
   requireApproved,
-  generalApiLimiter,
+  circleMediaTokenLimiter,
   async (req, res) => {
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
