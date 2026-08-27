@@ -6,15 +6,20 @@ import {
   getCircleMediaReadiness,
 } from "../circleMediaReadiness";
 
+type FakeMediaDevices = {
+  enumerateDevices: () => Promise<Array<{ kind: MediaDeviceKind }>>;
+  getUserMedia?: (constraints: MediaStreamConstraints) => Promise<unknown>;
+};
+
 function withGlobals<T>(
   overrides: {
     isSecureContext?: boolean;
-    mediaDevices?: any;
-    permissionsQuery?: (desc: { name: string }) => Promise<{ state: string }>;
+    mediaDevices?: FakeMediaDevices;
+    permissionsQuery?: (desc: { name: string }) => Promise<{ state: PermissionState }>;
   },
   fn: () => Promise<T>,
 ): Promise<T> {
-  const g = globalThis as any;
+  const g = globalThis as Record<string, unknown>;
   const previousWindow = Object.getOwnPropertyDescriptor(g, "window");
   const previousNavigator = Object.getOwnPropertyDescriptor(g, "navigator");
   Object.defineProperty(g, "window", {
@@ -80,12 +85,12 @@ test("acquisition refuses an insecure context before getUserMedia", async () => 
 });
 
 test("camera acquisition never requests audio", async () => {
-  let constraints: any = null;
+  let constraints: MediaStreamConstraints | null = null;
   const result = await withGlobals(
     {
       mediaDevices: {
         enumerateDevices: async () => [{ kind: "videoinput" }],
-        getUserMedia: async (value: any) => {
+        getUserMedia: async (value: MediaStreamConstraints) => {
           constraints = value;
           return { id: "fake-stream", getTracks: () => [] };
         },

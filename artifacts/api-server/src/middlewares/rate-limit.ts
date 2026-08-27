@@ -8,7 +8,7 @@
  * Trust model (future): high-trust/verified users get higher limits.
  * Today: IP-based and userId-based limits that are generous but enforceable.
  */
-import type { Request } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { makeLimiter, skipLocalhostInDev } from "../lib/rateLimitStore";
 
 export { skipLocalhostInDev };
@@ -113,8 +113,8 @@ export const paymentLimiter = makeLimiter({
 // would reintroduce the old global-plus-route double-count bug.
 export const generalApiLimiter = (
   _req: Request,
-  _res: import("express").Response,
-  next: import("express").NextFunction,
+  _res: Response,
+  next: NextFunction,
 ) => next();
 
 // ── 6. Chat Messages (30 / min per user) ─────────────────────────────────────
