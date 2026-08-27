@@ -28,13 +28,23 @@ Missing either field → Zod 400 → DB mock never consumed → once-mock bleeds
 
 The legacy "no password" registration path was tested as a 201. That path was removed — the route now requires password. The test was updated to expect 400 for a missing password.
 
-## Pre-existing failing test suites (not caused by audit-fix session)
+## Resolved suite failures from shared-module imports
 
-- `bug-15b-15c.test.ts` — fails with `TypeError: request is not a function` (supertest ESM interop issue in that specific test file's setup). Was already failing before `esModuleInterop: true` was added (was `express_1.default is not a function`). The esModuleInterop change actually improved it from 0 passing → 2 passing.
-- `integration-lifecycle.test.ts` — fails with 401 on POST /api/requests; needs real DB or different auth mock setup.
-- `lifecycle.test.ts` — similar pre-existing DB dependency failures.
+When production code adds a named import from a shared module, every native ESM
+`jest.unstable_mockModule` factory for that module must expose the named export,
+even if the test does not call it. Otherwise Jest fails during module linking
+with “does not provide an export named ...” before any test runs. For the
+queue module, the shared Redis accessor is mocked as `null` so tests never open
+network connections.
 
-Do NOT attempt to fix these in passing; they require dedicated test infra work.
+**Why this caused real failures:** the rate-limit store began importing the
+queue's shared Redis accessor, but several route-test mocks still modeled the
+older queue surface. Seven suites failed at import time until their factories
+were updated.
+
+**How to apply:** after adding a named import, search all
+`jest.unstable_mockModule` factories for that module and keep their export
+surfaces aligned with the production module.
 
 ## jest.config.mjs esModuleInterop
 
