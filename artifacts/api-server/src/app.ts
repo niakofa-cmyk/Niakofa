@@ -7,7 +7,7 @@ import router from "./routes";
 import { voiceAudioRawParser } from "./routes/nia-voice";
 import { logger } from "./lib/logger";
 import { AppError, ErrorCode } from "./lib/errors";
-import { generalApiLimiter } from "./middlewares/rate-limit";
+import { apiTrafficLimiter } from "./middlewares/rate-limit.hardened";
 import { parseAuth } from "./middlewares/auth";
 import { requestTimeout } from "./middlewares/timeout";
 import helmet from "helmet";
@@ -141,8 +141,15 @@ app.use(pinoHttp({ logger }));
 // 30s for normal requests, 120s for long-poll / SSE endpoints.
 app.use(requestTimeout(30_000));
 
+// Parse auth before the global limiter so authenticated traffic gets a
+// user-scoped budget instead of sharing one IP bucket with other residents,
+// coworkers, or cellular users behind the same NAT.
+app.use(parseAuth);
+
 // ── Rate limiting ──────────────────────────────────────────────────────────────
-app.use(generalApiLimiter);
+// The legacy generalApiLimiter remains a route-level no-op for compatibility;
+// this is the single effective global application of the API limiter.
+app.use(apiTrafficLimiter);
 
 // ── Raw body parsers for webhook endpoints ────────────────────────────────────
 // These MUST be mounted BEFORE express.json() so the raw body is preserved
@@ -168,10 +175,6 @@ app.use(
 // 10mb to allow base64 avatar uploads
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
-
-// ── Auth middleware ────────────────────────────────────────────────────────────
-// Parse session tokens on every request so req.user is available in routes.
-app.use(parseAuth);
 
 // ── X-Request-ID propagation ──────────────────────────────────────────────────
 // Echo the pino-http–generated request ID back to the client so that frontend

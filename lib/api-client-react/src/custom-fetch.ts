@@ -1,5 +1,11 @@
+import { fetchWithBackoff } from "./fetchWithBackoff";
+
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
+  maxAttempts?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  retryNonIdempotent?: boolean;
 };
 
 export type ErrorType<T = unknown> = ApiError<T>;
@@ -327,7 +333,15 @@ export async function customFetch<T = unknown>(
   options: CustomFetchOptions = {},
 ): Promise<T> {
   input = applyBaseUrl(input);
-  const { responseType = "auto", headers: headersInit, ...init } = options;
+  const {
+    responseType = "auto",
+    headers: headersInit,
+    maxAttempts,
+    baseDelayMs,
+    maxDelayMs,
+    retryNonIdempotent,
+    ...init
+  } = options;
 
   const method = resolveMethod(input, init.method);
 
@@ -360,7 +374,15 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  const response = await fetchWithBackoff(input, {
+    ...init,
+    method,
+    headers,
+    maxAttempts,
+    baseDelayMs,
+    maxDelayMs,
+    retryNonIdempotent,
+  });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
