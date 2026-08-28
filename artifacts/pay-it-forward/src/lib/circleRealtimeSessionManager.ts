@@ -27,6 +27,7 @@ export type MediaTokenErrorCode =
   | "session_ended"
   | "state_conflict"
   | "rate_limited"
+  | "not_configured"
   | "server_error"
   | "unknown";
 
@@ -42,7 +43,13 @@ export class MediaTokenError extends Error {
   }
 }
 
-function classifyMediaTokenStatus(status: number): MediaTokenErrorCode {
+function classifyMediaTokenStatus(
+  status: number,
+  message = "",
+): MediaTokenErrorCode {
+  if (status === 503 && /livekit is not configured/i.test(message)) {
+    return "not_configured";
+  }
   switch (status) {
     case 401:
       return "reauthenticate";
@@ -479,6 +486,19 @@ export class CircleRealtimeSessionManager {
         return data;
       }
 
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      const bodyMessage = body.error ?? "";
+      const code = classifyMediaTokenStatus(response.status, bodyMessage);
+      if (code === "not_configured") {
+        throw new MediaTokenError(
+          bodyMessage || "LiveKit is not configured on this environment",
+          code,
+          response.status,
+        );
+      }
+
       const retryable = response.status === 429 || response.status >= 500;
       if (retryable && attempt < 2) {
         const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
@@ -487,15 +507,14 @@ export class CircleRealtimeSessionManager {
         continue;
       }
 
-      const body = await response.json().catch(() => ({}));
       const retryAfterHeader = response.headers.get("Retry-After");
       const retryAfterMs = parseRetryAfter(retryAfterHeader);
       const suffix = retryAfterHeader
         ? ` Retry after ${retryAfterHeader} seconds.`
         : "";
       throw new MediaTokenError(
-        `${(body as { error?: string }).error ?? `Media token failed (${response.status})`}${suffix}`,
-        classifyMediaTokenStatus(response.status),
+        `${bodyMessage || `Media token failed (${response.status})`}${suffix}`,
+        code,
         response.status,
         retryAfterMs != null ? Math.round(retryAfterMs / 1000) : undefined,
       );

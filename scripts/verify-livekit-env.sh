@@ -10,7 +10,14 @@ if [[ -z "${LIVEKIT_URL:-}" ]]; then
 else
   case "$LIVEKIT_URL" in
     wss://*) echo "OK: LIVEKIT_URL uses wss://" ;;
-    ws://localhost*|ws://127.0.0.1*|ws://[::1]*) echo "OK: local ws URL (development only)" ;;
+    ws://localhost*|ws://127.0.0.1*|ws://[::1]*)
+      if [[ "${NODE_ENV:-development}" == "production" ]]; then
+        echo "FAIL: production LIVEKIT_URL must use wss://"
+        ok=0
+      else
+        echo "OK: local ws URL (development only)"
+      fi
+      ;;
     *) echo "FAIL: LIVEKIT_URL must use wss:// in production"
        ok=0 ;;
   esac

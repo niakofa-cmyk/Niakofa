@@ -10,6 +10,7 @@ describe("Circle media configuration", () => {
     expect(isValidLiveKitUrl("https://media.example.com")).toBe(false);
     expect(isValidLiveKitUrl("not-a-url")).toBe(false);
     expect(isValidLiveKitUrl("wss://user:pass@media.example.com")).toBe(false);
+    expect(isValidLiveKitUrl("ws://localhost:7880", { allowLocalWs: false })).toBe(false);
   });
 
   it("parses only positive, exact session identifiers", () => {

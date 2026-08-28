@@ -1,5 +1,20 @@
+export interface LiveKitUrlValidationOptions {
+  /**
+   * Local ws:// endpoints are useful for development, but must never be
+   * returned by a production API because an HTTPS browser will reject them as
+   * mixed content and they are not reachable by other devices.
+   */
+  allowLocalWs?: boolean;
+}
+
 /** Validate the server-side LiveKit endpoint before returning it to clients. */
-export function isValidLiveKitUrl(value: string): boolean {
+export function isValidLiveKitUrl(
+  value: string,
+  options: LiveKitUrlValidationOptions = {},
+): boolean {
+  const allowLocalWs =
+    options.allowLocalWs ?? process.env.NODE_ENV !== "production";
+
   try {
     const url = new URL(value);
     if (url.username || url.password || !url.hostname) return false;
@@ -7,7 +22,8 @@ export function isValidLiveKitUrl(value: string): boolean {
     // Plain WebSockets are useful for local development, but returning a
     // remote ws:// endpoint from an HTTPS app would expose the media token and
     // fail in browsers as mixed content.
-    return url.protocol === "ws:" &&
+    return allowLocalWs &&
+      url.protocol === "ws:" &&
       ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
   } catch {
     return false;

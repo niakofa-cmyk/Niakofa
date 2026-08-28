@@ -28,7 +28,14 @@ router.post(
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const livekitUrl = process.env.LIVEKIT_URL;
-    if (!apiKey || !apiSecret || !livekitUrl || !isValidLiveKitUrl(livekitUrl)) {
+    if (
+      !apiKey ||
+      !apiSecret ||
+      !livekitUrl ||
+      !isValidLiveKitUrl(livekitUrl, {
+        allowLocalWs: process.env.NODE_ENV !== "production",
+      })
+    ) {
       return res.status(503).json({ error: "LiveKit is not configured on this environment" });
     }
 

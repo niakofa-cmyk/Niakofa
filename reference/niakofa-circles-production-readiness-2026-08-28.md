@@ -35,6 +35,11 @@ their extracted text for quick review.
 4. Railway example configuration documents all three server-only LiveKit
    variables, and `scripts/verify-livekit-env.sh` checks their presence and
    production URL shape without printing secret values.
+5. Production URL validation now rejects local `ws://` endpoints, and the
+   media-token client surfaces the exact missing-LiveKit 503 without wasting
+   retry attempts.
+6. `/api/readiness` reports a redacted `livekit` dependency status so Railway
+   operators can distinguish missing media configuration from a database outage.
 
 ## Remaining release gate
 

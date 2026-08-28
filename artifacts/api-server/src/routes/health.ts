@@ -11,6 +11,7 @@ import { getHubMetrics } from "../lib/ws-hub";
 import { getSystemSetting } from "../lib/db-helpers";
 import { getNavigationCircuitBreakerStatus } from "./navigation";
 import { getStorageDescription } from "../lib/storage";
+import { isValidLiveKitUrl } from "../lib/circleMediaConfig";
 
 // ── Region bucketing ──────────────────────────────────────────────────────────
 // Maps a lat/lng point to one of the platform's target regions.
@@ -70,6 +71,27 @@ const GIT_COMMIT = process.env["GIT_COMMIT"] ?? "unknown";
 const NIA_HEALTH_TIMEOUT_MS = 2_000;
 
 const router: IRouter = Router();
+
+function getLiveKitReadiness(): {
+  status: "ready" | "degraded";
+  detail: string;
+} {
+  const livekitUrl = process.env.LIVEKIT_URL;
+  const configured =
+    Boolean(process.env.LIVEKIT_API_KEY) &&
+    Boolean(process.env.LIVEKIT_API_SECRET) &&
+    Boolean(livekitUrl) &&
+    isValidLiveKitUrl(livekitUrl ?? "", {
+      allowLocalWs: process.env.NODE_ENV !== "production",
+    });
+
+  return configured
+    ? { status: "ready", detail: "configured" }
+    : {
+        status: "degraded",
+        detail: "LIVEKIT_URL and server credentials are incomplete or invalid",
+      };
+}
 
 async function checkNiaService(): Promise<{ status: "ok" | "unavailable"; httpStatus?: number }> {
   const controller = new AbortController();
@@ -172,6 +194,7 @@ router.get("/readiness", async (_req, res) => {
   const redisConfigured = isRedisConfigured();
   const mapConfigured = Boolean(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
   const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY);
+  const livekit = getLiveKitReadiness();
   const dependencies = {
     database: {
       required: true,
@@ -204,6 +227,11 @@ router.get("/readiness", async (_req, res) => {
       required: false,
       status: mapConfigured ? "ready" : "degraded",
       detail: mapConfigured ? "configured" : "map/address fallback",
+    },
+    livekit: {
+      required: false,
+      status: livekit.status,
+      detail: livekit.detail,
     },
   } as const;
   const ready = database === "ready" && schema === "ready";

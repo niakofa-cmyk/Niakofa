@@ -326,6 +326,8 @@ function mediaTokenErrorMessage(error: unknown): string {
       return error.retryAfterSeconds
         ? `Circle media is rate-limited. Try again in ${error.retryAfterSeconds} seconds.`
         : "Circle media is rate-limited. Wait a moment, then try again.";
+    case "not_configured":
+      return "Live audio/video is not configured on the server yet. Please try again after the Circle host enables media.";
     case "server_error":
       return "Circle media is temporarily unavailable. Check your connection and try again.";
     default:

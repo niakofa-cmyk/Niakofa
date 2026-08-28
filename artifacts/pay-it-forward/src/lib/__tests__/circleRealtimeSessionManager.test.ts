@@ -167,6 +167,38 @@ test("media token failures expose distinct UI-actionable status codes", async ()
   }
 });
 
+test("missing LiveKit configuration is surfaced without retrying", async () => {
+  let requests = 0;
+  const manager = new CircleRealtimeSessionManager({
+    baseUrl: "",
+    sessionId: "missing-livekit",
+    selfUserId: "user-missing-livekit",
+    authHeaders: () => ({}),
+    videoEnabled: false,
+    fetchImpl: async () => {
+      requests += 1;
+      return {
+        ok: false,
+        status: 503,
+        headers: { get: () => null },
+        json: async () => ({
+          error: "LiveKit is not configured on this environment",
+        }),
+      } as unknown as Response;
+    },
+  });
+
+  await assert.rejects(manager.start(), (error: unknown) => {
+    assert.ok(error instanceof MediaTokenError);
+    assert.equal(error.code, "not_configured");
+    assert.equal(error.status, 503);
+    assert.match(error.message, /LiveKit is not configured/);
+    return true;
+  });
+  assert.equal(requests, 1);
+  manager.destroy();
+});
+
 test("recovery reuses the same Circle identity and republishes active media", async () => {
   const transports = [new FakeTransport(), new FakeTransport()];
   const states: string[] = [];
