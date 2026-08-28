@@ -1,22 +1,16 @@
 import { Router } from "express";
 import { LiveKitAPI } from "livekit-server-sdk";
-import { inspectLiveKitConfig, sanitizeLiveKitHost } from "../lib/circleLiveKitHealth";
+import { inspectLiveKitConfig, liveKitApiHost } from "../lib/circleLiveKitHealth";
 import { logger } from "../lib/logger";
 
 const router = Router();
 const LIVEKIT_TIMEOUT_MS = 3_000;
 
-/**
- * Bounded server-side LiveKit readiness probe.
- *
- * This endpoint deliberately exposes only safe diagnostics. It never returns
- * API keys, API secrets, JWTs, or Railway credentials.
- */
 router.get("/livekit-readiness", async (_req, res) => {
   const config = inspectLiveKitConfig();
-  const host = sanitizeLiveKitHost(process.env.LIVEKIT_URL);
+  const host = liveKitApiHost(process.env.LIVEKIT_URL);
 
-  if (config.status !== "ready") {
+  if (config.status !== "ready" || !host) {
     return res.status(503).json({
       status: "degraded",
       service: "livekit",
@@ -29,17 +23,14 @@ router.get("/livekit-readiness", async (_req, res) => {
   const timeout = setTimeout(() => controller.abort(), LIVEKIT_TIMEOUT_MS);
 
   try {
-    // The server SDK uses the HTTPS API host derived from the configured
-    // LiveKit endpoint. listRooms proves both endpoint reachability and that
-    // the API key/secret can authenticate against the LiveKit service.
+    // listRooms proves endpoint reachability and API-key/secret authentication.
+    // It does not send credentials back to the browser.
     const api = new LiveKitAPI({
-      host: host ?? undefined,
+      host,
       apiKey: process.env.LIVEKIT_API_KEY,
       secret: process.env.LIVEKIT_API_SECRET,
     });
 
-    // listRooms has no client-side AbortSignal in the SDK. Race it against a
-    // bounded timer so a broken upstream never makes the health endpoint hang.
     const rooms = await Promise.race([
       api.room.listRooms(),
       new Promise<never>((_, reject) => {
