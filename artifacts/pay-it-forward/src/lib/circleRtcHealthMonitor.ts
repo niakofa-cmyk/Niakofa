@@ -22,6 +22,11 @@ export interface CircleRtcHealthMonitorOptions {
   onRecover?: (reason: string) => Promise<void> | void;
 }
 
+type ResolvedCircleRtcHealthMonitorOptions = Required<
+  Pick<CircleRtcHealthMonitorOptions, "failureThreshold" | "recoveryCooldownMs" | "intervalMs" | "isOnline" | "now">
+> &
+  Pick<CircleRtcHealthMonitorOptions, "onSnapshot" | "onRecover">;
+
 /**
  * Lightweight browser-side watchdog for a LiveKit Circle session.
  *
@@ -30,8 +35,7 @@ export interface CircleRtcHealthMonitorOptions {
  * policy, with a cooldown to prevent 4–5 second reconnect storms.
  */
 export class CircleRtcHealthMonitor {
-  private readonly opts: Required<Omit<CircleRtcHealthMonitorOptions, "onSnapshot" | "onRecover" | "isOnline" | "now">> &
-    Pick<CircleRtcHealthMonitorOptions, "onSnapshot" | "onRecover" | "isOnline" | "now">;
+  private readonly opts: ResolvedCircleRtcHealthMonitorOptions;
   private timer: ReturnType<typeof setInterval> | null = null;
   private state: CircleRtcHealthState = "healthy";
   private lastConnectionState = "connected";
@@ -46,7 +50,7 @@ export class CircleRtcHealthMonitor {
       failureThreshold: options.failureThreshold ?? 3,
       recoveryCooldownMs: options.recoveryCooldownMs ?? 8_000,
       intervalMs: options.intervalMs ?? 2_000,
-      isOnline: options.isOnline ?? (() => typeof navigator === "undefined" || navigator.onLine),
+      isOnline: options.isOnline ?? (() => typeof window === "undefined" || navigator.onLine),
       now: options.now ?? Date.now,
       onSnapshot: options.onSnapshot,
       onRecover: options.onRecover,
@@ -91,7 +95,12 @@ export class CircleRtcHealthMonitor {
     if (normalized === "disconnected") {
       this.consecutiveFailures += 1;
       if (this.consecutiveFailures >= this.opts.failureThreshold) {
-        this.setState(this.opts.isOnline() ? "lost" : "offline");
+        if (this.opts.isOnline()) {
+          this.setState("lost");
+          void this.requestRecovery("livekit-connection-lost");
+        } else {
+          this.setState("offline");
+        }
       } else {
         this.setState("degraded");
       }
