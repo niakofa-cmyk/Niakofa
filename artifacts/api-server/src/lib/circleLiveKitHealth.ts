@@ -11,11 +11,6 @@ export interface LiveKitConfigHealth {
   detail: string;
 }
 
-/**
- * Server-side configuration check. Never return credential values.
- * This is intentionally separate from the actual LiveKit API reachability
- * check so Railway can distinguish bad configuration from an upstream outage.
- */
 export function inspectLiveKitConfig(env: NodeJS.ProcessEnv = process.env): LiveKitConfigHealth {
   const url = env.LIVEKIT_URL?.trim() ?? "";
   const apiKeyConfigured = Boolean(env.LIVEKIT_API_KEY?.trim());
@@ -41,10 +36,13 @@ export function inspectLiveKitConfig(env: NodeJS.ProcessEnv = process.env): Live
   };
 }
 
-export function sanitizeLiveKitHost(value: string | undefined): string | null {
+/** Convert the browser-facing wss:// endpoint into the HTTPS host expected by the LiveKit server SDK. */
+export function liveKitApiHost(value: string | undefined): string | null {
   if (!value) return null;
   try {
     const url = new URL(value);
+    if (url.protocol === "wss:") url.protocol = "https:";
+    else if (url.protocol === "ws:") url.protocol = "http:";
     return `${url.protocol}//${url.host}`;
   } catch {
     return null;
