@@ -16,7 +16,10 @@ class FakeTransport implements CircleMediaTransport {
   destroyed = false;
   failCamera = false;
 
-  async join(_opts: JoinMediaSessionOptions, callbacks: MediaTransportCallbacks): Promise<void> {
+  async join(
+    _opts: JoinMediaSessionOptions,
+    callbacks: MediaTransportCallbacks,
+  ): Promise<void> {
     this.callbacks = callbacks;
     this.state = "connected";
     callbacks.onConnectionStateChange?.("connected");
@@ -107,7 +110,7 @@ test("recovery reuses the same Circle identity and republishes active media", as
       tokenRequests += 1;
       return tokenResponse();
     },
-    onStateChange: state => states.push(state),
+    onStateChange: (state) => states.push(state),
     reconnectBaseDelayMs: 0,
     reconnectJitterMs: 0,
   });
@@ -130,6 +133,41 @@ test("recovery reuses the same Circle identity and republishes active media", as
   manager.destroy();
 });
 
+test("token refresh uses the server expiry and shares concurrent starts", async () => {
+  const transports = [new FakeTransport(), new FakeTransport()];
+  let tokenRequests = 0;
+  const manager = new CircleRealtimeSessionManager({
+    baseUrl: "",
+    sessionId: "circle-refresh",
+    selfUserId: "user-refresh",
+    authHeaders: () => ({}),
+    videoEnabled: false,
+    createTransport: () => transports.shift() ?? new FakeTransport(),
+    fetchImpl: async () => {
+      tokenRequests += 1;
+      return {
+        ok: true,
+        headers: { get: () => null },
+        json: async () => ({
+          media_url: "wss://livekit.example.test",
+          media_token: `token-${tokenRequests}`,
+          expires_in: 0.01,
+        }),
+      } as unknown as Response;
+    },
+    reconnectBaseDelayMs: 0,
+    reconnectJitterMs: 0,
+    tokenRefreshMinDelayMs: 0,
+  });
+
+  await Promise.all([manager.start(), manager.start()]);
+  assert.equal(tokenRequests, 1);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.ok(tokenRequests >= 2);
+  assert.equal(manager.getState(), "live");
+  manager.destroy();
+});
+
 test("destroy ends the manager without using a page reload", async () => {
   const states: string[] = [];
   const manager = new CircleRealtimeSessionManager({
@@ -140,7 +178,7 @@ test("destroy ends the manager without using a page reload", async () => {
     videoEnabled: false,
     createTransport: () => new FakeTransport(),
     fetchImpl: async () => tokenResponse(),
-    onStateChange: state => states.push(state),
+    onStateChange: (state) => states.push(state),
   });
 
   await manager.start();

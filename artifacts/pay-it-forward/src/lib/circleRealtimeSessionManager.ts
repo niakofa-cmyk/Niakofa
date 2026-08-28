@@ -39,6 +39,8 @@ export interface CircleRealtimeSessionOptions {
   /** Backoff controls. Production uses one second plus small jitter. */
   reconnectBaseDelayMs?: number;
   reconnectJitterMs?: number;
+  /** Minimum delay before token refresh. Defaults to one minute. */
+  tokenRefreshMinDelayMs?: number;
   onStateChange?: (state: ContinuityState) => void;
   onTransportChange?: (transport: CircleMediaTransport | null) => void;
   onRemoteStream?: MediaTransportCallbacks["onRemoteStream"];
@@ -66,6 +68,7 @@ export class CircleRealtimeSessionManager {
   private reconnectAttempts = 0;
   private tokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private startPromise: Promise<void> | null = null;
   private recoveryPromise: Promise<void> | null = null;
   private destroyed = false;
   private onlineHandler: (() => void) | null = null;
@@ -73,9 +76,13 @@ export class CircleRealtimeSessionManager {
   private visibilityHandler: (() => void) | null = null;
   private micLive = false;
   private camLive = false;
+  private micRequested = false;
+  private camRequested = false;
+  private tokenTtlSeconds: number;
 
   constructor(opts: CircleRealtimeSessionOptions) {
     this.opts = opts;
+    this.tokenTtlSeconds = opts.tokenTtlSeconds ?? 4 * 60 * 60;
   }
 
   getState(): ContinuityState {
@@ -97,12 +104,21 @@ export class CircleRealtimeSessionManager {
   async start(): Promise<void> {
     if (this.destroyed) throw new Error("Session manager destroyed");
     if (this.transport && this.state === "live") return;
+    if (this.startPromise) return this.startPromise;
 
+    const startPromise = this.runStart();
+    const trackedPromise = startPromise.finally(() => {
+      if (this.startPromise === trackedPromise) this.startPromise = null;
+    });
+    this.startPromise = trackedPromise;
+    return trackedPromise;
+  }
+
+  private async runStart(): Promise<void> {
     this.lifecycle += 1;
     const life = this.lifecycle;
     this.setState("connecting");
     this.bindEnvironmentListeners();
-
     try {
       await this.connectWithToken(life);
       if (life !== this.lifecycle || this.destroyed) return;
@@ -124,6 +140,7 @@ export class CircleRealtimeSessionManager {
   async ensureMicrophone(): Promise<MediaStream> {
     const transport = this.transport;
     if (!transport) throw new Error("Circle media is not connected");
+    this.micRequested = true;
 
     try {
       const stream = await transport.publishLocalMedia({ video: false });
@@ -136,6 +153,7 @@ export class CircleRealtimeSessionManager {
         classified.message,
         classified.code,
       );
+      this.micLive = false;
       throw error;
     }
   }
@@ -147,6 +165,7 @@ export class CircleRealtimeSessionManager {
     const transport = this.transport;
     if (!transport?.addVideoTrack)
       throw new Error("Camera is not supported on this transport");
+    this.camRequested = true;
 
     try {
       const stream = await transport.addVideoTrack();
@@ -161,8 +180,17 @@ export class CircleRealtimeSessionManager {
   }
 
   disableCamera(): void {
+    this.camRequested = false;
     this.transport?.stopVideoTracks?.();
     this.camLive = false;
+  }
+
+  stopLocalMedia(): void {
+    this.micRequested = false;
+    this.camRequested = false;
+    this.micLive = false;
+    this.camLive = false;
+    this.transport?.stopLocalMedia?.();
   }
 
   setMicEnabled(enabled: boolean): void {
@@ -204,6 +232,16 @@ export class CircleRealtimeSessionManager {
       this.opts.onMediaError?.("camera", classified.message, classified.code);
       throw error;
     }
+  }
+
+  startRecording(): void {
+    if (!this.transport?.startRecording)
+      throw new Error("Recording is unavailable on this media connection");
+    this.transport.startRecording();
+  }
+
+  stopRecording(): Promise<Blob | null> {
+    return this.transport?.stopRecording?.() ?? Promise.resolve(null);
   }
 
   /**
@@ -269,14 +307,14 @@ export class CircleRealtimeSessionManager {
     try {
       this.teardownTransportOnly();
       await this.connectWithToken(life);
-      if (this.micLive) {
+      if (this.micRequested) {
         try {
           await this.ensureMicrophone();
         } catch {
           // The error callback already classified the microphone failure.
         }
       }
-      if (this.camLive) {
+      if (this.camRequested) {
         try {
           await this.enableCamera();
         } catch {
@@ -367,6 +405,13 @@ export class CircleRealtimeSessionManager {
         if (!data.media_url || !data.media_token) {
           throw new Error("Incomplete media token response");
         }
+        if (
+          typeof data.expires_in === "number" &&
+          Number.isFinite(data.expires_in) &&
+          data.expires_in > 0
+        ) {
+          this.tokenTtlSeconds = data.expires_in;
+        }
         return data;
       }
 
@@ -390,8 +435,14 @@ export class CircleRealtimeSessionManager {
 
   private scheduleTokenRefresh(): void {
     if (this.tokenRefreshTimer) clearTimeout(this.tokenRefreshTimer);
-    const ttl = this.opts.tokenTtlSeconds ?? 4 * 60 * 60;
-    const refreshMs = Math.max(60_000, Math.floor(ttl * 0.8 * 1000));
+    const minimumDelay = Math.max(
+      0,
+      this.opts.tokenRefreshMinDelayMs ?? 60_000,
+    );
+    const refreshMs = Math.max(
+      minimumDelay,
+      Math.floor(this.tokenTtlSeconds * 0.8 * 1000),
+    );
     this.tokenRefreshTimer = setTimeout(() => {
       void this.refreshTokenOnly();
     }, refreshMs);

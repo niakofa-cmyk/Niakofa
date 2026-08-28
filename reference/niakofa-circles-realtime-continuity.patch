@@ -1,0 +1,627 @@
+diff --git a/artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.test.ts b/artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.test.ts
+index cb187294..b145f313 100644
+--- a/artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.test.ts
++++ b/artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.test.ts
+@@ -16,7 +16,10 @@ class FakeTransport implements CircleMediaTransport {
+   destroyed = false;
+   failCamera = false;
+ 
+-  async join(_opts: JoinMediaSessionOptions, callbacks: MediaTransportCallbacks): Promise<void> {
++  async join(
++    _opts: JoinMediaSessionOptions,
++    callbacks: MediaTransportCallbacks,
++  ): Promise<void> {
+     this.callbacks = callbacks;
+     this.state = "connected";
+     callbacks.onConnectionStateChange?.("connected");
+@@ -107,7 +110,7 @@ test("recovery reuses the same Circle identity and republishes active media", as
+       tokenRequests += 1;
+       return tokenResponse();
+     },
+-    onStateChange: state => states.push(state),
++    onStateChange: (state) => states.push(state),
+     reconnectBaseDelayMs: 0,
+     reconnectJitterMs: 0,
+   });
+@@ -130,6 +133,41 @@ test("recovery reuses the same Circle identity and republishes active media", as
+   manager.destroy();
+ });
+ 
++test("token refresh uses the server expiry and shares concurrent starts", async () => {
++  const transports = [new FakeTransport(), new FakeTransport()];
++  let tokenRequests = 0;
++  const manager = new CircleRealtimeSessionManager({
++    baseUrl: "",
++    sessionId: "circle-refresh",
++    selfUserId: "user-refresh",
++    authHeaders: () => ({}),
++    videoEnabled: false,
++    createTransport: () => transports.shift() ?? new FakeTransport(),
++    fetchImpl: async () => {
++      tokenRequests += 1;
++      return {
++        ok: true,
++        headers: { get: () => null },
++        json: async () => ({
++          media_url: "wss://livekit.example.test",
++          media_token: `token-${tokenRequests}`,
++          expires_in: 0.01,
++        }),
++      } as unknown as Response;
++    },
++    reconnectBaseDelayMs: 0,
++    reconnectJitterMs: 0,
++    tokenRefreshMinDelayMs: 0,
++  });
++
++  await Promise.all([manager.start(), manager.start()]);
++  assert.equal(tokenRequests, 1);
++  await new Promise((resolve) => setTimeout(resolve, 25));
++  assert.ok(tokenRequests >= 2);
++  assert.equal(manager.getState(), "live");
++  manager.destroy();
++});
++
+ test("destroy ends the manager without using a page reload", async () => {
+   const states: string[] = [];
+   const manager = new CircleRealtimeSessionManager({
+@@ -140,11 +178,11 @@ test("destroy ends the manager without using a page reload", async () => {
+     videoEnabled: false,
+     createTransport: () => new FakeTransport(),
+     fetchImpl: async () => tokenResponse(),
+-    onStateChange: state => states.push(state),
++    onStateChange: (state) => states.push(state),
+   });
+ 
+   await manager.start();
+   manager.destroy();
+   assert.equal(manager.getState(), "ended");
+   assert.equal(states.at(-1), "ended");
+-});
+\ No newline at end of file
++});
+diff --git a/artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts b/artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts
+index 4fcbd065..471d12f6 100644
+--- a/artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts
++++ b/artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts
+@@ -39,6 +39,8 @@ export interface CircleRealtimeSessionOptions {
+   /** Backoff controls. Production uses one second plus small jitter. */
+   reconnectBaseDelayMs?: number;
+   reconnectJitterMs?: number;
++  /** Minimum delay before token refresh. Defaults to one minute. */
++  tokenRefreshMinDelayMs?: number;
+   onStateChange?: (state: ContinuityState) => void;
+   onTransportChange?: (transport: CircleMediaTransport | null) => void;
+   onRemoteStream?: MediaTransportCallbacks["onRemoteStream"];
+@@ -66,6 +68,7 @@ export class CircleRealtimeSessionManager {
+   private reconnectAttempts = 0;
+   private tokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+   private healthTimer: ReturnType<typeof setInterval> | null = null;
++  private startPromise: Promise<void> | null = null;
+   private recoveryPromise: Promise<void> | null = null;
+   private destroyed = false;
+   private onlineHandler: (() => void) | null = null;
+@@ -73,9 +76,13 @@ export class CircleRealtimeSessionManager {
+   private visibilityHandler: (() => void) | null = null;
+   private micLive = false;
+   private camLive = false;
++  private micRequested = false;
++  private camRequested = false;
++  private tokenTtlSeconds: number;
+ 
+   constructor(opts: CircleRealtimeSessionOptions) {
+     this.opts = opts;
++    this.tokenTtlSeconds = opts.tokenTtlSeconds ?? 4 * 60 * 60;
+   }
+ 
+   getState(): ContinuityState {
+@@ -97,12 +104,21 @@ export class CircleRealtimeSessionManager {
+   async start(): Promise<void> {
+     if (this.destroyed) throw new Error("Session manager destroyed");
+     if (this.transport && this.state === "live") return;
++    if (this.startPromise) return this.startPromise;
+ 
++    const startPromise = this.runStart();
++    const trackedPromise = startPromise.finally(() => {
++      if (this.startPromise === trackedPromise) this.startPromise = null;
++    });
++    this.startPromise = trackedPromise;
++    return trackedPromise;
++  }
++
++  private async runStart(): Promise<void> {
+     this.lifecycle += 1;
+     const life = this.lifecycle;
+     this.setState("connecting");
+     this.bindEnvironmentListeners();
+-
+     try {
+       await this.connectWithToken(life);
+       if (life !== this.lifecycle || this.destroyed) return;
+@@ -124,6 +140,7 @@ export class CircleRealtimeSessionManager {
+   async ensureMicrophone(): Promise<MediaStream> {
+     const transport = this.transport;
+     if (!transport) throw new Error("Circle media is not connected");
++    this.micRequested = true;
+ 
+     try {
+       const stream = await transport.publishLocalMedia({ video: false });
+@@ -136,6 +153,7 @@ export class CircleRealtimeSessionManager {
+         classified.message,
+         classified.code,
+       );
++      this.micLive = false;
+       throw error;
+     }
+   }
+@@ -147,6 +165,7 @@ export class CircleRealtimeSessionManager {
+     const transport = this.transport;
+     if (!transport?.addVideoTrack)
+       throw new Error("Camera is not supported on this transport");
++    this.camRequested = true;
+ 
+     try {
+       const stream = await transport.addVideoTrack();
+@@ -161,10 +180,19 @@ export class CircleRealtimeSessionManager {
+   }
+ 
+   disableCamera(): void {
++    this.camRequested = false;
+     this.transport?.stopVideoTracks?.();
+     this.camLive = false;
+   }
+ 
++  stopLocalMedia(): void {
++    this.micRequested = false;
++    this.camRequested = false;
++    this.micLive = false;
++    this.camLive = false;
++    this.transport?.stopLocalMedia?.();
++  }
++
+   setMicEnabled(enabled: boolean): void {
+     this.transport?.setMicEnabled(enabled);
+   }
+@@ -206,6 +234,16 @@ export class CircleRealtimeSessionManager {
+     }
+   }
+ 
++  startRecording(): void {
++    if (!this.transport?.startRecording)
++      throw new Error("Recording is unavailable on this media connection");
++    this.transport.startRecording();
++  }
++
++  stopRecording(): Promise<Blob | null> {
++    return this.transport?.stopRecording?.() ?? Promise.resolve(null);
++  }
++
+   /**
+    * Rejoins the same Circle room without reloading the page.
+    * Concurrent recovery signals share one promise to prevent reconnect storms.
+@@ -269,14 +307,14 @@ export class CircleRealtimeSessionManager {
+     try {
+       this.teardownTransportOnly();
+       await this.connectWithToken(life);
+-      if (this.micLive) {
++      if (this.micRequested) {
+         try {
+           await this.ensureMicrophone();
+         } catch {
+           // The error callback already classified the microphone failure.
+         }
+       }
+-      if (this.camLive) {
++      if (this.camRequested) {
+         try {
+           await this.enableCamera();
+         } catch {
+@@ -367,6 +405,13 @@ export class CircleRealtimeSessionManager {
+         if (!data.media_url || !data.media_token) {
+           throw new Error("Incomplete media token response");
+         }
++        if (
++          typeof data.expires_in === "number" &&
++          Number.isFinite(data.expires_in) &&
++          data.expires_in > 0
++        ) {
++          this.tokenTtlSeconds = data.expires_in;
++        }
+         return data;
+       }
+ 
+@@ -390,8 +435,14 @@ export class CircleRealtimeSessionManager {
+ 
+   private scheduleTokenRefresh(): void {
+     if (this.tokenRefreshTimer) clearTimeout(this.tokenRefreshTimer);
+-    const ttl = this.opts.tokenTtlSeconds ?? 4 * 60 * 60;
+-    const refreshMs = Math.max(60_000, Math.floor(ttl * 0.8 * 1000));
++    const minimumDelay = Math.max(
++      0,
++      this.opts.tokenRefreshMinDelayMs ?? 60_000,
++    );
++    const refreshMs = Math.max(
++      minimumDelay,
++      Math.floor(this.tokenTtlSeconds * 0.8 * 1000),
++    );
+     this.tokenRefreshTimer = setTimeout(() => {
+       void this.refreshTokenOnly();
+     }, refreshMs);
+diff --git a/artifacts/pay-it-forward/src/pages/audio-circle-room.tsx b/artifacts/pay-it-forward/src/pages/audio-circle-room.tsx
+index 644f86f9..80ed1cf1 100644
+--- a/artifacts/pay-it-forward/src/pages/audio-circle-room.tsx
++++ b/artifacts/pay-it-forward/src/pages/audio-circle-room.tsx
+@@ -51,7 +51,6 @@ import { toast } from "@/hooks/use-toast";
+ import { useWebSocket } from "@/lib/useWebSocket";
+ import type { WsEvent } from "@/lib/wsClient";
+ import {
+-  AudioCircleMesh,
+   getAudioCircleMediaCapabilities,
+   type AudioCircleMediaCapabilities,
+ } from "@/lib/audioCircleWebRTC";
+@@ -127,6 +126,22 @@ type PreJoinStatus = "checking" | "ready" | "blocked";
+ 
+ const REACTION_EMOJIS = ["👏", "❤️", "😂", "😮", "🤔", "🔥", "💯"];
+ 
++async function enumerateCircleDevices(
++  kind: MediaDeviceKind,
++): Promise<MediaDeviceInfo[]> {
++  if (
++    typeof navigator === "undefined" ||
++    !navigator.mediaDevices?.enumerateDevices
++  )
++    return [];
++  try {
++    const devices = await navigator.mediaDevices.enumerateDevices();
++    return devices.filter((device) => device.kind === kind);
++  } catch {
++    return [];
++  }
++}
++
+ interface ChatMessage {
+   id: string;
+   user_id: number;
+@@ -752,7 +767,7 @@ export default function AudioCircleRoomScreen() {
+     new Map(),
+   );
+   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+-  const [meshReady, setMeshReady] = useState(false);
++  const [mediaReady, setMediaReady] = useState(false);
+   const [connectionStatus, setConnectionStatus] =
+     useState<ConnectionStatus>("connecting");
+   const [enduranceSampleCount, setEnduranceSampleCount] = useState(0);
+@@ -1012,10 +1027,10 @@ export default function AudioCircleRoomScreen() {
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [session?.id, myUserId]);
+ 
+-  // Start browser-side certification sampling once the mesh exists. This is
++  // Start browser-side certification sampling once the media session exists. This is
+   // intentionally local-only: media stats never pass through the API.
+   useEffect(() => {
+-    if (!session || !meshReady || !mediaTransportRef.current) return;
++    if (!session || !mediaReady || !mediaTransportRef.current) return;
+     const collector = new CircleEnduranceCollector({
+       sessionId,
+       intervalMs: 5000,
+@@ -1040,7 +1055,7 @@ export default function AudioCircleRoomScreen() {
+     };
+     // Sampling should follow the room/mesh lifecycle, not every media toggle.
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [session?.id, meshReady]);
++  }, [session?.id, mediaReady]);
+ 
+   // ── Load initial state + chat history ─────────────────────────────────────
+   useEffect(() => {
+@@ -1153,7 +1168,7 @@ export default function AudioCircleRoomScreen() {
+       onTransportChange: (transport) => {
+         if (cancelled) return;
+         mediaTransportRef.current = transport;
+-        setMeshReady(!!transport);
++        setMediaReady(!!transport);
+         if (!transport) {
+           setRemoteStreams(new Map());
+           setLocalStream(null);
+@@ -1198,7 +1213,7 @@ export default function AudioCircleRoomScreen() {
+     reconnectCountRef.current = 0;
+     manager.start().catch((error) => {
+       if (cancelled) return;
+-      setMeshReady(false);
++      setMediaReady(false);
+       setConnectionStatus("lost");
+       const description =
+         error instanceof Error
+@@ -1218,7 +1233,7 @@ export default function AudioCircleRoomScreen() {
+       sessionManagerRef.current = null;
+       manager.destroy();
+       mediaTransportRef.current = null;
+-      setMeshReady(false);
++      setMediaReady(false);
+       for (const cleanup of analyserCleanups.values()) cleanup();
+       analyserCleanups.clear();
+       // Close the shared AudioContext when the session ends
+@@ -1281,49 +1296,15 @@ export default function AudioCircleRoomScreen() {
+     }
+   }, [remoteStreams]);
+ 
+-  // Connect mesh to peers
+-  useEffect(() => {
+-    const transport = mediaTransportRef.current;
+-    if (!transport || !myUserId) return;
+-    // In an open video room, every active participant needs a receive path
+-    // because any of them may intentionally publish a camera. Audio-only
+-    // listeners keep the smaller stage-only mesh.
+-    if (canPublishMedia && session?.video_enabled) {
+-      for (const p of participants) {
+-        if (p.user_id !== myUserId) transport.connectToPeer?.(p.user_id);
+-      }
+-    } else if (canSpeak) {
+-      for (const p of participants) {
+-        if (p.user_id !== myUserId) transport.connectToPeer?.(p.user_id);
+-      }
+-    } else {
+-      const stageUsers = participants.filter(
+-        (p) =>
+-          p.role === "host" || p.role === "speaker" || p.role === "co_host",
+-      );
+-      for (const s of stageUsers) {
+-        if (s.user_id !== myUserId) transport.connectToPeer?.(s.user_id);
+-      }
+-    }
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [
+-    participants.map((p) => p.user_id).join(","),
+-    myUserId,
+-    canSpeak,
+-    canPublishMedia,
+-    session?.video_enabled,
+-    meshReady,
+-  ]);
+-
+-  // Publish mic when promoted to speaker
++  // Publish mic when promoted to speaker. LiveKit subscribes to room
++  // publications itself; the page never manually creates peer connections.
+   useEffect(() => {
+     const manager = sessionManagerRef.current;
+-    if (!manager || !mediaTransportRef.current) return;
++    if (!manager) return;
+     // Open Circles allow listeners to intentionally publish video. They do
+     // not auto-publish a microphone, and their camera must not be torn down.
+     if (!canSpeak && !canPublishMedia) {
+-      const transport = mediaTransportRef.current;
+-      transport.stopLocalMedia?.();
++      manager.stopLocalMedia();
+       setLocalStream(null);
+       setMicOn(false);
+       setVideoOn(false);
+@@ -1367,7 +1348,7 @@ export default function AudioCircleRoomScreen() {
+         });
+       });
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [canSpeak, canPublishMedia, meshReady]);
++  }, [canSpeak, canPublishMedia, mediaReady]);
+ 
+   // Remote audio element lifecycle
+   useEffect(() => {
+@@ -1548,7 +1529,6 @@ export default function AudioCircleRoomScreen() {
+     if (p.session_id !== sessionId) return;
+     setParticipants((prev) => prev.filter((x) => x.user_id !== p.user_id));
+     handRaisedAtRef.current.delete(p.user_id);
+-    mediaTransportRef.current?.disconnectFromPeer?.(p.user_id);
+   });
+ 
+   useWebSocket("circle_hand_raised", (e) => {
+@@ -1584,8 +1564,6 @@ export default function AudioCircleRoomScreen() {
+           : x,
+       ),
+     );
+-    if (p.user_id !== myUserId && p.role === "listener")
+-      mediaTransportRef.current?.disconnectFromPeer?.(p.user_id);
+   });
+ 
+   useWebSocket("circle_cohost_assigned", (e) => {
+@@ -1630,7 +1608,7 @@ export default function AudioCircleRoomScreen() {
+       );
+       if (me?.role === "speaker") {
+         setMicOn(false);
+-        mediaTransportRef.current?.setMicEnabled(false);
++        sessionManagerRef.current?.setMicEnabled(false);
+         toast({ title: "The host muted everyone" });
+       }
+     } else if (p.user_id !== null) {
+@@ -1641,7 +1619,7 @@ export default function AudioCircleRoomScreen() {
+       );
+       if (p.user_id === myUserId) {
+         setMicOn(!p.muted);
+-        mediaTransportRef.current?.setMicEnabled(!p.muted);
++        sessionManagerRef.current?.setMicEnabled(!p.muted);
+         toast({
+           title: p.muted ? "The host muted you" : "The host unmuted you",
+         });
+@@ -1661,7 +1639,6 @@ export default function AudioCircleRoomScreen() {
+       return;
+     }
+     setParticipants((prev) => prev.filter((x) => x.user_id !== p.user_id));
+-    mediaTransportRef.current?.disconnectFromPeer?.(p.user_id);
+   });
+ 
+   useWebSocket("circle_reaction", (e) => {
+@@ -1733,10 +1710,7 @@ export default function AudioCircleRoomScreen() {
+       if (p.is_recording && !wasRecording) {
+         recordingElapsedSecondsRef.current = 0;
+         try {
+-          const transport = mediaTransportRef.current;
+-          if (!transport?.startRecording)
+-            throw new Error("Recording is unavailable");
+-          transport.startRecording();
++          sessionManagerRef.current?.startRecording();
+         } catch {
+           isRecordingRef.current = false;
+           setSession((prev) =>
+@@ -1751,7 +1725,7 @@ export default function AudioCircleRoomScreen() {
+         }
+       } else if (!p.is_recording && wasRecording) {
+         const elapsed = recordingElapsedSecondsRef.current;
+-        const stopPromise = mediaTransportRef.current?.stopRecording?.();
++        const stopPromise = sessionManagerRef.current?.stopRecording();
+         if (stopPromise) {
+           void stopPromise
+             .then((blob) => {
+@@ -1774,15 +1748,13 @@ export default function AudioCircleRoomScreen() {
+     if (
+       !isHost ||
+       !session?.is_recording ||
+-      !mediaTransportRef.current ||
++      !sessionManagerRef.current ||
+       isRecordingRef.current
+     )
+       return;
+     isRecordingRef.current = true;
+     try {
+-      if (!mediaTransportRef.current.startRecording)
+-        throw new Error("Recording is unavailable");
+-      mediaTransportRef.current.startRecording();
++      sessionManagerRef.current?.startRecording();
+     } catch {
+       isRecordingRef.current = false;
+       setSession((prev) => (prev ? { ...prev, is_recording: false } : prev));
+@@ -1792,7 +1764,7 @@ export default function AudioCircleRoomScreen() {
+     // `post` is declared in the actions section below; this effect is keyed to
+     // the room/media lifecycle so it must not rerun on every render.
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [isHost, session?.is_recording, session?.id, meshReady]);
++  }, [isHost, session?.is_recording, session?.id, mediaReady]);
+ 
+   useWebSocket("circle_recording_available", (e) => {
+     const p = e.payload as { session_id: number };
+@@ -2329,14 +2301,14 @@ export default function AudioCircleRoomScreen() {
+   useEffect(() => {
+     if (!canPublishMedia || !localStream) return;
+     const refresh = () => {
+-      AudioCircleMesh.enumerateAudioDevices().then((devices) => {
++      enumerateCircleDevices("audioinput").then((devices) => {
+         setAudioDevices(devices);
+         const currentId =
+           localStream.getAudioTracks()[0]?.getSettings().deviceId ?? "";
+         setSelectedAudioDeviceId((id) => id || currentId);
+       });
+       if (session?.video_enabled) {
+-        AudioCircleMesh.enumerateVideoDevices().then((devices) => {
++        enumerateCircleDevices("videoinput").then((devices) => {
+           setVideoDevices(devices);
+           const currentId =
+             localStream.getVideoTracks()[0]?.getSettings().deviceId ?? "";
+@@ -2719,7 +2691,7 @@ export default function AudioCircleRoomScreen() {
+       recordingElapsedSecondsRef.current = 0;
+       setSession((prev) => (prev ? { ...prev, is_recording: true } : prev));
+       try {
+-        mediaTransportRef.current?.startRecording?.();
++        sessionManagerRef.current?.startRecording();
+       } catch {
+         isRecordingRef.current = false;
+         setSession((prev) => (prev ? { ...prev, is_recording: false } : prev));
+@@ -2730,7 +2702,7 @@ export default function AudioCircleRoomScreen() {
+       if (!ok) {
+         isRecordingRef.current = false;
+         setSession((prev) => (prev ? { ...prev, is_recording: false } : prev));
+-        await mediaTransportRef.current?.stopRecording?.();
++        await sessionManagerRef.current?.stopRecording();
+       }
+       return;
+     }
+@@ -2742,7 +2714,7 @@ export default function AudioCircleRoomScreen() {
+       setSession((prev) => (prev ? { ...prev, is_recording: true } : prev));
+       return;
+     }
+-    const blob = await mediaTransportRef.current?.stopRecording?.();
++    const blob = await sessionManagerRef.current?.stopRecording();
+     if (blob && blob.size > 0)
+       await uploadRecording(blob, recordingElapsedSecondsRef.current);
+   };
+diff --git a/reference/niakofa-circles-realtime-continuity-2026-08-27.md b/reference/niakofa-circles-realtime-continuity-2026-08-27.md
+new file mode 100644
+index 00000000..35fb15c5
+--- /dev/null
++++ b/reference/niakofa-circles-realtime-continuity-2026-08-27.md
+@@ -0,0 +1,80 @@
++# Niakofa Circles — realtime continuity handoff
++
++## Source materials reviewed
++
++The August 27, 2026 handoff was reviewed in full before editing:
++
++- `attached_assets/Pasted-I-ll-first-inventory-the-current-workspace-read-both-do_1787888092182.txt`
++- `attached_assets/Pasted-build-the-CircleRealtimeSessionManager-connect-reconnec_1787888106770.txt`
++- `attached_assets/niakofa-circles-realtime-continuity_1787888137024.zip`
++
++The ZIP contains the continuity specification, repository assessment, apply
++notes, a first-pass session manager, and invariant tests. Those materials are
++kept in `attached_assets/` for traceability. This file records the maintained
++implementation boundary and verification evidence for the canonical
++`artifacts/` source tree.
++
++## Production media boundary
++
++- REST and WebSocket remain the control plane for membership, roles,
++  moderation, presence, chat, and recording state.
++- LiveKit is the only Circle media transport. The browser connects to the
++  short-lived URL/token returned by the media-token route.
++- The `CircleRealtimeSessionManager` owns the LiveKit session lifetime,
++  connection states, token renewal, bounded recovery, online/offline events,
++  visibility recovery, and local media intent.
++- Microphone and camera are separate LiveKit publications. Camera acquisition
++  or publication failure must not stop a working microphone.
++- React subscribes to manager callbacks. It does not create mesh peers,
++  disconnect peer connections, or use REST resync as a media-health signal.
++- Only metadata such as participant names, avatars, chat, and room policy may
++  be cached. Live tracks, packets, and frames are never cached.
++
++## Recovery contract
++
++```text
++LIVE → network/visibility interruption → RECONNECTING
++     → fresh token + same Circle room identity → LIVE
++```
++
++Recovery never reloads the page. Concurrent starts and recovery signals share
++one in-flight operation, retries use bounded exponential backoff with jitter,
++and the manager republishes only the microphone/camera that the participant
++had requested. A failed re-publication is reported independently by device.
++
++The token scheduler uses the server-provided `expires_in` value and refreshes
++at 80% of the lifetime. The one-minute minimum delay is a production safety
++floor and is injectable in tests.
++
++## Automated verification
++
++Run from the repository root:
++
++```bash
++pnpm run typecheck:libs
++pnpm --filter @workspace/pay-it-forward typecheck
++pnpm --filter @workspace/pay-it-forward test
++pnpm --filter @workspace/pay-it-forward build
++```
++
++The A–G suite is:
++
++| Test | Contract | Result |
++| --- | --- | --- |
++| A | Host audio reaches a listener through `LiveKitCircleTransport` | Pass |
++| B | Host camera publication preserves host audio | Pass |
++| C | Open Circle listener can publish video without approval | Pass |
++| D | Camera permission denial preserves microphone and reports a classified camera error | Pass |
++| E | Network interruption rejoins the same Circle identity | Pass |
++| F | Visibility return recovers without a page reload | Pass |
++| G | Audio/video device switching preserves the other media track | Pass |
++
++The suite instantiates the production `LiveKitCircleTransport` adapter and
++uses its injected SDK-room/capture seams to create a deterministic,
++two-participant in-process LiveKit-shaped network. It is real adapter
++integration coverage, not a claim that CI packets crossed a hosted SFU, TURN
++server, NAT boundary, or physical device.
++
++Real-browser/device certification is still required for production sign-off:
++permission prompts, camera hardware, mobile lock/unlock, Wi-Fi/cellular
++interruption, TURN/NAT paths, and a four-person room remain external gates.
+\ No newline at end of file
