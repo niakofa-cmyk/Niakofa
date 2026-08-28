@@ -36,6 +36,9 @@ export interface CircleMediaTransport {
   switchVideoDevice?(deviceId: string): Promise<MediaStream>;
   startRecording?(): void;
   stopRecording?(): Promise<Blob | null>;
+  /** Browser-local, credential-free diagnostics for the current media session. */
+  getRtcDiagnostics?(): string | null;
+  markRtcRendering?(kind: "audio" | "video"): void;
   connectToPeer?(remoteUserId: string | number): void;
   disconnectFromPeer?(remoteUserId: string | number): void;
   getPeerConnections?(): Map<string | number, RTCPeerConnection>;

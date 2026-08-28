@@ -146,6 +146,32 @@ export class CircleRealtimeSessionManager {
     return this.transport;
   }
 
+  exportRtcDiagnostics(): string | null {
+    const diagnostics = this.transport?.getRtcDiagnostics?.();
+    if (!diagnostics) return null;
+    try {
+      return JSON.stringify(
+        {
+          ...JSON.parse(diagnostics),
+          continuity: {
+            state: this.state,
+            microphoneLive: this.micLive,
+            cameraLive: this.camLive,
+            reconnectAttempts: this.reconnectAttempts,
+          },
+        },
+        null,
+        2,
+      );
+    } catch {
+      return diagnostics;
+    }
+  }
+
+  markRtcRendering(kind: "audio" | "video"): void {
+    this.transport?.markRtcRendering?.(kind);
+  }
+
   isMicrophoneLive(): boolean {
     return this.micLive;
   }

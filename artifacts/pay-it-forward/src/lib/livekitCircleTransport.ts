@@ -19,6 +19,10 @@ import type {
   MediaConnectionState,
   MediaTransportCallbacks,
 } from "./circleMediaTransport";
+import {
+  installCircleRtcHardening,
+  type CircleRtcRuntime,
+} from "./installCircleRtcHardening";
 
 export interface LiveKitCircleTransportOptions {
   /**
@@ -62,6 +66,8 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   private recordingStopPromise: Promise<Blob | null> | null = null;
   private recordedChunks: Blob[] = [];
   private mixSources = new Map<string, MediaStreamAudioSourceNode>();
+  private rtcRuntime: CircleRtcRuntime | null = null;
+  private cameraRecoveryEnabled = true;
   private readonly createRoom: (options: RoomOptions) => Room;
   private readonly createLocalTracks: (
     options?: CreateLocalTracksOptions,
@@ -137,6 +143,12 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       publishDefaults: { simulcast: true, dtx: true },
     });
     this.room = room;
+    this.cameraRecoveryEnabled = true;
+    const rtcRuntime = installCircleRtcHardening(room, {
+      shouldRecoverCamera: () => this.cameraRecoveryEnabled,
+    });
+    this.rtcRuntime = rtcRuntime;
+    rtcRuntime.telemetry.markTokenReceived();
     room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
       if (!this.isCurrent(room, lifecycleId)) return;
       this.setState(
@@ -209,7 +221,16 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     );
 
     this.setState("connecting");
-    await room.connect(opts.mediaUrl, opts.mediaToken, { autoSubscribe: true });
+    try {
+      await room.connect(opts.mediaUrl, opts.mediaToken, { autoSubscribe: true });
+    } catch (error) {
+      rtcRuntime.telemetry.setError(error, "room-connect-failed");
+      rtcRuntime.detach();
+      this.rtcRuntime = null;
+      this.room = null;
+      room.disconnect();
+      throw error;
+    }
     if (!this.isCurrent(room, lifecycleId)) {
       room.disconnect();
       throw new Error("LiveKit media session ended while connecting");
@@ -229,6 +250,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
           video: false,
         });
         if (!mic) throw new Error("Microphone unavailable");
+        this.rtcRuntime?.telemetry.markCaptureStarted("audio");
         if (
           !this.isCurrent(room, lifecycleId) ||
           requestId !== this.localMediaRequestId
@@ -283,6 +305,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   async addVideoTrack(): Promise<MediaStream> {
     const requestId = this.localMediaRequestId;
     const cameraRequestId = ++this.cameraRequestId;
+    this.cameraRecoveryEnabled = true;
     return this.runMediaOperation(async () => {
       const room = this.room;
       const lifecycleId = this.lifecycleId;
@@ -308,6 +331,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       video: true,
     });
     if (!camera) throw new Error("Camera unavailable");
+    this.rtcRuntime?.telemetry.markCaptureStarted("video");
     if (
       !this.isCurrent(room, lifecycleId) ||
       requestId !== this.localMediaRequestId ||
@@ -351,6 +375,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   stopLocalMedia(): void {
     this.localMediaRequestId += 1;
     this.cameraRequestId += 1;
+    this.cameraRecoveryEnabled = false;
     const room = this.room;
     const micTrack = this.micTrack;
     this.micTrack = null;
@@ -362,6 +387,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
 
   stopVideoTracks(): void {
     this.cameraRequestId += 1;
+    this.cameraRecoveryEnabled = false;
     const room = this.room;
     const camTrack = this.camTrack;
     this.camTrack = null;
@@ -377,6 +403,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   }
 
   setVideoEnabled(enabled: boolean): void {
+    this.cameraRecoveryEnabled = enabled;
     if (enabled) {
       if (this.camTrack) {
         this.camTrack.mediaStreamTrack.enabled = true;
@@ -578,6 +605,14 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     return this.state;
   }
 
+  getRtcDiagnostics(): string | null {
+    return this.rtcRuntime?.telemetry.exportJson() ?? null;
+  }
+
+  markRtcRendering(kind: "audio" | "video"): void {
+    this.rtcRuntime?.telemetry.markRendering(kind);
+  }
+
   destroy(): void {
     this.lifecycleId += 1;
     this.localMediaRequestId += 1;
@@ -586,6 +621,8 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     this.stopLocalMedia();
     this.remoteStreams.clear();
     this.mixSources.clear();
+    this.rtcRuntime?.detach();
+    this.rtcRuntime = null;
     this.room?.disconnect();
     this.room = null;
     this.setState("ended");

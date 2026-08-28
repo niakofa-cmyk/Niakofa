@@ -69,7 +69,6 @@ import {
 } from "@/lib/circleMediaReadiness";
 import {
   CircleEnduranceCollector,
-  downloadEnduranceReport,
 } from "@/lib/circleEnduranceMetrics";
 import { canPublishCircleMedia } from "@/lib/circleMediaPolicy";
 
@@ -1387,6 +1386,7 @@ export default function AudioCircleRoomScreen() {
           audioElsRef.current.set(userId, el);
         }
         if (el.srcObject !== stream) el.srcObject = stream;
+        sessionManagerRef.current?.markRtcRendering("audio");
       }
     }
     for (const [userId] of Array.from(audioElsRef.current)) {
@@ -1400,6 +1400,17 @@ export default function AudioCircleRoomScreen() {
       }
     }
   }, [remoteStreams]);
+
+  useEffect(() => {
+    if (localStream?.getVideoTracks().length) {
+      sessionManagerRef.current?.markRtcRendering("video");
+    }
+    for (const stream of remoteStreams.values()) {
+      if (stream.getVideoTracks().length) {
+        sessionManagerRef.current?.markRtcRendering("video");
+      }
+    }
+  }, [localStream, remoteStreams]);
 
   // ── Upload recording blob (with retry + IndexedDB recovery) ─────────────
   const uploadRecording = useCallback(
@@ -2573,19 +2584,37 @@ export default function AudioCircleRoomScreen() {
 
   const exportEnduranceReport = () => {
     const collector = enduranceRef.current;
-    if (!collector) {
+    const rtcDiagnostics = sessionManagerRef.current?.exportRtcDiagnostics();
+    if (!collector && !rtcDiagnostics) {
       toast({
         title: "Diagnostics not ready",
         description: "Media sampling starts when the Circle connects.",
       });
       return;
     }
-    const report = collector.stop();
+    const report = collector?.stop();
     enduranceRef.current = null;
-    downloadEnduranceReport(report, `circle-${sessionId}-endurance.json`);
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      sessionId,
+      ...(report ? { endurance: report } : {}),
+      ...(rtcDiagnostics ? { rtc: JSON.parse(rtcDiagnostics) } : {}),
+    };
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `circle-${sessionId}-webrtc-diagnostics.json`;
+    link.click();
+    URL.revokeObjectURL(url);
     toast({
       title: "Diagnostics exported",
-      description: `${report.sampleCount} samples over ${report.durationSec}s. Use this JSON for the 30–60 minute certification gate.`,
+      description: report
+        ? `${report.sampleCount} samples over ${report.durationSec}s plus RTC milestones.`
+        : "RTC milestones and connection state saved as JSON.",
     });
   };
 
