@@ -84,7 +84,6 @@
     "@stripe/react-stripe-js": "^2.9.0",
     "@stripe/stripe-js": "^7.9.0",
     "i18next": "^26.3.1",
-    "react-i18next": "^17.0.8",
     "mapbox-gl": "^3.24.1",
     "react-map-gl": "^8.1.1"
   }
