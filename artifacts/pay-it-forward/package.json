@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx/esm --test src/lib/__tests__/heading-math.test.ts src/lib/__tests__/sankofa-bird.test.ts src/lib/__tests__/geo-utils.test.ts src/lib/__tests__/sankofa-bird-animation.test.ts src/lib/__tests__/sankofa-bird-device.test.ts src/lib/__tests__/sme-core.test.ts src/lib/__tests__/sankofa-bird-phase27.test.ts src/lib/__tests__/circleMediaPolicy.test.ts src/lib/__tests__/circleMediaTransport.test.ts src/lib/__tests__/circleMediaReadiness.test.ts src/lib/__tests__/circleRealtimeSessionManager.test.ts src/lib/__tests__/circleRealtimeSessionManager.livekit.integration.test.ts src/lib/__tests__/fetchWithBackoff.test.ts"
+    "test": "node --import tsx/esm --test src/lib/__tests__/heading-math.test.ts src/lib/__tests__/sankofa-bird.test.ts src/lib/__tests__/geo-utils.test.ts src/lib/__tests__/sankofa-bird-animation.test.ts src/lib/__tests__/sankofa-bird-device.test.ts src/lib/__tests__/sme-core.test.ts src/lib/__tests__/sankofa-bird-phase27.test.ts src/lib/__tests__/circleMediaPolicy.test.ts src/lib/__tests__/circleMediaTransport.test.ts src/lib/__tests__/circleMediaReadiness.test.ts src/lib/__tests__/circleRealtimeSessionManager.test.ts src/lib/__tests__/circleRealtimeSessionManager.livekit.integration.test.ts src/lib/__tests__/circleRtcHealth.test.ts src/lib/__tests__/fetchWithBackoff.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -86,7 +86,6 @@
     "@stripe/stripe-js": "^7.9.0",
     "i18next": "^26.3.1",
     "mapbox-gl": "^3.24.1",
-    "react-i18next": "^17.0.8",
     "react-map-gl": "^8.1.1"
   }
 }
