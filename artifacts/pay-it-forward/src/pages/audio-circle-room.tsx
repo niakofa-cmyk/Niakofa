@@ -60,6 +60,7 @@ import {
 } from "@/lib/circleMediaTransport";
 import {
   CircleRealtimeSessionManager,
+  MediaTokenError,
   type ContinuityState,
 } from "@/lib/circleRealtimeSessionManager";
 import {
@@ -303,6 +304,33 @@ function mediaErrorMessage(
   device: "microphone" | "camera",
 ): string {
   return classifyMediaError(error, device).message;
+}
+
+function mediaTokenErrorMessage(error: unknown): string {
+  if (!(error instanceof MediaTokenError)) {
+    return error instanceof Error
+      ? error.message
+      : "Couldn't connect to Circle media.";
+  }
+
+  switch (error.code) {
+    case "reauthenticate":
+      return "Your sign-in expired. Sign in again, then rejoin the Circle.";
+    case "not_authorized":
+      return "You no longer have access to this Circle.";
+    case "session_ended":
+      return "This Circle has ended.";
+    case "state_conflict":
+      return "The Circle changed while you were joining. Return to Circles and try again.";
+    case "rate_limited":
+      return error.retryAfterSeconds
+        ? `Circle media is rate-limited. Try again in ${error.retryAfterSeconds} seconds.`
+        : "Circle media is rate-limited. Wait a moment, then try again.";
+    case "server_error":
+      return "Circle media is temporarily unavailable. Check your connection and try again.";
+    default:
+      return error.message;
+  }
 }
 
 // ── Live "Xm Ys" tick hook ───────────────────────────────────────────────────
@@ -1215,10 +1243,7 @@ export default function AudioCircleRoomScreen() {
       if (cancelled) return;
       setMediaReady(false);
       setConnectionStatus("lost");
-      const description =
-        error instanceof Error
-          ? error.message
-          : "Couldn't connect to Circle media.";
+      const description = mediaTokenErrorMessage(error);
       setMediaError(description);
       toast({
         title: "Media connection failed",
@@ -1249,15 +1274,6 @@ export default function AudioCircleRoomScreen() {
     session?.media_publish_policy,
   ]);
 
-  function subscribeRaw(
-    _type: string,
-    handler: (e: WsEvent) => void,
-  ): () => void {
-    signalHandlerRef.current = handler;
-    return () => {
-      signalHandlerRef.current = null;
-    };
-  }
   useWebSocket("circle_signal", (e) => signalHandlerRef.current?.(e));
 
   // Lazily create the shared AudioContext for all volume analysers in this session.

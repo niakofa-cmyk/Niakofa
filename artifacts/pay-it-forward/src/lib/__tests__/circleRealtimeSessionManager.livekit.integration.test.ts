@@ -28,7 +28,7 @@ import type {
   MediaTransportCallbacks,
 } from "../circleMediaTransport";
 
-type EventHandler = (...args: any[]) => void;
+type EventHandler = (...args: unknown[]) => void;
 type TrackKind = "audio" | "video";
 
 class TestMediaStream {
@@ -167,7 +167,7 @@ class FakeLiveKitRoom {
     return this;
   }
 
-  emit(event: string, ...args: any[]): void {
+  emit(event: string, ...args: unknown[]): void {
     for (const handler of this.handlers.get(event) ?? []) handler(...args);
   }
 

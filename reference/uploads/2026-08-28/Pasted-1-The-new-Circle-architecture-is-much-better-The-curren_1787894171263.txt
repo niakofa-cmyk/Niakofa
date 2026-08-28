@@ -1,0 +1,529 @@
+1. The new Circle architecture is much better
+The current architecture is now effectively:
+
+                 NIAKOFA CIRCLE
+                       │
+                Circle Session
+                       │
+             ┌─────────┴─────────┐
+             │                   │
+          Control              Media
+             │                   │
+        REST / WS             LiveKit
+             │                   │
+       membership             WebRTC
+       presence                 │
+       chat                     ▼
+       moderation              SFU
+
+That is the correct separation.
+The new CircleRealtimeSessionManager explicitly says it owns the media plane, while REST/WebSocket remain responsible for membership, moderation, chat and presence.
+That's a significant architectural improvement.
+
+2. Your Host → Listener connection problem now has the right foundation
+The LiveKit transport creates one room and enables:
+
+adaptiveStream
+dynacast
+simulcast
+DTX
+
+and uses autoSubscribe: true.
+So the intended topology is now:
+
+Host
+ 🎤 ─┐
+ 📹 ─┤
+     ▼
+  LiveKit SFU
+     │
+ ┌───┴────┐
+ ▼        ▼
+Listener Listener
+ 🎤📹      🎤📹
+
+Not:
+
+Host ←→ Listener
+Host ←→ Listener
+Host ←→ Listener
+
+That's exactly what you want as Circle membership grows.
+
+3. The camera crash → audio failure problem is specifically addressed
+This is one of the strongest parts of the update.
+The new transport maintains:
+
+micTrack
+camTrack
+
+independently.
+The session manager also deliberately documents camera acquisition as a separate operation:
+adding/removing/losing camera must not tear down microphone.
+So this scenario is now explicitly supported:
+
+HOST
+
+🎤 LIVE
+📹 OFF
+
+        ↓ Camera ON
+
+🎤 LIVE
+📹 LIVE
+
+And:
+
+🎤 LIVE
+📹 CAMERA ERROR
+
+RESULT:
+
+🎤 STILL LIVE
+📹 FAILED
+
+That's exactly the behavior you requested.
+
+4. Listener video without host approval is implemented
+The new integration test explicitly checks:
+
+listener
+   ↓
+open Circle
+   ↓
+publish video
+
+without requiring host approval.
+So your desired policy:
+
+HOST
+   │
+   ├── camera
+   └── microphone
+
+LISTENER
+   │
+   ├── camera
+   └── microphone
+
+is now supported.
+That's a yes.
+
+5. The browser camera problem is much better diagnosed now
+The readiness layer distinguishes:
+
+secure_context_required
+api_unavailable
+permission_denied
+device_not_found
+device_busy
+constraint_failed
+connectivity_error
+unknown
+
+That's important because these messages:
+"Niakofa could not access the camera."
+and:
+"Your camera opened, but the live connection failed."
+are not the same problem.
+The current implementation now attempts to distinguish them.
+For example:
+Permission
+
+NotAllowedError
+       ↓
+permission_denied
+       ↓
+Allow camera access
+
+Camera already occupied
+
+NotReadableError
+       ↓
+device_busy
+       ↓
+Close other apps/tabs
+
+LiveKit/network
+
+LiveKit / ICE / TURN / publish
+       ↓
+connectivity_error
+
+That's the correct diagnostic model.
+
+6. The automatic reconnection system is now actually present
+This is the biggest answer to your previous question.
+The new manager supports:
+
+connecting
+live
+reconnecting
+token_refresh
+lost
+ended
+
+and has:
+
+recover()
+retry()
+
+The manager deliberately rejoins the same Circle session without reloading the page.
+So I no longer recommend a page-refresh strategy.
+Correct solution:
+automatic LiveKit session recovery.
+
+7. It also has exponential backoff
+The recovery path uses a bounded backoff with jitter:
+
+1s
+2s
+4s
+8s
+15s max
+
+approximately, depending on configuration.
+This is much better than:
+
+disconnect
+ ↓
+immediately reconnect
+ ↓
+disconnect
+ ↓
+immediately reconnect
+ ↓
+🔥 reconnect storm
+
+
+8. And it prevents reconnect storms
+This is especially important.
+The manager has:
+
+recoveryPromise
+
+so concurrent recovery signals share one recovery operation.
+That prevents:
+
+LiveKit reconnect
++
+network event
++
+visibility event
++
+health timer
++
+user retry
+       ↓
+5 simultaneous reconnects
+
+That's exactly the type of thing that can destabilize a realtime system.
+
+9. Token refresh has also been implemented
+The session manager gets the server's:
+
+expires_in
+
+and schedules refresh before expiration.
+It also retries media-token requests for:
+
+429
+5xx
+
+and respects:
+
+Retry-After
+
+when supplied.
+That's particularly relevant to the earlier 429 problem.
+
+10. However — here is the biggest thing I would NOT claim yet
+The new "LiveKit integration tests" are excellent contract tests, but they are still simulated.
+The repository itself describes them as an:
+in-process LiveKit-shaped network
+rather than a real LiveKit cluster.
+That means this proves:
+
+A → simulated LiveKit → B
+
+but doesn't yet prove:
+
+iPhone Safari
+      ↓
+real WebRTC
+      ↓
+Internet
+      ↓
+TURN / ICE
+      ↓
+REAL LIVEKIT SFU
+      ↓
+Internet
+      ↓
+Android Chrome
+
+That's a major distinction.
+
+11. Your current tests are nevertheless very good
+The new tests cover:
+Test A
+Host audio → Listener.
+Test B
+Host camera starts without killing host audio.
+Test C
+Listener can publish video in an open Circle.
+Test D
+Camera permission failure preserves microphone.
+Test E
+Network interruption → reconnect same Circle identity.
+Test F
+Browser visibility recovery without page reload.
+Test G
+Audio/video device switching preserves the other media track.
+That's a very respectable test contract.
+
+12. There's also a manager-level test suite
+The manager tests verify:
+* camera failure doesn't kill microphone
+* recovery republishes active media
+* token refresh
+* concurrent starts
+* destruction without reload.
+So the project is no longer missing the software architecture for continuity.
+
+13. But I found something I would improve in the tests
+There's a subtle weakness in Test D.
+The fake camera error:
+
+"camera permission denied"
+
+is just an ordinary Error, not a browser DOMException("NotAllowedError").
+Consequently, the test expects:
+
+unknown
+
+rather than:
+
+permission_denied
+
+Meanwhile the more realistic LiveKit integration test uses a real:
+
+DOMException
+NotAllowedError
+
+and correctly expects:
+
+permission_denied
+
+I would clean this up.
+The unit test should use the same browser-shaped error semantics so the test verifies the actual production classification contract.
+
+14. Another thing I'd improve: don't make setVideoEnabled() silently swallow everything
+The current manager does:
+
+enableCamera().catch(() => {})
+
+when video is enabled.
+That's dangerous from an observability standpoint.
+The error callback may run, but the calling UI doesn't receive the rejected promise.
+I'd prefer:
+
+setVideoEnabled()
+       ↓
+attempt
+       ↓
+success → LIVE
+failure → typed result/error
+       ↓
+UI displays exact reason
+
+rather than silently swallowing the exception.
+
+15. I would also make the media-token endpoint more resilient
+The manager currently retries 429/5xx three times.
+That's good.
+But eventually we should distinguish:
+
+429 from API protection
+401 authentication
+403 Circle authorization
+404 session ended
+409 Circle state conflict
+5xx infrastructure
+
+Because these should produce completely different UI behavior.
+For example:
+
+401
+→ refresh authentication
+
+403
+→ you are no longer allowed in this Circle
+
+404
+→ Circle ended
+
+429
+→ wait/backoff
+
+5xx
+→ infrastructure recovery
+
+
+16. I would NOT add live-video caching
+This is still important.
+Don't do:
+
+Live video
+ ↓
+cache
+ ↓
+refresh
+
+Instead:
+
+LiveKit
+ ↓
+connection state
+ ↓
+automatic reconnect
+ ↓
+token renewal
+ ↓
+track restoration
+
+Cache is appropriate for Circle metadata.
+Not the realtime media path.
+
+17. The architecture is now approximately this
+
+                       NIAKOFA
+                          │
+             ┌────────────┴────────────┐
+             │                         │
+        CONTROL PLANE             MEDIA PLANE
+             │                         │
+       REST / WebSocket              LiveKit
+             │                         │
+       ┌─────┼──────┐                 SFU
+       │     │      │                  │
+     Auth  Circle  Chat       ┌────────┼────────┐
+                              │        │        │
+                            Host    Listener Listener
+                            🎤📹      🎤📹      🎤📹
+
+And the browser layer:
+
+Browser
+ │
+ ├── HTTPS
+ ├── getUserMedia
+ ├── Permissions
+ ├── Camera
+ ├── Microphone
+ │
+ ▼
+LiveKit WebRTC
+ │
+ ├── ICE
+ ├── STUN
+ ├── TURN
+ └── SFU
+
+That is the architecture I would keep.
+
+18. Current Circle score
+After this newest repo check, I'd revise the score:
+Area	Assessment
+Circle product architecture	9/10
+LiveKit architecture	9/10
+Audio/video isolation	9/10
+Listener video publishing	9/10
+Camera diagnostics	8.5/10
+Automatic recovery	8.5/10
+Token lifecycle	8/10
+API/429 protection	8/10
+Automated Circle tests	8.5/10
+Real device/WebRTC validation	5/10
+Production scale validation	5/10
+The low numbers at the bottom aren't because the code is bad.
+They're because you cannot prove Internet-scale WebRTC behavior with mocked LiveKit objects.
+
+19. So is this now what we envisioned?
+Architecturally: YES.
+This is now much closer to the original Niakofa Circles vision:
+
+ENTER CIRCLE
+      ↓
+🎤 Audio connects
+      ↓
+📹 Camera optionally starts
+      ↓
+Host + Listeners share same SFU
+      ↓
+Any permitted participant can publish
+      ↓
+Camera failure doesn't kill audio
+      ↓
+Network interruption
+      ↓
+Automatic recovery
+      ↓
+Same Circle
+      ↓
+Same session experience
+
+The current repository explicitly implements the pieces necessary for that model.
+
+20. The next thing I would do is NOT another major rewrite
+I would make the next milestone:
+NIAKOFA CIRCLES REAL-WORLD RTC CERTIFICATION
+We need a real deployed test:
+
+                 LIVEKIT CLOUD / SELF-HOSTED
+                         SFU
+                          │
+              ┌───────────┴───────────┐
+              │                       │
+          DEVICE A                DEVICE B
+        iPhone Safari           Android Chrome
+              │                       │
+              └──────── INTERNET ─────┘
+
+Then test:
+🟢 A
+Host microphone → Listener
+🟢 B
+Host microphone + camera → Listener
+🟢 C
+Listener microphone + camera → Host
+🟢 D
+Host camera denied → audio stays alive
+🟢 E
+Wi-Fi → cellular
+🟢 F
+cellular → Wi-Fi
+🟢 G
+temporary Internet loss → automatic recovery
+🟢 H
+browser background → foreground
+🟢 I
+camera switching
+🟢 J
+microphone switching
+🟢 K
+TURN-only connection
+🟢 L
+two or more simultaneous publishers
+🟢 M
+long-running 30–60 minute Circle
+
+Final answer
+Yes, the new repository is now much closer to what we envisioned.
+The previous fundamental problem—"Niakofa doesn't have a formally defined realtime media system"—has effectively been addressed.
+The repository now has a real media-plane abstraction, LiveKit SFU transport, independent audio/video lifecycle, camera readiness/error classification, listener publishing, automatic reconnect, token refresh, visibility recovery, and dedicated Circle continuity tests.
+The remaining major problem is no longer architectural. It's real-world RTC certification.
+And I would not solve your Host/Listener continuity problem with page refresh or video caching. The correct production solution is what the new code is beginning to implement:
+same Circle → same logical session → LiveKit reconnect → token renewal → restore active media → no page refresh.
+One final cleanup I'd make before certification is fixing the swallowed camera error and aligning the unit test's camera failure with the browser's actual NotAllowedError semantics.
+After that, the next meaningful test is real devices against a real LiveKit deployment, because that's where we can finally determine whether the current "Microphone opened but live connection failed" and "could not access camera" problems are actually resolved rather than merely simulated away.

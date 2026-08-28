@@ -11,7 +11,53 @@ import type {
   MediaTransportCallbacks,
 } from "./circleMediaTransport";
 import { LiveKitCircleTransport } from "./livekitCircleTransport";
-import { classifyMediaError } from "./circleMediaReadiness";
+import {
+  classifyMediaError,
+  type MediaReadinessCode,
+} from "./circleMediaReadiness";
+
+/**
+ * UI-actionable reason a media-token request failed after any retryable
+ * attempts are exhausted. Keeping the HTTP status makes logging and telemetry
+ * useful while the code gives callers a stable UI decision.
+ */
+export type MediaTokenErrorCode =
+  | "reauthenticate"
+  | "not_authorized"
+  | "session_ended"
+  | "state_conflict"
+  | "rate_limited"
+  | "server_error"
+  | "unknown";
+
+export class MediaTokenError extends Error {
+  constructor(
+    message: string,
+    readonly code: MediaTokenErrorCode,
+    readonly status: number,
+    readonly retryAfterSeconds?: number,
+  ) {
+    super(message);
+    this.name = "MediaTokenError";
+  }
+}
+
+function classifyMediaTokenStatus(status: number): MediaTokenErrorCode {
+  switch (status) {
+    case 401:
+      return "reauthenticate";
+    case 403:
+      return "not_authorized";
+    case 404:
+      return "session_ended";
+    case 409:
+      return "state_conflict";
+    case 429:
+      return "rate_limited";
+    default:
+      return status >= 500 ? "server_error" : "unknown";
+  }
+}
 
 export type ContinuityState =
   | "idle"
@@ -197,9 +243,27 @@ export class CircleRealtimeSessionManager {
     this.transport?.setMicEnabled(enabled);
   }
 
-  setVideoEnabled(enabled: boolean): void {
-    if (enabled) void this.enableCamera().catch(() => {});
-    else this.disableCamera();
+  /**
+   * Turns the camera on or off. Camera failures are still reported through
+   * onMediaError, but the caller also receives the typed result directly.
+   */
+  async setVideoEnabled(
+    enabled: boolean,
+  ): Promise<
+    | { ok: true }
+    | { ok: false; code: MediaReadinessCode; message: string }
+  > {
+    if (!enabled) {
+      this.disableCamera();
+      return { ok: true };
+    }
+    try {
+      await this.enableCamera();
+      return { ok: true };
+    } catch (error) {
+      const classified = classifyMediaError(error, "camera");
+      return { ok: false, code: classified.code, message: classified.message };
+    }
   }
 
   async switchAudioDevice(deviceId: string): Promise<MediaStream> {
@@ -424,13 +488,23 @@ export class CircleRealtimeSessionManager {
       }
 
       const body = await response.json().catch(() => ({}));
-      const retryAfter = response.headers.get("Retry-After");
-      const suffix = retryAfter ? ` Retry after ${retryAfter} seconds.` : "";
-      throw new Error(
+      const retryAfterHeader = response.headers.get("Retry-After");
+      const retryAfterMs = parseRetryAfter(retryAfterHeader);
+      const suffix = retryAfterHeader
+        ? ` Retry after ${retryAfterHeader} seconds.`
+        : "";
+      throw new MediaTokenError(
         `${(body as { error?: string }).error ?? `Media token failed (${response.status})`}${suffix}`,
+        classifyMediaTokenStatus(response.status),
+        response.status,
+        retryAfterMs != null ? Math.round(retryAfterMs / 1000) : undefined,
       );
     }
-    throw new Error("Media token request exhausted retries");
+    throw new MediaTokenError(
+      "Media token request exhausted retries",
+      "server_error",
+      0,
+    );
   }
 
   private scheduleTokenRefresh(): void {
