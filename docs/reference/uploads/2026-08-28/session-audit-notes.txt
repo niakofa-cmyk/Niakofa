@@ -1,0 +1,5 @@
+I’ll first audit the current workspace, read the uploaded document completely, inventory and inspect every file in the ZIP, then compare that against the connected GitHub repository and recent commits before touching code. I’ll preserve the reference materials in the project, verify the app locally, and only then stage and push changes.
+
+This note is preserved as session context for the August 28, 2026 Circles
+production-readiness review. The actual implementation source remains the
+canonical files under artifacts/.

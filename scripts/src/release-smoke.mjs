@@ -15,6 +15,8 @@
 const webUrl = (process.env.NIAKOFA_WEB_URL ?? "http://127.0.0.1:5000").replace(/\/+$/, "");
 const apiUrl = (process.env.NIAKOFA_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
 const timeoutMs = Number(process.env.NIAKOFA_SMOKE_TIMEOUT_MS ?? 5000);
+const expectedCommit = process.env.NIAKOFA_EXPECT_COMMIT?.trim();
+const requireLiveKit = /^(1|true|yes)$/i.test(process.env.NIAKOFA_REQUIRE_LIVEKIT ?? "");
 
 const coreWebJourneys = [
   ["/", "map and request discovery"],
@@ -67,6 +69,12 @@ async function request(base, path) {
   }
 }
 
+async function requestJson(base, path) {
+  const response = await request(base, path);
+  const body = await response.json().catch(() => null);
+  return { response, body };
+}
+
 async function checkWeb() {
   console.log(`Web smoke: ${webUrl}`);
   for (const [path, label] of coreWebJourneys) {
@@ -98,6 +106,55 @@ async function checkApi() {
     } catch (error) {
       fail(`${label} (${path}) request failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  try {
+    const { response, body } = await requestJson(apiUrl, "/api/healthz");
+    if (!response.ok || body?.status !== "ok" || body?.db !== "connected") {
+      fail(
+        `deploy health probe (/api/healthz) is not healthy: HTTP ${response.status}, ` +
+        `status=${String(body?.status ?? "unknown")}, db=${String(body?.db ?? "unknown")}`,
+      );
+    } else if (expectedCommit && body.commit !== expectedCommit) {
+      fail(
+        `deploy health probe served commit ${String(body.commit ?? "unknown")}; ` +
+        `expected ${expectedCommit}`,
+      );
+    } else {
+      pass(
+        expectedCommit
+          ? `deploy health probe is healthy and serves ${expectedCommit}`
+          : "deploy health probe is healthy",
+      );
+    }
+  } catch (error) {
+    fail(`deploy health probe (/api/healthz) request failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    const { response, body } = await requestJson(apiUrl, "/api/readiness");
+    if (!response.ok || body?.ready !== true) {
+      fail(
+        `dependency readiness (/api/readiness) is not ready: HTTP ${response.status}, ` +
+        `status=${String(body?.status ?? "unknown")}`,
+      );
+    } else {
+      pass("required database and schema dependencies are ready");
+    }
+
+    const livekit = body?.dependencies?.livekit;
+    if (livekit?.status === "ready") {
+      pass("LiveKit media configuration is ready");
+    } else if (requireLiveKit) {
+      fail(`LiveKit media configuration is required but ${String(livekit?.detail ?? "unavailable")}`);
+    } else {
+      console.warn(
+        `  ! LiveKit media configuration is not ready (${String(livekit?.detail ?? "not reported")}); ` +
+        "set NIAKOFA_REQUIRE_LIVEKIT=true for the production gate.",
+      );
+    }
+  } catch (error) {
+    fail(`dependency readiness (/api/readiness) request failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   for (const [path, label] of protectedApiJourneys) {

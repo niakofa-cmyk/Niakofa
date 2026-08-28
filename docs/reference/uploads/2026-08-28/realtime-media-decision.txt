@@ -1,0 +1,17 @@
+Should you implement a new realtime media system?
+
+No. Configure LiveKit and finish certification. The target remains an SFU
+media plane with TURN, short-lived JWTs, a separate REST/WebSocket control
+plane, and independent audio/video tracks.
+
+The production sequence is:
+
+1. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET on the API service.
+2. Redeploy the API.
+3. Confirm the media-token route returns media_url and media_token rather than
+   HTTP 503.
+4. Test host microphone, listener audio, host camera, listener camera, denied
+   camera permission, network recovery, and cellular/TURN behavior.
+
+Camera permission failures and LiveKit connectivity failures are distinct user
+experiences. A failed camera operation must not tear down an active microphone.

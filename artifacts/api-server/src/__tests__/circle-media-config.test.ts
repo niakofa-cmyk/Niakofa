@@ -9,6 +9,7 @@ describe("Circle media configuration", () => {
     expect(isValidLiveKitUrl("ws://media.example.com")).toBe(false);
     expect(isValidLiveKitUrl("https://media.example.com")).toBe(false);
     expect(isValidLiveKitUrl("not-a-url")).toBe(false);
+    expect(isValidLiveKitUrl("wss://")).toBe(false);
     expect(isValidLiveKitUrl("wss://user:pass@media.example.com")).toBe(false);
     expect(isValidLiveKitUrl("ws://localhost:7880", { allowLocalWs: false })).toBe(false);
   });
