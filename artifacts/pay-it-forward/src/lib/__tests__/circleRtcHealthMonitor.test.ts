@@ -43,7 +43,7 @@ test("Circle RTC monitor reports offline without forcing page refresh", () => {
   monitor.reportConnectionState("disconnected");
   monitor.reportConnectionState("disconnected");
 
-  assert.equal(monitor.getSnapshot().state, "lost");
+  assert.equal(monitor.getSnapshot().state, "offline");
 });
 
 test("Circle RTC monitor returns to healthy after LiveKit reconnects", () => {
