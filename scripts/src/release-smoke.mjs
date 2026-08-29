@@ -16,7 +16,10 @@ const webUrl = (process.env.NIAKOFA_WEB_URL ?? "http://127.0.0.1:5000").replace(
 const apiUrl = (process.env.NIAKOFA_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
 const timeoutMs = Number(process.env.NIAKOFA_SMOKE_TIMEOUT_MS ?? 5000);
 const expectedCommit = process.env.NIAKOFA_EXPECT_COMMIT?.trim();
-const requireLiveKit = /^(1|true|yes)$/i.test(process.env.NIAKOFA_REQUIRE_LIVEKIT ?? "");
+// Circles are a production release surface, so LiveKit is required by default.
+// An explicit false is retained for platform-only/local diagnostics; it must
+// never be implicit.
+const requireLiveKit = !/^(0|false|no)$/i.test(process.env.NIAKOFA_REQUIRE_LIVEKIT ?? "true");
 
 const coreWebJourneys = [
   ["/", "map and request discovery"],
@@ -132,17 +135,27 @@ async function checkApi() {
   }
 
   try {
-    const { response, body } = await requestJson(apiUrl, "/api/readiness");
+    const readinessPath = requireLiveKit
+      ? "/api/readiness?scope=circles"
+      : "/api/readiness";
+    const { response, body } = await requestJson(apiUrl, readinessPath);
     if (!response.ok || body?.ready !== true) {
       fail(
-        `dependency readiness (/api/readiness) is not ready: HTTP ${response.status}, ` +
+        `dependency readiness (${readinessPath}) is not ready: HTTP ${response.status}, ` +
         `status=${String(body?.status ?? "unknown")}`,
       );
     } else {
-      pass("required database and schema dependencies are ready");
+      pass(
+        requireLiveKit
+          ? "required database, schema, and Circle LiveKit configuration are ready"
+          : "required database and schema dependencies are ready",
+      );
     }
 
     const livekit = body?.dependencies?.livekit;
+    if (requireLiveKit && body?.dependencies?.livekit?.required !== true) {
+      fail("Circle readiness did not mark LiveKit as a required dependency");
+    }
     if (livekit?.status === "ready") {
       pass("LiveKit media configuration is ready");
     } else if (requireLiveKit) {
@@ -150,11 +163,30 @@ async function checkApi() {
     } else {
       console.warn(
         `  ! LiveKit media configuration is not ready (${String(livekit?.detail ?? "not reported")}); ` +
-        "set NIAKOFA_REQUIRE_LIVEKIT=true for the production gate.",
+        "this was an explicit platform-only smoke run.",
       );
     }
+
+    if (requireLiveKit) {
+      try {
+        const { response: livekitResponse, body: livekitBody } =
+          await requestJson(apiUrl, "/api/livekit-readiness");
+        if (!livekitResponse.ok || livekitBody?.status !== "ready" ||
+            livekitBody?.reachability !== "authenticated") {
+          fail(
+            `LiveKit server readiness is not authenticated: HTTP ${livekitResponse.status}, ` +
+            `status=${String(livekitBody?.status ?? "unknown")}, ` +
+            `reachability=${String(livekitBody?.reachability ?? "unknown")}`,
+          );
+        } else {
+          pass("LiveKit server API is reachable with authenticated credentials");
+        }
+      } catch (error) {
+        fail(`LiveKit server readiness request failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   } catch (error) {
-    fail(`dependency readiness (/api/readiness) request failed: ${error instanceof Error ? error.message : String(error)}`);
+    fail(`dependency readiness (${requireLiveKit ? "/api/readiness?scope=circles" : "/api/readiness"}) request failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   for (const [path, label] of protectedApiJourneys) {

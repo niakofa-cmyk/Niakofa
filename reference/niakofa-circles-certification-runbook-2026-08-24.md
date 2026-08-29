@@ -18,8 +18,13 @@ node scripts/src/release-smoke.mjs
 
 The smoke gate must be run with both the web and API workflows serving, or with
 `NIAKOFA_WEB_URL` and `NIAKOFA_API_URL` pointing at the same release candidate.
-It verifies the SPA shell, public health probes, and unauthenticated `401`
-boundaries for Circles session resync and WebRTC ICE credentials.
+By default it calls `/api/readiness?scope=circles`, which requires the database,
+migrated schema, and configured LiveKit, and then calls
+`/api/livekit-readiness` to verify authenticated server reachability. The
+explicit `NIAKOFA_REQUIRE_LIVEKIT=false` override is for platform-only/local
+diagnostics, not a Circle release decision. The smoke also verifies the SPA
+shell, public health probes, and unauthenticated `401` boundaries for Circles
+session resync and WebRTC ICE credentials.
 
 The frontend test command includes the deterministic LiveKit transport
 continuity suite:
@@ -30,7 +35,7 @@ continuity suite:
 | B. Host camera without audio loss         | Pass                                         |
 | C. Open listener camera without approval  | Pass                                         |
 | D. Camera denial preserves audio          | Pass                                         |
-| E. Network interruption recovery          | Pass                                         |
+| E. Wi-Fi → cellular handoff, audio + video | Pass                                         |
 | F. Visibility lock/unlock recovery        | Pass                                         |
 | G. Device switch without audio disruption | Pass                                         |
 

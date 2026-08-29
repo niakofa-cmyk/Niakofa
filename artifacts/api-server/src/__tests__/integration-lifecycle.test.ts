@@ -617,6 +617,44 @@ describe("Health Endpoint", () => {
     }
   });
 
+  it("blocks Circle readiness when LiveKit is missing", async () => {
+    const originalLiveKit = {
+      url: process.env.LIVEKIT_URL,
+      key: process.env.LIVEKIT_API_KEY,
+      secret: process.env.LIVEKIT_API_SECRET,
+    };
+    delete process.env.LIVEKIT_URL;
+    delete process.env.LIVEKIT_API_KEY;
+    delete process.env.LIVEKIT_API_SECRET;
+    (db.execute as jest.Mock)
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ exists: true }] });
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Nia unavailable"));
+
+    try {
+      const res = await request(app).get("/api/readiness?scope=circles");
+
+      expect(res.status).toBe(503);
+      expect(res.body.scope).toBe("circles");
+      expect(res.body.ready).toBe(false);
+      expect(res.body.required.database).toBe(true);
+      expect(res.body.required.livekit).toBe(false);
+      expect(res.body.dependencies.livekit).toEqual({
+        required: true,
+        status: "degraded",
+        detail: "LIVEKIT_URL and server credentials are incomplete or invalid",
+      });
+    } finally {
+      fetchSpy.mockRestore();
+      if (originalLiveKit.url === undefined) delete process.env.LIVEKIT_URL;
+      else process.env.LIVEKIT_URL = originalLiveKit.url;
+      if (originalLiveKit.key === undefined) delete process.env.LIVEKIT_API_KEY;
+      else process.env.LIVEKIT_API_KEY = originalLiveKit.key;
+      if (originalLiveKit.secret === undefined) delete process.env.LIVEKIT_API_SECRET;
+      else process.env.LIVEKIT_API_SECRET = originalLiveKit.secret;
+    }
+  });
+
   it("blocks readiness when the database is connected but the canonical schema is missing", async () => {
     (db.execute as jest.Mock)
       .mockResolvedValueOnce({ rows: [] })

@@ -24,17 +24,18 @@ The uploaded handoff specification is preserved at:
 real browser/device and real network evidence must be recorded before claiming
 production readiness.
 
-On August 27, 2026, the deterministic A–G LiveKit transport continuity suite
-passed. This verifies the adapter and manager contracts but does not change the
-release status: real-browser, real-SFU/TURN, NAT, and device evidence remains
-outstanding.
+On August 29, 2026, the deterministic A–G LiveKit transport continuity suite
+passed, including an explicit Wi-Fi → cellular handoff with active audio and
+video republished under the same Circle identity. This verifies the adapter and
+manager contracts but does not change the release status: real-browser,
+real-SFU/TURN, NAT, and device evidence remains outstanding.
 
 | Test                     | Required evidence                                    | Status                                     |
 | ------------------------ | ---------------------------------------------------- | ------------------------------------------ |
 | Two-way audio            | Two real browsers hear host and participant          | Not run in this workspace                  |
 | Two-way video            | Host and participant receive each other’s camera     | Not run in this workspace                  |
 | Three or more people     | Host plus three participants stay connected          | Not run in this workspace                  |
-| Network recovery         | Wi-Fi/cellular interruption recovers or shows `lost` | Not run in this workspace                  |
+| Network recovery         | Wi-Fi/cellular interruption recovers or shows `lost` | Automated handoff contract passes; real device not run |
 | Refresh and rejoin       | Refresh restores room and A/V                        | Not run in this workspace                  |
 | Camera lifecycle         | Camera on → off → on stays live                      | Not run in this workspace                  |
 | Microphone lifecycle     | Mic on → mute → unmute stays live                    | Not run in this workspace                  |

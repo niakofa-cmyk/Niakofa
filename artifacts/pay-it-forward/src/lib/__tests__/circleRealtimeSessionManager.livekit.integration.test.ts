@@ -101,6 +101,7 @@ interface PublishedTrack {
 class FakeLiveKitNetwork {
   readonly rooms = new Map<string, FakeLiveKitRoom>();
   readonly publications: PublishedTrack[] = [];
+  connectionType: "wifi" | "cellular" = "wifi";
 
   createRoom(identity: string): FakeLiveKitRoom {
     const room = new FakeLiveKitRoom(this, identity);
@@ -134,6 +135,16 @@ class FakeLiveKitNetwork {
         { mediaStreamTrack: track.mediaStreamTrack },
         {},
         { identity: owner.identity },
+      );
+    }
+  }
+
+  transitionTo(connectionType: "wifi" | "cellular"): void {
+    this.connectionType = connectionType;
+    for (const room of this.rooms.values()) {
+      room.emit(
+        RoomEvent.ConnectionStateChanged,
+        ConnectionState.Disconnected,
       );
     }
   }
@@ -375,7 +386,7 @@ test("Test D — denied camera reports a camera error while microphone stays liv
   manager.destroy();
 });
 
-test("Test E — a network interruption recovers the same Circle identity", async () => {
+test("Test E — Wi-Fi to cellular handoff recovers active audio and video", async () => {
   const network = new FakeLiveKitNetwork();
   const rooms: FakeLiveKitRoom[] = [];
   const transports: LiveKitCircleTransport[] = [];
@@ -402,23 +413,41 @@ test("Test E — a network interruption recovers the same Circle identity", asyn
 
   await manager.start();
   await manager.ensureMicrophone();
+  await manager.enableCamera();
   const firstRoom = rooms[0];
-  firstRoom.emit(
-    RoomEvent.ConnectionStateChanged,
-    ConnectionState.Disconnected,
+  assert.equal(firstRoom.identity, "host");
+  assert.equal(manager.isMicrophoneLive(), true);
+  assert.equal(manager.isCameraLive(), true);
+  assert.equal(
+    manager.getTransport()?.getLocalStream()?.getAudioTracks().length,
+    1,
   );
-  await manager.recover("network-interruption");
+  assert.equal(
+    manager.getTransport()?.getLocalStream()?.getVideoTracks().length,
+    1,
+  );
+
+  network.transitionTo("cellular");
+  await manager.recover("wifi-to-cellular-handoff");
 
   assert.equal(rooms.length, 2);
+  assert.equal(network.connectionType, "cellular");
   assert.equal(firstRoom.disconnected, true);
+  assert.equal(rooms[1].identity, "host");
   assert.deepEqual(tokenUrls, [
     "/api/audio-circle-sessions/circle-e/media-token",
     "/api/audio-circle-sessions/circle-e/media-token",
   ]);
   assert.equal(manager.getState(), "live");
   assert.equal(manager.getTransport(), transports[1]);
+  assert.equal(manager.isMicrophoneLive(), true);
+  assert.equal(manager.isCameraLive(), true);
   assert.equal(
     manager.getTransport()?.getLocalStream()?.getAudioTracks().length,
+    1,
+  );
+  assert.equal(
+    manager.getTransport()?.getLocalStream()?.getVideoTracks().length,
     1,
   );
   manager.destroy();

@@ -164,9 +164,11 @@ router.get("/health", async (_req, res) => {
 
 // ── GET /readiness — machine-readable dependency readiness ────────────────────
 // /healthz answers whether Railway can send traffic to the API. This endpoint
-// gives operators and clients the complete bounded dependency picture without
-// making optional services a deployment gate.
-router.get("/readiness", async (_req, res) => {
+// gives operators and clients the complete bounded dependency picture. The
+// `scope=circles` variant is the release gate for the Circle media plane and
+// promotes LiveKit configuration from optional degradation to required readiness.
+router.get("/readiness", async (req, res) => {
+  const circlesScope = req.query.scope === "circles";
   const dbStart = Date.now();
   let database: "ready" | "unavailable" = "unavailable";
   let schema: "ready" | "unavailable" = "unavailable";
@@ -229,18 +231,25 @@ router.get("/readiness", async (_req, res) => {
       detail: mapConfigured ? "configured" : "map/address fallback",
     },
     livekit: {
-      required: false,
+      required: circlesScope,
       status: livekit.status,
       detail: livekit.detail,
     },
   } as const;
-  const ready = database === "ready" && schema === "ready";
+  const ready =
+    database === "ready" &&
+    schema === "ready" &&
+    (!circlesScope || livekit.status === "ready");
   const degraded = Object.values(dependencies).some((dependency) => dependency.status === "degraded");
 
   res.status(ready ? 200 : 503).json({
     status: ready ? (degraded ? "degraded" : "ready") : "unready",
     ready,
-    required: { database: ready },
+    required: {
+      database: database === "ready" && schema === "ready",
+      livekit: circlesScope ? livekit.status === "ready" : undefined,
+    },
+    scope: circlesScope ? "circles" : "platform",
     dependencies,
     database_latency_ms: Date.now() - dbStart,
     commit: GIT_COMMIT,
