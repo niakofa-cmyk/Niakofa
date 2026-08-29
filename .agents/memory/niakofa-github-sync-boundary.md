@@ -14,12 +14,10 @@ separate; an attempted push can fail before identifying a usable remote even
 when the local checkout is otherwise valid.
 
 **How to apply:** Compare local `HEAD` with the public `main` ref after every
-push attempt. A workspace secret callback may be unavailable even when the
-shell environment has an authorized token; use shell variable expansion for
-one token-authenticated push without printing the value, then fetch and compare
-both hashes independently.
+push attempt. If the HTTPS remote rejects authentication, use the attached
+GitHub connection's authenticated API for the write and then compare both
+hashes independently; never paste or print a token.
 
-**Why:** The shell-backed GitHub credential was available in this production
-session while the sandbox secret callback returned no value; the push succeeded
-only through the supported environment boundary, and the post-push fetch proved
-the public branch matched exactly.
+**Why:** The shell-backed HTTPS remote rejected authentication in this
+workspace, while the supported GitHub connection could read and confirm the
+public ref without exposing credentials.
