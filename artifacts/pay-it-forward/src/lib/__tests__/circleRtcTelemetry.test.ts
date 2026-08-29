@@ -25,7 +25,10 @@ test("RTC telemetry exports the safe media milestones", () => {
   );
   assert.deepEqual(
     JSON.parse(telemetry.exportJson()),
-    JSON.parse(JSON.stringify(snapshot)),
+    {
+      ...JSON.parse(JSON.stringify(snapshot)),
+      diagnosis: telemetry.diagnosis,
+    },
   );
 });
 

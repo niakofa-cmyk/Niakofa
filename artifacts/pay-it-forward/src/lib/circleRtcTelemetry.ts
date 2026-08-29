@@ -27,6 +27,15 @@ export type CircleRtcPhase =
   | "connected"
   | "failed";
 
+export type CircleRtcFailureDomain =
+  | "none"
+  | "capture"
+  | "ice-turn"
+  | "livekit-session"
+  | "subscription"
+  | "rendering"
+  | "unknown";
+
 export interface CircleRtcEvent {
   at: number;
   phase: CircleRtcPhase;
@@ -47,6 +56,10 @@ export interface CircleRtcSnapshot {
   events: CircleRtcEvent[];
   stats?: {
     candidatePairState?: string;
+    candidatePairProtocol?: string;
+    localCandidateType?: string;
+    remoteCandidateType?: string;
+    dtlsState?: string;
     iceRole?: string;
     currentRoundTripTimeMs?: number;
     packetsLost?: number;
@@ -62,9 +75,14 @@ export interface CircleRtcSnapshot {
 const now = () => Date.now();
 
 interface RtcStatsEntry {
+  id?: string;
   type?: string;
   state?: string;
   nominated?: boolean;
+  localCandidateId?: string;
+  remoteCandidateId?: string;
+  candidateType?: string;
+  protocol?: string;
   currentRoundTripTime?: number;
   packetsLost?: number;
   jitter?: number;
@@ -116,6 +134,8 @@ export class CircleRtcTelemetry {
   private room?: Room;
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private roomCleanups: Array<() => void> = [];
+  private lastCandidatePairState?: string;
+  private lastDtlsState?: string;
   private snapshotValue: CircleRtcSnapshot = {
     phase: "idle",
     roomState: "disconnected",
@@ -137,6 +157,81 @@ export class CircleRtcTelemetry {
       stats: this.snapshotValue.stats
         ? { ...this.snapshotValue.stats }
         : undefined,
+    };
+  }
+
+  get diagnosis(): {
+    domain: CircleRtcFailureDomain;
+    reason: string;
+    eventType?: string;
+  } {
+    const failure = [...this.events]
+      .reverse()
+      .find((event) => event.phase === "failed");
+    const failureType = failure?.type ?? "";
+    const stats = this.snapshotValue.stats;
+
+    if (/capture|permission|camera-restart/i.test(failureType)) {
+      return {
+        domain: "capture",
+        reason: "Browser media capture or device permission failed.",
+        eventType: failureType,
+      };
+    }
+    if (/subscription|track-unsubscribed/i.test(failureType)) {
+      return {
+        domain: "subscription",
+        reason: "LiveKit delivered a subscription failure or removed a remote track.",
+        eventType: failureType,
+      };
+    }
+    if (
+      stats?.candidatePairState &&
+      /failed|disconnected|closed/i.test(stats.candidatePairState)
+    ) {
+      return {
+        domain: "ice-turn",
+        reason: `ICE candidate pair is ${stats.candidatePairState}.`,
+        eventType: "ice-candidate-pair",
+      };
+    }
+    if (stats?.dtlsState && /failed|closed/i.test(stats.dtlsState)) {
+      return {
+        domain: "ice-turn",
+        reason: `DTLS transport is ${stats.dtlsState}.`,
+        eventType: "dtls-state",
+      };
+    }
+    if (/connect|room-disconnected|livekit-reconnect/i.test(failureType)) {
+      return {
+        domain: "livekit-session",
+        reason: "The LiveKit room session disconnected or failed to connect.",
+        eventType: failureType,
+      };
+    }
+    const subscribed = this.events.some(
+      (event) => event.type === "track-subscribed",
+    );
+    const rendered = this.events.some(
+      (event) =>
+        event.type === "audio-rendering" || event.type === "video-rendering",
+    );
+    if (subscribed && !rendered) {
+      return {
+        domain: "rendering",
+        reason: "A remote track was subscribed, but no media element reported rendering.",
+        eventType: "track-subscribed",
+      };
+    }
+    if (this.events.length === 0) {
+      return {
+        domain: "unknown",
+        reason: "No RTC milestones have been recorded yet.",
+      };
+    }
+    return {
+      domain: "none",
+      reason: "No failure domain is currently indicated by the recorded milestones.",
     };
   }
 
@@ -353,14 +448,37 @@ export class CircleRtcTelemetry {
         const report = await getStats.call(item.track);
         if (!report) continue;
 
+        const entries: RtcStatsEntry[] = [];
         report.forEach((value: RTCStats) => {
-          const entry = value as unknown as RtcStatsEntry;
+          entries.push(value as unknown as RtcStatsEntry);
+        });
+        const candidates = new Map(
+          entries
+            .filter((entry) => entry.type === "local-candidate" || entry.type === "remote-candidate")
+            .filter((entry): entry is RtcStatsEntry & { id: string } => !!entry.id)
+            .map((entry) => [entry.id, entry]),
+        );
+        entries.forEach((entry) => {
           if (
             entry.type === "candidate-pair" &&
-            (entry.state === "succeeded" || entry.state === "connected")
+            (entry.state === "succeeded" ||
+              entry.state === "connected" ||
+              entry.state === "checking" ||
+              entry.state === "disconnected" ||
+              entry.state === "failed" ||
+              entry.state === "closed")
           ) {
-            aggregate.candidatePairState = String(entry.state);
+            if (entry.nominated || !aggregate.candidatePairState) {
+              aggregate.candidatePairState = String(entry.state);
+            }
             aggregate.iceRole = entry.nominated ? "controlling" : undefined;
+            aggregate.candidatePairProtocol = entry.protocol;
+            aggregate.localCandidateType = entry.localCandidateId
+              ? candidates.get(entry.localCandidateId)?.candidateType
+              : undefined;
+            aggregate.remoteCandidateType = entry.remoteCandidateId
+              ? candidates.get(entry.remoteCandidateId)?.candidateType
+              : undefined;
             if (typeof entry.currentRoundTripTime === "number") {
               aggregate.currentRoundTripTimeMs = Math.round(
                 entry.currentRoundTripTime * 1_000,
@@ -389,8 +507,8 @@ export class CircleRtcTelemetry {
               entry.bytesSent ?? aggregate.outboundBytes ?? 0,
             );
           }
-          if (entry.type === "transport" && entry.dtlsState === "connected") {
-            this.record("dtls-connected", "dtls-connected");
+          if (entry.type === "transport" && entry.dtlsState) {
+            aggregate.dtlsState = entry.dtlsState;
           }
         });
       } catch (error) {
@@ -399,7 +517,24 @@ export class CircleRtcTelemetry {
     }
 
     if (aggregate.candidatePairState) {
-      this.record("ice-connected", "ice-candidate-pair", aggregate);
+      if (aggregate.candidatePairState !== this.lastCandidatePairState) {
+        this.record(
+          /failed|disconnected|closed/i.test(aggregate.candidatePairState)
+            ? "failed"
+            : "ice-connected",
+          "ice-candidate-pair",
+          aggregate,
+        );
+        this.lastCandidatePairState = aggregate.candidatePairState;
+      }
+    }
+    if (aggregate.dtlsState && aggregate.dtlsState !== this.lastDtlsState) {
+      this.record(
+        /failed|closed/i.test(aggregate.dtlsState) ? "failed" : "dtls-connected",
+        "dtls-state",
+        { state: aggregate.dtlsState },
+      );
+      this.lastDtlsState = aggregate.dtlsState;
     }
     this.snapshotValue = { ...this.snapshotValue, stats: aggregate };
   }
@@ -420,6 +555,8 @@ export class CircleRtcTelemetry {
     this.stopStatsPolling();
     for (const cleanup of this.roomCleanups.splice(0)) cleanup();
     this.room = undefined;
+    this.lastCandidatePairState = undefined;
+    this.lastDtlsState = undefined;
     this.remoteTracks.clear();
     this.snapshotValue = {
       ...this.snapshotValue,
@@ -431,6 +568,10 @@ export class CircleRtcTelemetry {
   }
 
   exportJson(): string {
-    return JSON.stringify(this.snapshot, null, 2);
+    return JSON.stringify(
+      { ...this.snapshot, diagnosis: this.diagnosis },
+      null,
+      2,
+    );
   }
 }

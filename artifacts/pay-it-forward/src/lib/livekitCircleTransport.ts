@@ -245,10 +245,16 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       const lifecycleId = this.lifecycleId;
       if (!room) throw new Error("LiveKit transport not joined");
       if (!this.micTrack) {
-        const [mic] = await this.createLocalTracks({
-          audio: true,
-          video: false,
-        });
+        let mic: LocalTrack | undefined;
+        try {
+          [mic] = await this.createLocalTracks({
+            audio: true,
+            video: false,
+          });
+        } catch (error) {
+          this.rtcRuntime?.telemetry.setError(error, "audio-capture-failed");
+          throw error;
+        }
         if (!mic) throw new Error("Microphone unavailable");
         this.rtcRuntime?.telemetry.markCaptureStarted("audio");
         if (
@@ -265,6 +271,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
             source: Track.Source.Microphone,
           });
         } catch (error) {
+          this.rtcRuntime?.telemetry.setError(error, "audio-publish-failed");
           mic.stop();
           throw error;
         }
@@ -326,10 +333,16 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     cameraRequestId: number,
   ): Promise<MediaStream> {
     if (this.camTrack) return this.emitLocalStream();
-    const [camera] = await this.createLocalTracks({
-      audio: false,
-      video: true,
-    });
+    let camera: LocalTrack | undefined;
+    try {
+      [camera] = await this.createLocalTracks({
+        audio: false,
+        video: true,
+      });
+    } catch (error) {
+      this.rtcRuntime?.telemetry.setError(error, "video-capture-failed");
+      throw error;
+    }
     if (!camera) throw new Error("Camera unavailable");
     this.rtcRuntime?.telemetry.markCaptureStarted("video");
     if (
@@ -345,6 +358,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
         source: Track.Source.Camera,
       });
     } catch (error) {
+      this.rtcRuntime?.telemetry.setError(error, "video-publish-failed");
       camera.stop();
       throw error;
     }
