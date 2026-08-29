@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
+import { PoolContributionPanel } from "@/components/PoolContributionPanel";
 
 interface GratitudePost {
   id: number;
@@ -1237,6 +1238,40 @@ export default function CommunityScreen() {
               </div>
             </motion.div>
 
+            {/* Keep the funding action next to the balance hero. The same
+                component serves authenticated contributions and anonymous
+                Stripe donations; the parent keeps each provider flow intact. */}
+            {currentUser ? (
+              <PoolContributionPanel
+                amount={contributeAmount}
+                setAmount={setContributeAmount}
+                pending={contributeMutation.isPending}
+                onContinue={submitContribution}
+              />
+            ) : isStripeConfigured() ? (
+              <PoolContributionPanel
+                amount={anonAmount}
+                setAmount={setAnonAmount}
+                pending={anonPending}
+                onContinue={submitAnonDonation}
+                title="Support the Community"
+                subtitle="No account needed — every dollar goes directly to helpers serving Tarrant County neighbors."
+              />
+            ) : null}
+            {(contributeMsg || anonMsg) && (
+              <div
+                role="status"
+                aria-live="polite"
+                className={`rounded-xl px-3 py-2 text-xs ${
+                  (contributeMsg ?? anonMsg ?? "").startsWith("Thank")
+                    ? "bg-green-500/10 text-green-400"
+                    : "bg-destructive/10 text-destructive/80"
+                }`}
+              >
+                {contributeMsg ?? anonMsg}
+              </div>
+            )}
+
             {/* Helpers Earned This Week — "good people paid every day" promise */}
             {/* "Helpers Earned This Week" — weekly transparency card.
                 helpers_earned_7d / helpers_paid_7d are typed directly on PoolStats. */}
@@ -1491,60 +1526,8 @@ export default function CommunityScreen() {
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Businesses and individuals can sponsor the community pool directly. Your contributions go directly to helpers serving Fort Worth neighbors.
+                Use the <span className="font-bold text-foreground">Fund the Community Pool</span> panel above to contribute — your history shows up below.
               </p>
-
-              {/* Contribute to the pool */}
-              {currentUser && (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <DollarSign className="w-4 h-4 text-yellow-400/60 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min={1}
-                        max={10000}
-                        placeholder="Amount"
-                        value={contributeAmount}
-                        onChange={(e) => setContributeAmount(e.target.value)}
-                        className="w-full bg-background/60 border border-yellow-500/30 rounded-xl pl-9 pr-3 py-2.5 text-base font-bold focus:outline-none focus:border-yellow-400/60"
-                      />
-                    </div>
-                    <button
-                      onClick={submitContribution}
-                      disabled={contributeMutation.isPending}
-                      className="shrink-0 bg-yellow-400 text-black font-black text-xs uppercase tracking-wider rounded-xl px-4 py-2.5 active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                      {contributeMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Heart className="w-3.5 h-3.5" />}
-                      Fund the Pool
-                    </button>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {[5, 10, 25, 50].map((amt) => (
-                      <button
-                        key={amt}
-                        onClick={() => setContributeAmount(String(amt))}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                          contributeAmount === String(amt)
-                            ? "bg-yellow-400/20 border-yellow-400/60 text-yellow-400"
-                            : "bg-background/40 border-border text-muted-foreground"
-                        }`}
-                      >
-                        ${amt}
-                      </button>
-                    ))}
-                  </div>
-                  {contributeMsg && (
-                    <div className={`text-xs rounded-xl px-3 py-2 ${
-                      contributeMsg.startsWith("Thank")
-                        ? "text-green-400 bg-green-500/10"
-                        : "text-destructive/80 bg-destructive/10"
-                    }`}>
-                      {contributeMsg}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Contribution history */}
               {currentUser ? (
@@ -1605,66 +1588,6 @@ export default function CommunityScreen() {
                 </div>
               )}
             </div>
-
-            {/* Anonymous public donation — no account required */}
-            {!currentUser && isStripeConfigured() && (
-              <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Heart className="w-4 h-4 text-primary shrink-0" />
-                  <div className="font-bold text-sm text-primary">Support the Community</div>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  You don't need an account to fund the pool. Every dollar goes directly to helpers serving Tarrant County neighbors.
-                </p>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <DollarSign className="w-4 h-4 text-primary/50 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={1}
-                      max={10000}
-                      placeholder="Amount"
-                      value={anonAmount}
-                      onChange={(e) => setAnonAmount(e.target.value)}
-                      className="w-full bg-background/60 border border-primary/30 rounded-xl pl-9 pr-3 py-2.5 text-base font-bold focus:outline-none focus:border-primary/60"
-                    />
-                  </div>
-                  <button
-                    onClick={submitAnonDonation}
-                    disabled={anonPending}
-                    className="shrink-0 bg-primary text-primary-foreground font-black text-xs uppercase tracking-wider rounded-xl px-4 py-2.5 active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    {anonPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Heart className="w-3.5 h-3.5" />}
-                    Donate
-                  </button>
-                </div>
-                <div className="flex gap-1.5">
-                  {[5, 10, 25, 50].map((amt) => (
-                    <button
-                      key={amt}
-                      onClick={() => setAnonAmount(String(amt))}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                        anonAmount === String(amt)
-                          ? "bg-primary/20 border-primary/60 text-primary"
-                          : "bg-background/40 border-border text-muted-foreground"
-                      }`}
-                    >
-                      ${amt}
-                    </button>
-                  ))}
-                </div>
-                {anonMsg && (
-                  <div className={`text-xs rounded-xl px-3 py-2 ${
-                    anonMsg.startsWith("Thank")
-                      ? "text-green-400 bg-green-500/10"
-                      : "text-destructive/80 bg-destructive/10"
-                  }`}>
-                    {anonMsg}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Stripe payment sheet for pool contributions */}
             {contributeSecret && (
