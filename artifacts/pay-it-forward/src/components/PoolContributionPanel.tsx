@@ -12,8 +12,8 @@ interface PoolContributionPanelProps {
 }
 
 const QUICK_AMOUNTS = [5, 10, 25, 50] as const;
-const MIN_AMOUNT = 1;
-const MAX_AMOUNT = 10_000;
+export const MIN_POOL_AMOUNT = 1;
+export const MAX_POOL_AMOUNT = 10_000;
 
 /**
  * The primary launcher for funding the Community Pool.
@@ -39,8 +39,8 @@ export function PoolContributionPanel({
   const parsedAmount = Number(amount);
   const valid =
     Number.isFinite(parsedAmount) &&
-    parsedAmount >= MIN_AMOUNT &&
-    parsedAmount <= MAX_AMOUNT;
+    parsedAmount >= MIN_POOL_AMOUNT &&
+    parsedAmount <= MAX_POOL_AMOUNT;
   const showError = amount.trim() !== "" && !valid;
 
   return (
@@ -96,8 +96,8 @@ export function PoolContributionPanel({
             onChange={(event) => setAmount(event.target.value)}
             type="number"
             inputMode="decimal"
-            min={MIN_AMOUNT}
-            max={MAX_AMOUNT}
+            min={MIN_POOL_AMOUNT}
+            max={MAX_POOL_AMOUNT}
             step="0.01"
             placeholder="0.00"
             disabled={pending || disabled}

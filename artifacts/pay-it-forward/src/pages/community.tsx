@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
-import { PoolContributionPanel } from "@/components/PoolContributionPanel";
+import { MAX_POOL_AMOUNT, MIN_POOL_AMOUNT, PoolContributionPanel } from "@/components/PoolContributionPanel";
 
 interface GratitudePost {
   id: number;
@@ -24,8 +24,9 @@ interface GratitudePost {
   created_at: string;
 }
 
-function formatPoolCurrency(value: number): string {
-  return value.toLocaleString("en-US", {
+function formatPoolCurrency(value: number | string | null | undefined): string {
+  const amount = Number(value ?? 0);
+  return (Number.isFinite(amount) ? amount : 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -939,9 +940,9 @@ export default function CommunityScreen() {
   useWebSocket("pool_low_balance", () => { refetchPoolStats(); });
 
   const submitContribution = async () => {
-    const amt = parseFloat(contributeAmount);
-    if (!Number.isFinite(amt) || amt < 1) {
-      setContributeMsg("Enter an amount of $1 or more.");
+    const amt = Number(contributeAmount);
+    if (!Number.isFinite(amt) || amt < MIN_POOL_AMOUNT || amt > MAX_POOL_AMOUNT) {
+      setContributeMsg("Enter an amount from $1.00 to $10,000.00.");
       return;
     }
     setContributeMsg(null);
@@ -973,9 +974,9 @@ export default function CommunityScreen() {
 
   // Anonymous donation — no account required (POST /pool/donate, Stripe-only)
   const submitAnonDonation = async () => {
-    const amt = parseFloat(anonAmount);
-    if (!Number.isFinite(amt) || amt < 1) {
-      setAnonMsg("Enter an amount of $1 or more.");
+    const amt = Number(anonAmount);
+    if (!Number.isFinite(amt) || amt < MIN_POOL_AMOUNT || amt > MAX_POOL_AMOUNT) {
+      setAnonMsg("Enter an amount from $1.00 to $10,000.00.");
       return;
     }
     setAnonMsg(null);
@@ -1009,7 +1010,9 @@ export default function CommunityScreen() {
 
   const poolBalance = poolStats?.balance ?? 0;
   const poolTarget = 500;
-  const poolPct = poolStats ? Math.min(Math.round((poolBalance / poolTarget) * 100), 100) : 0;
+  const poolPct = poolStats
+    ? Math.max(0, Math.min(Math.round((poolBalance / poolTarget) * 100), 100))
+    : 0;
   const poolReached = poolStats ? poolBalance >= poolTarget : false;
 
   const toggleLike = (id: number) => {
@@ -1299,7 +1302,7 @@ export default function CommunityScreen() {
                   <div className="text-[10px] text-green-400 font-bold mt-1">
                     ✓ ${formatPoolCurrency(poolStats.guaranteed_minimum)} flat floor
                     {poolStats.minimum_hourly_rate
-                      ? ` · $${poolStats.minimum_hourly_rate.toFixed(0)}/hr for timed tasks`
+                      ? ` · $${formatPoolCurrency(poolStats.minimum_hourly_rate)}/hr for timed tasks`
                       : ""} guaranteed per task
                   </div>
                 )}
@@ -1769,8 +1772,8 @@ export default function CommunityScreen() {
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
                   <DollarSign className="w-5 h-5 text-primary" />
                 </div>
-                <div className="text-3xl font-black text-primary">
-                  ${stats?.total_pledge_volume?.toFixed(0) ?? "0"}
+                  <div className="text-3xl font-black text-primary">
+                  ${formatPoolCurrency(stats?.total_pledge_volume)}
                 </div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Paid Forward</div>
               </div>
@@ -1840,7 +1843,11 @@ export default function CommunityScreen() {
             )}
 
             {countyData && (() => {
-              const hRatio = countyData.pool_health_ratio;
+              const hRatio = Math.max(0, Math.min(Number(countyData.pool_health_ratio) || 0, 1));
+              const countyPoolPct = Math.max(
+                0,
+                Math.min(Number(countyData.pool_pct) || 0, 100),
+              );
               const healthColor =
                 hRatio >= 0.9 ? "text-green-400"
                 : hRatio >= 0.7 ? "text-yellow-400"
@@ -1882,13 +1889,13 @@ export default function CommunityScreen() {
                     {/* Balance vs target */}
                     <div className="mb-3">
                       <div className="flex justify-between text-xs mb-1.5">
-                        <span className="font-black text-lg">${countyData.pool_balance.toFixed(2)}</span>
-                        <span className="text-muted-foreground text-[11px] self-end">target ${countyData.target_reserve_amount.toLocaleString()}</span>
+                        <span className="font-black text-lg">${formatPoolCurrency(countyData.pool_balance)}</span>
+                        <span className="text-muted-foreground text-[11px] self-end">target ${formatPoolCurrency(countyData.target_reserve_amount)}</span>
                       </div>
                       <div className="h-3 bg-black/20 rounded-full overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
-                          animate={{ width: `${countyData.pool_pct}%` }}
+                          animate={{ width: `${countyPoolPct}%` }}
                           transition={{ duration: 1.2, ease: "easeOut" }}
                           className={`h-full rounded-full ${
                             hRatio >= 0.9 ? "bg-gradient-to-r from-green-400 to-emerald-500"
@@ -1945,10 +1952,10 @@ export default function CommunityScreen() {
                     </h3>
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        { label: "Contributed", value: `$${countyData.total_contributed.toFixed(2)}`, desc: "From sponsors & neighbors", color: "text-green-400" },
-                        { label: "Paid to Helpers", value: `$${countyData.total_paid_to_helpers.toFixed(2)}`, desc: "Instantly on task completion", color: "text-primary" },
+                        { label: "Contributed", value: `$${formatPoolCurrency(countyData.total_contributed)}`, desc: "From sponsors & neighbors", color: "text-green-400" },
+                        { label: "Paid to Helpers", value: `$${formatPoolCurrency(countyData.total_paid_to_helpers)}`, desc: "Instantly on task completion", color: "text-primary" },
                         { label: "Helpers Paid", value: countyData.helpers_paid.toString(), desc: "Unique neighbors compensated", color: "text-yellow-400" },
-                        { label: "30-Day Inflow", value: `$${countyData.inflow_30d.toFixed(2)}`, desc: "Repayments + contributions", color: "text-cyan-400" },
+                        { label: "30-Day Inflow", value: `$${formatPoolCurrency(countyData.inflow_30d)}`, desc: "Repayments + contributions", color: "text-cyan-400" },
                       ].map(item => (
                         <div key={item.label} className="bg-background/60 rounded-xl px-3 py-2.5">
                           <div className={`text-xl font-black ${item.color}`}>{item.value}</div>
@@ -1996,7 +2003,7 @@ export default function CommunityScreen() {
                                 )}
                               </div>
                               <div className={`font-black tabular-nums ${isCredit ? "text-green-400" : "text-primary"}`}>
-                                {isCredit ? "+" : "−"}${Math.abs(entry.amount).toFixed(2)}
+                                {isCredit ? "+" : "−"}${formatPoolCurrency(Math.abs(entry.amount))}
                               </div>
                             </div>
                           );
