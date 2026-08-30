@@ -1592,7 +1592,13 @@ export default function ProfileScreen() {
                     <BookOpen className="w-6 h-6 mx-auto mb-2 text-muted-foreground/40" />
                     <p className="text-sm text-muted-foreground font-semibold">No local resources yet</p>
                     <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                      We don't have resources for your area yet. Email{" "}
+                      {/* Name the actual detected area when we have one, instead
+                          of implying these are unmatched-but-nearby results. */}
+                      {civicData?.city && civicData?.state
+                        ? `We don't have resources for ${civicData.city}, ${civicData.state} yet. Email `
+                        : civicData?.state
+                          ? `We don't have resources for ${civicData.state} yet. Email `
+                          : "We don't have resources for your area yet. Email "}
                       <a href="mailto:resources@niakofa.community" className="text-primary hover:underline">
                         resources@niakofa.community
                       </a>{" "}
@@ -1602,11 +1608,6 @@ export default function ProfileScreen() {
                 )}
                 {!civicLoading && civicData && civicData.resources.length > 0 && (
                   <>
-                    {civicData.match_level === "fallback" && (
-                      <p className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2 mb-2">
-                        Showing general resources — enable location for local results
-                      </p>
-                    )}
                     {civicData.resources.map(org => (
                       <a
                         key={org.id}

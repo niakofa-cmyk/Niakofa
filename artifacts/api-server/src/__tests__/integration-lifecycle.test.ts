@@ -610,10 +610,18 @@ describe("Health Endpoint", () => {
       expect(res.body.dependencies.schema.status).toBe("ready");
       expect(res.body.dependencies.nia.status).toBe("degraded");
       expect(res.body.dependencies.redis.detail).toBe("durable scheduler fallback");
+      const stripeConfigured =
+        Boolean(process.env.STRIPE_SECRET_KEY) &&
+        Boolean(process.env.STRIPE_WEBHOOK_SECRET);
       expect(res.body.dependencies.stripe.detail).toBe(
-        "STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are incomplete",
+        stripeConfigured
+          ? "secret key and webhook signing secret configured"
+          : "STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are incomplete",
       );
-      expect(res.body.dependencies.mapbox.detail).toBe("map/address fallback");
+      const mapboxConfigured = Boolean(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+      expect(res.body.dependencies.mapbox.detail).toBe(
+        mapboxConfigured ? "configured" : "map/address fallback",
+      );
     } finally {
       fetchSpy.mockRestore();
     }

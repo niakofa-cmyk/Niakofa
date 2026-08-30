@@ -13,7 +13,7 @@
 
 import express from "express";
 import request from "supertest";
-import { jest } from "@jest/globals";
+import { afterEach, beforeAll, beforeEach, jest } from "@jest/globals";
 
 // ── Mock logger so we don't get pino noise in test output ─────────────────────
 jest.unstable_mockModule("../lib/logger.js", () => ({
@@ -77,6 +77,26 @@ const TARRANT_LOCATIONS = {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 let app: express.Express;
+const ORIGINAL_MAPBOX_TOKEN = process.env.MAPBOX_TOKEN;
+const ORIGINAL_VITE_MAPBOX_TOKEN = process.env.VITE_MAPBOX_TOKEN;
+
+const HAS_REAL_MAPBOX = Boolean(
+  [ORIGINAL_MAPBOX_TOKEN, ORIGINAL_VITE_MAPBOX_TOKEN].some(
+    token => token?.startsWith("pk.") && token.length > 20,
+  ),
+);
+
+function clearMapboxEnv() {
+  delete process.env.MAPBOX_TOKEN;
+  delete process.env.VITE_MAPBOX_TOKEN;
+}
+
+function restoreMapboxEnv() {
+  if (ORIGINAL_MAPBOX_TOKEN === undefined) delete process.env.MAPBOX_TOKEN;
+  else process.env.MAPBOX_TOKEN = ORIGINAL_MAPBOX_TOKEN;
+  if (ORIGINAL_VITE_MAPBOX_TOKEN === undefined) delete process.env.VITE_MAPBOX_TOKEN;
+  else process.env.VITE_MAPBOX_TOKEN = ORIGINAL_VITE_MAPBOX_TOKEN;
+}
 
 beforeAll(async () => {
   mockAuthEnabled = true;
@@ -86,8 +106,16 @@ beforeAll(async () => {
   app.use("/api", navRouter);
 });
 
+beforeEach(() => {
+  // The deterministic validation/circuit-breaker tests must exercise the
+  // missing-token branch even when the workspace has a real Mapbox secret.
+  mockAuthEnabled = true;
+  clearMapboxEnv();
+});
+
 afterEach(() => {
   mockAuthEnabled = true;
+  restoreMapboxEnv();
 });
 
 describe("GET /api/navigation/route — Authentication", () => {
@@ -381,21 +409,19 @@ describe("GET /api/navigation/route — Circuit Breaker (no real calls)", () => 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Live integration group — only runs when MAPBOX_TOKEN is set to a real token.
+// Live integration group — only runs when a Mapbox public token is set.
 // In CI / Replit dev without the secret these tests are automatically skipped
 // so they never block the 182-test suite. When MAPBOX_TOKEN IS present the
 // tests hit the real Mapbox Directions v5 API and verify end-to-end routing
 // across 4 real Tarrant County location pairs.
 // ─────────────────────────────────────────────────────────────────────────────
-const HAS_REAL_MAPBOX = Boolean(
-  process.env.MAPBOX_TOKEN &&
-  process.env.MAPBOX_TOKEN.startsWith("pk.") &&
-  process.env.MAPBOX_TOKEN.length > 20
-);
-
 (HAS_REAL_MAPBOX ? describe : describe.skip)(
   "GET /api/navigation/route — Live Mapbox integration (4 Tarrant County pairs)",
   () => {
+    beforeEach(() => {
+      restoreMapboxEnv();
+    });
+
     const PAIRS = [
       {
         name: "City Hall → TCU (3.2 km SW cross-town)",
@@ -405,14 +431,14 @@ const HAS_REAL_MAPBOX = Boolean(
       },
       {
         name: "Sundance Square → Botanic Garden (1.8 km cultural district)",
-        start: TARRANT_LOCATIONS.sundance,
+        start: TARRANT_LOCATIONS.sundanceSquare,
         end: TARRANT_LOCATIONS.botanicGarden,
         minSteps: 2,
       },
       {
         name: "TCU → Benbrook Lake Park (8 km suburban run)",
         start: TARRANT_LOCATIONS.tcu,
-        end: TARRANT_LOCATIONS.benbrook,
+        end: TARRANT_LOCATIONS.benbrookLake,
         minSteps: 4,
       },
       {

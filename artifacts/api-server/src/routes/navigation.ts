@@ -253,7 +253,9 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
     // richer voice instruction text. Language and units are locale-aware.
     const drivingExtras =
       profile === "driving"
-        ? `&depart_at=${encodeURIComponent(new Date().toISOString())}&annotations=congestion,maxspeed&voice_instructions=true&voice_units=${voiceUnits}`
+        // Mapbox's depart_at format accepts second precision, but rejects the
+        // millisecond precision emitted by Date#toISOString().
+        ? `&depart_at=${encodeURIComponent(new Date().toISOString().replace(/\.\d{3}Z$/, "Z"))}&annotations=congestion,maxspeed&voice_instructions=true&voice_units=${voiceUnits}`
         : `&voice_instructions=true&voice_units=${voiceUnits}`;
     const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full${drivingExtras}&language=${navLang}&access_token=${token}`;
 

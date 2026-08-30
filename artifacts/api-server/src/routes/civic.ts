@@ -239,11 +239,11 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
   const place = await reverseGeocode(lat, lng);
 
   if (!place || !place.state_short) {
-    const statewide = await db
-      .select()
-      .from(civicResourcesTable)
-      .limit(6);
-    const result = { resources: statewide, place_name: "your area", match_level: "fallback" };
+    // We couldn't determine the user's location at all — showing an
+    // arbitrary sample of whatever happens to be in the table would be
+    // misleading: it could be labeled "your area" while belonging to a
+    // completely different region. Be honest instead: report no resources.
+    const result = { resources: [], place_name: "your area", match_level: "fallback" as const };
     await cacheSet(locationCacheKey, result, CIVIC_TTL);
     return res.json(result);
   }
@@ -290,10 +290,8 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
     if (resources.length > 0) matchLevel = "state";
   }
 
-  if (resources.length === 0) {
-    resources = await db.select().from(civicResourcesTable).limit(6);
-    matchLevel = "fallback";
-  }
+  // If city/county/state all miss, keep resources empty rather than showing
+  // an unrelated region's organizations as though they were local.
 
   logger.info({ lat, lng, state, county, city, matchLevel, count: resources.length }, "civic resources resolved");
 
