@@ -7,14 +7,20 @@ and the **artifacts/pay-it-forward: web** workflow.
 
 ---
 
-## ⚠️ CRITICAL — App Does Not Work Without These
+## ⚠️ CRITICAL — Core App and Production Money/Media Boundaries
 
 | Secret Name | Where to Get It | Used For |
 |---|---|---|
 | `VITE_MAPBOX_TOKEN` | https://account.mapbox.com → Tokens → Create token (free tier) | Map rendering, live traffic layer, terrain, global GPS display |
 | `MAPBOX_TOKEN` | Same token as above | Server-side navigation routing (Directions API) — all continents |
-| `ANTHROPIC_API_KEY` | https://console.anthropic.com → API Keys | Nia AI — all conversations, crisis detection, multilingual support |
-| `INTERNAL_SECRET` | Generate any random 32+ char string, e.g. `openssl rand -hex 32` | Security: api-server ↔ nia-service communication |
+| `SESSION_SECRET` | Generate a random 32+ character value | HTTP session security and token signing |
+| `STRIPE_SECRET_KEY` | https://dashboard.stripe.com → Developers → API Keys | Community Pool donations, pledges, and payouts |
+| `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → Developers → Webhooks | Verified payment and payout state transitions |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe Dashboard → Developers → API keys | Browser-side Stripe payment collection |
+| `REDIS_URL` | Redis provider (Upstash, Railway Redis, etc.) | Durable production queues for payouts, cashouts, notifications, and reconciliation |
+| `LIVEKIT_URL` | LiveKit Cloud → Project Settings | Circle media endpoint (`wss://` in production) |
+| `LIVEKIT_API_KEY` | LiveKit Cloud → Project Settings → Keys | Server-minted Circle media tokens |
+| `LIVEKIT_API_SECRET` | LiveKit Cloud → Project Settings → Keys | Server-minted Circle media tokens |
 
 > Both `VITE_MAPBOX_TOKEN` and `MAPBOX_TOKEN` should be the same Mapbox token value.
 > The VITE_ prefix is required by Vite to expose it to the browser (client-side map rendering).
@@ -22,16 +28,14 @@ and the **artifacts/pay-it-forward: web** workflow.
 
 ---
 
-## 🟡 IMPORTANT — Features Disabled Without These
+## 🟡 CONDITIONAL / OPTIONAL — Capabilities and Enhancements
 
 | Secret Name | Where to Get It | Used For |
 |---|---|---|
 | `VAPID_PUBLIC_KEY` | Generate with `npx web-push generate-vapid-keys` | Push notifications to helpers' phones |
 | `VAPID_PRIVATE_KEY` | Same command as above | Push notifications (private key pair) |
-| `STRIPE_SECRET_KEY` | https://dashboard.stripe.com → Developers → API Keys | Community pool donations, pledge payments |
-| `VITE_STRIPE_PUBLISHABLE_KEY` | Same Stripe dashboard | Client-side Stripe payment modal |
-| `SESSION_SECRET` | Random 32+ char string | ✅ **Already set** — HTTP session security |
-| `REDIS_URL` | Redis provider (Upstash, Railway Redis, etc.) | Powers the Pay-It-Forward pledge worker (repayment reminders, the 2-year default check-in) and the payout-retry worker (re-attempting a helper's payment if it fails the first time). **Without this set, both workers fail to start — silently, with no error to the user.** Reminders simply never go out and failed payouts never retry. This is core to the platform's "pay whenever, no pressure" promise, not a nice-to-have. |
+| `ANTHROPIC_API_KEY` | https://console.anthropic.com → API Keys | Nia AI — required only when the admin enables Nia |
+| `INTERNAL_SECRET` | Generate any random 32+ char string, e.g. `openssl rand -hex 32` | api-server ↔ nia-service auth when Nia is enabled |
 
 ---
 
@@ -64,6 +68,13 @@ ANTHROPIC_API_KEY=sk-ant-...
 INTERNAL_SECRET=$(openssl rand -hex 32)
 # or just pick any long random string, e.g.: niakofa-internal-2026-xyz-abc-123
 ```
+
+For production Community Pool payments, configure `STRIPE_SECRET_KEY`,
+`STRIPE_WEBHOOK_SECRET`, and `VITE_STRIPE_PUBLISHABLE_KEY`. For production
+Circles, configure all three `LIVEKIT_*` values. `REDIS_URL` is also required
+in production: the API intentionally refuses to start with missing or malformed
+Redis because money-moving and notification jobs must not silently fall back to
+an in-process scheduler. Development preview may use the explicit fallback.
 
 ---
 

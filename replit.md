@@ -33,14 +33,18 @@ Set these in the Replit Secrets tab. See `SECRETS_REQUIRED.md` for full details.
 | `DATABASE_URL` | ✅ Critical | Postgres DB — all data. Workers error without it. |
 | `VITE_MAPBOX_TOKEN` | ✅ Critical | Map rendering (client) |
 | `MAPBOX_TOKEN` | ✅ Critical | Navigation routing (server) — same token as above |
-| `ANTHROPIC_API_KEY` | ✅ Critical | Nia AI assistant |
-| `INTERNAL_SECRET` | ✅ Critical | api-server ↔ nia-service auth |
+| `ANTHROPIC_API_KEY` | 🟡 Conditional | Nia AI assistant (required when Nia is enabled) |
+| `INTERNAL_SECRET` | 🟡 Conditional | api-server ↔ nia-service auth (required when Nia is enabled) |
 | `SESSION_SECRET` | ✅ Already set | JWT signing |
-| `STRIPE_SECRET_KEY` | 🟡 Important | Community pool payments |
-| `VITE_STRIPE_PUBLISHABLE_KEY` | 🟡 Already set | Stripe client |
+| `STRIPE_SECRET_KEY` | ✅ Production critical | Community Pool payments and payouts |
+| `STRIPE_WEBHOOK_SECRET` | ✅ Production critical | Verified Stripe webhook delivery |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | ✅ Production critical | Stripe client payment collection |
 | `VAPID_PUBLIC_KEY` | 🟡 Already set | Push notifications |
 | `VAPID_PRIVATE_KEY` | 🟡 Important | Push notifications (private) |
-| `REDIS_URL` | 🔵 Optional | BullMQ pledge/payout workers |
+| `REDIS_URL` | ✅ Production critical | Durable BullMQ payout, cashout, notification, and reconciliation workers |
+| `LIVEKIT_URL` | ✅ Production critical for Circles | Hosted LiveKit media endpoint (`wss://` in production) |
+| `LIVEKIT_API_KEY` | ✅ Production critical for Circles | Server-minted Circle media tokens |
+| `LIVEKIT_API_SECRET` | ✅ Production critical for Circles | Server-minted Circle media tokens |
 
 ## Architecture
 
@@ -48,7 +52,7 @@ Set these in the Replit Secrets tab. See `SECRETS_REQUIRED.md` for full details.
 - **Contract-first:** `lib/api-spec/openapi.yaml` → orval generates Zod schemas + React Query hooks. Run `pnpm --filter @workspace/api-spec run codegen` after spec changes.
 - **Auth:** HMAC-SHA256 stateless tokens (SESSION_SECRET). Admin gate is `is_admin` DB column.
 - **WebSocket hub:** `/ws` — live events (requests, helper locations, reports, WS types in `wsClient.ts` must mirror `ws-hub.ts`).
-- **Workers:** BullMQ when REDIS_URL set; setInterval fallback otherwise.
+- **Workers:** BullMQ is required in production; the explicit setInterval fallback is development-only.
 - **DB migrations:** `pnpm --filter @workspace/api-server run migrate` (77 migrations through Phase 14).
 
 ## Main doc

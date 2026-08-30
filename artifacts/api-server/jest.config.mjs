@@ -21,7 +21,7 @@ const config = {
       },
     ],
   },
-  testMatch: ["**/__tests__/**/*.test.ts"],
+  testMatch: ["**/__tests__/*.test.ts", "**/__tests__/**/*.test.ts"],
   testTimeout: 15000,
 };
 
