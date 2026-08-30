@@ -14,6 +14,7 @@
 - [Legacy Start Screen](legacy-start-screen.md) — architecture of the cinematic start screen and how it wires into legacy-home.tsx.
 - [Legacy API contracts](legacy-api-contracts.md) — current data sources for Legacy journey, welcome, and calendar UI; retired endpoint list.
 - [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes use GITHUB_PERSONAL_ACCESS_TOKEN in remote URL (token auth, not password).
+- [GitHub workflow sync boundary](github-workflow-sync-boundary.md) — the current OAuth grant lacks workflow scope; .github/workflows writes need a separate operator gate.
 - [Legacy Cinematic Layer](legacy-cinematic-layer.md) — LegacyCinematicDialogue + LegacyChapterEnvironment arch; ChapterScreen prop contract; CSS animation class names.
 - [Legacy Character Engine Runtime](legacy-character-engine-runtime.md) — stable IDs, explicit runtime layers, and the archive/licensing boundary for character rendering.
 - [Legacy RPG art boundary](legacy-rpg-art-boundary.md) — supplied RPG art is curated into React presentation only; never promote a second runtime or imply historical identity.
