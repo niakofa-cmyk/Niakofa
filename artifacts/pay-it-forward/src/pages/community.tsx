@@ -933,6 +933,56 @@ export default function CommunityScreen() {
     { limit: 15 },
     { query: { queryKey: getGetPoolLedgerQueryKey({ limit: 15 }), staleTime: 15000 } }
   );
+  // Public Pool endpoints are platform-wide transparency views. Members get a
+  // scoped view of the Community Pool assigned to their account.
+  const [myPoolStats, setMyPoolStats] = useState<CommunityStats | null>(null);
+  const [myPoolLedger, setMyPoolLedger] = useState<LedgerEntry[] | null>(null);
+
+  const refreshMyPool = useCallback(async () => {
+    if (!currentUser) {
+      setMyPoolStats(null);
+      setMyPoolLedger(null);
+      return;
+    }
+    try {
+      const headers = authHeaders();
+      const [statsRes, ledgerRes] = await Promise.all([
+        fetch(`${base}/api/pool/my-stats`, { headers }),
+        fetch(`${base}/api/pool/my-ledger?limit=15`, { headers }),
+      ]);
+      if (statsRes.ok) {
+        const data = await statsRes.json();
+        setMyPoolStats({
+          id: Number(data.community_id),
+          name: data.community_name ?? "Your Community",
+          target_reserve_amount: Number(data.target_reserve_amount ?? 500),
+          pool_balance: Number(data.balance ?? 0),
+          pool_health_ratio: 0,
+          pool_pct: Number(data.pool_pct ?? 0),
+          member_count: 0,
+          total_contributed: Number(data.total_contributed ?? 0),
+          total_paid_to_helpers: Number(data.total_fronted ?? 0),
+          total_repaid: Number(data.total_repaid ?? 0),
+          helpers_paid: 0,
+          sponsor_count: Number(data.sponsor_count ?? 0),
+          inflow_30d: 0,
+          outflow_30d: 0,
+          created_at: new Date().toISOString(),
+        });
+      }
+      if (ledgerRes.ok) {
+        const data = await ledgerRes.json();
+        setMyPoolLedger(Array.isArray(data.entries) ? data.entries : []);
+      }
+    } catch {
+      // Keep the public transparency data visible if the scoped request fails.
+    }
+  }, [currentUser, base]);
+
+  useEffect(() => {
+    if (tab === "pool") void refreshMyPool();
+  }, [tab, refreshMyPool]);
+
   const [contributePending, setContributePending] = useState(false);
   const [contributeAmount, setContributeAmount] = useState("");
   const [contributeMsg, setContributeMsg] = useState<string | null>(null);
@@ -1066,12 +1116,15 @@ export default function CommunityScreen() {
     }
   };
 
-  const poolBalance = poolStats?.balance ?? 0;
-  const poolTarget = 500;
-  const poolPct = poolStats
-    ? Math.max(0, Math.min(Math.round((poolBalance / poolTarget) * 100), 100))
-    : 0;
-  const poolReached = poolStats ? poolBalance >= poolTarget : false;
+  const effectivePoolLedger = currentUser && myPoolLedger ? myPoolLedger : poolLedger?.entries;
+  const poolBalance = currentUser && myPoolStats
+    ? myPoolStats.pool_balance
+    : (poolStats?.balance ?? 0);
+  const poolTarget = currentUser && myPoolStats
+    ? myPoolStats.target_reserve_amount
+    : 500;
+  const poolPct = Math.max(0, Math.min(Math.round((poolBalance / poolTarget) * 100), 100));
+  const poolReached = poolBalance >= poolTarget;
 
   const toggleLike = (id: number) => {
     setLikedPosts(prev => {
@@ -1627,7 +1680,7 @@ export default function CommunityScreen() {
                     <p className="text-xs text-muted-foreground">No pool activity yet</p>
                     <p className="mt-0.5 text-[10px] text-muted-foreground/60">Contributions and helper payments will appear here.</p>
                   </div>
-                ) : poolLedger.entries.map((entry: { id: number; entry_type: string; amount: number; display_name?: string | null; created_at: string }) => {
+                ) : effectivePoolLedger?.map((entry: { id: number; entry_type: string; amount: number; display_name?: string | null; created_at: string }) => {
                   const meta: Record<string, { icon: string; label: string }> = {
                     sponsor_contribution: { icon: "💛", label: entry.display_name ? `${entry.display_name} funded the pool` : "Pool contribution" },
                     helper_front: { icon: "⚡", label: "Helper paid instantly at completion" },

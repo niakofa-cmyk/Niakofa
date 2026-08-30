@@ -29,6 +29,7 @@ import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { isAmbiguousStripeError } from "../lib/stripe-errors";
 import { buildCashoutTransferParams, cashoutIdempotencyKey } from "../lib/stripe-cashout";
+import { trackWorker } from "../lib/worker-lifecycle";
 
 async function processCashout(job: Job<CashoutJobData>): Promise<void> {
   const { cashout_id, user_id, amount_cents, stripe_account_id } = job.data;
@@ -314,5 +315,6 @@ export function startCashoutWorker(): Worker<CashoutJobData> | null {
   });
 
   logger.info("cashout-worker: started (5 retries, exponential backoff)");
+  trackWorker(worker);
   return worker;
 }

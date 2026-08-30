@@ -20,6 +20,7 @@ import { eq, and, lte, isNull, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
+import { trackWorker } from "../lib/worker-lifecycle";
 
 const PLEDGE_JOB_NAME = "daily-pledge-reconciliation";
 // Repeat every 24 hours
@@ -209,5 +210,6 @@ export async function startPledgeWorker(): Promise<Worker | null> {
   );
 
   logger.info("pledge-worker: started");
+  trackWorker(worker);
   return worker;
 }

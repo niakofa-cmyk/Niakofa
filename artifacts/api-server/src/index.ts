@@ -7,7 +7,9 @@ import {
   isRedisConfigured,
   assertProductionRedisReady,
   closeRedis,
+  waitForRedisReady,
 } from "./lib/queue";
+import { closeWorkers } from "./lib/worker-lifecycle";
 import {
   workerStarted,
   workerNoRedis,
@@ -61,6 +63,12 @@ if (
 // appear healthy while payout, cashout, notification, and reconciliation jobs
 // are silently disabled.
 assertProductionRedisReady();
+if (process.env.NODE_ENV === "production") {
+  // Do not advertise a healthy production API until Redis has completed its
+  // initial handshake. Workers then inherit a known-good connection and can
+  // recover automatically from later transient disconnects.
+  await waitForRedisReady(15_000);
+}
 
 const server = http.createServer(app);
 
@@ -207,6 +215,7 @@ const shutdown = async (signal: string) => {
   logger.info({ signal }, "shutdown: received — closing gracefully");
   stopHeartbeat();
   server.close(async () => {
+    await closeWorkers(30_000);
     await closeRedis();
     // Drain the Postgres connection pool cleanly so Railway doesn't accumulate
     // dangling connections across rolling restarts.
@@ -223,7 +232,7 @@ const shutdown = async (signal: string) => {
   setTimeout(() => {
     logger.error("shutdown: timed out — forcing exit");
     process.exit(1);
-  }, 10_000);
+  }, 40_000);
 };
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

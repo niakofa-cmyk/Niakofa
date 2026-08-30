@@ -1626,6 +1626,51 @@ export const GetPoolLedgerResponse = zod.object({
 
 
 /**
+ * @summary Get Community Pool stats for the authenticated member's community
+ */
+export const getMyPoolStatsResponsePoolPctMin = 0;
+export const getMyPoolStatsResponsePoolPctMax = 100;
+
+
+
+export const GetMyPoolStatsResponse = zod.object({
+  "community_id": zod.number(),
+  "community_name": zod.string(),
+  "balance": zod.number(),
+  "total_contributed": zod.number(),
+  "total_fronted": zod.number(),
+  "total_repaid": zod.number(),
+  "sponsor_count": zod.number(),
+  "pool_pct": zod.number().min(getMyPoolStatsResponsePoolPctMin).max(getMyPoolStatsResponsePoolPctMax),
+  "target_reserve_amount": zod.number()
+})
+
+
+/**
+ * @summary Get recent Community Pool activity for the authenticated member's community
+ */
+export const getMyPoolLedgerQueryLimitMax = 50;
+
+
+
+export const GetMyPoolLedgerQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getMyPoolLedgerQueryLimitMax).optional()
+})
+
+export const GetMyPoolLedgerResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "id": zod.number(),
+  "entry_type": zod.enum(['sponsor_contribution', 'helper_front', 'pledge_repayment', 'guaranteed_minimum', 'adjustment']),
+  "amount": zod.number(),
+  "request_id": zod.number().nullish(),
+  "display_name": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "created_at": zod.coerce.date()
+}))
+})
+
+
+/**
  * With Stripe configured, returns a client_secret for a PaymentIntent
  * (the webhook records the ledger entry on success). Without Stripe
  * (development), the contribution is recorded directly.

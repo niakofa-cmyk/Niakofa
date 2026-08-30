@@ -1,73 +1,64 @@
 /**
- * Worker Lifecycle Manager
+ * Process-wide BullMQ worker lifecycle registry.
  *
- * Provides a registry for background workers (setInterval-based schedulers)
- * with graceful shutdown support. Workers register their interval handles;
- * on SIGTERM/SIGINT all intervals are cleared and a final flush is awaited.
- *
- * Usage:
- *   import { registerWorker } from "../lib/worker-lifecycle";
- *   const interval = setInterval(() => { ... }, 60_000);
- *   registerWorker("crisis-followup", interval);
+ * Workers are registered as soon as they are created so SIGTERM/SIGINT can
+ * stop fetching new jobs and wait for active jobs to finish before Redis/DB
+ * connections are closed. BullMQ documents Worker.close() as the graceful
+ * shutdown primitive.
  */
+import type { Worker } from "bullmq";
 import { logger } from "./logger";
 
-interface WorkerEntry {
-  name: string;
-  interval: ReturnType<typeof setInterval>;
-  flush?: () => Promise<void>;
-}
+const workers = new Set<Worker>();
+let closing = false;
 
-const registry: WorkerEntry[] = [];
-let shuttingDown = false;
-
-export function registerWorker(
-  name: string,
-  interval: ReturnType<typeof setInterval>,
-  flush?: () => Promise<void>,
-): void {
-  registry.push({ name, interval, flush });
-  logger.info({ worker: name }, "worker registered");
-}
-
-export function unregisterWorker(name: string): void {
-  const idx = registry.findIndex((w) => w.name === name);
-  if (idx >= 0) {
-    clearInterval(registry[idx].interval);
-    registry.splice(idx, 1);
-    logger.info({ worker: name }, "worker unregistered");
+export function trackWorker(worker: Worker | null | undefined): Worker | null | undefined {
+  if (!worker) return worker;
+  if (closing) {
+    void worker.close(true).catch((err) =>
+      logger.warn({ err }, "bullmq: worker created during shutdown could not be closed")
+    );
+    return worker;
   }
+  workers.add(worker);
+  return worker;
 }
 
-export async function shutdownWorkers(timeoutMs = 10_000): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info({ count: registry.length }, "shutting down workers...");
+export function workerCount(): number {
+  return workers.size;
+}
 
-  for (const entry of registry) {
-    clearInterval(entry.interval);
-    if (entry.flush) {
+export async function closeWorkers(timeoutMs = 30_000): Promise<void> {
+  if (closing && workers.size === 0) return;
+  closing = true;
+  const active = [...workers];
+  if (!active.length) return;
+
+  logger.info({ count: active.length }, "bullmq: gracefully closing workers");
+
+  let timedOut = false;
+  await Promise.race([
+    Promise.all(active.map(async (worker) => {
       try {
-        await Promise.race([
-          entry.flush(),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`flush timeout: ${entry.name}`)), timeoutMs),
-          ),
-        ]);
+        await worker.close();
       } catch (err) {
-        logger.error({ err, worker: entry.name }, "worker flush failed");
+        logger.error({ err }, "bullmq: worker graceful close failed");
       }
-    }
-    logger.info({ worker: entry.name }, "worker stopped");
+    })),
+    new Promise<void>((resolve) => setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, timeoutMs)),
+  ]);
+
+  if (timedOut) {
+    logger.warn(
+      { remaining: workers.size },
+      "bullmq: shutdown timeout reached; forcing remaining workers closed",
+    );
+    await Promise.all([...workers].map((worker) => worker.close(true).catch((err) =>
+      logger.warn({ err }, "bullmq: forced worker close failed")
+    )));
   }
-  registry.length = 0;
-  logger.info("all workers shut down");
-}
-
-export function isShuttingDown(): boolean {
-  return shuttingDown;
-}
-
-export function getActiveWorkers(): string[] {
-  return registry.map((w) => w.name);
+  workers.clear();
 }

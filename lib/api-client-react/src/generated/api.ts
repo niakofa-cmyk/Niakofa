@@ -56,6 +56,7 @@ import type {
   GetCivicResourcesParams,
   GetGriotStoryReportsParams,
   GetHubSummary200,
+  GetMyPoolLedgerParams,
   GetNearbyRequestsParams,
   GetNiaAuditLog200,
   GetNiaCostAlert200,
@@ -89,6 +90,7 @@ import type {
   LogoutUser200,
   ModerateUser200,
   ModerateUserInput,
+  MyPoolStats,
   PledgePayment,
   PoolContributeBody,
   PoolContributeResponse,
@@ -3974,6 +3976,167 @@ export function useGetPoolLedger<TData = Awaited<ReturnType<typeof getPoolLedger
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPoolLedgerQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetMyPoolStatsUrl = () => {
+
+
+
+
+  return `/api/pool/my-stats`
+}
+
+/**
+ * @summary Get Community Pool stats for the authenticated member's community
+ */
+export const getMyPoolStats = async ( options?: RequestInit): Promise<MyPoolStats> => {
+
+  return customFetch<MyPoolStats>(getGetMyPoolStatsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyPoolStatsQueryKey = () => {
+    return [
+    `/api/pool/my-stats`
+    ] as const;
+    }
+
+
+export const getGetMyPoolStatsQueryOptions = <TData = Awaited<ReturnType<typeof getMyPoolStats>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyPoolStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyPoolStatsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyPoolStats>>> = ({ signal }) => getMyPoolStats({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyPoolStats>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyPoolStatsQueryResult = NonNullable<Awaited<ReturnType<typeof getMyPoolStats>>>
+export type GetMyPoolStatsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get Community Pool stats for the authenticated member's community
+ */
+
+export function useGetMyPoolStats<TData = Awaited<ReturnType<typeof getMyPoolStats>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyPoolStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyPoolStatsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetMyPoolLedgerUrl = (params?: GetMyPoolLedgerParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/pool/my-ledger?${stringifiedParams}` : `/api/pool/my-ledger`
+}
+
+/**
+ * @summary Get recent Community Pool activity for the authenticated member's community
+ */
+export const getMyPoolLedger = async (params?: GetMyPoolLedgerParams, options?: RequestInit): Promise<PoolLedgerResponse> => {
+
+  return customFetch<PoolLedgerResponse>(getGetMyPoolLedgerUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyPoolLedgerQueryKey = (params?: GetMyPoolLedgerParams,) => {
+    return [
+    `/api/pool/my-ledger`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetMyPoolLedgerQueryOptions = <TData = Awaited<ReturnType<typeof getMyPoolLedger>>, TError = ErrorType<void>>(params?: GetMyPoolLedgerParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyPoolLedger>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyPoolLedgerQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyPoolLedger>>> = ({ signal }) => getMyPoolLedger(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyPoolLedger>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyPoolLedgerQueryResult = NonNullable<Awaited<ReturnType<typeof getMyPoolLedger>>>
+export type GetMyPoolLedgerQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get recent Community Pool activity for the authenticated member's community
+ */
+
+export function useGetMyPoolLedger<TData = Awaited<ReturnType<typeof getMyPoolLedger>>, TError = ErrorType<void>>(
+ params?: GetMyPoolLedgerParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyPoolLedger>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyPoolLedgerQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

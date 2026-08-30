@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { getWorkerHealth, areAllCriticalWorkersRunning } from "../lib/worker-registry";
-import { isRedisConfigured, getRedisUrlStatus } from "../lib/queue";
+import { isRedisConfigured, getRedisUrlStatus, getRedisConnection } from "../lib/queue";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
@@ -201,6 +201,9 @@ router.get("/readiness", async (req, res) => {
 
   const nia = await checkNiaService();
   const redisConfigured = isRedisConfigured();
+  const redisConnection = redisConfigured ? getRedisConnection() : null;
+  const redisReady = redisConnection?.status === "ready";
+  const redisRequired = process.env.NODE_ENV === "production";
   const mapConfigured = Boolean(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
   const stripeConfigured =
     Boolean(process.env.STRIPE_SECRET_KEY) &&
@@ -225,9 +228,15 @@ router.get("/readiness", async (req, res) => {
       detail: nia.status === "ok" ? "available" : "unavailable",
     },
     redis: {
-      required: false,
-      status: redisConfigured ? "ready" : "degraded",
-      detail: redisConfigured ? "queue-backed" : "durable scheduler fallback",
+      required: redisRequired,
+      status: redisReady ? "ready" : "degraded",
+      detail: redisReady
+        ? "connected and BullMQ-ready"
+        : redisConfigured
+          ? `configured but connection status is ${redisConnection?.status ?? "unknown"}`
+          : redisRequired
+            ? "not configured — legacy scheduler fallback"
+            : "durable scheduler fallback",
     },
     stripe: {
       required: paymentsScope,
@@ -251,7 +260,8 @@ router.get("/readiness", async (req, res) => {
     database === "ready" &&
     schema === "ready" &&
     (!circlesScope || livekit.status === "ready") &&
-    (!paymentsScope || stripeConfigured);
+    (!paymentsScope || stripeConfigured) &&
+    (!redisRequired || redisReady);
   const degraded = Object.values(dependencies).some((dependency) => dependency.status === "degraded");
 
   res.status(ready ? 200 : 503).json({
@@ -320,7 +330,10 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
 
     // 3. Redis status
     const redisConfigured = isRedisConfigured();
-    const redisStatus = redisConfigured ? "configured" : getRedisUrlStatus();
+    const redisConnection = redisConfigured ? getRedisConnection() : null;
+    const redisStatus = redisConfigured
+      ? (redisConnection?.status ?? "unknown")
+      : getRedisUrlStatus();
 
     // 4. Circuit breaker (navigation / Mapbox)
     const navCb = getNavigationCircuitBreakerStatus();
@@ -351,7 +364,12 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
         list: workers,
       },
       websocket_hub: hubMetrics,
-      redis: { configured: redisConfigured, status: redisStatus },
+      redis: {
+        configured: redisConfigured,
+        required: process.env.NODE_ENV === "production",
+        ready: redisConnection?.status === "ready",
+        status: redisStatus,
+      },
       navigation_circuit_breaker: navCb,
       storage: storageDesc,
       system_settings: settingsSnapshot,

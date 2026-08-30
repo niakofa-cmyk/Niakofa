@@ -60,6 +60,22 @@ export interface PoolLedgerResponse {
   entries: PoolLedgerEntry[];
 }
 
+export interface MyPoolStats {
+  community_id: number;
+  community_name: string;
+  balance: number;
+  total_contributed: number;
+  total_fronted: number;
+  total_repaid: number;
+  sponsor_count: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  pool_pct: number;
+  target_reserve_amount: number;
+}
+
 export interface PoolContributeBody {
   /**
      * @minimum 1
@@ -1630,6 +1646,14 @@ export type ModerateUser200 = {
 };
 
 export type GetPoolLedgerParams = {
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
+};
+
+export type GetMyPoolLedgerParams = {
 /**
  * @minimum 1
  * @maximum 50

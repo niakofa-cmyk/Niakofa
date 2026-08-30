@@ -170,6 +170,92 @@ router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
 });
 
 /**
+ * GET /pool/my-stats — authenticated member view of their assigned Community Pool.
+ *
+ * The public /pool/stats endpoint remains a platform-wide transparency view;
+ * this endpoint keeps a member's Pool tab scoped to their assigned community.
+ */
+router.get("/pool/my-stats", requireAuth, async (req, res) => {
+  try {
+    const userId = req.authenticatedUserId!;
+    const [member] = await db
+      .select({ community_id: usersTable.community_id })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+
+    const communityId = member?.community_id ?? null;
+    if (communityId == null) {
+      return res.status(404).json({ error: "Your account is not assigned to a Community Pool yet." });
+    }
+
+    const communityResult = await db.execute<{ name: string }>(
+      sql`SELECT name FROM communities WHERE id = ${communityId} LIMIT 1`,
+    );
+    const communityName = communityResult.rows[0]?.name;
+
+    const [totals] = await db
+      .select({
+        balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8`,
+        total_contributed: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN ${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
+        total_fronted: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'helper_front' THEN -${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
+        total_repaid: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'pledge_repayment' THEN ${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
+        sponsor_count: sql<number>`COUNT(DISTINCT CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN ${communityPoolLedgerTable.user_id} END)::int`,
+      })
+      .from(communityPoolLedgerTable)
+      .where(eq(communityPoolLedgerTable.community_id, communityId));
+
+    const balance = totals?.balance ?? 0;
+    const target = 500;
+    return res.json({
+      community_id: communityId,
+      community_name: communityName ?? "Your Community",
+      balance,
+      total_contributed: totals?.total_contributed ?? 0,
+      total_fronted: totals?.total_fronted ?? 0,
+      total_repaid: totals?.total_repaid ?? 0,
+      sponsor_count: totals?.sponsor_count ?? 0,
+      pool_pct: Math.max(0, Math.min(Math.round((balance / target) * 100), 100)),
+      target_reserve_amount: target,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to load member Community Pool stats");
+    return res.status(500).json({ error: "Failed to load your Community Pool" });
+  }
+});
+
+/** Recent activity for the authenticated member's Community Pool only. */
+router.get("/pool/my-ledger", requireAuth, async (req, res) => {
+  try {
+    const userId = req.authenticatedUserId!;
+    const [member] = await db
+      .select({ community_id: usersTable.community_id })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (member?.community_id == null) return res.json({ entries: [] });
+
+    const limit = Math.min(Math.max(parseInt(String(req.query["limit"] ?? "25")) || 25, 1), 50);
+    const rows = await db
+      .select({
+        id: communityPoolLedgerTable.id,
+        entry_type: communityPoolLedgerTable.entry_type,
+        amount: communityPoolLedgerTable.amount,
+        notes: communityPoolLedgerTable.notes,
+        created_at: communityPoolLedgerTable.created_at,
+      })
+      .from(communityPoolLedgerTable)
+      .where(eq(communityPoolLedgerTable.community_id, member.community_id))
+      .orderBy(desc(communityPoolLedgerTable.created_at))
+      .limit(limit);
+    return res.json({ entries: rows });
+  } catch (err) {
+    logger.error({ err }, "Failed to load member Community Pool ledger");
+    return res.status(500).json({ error: "Failed to load your Community Pool activity" });
+  }
+});
+
+/**
  * POST /pool/contribute — fund the Community Pool.
  * With Stripe configured: creates a PaymentIntent (metadata pool_contribution)
  * and returns client_secret; the webhook records the ledger entry on success.

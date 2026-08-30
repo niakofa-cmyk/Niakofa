@@ -45,8 +45,9 @@ export function parseRedisUrl(raw: string): string | undefined {
   // unresolved `${{...}}` / `${...}` template placeholders specifically —
   // NOT bare "$", which is a legal character in Redis userinfo credentials
   // (e.g. "redis://user:pa$@host:6379" is a valid URL and must pass).
+  let parsed: URL;
   try {
-    const parsed = new URL(url);
+    parsed = new URL(url);
     if (!parsed.hostname || /\$\{[^}]*\}/.test(url) || /[{}]/.test(parsed.hostname)) {
       throw new Error("missing hostname or contains an unresolved template placeholder");
     }
@@ -60,7 +61,7 @@ export function parseRedisUrl(raw: string): string | undefined {
   // Upstash (and many cloud Redis providers) require TLS even when the URL
   // starts with redis:// rather than rediss://. Upgrade to rediss:// so
   // ioredis enables the TLS layer automatically.
-  const hostname = url.replace(/rediss?:\/\/[^@]*@/, "").split(":")[0] ?? "";
+  const hostname = parsed.hostname.toLowerCase();
   const needsTls =
     hostname.endsWith(".upstash.io") ||
     hostname.endsWith(".redis.cache.windows.net") ||
@@ -116,34 +117,105 @@ export function assertProductionRedisReady(): void {
   if (error) throw new Error(error);
 }
 
-let _connection: IORedis | null = null;
+let _workerConnection: IORedis | null = null;
+let _queueConnection: IORedis | null = null;
 
+function attachRedisLogging(connection: IORedis, role: "worker" | "queue"): void {
+  connection.on("connect", () => logger.info({ role }, "redis: connected"));
+  connection.on("ready", () => logger.info({ role }, "redis: ready"));
+  connection.on("error", (err: Error) => logger.warn({ role, err }, "redis: connection error"));
+  connection.on("reconnecting", (delay: number) => logger.info({ role, delay }, "redis: reconnecting"));
+  connection.on("end", () => logger.warn({ role }, "redis: connection ended"));
+}
+
+/**
+ * Worker connections keep retrying through transient Redis outages.
+ * BullMQ requires maxRetriesPerRequest=null for worker clients.
+ */
 export function getRedisConnection(): IORedis | null {
   if (!REDIS_URL) return null;
-  if (_connection) return _connection;
+  if (_workerConnection) return _workerConnection;
 
-  _connection = new IORedis(REDIS_URL, {
-    maxRetriesPerRequest: null,   // required by BullMQ
-    enableReadyCheck: false,
+  _workerConnection = new IORedis(REDIS_URL, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
     lazyConnect: false,
+    connectTimeout: 10_000,
+    retryStrategy: (times) => Math.min(Math.max(times * 1_000, 1_000), 20_000),
   });
+  attachRedisLogging(_workerConnection, "worker");
+  return _workerConnection;
+}
 
-  _connection.on("connect", () => logger.info("redis: connected"));
-  _connection.on("error", (err: Error) => logger.warn({ err }, "redis: connection error"));
-  _connection.on("reconnecting", () => logger.info("redis: reconnecting…"));
+/**
+ * Queue/producer connections fail quickly when Redis is unavailable. HTTP
+ * handlers must not inherit the worker's indefinite retry policy.
+ */
+export function getQueueConnection(): IORedis | null {
+  if (!REDIS_URL) return null;
+  if (_queueConnection) return _queueConnection;
 
-  return _connection;
+  _queueConnection = new IORedis(REDIS_URL, {
+    maxRetriesPerRequest: 3,
+    enableReadyCheck: true,
+    enableOfflineQueue: false,
+    lazyConnect: false,
+    connectTimeout: 5_000,
+    retryStrategy: (times) => Math.min(Math.max(times * 250, 250), 2_000),
+  });
+  attachRedisLogging(_queueConnection, "queue");
+  return _queueConnection;
 }
 
 export function isRedisConfigured(): boolean {
   return !!REDIS_URL;
 }
 
+export async function waitForRedisReady(timeoutMs = 10_000): Promise<void> {
+  if (!REDIS_URL) throw new Error("Redis is not configured");
+  const connections = [getRedisConnection(), getQueueConnection()].filter(Boolean) as IORedis[];
+  if (!connections.length) throw new Error("Redis is not configured");
+
+  await Promise.all(connections.map(async (connection) => {
+    if (connection.status === "ready") return;
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Redis did not become ready within ${timeoutMs}ms`));
+      }, timeoutMs);
+      const onReady = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (err: Error) => {
+        logger.warn({ err }, "redis: startup connection error; retrying");
+      };
+      const cleanup = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        connection.off("ready", onReady);
+        connection.off("error", onError);
+      };
+      connection.once("ready", onReady);
+      connection.on("error", onError);
+    });
+  }));
+}
+
 export async function closeRedis(): Promise<void> {
-  if (_connection) {
-    await _connection.quit();
-    _connection = null;
-  }
+  const connections = [_queueConnection, _workerConnection].filter(Boolean) as IORedis[];
+  _queueConnection = null;
+  _workerConnection = null;
+  await Promise.all(connections.map(async (connection) => {
+    try {
+      if (connection.status !== "end") await connection.quit();
+    } catch (err) {
+      logger.warn({ err }, "redis: graceful close failed; disconnecting");
+      connection.disconnect();
+    }
+  }));
 }
 
 // ── Queue names ───────────────────────────────────────────────────────────────
@@ -163,7 +235,7 @@ const SHARED_DEFAULTS: JobsOptions = {
 
 // ── Queue factory (returns null when Redis unavailable) ───────────────────────
 export function createQueue(name: string, defaults?: JobsOptions): Queue | null {
-  const conn = getRedisConnection();
+  const conn = getQueueConnection();
   if (!conn) return null;
   return new Queue(name, {
     connection: conn,
@@ -207,7 +279,7 @@ export async function enqueuePayoutRetry(data: PayoutJobData): Promise<boolean> 
     return false;
   }
   await payoutQueue.add("retry-payout", data, {
-    jobId: `payout-${data.request_id}-${Date.now()}`,
+    jobId: `payout-${data.request_id}`,
   });
   logger.info({ request_id: data.request_id }, "payout retry enqueued");
   return true;
@@ -227,7 +299,7 @@ export async function enqueueCashoutRetry(data: CashoutJobData): Promise<boolean
     return false;
   }
   await cashoutQueue.add("retry-cashout", data, {
-    jobId: `cashout-${data.cashout_id}-${Date.now()}`,
+    jobId: `cashout-${data.cashout_id}`,
   });
   logger.info({ cashout_id: data.cashout_id }, "cashout retry enqueued");
   return true;

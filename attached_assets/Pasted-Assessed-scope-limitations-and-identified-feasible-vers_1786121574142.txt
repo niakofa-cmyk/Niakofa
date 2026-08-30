@@ -65,7 +65,7 @@ Given that, here's what I'd propose as a realistic, honest scope for this sessio
 5. Commit locally, and hand you either a ready-to-push branch, or push directly if you give me a scoped token
 Before I sink significant time into this, one thing would help:
 How should I handle the GitHub push at the end?
-Keep until I tell you we are done today with all phases.This token will only be used once and deleted right after the session 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
+Keep until I tell you we are done today with all phases.This token will only be used once and deleted right after the session [REDACTED_GITHUB_TOKEN]
 For 'test audio/video/Circles', what's most valuable given I can't run live mic/camera calls here?
 Both, plus write new unit tests for gaps found
 

@@ -29,6 +29,7 @@ import { eq, and, lt, isNull } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { trackWorker } from "../lib/worker-lifecycle";
 import { sendPushToUser } from "../routes/push";
 
 const CLEANUP_JOB_NAME = "daily-request-cleanup";
@@ -208,6 +209,7 @@ export async function startCleanupWorker(): Promise<Worker | null> {
   );
 
   logger.info("cleanup-worker: started");
+  trackWorker(worker);
   return worker;
 }
 

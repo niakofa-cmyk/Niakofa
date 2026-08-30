@@ -24,7 +24,7 @@ const pool = new pg.Pool({ connectionString: DATABASE_URL });
 const db = drizzle(pool);
 const VERIFIED_AT = new Date("2026-08-30T00:00:00.000Z");
 const CENSUS_API = "https://api.census.gov/data/2025/pep/population";
-const CENSUS_API_KEY = process.env.CENSUS_API_KEY;
+const CENSUS_API_KEY = process.env.CENSUS_API_KEY?.trim();
 const USA_LOCAL_GOV_URL = "https://www.usa.gov/state-local-governments";
 const NATIONAL_211_URL = "https://www.211.org/";
 
@@ -104,6 +104,7 @@ async function censusRows(url: string): Promise<string[][]> {
 }
 
 async function loadNationalCounties(): Promise<CountyRecord[]> {
+  if (!CENSUS_API_KEY) return [];
   const rows = await censusRows(`${CENSUS_API}?get=NAME&for=county:*`);
   const [header, ...data] = rows;
   const nameIndex = header.indexOf("NAME");
@@ -263,16 +264,20 @@ export default async function runSeed(): Promise<void> {
     }
 
     let counties: CountyRecord[];
-    let censusAvailable = true;
-    try {
-      counties = await loadNationalCounties();
-    } catch (error) {
-      censusAvailable = false;
-      console.warn(
-        `civic coverage seed: Census county lookup unavailable; using the ` +
-        `verified offline Texas county list only (${String(error)}).`,
-      );
+    let censusAvailable = Boolean(CENSUS_API_KEY);
+    if (!censusAvailable) {
       counties = offlineTexasCounties();
+    } else {
+      try {
+        counties = await loadNationalCounties();
+      } catch (error) {
+        censusAvailable = false;
+        console.warn(
+          `civic coverage seed: Census county lookup unavailable; using the ` +
+          `verified offline Texas county list only (${String(error)}).`,
+        );
+        counties = offlineTexasCounties();
+      }
     }
     for (const county of counties) {
       const state = FIPS_TO_STATE[county.stateFips];

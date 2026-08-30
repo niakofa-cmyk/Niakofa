@@ -9,6 +9,7 @@ import { Worker, type Job } from "bullmq";
 import { getRedisConnection, QUEUE, type NotificationJobData } from "../lib/queue";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
+import { trackWorker } from "../lib/worker-lifecycle";
 
 async function processNotification(job: Job<NotificationJobData>): Promise<void> {
   const { user_id, title, body, urgency, requestId, notifType } = job.data;
@@ -58,5 +59,6 @@ export function startNotificationWorker(): Worker<NotificationJobData> | null {
   );
 
   logger.info("notification-worker: started (concurrency 5)");
+  trackWorker(worker);
   return worker;
 }

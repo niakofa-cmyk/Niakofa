@@ -13,6 +13,7 @@ import { db, paymentTransactionsTable, transactionsTable } from "@workspace/db";
 import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { trackWorker } from "../lib/worker-lifecycle";
 
 async function processPayout(job: Job<PayoutJobData>): Promise<void> {
   const {
@@ -127,5 +128,6 @@ export function startPayoutWorker(): Worker<PayoutJobData> | null {
   });
 
   logger.info("payout-worker: started (5 retries, exponential backoff)");
+  trackWorker(worker);
   return worker;
 }
