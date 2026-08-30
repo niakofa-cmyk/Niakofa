@@ -66,9 +66,11 @@ router.post("/stripe/webhook", async (req, res) => {
         if (pi.metadata?.["pool_contribution"] === "true") {
           const contribAmount = (pi.amount_received || pi.amount) / 100;
           const contributorId = parseInt(pi.metadata["user_id"] ?? "") || null;
+          const communityId = parseInt(pi.metadata["community_id"] ?? "") || null;
           const recorded = await recordPoolContribution({
             amount: contribAmount,
             userId: contributorId,
+            communityId,
             stripePaymentIntentId: pi.id,
             notes: "Sponsor contribution via Stripe",
           });

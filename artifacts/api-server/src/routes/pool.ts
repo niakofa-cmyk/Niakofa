@@ -184,6 +184,15 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
   }
 
   try {
+    // Keep the contributor's geographic attribution on the PaymentIntent so
+    // the webhook can write the successful contribution into the right pool.
+    const [contributor] = await db
+      .select({ community_id: usersTable.community_id })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    const communityId = contributor?.community_id ?? null;
+
     if (_stripe) {
       const idempotencyKey = getPoolIdempotencyKey(req.header("Idempotency-Key"));
       const intent = await _stripe.paymentIntents.create({
@@ -193,6 +202,7 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
         metadata: {
           pool_contribution: "true",
           user_id: String(userId),
+          community_id: communityId == null ? "" : String(communityId),
         },
       }, { idempotencyKey });
       return res.json({
@@ -213,6 +223,7 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
     await recordPoolContribution({
       amount,
       userId,
+      communityId,
       notes: "Contribution recorded without Stripe (development mode)",
     });
     // Pool was just replenished — backfill any queued guaranteed minimums

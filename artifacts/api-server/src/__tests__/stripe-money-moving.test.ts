@@ -33,7 +33,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
     stripe_transfer_id: "stripe_transfer_id",
     state: "state",
   },
-  usersTable: { id: "id" },
+  usersTable: { id: "id", community_id: "community_id" },
   requestsTable: { id: "id", title: "title" },
   transactionsTable: {},
   communityPoolLedgerTable: {},
@@ -167,6 +167,26 @@ describe("POST /api/pool/contribute", () => {
     expect(firstOptions.idempotencyKey).toEqual(expect.any(String));
     expect(secondOptions.idempotencyKey).toEqual(expect.any(String));
     expect(firstOptions.idempotencyKey).not.toBe(secondOptions.idempotencyKey);
+  });
+
+  it("attaches the contributor's community to the Stripe PaymentIntent", async () => {
+    db.limit.mockResolvedValueOnce([{ community_id: 7 }]);
+
+    const response = await request(app)
+      .post("/api/pool/contribute")
+      .send({ amount: 25 });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          pool_contribution: "true",
+          user_id: "42",
+          community_id: "7",
+        }),
+      }),
+      expect.any(Object),
+    );
   });
 
   it("preserves the caller's idempotency key for safe retries", async () => {

@@ -1043,7 +1043,7 @@ export default function CommunityScreen() {
   ];
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col pb-24">
+    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col pb-[calc(6rem+env(safe-area-inset-bottom))]">
       <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
           <Users className="w-5 h-5 text-primary" /> Community

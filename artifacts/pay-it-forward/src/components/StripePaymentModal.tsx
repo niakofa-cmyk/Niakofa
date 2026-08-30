@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { loadStripe } from "@stripe/stripe-js";
 import {
@@ -242,10 +243,9 @@ export function StripePaymentModal({
     };
   }, []);
 
-  if (!stripePromise) return null;
   if (!mounted) return null;
 
-  return (
+  const content = (
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -253,12 +253,12 @@ export function StripePaymentModal({
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
         className="fixed inset-0 isolate overflow-hidden bg-card"
-        style={{ zIndex: Z_MODAL }}
+        style={{ zIndex: Z_MODAL + 100 }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="payment-modal-title"
       >
-        <div className="absolute inset-0 overflow-y-auto overscroll-contain">
+        <div className="absolute inset-0 overflow-y-auto overscroll-y-contain [touch-action:pan-y]">
           <div className="mx-auto min-h-full max-w-lg px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
             <div className="sticky top-0 z-20 -mx-4 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur-md">
               <div className="flex min-w-0 items-center gap-2.5">
@@ -318,4 +318,31 @@ export function StripePaymentModal({
       </motion.div>
     </AnimatePresence>
   );
+
+  if (!stripePromise) {
+    return createPortal(
+      <div
+        className="fixed inset-0 flex items-center justify-center bg-black/70 p-4"
+        style={{ zIndex: Z_MODAL + 100 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stripe-config-error-title"
+      >
+        <div className="w-full max-w-md rounded-3xl border border-destructive/30 bg-card p-5 shadow-2xl">
+          <h3 id="stripe-config-error-title" className="text-base font-black">
+            Secure payment is temporarily unavailable
+          </h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            The payment form is not configured on this device. No card information was requested or charged.
+          </p>
+          <Button type="button" className="mt-4 min-h-[48px] w-full" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
+  return createPortal(content, document.body);
 }
