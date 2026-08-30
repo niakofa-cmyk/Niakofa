@@ -610,7 +610,9 @@ describe("Health Endpoint", () => {
       expect(res.body.dependencies.schema.status).toBe("ready");
       expect(res.body.dependencies.nia.status).toBe("degraded");
       expect(res.body.dependencies.redis.detail).toBe("durable scheduler fallback");
-      expect(res.body.dependencies.stripe.detail).toBe("payments remain pending");
+      expect(res.body.dependencies.stripe.detail).toBe(
+        "STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are incomplete",
+      );
       expect(res.body.dependencies.mapbox.detail).toBe("map/address fallback");
     } finally {
       fetchSpy.mockRestore();

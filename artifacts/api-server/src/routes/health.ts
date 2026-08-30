@@ -168,7 +168,14 @@ router.get("/health", async (_req, res) => {
 // `scope=circles` variant is the release gate for the Circle media plane and
 // promotes LiveKit configuration from optional degradation to required readiness.
 router.get("/readiness", async (req, res) => {
-  const circlesScope = req.query.scope === "circles";
+  const requestedScopes = new Set(
+    String(req.query.scope ?? "")
+      .split(",")
+      .map((scope) => scope.trim())
+      .filter(Boolean),
+  );
+  const circlesScope = requestedScopes.has("circles");
+  const paymentsScope = requestedScopes.has("payments");
   const dbStart = Date.now();
   let database: "ready" | "unavailable" = "unavailable";
   let schema: "ready" | "unavailable" = "unavailable";
@@ -195,7 +202,9 @@ router.get("/readiness", async (req, res) => {
   const nia = await checkNiaService();
   const redisConfigured = isRedisConfigured();
   const mapConfigured = Boolean(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
-  const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY);
+  const stripeConfigured =
+    Boolean(process.env.STRIPE_SECRET_KEY) &&
+    Boolean(process.env.STRIPE_WEBHOOK_SECRET);
   const livekit = getLiveKitReadiness();
   const dependencies = {
     database: {
@@ -221,9 +230,11 @@ router.get("/readiness", async (req, res) => {
       detail: redisConfigured ? "queue-backed" : "durable scheduler fallback",
     },
     stripe: {
-      required: false,
+      required: paymentsScope,
       status: stripeConfigured ? "ready" : "degraded",
-      detail: stripeConfigured ? "configured" : "payments remain pending",
+      detail: stripeConfigured
+        ? "secret key and webhook signing secret configured"
+        : "STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are incomplete",
     },
     mapbox: {
       required: false,
@@ -239,7 +250,8 @@ router.get("/readiness", async (req, res) => {
   const ready =
     database === "ready" &&
     schema === "ready" &&
-    (!circlesScope || livekit.status === "ready");
+    (!circlesScope || livekit.status === "ready") &&
+    (!paymentsScope || stripeConfigured);
   const degraded = Object.values(dependencies).some((dependency) => dependency.status === "degraded");
 
   res.status(ready ? 200 : 503).json({
@@ -248,8 +260,9 @@ router.get("/readiness", async (req, res) => {
     required: {
       database: database === "ready" && schema === "ready",
       livekit: circlesScope ? livekit.status === "ready" : undefined,
+      stripe: paymentsScope ? stripeConfigured : undefined,
     },
-    scope: circlesScope ? "circles" : "platform",
+    scope: [circlesScope && "circles", paymentsScope && "payments"].filter(Boolean).join(",") || "platform",
     dependencies,
     database_latency_ms: Date.now() - dbStart,
     commit: GIT_COMMIT,

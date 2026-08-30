@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import { db, communityPoolLedgerTable, poolPendingMinimumsTable, usersTable, requestsTable } from "@workspace/db";
 import { desc, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
@@ -22,6 +23,18 @@ const _stripe = _STRIPE_SK
   : null;
 
 const router = Router();
+
+export function canRecordPoolContributionWithoutStripe(nodeEnv = process.env.NODE_ENV): boolean {
+  return nodeEnv !== "production";
+}
+
+function getPoolIdempotencyKey(rawKey: string | undefined): string {
+  const key = rawKey?.trim();
+  // A missing key must never collapse separate contributions into one Stripe
+  // PaymentIntent. The frontend supplies a stable key for each user attempt;
+  // this random fallback protects direct API clients from cross-payment reuse.
+  return key && key.length <= 255 ? key : randomUUID();
+}
 
 /**
  * GET /pool/stats — public transparency stats for the Community Pool.
@@ -160,7 +173,7 @@ router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
  * POST /pool/contribute — fund the Community Pool.
  * With Stripe configured: creates a PaymentIntent (metadata pool_contribution)
  * and returns client_secret; the webhook records the ledger entry on success.
- * Without Stripe (dev): records the contribution directly.
+ * Without Stripe (development/test only): records the contribution directly.
  */
 router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
@@ -172,7 +185,7 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
 
   try {
     if (_stripe) {
-      const idempotencyKey = String(req.header("Idempotency-Key") ?? "").trim() || `pool-contribution-${userId}-${Math.round(amount * 100)}`;
+      const idempotencyKey = getPoolIdempotencyKey(req.header("Idempotency-Key"));
       const intent = await _stripe.paymentIntents.create({
         amount: Math.round(amount * 100),
         currency: "usd",
@@ -189,7 +202,14 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
       });
     }
 
-    // Dev mode — no Stripe: record directly so the flow is testable end-to-end
+    if (!canRecordPoolContributionWithoutStripe()) {
+      return res.status(503).json({
+        error: "Community Pool payments are not configured. Please try again later.",
+      });
+    }
+
+    // Development/test mode — no Stripe: record directly so the flow is
+    // testable end-to-end without ever crediting an unconfigured production app.
     await recordPoolContribution({
       amount,
       userId,
@@ -232,7 +252,7 @@ router.post("/pool/donate", paymentLimiter, async (req, res) => {
   }
 
   try {
-    const idempotencyKey = String(req.header("Idempotency-Key") ?? "").trim() || `anonymous-pool-donation-${Math.round(amount * 100)}`;
+    const idempotencyKey = getPoolIdempotencyKey(req.header("Idempotency-Key"));
     const intent = await _stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency: "usd",

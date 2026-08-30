@@ -46,6 +46,16 @@ if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
   );
 }
 
+if (
+  process.env.NODE_ENV === "production" &&
+  (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET)
+) {
+  throw new Error(
+    "STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be set in production. " +
+    "Community Pool payments cannot safely run without both live Stripe credentials."
+  );
+}
+
 // Critical background work is part of the production correctness boundary.
 // Do this before creating/listening on the HTTP server so a deployment cannot
 // appear healthy while payout, cashout, notification, and reconciliation jobs

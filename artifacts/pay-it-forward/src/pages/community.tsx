@@ -6,7 +6,7 @@ import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
 import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock, AlertTriangle, ClipboardList, Radio } from "lucide-react";
-import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey, useGetPoolStats, getGetPoolStatsQueryKey, useGetPoolLedger, getGetPoolLedgerQueryKey, useContributeToPool } from "@workspace/api-client-react";
+import { contributeToPool, useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey, useGetPoolStats, getGetPoolStatsQueryKey, useGetPoolLedger, getGetPoolLedgerQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
@@ -22,6 +22,20 @@ interface GratitudePost {
   request_title?: string | null;
   likes: number;
   created_at: string;
+}
+
+function formatPoolCurrency(value: number): string {
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function createPoolIdempotencyKey(scope: "contribution" | "donation"): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `pool-${scope}-${crypto.randomUUID()}`;
+  }
+  return `pool-${scope}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -853,7 +867,7 @@ export default function CommunityScreen() {
     { limit: 15 },
     { query: { queryKey: getGetPoolLedgerQueryKey({ limit: 15 }), staleTime: 15000 } }
   );
-  const contributeMutation = useContributeToPool();
+  const [contributePending, setContributePending] = useState(false);
   const [contributeAmount, setContributeAmount] = useState("");
   const [contributeMsg, setContributeMsg] = useState<string | null>(null);
   const [contributeSecret, setContributeSecret] = useState<string | null>(null);
@@ -875,18 +889,29 @@ export default function CommunityScreen() {
       return;
     }
     setContributeMsg(null);
+    setContributePending(true);
     try {
-      const result = await contributeMutation.mutateAsync({ data: { amount: amt } });
+      const result = await contributeToPool(
+        { amount: amt },
+        {
+          headers: {
+            ...authHeaders(),
+            "Idempotency-Key": createPoolIdempotencyKey("contribution"),
+          },
+        },
+      );
       if (result.mode === "stripe" && result.client_secret) {
         setContributeSecret(result.client_secret);
       } else {
-        setContributeMsg(`Thank you! ${amt.toFixed(2)} added to the pool. 💙`);
+        setContributeMsg(`Thank you! $${formatPoolCurrency(amt)} added to the pool. 💙`);
         setContributeAmount("");
         refetchPoolStats();
         refetchPoolLedger();
       }
     } catch {
       setContributeMsg("Contribution failed. Please try again.");
+    } finally {
+      setContributePending(false);
     }
   };
 
@@ -902,7 +927,10 @@ export default function CommunityScreen() {
     try {
       const res = await fetch(`${base}/api/pool/donate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": createPoolIdempotencyKey("donation"),
+        },
         body: JSON.stringify({ amount: amt }),
       });
       const data = await res.json() as { mode?: string; client_secret?: string; error?: string; setup?: string };
@@ -925,7 +953,8 @@ export default function CommunityScreen() {
 
   const poolBalance = poolStats?.balance ?? 0;
   const poolTarget = 500;
-  const poolPct = Math.min(Math.round((poolBalance / poolTarget) * 100), 100);
+  const poolPct = poolStats ? Math.min(Math.round((poolBalance / poolTarget) * 100), 100) : 0;
+  const poolReached = poolStats ? poolBalance >= poolTarget : false;
 
   const toggleLike = (id: number) => {
     setLikedPosts(prev => {
@@ -1204,13 +1233,15 @@ export default function CommunityScreen() {
               </div>
               <div className="text-center">
                 <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Community Pool</div>
-                <div className="text-4xl font-black text-primary mt-1">${poolBalance.toFixed(2)}</div>
+                <div className="text-4xl font-black text-primary mt-1">
+                  {poolStats ? `$${formatPoolCurrency(poolBalance)}` : "—"}
+                </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  Available now to pay helpers instantly
+                  {poolStats ? "Available now to pay helpers instantly" : "Loading pool balance…"}
                 </div>
                 {poolStats && poolStats.guaranteed_minimum > 0 && (
                   <div className="text-[10px] text-green-400 font-bold mt-1">
-                    ✓ ${poolStats.guaranteed_minimum.toFixed(2)} flat floor
+                    ✓ ${formatPoolCurrency(poolStats.guaranteed_minimum)} flat floor
                     {poolStats.minimum_hourly_rate
                       ? ` · $${poolStats.minimum_hourly_rate.toFixed(0)}/hr for timed tasks`
                       : ""} guaranteed per task
@@ -1222,9 +1253,17 @@ export default function CommunityScreen() {
               <div className="w-full">
                 <div className="flex justify-between text-[10px] text-muted-foreground mb-1.5">
                   <span>Community milestone</span>
-                  <span className="font-bold text-primary">{poolPct}% to ${poolTarget}</span>
+                  <span className="font-bold text-primary">{poolStats ? `${poolPct}% to $${poolTarget}` : "Loading…"}</span>
                 </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-2 bg-muted rounded-full overflow-hidden"
+                  role="progressbar"
+                  aria-label="Community Pool progress toward the Emergency Assistance Reserve"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={poolStats ? poolPct : undefined}
+                  aria-valuetext={poolStats ? `${poolPct}% of the $${poolTarget} milestone` : "Loading pool progress"}
+                >
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${poolPct}%` }}
@@ -1232,8 +1271,10 @@ export default function CommunityScreen() {
                     className="h-full bg-gradient-to-r from-primary to-cyan-400 rounded-full"
                   />
                 </div>
-                <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
-                  When we hit $500, we unlock the Emergency Assistance Reserve 🏦
+                <div className={`text-[10px] mt-1.5 text-center ${poolReached ? "text-green-400 font-bold" : "text-muted-foreground"}`}>
+                  {poolReached
+                    ? "✓ $500 milestone reached — the Emergency Assistance Reserve is unlocked 🏦"
+                    : "When we hit $500, we unlock the Emergency Assistance Reserve 🏦"}
                 </div>
               </div>
             </motion.div>
@@ -1245,7 +1286,7 @@ export default function CommunityScreen() {
               <PoolContributionPanel
                 amount={contributeAmount}
                 setAmount={setContributeAmount}
-                pending={contributeMutation.isPending}
+                pending={contributePending}
                 onContinue={submitContribution}
               />
             ) : isStripeConfigured() ? (
@@ -1292,7 +1333,7 @@ export default function CommunityScreen() {
                         Helpers Earned This Week
                       </div>
                       <div className="text-3xl font-black text-foreground">
-                        ${earned7d.toFixed(2)}
+                        ${formatPoolCurrency(earned7d)}
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
                         paid to{" "}
@@ -1325,7 +1366,7 @@ export default function CommunityScreen() {
                 ].map((item) => (
                   <div key={item.label} className="bg-background/60 rounded-xl px-3 py-2.5">
                     <div className={`text-lg font-black ${item.color}`}>
-                      {item.isCount ? item.value : `$${Number(item.value).toFixed(2)}`}
+                      {item.isCount ? item.value.toLocaleString("en-US") : `$${formatPoolCurrency(Number(item.value))}`}
                     </div>
                     <div className="text-[10px] font-bold uppercase tracking-wider">{item.label}</div>
                     <div className="text-[9px] text-muted-foreground mt-0.5">{item.desc}</div>
@@ -1393,12 +1434,12 @@ export default function CommunityScreen() {
                   {/* 30-day inflow vs outflow */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-background/50 rounded-xl px-3 py-2">
-                      <div className="text-sm font-black text-green-400">${inflow.toFixed(2)}</div>
+                        <div className="text-sm font-black text-green-400">${formatPoolCurrency(inflow)}</div>
                       <div className="text-[10px] font-bold uppercase tracking-wider">30-Day Inflow</div>
                       <div className="text-[9px] text-muted-foreground">contributions + repayments</div>
                     </div>
                     <div className="bg-background/50 rounded-xl px-3 py-2">
-                      <div className="text-sm font-black text-primary">${outflow.toFixed(2)}</div>
+                        <div className="text-sm font-black text-primary">${formatPoolCurrency(outflow)}</div>
                       <div className="text-[10px] font-bold uppercase tracking-wider">30-Day Outflow</div>
                       <div className="text-[9px] text-muted-foreground">helpers paid + minimums</div>
                     </div>
@@ -1410,7 +1451,7 @@ export default function CommunityScreen() {
                       <div className="flex justify-between text-[9px] text-muted-foreground">
                         <span>Inflow coverage</span>
                         <span className={inflow >= outflow ? "text-green-400 font-bold" : "text-yellow-400 font-bold"}>
-                          {Math.round((inflow / outflow) * 100)}%
+                          {Math.min(Math.round((inflow / outflow) * 100), 100)}%
                         </span>
                       </div>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
@@ -1435,7 +1476,7 @@ export default function CommunityScreen() {
                           Neighbors who received help and pledged to pay it forward — this money flows back when they're ready.
                         </div>
                       </div>
-                      <div className="text-sm font-black text-cyan-400 shrink-0">${outstanding.toFixed(2)}</div>
+                      <div className="text-sm font-black text-cyan-400 shrink-0">${formatPoolCurrency(outstanding)}</div>
                     </div>
                   )}
                 </motion.div>
@@ -1451,19 +1492,25 @@ export default function CommunityScreen() {
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   The pool ran low, so <span className="font-bold text-foreground">{poolStats?.pending_minimums_count}</span> guaranteed
                   thank-you payment{(poolStats?.pending_minimums_count ?? 0) === 1 ? "" : "s"} totaling{" "}
-                  <span className="font-bold text-yellow-400">${(poolStats?.pending_minimums_total ?? 0).toFixed(2)}</span> are queued.
+                  <span className="font-bold text-yellow-400">${formatPoolCurrency(poolStats?.pending_minimums_total ?? 0)}</span> are queued.
                   They're paid automatically — oldest first — as soon as the pool is replenished. Every contribution helps.
                 </p>
               </div>
             )}
 
             {/* Transparency ledger */}
-            {poolLedger && Array.isArray(poolLedger.entries) && poolLedger.entries.length > 0 && (
+            {poolLedger && Array.isArray(poolLedger.entries) && (
               <div className="bg-card border border-border rounded-2xl p-4 space-y-2.5">
                 <h3 className="font-black text-sm flex items-center gap-2">
                   <Activity className="w-4 h-4 text-primary" /> Pool Activity
                 </h3>
-                {poolLedger.entries.map((entry: { id: number; entry_type: string; amount: number; display_name?: string | null; created_at: string }) => {
+                {poolLedger.entries.length === 0 ? (
+                  <div className="rounded-xl bg-background/60 px-3 py-4 text-center">
+                    <Activity className="mx-auto mb-1.5 h-7 w-7 text-primary/30" aria-hidden="true" />
+                    <p className="text-xs text-muted-foreground">No pool activity yet</p>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground/60">Contributions and helper payments will appear here.</p>
+                  </div>
+                ) : poolLedger.entries.map((entry: { id: number; entry_type: string; amount: number; display_name?: string | null; created_at: string }) => {
                   const meta: Record<string, { icon: string; label: string }> = {
                     sponsor_contribution: { icon: "💛", label: entry.display_name ? `${entry.display_name} funded the pool` : "Pool contribution" },
                     helper_front: { icon: "⚡", label: "Helper paid instantly at completion" },
@@ -1483,7 +1530,7 @@ export default function CommunityScreen() {
                         </div>
                       </div>
                       <div className={`text-xs font-black shrink-0 ${positive ? "text-green-400" : "text-primary"}`}>
-                        {positive ? "+" : "−"}${Math.abs(entry.amount).toFixed(2)}
+                         {positive ? "+" : "−"}${formatPoolCurrency(Math.abs(entry.amount))}
                       </div>
                     </div>
                   );
@@ -1520,7 +1567,7 @@ export default function CommunityScreen() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-yellow-400 shrink-0" />
-                  <div className="font-bold text-sm text-yellow-400">Sponsor a Neighbor</div>
+                  <div className="font-bold text-sm text-yellow-400">Your Contribution History</div>
                 </div>
                 {sponsorHistory.loading && <RefreshCw className="w-3 h-3 text-yellow-400/60 animate-spin" />}
               </div>
@@ -1567,7 +1614,7 @@ export default function CommunityScreen() {
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <div className="text-xs font-black text-yellow-400">${entry.amount.toFixed(2)}</div>
+                             <div className="text-xs font-black text-yellow-400">${formatPoolCurrency(entry.amount)}</div>
                             <div className="text-[9px] text-muted-foreground">
                               {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                             </div>

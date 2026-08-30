@@ -20,6 +20,9 @@ const expectedCommit = process.env.NIAKOFA_EXPECT_COMMIT?.trim();
 // An explicit false is retained for platform-only/local diagnostics; it must
 // never be implicit.
 const requireLiveKit = !/^(0|false|no)$/i.test(process.env.NIAKOFA_REQUIRE_LIVEKIT ?? "true");
+// Community Pool payments are a launch-critical money-moving surface. An
+// explicit false is retained for platform-only diagnostics, never implicitly.
+const requirePayments = !/^(0|false|no)$/i.test(process.env.NIAKOFA_REQUIRE_PAYMENTS ?? "true");
 
 const coreWebJourneys = [
   ["/", "map and request discovery"],
@@ -134,10 +137,14 @@ async function checkApi() {
     fail(`deploy health probe (/api/healthz) request failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
+  const scopes = [
+    requireLiveKit ? "circles" : null,
+    requirePayments ? "payments" : null,
+  ].filter(Boolean);
+  const readinessPath = scopes.length > 0
+    ? `/api/readiness?scope=${scopes.join(",")}`
+    : "/api/readiness";
   try {
-    const readinessPath = requireLiveKit
-      ? "/api/readiness?scope=circles"
-      : "/api/readiness";
     const { response, body } = await requestJson(apiUrl, readinessPath);
     if (!response.ok || body?.ready !== true) {
       fail(
@@ -147,8 +154,10 @@ async function checkApi() {
     } else {
       pass(
         requireLiveKit
-          ? "required database, schema, and Circle LiveKit configuration are ready"
-          : "required database and schema dependencies are ready",
+          ? `required database, schema, Circle LiveKit${requirePayments ? ", and Stripe payment" : ""} configuration is ready`
+          : requirePayments
+            ? "required database, schema, and Stripe payment configuration are ready"
+            : "required database and schema dependencies are ready",
       );
     }
 
@@ -185,8 +194,23 @@ async function checkApi() {
         fail(`LiveKit server readiness request failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+
+    const stripe = body?.dependencies?.stripe;
+    if (requirePayments && body?.dependencies?.stripe?.required !== true) {
+      fail("Payment readiness did not mark Stripe as a required dependency");
+    }
+    if (requirePayments && stripe?.status !== "ready") {
+      fail(`Stripe payment configuration is required but ${String(stripe?.detail ?? "unavailable")}`);
+    } else if (stripe?.status === "ready") {
+      pass("Stripe payment configuration is ready");
+    } else if (!requirePayments) {
+      console.warn(
+        `  ! Stripe payment configuration is not ready (${String(stripe?.detail ?? "not reported")}); ` +
+        "this was an explicit platform-only smoke run.",
+      );
+    }
   } catch (error) {
-    fail(`dependency readiness (${requireLiveKit ? "/api/readiness?scope=circles" : "/api/readiness"}) request failed: ${error instanceof Error ? error.message : String(error)}`);
+    fail(`dependency readiness (${readinessPath}) request failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   for (const [path, label] of protectedApiJourneys) {

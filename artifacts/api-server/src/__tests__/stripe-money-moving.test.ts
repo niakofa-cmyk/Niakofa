@@ -22,6 +22,7 @@ const db: unknown = {
 
 const stripeConstructEvent = jest.fn();
 const stripeChargeRetrieve = jest.fn();
+const stripePaymentIntentCreate = jest.fn();
 const drizzleEq = jest.fn();
 
 jest.unstable_mockModule("@workspace/db", () => ({
@@ -51,6 +52,7 @@ jest.unstable_mockModule("stripe", () => ({
   default: class StripeMock {
     webhooks = { constructEvent: stripeConstructEvent };
     charges = { retrieve: stripeChargeRetrieve };
+    paymentIntents = { create: stripePaymentIntentCreate };
   },
 }));
 
@@ -83,6 +85,9 @@ jest.unstable_mockModule("../lib/community-pool", () => ({
   wasRequestFronted: jest.fn(),
   recordPoolContribution: jest.fn(),
   getPoolBalance: jest.fn(),
+  getGuaranteedMinimum: jest.fn(),
+  getHourlyMinimumRate: jest.fn(),
+  isPoolEnabled: jest.fn(),
   processPendingMinimums: jest.fn(),
   syncHubReservedBalance: jest.fn(),
 }));
@@ -93,6 +98,7 @@ jest.unstable_mockModule("../lib/logger", () => ({
 
 let app: express.Express;
 let requireApproved: jest.Mock;
+let canRecordPoolContributionWithoutStripe: (nodeEnv?: string) => boolean;
 
 beforeAll(async () => {
   process.env.STRIPE_SECRET_KEY = "offline-test-key";
@@ -100,9 +106,12 @@ beforeAll(async () => {
   const auth = await import("../middlewares/auth");
   requireApproved = auth.requireApproved as unknown as jest.Mock;
   const { default: stripeRouter } = await import("../routes/stripe");
+  const pool = await import("../routes/pool");
+  canRecordPoolContributionWithoutStripe = pool.canRecordPoolContributionWithoutStripe;
   app = express();
   app.use(express.json());
   app.use("/api", stripeRouter);
+  app.use("/api", pool.default);
 });
 
 beforeEach(() => {
@@ -114,6 +123,10 @@ beforeEach(() => {
   db.from.mockReturnThis();
   db.limit.mockResolvedValue([]);
   db.returning.mockResolvedValue([]);
+  stripePaymentIntentCreate.mockResolvedValue({
+    id: "pi_pool_test",
+    client_secret: "pi_pool_test_secret",
+  });
 });
 
 describe("POST /api/stripe/payment-intent", () => {
@@ -128,6 +141,46 @@ describe("POST /api/stripe/payment-intent", () => {
     expect(response.status).toBe(403);
     expect(requireApproved).toHaveBeenCalled();
     expect(db.select).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/pool/contribute", () => {
+  it("uses a distinct Stripe idempotency key for each unkeyed payment attempt", async () => {
+    const first = await request(app)
+      .post("/api/pool/contribute")
+      .send({ amount: 25 });
+    const second = await request(app)
+      .post("/api/pool/contribute")
+      .send({ amount: 25 });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledTimes(2);
+
+    const firstOptions = stripePaymentIntentCreate.mock.calls[0][1] as { idempotencyKey: string };
+    const secondOptions = stripePaymentIntentCreate.mock.calls[1][1] as { idempotencyKey: string };
+    expect(firstOptions.idempotencyKey).toEqual(expect.any(String));
+    expect(secondOptions.idempotencyKey).toEqual(expect.any(String));
+    expect(firstOptions.idempotencyKey).not.toBe(secondOptions.idempotencyKey);
+  });
+
+  it("preserves the caller's idempotency key for safe retries", async () => {
+    const response = await request(app)
+      .post("/api/pool/contribute")
+      .set("Idempotency-Key", "pool-attempt-123")
+      .send({ amount: 25 });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ amount: 2500 }),
+      { idempotencyKey: "pool-attempt-123" },
+    );
+  });
+
+  it("allows direct recording only outside production", () => {
+    expect(canRecordPoolContributionWithoutStripe("development")).toBe(true);
+    expect(canRecordPoolContributionWithoutStripe("test")).toBe(true);
+    expect(canRecordPoolContributionWithoutStripe("production")).toBe(false);
   });
 });
 
