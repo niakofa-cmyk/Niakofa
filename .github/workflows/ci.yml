@@ -56,7 +56,7 @@ jobs:
         env:
           SESSION_SECRET: ci-test-secret-64-chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
       - name: Run App/AI boundary tests
-        run: pnpm --filter @workspace/api-server run test -- --testPathPattern="app-ai-boundary"
+        run: cd artifacts/api-server && node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./jest.config.mjs --runInBand src/__tests__/app-ai-boundary.test.ts
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           SESSION_SECRET: ci-test-secret-64-chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
