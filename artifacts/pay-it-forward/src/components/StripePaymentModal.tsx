@@ -22,11 +22,12 @@ export function isStripeConfigured(): boolean {
 interface PaymentFormProps {
   amount: number;
   description: string;
+  returnUrl?: string;
   onSuccess: () => void;
   onSkip: () => void;
 }
 
-function PaymentForm({ amount, description, onSuccess, onSkip }: PaymentFormProps) {
+function PaymentForm({ amount, description, returnUrl, onSuccess, onSkip }: PaymentFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [isLoading, setIsLoading] = useState(false);
@@ -40,16 +41,22 @@ function PaymentForm({ amount, description, onSuccess, onSkip }: PaymentFormProp
     setErrorMessage(null);
 
     try {
-      const { error } = await stripe.confirmPayment({
+      const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: window.location.href,
+          return_url: returnUrl ?? window.location.href,
         },
         redirect: "if_required",
       });
 
       if (error) {
         setErrorMessage(error.message ?? "Payment failed. Please try again.");
+      } else if (
+        paymentIntent &&
+        paymentIntent.status !== "succeeded" &&
+        paymentIntent.status !== "processing"
+      ) {
+        setErrorMessage("Payment needs another step before it can be completed.");
       } else {
         onSuccess();
       }
@@ -132,6 +139,7 @@ interface StripePaymentModalProps {
   clientSecret: string;
   amount: number;
   description?: string;
+  returnUrl?: string;
   onSuccess: () => void;
   onSkip: () => void;
   onClose: () => void;
@@ -141,6 +149,7 @@ export function StripePaymentModal({
   clientSecret,
   amount,
   description = "",
+  returnUrl,
   onSuccess,
   onSkip,
   onClose,
@@ -248,6 +257,7 @@ export function StripePaymentModal({
                 <PaymentForm
                   amount={amount}
                   description={description}
+                  returnUrl={returnUrl}
                   onSuccess={onSuccess}
                   onSkip={onSkip}
                 />

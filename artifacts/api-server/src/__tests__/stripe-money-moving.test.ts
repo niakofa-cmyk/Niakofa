@@ -37,6 +37,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   requestsTable: { id: "id", title: "title" },
   transactionsTable: {},
   communityPoolLedgerTable: {},
+  poolPendingMinimumsTable: {},
   walletCashoutsTable: { id: "id", state: "state" },
   diasporaHubsTable: { id: "id" },
   diasporaHubPledgesTable: { id: "id" },
@@ -44,6 +45,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
 
 jest.unstable_mockModule("drizzle-orm", () => ({
   and: jest.fn(),
+  desc: jest.fn(),
   eq: drizzleEq,
   sql: jest.fn(),
 }));
@@ -67,10 +69,13 @@ jest.unstable_mockModule("../middlewares/auth", () => ({
 
 jest.unstable_mockModule("../middlewares/authz", () => ({
   requireOwnership: (_field: string) => (_req: unknown, _res: unknown, next: unknown) => next(),
+  requireAdmin: () => (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../middlewares/rate-limit", () => ({
   paymentLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  generalApiLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  adminLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
 }));
 
 jest.unstable_mockModule("../lib/ws-hub", () => ({

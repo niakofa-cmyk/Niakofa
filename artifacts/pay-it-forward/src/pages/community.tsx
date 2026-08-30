@@ -38,6 +38,13 @@ function createPoolIdempotencyKey(scope: "contribution" | "donation"): string {
   return `pool-${scope}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function createPoolPaymentReturnUrl(scope: "contribution" | "donation"): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  const url = new URL(window.location.href);
+  url.searchParams.set("pool_payment_return", scope);
+  return url.toString();
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   groceries: "🛒 Groceries",
   transportation: "🚗 Transportation",
@@ -878,6 +885,55 @@ export default function CommunityScreen() {
   const [anonSecret, setAnonSecret] = useState<string | null>(null);
   const [anonPending, setAnonPending] = useState(false);
 
+  // Stripe may send the browser back here after an authentication redirect,
+  // after the modal has unmounted. Read only returns explicitly marked by the
+  // Pool modal, surface the final redirect status, and remove Stripe's query
+  // parameters so a refresh cannot repeat the notification.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const scope = url.searchParams.get("pool_payment_return");
+    const redirectStatus = url.searchParams.get("redirect_status");
+    if (
+      (scope !== "contribution" && scope !== "donation") ||
+      !redirectStatus
+    ) {
+      return;
+    }
+
+    const completed =
+      redirectStatus === "succeeded" || redirectStatus === "processing";
+    const message = completed
+      ? redirectStatus === "processing"
+        ? "Your payment is processing. The pool will update as soon as Stripe confirms it. 💙"
+        : scope === "contribution"
+          ? "Thank you! Your contribution is on its way to the pool. 💙"
+          : "Thank you for supporting the community! Your donation is on its way to the pool. 💙"
+      : "Payment was not completed. You can try again whenever you’re ready.";
+
+    if (scope === "contribution") {
+      setContributeMsg(message);
+    } else {
+      setAnonMsg(message);
+    }
+    let refreshTimer: number | undefined;
+    if (completed) {
+      void refetchPoolStats();
+      void refetchPoolLedger();
+      refreshTimer = window.setTimeout(() => {
+        void refetchPoolStats();
+        void refetchPoolLedger();
+      }, 2500);
+    }
+
+    ["pool_payment_return", "redirect_status", "payment_intent", "payment_intent_client_secret"]
+      .forEach((key) => url.searchParams.delete(key));
+    window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+    return () => {
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
+  }, [refetchPoolLedger, refetchPoolStats]);
+
   useWebSocket("pool_updated", () => { refetchPoolStats(); refetchPoolLedger(); });
   useWebSocket("pool_front_paid", () => { refetchPoolStats(); refetchPoolLedger(); });
   useWebSocket("pool_low_balance", () => { refetchPoolStats(); });
@@ -1642,6 +1698,7 @@ export default function CommunityScreen() {
                 clientSecret={contributeSecret}
                 amount={parseFloat(contributeAmount) || 0}
                 description="Community Pool contribution"
+                returnUrl={createPoolPaymentReturnUrl("contribution")}
                 onSuccess={() => {
                   setContributeSecret(null);
                   setContributeMsg("Thank you! Your contribution is on its way to the pool. 💙");
@@ -1659,6 +1716,7 @@ export default function CommunityScreen() {
                 clientSecret={anonSecret}
                 amount={parseFloat(anonAmount) || 0}
                 description="Anonymous Community Pool donation — your gift goes directly to helpers serving Tarrant County neighbors."
+                returnUrl={createPoolPaymentReturnUrl("donation")}
                 onSuccess={() => {
                   setAnonSecret(null);
                   setAnonMsg("Thank you for supporting the community! Your donation is on its way to the pool. 💙");
