@@ -41,6 +41,18 @@ const CIVIC_GEO_TTL = 300; // 5 min — nearby-map queries are viewport-driven, 
 
 const router = Router();
 
+// Geographic input hardening: never send malformed or out-of-world
+// coordinates to Mapbox or use them to broaden a civic-resource lookup.
+function isValidCoordinate(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) &&
+    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
+function normalizeJurisdiction(value: string | null | undefined): string | null {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return normalized ? normalized : null;
+}
+
 const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? process.env.VITE_MAPBOX_TOKEN ?? "";
 
 interface MapboxFeature {
@@ -212,7 +224,7 @@ async function resolveNeedCoords(
   return coords;
 }
 
-// GET /civic/resources?lat=X&lng=Y  (lat/lng are optional — falls back to full list)
+// GET /civic/resources?lat=X&lng=Y
 // Anonymous (no requireAuth, by design — resources should be visible pre-signup),
 // but the lat/lng branch triggers a paid Mapbox geocoding call per unique
 // rounded coordinate, so it must still be rate-limited or an anonymous
@@ -221,18 +233,23 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
   const lat = parseFloat(req.query.lat as string);
   const lng = parseFloat(req.query.lng as string);
 
-  if (isNaN(lat) || isNaN(lng)) {
-    const cacheKey = "civic:all";
-    const cached = await cacheGet(cacheKey);
-    if (cached) return res.json(cached);
-    const all = await db.select().from(civicResourcesTable).limit(50);
-    await cacheSet(cacheKey, all, CIVIC_TTL);
-    return res.json(all);
+  if (!isValidCoordinate(lat, lng)) {
+    if (req.query.lat !== undefined || req.query.lng !== undefined) {
+      return res.status(400).json({ error: "lat and lng must be valid geographic coordinates" });
+    }
+
+    // A location-aware endpoint must not return an arbitrary global slice when
+    // a caller has not supplied a location.
+    return res.json({
+      resources: [],
+      place_name: "location required",
+      match_level: "fallback" as const,
+    });
   }
 
   const latRounded = Math.round(lat * 10) / 10;
   const lngRounded = Math.round(lng * 10) / 10;
-  const locationCacheKey = `civic:loc:${latRounded}:${lngRounded}`;
+  const locationCacheKey = `civic:v3:loc:${latRounded}:${lngRounded}`;
   const locationCached = await cacheGet(locationCacheKey);
   if (locationCached) return res.json(locationCached);
 
@@ -243,14 +260,25 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
     // arbitrary sample of whatever happens to be in the table would be
     // misleading: it could be labeled "your area" while belonging to a
     // completely different region. Be honest instead: report no resources.
-    const result = { resources: [], place_name: "your area", match_level: "fallback" as const };
+    const result = { resources: [], place_name: "location could not be verified", match_level: "fallback" as const };
     await cacheSet(locationCacheKey, result, CIVIC_TTL);
     return res.json(result);
   }
 
-  const state = place.state_short.toUpperCase();
-  const county = place.county;
-  const city = place.city;
+  const state = normalizeJurisdiction(place.state_short)?.toUpperCase() ?? null;
+  const county = normalizeJurisdiction(place.county);
+  const city = normalizeJurisdiction(place.city);
+
+  if (!state) {
+    return res.status(200).json({
+      resources: [],
+      place_name: place.place_name || "your area",
+      city,
+      county: county ? `${county} County` : null,
+      state: null,
+      match_level: "fallback" as const,
+    });
+  }
 
   let matchLevel: "city" | "county" | "state" | "fallback" = "fallback";
   let resources: (typeof civicResourcesTable.$inferSelect)[] = [];
@@ -265,7 +293,8 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
           eq(civicResourcesTable.county, county),
           eq(civicResourcesTable.city, city)
         )
-      );
+      )
+      .orderBy(desc(civicResourcesTable.is_authoritative), desc(civicResourcesTable.coverage_status));
     if (resources.length > 0) matchLevel = "city";
   }
 
@@ -278,7 +307,8 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
           eq(civicResourcesTable.state, state),
           eq(civicResourcesTable.county, county)
         )
-      );
+      )
+      .orderBy(desc(civicResourcesTable.is_authoritative), desc(civicResourcesTable.coverage_status));
     if (resources.length > 0) matchLevel = "county";
   }
 
@@ -286,7 +316,8 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
     resources = await db
       .select()
       .from(civicResourcesTable)
-      .where(eq(civicResourcesTable.state, state));
+      .where(eq(civicResourcesTable.state, state))
+      .orderBy(desc(civicResourcesTable.is_authoritative), desc(civicResourcesTable.coverage_status));
     if (resources.length > 0) matchLevel = "state";
   }
 
@@ -326,8 +357,8 @@ router.get("/civic/resources/nearby", generalApiLimiter, async (req, res) => {
     radius_miles: req.query.radius_miles !== undefined ? parseFloat(req.query.radius_miles as string) : undefined,
     category: req.query.category,
   });
-  if (!parsed.success || isNaN(parsed.data.lat) || isNaN(parsed.data.lng)) {
-    return res.status(400).json({ error: "lat and lng are required" });
+  if (!parsed.success || !isValidCoordinate(parsed.data.lat, parsed.data.lng)) {
+    return res.status(400).json({ error: "lat and lng must be valid geographic coordinates" });
   }
   const { lat, lng } = parsed.data;
   const radius = Math.min(50, Math.max(0.1, parsed.data.radius_miles));
@@ -335,7 +366,7 @@ router.get("/civic/resources/nearby", generalApiLimiter, async (req, res) => {
 
   const latR = Math.round(lat * 100) / 100;
   const lngR = Math.round(lng * 100) / 100;
-  const cacheKey = `civic:nearby:${latR}:${lngR}:${radius}:${category ?? "*"}`;
+  const cacheKey = `civic:v2:nearby:${latR}:${lngR}:${radius}:${category ?? "*"}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return res.json(cached);
 
@@ -1287,13 +1318,33 @@ function normalizeResourceInput(body: Record<string, unknown>) {
     city: strOrNull(body.city),
     org_name: str(body.org_name),
     description: strOrNull(body.description),
-    url: str(body.url),
+    url: (() => {
+      try {
+        const parsed = new URL(str(body.url));
+        return parsed.protocol === "http:" || parsed.protocol === "https:"
+          ? parsed.toString()
+          : "";
+      } catch {
+        return "";
+      }
+    })(),
     phone: strOrNull(body.phone),
     category: strOrNull(body.category)?.toLowerCase() ?? null,
     address: strOrNull(body.address),
     latitude: numOrNull(body.latitude),
     longitude: numOrNull(body.longitude),
-    open_hours: strOrNull(body.open_hours),
+    open_hours: (() => {
+      const raw = strOrNull(body.open_hours);
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? JSON.stringify(parsed)
+          : null;
+      } catch {
+        return null;
+      }
+    })(),
   };
 }
 
@@ -1331,6 +1382,10 @@ router.post("/admin/civic/resources", requireAuth, requireAdmin(), adminLimiter,
   }
   if ((input.latitude === null) !== (input.longitude === null)) {
     return res.status(400).json({ error: "latitude and longitude must be provided together" });
+  }
+  if (input.latitude !== null && input.longitude !== null &&
+      !isValidCoordinate(input.latitude, input.longitude)) {
+    return res.status(400).json({ error: "latitude/longitude are outside valid geographic bounds" });
   }
 
   try {
@@ -1391,6 +1446,10 @@ router.patch("/admin/civic/resources/:id", requireAuth, requireAdmin(), adminLim
   }
   if ((merged.latitude === null) !== (merged.longitude === null)) {
     return res.status(400).json({ error: "latitude and longitude must be provided together" });
+  }
+  if (merged.latitude !== null && merged.longitude !== null &&
+      !isValidCoordinate(merged.latitude, merged.longitude)) {
+    return res.status(400).json({ error: "latitude/longitude are outside valid geographic bounds" });
   }
 
   try {

@@ -117,13 +117,21 @@ interface LedgerEntry {
 
 interface CivicResource {
   id: number;
-  name: string;
-  category: string;
+  org_name: string;
+  category: string | null;
   description: string | null;
   address: string | null;
   phone: string | null;
-  website: string | null;
-  hours: string | null;
+  url: string;
+  open_hours: string | null;
+  coverage_status?: string;
+  is_authoritative?: boolean;
+}
+
+interface CivicResourcesResponse {
+  resources: CivicResource[];
+  place_name?: string;
+  match_level?: "city" | "county" | "state" | "fallback";
 }
 
 const CIVIC_ICONS: Record<string, string> = {
@@ -146,6 +154,8 @@ function CivicResourcesTab() {
   const [category, setCategory] = useState("all");
   const [showSuggest, setShowSuggest] = useState(false);
   const [suggestionSent, setSuggestionSent] = useState(false);
+  const [locationRequired, setLocationRequired] = useState(false);
+  const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<SuggestionForm>({
     name: "", category: "other", description: "", phone: "", website: "",
   });
@@ -164,15 +174,49 @@ function CivicResourcesTab() {
     setTimeout(() => { setShowSuggest(false); setSuggestionSent(false); setSuggestion({ name: "", category: "other", description: "", phone: "", website: "" }); }, 2000);
   };
 
-  useEffect(() => {
+  const loadResources = useCallback(() => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/civic/resources`)
-      .then(r => r.json())
-      .then((data) => { if (Array.isArray(data)) setResources(data); setLoading(false); })
-      .catch(() => setLoading(false));
+    setLoading(true);
+    if (!navigator.geolocation) {
+      setLocationRequired(true);
+      setLoading(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        fetch(`${base}/api/civic/resources?lat=${encodeURIComponent(coords.latitude)}&lng=${encodeURIComponent(coords.longitude)}`)
+          .then(async (response) => {
+            if (!response.ok) throw new Error("Unable to resolve resources");
+            return response.json() as Promise<CivicResourcesResponse>;
+          })
+          .then((data) => {
+            setResources(Array.isArray(data.resources) ? data.resources : []);
+            setLocationLabel(data.place_name ?? null);
+            setLocationRequired(false);
+          })
+          .catch(() => setResources([]))
+          .finally(() => setLoading(false));
+      },
+      () => {
+        setLocationRequired(true);
+        setLoading(false);
+      },
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 8000 },
+    );
   }, []);
 
-  const categories = ["all", ...Array.from(new Set(resources.map(r => r.category)))];
+  useEffect(() => {
+    loadResources();
+  }, [loadResources]);
+
+  const categories = [
+    "all",
+    ...Array.from(new Set(
+      resources
+        .map(r => r.category)
+        .filter((cat): cat is string => Boolean(cat)),
+    )),
+  ];
   const filtered = category === "all" ? resources : resources.filter(r => r.category === category);
 
   if (loading && resources.length === 0) return (
@@ -184,8 +228,22 @@ function CivicResourcesTab() {
   if (resources.length === 0) return (
     <div className="text-center py-16 px-4">
       <div className="text-4xl mb-3">🏛️</div>
-      <div className="font-bold text-sm text-muted-foreground">No resources listed yet</div>
-      <div className="text-xs text-muted-foreground/60 mt-1">Community resources will appear here</div>
+      <div className="font-bold text-sm text-muted-foreground">
+        {locationRequired ? "Location is needed to show local resources" : "No verified resources found for this area"}
+      </div>
+      <div className="text-xs text-muted-foreground/60 mt-1">
+        {locationRequired
+          ? "Allow location access so Niakofa can keep civic resources in the right jurisdiction."
+          : `We searched ${locationLabel ?? "your area"} without showing unrelated results.`}
+      </div>
+      {locationRequired && (
+        <button
+          onClick={loadResources}
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Try location again
+        </button>
+      )}
     </div>
   );
 
@@ -213,14 +271,14 @@ function CivicResourcesTab() {
         <div key={r.id} className="bg-card border border-border rounded-2xl p-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-lg shrink-0">
-              {CIVIC_ICONS[r.category] ?? "💙"}
+               {CIVIC_ICONS[r.category ?? "other"] ?? "💙"}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-black text-sm">{r.name}</div>
+           <div className="font-black text-sm">{r.org_name}</div>
               {r.description && <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{r.description}</p>}
               <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
                 {r.address && <span className="text-[10px] text-muted-foreground">📍 {r.address}</span>}
-                {r.hours && <span className="text-[10px] text-muted-foreground">🕐 {r.hours}</span>}
+                 {r.open_hours && <span className="text-[10px] text-muted-foreground">🕐 {r.open_hours}</span>}
               </div>
               <div className="flex gap-2 mt-3">
                 {r.phone && (
@@ -228,8 +286,8 @@ function CivicResourcesTab() {
                     📞 Call
                   </a>
                 )}
-                {r.website && (
-                  <a href={r.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground font-bold bg-muted border border-border px-3 py-1.5 rounded-full active:scale-95 transition-all">
+                 {r.url && (
+                   <a href={r.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground font-bold bg-muted border border-border px-3 py-1.5 rounded-full active:scale-95 transition-all">
                     🌐 Website
                   </a>
                 )}

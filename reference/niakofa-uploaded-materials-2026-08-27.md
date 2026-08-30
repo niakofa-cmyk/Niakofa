@@ -51,3 +51,23 @@ The current implementation evidence is:
 The ZIP and source notes remain in `attached_assets/` for audit traceability.
 Automated A–G coverage does not replace real-browser, TURN/NAT, and
 device-permission certification; see the certification runbook.
+
+## Civic coverage and geographic safety handoff
+
+The August 30, 2026 civic materials were reviewed against the canonical root
+source tree:
+
+- `attached_assets/civic_patch_1788115290670.zip`
+- `attached_assets/Niakofa-civic-data-coverage_1788115290670.zip`
+- `attached_assets/Niakofa-civic-geographic-security-hardened_1788115290670.zip`
+- `attached_assets/Niakofa-civic-national-coverage-source_1788115290670.zip`
+- `attached_assets/Niakofa-main-2_1788115290670.zip`
+- `attached_assets/Niakofa-main_2_1788115290670.zip`
+
+The maintained implementation uses `artifacts/`, `lib/`, and `scripts/` as the
+canonical paths. Civic resources now fail closed without valid coordinates,
+admin URLs and coordinates are validated, location cache keys are versioned,
+and national state/county coverage is backed by USA.gov, 2-1-1, and Census
+provenance. Census places are tracked separately until a municipal URL is
+verified; no municipal URL is inferred from a place name. The original ZIPs
+remain in `attached_assets/` for provenance and archive-level auditability.

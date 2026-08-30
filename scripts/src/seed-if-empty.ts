@@ -34,6 +34,12 @@ async function main() {
         : "seed-if-empty: table is empty — running civic seed..."
     );
 
+    // Establish national state/county coverage before repairing the richer
+    // Fort Worth seed. The coverage seed is idempotent and also maintains the
+    // Texas Census-place verification queue.
+    const coverageModule = (await import("./seed-civic-coverage.js")) as { default?: unknown };
+    if (typeof coverageModule.default === "function") await coverageModule.default();
+
     // Dynamically import and run the full seed.
     // seed-fort-worth.ts has no default export — it runs itself via
     // top-level side effects on import instead — so we access .default

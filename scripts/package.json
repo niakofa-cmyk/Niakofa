@@ -7,6 +7,7 @@
     "hello": "tsx ./src/hello.ts",
     "seed": "tsx ./src/seed-fort-worth.ts",
     "seed-if-empty": "tsx ./src/seed-if-empty.ts",
+    "seed-civic-coverage": "tsx ./src/run-civic-coverage.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed-crisis": "tsx ./src/seed-regional-crisis.ts",
     "seed-businesses": "tsx ./src/seed-businesses.ts",

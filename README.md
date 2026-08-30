@@ -28,6 +28,7 @@ cd artifacts/pay-it-forward && pnpm exec vite --config vite.config.ts --host 0.0
 | `ADMIN_SECRET` | Password protecting the `/admin` route |
 | `VITE_MAPBOX_TOKEN` | Mapbox public token (baked into frontend build) |
 | `MAPBOX_TOKEN` | Mapbox token for server-side geocoding |
+| `CENSUS_API_KEY` | Optional Census geography API key; without it, the seed uses the verified Texas offline fallback and reports degraded national coverage |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (`pk_live_` / `pk_test_`) |
 | `STRIPE_SECRET_KEY` | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |

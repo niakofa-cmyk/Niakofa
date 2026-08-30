@@ -15,7 +15,7 @@
  * Run: node scripts/src/release-validate.js
  * Exit 0 = ready for release, exit 1 = blocking issues found.
  */
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 
@@ -49,10 +49,19 @@ console.log("\n=== Release Validation ===\n");
 // 1. TypeScript typecheck
 console.log("1. TypeScript typecheck...");
 try {
-  execSync("pnpm run typecheck", { cwd: ROOT, stdio: "pipe" });
+  const tsc = join(ROOT, "node_modules", ".bin", "tsc");
+  const typecheckProjects = [
+    ["--build", "--pretty", "false"],
+    ["-p", "artifacts/api-server/tsconfig.json", "--noEmit", "--pretty", "false"],
+    ["-p", "artifacts/pay-it-forward/tsconfig.json", "--noEmit", "--pretty", "false"],
+    ["-p", "scripts/tsconfig.json", "--noEmit", "--pretty", "false"],
+  ];
+  for (const args of typecheckProjects) {
+    execFileSync(tsc, args, { cwd: ROOT, stdio: "pipe" });
+  }
   pass("typecheck passes");
 } catch {
-  fail("typecheck failed — run `pnpm run typecheck` for details");
+  fail("typecheck failed — run the workspace typecheck commands for details");
 }
 
 // 2. No explicit any types
