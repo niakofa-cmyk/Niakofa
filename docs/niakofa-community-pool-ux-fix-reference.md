@@ -5,11 +5,11 @@ improvements in the current Niakofa checkout.
 
 ## Source package
 
-- Original archive: `attached_assets/niakofa-community-pool-ux-fix_1_1788045295977.zip`
+- Original archive: `docs/reference/community-pool-fix_1788104483429.zip`
 - Archive contents: the proposed payment modal, reusable contribution panel,
   community-page patch, README, and review diff.
-- The original archive remains unchanged in `attached_assets/` for provenance;
-  this file documents what was applied rather than replacing the current page
+- The original archive is kept under `docs/reference/` for provenance; this
+  file documents what was applied rather than replacing the current page
   wholesale.
 
 ## Applied behavior

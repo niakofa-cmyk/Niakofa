@@ -33,9 +33,15 @@ function PaymentForm({ amount, description, returnUrl, onSuccess, onSkip }: Paym
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // PaymentElement loads asynchronously. Do not allow confirmation until the
+  // iframe has reported that it is ready; otherwise confirmPayment can throw
+  // a generic error before Stripe has finished initializing.
+  const [elementReady, setElementReady] = useState(false);
+  const [elementLoadError, setElementLoadError] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stripe || !elements || isLoading) return;
+    if (!stripe || !elements || isLoading || !elementReady) return;
 
     setIsLoading(true);
     setErrorMessage(null);
@@ -51,6 +57,9 @@ function PaymentForm({ amount, description, returnUrl, onSuccess, onSkip }: Paym
 
       if (error) {
         setErrorMessage(error.message ?? "Payment failed. Please try again.");
+        if (error.type && error.type !== "card_error" && error.type !== "validation_error") {
+          console.error("[StripePaymentModal] confirmPayment returned a non-card error:", error);
+        }
       } else if (
         paymentIntent &&
         paymentIntent.status !== "succeeded" &&
@@ -60,8 +69,16 @@ function PaymentForm({ amount, description, returnUrl, onSuccess, onSkip }: Paym
       } else {
         onSuccess();
       }
-    } catch {
-      setErrorMessage("Payment could not be completed. Please try again.");
+    } catch (err) {
+      console.error("[StripePaymentModal] confirmPayment threw:", err);
+      const isNetworkIssue =
+        err instanceof TypeError ||
+        (err instanceof Error && /network|fetch/i.test(err.message));
+      setErrorMessage(
+        isNetworkIssue
+          ? "We couldn't reach the payment network. Check your connection and try again."
+          : "Payment could not be completed — this usually isn't your card, it's a setup issue on our end. Please try again in a moment.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -84,7 +101,35 @@ function PaymentForm({ amount, description, returnUrl, onSuccess, onSkip }: Paym
 
         {description && <p className="px-1 text-xs leading-relaxed text-muted-foreground">{description}</p>}
 
-        <PaymentElement options={{ layout: "tabs" }} />
+        <div className="relative">
+          {!elementReady && !elementLoadError && (
+            <div className="flex min-h-[120px] items-center justify-center gap-2 rounded-xl border border-border/60 bg-background/40 text-xs text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Loading payment form…
+            </div>
+          )}
+          <div className={elementReady ? "" : "sr-only"}>
+            <PaymentElement
+              options={{ layout: "tabs" }}
+              onReady={() => setElementReady(true)}
+              onLoadError={(event) => {
+                console.error("[StripePaymentModal] PaymentElement failed to load:", event.error);
+                setElementLoadError(
+                  event.error?.message ?? "The payment form couldn't load. Please refresh and try again.",
+                );
+              }}
+            />
+          </div>
+        </div>
+
+        {elementLoadError && (
+          <div
+            role="alert"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            {elementLoadError}
+          </div>
+        )}
 
         {errorMessage && (
           <div
@@ -110,12 +155,17 @@ function PaymentForm({ amount, description, returnUrl, onSuccess, onSkip }: Paym
           <Button
             type="submit"
             className="min-h-[52px] flex-1 bg-green-500 text-base font-black text-white hover:bg-green-600"
-            disabled={!stripe || !elements || isLoading}
+            disabled={!stripe || !elements || !elementReady || !!elementLoadError || isLoading}
           >
             {isLoading ? (
               <span className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 Processing…
+              </span>
+            ) : !elementReady && !elementLoadError ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Loading…
               </span>
             ) : (
               <span className="flex items-center gap-2">
