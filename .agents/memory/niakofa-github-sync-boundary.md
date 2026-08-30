@@ -21,3 +21,18 @@ hashes independently; never paste or print a token.
 **Why:** The shell-backed HTTPS remote rejected authentication in this
 workspace, while the supported GitHub connection could read and confirm the
 public ref without exposing credentials.
+
+When the authenticated GitHub API creates a commit but the shell remote cannot
+fetch it, the API's ISO timestamp may normalize the commit's original timezone
+offset and omit details such as the final message newline. Use the API's tree,
+parent, author, committer, and message metadata before treating a locally
+reconstructed commit as identical.
+
+**Why:** A branch hash comparison is only meaningful when the local commit
+object itself matches the remote object; matching file contents alone is not
+enough.
+
+**How to apply:** Prefer an authenticated API read of the published commit
+object, then compare refs after synchronization. Do not create another remote
+commit just to repair local history unless exact object reconstruction is
+impossible.
