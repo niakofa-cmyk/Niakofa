@@ -19,7 +19,7 @@ const stripe = STRIPE_SECRET_KEY
   : null;
 
 /** Safe diagnostics: exposes account identity/mode, never secrets. */
-router.get("/pool/stripe/config-health", requireAdmin, adminLimiter, async (_req, res) => {
+router.get("/pool/stripe/config-health", requireAdmin(), adminLimiter, async (_req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe is not configured." });
   try {
     const account = await stripe.accounts.retrieve();
@@ -41,7 +41,7 @@ router.get("/pool/stripe/config-health", requireAdmin, adminLimiter, async (_req
 });
 
 /** Read-only transaction-level reconciliation. */
-router.get("/pool/stripe/reconciliation", requireAdmin, adminLimiter, async (req, res) => {
+router.get("/pool/stripe/reconciliation", requireAdmin(), adminLimiter, async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe is not configured." });
   const days = Math.min(Math.max(Number(req.query.days ?? 30) || 30, 1), 90);
   const since = Math.floor(Date.now() / 1000) - days * 86400;
@@ -108,7 +108,7 @@ router.get("/pool/stripe/reconciliation", requireAdmin, adminLimiter, async (req
  * Repairs an already-succeeded Pool PaymentIntent. No new charge is created.
  * The existing Stripe-PI unique index makes this safe to retry.
  */
-router.post("/pool/stripe/reconciliation/:paymentIntentId/repair", requireAdmin, adminLimiter, async (req, res) => {
+router.post("/pool/stripe/reconciliation/:paymentIntentId/repair", requireAdmin(), adminLimiter, async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe is not configured." });
   const paymentIntentId = String(req.params.paymentIntentId ?? "").trim();
   if (!/^pi_[A-Za-z0-9]+$/.test(paymentIntentId)) return res.status(400).json({ error: "Invalid Stripe PaymentIntent ID." });
