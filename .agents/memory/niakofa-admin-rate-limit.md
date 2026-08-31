@@ -23,3 +23,9 @@ All five were missing `adminLimiter` import + usage on their admin routes:
 
 ## How to apply
 Before adding a new admin route, check: (1) `adminLimiter` is imported from `../middlewares/rate-limit`, (2) it appears after `requireAdmin()` in the middleware array. The `paymentLimiter` applies to any route that moves money — including unauthenticated pool donations (`POST /pool/donate`).
+
+Admin authorization is a factory: pass `requireAdmin()` to Express, never the bare `requireAdmin` function. Passing the factory directly returns a middleware without invoking `next()`, so requests can hang until the global timeout.
+
+**Why:** The reconciliation endpoints once appeared protected but stalled in production because the factory was mounted as a middleware. A factory-shaped test mock and a prompt bounded-scan test expose this mistake immediately.
+
+**How to apply:** Keep admin route tests mounted with a mock whose `requireAdmin` returns `(req, res, next) => next()`, and assert the endpoint responds promptly.
