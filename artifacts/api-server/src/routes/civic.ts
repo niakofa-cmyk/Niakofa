@@ -39,6 +39,7 @@ async function getApprovedSponsor(userId: number) {
 
 const CIVIC_TTL = 3600; // 1 hour — civic resources change rarely
 const CIVIC_GEO_TTL = 300; // 5 min — nearby-map queries are viewport-driven, shorter TTL than region lookups
+const MAPBOX_REQUEST_TIMEOUT_MS = 5000;
 
 const router = Router();
 
@@ -86,8 +87,10 @@ async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace |
     return null;
   }
   const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=place,district,region&access_token=${MAPBOX_TOKEN}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MAPBOX_REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) {
       logger.warn({ status: res.status }, "Mapbox geocoding non-200");
       return null;
@@ -143,6 +146,8 @@ async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace |
   } catch (err) {
     logger.warn({ err }, "Mapbox reverse geocode failed");
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

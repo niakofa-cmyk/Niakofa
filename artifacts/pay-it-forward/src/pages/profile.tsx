@@ -26,6 +26,7 @@ import type { Transaction } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCivicResources } from "@/hooks/useCivicResources";
 
 type ProfileTab = "overview" | "history" | "settings";
 
@@ -813,45 +814,6 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
 
 // ── Civic Resources Types ────────────────────────────────────────────────────
 
-interface CivicResource {
-  id: number;
-  org_name: string;
-  description: string | null;
-  url: string;
-  phone: string | null;
-  category: string | null;
-  city: string | null;
-  county: string | null;
-  state: string | null;
-}
-
-interface CivicResourcesResponse {
-  resources: CivicResource[];
-  place_name: string;
-  city: string | null;
-  county: string | null;
-  state: string | null;
-  match_level: "city" | "county" | "state" | "fallback";
-}
-
-function useCivicResources(lat: number | null | undefined, lng: number | null | undefined) {
-  const [data, setData] = useState<CivicResourcesResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (lat == null || lng == null) return;
-    setLoading(true);
-    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/civic/resources?lat=${lat}&lng=${lng}`)
-      .then(r => r.ok ? r.json() as Promise<CivicResourcesResponse> : Promise.reject())
-      .then(setData)
-      .catch(() => { /* non-fatal: keep stale civic resources visible rather than blanking */ })
-      .finally(() => setLoading(false));
-  }, [lat, lng]);
-
-  return { data, loading };
-}
-
 const CATEGORY_LABELS: Record<string, string> = {
   social_services: "Social Services",
   shelter: "Shelter",
@@ -1087,7 +1049,7 @@ export default function ProfileScreen() {
     return { pledgedTotal, paidTotal, pct };
   })();
 
-  const { data: civicData, loading: civicLoading } = useCivicResources(myLocation?.lat, myLocation?.lng);
+  const { data: civicData, loading: civicLoading, hasLocation: hasCivicLocation } = useCivicResources(myLocation);
 
   // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -1563,7 +1525,7 @@ export default function ProfileScreen() {
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-primary" /> County / Civic Connection
                 </div>
-                {civicData && !civicLoading ? (
+                {civicData ? (
                   <div className="flex items-center gap-1.5 mt-1">
                     <MapPin className="w-3 h-3 text-primary shrink-0" />
                     <p className="text-xs text-primary font-semibold truncate">
@@ -1573,30 +1535,58 @@ export default function ProfileScreen() {
                         ? `${civicData.county}, ${civicData.state}`
                         : civicData.place_name}
                     </p>
+                    {civicLoading && (
+                      <Loader2 className="w-3 h-3 text-muted-foreground animate-spin shrink-0" aria-label="Refreshing civic resources" />
+                    )}
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground mt-1">
-                    {civicLoading ? "Detecting your location…" : "Local assistance programs and resources"}
+                    {!hasCivicLocation
+                      ? "Waiting for location access…"
+                      : civicLoading
+                        ? "Finding local resources…"
+                        : "Local assistance programs and resources"}
                   </p>
                 )}
               </div>
               <div className="p-4 space-y-2">
-                {civicLoading && (
+                {civicLoading && !civicData && (
                   <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span className="text-sm">Finding resources near you…</span>
                   </div>
                 )}
-                {!civicLoading && (!civicData || civicData.resources.length === 0) && (
+                {!civicLoading && !civicData && (
+                  <div className="text-center py-4">
+                    <BookOpen className="w-6 h-6 mx-auto mb-2 text-muted-foreground/40" />
+                    <p className="text-sm text-muted-foreground font-semibold">
+                      {hasCivicLocation ? "No local resources yet" : "Location is needed to show local resources"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                      {/* Name the actual detected area when we have one, instead
+                          of implying these are unmatched-but-nearby results. */}
+                      {!hasCivicLocation
+                        ? "Allow location access so Niakofa can keep civic resources in the right jurisdiction."
+                        : "We don't have resources for your area yet. Email "}
+                      {hasCivicLocation && (
+                        <>
+                          <a href="mailto:resources@niakofa.community" className="text-primary hover:underline">
+                            resources@niakofa.community
+                          </a>{" "}
+                          to add your county.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                )}
+                {civicData && civicData.resources.length === 0 && (
                   <div className="text-center py-4">
                     <BookOpen className="w-6 h-6 mx-auto mb-2 text-muted-foreground/40" />
                     <p className="text-sm text-muted-foreground font-semibold">No local resources yet</p>
                     <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                      {/* Name the actual detected area when we have one, instead
-                          of implying these are unmatched-but-nearby results. */}
-                      {civicData?.city && civicData?.state
+                      {civicData.city && civicData.state
                         ? `We don't have resources for ${civicData.city}, ${civicData.state} yet. Email `
-                        : civicData?.state
+                        : civicData.state
                           ? `We don't have resources for ${civicData.state} yet. Email `
                           : "We don't have resources for your area yet. Email "}
                       <a href="mailto:resources@niakofa.community" className="text-primary hover:underline">
@@ -1606,7 +1596,7 @@ export default function ProfileScreen() {
                     </p>
                   </div>
                 )}
-                {!civicLoading && civicData && civicData.resources.length > 0 && (
+                {civicData && civicData.resources.length > 0 && (
                   <>
                     {civicData.resources.map(org => (
                       <a

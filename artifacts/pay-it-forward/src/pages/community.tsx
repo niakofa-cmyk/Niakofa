@@ -13,6 +13,7 @@ import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 import { MAX_POOL_AMOUNT, MIN_POOL_AMOUNT, PoolContributionPanel } from "@/components/PoolContributionPanel";
 import { CommunityPoolFinancialBreakdown } from "@/components/CommunityPoolFinancialBreakdown";
+import { useCivicResources } from "@/hooks/useCivicResources";
 
 interface GratitudePost {
   id: number;
@@ -116,25 +117,6 @@ interface LedgerEntry {
 }
 
 
-interface CivicResource {
-  id: number;
-  org_name: string;
-  category: string | null;
-  description: string | null;
-  address: string | null;
-  phone: string | null;
-  url: string;
-  open_hours: string | null;
-  coverage_status?: string;
-  is_authoritative?: boolean;
-}
-
-interface CivicResourcesResponse {
-  resources: CivicResource[];
-  place_name?: string;
-  match_level?: "city" | "county" | "state" | "fallback";
-}
-
 const CIVIC_ICONS: Record<string, string> = {
   shelter: "🏠", food: "🍱", medical: "💊", mental_health: "🧠",
   legal: "⚖️", financial: "💰", employment: "💼", transportation: "🚌",
@@ -150,16 +132,17 @@ interface SuggestionForm {
 }
 
 function CivicResourcesTab() {
-  const [resources, setResources] = useState<CivicResource[]>([]);
-  const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
   const [showSuggest, setShowSuggest] = useState(false);
   const [suggestionSent, setSuggestionSent] = useState(false);
-  const [locationRequired, setLocationRequired] = useState(false);
-  const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<SuggestionForm>({
     name: "", category: "other", description: "", phone: "", website: "",
   });
+  const { myLocation } = useAppContext();
+  const { data, loading, hasLocation } = useCivicResources(myLocation);
+  const resources = data?.resources ?? [];
+  const locationRequired = !hasLocation && !data;
+  const locationLabel = data?.place_name ?? null;
 
   const submitSuggestion = async () => {
     if (!suggestion.name.trim()) return;
@@ -175,41 +158,6 @@ function CivicResourcesTab() {
     setTimeout(() => { setShowSuggest(false); setSuggestionSent(false); setSuggestion({ name: "", category: "other", description: "", phone: "", website: "" }); }, 2000);
   };
 
-  const loadResources = useCallback(() => {
-    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    setLoading(true);
-    if (!navigator.geolocation) {
-      setLocationRequired(true);
-      setLoading(false);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        fetch(`${base}/api/civic/resources?lat=${encodeURIComponent(coords.latitude)}&lng=${encodeURIComponent(coords.longitude)}`)
-          .then(async (response) => {
-            if (!response.ok) throw new Error("Unable to resolve resources");
-            return response.json() as Promise<CivicResourcesResponse>;
-          })
-          .then((data) => {
-            setResources(Array.isArray(data.resources) ? data.resources : []);
-            setLocationLabel(data.place_name ?? null);
-            setLocationRequired(false);
-          })
-          .catch(() => setResources([]))
-          .finally(() => setLoading(false));
-      },
-      () => {
-        setLocationRequired(true);
-        setLoading(false);
-      },
-      { enableHighAccuracy: false, maximumAge: 300000, timeout: 8000 },
-    );
-  }, []);
-
-  useEffect(() => {
-    loadResources();
-  }, [loadResources]);
-
   const categories = [
     "all",
     ...Array.from(new Set(
@@ -220,7 +168,7 @@ function CivicResourcesTab() {
   ];
   const filtered = category === "all" ? resources : resources.filter(r => r.category === category);
 
-  if (loading && resources.length === 0) return (
+  if (loading && !data) return (
     <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
       <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
     </div>
@@ -237,19 +185,16 @@ function CivicResourcesTab() {
           ? "Allow location access so Niakofa can keep civic resources in the right jurisdiction."
           : `We searched ${locationLabel ?? "your area"} without showing unrelated results.`}
       </div>
-      {locationRequired && (
-        <button
-          onClick={loadResources}
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold"
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> Try location again
-        </button>
-      )}
     </div>
   );
 
   return (
     <div className="space-y-4">
+      {loading && data && (
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground px-1">
+          <Loader2 className="w-3 h-3 animate-spin" /> Updating your local resource list…
+        </div>
+      )}
       {/* Category filter — min 44px touch targets for mobile */}
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4">
         {categories.map(cat => (
