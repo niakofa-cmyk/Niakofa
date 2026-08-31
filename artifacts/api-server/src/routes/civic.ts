@@ -8,6 +8,7 @@ import { logger } from "../lib/logger";
 import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
 import { sendPushToUser } from "./push";
 import { distanceMiles } from "../lib/geo.js";
+import { normalizeMapboxStateCode } from "../lib/civic-geo.js";
 import { GetCivicResourcesNearbyQueryParams, GetCivicNeedsNearbyQueryParams } from "@workspace/api-zod";
 
 const VALID_CIVIC_NEED_CATEGORIES = [
@@ -59,7 +60,9 @@ interface MapboxFeature {
   place_type: string[];
   text: string;
   place_name: string;
-  context?: { id: string; text: string }[];
+  short_code?: string;
+  properties?: { short_code?: string };
+  context?: { id: string; text: string; short_code?: string }[];
 }
 
 interface MapboxGeocodingResponse {
@@ -111,9 +114,8 @@ async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace |
             county = c.text.replace(/ County$/i, "").trim();
           }
           if (c.id.startsWith("region.")) {
-            const parts = c.text.split(",");
             state = c.text.trim();
-            state_short = (parts[parts.length - 1] ?? c.text).trim();
+            state_short = normalizeMapboxStateCode(c.short_code, c.text);
           }
         }
       }
@@ -122,17 +124,18 @@ async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace |
         county = feature.text.replace(/ County$/i, "").trim();
         for (const c of ctx) {
           if (c.id.startsWith("region.")) {
-            const parts = c.text.split(",");
-            state_short = (parts[parts.length - 1] ?? c.text).trim();
             state = c.text.trim();
+            state_short = normalizeMapboxStateCode(c.short_code, c.text);
           }
         }
       }
 
       if (types.includes("region") && !state) {
-        const parts = feature.text.split(",");
-        state_short = (parts[parts.length - 1] ?? feature.text).trim();
         state = feature.text.trim();
+        state_short = normalizeMapboxStateCode(
+          feature.short_code ?? feature.properties?.short_code,
+          feature.text,
+        );
       }
     }
 
@@ -249,7 +252,9 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
 
   const latRounded = Math.round(lat * 10) / 10;
   const lngRounded = Math.round(lng * 10) / 10;
-  const locationCacheKey = `civic:v3:loc:${latRounded}:${lngRounded}`;
+  // Bump when jurisdiction matching changes so a pre-fix empty response
+  // cannot remain authoritative for the full location-cache TTL.
+  const locationCacheKey = `civic:v5:loc:${latRounded}:${lngRounded}`;
   const locationCached = await cacheGet(locationCacheKey);
   if (locationCached) return res.json(locationCached);
 
@@ -331,7 +336,9 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
     place_name: place.place_name,
     city: place.city,
     county: place.county ? `${place.county} County` : null,
-    state: place.state_short,
+    // Keep the display label human-readable; the canonical short code is used
+    // internally above for database matching.
+    state: place.state ?? place.state_short,
     match_level: matchLevel,
   };
   await cacheSet(locationCacheKey, payload, CIVIC_TTL);

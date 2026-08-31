@@ -14,6 +14,7 @@
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import express from "express";
+import { normalizeMapboxStateCode } from "../src/lib/civic-geo.js";
 
 // ── Shared chainable DB mock ──────────────────────────────────────────────────
 const mockDb: Record<string, jest.Mock> = {
@@ -284,6 +285,25 @@ function makeApp(router: unknown) {
   app.use(router);
   return app;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Mapbox county/state normalization
+// ════════════════════════════════════════════════════════════════════════════
+describe("normalizeMapboxStateCode", () => {
+  it("prefers Mapbox's structured US short code", () => {
+    expect(normalizeMapboxStateCode("us-tx", "Texas")).toBe("TX");
+  });
+
+  it("falls back to a validated state label when short_code is absent", () => {
+    expect(normalizeMapboxStateCode(undefined, "Texas, United States")).toBe("TX");
+    expect(normalizeMapboxStateCode(undefined, "New York")).toBe("NY");
+  });
+
+  it("rejects unknown and non-US short codes", () => {
+    expect(normalizeMapboxStateCode("CA-ON", "Ontario")).toBeNull();
+    expect(normalizeMapboxStateCode(undefined, "Atlantis")).toBeNull();
+  });
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // POST /requests/:id/tip-wallet
