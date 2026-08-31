@@ -67,8 +67,8 @@ test("rejects provider HTML and malformed tabular responses", async () => {
 test("parses Census county names, state FIPS, and county FIPS", () => {
   const rows = [
     ["state", "county", "NAME"],
-    ["48", "439", "Tarrant County"],
-    ["25", "017", "Middlesex County"],
+    ["48", "439", "Tarrant County, Texas"],
+    ["25", "017", "Middlesex County, Massachusetts"],
   ];
   assert.deepEqual(parseCountyRows(rows), [
     { name: "Tarrant", stateFips: "48", countyFips: "439" },
@@ -79,8 +79,8 @@ test("parses Census county names, state FIPS, and county FIPS", () => {
 test("parses place names while retaining the Census place code", () => {
   assert.deepEqual(parsePlaceRows([
     ["NAME", "place"],
-    ["Fort Worth city", "27000"],
-    ["Example CDP", "99999"],
+    ["Fort Worth city, Texas", "27000"],
+    ["Example CDP, Texas", "99999"],
   ]), [
     { name: "Fort Worth", placeFips: "27000" },
     { name: "Example", placeFips: "99999" },

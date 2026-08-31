@@ -5,7 +5,7 @@
  * without a Postgres connection and so malformed provider responses fail closed.
  */
 
-export const CENSUS_API = "https://api.census.gov/data/2025/pep/population";
+export const CENSUS_API = "https://api.census.gov/data/2024/acs/acs5";
 
 export type CountyRecord = {
   name: string;
@@ -124,6 +124,10 @@ function requireColumns(header: string[], columns: string[], kind: string): numb
   return indexes;
 }
 
+function withoutStateSuffix(name: string): string {
+  return name.replace(/,\s+[^,]+$/, "").trim();
+}
+
 export function parseCountyRows(rows: string[][]): CountyRecord[] {
   const [header, ...data] = rows;
   const [nameIndex, stateIndex, countyIndex] = requireColumns(
@@ -132,10 +136,10 @@ export function parseCountyRows(rows: string[][]): CountyRecord[] {
     "county",
   );
   return data.map((row) => ({
-    name: row[nameIndex].replace(
+    name: withoutStateSuffix(row[nameIndex]).replace(
       / County$| Parish$| Borough$| Census Area$| Municipality$| city and borough$/i,
       "",
-    ),
+    ).trim(),
     stateFips: row[stateIndex],
     countyFips: row[countyIndex],
   }));
@@ -145,7 +149,9 @@ export function parsePlaceRows(rows: string[][]): PlaceRecord[] {
   const [header, ...data] = rows;
   const [nameIndex, placeIndex] = requireColumns(header, ["NAME", "place"], "place");
   return data.map((row) => ({
-    name: row[nameIndex].replace(/ city$| town$| village$| borough$| CDP$/i, ""),
+    name: withoutStateSuffix(row[nameIndex])
+      .replace(/ city$| town$| village$| borough$| CDP$/i, "")
+      .trim(),
     placeFips: row[placeIndex],
   }));
 }

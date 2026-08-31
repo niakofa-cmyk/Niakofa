@@ -42,7 +42,7 @@ try {
 
   console.log(JSON.stringify({
     provider: "census",
-    dataset: "2025/pep/population",
+    dataset: "2024/acs/acs5",
     status: "available",
     countyRows: counties.length,
     stateCount: new Set(counties.map((county) => county.stateFips)).size,

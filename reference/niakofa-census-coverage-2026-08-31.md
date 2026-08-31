@@ -10,7 +10,8 @@ substitutes for Census geography and GEOIDs.
 ## Runtime behavior
 
 - With `CENSUS_API_KEY`, the coverage seed loads national county names and
-  state/county FIPS values from the Census 2025 PEP population dataset.
+  state/county FIPS values from the currently available Census 2024 ACS5
+  geography dataset.
 - It separately loads Texas Census places into `civic_jurisdictions` with
   `coverage_status = needs_verification`.
 - Census places do not create civic-resource URLs or city matches by name.
@@ -38,11 +39,12 @@ prints the key or a URL containing the key. A missing key reports `degraded`
 because national enrichment is optional; it does not disable safe Texas
 coverage.
 
-On August 31, 2026, the configured development secret was tested once by the
-live check and Census returned its key-error redirect (`invalid_key.html`).
-The application therefore correctly fell back to the verified Texas county
-baseline and did not insert unverified Texas places. Replace or revoke that
-secret with a valid Census key before expecting national enrichment.
+On August 31, 2026, the configured development secret first reached the
+provider but the old 2025 PEP dataset path returned HTTP 404. The same key
+successfully returned JSON from the available 2024 ACS5 endpoint after the
+dataset path was corrected. The initial seed therefore used the fallback; rerun
+the coverage seed after this endpoint correction to materialize national
+counties and the Texas verification queue.
 
 ## Operational boundary
 
