@@ -137,6 +137,36 @@ async function checkApi() {
     fail(`deploy health probe (/api/healthz) request failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
+  try {
+    const { response, body } = await requestJson(apiUrl, "/api/civic/resources");
+    if (
+      !response.ok ||
+      !Array.isArray(body?.resources) ||
+      body?.place_name !== "location required" ||
+      body?.match_level !== "fallback"
+    ) {
+      fail(
+        `civic location guard (/api/civic/resources) returned an unsafe or invalid response: ` +
+        `HTTP ${response.status}`,
+      );
+    } else {
+      pass("civic location guard returns an explicit location-required response");
+    }
+  } catch (error) {
+    fail(`civic location guard request failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    const response = await request(apiUrl, "/api/civic/resources?lat=91&lng=0");
+    if (response.status !== 400) {
+      fail(`civic coordinate validation expected HTTP 400, received ${response.status}`);
+    } else {
+      pass("civic coordinate validation rejects out-of-world coordinates");
+    }
+  } catch (error) {
+    fail(`civic coordinate validation request failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   const scopes = [
     requireLiveKit ? "circles" : null,
     requirePayments ? "payments" : null,

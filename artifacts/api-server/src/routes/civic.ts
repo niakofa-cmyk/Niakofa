@@ -192,8 +192,10 @@ async function forwardGeocode(query: string): Promise<{ lat: number; lng: number
     return null;
   }
   const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?limit=1&types=place,district,region&access_token=${MAPBOX_TOKEN}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MAPBOX_REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) {
       logger.warn({ status: res.status, query }, "Mapbox forward geocoding non-200");
       return null;
@@ -205,6 +207,8 @@ async function forwardGeocode(query: string): Promise<{ lat: number; lng: number
   } catch (err) {
     logger.warn({ err, query }, "Mapbox forward geocode failed");
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -922,8 +926,11 @@ router.get("/civic/needs/nearby", requireAuth, generalApiLimiter, async (req, re
     lng: req.query.lng !== undefined ? parseFloat(req.query.lng as string) : undefined,
     radius_miles: req.query.radius_miles !== undefined ? parseFloat(req.query.radius_miles as string) : undefined,
   });
-  if (!parsed.success || isNaN(parsed.data.lat) || isNaN(parsed.data.lng)) {
-    return res.status(400).json({ error: "lat and lng are required" });
+  if (
+    !parsed.success ||
+    !isValidCoordinate(parsed.data.lat, parsed.data.lng)
+  ) {
+    return res.status(400).json({ error: "lat and lng must be valid geographic coordinates" });
   }
   const { lat, lng } = parsed.data;
   const radius = Math.min(100, Math.max(0.1, parsed.data.radius_miles));
