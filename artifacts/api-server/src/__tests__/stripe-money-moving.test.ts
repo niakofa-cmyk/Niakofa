@@ -18,11 +18,13 @@ const db: unknown = {
   set: jest.fn().mockReturnThis(),
   returning: jest.fn(),
   insert: jest.fn().mockReturnThis(),
+  execute: jest.fn(),
 };
 
 const stripeConstructEvent = jest.fn();
 const stripeChargeRetrieve = jest.fn();
 const stripePaymentIntentCreate = jest.fn();
+const recordPoolContribution = jest.fn();
 const drizzleEq = jest.fn();
 
 jest.unstable_mockModule("@workspace/db", () => ({
@@ -88,7 +90,7 @@ jest.unstable_mockModule("../routes/push", () => ({
 
 jest.unstable_mockModule("../lib/community-pool", () => ({
   wasRequestFronted: jest.fn(),
-  recordPoolContribution: jest.fn(),
+  recordPoolContribution,
   getPoolBalance: jest.fn(),
   getGuaranteedMinimum: jest.fn(),
   getHourlyMinimumRate: jest.fn(),
@@ -126,6 +128,7 @@ beforeEach(() => {
   db.where.mockReturnThis();
   db.select.mockReturnThis();
   db.from.mockReturnThis();
+  db.execute.mockResolvedValue({ rows: [] });
   db.limit.mockResolvedValue([]);
   db.returning.mockResolvedValue([]);
   stripePaymentIntentCreate.mockResolvedValue({
@@ -210,8 +213,55 @@ describe("POST /api/pool/contribute", () => {
 });
 
 describe("POST /api/stripe/webhook", () => {
+  it("returns 500 when financial processing fails so Stripe retries", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_processing_failure",
+      livemode: true,
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_pool_failure",
+          amount: 500,
+          metadata: { pool_contribution: "true", user_id: "42" },
+        },
+      },
+    });
+    recordPoolContribution.mockRejectedValueOnce(new Error("ledger unavailable"));
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_processing_failure", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({
+      received: false,
+      error: "Webhook processing failed; Stripe should retry.",
+    });
+    expect(db.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps invalid signatures as 400 and does not record an unverified event", async () => {
+    stripeConstructEvent.mockImplementationOnce(() => {
+      throw new Error("signature mismatch");
+    });
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "invalid-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_invalid_signature", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(400);
+    expect(response.text).toContain("signature mismatch");
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
   it("skips all money side effects when payment intent was already completed", async () => {
     stripeConstructEvent.mockReturnValue({
+      id: "evt_1",
+      livemode: true,
       type: "payment_intent.succeeded",
       data: { object: { id: "pi_already_done", amount: 1000, metadata: {} } },
     });
@@ -231,6 +281,8 @@ describe("POST /api/stripe/webhook", () => {
 
   it("links an early transfer.created event through its source charge", async () => {
     stripeConstructEvent.mockReturnValue({
+      id: "evt_transfer",
+      livemode: true,
       type: "transfer.created",
       data: {
         object: {

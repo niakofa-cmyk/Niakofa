@@ -54,7 +54,27 @@ router.post("/stripe/webhook", async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : "Unknown"}`);
   }
 
-  logger.info({ type: event.type }, "Stripe webhook event received");
+  logger.info({ type: event.type, eventId: event.id }, "Stripe webhook event received");
+
+  // Record receipt before business processing. This keeps delivery observability
+  // independent from ledger posting and makes retry/failure gaps queryable.
+  try {
+    const paymentIntentId =
+      event.type.startsWith("payment_intent.")
+        ? ((event.data.object as Stripe.PaymentIntent).id ?? null)
+        : null;
+    await db.execute(sql`
+      INSERT INTO stripe_webhook_events
+        (stripe_event_id, event_type, livemode, payment_intent_id, processing_status)
+      VALUES
+        (${event.id}, ${event.type}, ${event.livemode}, ${paymentIntentId}, 'received')
+      ON CONFLICT (stripe_event_id) DO NOTHING
+    `);
+  } catch (auditErr) {
+    // Audit storage is diagnostic only. Never block a legitimate Stripe event
+    // from reaching the financial processing path.
+    logger.warn({ auditErr, eventId: event.id }, "Stripe webhook audit insert failed");
+  }
 
   try {
     switch (event.type) {
@@ -653,6 +673,34 @@ router.post("/stripe/webhook", async (req, res) => {
     }
   } catch (err) {
     logger.error({ err, eventType: event.type }, "Error processing Stripe webhook event");
+    try {
+      await db.execute(sql`
+        UPDATE stripe_webhook_events
+        SET processing_status = 'failed',
+            error_message = ${err instanceof Error ? err.message : "Unknown webhook processing error"}
+        WHERE stripe_event_id = ${event.id}
+      `);
+    } catch (auditErr) {
+      logger.warn({ auditErr, eventId: event.id }, "Stripe webhook failure audit update failed");
+    }
+
+    // Do not acknowledge a Stripe event when financial processing failed.
+    // HTTP 500 tells Stripe to retry instead of permanently losing the event.
+    return res.status(500).json({
+      received: false,
+      error: "Webhook processing failed; Stripe should retry.",
+    });
+  }
+
+  try {
+    await db.execute(sql`
+      UPDATE stripe_webhook_events
+      SET processing_status = 'processed',
+          processed_at = NOW()
+      WHERE stripe_event_id = ${event.id}
+    `);
+  } catch (auditErr) {
+    logger.warn({ auditErr, eventId: event.id }, "Stripe webhook success audit update failed");
   }
 
   return res.json({ received: true });

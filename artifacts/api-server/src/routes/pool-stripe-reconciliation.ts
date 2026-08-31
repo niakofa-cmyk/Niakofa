@@ -18,10 +18,10 @@ router.get("/pool/stripe/config-health", requireAdmin, adminLimiter, async (_req
   if (!stripe) return res.status(503).json({ error: "Stripe is not configured." });
   try {
     const account = await stripe.accounts.retrieve();
-    res.json({
+    return res.json({
       configured: true,
       account_id: account.id,
-      livemode: Boolean(account.livemode),
+      livemode: STRIPE_SECRET_KEY.startsWith("sk_live_"),
       charges_enabled: Boolean(account.charges_enabled),
       payouts_enabled: Boolean(account.payouts_enabled),
       webhook_secret_configured: Boolean(process.env["STRIPE_WEBHOOK_SECRET"]),
@@ -31,7 +31,7 @@ router.get("/pool/stripe/config-health", requireAdmin, adminLimiter, async (_req
     });
   } catch (err) {
     logger.error({ err }, "pool Stripe config health check failed");
-    res.status(500).json({ error: "Stripe configuration health check failed." });
+    return res.status(500).json({ error: "Stripe configuration health check failed." });
   }
 });
 
@@ -65,10 +65,10 @@ router.get("/pool/stripe/reconciliation", requireAdmin, adminLimiter, async (req
       }
     }
     const account = await stripe.accounts.retrieve();
-    res.json({ generated_at: new Date().toISOString(), lookback_days: days, stripe_account_id: account.id, missing_ledger_count: missing.length, missing });
+    return res.json({ generated_at: new Date().toISOString(), lookback_days: days, stripe_account_id: account.id, missing_ledger_count: missing.length, missing });
   } catch (err) {
     logger.error({ err }, "Community Pool Stripe reconciliation failed");
-    res.status(500).json({ error: "Stripe reconciliation failed." });
+    return res.status(500).json({ error: "Stripe reconciliation failed." });
   }
 });
 
@@ -99,10 +99,10 @@ router.post("/pool/stripe/reconciliation/:paymentIntentId/repair", requireAdmin,
     const recorded = await recordPoolContribution({ amount, userId, communityId, stripePaymentIntentId: pi.id, notes: "Reconciled Stripe Community Pool contribution" });
 
     logger.warn({ payment_intent_id: pi.id, amount, recorded }, "Community Pool Stripe payment reconciled");
-    res.json({ repaired: Boolean(recorded), already_recorded: false, payment_intent_id: pi.id, amount, user_id: userId, community_id: communityId });
+    return res.json({ repaired: Boolean(recorded), already_recorded: false, payment_intent_id: pi.id, amount, user_id: userId, community_id: communityId });
   } catch (err) {
     logger.error({ err, payment_intent_id: paymentIntentId }, "Community Pool Stripe payment repair failed");
-    res.status(500).json({ error: "Stripe payment repair failed." });
+    return res.status(500).json({ error: "Stripe payment repair failed." });
   }
 });
 
