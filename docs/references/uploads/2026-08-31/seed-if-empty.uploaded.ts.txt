@@ -40,11 +40,14 @@ async function main() {
     const coverageModule = (await import("./seed-civic-coverage.js")) as { default?: unknown };
     if (typeof coverageModule.default === "function") await coverageModule.default();
 
-    // Importing the Fort Worth seed is side-effect free. Await its exported
-    // runner so "done" is only logged after every insert and pool shutdown.
-    const seedModule = (await import("./seed-fort-worth.js")) as {
-      default: () => Promise<void>;
-    };
+    // seed-fort-worth.ts exports `runAndClose` as its default — importing it
+    // does NOT run anything by itself (it only self-runs when executed
+    // directly as a script, same pattern as seed-civic-coverage.ts above);
+    // calling and awaiting the default here is what triggers the seed pass
+    // and blocks until it — including its own pool.end() — has actually
+    // finished. A typed cast is used instead of destructuring because
+    // destructuring requires TS to confirm the property exists ahead of time.
+    const seedModule = (await import("./seed-fort-worth.js")) as { default: () => Promise<void> };
     await seedModule.default();
 
     console.log("seed-if-empty: done.");

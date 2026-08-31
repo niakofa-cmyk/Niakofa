@@ -513,9 +513,11 @@ async function seed() {
   await seedFarms();
 }
 
-// Keep pool ownership in one place so the seed can be safely imported and
-// awaited by the conditional bootstrap script. This prevents the importer
-// from reporting completion while the side-effect seed is still running.
+// seed() no longer closes the pool itself — that's centralized in
+// runAndClose() below so the pool is guaranteed to close exactly once, on
+// both the success and failure path, whether this file is run directly or
+// imported as a module (see export below). This also matches the pattern
+// already used by seed-civic-coverage.ts's `export default` function.
 async function runAndClose() {
   try {
     await seed();
@@ -526,7 +528,16 @@ async function runAndClose() {
 
 export default runAndClose;
 
-// Preserve direct CLI usage without running when imported by seed-if-empty.ts.
+// Self-run only when this file is executed directly (e.g.
+// `pnpm --filter @workspace/scripts run seed`). When imported instead
+// (seed-if-empty.ts does this on every dev-server boot), the importer
+// calls and awaits `runAndClose()` itself and owns the resulting error
+// handling / exit code — previously this file ran itself via a bare
+// top-level `seed().catch(...)` with no export, so `import()` in
+// seed-if-empty.ts resolved as soon as the module finished evaluating,
+// before the seed's actual async work was done — the "done" log could
+// print before seeding had truly finished, and there was no way to
+// await or catch the real result from the importer.
 if (import.meta.url === `file://${process.argv[1]}`) {
   runAndClose().catch((err) => {
     console.error("Seed failed:", err);
