@@ -809,11 +809,21 @@ export async function recordPoolContribution(params: {
   settlement?: PoolContributionSettlement;
 }): Promise<boolean> {
   const { userId, stripePaymentIntentId, notes, governmentSponsorId, communityId, hubId, settlement } = params;
-  const amount = roundMoney(settlement ? settlement.netAmountCents / 100 : params.amount);
-  if (amount <= 0 && !settlement) return false;
+  if (settlement) {
+    return (
+      await recordPoolContributionSettlement({
+        settlement,
+        userId,
+        communityId,
+        notes,
+      })
+    ).recorded;
+  }
+  const amount = roundMoney(params.amount);
+  if (amount <= 0) return false;
   try {
     await db.transaction(async (tx) => {
-      const [ledgerEntry] = await tx.insert(communityPoolLedgerTable).values({
+      await tx.insert(communityPoolLedgerTable).values({
         entry_type: "sponsor_contribution",
         amount,
         user_id: userId,
@@ -822,26 +832,7 @@ export async function recordPoolContribution(params: {
         stripe_payment_intent_id: stripePaymentIntentId ?? null,
         notes: notes ?? "Sponsor contribution to the Community Pool",
         government_sponsor_id: governmentSponsorId ?? null,
-      }).returning({ id: communityPoolLedgerTable.id });
-      if (settlement && ledgerEntry) {
-        await tx.insert(communityPoolFinancialEventsTable).values({
-          community_pool_ledger_id: ledgerEntry.id,
-          user_id: userId,
-          community_id: communityId ?? null,
-          stripe_payment_intent_id: settlement.stripePaymentIntentId,
-          stripe_charge_id: settlement.stripeChargeId,
-          stripe_balance_transaction_id: settlement.stripeBalanceTransactionId,
-          stripe_climate_transaction_id: settlement.stripeClimateTransactionId ?? null,
-          gross_amount_cents: settlement.grossAmountCents,
-          stripe_fee_cents: settlement.stripeFeeCents,
-          climate_contribution_cents: settlement.climateContributionCents,
-          net_amount_cents: settlement.netAmountCents,
-          currency: settlement.currency,
-          settlement_status: settlement.settlementStatus,
-          available_on: settlement.availableOn,
-          stripe_livemode: settlement.stripeLivemode,
-        });
-      }
+      });
       if (hubId != null) {
         await syncHubReservedBalance(hubId, tx);
       }
@@ -887,6 +878,20 @@ export async function recordPoolContributionSettlement(params: {
   const { settlement, userId, communityId, notes } = params;
   if (settlement.grossAmountCents <= 0 || settlement.netAmountCents < 0) {
     throw new Error("Invalid Stripe settlement amounts");
+  }
+  if (
+    !Number.isInteger(settlement.grossAmountCents) ||
+    !Number.isInteger(settlement.stripeFeeCents) ||
+    settlement.stripeFeeCents < 0 ||
+    !Number.isInteger(settlement.climateContributionCents) ||
+    settlement.climateContributionCents < 0 ||
+    !Number.isInteger(settlement.netAmountCents) ||
+    settlement.netAmountCents !==
+      settlement.grossAmountCents -
+        settlement.stripeFeeCents -
+        settlement.climateContributionCents
+  ) {
+    throw new Error("Stripe settlement gross, fee, Climate deduction, and net do not reconcile");
   }
 
   try {

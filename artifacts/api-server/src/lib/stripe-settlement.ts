@@ -6,6 +6,7 @@ export interface StripeSettlementBreakdown {
   stripePaymentIntentId: string;
   stripeChargeId: string;
   stripeBalanceTransactionId: string;
+  stripeClimateTransactionId: string | null;
   grossAmountCents: number;
   stripeFeeCents: number;
   netAfterStripeFeeCents: number;
@@ -30,6 +31,7 @@ export async function getStripeSettlementBreakdown(
   paymentIntent: Stripe.PaymentIntent,
   options?: {
     climateContributionCents?: number;
+    climateTransactionId?: string | null;
   },
 ): Promise<StripeSettlementBreakdown> {
   const chargeId = asId(paymentIntent.latest_charge);
@@ -48,8 +50,50 @@ export async function getStripeSettlementBreakdown(
 
   const grossAmountCents = paymentIntent.amount_received || paymentIntent.amount;
   const stripeFeeCents = balanceTransaction.fee;
-  const climateContributionCents = Math.max(0, Math.round(options?.climateContributionCents ?? 0));
   const netAfterStripeFeeCents = balanceTransaction.net;
+  if (
+    !Number.isInteger(grossAmountCents) ||
+    grossAmountCents <= 0 ||
+    !Number.isInteger(stripeFeeCents) ||
+    stripeFeeCents < 0 ||
+    !Number.isInteger(netAfterStripeFeeCents) ||
+    netAfterStripeFeeCents < 0
+  ) {
+    throw new Error(`Stripe returned invalid settlement amounts for PaymentIntent ${paymentIntent.id}`);
+  }
+  if (typeof balanceTransaction.amount === "number" && balanceTransaction.amount !== grossAmountCents) {
+    throw new Error(`Stripe gross amount does not match the charge balance transaction for PaymentIntent ${paymentIntent.id}`);
+  }
+  if (grossAmountCents - stripeFeeCents !== netAfterStripeFeeCents) {
+    throw new Error(`Stripe gross, fee, and net amounts do not reconcile for PaymentIntent ${paymentIntent.id}`);
+  }
+
+  const requestedClimateTransactionId = options?.climateTransactionId?.trim() || null;
+  const requestedClimateContributionCents = options?.climateContributionCents ?? 0;
+  if (
+    !Number.isInteger(requestedClimateContributionCents) ||
+    requestedClimateContributionCents < 0
+  ) {
+    throw new Error(`Stripe Climate contribution amount is invalid for PaymentIntent ${paymentIntent.id}`);
+  }
+  let climateContributionCents = requestedClimateContributionCents;
+  if (requestedClimateTransactionId) {
+    if (requestedClimateTransactionId === balanceTransaction.id) {
+      throw new Error("Stripe Climate transaction must differ from the payment balance transaction");
+    }
+    const climateTransaction = await stripe.balanceTransactions.retrieve(requestedClimateTransactionId);
+    if (climateTransaction.currency !== balanceTransaction.currency) {
+      throw new Error("Stripe Climate balance transaction currency does not match the payment");
+    }
+    if (!Number.isInteger(climateTransaction.net) || climateTransaction.net >= 0) {
+      throw new Error("Stripe Climate balance transaction has an invalid deduction");
+    }
+    const climateNetCents = Math.abs(climateTransaction.net);
+    if (climateContributionCents > 0 && climateContributionCents !== climateNetCents) {
+      throw new Error("Stripe Climate metadata amount does not match the balance transaction");
+    }
+    climateContributionCents = climateNetCents;
+  }
   const netAmountCents = netAfterStripeFeeCents - climateContributionCents;
   if (netAmountCents < 0) {
     throw new Error(`Settlement deductions exceed gross amount for PaymentIntent ${paymentIntent.id}`);
@@ -62,6 +106,7 @@ export async function getStripeSettlementBreakdown(
     stripePaymentIntentId: paymentIntent.id,
     stripeChargeId: charge.id,
     stripeBalanceTransactionId: balanceTransaction.id,
+    stripeClimateTransactionId: requestedClimateTransactionId,
     grossAmountCents,
     stripeFeeCents,
     netAfterStripeFeeCents,

@@ -6,7 +6,7 @@ import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requests
 import { and, eq, sql } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
-import { wasRequestFronted, recordPoolContribution, getPoolBalance, processPendingMinimums, syncHubReservedBalance } from "../lib/community-pool";
+import { wasRequestFronted, recordPoolContributionSettlement, getPoolBalance, processPendingMinimums, syncHubReservedBalance } from "../lib/community-pool";
 import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
 import { logger } from "../lib/logger";
 import { paymentLimiter } from "../middlewares/rate-limit";
@@ -96,19 +96,17 @@ router.post("/stripe/webhook", async (req, res) => {
           );
           const settlement = await getStripeSettlementBreakdown(stripe!, settlementIntent, {
             climateContributionCents,
+            climateTransactionId: pi.metadata?.["stripe_climate_transaction_id"] ?? null,
           });
-          const recorded = await recordPoolContribution({
-            amount: settlement.grossAmountCents / 100,
+          const recorded = await recordPoolContributionSettlement({
             userId: contributorId,
             communityId,
-            stripePaymentIntentId: pi.id,
             notes: "Sponsor contribution via Stripe",
             settlement: {
               ...settlement,
-              stripeClimateTransactionId: pi.metadata?.["stripe_climate_transaction_id"] ?? null,
             },
           });
-          if (recorded) {
+          if (recorded.recorded) {
             // Pool replenished — backfill any queued guaranteed minimums
             await processPendingMinimums();
             const balance = await getPoolBalance();
@@ -120,6 +118,7 @@ router.post("/stripe/webhook", async (req, res) => {
                 climate_contribution: settlement.climateContributionCents / 100,
                 net_amount: settlement.netAmountCents / 100,
                 user_id: contributorId,
+                already_recorded: recorded.alreadyRecorded,
               },
               "Community pool contribution settlement recorded",
             );

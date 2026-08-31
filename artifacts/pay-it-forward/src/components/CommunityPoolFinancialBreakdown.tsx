@@ -6,6 +6,7 @@ interface CommunityPoolFinancialBreakdownProps {
   settlementStatus?: string | null;
   availableOn?: string | Date | null;
   stripeBalanceTransactionId?: string | null;
+  stripeClimateTransactionId?: string | null;
 }
 
 function formatCents(cents: number): string {
@@ -34,6 +35,7 @@ export function CommunityPoolFinancialBreakdown({
   settlementStatus,
   availableOn,
   stripeBalanceTransactionId,
+  stripeClimateTransactionId,
 }: CommunityPoolFinancialBreakdownProps) {
   const status = settlementStatus ?? "pending";
   const availableText = availableOn
@@ -63,7 +65,12 @@ export function CommunityPoolFinancialBreakdown({
       )}
       {stripeBalanceTransactionId && (
         <div className="mt-1 truncate text-muted-foreground/60" title={stripeBalanceTransactionId}>
-          Stripe settlement linked
+          Stripe settlement linked · {stripeBalanceTransactionId}
+        </div>
+      )}
+      {stripeClimateTransactionId && (
+        <div className="truncate text-muted-foreground/60" title={stripeClimateTransactionId}>
+          Climate contribution linked · {stripeClimateTransactionId}
         </div>
       )}
     </div>

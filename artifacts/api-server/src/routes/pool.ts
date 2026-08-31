@@ -166,6 +166,7 @@ router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
         settlement_status: communityPoolFinancialEventsTable.settlement_status,
         available_on: communityPoolFinancialEventsTable.available_on,
         stripe_balance_transaction_id: communityPoolFinancialEventsTable.stripe_balance_transaction_id,
+         stripe_climate_transaction_id: communityPoolFinancialEventsTable.stripe_climate_transaction_id,
       })
       .from(communityPoolLedgerTable)
       .leftJoin(usersTable, eq(communityPoolLedgerTable.user_id, usersTable.id))
@@ -196,6 +197,7 @@ router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
         settlement_status: r.settlement_status,
         available_on: r.available_on,
         stripe_balance_transaction_id: r.stripe_balance_transaction_id,
+         stripe_climate_transaction_id: r.stripe_climate_transaction_id,
       })),
     });
   } catch (err) {
@@ -295,6 +297,7 @@ router.get("/pool/my-ledger", requireAuth, async (req, res) => {
         settlement_status: communityPoolFinancialEventsTable.settlement_status,
         available_on: communityPoolFinancialEventsTable.available_on,
         stripe_balance_transaction_id: communityPoolFinancialEventsTable.stripe_balance_transaction_id,
+         stripe_climate_transaction_id: communityPoolFinancialEventsTable.stripe_climate_transaction_id,
       })
       .from(communityPoolLedgerTable)
       .leftJoin(

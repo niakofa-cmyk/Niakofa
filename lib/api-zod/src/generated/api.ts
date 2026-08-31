@@ -1630,7 +1630,8 @@ export const GetPoolLedgerResponse = zod.object({
   "net_amount_cents": zod.number().nullish(),
   "settlement_status": zod.enum(['pending', 'available', 'paid_out', 'failed']).nullish(),
   "available_on": zod.coerce.date().nullish(),
-  "stripe_balance_transaction_id": zod.string().nullish()
+  "stripe_balance_transaction_id": zod.string().nullish(),
+  "stripe_climate_transaction_id": zod.string().nullish()
 }))
 })
 
@@ -1685,7 +1686,8 @@ export const GetMyPoolLedgerResponse = zod.object({
   "net_amount_cents": zod.number().nullish(),
   "settlement_status": zod.enum(['pending', 'available', 'paid_out', 'failed']).nullish(),
   "available_on": zod.coerce.date().nullish(),
-  "stripe_balance_transaction_id": zod.string().nullish()
+  "stripe_balance_transaction_id": zod.string().nullish(),
+  "stripe_climate_transaction_id": zod.string().nullish()
 }))
 })
 

@@ -1694,6 +1694,7 @@ export default function CommunityScreen() {
                   settlement_status?: string | null;
                   available_on?: string | Date | null;
                   stripe_balance_transaction_id?: string | null;
+                   stripe_climate_transaction_id?: string | null;
                 }) => {
                   const meta: Record<string, { icon: string; label: string }> = {
                     sponsor_contribution: { icon: "💛", label: entry.display_name ? `${entry.display_name} funded the pool` : "Pool contribution" },
@@ -1727,6 +1728,7 @@ export default function CommunityScreen() {
                           settlementStatus={entry.settlement_status}
                           availableOn={entry.available_on}
                           stripeBalanceTransactionId={entry.stripe_balance_transaction_id}
+                          stripeClimateTransactionId={entry.stripe_climate_transaction_id}
                         />
                       )}
                     </div>

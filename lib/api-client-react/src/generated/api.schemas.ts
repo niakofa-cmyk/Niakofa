@@ -78,6 +78,7 @@ export interface PoolLedgerEntry {
   settlement_status?: PoolLedgerEntrySettlementStatus;
   available_on?: string | null;
   stripe_balance_transaction_id?: string | null;
+  stripe_climate_transaction_id?: string | null;
 }
 
 export interface PoolLedgerResponse {

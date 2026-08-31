@@ -1,6 +1,6 @@
 import { Router } from "express";
 import Stripe from "stripe";
-import { db, communityPoolLedgerTable } from "@workspace/db";
+import { db, communityPoolLedgerTable, communityPoolFinancialEventsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
@@ -62,12 +62,19 @@ router.get("/pool/stripe/reconciliation", requireAdmin(), adminLimiter, async (r
 
       for (const pi of page.data) {
         if (pi.status !== "succeeded" || pi.metadata?.["pool_contribution"] !== "true") continue;
-        const [ledger] = await db
-          .select({ id: communityPoolLedgerTable.id })
+        const [record] = await db
+          .select({
+            ledger_id: communityPoolLedgerTable.id,
+            financial_event_id: communityPoolFinancialEventsTable.id,
+          })
           .from(communityPoolLedgerTable)
+          .leftJoin(
+            communityPoolFinancialEventsTable,
+            eq(communityPoolFinancialEventsTable.community_pool_ledger_id, communityPoolLedgerTable.id),
+          )
           .where(eq(communityPoolLedgerTable.stripe_payment_intent_id, pi.id))
           .limit(1);
-        if (!ledger) {
+        if (!record?.ledger_id || !record.financial_event_id) {
           missing.push({
             payment_intent_id: pi.id,
             amount: (pi.amount_received || pi.amount) / 100,
@@ -78,6 +85,8 @@ router.get("/pool/stripe/reconciliation", requireAdmin(), adminLimiter, async (r
             user_id: Number(pi.metadata?.["user_id"]) || null,
             community_id: Number(pi.metadata?.["community_id"]) || null,
             description: pi.description ?? null,
+            missing_ledger: !record?.ledger_id,
+            missing_financial_event: !record?.financial_event_id,
           });
         }
       }
@@ -96,7 +105,8 @@ router.get("/pool/stripe/reconciliation", requireAdmin(), adminLimiter, async (r
       pages_scanned: pagesScanned,
       truncated,
       stripe_account_id: account.id,
-      missing_ledger_count: missing.length,
+      missing_ledger_count: missing.filter((item) => item.missing_ledger === true).length,
+      missing_financial_event_count: missing.filter((item) => item.missing_financial_event === true).length,
       missing,
     });
   } catch (err) {
@@ -126,22 +136,22 @@ router.post("/pool/stripe/reconciliation/:paymentIntentId/repair", requireAdmin(
       stripe_climate_transaction_id?: string;
     };
     const metadataClimateCents = Number.parseInt(pi.metadata?.["climate_contribution_cents"] ?? "0", 10) || 0;
-    const climateContributionCents = Math.max(
-      0,
-      Number.isFinite(body.climate_contribution_cents)
-        ? Math.round(body.climate_contribution_cents ?? 0)
-        : metadataClimateCents,
-    );
-    const settlement = await getStripeSettlementBreakdown(stripe, pi, { climateContributionCents });
+    const climateContributionCents = Number.isFinite(body.climate_contribution_cents)
+      ? Math.round(body.climate_contribution_cents ?? 0)
+      : metadataClimateCents;
+    const climateTransactionId =
+      body.stripe_climate_transaction_id?.trim() ||
+      pi.metadata?.["stripe_climate_transaction_id"] ||
+      null;
+    const settlement = await getStripeSettlementBreakdown(stripe, pi, {
+      climateContributionCents,
+      climateTransactionId,
+    });
     const recorded = await recordPoolContributionSettlement({
       userId,
       communityId,
       settlement: {
         ...settlement,
-        stripeClimateTransactionId:
-          body.stripe_climate_transaction_id?.trim() ||
-          pi.metadata?.["stripe_climate_transaction_id"] ||
-          null,
       },
       notes: "Reconciled Stripe Community Pool contribution",
     });
@@ -166,6 +176,7 @@ router.post("/pool/stripe/reconciliation/:paymentIntentId/repair", requireAdmin(
       climate_contribution: settlement.climateContributionCents / 100,
       net_amount: settlement.netAmountCents / 100,
       stripe_balance_transaction_id: settlement.stripeBalanceTransactionId,
+      stripe_climate_transaction_id: settlement.stripeClimateTransactionId,
       settlement_status: settlement.settlementStatus,
       available_on: settlement.availableOn,
       user_id: userId,

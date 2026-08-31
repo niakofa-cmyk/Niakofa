@@ -2604,6 +2604,9 @@ components:
         stripe_balance_transaction_id:
           type: string
           nullable: true
+        stripe_climate_transaction_id:
+          type: string
+          nullable: true
 
     PoolLedgerResponse:
       type: object

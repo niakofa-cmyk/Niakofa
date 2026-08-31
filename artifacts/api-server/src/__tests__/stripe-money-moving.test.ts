@@ -165,14 +165,24 @@ beforeEach(() => {
     id: "ch_pool_test",
     balance_transaction: "txn_pool_test",
   });
-  stripeBalanceTransactionRetrieve.mockResolvedValue({
-    id: "txn_pool_test",
-    currency: "usd",
-    fee: 45,
-    net: 455,
-    status: "available",
-    available_on: 1_756_000_000,
-  });
+  stripeBalanceTransactionRetrieve.mockImplementation(async (id: string) => id === "txn_climate"
+    ? {
+        id,
+        currency: "usd",
+        fee: 0,
+        net: -5,
+        status: "available",
+        available_on: 1_756_000_000,
+      }
+    : {
+        id,
+        amount: 500,
+        currency: "usd",
+        fee: 45,
+        net: 455,
+        status: "available",
+        available_on: 1_756_000_000,
+      });
   stripeAccountsRetrieve.mockResolvedValue({ id: "acct_test" });
 });
 
@@ -314,15 +324,29 @@ describe("POST /api/stripe/webhook", () => {
       id: "ch_pool_settlement",
       balance_transaction: "txn_pool_settlement",
     });
-    stripeBalanceTransactionRetrieve.mockResolvedValue({
-      id: "txn_pool_settlement",
-      currency: "usd",
-      fee: 45,
-      net: 455,
-      status: "available",
-      available_on: 1_756_000_000,
+    stripeBalanceTransactionRetrieve.mockImplementation(async (id: string) => id === "txn_climate"
+      ? {
+          id,
+          currency: "usd",
+          fee: 0,
+          net: -5,
+          status: "available",
+          available_on: 1_756_000_000,
+        }
+      : {
+          id,
+          amount: 500,
+          currency: "usd",
+          fee: 45,
+          net: 455,
+          status: "available",
+          available_on: 1_756_000_000,
+        });
+    recordPoolContributionSettlement.mockResolvedValueOnce({
+      recorded: true,
+      alreadyRecorded: false,
+      ledgerId: 1,
     });
-    recordPoolContribution.mockResolvedValueOnce(true);
 
     const response = await request(app)
       .post("/api/stripe/webhook")
@@ -331,8 +355,7 @@ describe("POST /api/stripe/webhook", () => {
       .send(JSON.stringify({ id: "evt_pool_settlement", type: "payment_intent.succeeded" }));
 
     expect(response.status).toBe(200);
-    expect(recordPoolContribution).toHaveBeenCalledWith(expect.objectContaining({
-      amount: 5,
+    expect(recordPoolContributionSettlement).toHaveBeenCalledWith(expect.objectContaining({
       settlement: expect.objectContaining({
         grossAmountCents: 500,
         stripeFeeCents: 45,
@@ -358,7 +381,7 @@ describe("POST /api/stripe/webhook", () => {
         },
       },
     });
-    recordPoolContribution.mockRejectedValueOnce(new Error("ledger unavailable"));
+    recordPoolContributionSettlement.mockRejectedValueOnce(new Error("ledger unavailable"));
 
     const response = await request(app)
       .post("/api/stripe/webhook")
