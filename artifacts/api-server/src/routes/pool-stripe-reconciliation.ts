@@ -5,7 +5,8 @@ import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
-import { recordPoolContribution } from "../lib/community-pool";
+import { recordPoolContributionSettlement } from "../lib/community-pool";
+import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
 
 const router = Router();
 const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"] ?? "";
@@ -114,24 +115,62 @@ router.post("/pool/stripe/reconciliation/:paymentIntentId/repair", requireAdmin(
   if (!/^pi_[A-Za-z0-9]+$/.test(paymentIntentId)) return res.status(400).json({ error: "Invalid Stripe PaymentIntent ID." });
 
   try {
-    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] });
     if (pi.status !== "succeeded") return res.status(409).json({ error: `PaymentIntent is ${pi.status}, not succeeded.` });
     if (pi.metadata?.["pool_contribution"] !== "true") return res.status(409).json({ error: "PaymentIntent is not a Community Pool contribution." });
 
-    const [existing] = await db
-      .select({ id: communityPoolLedgerTable.id })
-      .from(communityPoolLedgerTable)
-      .where(eq(communityPoolLedgerTable.stripe_payment_intent_id, pi.id))
-      .limit(1);
-    if (existing) return res.json({ repaired: false, already_recorded: true, payment_intent_id: pi.id, amount: (pi.amount_received || pi.amount) / 100 });
-
-    const amount = (pi.amount_received || pi.amount) / 100;
     const userId = Number(pi.metadata?.["user_id"]) || null;
     const communityId = Number(pi.metadata?.["community_id"]) || null;
-    const recorded = await recordPoolContribution({ amount, userId, communityId, stripePaymentIntentId: pi.id, notes: "Reconciled Stripe Community Pool contribution" });
+    const body = (req.body ?? {}) as {
+      climate_contribution_cents?: number;
+      stripe_climate_transaction_id?: string;
+    };
+    const metadataClimateCents = Number.parseInt(pi.metadata?.["climate_contribution_cents"] ?? "0", 10) || 0;
+    const climateContributionCents = Math.max(
+      0,
+      Number.isFinite(body.climate_contribution_cents)
+        ? Math.round(body.climate_contribution_cents ?? 0)
+        : metadataClimateCents,
+    );
+    const settlement = await getStripeSettlementBreakdown(stripe, pi, { climateContributionCents });
+    const recorded = await recordPoolContributionSettlement({
+      userId,
+      communityId,
+      settlement: {
+        ...settlement,
+        stripeClimateTransactionId:
+          body.stripe_climate_transaction_id?.trim() ||
+          pi.metadata?.["stripe_climate_transaction_id"] ||
+          null,
+      },
+      notes: "Reconciled Stripe Community Pool contribution",
+    });
 
-    logger.warn({ payment_intent_id: pi.id, amount, recorded }, "Community Pool Stripe payment reconciled");
-    return res.json({ repaired: Boolean(recorded), already_recorded: false, payment_intent_id: pi.id, amount, user_id: userId, community_id: communityId });
+    logger.warn(
+      {
+        payment_intent_id: pi.id,
+        gross_amount: settlement.grossAmountCents / 100,
+        stripe_fee: settlement.stripeFeeCents / 100,
+        climate_contribution: settlement.climateContributionCents / 100,
+        net_amount: settlement.netAmountCents / 100,
+        recorded,
+      },
+      "Community Pool Stripe payment reconciled",
+    );
+    return res.json({
+      repaired: recorded.recorded,
+      already_recorded: recorded.alreadyRecorded,
+      payment_intent_id: pi.id,
+      gross_amount: settlement.grossAmountCents / 100,
+      stripe_fee: settlement.stripeFeeCents / 100,
+      climate_contribution: settlement.climateContributionCents / 100,
+      net_amount: settlement.netAmountCents / 100,
+      stripe_balance_transaction_id: settlement.stripeBalanceTransactionId,
+      settlement_status: settlement.settlementStatus,
+      available_on: settlement.availableOn,
+      user_id: userId,
+      community_id: communityId,
+    });
   } catch (err) {
     logger.error({ err, payment_intent_id: paymentIntentId }, "Community Pool Stripe payment repair failed");
     return res.status(500).json({ error: "Stripe payment repair failed." });

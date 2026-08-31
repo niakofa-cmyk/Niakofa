@@ -12,7 +12,14 @@ export interface PoolStats {
   /** Per-hour livable-wage floor used to scale the guaranteed minimum by estimated task duration (global platform default — see GET /communities/{id} for a county-specific rate). */
   minimum_hourly_rate?: number;
   balance: number;
+  /** Gross sponsor contributions before Stripe and Climate deductions */
   total_contributed: number;
+  /** Net sponsor funds credited to the spendable pool */
+  net_contributed: number;
+  /** Authoritative Stripe processing fees recorded from Balance Transactions */
+  stripe_fees: number;
+  /** Climate deductions recorded separately from sponsor contributions */
+  climate_contributions: number;
   total_fronted: number;
   total_repaid: number;
   total_minimums: number;

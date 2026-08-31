@@ -2499,7 +2499,7 @@ components:
   schemas:
     PoolStats:
       type: object
-      required: [enabled, guaranteed_minimum, balance, total_contributed, total_fronted, total_repaid, total_minimums, helpers_fronted, sponsor_count, pending_minimums_count, pending_minimums_total]
+      required: [enabled, guaranteed_minimum, balance, total_contributed, total_fronted, total_repaid, total_minimums, helpers_fronted, sponsor_count, pending_minimums_count, pending_minimums_total, net_contributed, stripe_fees, climate_contributions]
       properties:
         enabled:
           type: boolean
@@ -2512,6 +2512,16 @@ components:
           type: number
         total_contributed:
           type: number
+          description: Gross sponsor contributions before Stripe and Climate deductions
+        net_contributed:
+          type: number
+          description: Net sponsor funds credited to the spendable pool
+        stripe_fees:
+          type: number
+          description: Authoritative Stripe processing fees recorded from Balance Transactions
+        climate_contributions:
+          type: number
+          description: Climate deductions recorded separately from sponsor contributions
         total_fronted:
           type: number
         total_repaid:
@@ -2571,6 +2581,29 @@ components:
         created_at:
           type: string
           format: date-time
+        gross_amount_cents:
+          type: integer
+          nullable: true
+        stripe_fee_cents:
+          type: integer
+          nullable: true
+        climate_contribution_cents:
+          type: integer
+          nullable: true
+        net_amount_cents:
+          type: integer
+          nullable: true
+        settlement_status:
+          type: string
+          nullable: true
+          enum: [pending, available, paid_out, failed]
+        available_on:
+          type: string
+          format: date-time
+          nullable: true
+        stripe_balance_transaction_id:
+          type: string
+          nullable: true
 
     PoolLedgerResponse:
       type: object
@@ -2592,6 +2625,12 @@ components:
         balance:
           type: number
         total_contributed:
+          type: number
+        net_contributed:
+          type: number
+        stripe_fees:
+          type: number
+        climate_contributions:
           type: number
         total_fronted:
           type: number

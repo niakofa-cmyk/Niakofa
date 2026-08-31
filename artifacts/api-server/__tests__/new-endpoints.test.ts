@@ -50,6 +50,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   governmentSponsorsTable: { id: "id", user_id: "user_id", entity_name: "entity_name" },
   systemSettingsTable:     { key: "key", value: "value" },
   communityPoolLedgerTable: { id: "id", amount: "amount", hub_id: "hub_id", community_id: "community_id", type: "type", request_id: "request_id", user_id: "user_id", description: "description", created_at: "created_at" },
+  communityPoolFinancialEventsTable: {},
   diasporaHubsTable:       { id: "id", community_id: "community_id", name: "name", reserved_balance: "reserved_balance" },
   communitiesTable:        { id: "id", name: "name" },
   stripeAccountsTable:     { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },

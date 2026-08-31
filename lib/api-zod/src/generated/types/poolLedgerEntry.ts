@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PoolLedgerEntryEntryType } from './poolLedgerEntryEntryType';
+import type { PoolLedgerEntrySettlementStatus } from './poolLedgerEntrySettlementStatus';
 
 export interface PoolLedgerEntry {
   id: number;
@@ -15,4 +16,11 @@ export interface PoolLedgerEntry {
   display_name?: string | null;
   notes?: string | null;
   created_at: Date;
+  gross_amount_cents?: number | null;
+  stripe_fee_cents?: number | null;
+  climate_contribution_cents?: number | null;
+  net_amount_cents?: number | null;
+  settlement_status?: PoolLedgerEntrySettlementStatus;
+  available_on?: Date | null;
+  stripe_balance_transaction_id?: string | null;
 }

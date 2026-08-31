@@ -1,6 +1,13 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
-import { db, communityPoolLedgerTable, poolPendingMinimumsTable, usersTable, requestsTable } from "@workspace/db";
+import {
+  db,
+  communityPoolLedgerTable,
+  communityPoolFinancialEventsTable,
+  poolPendingMinimumsTable,
+  usersTable,
+  requestsTable,
+} from "@workspace/db";
 import { desc, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
@@ -45,7 +52,10 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
     const [totals] = await db
       .select({
         balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8`,
-        total_contributed: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN ${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
+        total_contributed: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN COALESCE(${communityPoolFinancialEventsTable.gross_amount_cents} / 100.0, ${communityPoolLedgerTable.amount}) ELSE 0 END), 0)::float8`,
+        net_contributed: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN COALESCE(${communityPoolFinancialEventsTable.net_amount_cents} / 100.0, ${communityPoolLedgerTable.amount}) ELSE 0 END), 0)::float8`,
+        stripe_fees: sql<number>`COALESCE(SUM(${communityPoolFinancialEventsTable.stripe_fee_cents}), 0)::float8 / 100`,
+        climate_contributions: sql<number>`COALESCE(SUM(${communityPoolFinancialEventsTable.climate_contribution_cents}), 0)::float8 / 100`,
         total_fronted: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'helper_front' THEN -${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
         total_repaid: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'pledge_repayment' THEN ${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
         total_minimums: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'guaranteed_minimum' THEN -${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
@@ -62,7 +72,11 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
         helpers_earned_7d: sql<number>`COALESCE(ABS(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} IN ('helper_front','guaranteed_minimum') AND ${communityPoolLedgerTable.created_at} > NOW() - INTERVAL '7 days' THEN ${communityPoolLedgerTable.amount} ELSE 0 END)), 0)::float8`,
         helpers_paid_7d: sql<number>`COUNT(DISTINCT CASE WHEN ${communityPoolLedgerTable.entry_type} IN ('helper_front','guaranteed_minimum') AND ${communityPoolLedgerTable.created_at} > NOW() - INTERVAL '7 days' THEN ${communityPoolLedgerTable.user_id} END)::int`,
       })
-      .from(communityPoolLedgerTable);
+      .from(communityPoolLedgerTable)
+      .leftJoin(
+        communityPoolFinancialEventsTable,
+        eq(communityPoolFinancialEventsTable.community_pool_ledger_id, communityPoolLedgerTable.id),
+      );
 
     // Outstanding PIF pledges: money owed back to the pool by past requesters.
     // This is expected future inflow — important for runway context.
@@ -103,6 +117,9 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
       minimum_hourly_rate,
       balance,
       total_contributed: totals?.total_contributed ?? 0,
+       net_contributed: totals?.net_contributed ?? totals?.total_contributed ?? 0,
+       stripe_fees: totals?.stripe_fees ?? 0,
+       climate_contributions: totals?.climate_contributions ?? 0,
       total_fronted: totals?.total_fronted ?? 0,
       total_repaid: totals?.total_repaid ?? 0,
       total_minimums: totals?.total_minimums ?? 0,
@@ -142,9 +159,20 @@ router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
         notes: communityPoolLedgerTable.notes,
         created_at: communityPoolLedgerTable.created_at,
         user_name: usersTable.name,
+        gross_amount_cents: communityPoolFinancialEventsTable.gross_amount_cents,
+        stripe_fee_cents: communityPoolFinancialEventsTable.stripe_fee_cents,
+        climate_contribution_cents: communityPoolFinancialEventsTable.climate_contribution_cents,
+        net_amount_cents: communityPoolFinancialEventsTable.net_amount_cents,
+        settlement_status: communityPoolFinancialEventsTable.settlement_status,
+        available_on: communityPoolFinancialEventsTable.available_on,
+        stripe_balance_transaction_id: communityPoolFinancialEventsTable.stripe_balance_transaction_id,
       })
       .from(communityPoolLedgerTable)
       .leftJoin(usersTable, eq(communityPoolLedgerTable.user_id, usersTable.id))
+      .leftJoin(
+        communityPoolFinancialEventsTable,
+        eq(communityPoolFinancialEventsTable.community_pool_ledger_id, communityPoolLedgerTable.id),
+      )
       .orderBy(desc(communityPoolLedgerTable.created_at))
       .limit(limit);
 
@@ -161,6 +189,13 @@ router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
             : null,
         notes: r.notes,
         created_at: r.created_at,
+        gross_amount_cents: r.gross_amount_cents,
+        stripe_fee_cents: r.stripe_fee_cents,
+        climate_contribution_cents: r.climate_contribution_cents,
+        net_amount_cents: r.net_amount_cents,
+        settlement_status: r.settlement_status,
+        available_on: r.available_on,
+        stripe_balance_transaction_id: r.stripe_balance_transaction_id,
       })),
     });
   } catch (err) {
@@ -197,12 +232,19 @@ router.get("/pool/my-stats", requireAuth, async (req, res) => {
     const [totals] = await db
       .select({
         balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8`,
-        total_contributed: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN ${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
+         total_contributed: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN COALESCE(${communityPoolFinancialEventsTable.gross_amount_cents} / 100.0, ${communityPoolLedgerTable.amount}) ELSE 0 END), 0)::float8`,
+         net_contributed: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN COALESCE(${communityPoolFinancialEventsTable.net_amount_cents} / 100.0, ${communityPoolLedgerTable.amount}) ELSE 0 END), 0)::float8`,
+         stripe_fees: sql<number>`COALESCE(SUM(${communityPoolFinancialEventsTable.stripe_fee_cents}), 0)::float8 / 100`,
+         climate_contributions: sql<number>`COALESCE(SUM(${communityPoolFinancialEventsTable.climate_contribution_cents}), 0)::float8 / 100`,
         total_fronted: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'helper_front' THEN -${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
         total_repaid: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'pledge_repayment' THEN ${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
         sponsor_count: sql<number>`COUNT(DISTINCT CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN ${communityPoolLedgerTable.user_id} END)::int`,
       })
       .from(communityPoolLedgerTable)
+      .leftJoin(
+        communityPoolFinancialEventsTable,
+        eq(communityPoolFinancialEventsTable.community_pool_ledger_id, communityPoolLedgerTable.id),
+      )
       .where(eq(communityPoolLedgerTable.community_id, communityId));
 
     const balance = totals?.balance ?? 0;
@@ -212,6 +254,9 @@ router.get("/pool/my-stats", requireAuth, async (req, res) => {
       community_name: communityName ?? "Your Community",
       balance,
       total_contributed: totals?.total_contributed ?? 0,
+      net_contributed: totals?.net_contributed ?? totals?.total_contributed ?? 0,
+      stripe_fees: totals?.stripe_fees ?? 0,
+      climate_contributions: totals?.climate_contributions ?? 0,
       total_fronted: totals?.total_fronted ?? 0,
       total_repaid: totals?.total_repaid ?? 0,
       sponsor_count: totals?.sponsor_count ?? 0,
@@ -243,8 +288,19 @@ router.get("/pool/my-ledger", requireAuth, async (req, res) => {
         amount: communityPoolLedgerTable.amount,
         notes: communityPoolLedgerTable.notes,
         created_at: communityPoolLedgerTable.created_at,
+        gross_amount_cents: communityPoolFinancialEventsTable.gross_amount_cents,
+        stripe_fee_cents: communityPoolFinancialEventsTable.stripe_fee_cents,
+        climate_contribution_cents: communityPoolFinancialEventsTable.climate_contribution_cents,
+        net_amount_cents: communityPoolFinancialEventsTable.net_amount_cents,
+        settlement_status: communityPoolFinancialEventsTable.settlement_status,
+        available_on: communityPoolFinancialEventsTable.available_on,
+        stripe_balance_transaction_id: communityPoolFinancialEventsTable.stripe_balance_transaction_id,
       })
       .from(communityPoolLedgerTable)
+      .leftJoin(
+        communityPoolFinancialEventsTable,
+        eq(communityPoolFinancialEventsTable.community_pool_ledger_id, communityPoolLedgerTable.id),
+      )
       .where(eq(communityPoolLedgerTable.community_id, member.community_id))
       .orderBy(desc(communityPoolLedgerTable.created_at))
       .limit(limit);

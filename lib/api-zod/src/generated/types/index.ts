@@ -126,6 +126,7 @@ export * from './poolContributeResponse';
 export * from './poolContributeResponseMode';
 export * from './poolLedgerEntry';
 export * from './poolLedgerEntryEntryType';
+export * from './poolLedgerEntrySettlementStatus';
 export * from './poolLedgerResponse';
 export * from './poolStats';
 export * from './reassignUserCommunityInput';

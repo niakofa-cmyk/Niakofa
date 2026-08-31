@@ -26,8 +26,10 @@ const stripeChargeRetrieve = jest.fn();
 const stripePaymentIntentCreate = jest.fn();
 const stripePaymentIntentList = jest.fn();
 const stripePaymentIntentRetrieve = jest.fn();
+const stripeBalanceTransactionRetrieve = jest.fn();
 const stripeAccountsRetrieve = jest.fn();
 const recordPoolContribution = jest.fn();
+const recordPoolContributionSettlement = jest.fn();
 const drizzleEq = jest.fn();
 
 jest.unstable_mockModule("@workspace/db", () => ({
@@ -42,6 +44,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   requestsTable: { id: "id", title: "title" },
   transactionsTable: {},
   communityPoolLedgerTable: {},
+  communityPoolFinancialEventsTable: {},
   poolPendingMinimumsTable: {},
   walletCashoutsTable: { id: "id", state: "state" },
   diasporaHubsTable: { id: "id" },
@@ -64,6 +67,7 @@ jest.unstable_mockModule("stripe", () => ({
       list: stripePaymentIntentList,
       retrieve: stripePaymentIntentRetrieve,
     };
+    balanceTransactions = { retrieve: stripeBalanceTransactionRetrieve };
     accounts = { retrieve: stripeAccountsRetrieve };
   },
 }));
@@ -99,6 +103,7 @@ jest.unstable_mockModule("../routes/push", () => ({
 jest.unstable_mockModule("../lib/community-pool", () => ({
   wasRequestFronted: jest.fn(),
   recordPoolContribution,
+  recordPoolContributionSettlement,
   getPoolBalance: jest.fn(),
   getGuaranteedMinimum: jest.fn(),
   getHourlyMinimumRate: jest.fn(),
@@ -146,7 +151,28 @@ beforeEach(() => {
     client_secret: "pi_pool_test_secret",
   });
   stripePaymentIntentList.mockResolvedValue({ data: [], has_more: false });
-  stripePaymentIntentRetrieve.mockReset();
+  stripePaymentIntentRetrieve.mockResolvedValue({
+    id: "pi_pool_test",
+    amount: 500,
+    amount_received: 500,
+    currency: "usd",
+    livemode: true,
+    status: "succeeded",
+    latest_charge: "ch_pool_test",
+    metadata: { pool_contribution: "true", user_id: "42" },
+  });
+  stripeChargeRetrieve.mockResolvedValue({
+    id: "ch_pool_test",
+    balance_transaction: "txn_pool_test",
+  });
+  stripeBalanceTransactionRetrieve.mockResolvedValue({
+    id: "txn_pool_test",
+    currency: "usd",
+    fee: 45,
+    net: 455,
+    status: "available",
+    available_on: 1_756_000_000,
+  });
   stripeAccountsRetrieve.mockResolvedValue({ id: "acct_test" });
 });
 
@@ -251,6 +277,74 @@ describe("GET /api/pool/stripe/reconciliation", () => {
 });
 
 describe("POST /api/stripe/webhook", () => {
+  it("records authoritative gross, Stripe fee, Climate deduction, and net pool funds", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_pool_settlement",
+      livemode: true,
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_pool_settlement",
+          amount: 500,
+          metadata: {
+            pool_contribution: "true",
+            user_id: "42",
+            climate_contribution_cents: "5",
+            stripe_climate_transaction_id: "txn_climate",
+          },
+        },
+      },
+    });
+    stripePaymentIntentRetrieve.mockResolvedValue({
+      id: "pi_pool_settlement",
+      amount: 500,
+      amount_received: 500,
+      currency: "usd",
+      livemode: true,
+      status: "succeeded",
+      latest_charge: "ch_pool_settlement",
+      metadata: {
+        pool_contribution: "true",
+        user_id: "42",
+        climate_contribution_cents: "5",
+        stripe_climate_transaction_id: "txn_climate",
+      },
+    });
+    stripeChargeRetrieve.mockResolvedValue({
+      id: "ch_pool_settlement",
+      balance_transaction: "txn_pool_settlement",
+    });
+    stripeBalanceTransactionRetrieve.mockResolvedValue({
+      id: "txn_pool_settlement",
+      currency: "usd",
+      fee: 45,
+      net: 455,
+      status: "available",
+      available_on: 1_756_000_000,
+    });
+    recordPoolContribution.mockResolvedValueOnce(true);
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_pool_settlement", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(200);
+    expect(recordPoolContribution).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 5,
+      settlement: expect.objectContaining({
+        grossAmountCents: 500,
+        stripeFeeCents: 45,
+        climateContributionCents: 5,
+        netAmountCents: 450,
+        stripeBalanceTransactionId: "txn_pool_settlement",
+        stripeClimateTransactionId: "txn_climate",
+        settlementStatus: "available",
+      }),
+    }));
+  });
+
   it("returns 500 when financial processing fails so Stripe retries", async () => {
     stripeConstructEvent.mockReturnValue({
       id: "evt_processing_failure",

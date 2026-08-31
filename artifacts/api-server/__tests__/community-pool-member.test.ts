@@ -26,6 +26,7 @@ const mockDb: Record<string, jest.Mock> = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
+  leftJoin: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
   limit: jest.fn().mockResolvedValue([]),
   execute: jest.fn().mockResolvedValue({ rows: [] }),
@@ -36,6 +37,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   db: mockDb,
   usersTable: usersColumns,
   communityPoolLedgerTable: poolColumns,
+  communityPoolFinancialEventsTable: {},
   poolPendingMinimumsTable: pendingMinimumColumns,
   requestsTable: {
     pledge_amount: "requests.pledge_amount",
@@ -104,7 +106,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   awaitedQueryResults.length = 0;
 
-  for (const method of ["select", "from", "where", "orderBy"]) {
+  for (const method of ["select", "from", "where", "orderBy", "leftJoin"]) {
     mockDb[method].mockReturnThis();
   }
   mockDb.limit.mockResolvedValue([]);

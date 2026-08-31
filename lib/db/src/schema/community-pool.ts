@@ -1,4 +1,4 @@
-import { pgTable, serial, text, real, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, real, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -43,6 +43,43 @@ export const communityPoolLedgerTable = pgTable("community_pool_ledger", {
 
 export type CommunityPoolLedgerEntry = typeof communityPoolLedgerTable.$inferSelect;
 export type NewCommunityPoolLedgerEntry = typeof communityPoolLedgerTable.$inferInsert;
+
+/**
+ * community_pool_financial_events — the Stripe settlement record attached to
+ * a spendable pool ledger entry.
+ *
+ * The pool ledger amount is the settled net amount. This table preserves the
+ * member's gross contribution and every processor/Climate deduction separately
+ * so public balances and financial reconciliation cannot confuse the two.
+ */
+export const communityPoolFinancialEventsTable = pgTable("community_pool_financial_events", {
+  id: serial("id").primaryKey(),
+  community_pool_ledger_id: integer("community_pool_ledger_id").notNull(),
+  user_id: integer("user_id"),
+  community_id: integer("community_id"),
+  stripe_payment_intent_id: text("stripe_payment_intent_id"),
+  stripe_charge_id: text("stripe_charge_id"),
+  stripe_balance_transaction_id: text("stripe_balance_transaction_id"),
+  stripe_climate_transaction_id: text("stripe_climate_transaction_id"),
+  gross_amount_cents: integer("gross_amount_cents").notNull(),
+  stripe_fee_cents: integer("stripe_fee_cents").notNull().default(0),
+  climate_contribution_cents: integer("climate_contribution_cents").notNull().default(0),
+  net_amount_cents: integer("net_amount_cents").notNull(),
+  currency: text("currency").notNull().default("usd"),
+  settlement_status: text("settlement_status").notNull().default("pending"),
+  available_on: timestamp("available_on", { withTimezone: true }),
+  paid_out_at: timestamp("paid_out_at", { withTimezone: true }),
+  stripe_livemode: boolean("stripe_livemode").notNull().default(false),
+  created_at: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`NOW()`),
+  updated_at: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .default(sql`NOW()`),
+});
+
+export type CommunityPoolFinancialEvent = typeof communityPoolFinancialEventsTable.$inferSelect;
+export type NewCommunityPoolFinancialEvent = typeof communityPoolFinancialEventsTable.$inferInsert;
 
 /**
  * pool_pending_minimums — guaranteed minimums the pool COULDN'T pay because

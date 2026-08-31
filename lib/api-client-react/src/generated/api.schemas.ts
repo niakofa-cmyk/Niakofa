@@ -11,7 +11,14 @@ export interface PoolStats {
   /** Per-hour livable-wage floor used to scale the guaranteed minimum by estimated task duration (global platform default — see GET /communities/{id} for a county-specific rate). */
   minimum_hourly_rate?: number;
   balance: number;
+  /** Gross sponsor contributions before Stripe and Climate deductions */
   total_contributed: number;
+  /** Net sponsor funds credited to the spendable pool */
+  net_contributed: number;
+  /** Authoritative Stripe processing fees recorded from Balance Transactions */
+  stripe_fees: number;
+  /** Climate deductions recorded separately from sponsor contributions */
+  climate_contributions: number;
   total_fronted: number;
   total_repaid: number;
   total_minimums: number;
@@ -46,6 +53,16 @@ export const PoolLedgerEntryEntryType = {
   adjustment: 'adjustment',
 } as const;
 
+export type PoolLedgerEntrySettlementStatus = typeof PoolLedgerEntrySettlementStatus[keyof typeof PoolLedgerEntrySettlementStatus] | null;
+
+
+export const PoolLedgerEntrySettlementStatus = {
+  pending: 'pending',
+  available: 'available',
+  paid_out: 'paid_out',
+  failed: 'failed',
+} as const;
+
 export interface PoolLedgerEntry {
   id: number;
   entry_type: PoolLedgerEntryEntryType;
@@ -54,6 +71,13 @@ export interface PoolLedgerEntry {
   display_name?: string | null;
   notes?: string | null;
   created_at: string;
+  gross_amount_cents?: number | null;
+  stripe_fee_cents?: number | null;
+  climate_contribution_cents?: number | null;
+  net_amount_cents?: number | null;
+  settlement_status?: PoolLedgerEntrySettlementStatus;
+  available_on?: string | null;
+  stripe_balance_transaction_id?: string | null;
 }
 
 export interface PoolLedgerResponse {
@@ -65,6 +89,9 @@ export interface MyPoolStats {
   community_name: string;
   balance: number;
   total_contributed: number;
+  net_contributed?: number;
+  stripe_fees?: number;
+  climate_contributions?: number;
   total_fronted: number;
   total_repaid: number;
   sponsor_count: number;

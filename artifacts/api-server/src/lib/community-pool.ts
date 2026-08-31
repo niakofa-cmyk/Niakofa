@@ -1,6 +1,7 @@
 import {
   db,
   communityPoolLedgerTable,
+  communityPoolFinancialEventsTable,
   poolPendingMinimumsTable,
   systemSettingsTable,
   usersTable,
@@ -805,13 +806,14 @@ export async function recordPoolContribution(params: {
    * Null = unrestricted/global pool contribution.
    */
   hubId?: number | null;
+  settlement?: PoolContributionSettlement;
 }): Promise<boolean> {
-  const { userId, stripePaymentIntentId, notes, governmentSponsorId, communityId, hubId } = params;
-  const amount = roundMoney(params.amount);
-  if (amount <= 0) return false;
+  const { userId, stripePaymentIntentId, notes, governmentSponsorId, communityId, hubId, settlement } = params;
+  const amount = roundMoney(settlement ? settlement.netAmountCents / 100 : params.amount);
+  if (amount <= 0 && !settlement) return false;
   try {
     await db.transaction(async (tx) => {
-      await tx.insert(communityPoolLedgerTable).values({
+      const [ledgerEntry] = await tx.insert(communityPoolLedgerTable).values({
         entry_type: "sponsor_contribution",
         amount,
         user_id: userId,
@@ -820,7 +822,26 @@ export async function recordPoolContribution(params: {
         stripe_payment_intent_id: stripePaymentIntentId ?? null,
         notes: notes ?? "Sponsor contribution to the Community Pool",
         government_sponsor_id: governmentSponsorId ?? null,
-      });
+      }).returning({ id: communityPoolLedgerTable.id });
+      if (settlement && ledgerEntry) {
+        await tx.insert(communityPoolFinancialEventsTable).values({
+          community_pool_ledger_id: ledgerEntry.id,
+          user_id: userId,
+          community_id: communityId ?? null,
+          stripe_payment_intent_id: settlement.stripePaymentIntentId,
+          stripe_charge_id: settlement.stripeChargeId,
+          stripe_balance_transaction_id: settlement.stripeBalanceTransactionId,
+          stripe_climate_transaction_id: settlement.stripeClimateTransactionId ?? null,
+          gross_amount_cents: settlement.grossAmountCents,
+          stripe_fee_cents: settlement.stripeFeeCents,
+          climate_contribution_cents: settlement.climateContributionCents,
+          net_amount_cents: settlement.netAmountCents,
+          currency: settlement.currency,
+          settlement_status: settlement.settlementStatus,
+          available_on: settlement.availableOn,
+          stripe_livemode: settlement.stripeLivemode,
+        });
+      }
       if (hubId != null) {
         await syncHubReservedBalance(hubId, tx);
       }
@@ -832,6 +853,107 @@ export async function recordPoolContribution(params: {
       // Webhook retry — contribution already recorded for this payment intent
       logger.info({ stripe_pi: stripePaymentIntentId }, "Pool contribution already recorded — webhook retry ignored");
       return false;
+    }
+    throw err;
+  }
+}
+
+export interface PoolContributionSettlement {
+  stripePaymentIntentId: string;
+  stripeChargeId: string;
+  stripeBalanceTransactionId: string;
+  stripeClimateTransactionId?: string | null;
+  grossAmountCents: number;
+  stripeFeeCents: number;
+  climateContributionCents: number;
+  netAmountCents: number;
+  currency: string;
+  settlementStatus: "pending" | "available" | "paid_out" | "failed";
+  availableOn: Date | null;
+  stripeLivemode: boolean;
+}
+
+/**
+ * Record a Stripe settlement and its spendable net amount. If an older repair
+ * already posted the gross amount, append a balancing adjustment instead of
+ * mutating the append-only pool ledger.
+ */
+export async function recordPoolContributionSettlement(params: {
+  settlement: PoolContributionSettlement;
+  userId: number | null;
+  communityId?: number | null;
+  notes?: string;
+}): Promise<{ recorded: boolean; alreadyRecorded: boolean; ledgerId: number | null }> {
+  const { settlement, userId, communityId, notes } = params;
+  if (settlement.grossAmountCents <= 0 || settlement.netAmountCents < 0) {
+    throw new Error("Invalid Stripe settlement amounts");
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      const [existingEvent] = await tx
+        .select({ id: communityPoolFinancialEventsTable.id })
+        .from(communityPoolFinancialEventsTable)
+        .where(eq(communityPoolFinancialEventsTable.stripe_payment_intent_id, settlement.stripePaymentIntentId))
+        .limit(1);
+      if (existingEvent) return { recorded: false, alreadyRecorded: true, ledgerId: null };
+
+      const [existingLedger] = await tx
+        .select({
+          id: communityPoolLedgerTable.id,
+          amount: communityPoolLedgerTable.amount,
+        })
+        .from(communityPoolLedgerTable)
+        .where(eq(communityPoolLedgerTable.stripe_payment_intent_id, settlement.stripePaymentIntentId))
+        .limit(1);
+
+      let ledgerId = existingLedger?.id ?? null;
+      if (!existingLedger) {
+        const [ledgerEntry] = await tx.insert(communityPoolLedgerTable).values({
+          entry_type: "sponsor_contribution",
+          amount: roundMoney(settlement.netAmountCents / 100),
+          user_id: userId,
+          community_id: communityId ?? null,
+          stripe_payment_intent_id: settlement.stripePaymentIntentId,
+          notes: notes ?? "Sponsor contribution via Stripe",
+        }).returning({ id: communityPoolLedgerTable.id });
+        ledgerId = ledgerEntry?.id ?? null;
+      } else {
+        const adjustment = roundMoney(settlement.netAmountCents / 100 - Number(existingLedger.amount));
+        if (adjustment !== 0) {
+          await tx.insert(communityPoolLedgerTable).values({
+            entry_type: "adjustment",
+            amount: adjustment,
+            user_id: userId,
+            community_id: communityId ?? null,
+            notes: `Settlement adjustment for Stripe PaymentIntent ${settlement.stripePaymentIntentId}`,
+          });
+        }
+      }
+
+      if (!ledgerId) throw new Error("Pool settlement could not create or find a ledger entry");
+      await tx.insert(communityPoolFinancialEventsTable).values({
+        community_pool_ledger_id: ledgerId,
+        user_id: userId,
+        community_id: communityId ?? null,
+        stripe_payment_intent_id: settlement.stripePaymentIntentId,
+        stripe_charge_id: settlement.stripeChargeId,
+        stripe_balance_transaction_id: settlement.stripeBalanceTransactionId,
+        stripe_climate_transaction_id: settlement.stripeClimateTransactionId ?? null,
+        gross_amount_cents: settlement.grossAmountCents,
+        stripe_fee_cents: settlement.stripeFeeCents,
+        climate_contribution_cents: settlement.climateContributionCents,
+        net_amount_cents: settlement.netAmountCents,
+        currency: settlement.currency,
+        settlement_status: settlement.settlementStatus,
+        available_on: settlement.availableOn,
+        stripe_livemode: settlement.stripeLivemode,
+      });
+      return { recorded: true, alreadyRecorded: false, ledgerId };
+    });
+  } catch (err: unknown) {
+    if ((err as { code?: string })?.code === "23505") {
+      return { recorded: false, alreadyRecorded: true, ledgerId: null };
     }
     throw err;
   }

@@ -57,6 +57,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   userSettingsTable: { id: "id", user_id: "user_id" },
   helperAvailabilityTable: { id: "id", user_id: "user_id" },
   communityPoolLedgerTable: { id: "id", amount: "amount" },
+  communityPoolFinancialEventsTable: {},
   poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
   communitiesTable: { id: "id", name: "name", target_reserve_amount: "target_reserve_amount" },
   systemSettingsTable: { key: "key", value: "value" },

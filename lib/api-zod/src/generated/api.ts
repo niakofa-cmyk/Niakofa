@@ -1584,7 +1584,10 @@ export const GetPoolStatsResponse = zod.object({
   "guaranteed_minimum": zod.number(),
   "minimum_hourly_rate": zod.number().optional().describe('Per-hour livable-wage floor used to scale the guaranteed minimum by estimated task duration (global platform default — see GET \/communities\/{id} for a county-specific rate).'),
   "balance": zod.number(),
-  "total_contributed": zod.number(),
+  "total_contributed": zod.number().describe('Gross sponsor contributions before Stripe and Climate deductions'),
+  "net_contributed": zod.number().describe('Net sponsor funds credited to the spendable pool'),
+  "stripe_fees": zod.number().describe('Authoritative Stripe processing fees recorded from Balance Transactions'),
+  "climate_contributions": zod.number().describe('Climate deductions recorded separately from sponsor contributions'),
   "total_fronted": zod.number(),
   "total_repaid": zod.number(),
   "total_minimums": zod.number(),
@@ -1620,7 +1623,14 @@ export const GetPoolLedgerResponse = zod.object({
   "request_id": zod.number().nullish(),
   "display_name": zod.string().nullish(),
   "notes": zod.string().nullish(),
-  "created_at": zod.coerce.date()
+  "created_at": zod.coerce.date(),
+  "gross_amount_cents": zod.number().nullish(),
+  "stripe_fee_cents": zod.number().nullish(),
+  "climate_contribution_cents": zod.number().nullish(),
+  "net_amount_cents": zod.number().nullish(),
+  "settlement_status": zod.enum(['pending', 'available', 'paid_out', 'failed']).nullish(),
+  "available_on": zod.coerce.date().nullish(),
+  "stripe_balance_transaction_id": zod.string().nullish()
 }))
 })
 
@@ -1638,6 +1648,9 @@ export const GetMyPoolStatsResponse = zod.object({
   "community_name": zod.string(),
   "balance": zod.number(),
   "total_contributed": zod.number(),
+  "net_contributed": zod.number().optional(),
+  "stripe_fees": zod.number().optional(),
+  "climate_contributions": zod.number().optional(),
   "total_fronted": zod.number(),
   "total_repaid": zod.number(),
   "sponsor_count": zod.number(),
@@ -1665,7 +1678,14 @@ export const GetMyPoolLedgerResponse = zod.object({
   "request_id": zod.number().nullish(),
   "display_name": zod.string().nullish(),
   "notes": zod.string().nullish(),
-  "created_at": zod.coerce.date()
+  "created_at": zod.coerce.date(),
+  "gross_amount_cents": zod.number().nullish(),
+  "stripe_fee_cents": zod.number().nullish(),
+  "climate_contribution_cents": zod.number().nullish(),
+  "net_amount_cents": zod.number().nullish(),
+  "settlement_status": zod.enum(['pending', 'available', 'paid_out', 'failed']).nullish(),
+  "available_on": zod.coerce.date().nullish(),
+  "stripe_balance_transaction_id": zod.string().nullish()
 }))
 })
 

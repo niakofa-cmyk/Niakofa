@@ -12,6 +12,7 @@ import { useWebSocket } from "@/lib/useWebSocket";
 import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 import { MAX_POOL_AMOUNT, MIN_POOL_AMOUNT, PoolContributionPanel } from "@/components/PoolContributionPanel";
+import { CommunityPoolFinancialBreakdown } from "@/components/CommunityPoolFinancialBreakdown";
 
 interface GratitudePost {
   id: number;
@@ -1680,7 +1681,20 @@ export default function CommunityScreen() {
                     <p className="text-xs text-muted-foreground">No pool activity yet</p>
                     <p className="mt-0.5 text-[10px] text-muted-foreground/60">Contributions and helper payments will appear here.</p>
                   </div>
-                ) : effectivePoolLedger?.map((entry: { id: number; entry_type: string; amount: number; display_name?: string | null; created_at: string }) => {
+                ) : effectivePoolLedger?.map((entry: {
+                  id: number;
+                  entry_type: string;
+                  amount: number;
+                  display_name?: string | null;
+                  created_at: string;
+                  gross_amount_cents?: number | null;
+                  stripe_fee_cents?: number | null;
+                  climate_contribution_cents?: number | null;
+                  net_amount_cents?: number | null;
+                  settlement_status?: string | null;
+                  available_on?: string | Date | null;
+                  stripe_balance_transaction_id?: string | null;
+                }) => {
                   const meta: Record<string, { icon: string; label: string }> = {
                     sponsor_contribution: { icon: "💛", label: entry.display_name ? `${entry.display_name} funded the pool` : "Pool contribution" },
                     helper_front: { icon: "⚡", label: "Helper paid instantly at completion" },
@@ -1691,17 +1705,30 @@ export default function CommunityScreen() {
                   const m = meta[entry.entry_type] ?? { icon: "💙", label: "Pool activity" };
                   const positive = entry.amount >= 0;
                   return (
-                    <div key={entry.id} className="flex items-center gap-2.5 bg-background/60 rounded-xl px-3 py-2">
-                      <div className="text-base shrink-0">{m.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-bold truncate">{m.label}</div>
-                        <div className="text-[9px] text-muted-foreground">
-                          {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    <div key={entry.id} className="bg-background/60 rounded-xl px-3 py-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="text-base shrink-0">{m.icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold truncate">{m.label}</div>
+                          <div className="text-[9px] text-muted-foreground">
+                            {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </div>
+                        </div>
+                        <div className={`text-xs font-black shrink-0 ${positive ? "text-green-400" : "text-primary"}`}>
+                           {positive ? "+" : "−"}${formatPoolCurrency(Math.abs(entry.amount))}
                         </div>
                       </div>
-                      <div className={`text-xs font-black shrink-0 ${positive ? "text-green-400" : "text-primary"}`}>
-                         {positive ? "+" : "−"}${formatPoolCurrency(Math.abs(entry.amount))}
-                      </div>
+                      {entry.gross_amount_cents != null && entry.net_amount_cents != null && (
+                        <CommunityPoolFinancialBreakdown
+                          grossAmountCents={entry.gross_amount_cents}
+                          stripeFeeCents={entry.stripe_fee_cents ?? 0}
+                          climateContributionCents={entry.climate_contribution_cents ?? 0}
+                          netAmountCents={entry.net_amount_cents}
+                          settlementStatus={entry.settlement_status}
+                          availableOn={entry.available_on}
+                          stripeBalanceTransactionId={entry.stripe_balance_transaction_id}
+                        />
+                      )}
                     </div>
                   );
                 })}

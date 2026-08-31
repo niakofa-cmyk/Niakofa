@@ -7,6 +7,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
 import { wasRequestFronted, recordPoolContribution, getPoolBalance, processPendingMinimums, syncHubReservedBalance } from "../lib/community-pool";
+import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
 import { logger } from "../lib/logger";
 import { paymentLimiter } from "../middlewares/rate-limit";
 
@@ -84,22 +85,44 @@ router.post("/stripe/webhook", async (req, res) => {
         // 0. Community Pool contribution? Record the ledger entry and stop —
         // pool contributions have no payment_transactions row.
         if (pi.metadata?.["pool_contribution"] === "true") {
-          const contribAmount = (pi.amount_received || pi.amount) / 100;
           const contributorId = parseInt(pi.metadata["user_id"] ?? "") || null;
           const communityId = parseInt(pi.metadata["community_id"] ?? "") || null;
+          const settlementIntent = await stripe!.paymentIntents.retrieve(pi.id, {
+            expand: ["latest_charge"],
+          });
+          const climateContributionCents = Math.max(
+            0,
+            Number.parseInt(pi.metadata?.["climate_contribution_cents"] ?? "0", 10) || 0,
+          );
+          const settlement = await getStripeSettlementBreakdown(stripe!, settlementIntent, {
+            climateContributionCents,
+          });
           const recorded = await recordPoolContribution({
-            amount: contribAmount,
+            amount: settlement.grossAmountCents / 100,
             userId: contributorId,
             communityId,
             stripePaymentIntentId: pi.id,
             notes: "Sponsor contribution via Stripe",
+            settlement: {
+              ...settlement,
+              stripeClimateTransactionId: pi.metadata?.["stripe_climate_transaction_id"] ?? null,
+            },
           });
           if (recorded) {
             // Pool replenished — backfill any queued guaranteed minimums
             await processPendingMinimums();
             const balance = await getPoolBalance();
             broadcast({ type: "pool_updated", payload: { balance } });
-            logger.info({ amount: contribAmount, user_id: contributorId }, "Community pool contribution recorded");
+            logger.info(
+              {
+                gross_amount: settlement.grossAmountCents / 100,
+                stripe_fee: settlement.stripeFeeCents / 100,
+                climate_contribution: settlement.climateContributionCents / 100,
+                net_amount: settlement.netAmountCents / 100,
+                user_id: contributorId,
+              },
+              "Community pool contribution settlement recorded",
+            );
           }
           break;
         }

@@ -11,6 +11,9 @@ export interface MyPoolStats {
   community_name: string;
   balance: number;
   total_contributed: number;
+  net_contributed?: number;
+  stripe_fees?: number;
+  climate_contributions?: number;
   total_fronted: number;
   total_repaid: number;
   sponsor_count: number;

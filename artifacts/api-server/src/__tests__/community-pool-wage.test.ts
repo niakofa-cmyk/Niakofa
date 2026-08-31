@@ -48,6 +48,7 @@ jest.unstable_mockModule("@workspace/db", () => {
       help_count: "help_count", highest_tier_reached: "highest_tier_reached",
     },
     communityPoolLedgerTable: { id: "id", amount: "amount", community_id: "community_id" },
+    communityPoolFinancialEventsTable: {},
     poolPendingMinimumsTable: { id: "id" },
     transactionsTable: { id: "id" },
     diasporaHubsTable: { id: "id" },

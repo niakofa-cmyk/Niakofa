@@ -93,6 +93,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   },
   communitiesTable: { id: "id", name: "name", target_reserve_amount: "target_reserve_amount" },
   communityPoolLedgerTable: { id: "id", amount: "amount", request_id: "request_id" },
+  communityPoolFinancialEventsTable: {},
   poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
   scheduledPaymentsTable: { id: "id", user_id: "user_id", status: "status" },
   walletCashoutsTable: { id: "id", user_id: "user_id", status: "status" },
