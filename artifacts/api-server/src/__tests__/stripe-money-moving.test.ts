@@ -24,6 +24,9 @@ const db: unknown = {
 const stripeConstructEvent = jest.fn();
 const stripeChargeRetrieve = jest.fn();
 const stripePaymentIntentCreate = jest.fn();
+const stripePaymentIntentList = jest.fn();
+const stripePaymentIntentRetrieve = jest.fn();
+const stripeAccountsRetrieve = jest.fn();
 const recordPoolContribution = jest.fn();
 const drizzleEq = jest.fn();
 
@@ -56,7 +59,12 @@ jest.unstable_mockModule("stripe", () => ({
   default: class StripeMock {
     webhooks = { constructEvent: stripeConstructEvent };
     charges = { retrieve: stripeChargeRetrieve };
-    paymentIntents = { create: stripePaymentIntentCreate };
+    paymentIntents = {
+      create: stripePaymentIntentCreate,
+      list: stripePaymentIntentList,
+      retrieve: stripePaymentIntentRetrieve,
+    };
+    accounts = { retrieve: stripeAccountsRetrieve };
   },
 }));
 
@@ -114,11 +122,13 @@ beforeAll(async () => {
   requireApproved = auth.requireApproved as unknown as jest.Mock;
   const { default: stripeRouter } = await import("../routes/stripe");
   const pool = await import("../routes/pool");
+  const { default: poolStripeReconciliationRouter } = await import("../routes/pool-stripe-reconciliation");
   canRecordPoolContributionWithoutStripe = pool.canRecordPoolContributionWithoutStripe;
   app = express();
   app.use(express.json());
   app.use("/api", stripeRouter);
   app.use("/api", pool.default);
+  app.use("/api", poolStripeReconciliationRouter);
 });
 
 beforeEach(() => {
@@ -135,6 +145,9 @@ beforeEach(() => {
     id: "pi_pool_test",
     client_secret: "pi_pool_test_secret",
   });
+  stripePaymentIntentList.mockResolvedValue({ data: [], has_more: false });
+  stripePaymentIntentRetrieve.mockReset();
+  stripeAccountsRetrieve.mockResolvedValue({ id: "acct_test" });
 });
 
 describe("POST /api/stripe/payment-intent", () => {
@@ -209,6 +222,31 @@ describe("POST /api/pool/contribute", () => {
     expect(canRecordPoolContributionWithoutStripe("development")).toBe(true);
     expect(canRecordPoolContributionWithoutStripe("test")).toBe(true);
     expect(canRecordPoolContributionWithoutStripe("production")).toBe(false);
+  });
+});
+
+describe("GET /api/pool/stripe/reconciliation", () => {
+  it("bounds paginated Stripe scans and reports when the result is truncated", async () => {
+    stripePaymentIntentList.mockImplementation(async (params: { starting_after?: string }) => ({
+      data: [{ id: `pi_page_${params.starting_after ?? "first"}`, status: "requires_payment_method", metadata: {} }],
+      has_more: true,
+    }));
+    stripeAccountsRetrieve.mockResolvedValue({ id: "acct_test" });
+
+    const response = await request(app)
+      .get("/api/pool/stripe/reconciliation?days=90");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      pages_scanned: 5,
+      truncated: true,
+      stripe_account_id: "acct_test",
+      missing_ledger_count: 0,
+    });
+    expect(stripePaymentIntentList).toHaveBeenCalledTimes(5);
+    expect(stripePaymentIntentList.mock.calls[1][0]).toEqual(expect.objectContaining({
+      starting_after: "pi_page_first",
+    }));
   });
 });
 

@@ -9,8 +9,13 @@ import { recordPoolContribution } from "../lib/community-pool";
 
 const router = Router();
 const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"] ?? "";
+const STRIPE_REQUEST_TIMEOUT_MS = 10_000;
+const RECONCILIATION_MAX_PAGES = 5;
 const stripe = STRIPE_SECRET_KEY
-  ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion })
+  ? new Stripe(STRIPE_SECRET_KEY, {
+      apiVersion: "2024-06-20" as Stripe.LatestApiVersion,
+      timeout: STRIPE_REQUEST_TIMEOUT_MS,
+    })
   : null;
 
 /** Safe diagnostics: exposes account identity/mode, never secrets. */
@@ -41,31 +46,58 @@ router.get("/pool/stripe/reconciliation", requireAdmin, adminLimiter, async (req
   const days = Math.min(Math.max(Number(req.query.days ?? 30) || 30, 1), 90);
   const since = Math.floor(Date.now() / 1000) - days * 86400;
   const missing: Array<Record<string, unknown>> = [];
+  let pagesScanned = 0;
+  let truncated = false;
 
   try {
-    for await (const pi of stripe.paymentIntents.list({ limit: 100, created: { gte: since } })) {
-      if (pi.status !== "succeeded" || pi.metadata?.["pool_contribution"] !== "true") continue;
-      const [ledger] = await db
-        .select({ id: communityPoolLedgerTable.id })
-        .from(communityPoolLedgerTable)
-        .where(eq(communityPoolLedgerTable.stripe_payment_intent_id, pi.id))
-        .limit(1);
-      if (!ledger) {
-        missing.push({
-          payment_intent_id: pi.id,
-          amount: (pi.amount_received || pi.amount) / 100,
-          currency: pi.currency,
-          status: pi.status,
-          livemode: pi.livemode,
-          created: pi.created,
-          user_id: Number(pi.metadata?.["user_id"]) || null,
-          community_id: Number(pi.metadata?.["community_id"]) || null,
-          description: pi.description ?? null,
-        });
+    let startingAfter: string | undefined;
+    for (let pageNumber = 0; pageNumber < RECONCILIATION_MAX_PAGES; pageNumber += 1) {
+      const page = await stripe.paymentIntents.list({
+        limit: 100,
+        created: { gte: since },
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+      pagesScanned += 1;
+
+      for (const pi of page.data) {
+        if (pi.status !== "succeeded" || pi.metadata?.["pool_contribution"] !== "true") continue;
+        const [ledger] = await db
+          .select({ id: communityPoolLedgerTable.id })
+          .from(communityPoolLedgerTable)
+          .where(eq(communityPoolLedgerTable.stripe_payment_intent_id, pi.id))
+          .limit(1);
+        if (!ledger) {
+          missing.push({
+            payment_intent_id: pi.id,
+            amount: (pi.amount_received || pi.amount) / 100,
+            currency: pi.currency,
+            status: pi.status,
+            livemode: pi.livemode,
+            created: pi.created,
+            user_id: Number(pi.metadata?.["user_id"]) || null,
+            community_id: Number(pi.metadata?.["community_id"]) || null,
+            description: pi.description ?? null,
+          });
+        }
       }
+
+      if (!page.has_more || page.data.length === 0) break;
+      if (pageNumber === RECONCILIATION_MAX_PAGES - 1) {
+        truncated = true;
+        break;
+      }
+      startingAfter = page.data[page.data.length - 1]?.id;
     }
     const account = await stripe.accounts.retrieve();
-    return res.json({ generated_at: new Date().toISOString(), lookback_days: days, stripe_account_id: account.id, missing_ledger_count: missing.length, missing });
+    return res.json({
+      generated_at: new Date().toISOString(),
+      lookback_days: days,
+      pages_scanned: pagesScanned,
+      truncated,
+      stripe_account_id: account.id,
+      missing_ledger_count: missing.length,
+      missing,
+    });
   } catch (err) {
     logger.error({ err }, "Community Pool Stripe reconciliation failed");
     return res.status(500).json({ error: "Stripe reconciliation failed." });
