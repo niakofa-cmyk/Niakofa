@@ -13,6 +13,16 @@ import {
   civicResourcesTable,
   type InsertCivicResource,
 } from "@workspace/db";
+import {
+  CENSUS_API,
+  FIPS_TO_STATE,
+  STATE_CODES,
+  fetchCensusRows,
+  offlineTexasCounties,
+  parseCountyRows,
+  parsePlaceRows,
+  type CountyRecord,
+} from "./census-coverage.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -23,126 +33,23 @@ if (!DATABASE_URL) {
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
 const db = drizzle(pool);
 const VERIFIED_AT = new Date("2026-08-30T00:00:00.000Z");
-const CENSUS_API = "https://api.census.gov/data/2025/pep/population";
 const CENSUS_API_KEY = process.env.CENSUS_API_KEY?.trim();
 const USA_LOCAL_GOV_URL = "https://www.usa.gov/state-local-governments";
 const NATIONAL_211_URL = "https://www.211.org/";
 
-const STATE_CODES: Record<string, string> = {
-  AL: "Alabama", AS: "American Samoa", AK: "Alaska", AZ: "Arizona",
-  AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut",
-  DE: "Delaware", FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho",
-  IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky",
-  LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts",
-  MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
-  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire",
-  NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina",
-  ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon",
-  PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
-  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah",
-  VT: "Vermont", VA: "Virginia", WA: "Washington", WV: "West Virginia",
-  WI: "Wisconsin", WY: "Wyoming", DC: "District of Columbia",
-};
-
-const FIPS_TO_STATE: Record<string, string> = {
-  "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO",
-  "09": "CT", "10": "DE", "11": "DC", "12": "FL", "13": "GA", "15": "HI",
-  "16": "ID", "17": "IL", "18": "IN", "19": "IA", "20": "KS", "21": "KY",
-  "22": "LA", "23": "ME", "24": "MD", "25": "MA", "26": "MI", "27": "MN",
-  "28": "MS", "29": "MO", "30": "MT", "31": "NE", "32": "NV", "33": "NH",
-  "34": "NJ", "35": "NM", "36": "NY", "37": "NC", "38": "ND", "39": "OH",
-  "40": "OK", "41": "OR", "42": "PA", "44": "RI", "45": "SC", "46": "SD",
-  "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA",
-  "54": "WV", "55": "WI", "56": "WY", "60": "AS", "66": "GU", "69": "MP",
-  "72": "PR", "78": "VI",
-};
-
-// The Texas list is an offline safety net for environments where Census API
-// access requires a key. It is used without fabricated GEOIDs; Census remains
-// the source of truth for national county names and identifiers when available.
-const TX_COUNTIES = `
-Anderson|Andrews|Angelina|Aransas|Archer|Armstrong|Atascosa|Austin|Bailey|Bandera|Bastrop|Baylor|Bee|Bell|Bexar|Blanco|Borden|Bosque|Bowie|Brazoria|Brazos|Brewster|Briscoe|Brooks|Brown|Burleson|Burnet|
-Caldwell|Calhoun|Callahan|Cameron|Camp|Carson|Cass|Castro|Chambers|Cherokee|Childress|Clay|Cochran|Coke|Coleman|Collin|Collingsworth|Colorado|Comal|Comanche|Concho|Cooke|Coryell|Cottle|Crane|Crockett|Crosby|Culberson|
-Dallam|Dallas|Dawson|Deaf Smith|Delta|Denton|DeWitt|Dickens|Dimmit|Donley|Duval|Eastland|Ector|Edwards|Ellis|El Paso|Erath|Falls|Fannin|Fayette|Fisher|Floyd|Foard|Fort Bend|Franklin|Freestone|Frio|
-Gaines|Galveston|Garza|Gillespie|Glasscock|Goliad|Gonzales|Gray|Grayson|Gregg|Grimes|Guadalupe|Hale|Hall|Hamilton|Hansford|Hardeman|Hardin|Harrison|Hartley|Harris|Haskell|Hays|Hemphill|Henderson|Hidalgo|Hill|Hockley|Hood|Hopkins|Houston|Howard|Hudspeth|Hunt|Hutchinson|Irion|
-Jack|Jackson|Jasper|Jeff Davis|Jefferson|Jim Hogg|Jim Wells|Johnson|Jones|Karnes|Kaufman|Kendall|Kenedy|Kent|Kerr|Kimble|King|Kinney|Kleberg|Knox|Lamar|Lamb|Lampasas|LaSalle|Lavaca|Lee|Leon|Liberty|Limestone|Lipscomb|Live Oak|Llano|Loving|Lubbock|Lynn|
-Madison|Marion|Martin|Mason|Matagorda|Maverick|McCulloch|McLennan|McMullen|Medina|Menard|Midland|Milam|Mills|Mitchell|Montague|Montgomery|Moore|Morris|Motley|Nacogdoches|Navarro|Newton|Nolan|Nueces|Ochiltree|Oldham|Orange|
-Palo Pinto|Panola|Parker|Parmer|Pecos|Polk|Potter|Presidio|Rains|Randall|Reagan|Real|Red River|Reeves|Refugio|Roberts|Robertson|Rockwall|Runnels|Rusk|
-Sabine|San Augustine|San Jacinto|San Patricio|San Saba|Schleicher|Scurry|Shackelford|Shelby|Sherman|Smith|Somervell|Starr|Stephens|Sterling|Stonewall|Sutton|Swisher|
-Tarrant|Taylor|Terrell|Terry|Throckmorton|Titus|Tom Green|Travis|Trinity|Tyler|Upshur|Upton|Uvalde|Val Verde|Van Zandt|Victoria|Walker|Waller|Ward|Washington|Webb|Wharton|Wheeler|Wichita|Wilbarger|Willacy|Williamson|Wilson|Winkler|Wise|Wood|Yoakum|Young|Zapata|Zavala
-`.split("|").map((county) => county.trim()).filter(Boolean);
-
-if (TX_COUNTIES.length !== 254) {
-  throw new Error(`Expected 254 Texas counties in offline fallback, got ${TX_COUNTIES.length}`);
-}
-
-type CountyRecord = {
-  name: string;
-  stateFips: string;
-  countyFips: string | null;
-};
-
-async function censusRows(url: string): Promise<string[][]> {
-  const requestUrl = CENSUS_API_KEY
-    ? `${url}&key=${encodeURIComponent(CENSUS_API_KEY)}`
-    : url;
-  const response = await fetch(requestUrl, { headers: { accept: "application/json" } });
-  const body = await response.text();
-  if (!response.ok) {
-    throw new Error(`Census API ${response.status}: ${body.slice(0, 240)}`);
-  }
-  let rows: unknown;
-  try {
-    rows = JSON.parse(body);
-  } catch {
-    throw new Error(`Census API returned non-JSON content: ${body.slice(0, 120)}`);
-  }
-  if (!Array.isArray(rows) || rows.length < 1) {
-    throw new Error("Census API returned no rows");
-  }
-  return rows as string[][];
-}
-
 async function loadNationalCounties(): Promise<CountyRecord[]> {
   if (!CENSUS_API_KEY) return [];
-  const rows = await censusRows(`${CENSUS_API}?get=NAME&for=county:*`);
-  const [header, ...data] = rows;
-  const nameIndex = header.indexOf("NAME");
-  const stateIndex = header.indexOf("state");
-  const countyIndex = header.indexOf("county");
-  if (nameIndex < 0 || stateIndex < 0 || countyIndex < 0) {
-    throw new Error("Unexpected Census county response");
-  }
-  return data.map((row) => ({
-    name: row[nameIndex].replace(
-      / County$| Parish$| Borough$| Census Area$| Municipality$| city and borough$/i,
-      "",
-    ),
-    stateFips: row[stateIndex],
-    countyFips: row[countyIndex],
-  }));
-}
-
-function offlineTexasCounties(): CountyRecord[] {
-  return TX_COUNTIES.map((name) => ({
-    name,
-    stateFips: "48",
-    countyFips: null,
-  }));
+  return parseCountyRows(await fetchCensusRows(
+    `${CENSUS_API}?get=NAME&for=county:*`,
+    CENSUS_API_KEY,
+  ));
 }
 
 async function loadPlaces(stateFips: string) {
-  const rows = await censusRows(`${CENSUS_API}?get=NAME&for=place:*&in=state:${stateFips}`);
-  const [header, ...data] = rows;
-  const nameIndex = header.indexOf("NAME");
-  const placeIndex = header.indexOf("place");
-  if (nameIndex < 0 || placeIndex < 0) {
-    throw new Error("Unexpected Census place response");
-  }
-  return data.map((row) => ({
-    name: row[nameIndex].replace(/ city$| town$| village$| borough$| CDP$/i, ""),
-    placeFips: row[placeIndex],
-  }));
+  return parsePlaceRows(await fetchCensusRows(
+    `${CENSUS_API}?get=NAME&for=place:*&in=state:${stateFips}`,
+    CENSUS_API_KEY,
+  ));
 }
 
 function nationalStateBaseline(state: string): InsertCivicResource {

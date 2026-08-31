@@ -1,4 +1,4 @@
-import Stripe from "stripe";
+import type Stripe from "stripe";
 
 export type PoolSettlementStatus = "pending" | "available" | "paid_out" | "failed";
 
