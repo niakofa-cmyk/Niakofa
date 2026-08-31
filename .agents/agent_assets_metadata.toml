@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "tQ4TUGddnX8ZYBklAnQnb"
+uri = "file://screenshots/niakofa-census-verification-landing-2026-08-31.jpg"
+type = "image"
+title = "Niakofa landing preview"
+description = "Verified 1280×720 landing screen captured from the running web workflow after Census coverage updates."
+logical_id = "3f1a3e51-df94-4c88-95a6-dfef6b654cf1"
+content_hash = "sha256:9bd261e7006c9b71b7fac9e46d95bd86a814c8e5ac36a83b886dc0755ff90783"
+size = 32276
+mtime_ms = 1788205191634
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:60f6808a-b80f-4d05-9a92-ce5c4955e3ff/3f1a3e51-df94-4c88-95a6-dfef6b654cf1/2e00079d-a82a-4364-9eac-62ef00bba704"
+storage_version_token = "1788205834810533"
+content_type = "image/jpeg"
