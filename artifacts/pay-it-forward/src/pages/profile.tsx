@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { useCivicResources } from "@/hooks/useCivicResources";
 import { usePoolHistoryRefresh } from "@/lib/usePoolHistoryRefresh";
+import { CommunityPoolFinancialBreakdown } from "@/components/CommunityPoolFinancialBreakdown";
 
 type ProfileTab = "overview" | "history" | "settings";
 
@@ -1488,24 +1489,17 @@ export default function ProfileScreen() {
                       </span>
                     </div>
                     {tx.type === "pool_contribution" && tx.metadata && !isPoolRefund && (
-                      <div className="mt-2 pt-2 border-t border-border/60 space-y-0.5 text-[11px] text-muted-foreground">
-                        <div className="flex justify-between">
-                          <span>Processing fee</span>
-                          <span>-{fmtCents(tx.metadata["stripe_fee_cents"])}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Climate contribution</span>
-                          <span>-{fmtCents(tx.metadata["climate_contribution_cents"])}</span>
-                        </div>
-                        <div className="flex justify-between font-semibold text-foreground/80">
-                          <span>Net added to Pool</span>
-                          <span>{fmtCents(tx.metadata["net_amount_cents"])}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Status</span>
-                          <span>{settlementStatusLabel(tx.metadata["settlement_status"])}</span>
-                        </div>
-                      </div>
+                      <CommunityPoolFinancialBreakdown
+                        grossAmountCents={Number(tx.metadata["gross_amount_cents"] ?? 0)}
+                        stripeFeeCents={Number(tx.metadata["stripe_fee_cents"] ?? 0)}
+                        climateContributionCents={Number(tx.metadata["climate_contribution_cents"] ?? 0)}
+                        netAmountCents={Number(tx.metadata["net_amount_cents"] ?? 0)}
+                        stripeVerificationStatus={String(tx.metadata["stripe_verification_status"] ?? "unverified")}
+                        settlementStatus={String(tx.metadata["settlement_status"] ?? "pending")}
+                        availableOn={tx.metadata["available_on"] as string | null | undefined}
+                        paidOutAt={tx.metadata["paid_out_at"] as string | null | undefined}
+                        paidOutReference={tx.metadata["paid_out_reference"] as string | null | undefined}
+                      />
                     )}
                     {isPoolRefund && tx.metadata && (
                       <div className="mt-2 pt-2 border-t border-border/60 space-y-0.5 text-[11px] text-muted-foreground">

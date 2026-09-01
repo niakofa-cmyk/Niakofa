@@ -13,6 +13,7 @@ import { eq, and, lte, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "./logger";
+import { getStripeSecretKey } from "./stripe-config";
 import { isAmbiguousStripeError } from "./stripe-errors";
 import { buildCashoutTransferParams, cashoutIdempotencyKey } from "./stripe-cashout";
 import { workerRan } from "./worker-registry";
@@ -516,7 +517,7 @@ async function reconcileOneCashoutRow(
 }
 
 async function processCashoutReconciliation(): Promise<void> {
-  const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"];
+  const STRIPE_SECRET_KEY = getStripeSecretKey();
   if (!STRIPE_SECRET_KEY) {
     logger.debug("cashout-reconciliation: STRIPE_SECRET_KEY not configured — skipping run");
     return;
@@ -635,7 +636,7 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DRIFT_ALERT_THRESHOLD = 10; // dollars
 
 async function checkLedgerStripeDrift(): Promise<void> {
-  const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"];
+  const STRIPE_SECRET_KEY = getStripeSecretKey();
   if (!STRIPE_SECRET_KEY) {
     logger.debug("ledger-drift: STRIPE_SECRET_KEY not configured — skipping daily drift check");
     return;

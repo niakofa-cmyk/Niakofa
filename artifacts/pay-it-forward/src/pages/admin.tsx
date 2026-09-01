@@ -171,6 +171,25 @@ interface AuditLogEntry {
   admin_name?: string;
 }
 
+interface AdminPoolSettlement {
+  id: number;
+  user_id: number | null;
+  gross_amount_cents: number;
+  stripe_fee_cents: number;
+  climate_contribution_cents: number;
+  net_amount_cents: number;
+  currency: string;
+  stripe_verification_status: string;
+  stripe_verified_at: string | null;
+  stripe_verification_error: string | null;
+  settlement_status: string;
+  available_on: string | null;
+  paid_out_at: string | null;
+  paid_out_reference: string | null;
+  stripe_balance_transaction_id: string | null;
+  created_at: string;
+}
+
 interface PledgePoolData {
   total_pledged: number;
   total_paid: number;
@@ -3870,22 +3889,123 @@ function BusinessApprovalsPanel() {
 }
 
 function OperationsTab() {
-  const [sub, setSub] = useState<"cashouts" | "hardship" | "businesses">("cashouts");
+  const [sub, setSub] = useState<"cashouts" | "hardship" | "businesses" | "pool_settlements">("cashouts");
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
-        {(["cashouts", "hardship", "businesses"] as const).map(s => (
+        {(["cashouts", "hardship", "businesses", "pool_settlements"] as const).map(s => (
           <button key={s} onClick={() => setSub(s)} style={{ touchAction: "manipulation" }}
             className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
               sub === s ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground bg-background active:bg-muted"
             }`}>
-            {s}
+            {s === "pool_settlements" ? "Pool payouts" : s}
           </button>
         ))}
       </div>
       {sub === "cashouts" && <CashoutsPanel />}
       {sub === "hardship" && <HardshipPanel />}
       {sub === "businesses" && <BusinessApprovalsPanel />}
+      {sub === "pool_settlements" && <PoolSettlementsPanel />}
+    </div>
+  );
+}
+
+function PoolSettlementsPanel() {
+  const [rows, setRows] = useState<AdminPoolSettlement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [reference, setReference] = useState<Record<number, string>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/pool/settlements?settlement_status=available&limit=100`, {
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (!res.ok) throw new Error("Could not load pool settlements.");
+      const data = await res.json() as { settlements: AdminPoolSettlement[] };
+      setRows(data.settlements ?? []);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load pool settlements.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const markPaidOut = async (id: number) => {
+    const payoutReference = reference[id]?.trim() ?? "";
+    if (!payoutReference) {
+      toast({ title: "Payout reference required", description: "Enter the transfer, batch, or ledger reference first.", variant: "destructive" });
+      return;
+    }
+    setBusyId(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/pool/settlements/${id}/mark-paid-out`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ payout_reference: payoutReference }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Could not mark settlement paid out.");
+      toast({ title: "Payout confirmed", description: "The settlement is now recorded as paid out." });
+      await load();
+    } catch (err) {
+      toast({ title: "Payout not confirmed", description: err instanceof Error ? err.message : "Try again.", variant: "destructive" });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-2 font-bold"><Banknote className="h-4 w-4 text-primary" /> Community Pool payouts</div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Only Stripe-verified funds that are available can be confirmed. This action writes an immutable audit event and updates contributor History.
+        </p>
+      </div>
+      {loading && <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">Loading available settlements…</div>}
+      {error && <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>}
+      {!loading && !error && rows.length === 0 && (
+        <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">No available, verified pool settlements are waiting for payout confirmation.</div>
+      )}
+      {rows.map((row) => (
+        <div key={row.id} className="rounded-2xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold">Settlement #{row.id}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {row.stripe_balance_transaction_id ?? "Stripe transaction linked"} · {fmtDate(row.created_at)}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="font-black">${(row.net_amount_cents / 100).toFixed(2)}</div>
+              <div className="text-[10px] text-green-400">Stripe verified · Available</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground">
+            <div>Gross<br /><span className="font-bold text-foreground">${(row.gross_amount_cents / 100).toFixed(2)}</span></div>
+            <div>Stripe fee<br /><span className="font-bold text-foreground">-${(row.stripe_fee_cents / 100).toFixed(2)}</span></div>
+            <div>Climate<br /><span className="font-bold text-foreground">-${(row.climate_contribution_cents / 100).toFixed(2)}</span></div>
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={reference[row.id] ?? ""}
+              onChange={(event) => setReference((current) => ({ ...current, [row.id]: event.target.value }))}
+              placeholder="Payout reference (required)"
+              maxLength={200}
+              className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-xs"
+            />
+            <Button size="sm" disabled={busyId === row.id} onClick={() => void markPaidOut(row.id)}>
+              {busyId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm paid out"}
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -935,6 +935,13 @@ export async function recordPoolContributionSettlement(params: {
   notes?: string;
 }): Promise<{ recorded: boolean; alreadyRecorded: boolean; ledgerId: number | null }> {
   const { settlement, userId, historyUserId = userId, communityId, notes } = params;
+  // Automatic Stripe processing must never confirm a Niakofa payout.
+  if ((settlement as { settlementStatus: string }).settlementStatus === "paid_out") {
+    throw new Error(
+      "recordPoolContributionSettlement() cannot set settlement_status='paid_out'. " +
+      "Use the explicit operator payout workflow after verification and availability.",
+    );
+  }
   if (settlement.grossAmountCents <= 0 || settlement.netAmountCents < 0) {
     throw new Error("Invalid Stripe settlement amounts");
   }
@@ -1009,6 +1016,8 @@ export async function recordPoolContributionSettlement(params: {
         climate_contribution_cents: settlement.climateContributionCents,
         net_amount_cents: settlement.netAmountCents,
         currency: settlement.currency,
+        stripe_verification_status: "verified",
+        stripe_verified_at: new Date(),
         settlement_status: settlement.settlementStatus,
         available_on: settlement.availableOn,
         stripe_livemode: settlement.stripeLivemode,
@@ -1025,6 +1034,8 @@ export async function recordPoolContributionSettlement(params: {
           climate_contribution_cents: settlement.climateContributionCents,
           net_amount_cents: settlement.netAmountCents,
           currency: settlement.currency,
+          stripe_verification_status: "verified",
+          stripe_verified_at: new Date(),
           settlement_status: settlement.settlementStatus,
           available_on: settlement.availableOn,
         };

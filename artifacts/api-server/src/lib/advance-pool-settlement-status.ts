@@ -10,6 +10,7 @@ import { broadcast } from "./ws-hub";
 import { getPoolBalance } from "./community-pool";
 import { logger } from "./logger";
 import { workerRan } from "./worker-registry";
+import { getStripeSecretKey } from "./stripe-config";
 
 export async function advancePendingPoolSettlements(
   stripe: Stripe,
@@ -59,6 +60,7 @@ export async function advancePendingPoolSettlements(
           await tx.execute(sql`
             UPDATE transactions
             SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+              'stripe_verification_status', 'verified',
               'settlement_status', 'available',
               'available_on', ${balanceTransaction.available_on
                 ? new Date(balanceTransaction.available_on * 1000).toISOString()
@@ -86,7 +88,7 @@ export async function advancePendingPoolSettlements(
  * guarded at API startup; no `paid_out` transition is inferred here.
  */
 export function startPoolSettlementStatusWorker(): () => void {
-  const secretKey = process.env["STRIPE_SECRET_KEY"];
+  const secretKey = getStripeSecretKey();
   if (!secretKey) {
     logger.warn("pool-settlement-worker: Stripe not configured — advancement disabled");
     return () => undefined;

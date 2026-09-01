@@ -1,4 +1,4 @@
-import { pgTable, serial, text, real, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, real, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -66,9 +66,18 @@ export const communityPoolFinancialEventsTable = pgTable("community_pool_financi
   climate_contribution_cents: integer("climate_contribution_cents").notNull().default(0),
   net_amount_cents: integer("net_amount_cents").notNull(),
   currency: text("currency").notNull().default("usd"),
+  // Track A: automatic provider verification. This answers whether Stripe's
+  // records were independently verified; it is never an operator approval.
+  stripe_verification_status: text("stripe_verification_status").notNull().default("unverified"),
+  stripe_verified_at: timestamp("stripe_verified_at", { withTimezone: true }),
+  stripe_verification_error: text("stripe_verification_error"),
   settlement_status: text("settlement_status").notNull().default("pending"),
   available_on: timestamp("available_on", { withTimezone: true }),
   paid_out_at: timestamp("paid_out_at", { withTimezone: true }),
+  // Track B: explicit operator confirmation that Niakofa released the funds.
+  paid_out_by: integer("paid_out_by"),
+  paid_out_reference: text("paid_out_reference"),
+  paid_out_note: text("paid_out_note"),
   stripe_livemode: boolean("stripe_livemode").notNull().default(false),
   created_at: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -80,6 +89,23 @@ export const communityPoolFinancialEventsTable = pgTable("community_pool_financi
 
 export type CommunityPoolFinancialEvent = typeof communityPoolFinancialEventsTable.$inferSelect;
 export type NewCommunityPoolFinancialEvent = typeof communityPoolFinancialEventsTable.$inferInsert;
+
+/** Immutable, insert-only audit trail for operator payout confirmations. */
+export const communityPoolFinancialAuditEventsTable = pgTable("community_pool_financial_audit_events", {
+  id: serial("id").primaryKey(),
+  financial_event_id: integer("financial_event_id").notNull(),
+  action: text("action").notNull(),
+  actor_user_id: integer("actor_user_id").notNull(),
+  reference: text("reference"),
+  note: text("note"),
+  metadata: jsonb("metadata"),
+  created_at: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`NOW()`),
+});
+
+export type CommunityPoolFinancialAuditEvent = typeof communityPoolFinancialAuditEventsTable.$inferSelect;
+export type NewCommunityPoolFinancialAuditEvent = typeof communityPoolFinancialAuditEventsTable.$inferInsert;
 
 /**
  * pool_pending_minimums — guaranteed minimums the pool COULDN'T pay because

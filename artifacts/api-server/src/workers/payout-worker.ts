@@ -13,6 +13,7 @@ import { db, paymentTransactionsTable, transactionsTable } from "@workspace/db";
 import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey } from "../lib/stripe-config";
 import { trackWorker } from "../lib/worker-lifecycle";
 
 async function processPayout(job: Job<PayoutJobData>): Promise<void> {
@@ -22,7 +23,7 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     request_title,
   } = job.data;
 
-  const stripeKey = process.env["STRIPE_SECRET_KEY"];
+  const stripeKey = getStripeSecretKey();
   if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not configured");
 
   const stripe = new Stripe(stripeKey);

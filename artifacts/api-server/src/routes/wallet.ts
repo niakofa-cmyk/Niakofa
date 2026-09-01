@@ -49,6 +49,7 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey } from "../lib/stripe-config";
 import { paymentLimiter } from "../middlewares/rate-limit";
 import { enqueueCashoutRetry } from "../lib/queue";
 import { buildCashoutTransferParams, cashoutIdempotencyKey } from "../lib/stripe-cashout";
@@ -56,7 +57,7 @@ import { getSystemSetting } from "../lib/db-helpers";
 
 const router = Router();
 
-const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"] ?? "";
+const STRIPE_SECRET_KEY = getStripeSecretKey();
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion })
   : null;
@@ -71,7 +72,7 @@ router.post(
     if (!stripe) {
       return res.status(503).json({
         error: "Stripe is not configured.",
-        setup: "Set STRIPE_SECRET_KEY to enable wallet cashouts.",
+        setup: "Configure Stripe payments to enable wallet cashouts.",
       });
     }
 

@@ -1,6 +1,7 @@
 import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
+import { getStripeSecretKey, getStripeWebhookSecret } from "./lib/stripe-config";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
 import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startLedgerDriftMonitor, startNet30InvoiceReminderWorker } from "./lib/scheduler";
 import {
@@ -51,7 +52,7 @@ if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
 
 if (
   process.env.NODE_ENV === "production" &&
-  (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET)
+  (!getStripeSecretKey() || !getStripeWebhookSecret())
 ) {
   throw new Error(
     "STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be set in production. " +

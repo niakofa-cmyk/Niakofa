@@ -13,6 +13,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { paymentLimiter, generalApiLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey } from "../lib/stripe-config";
 import { broadcast } from "../lib/ws-hub";
 import {
   getPoolBalance,
@@ -26,7 +27,7 @@ import {
 } from "../lib/community-pool";
 import Stripe from "stripe";
 
-const _STRIPE_SK = process.env["STRIPE_SECRET_KEY"] ?? "";
+const _STRIPE_SK = getStripeSecretKey();
 const _stripe = _STRIPE_SK
   ? new Stripe(_STRIPE_SK, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion })
   : null;
@@ -191,8 +192,11 @@ router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
         stripe_fee_cents: communityPoolFinancialEventsTable.stripe_fee_cents,
         climate_contribution_cents: communityPoolFinancialEventsTable.climate_contribution_cents,
         net_amount_cents: communityPoolFinancialEventsTable.net_amount_cents,
+         stripe_verification_status: communityPoolFinancialEventsTable.stripe_verification_status,
         settlement_status: communityPoolFinancialEventsTable.settlement_status,
         available_on: communityPoolFinancialEventsTable.available_on,
+         paid_out_at: communityPoolFinancialEventsTable.paid_out_at,
+         paid_out_reference: communityPoolFinancialEventsTable.paid_out_reference,
         stripe_balance_transaction_id: communityPoolFinancialEventsTable.stripe_balance_transaction_id,
          stripe_climate_transaction_id: communityPoolFinancialEventsTable.stripe_climate_transaction_id,
       })
@@ -222,8 +226,11 @@ router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
         stripe_fee_cents: r.stripe_fee_cents,
         climate_contribution_cents: r.climate_contribution_cents,
         net_amount_cents: r.net_amount_cents,
+        stripe_verification_status: r.stripe_verification_status,
         settlement_status: r.settlement_status,
         available_on: r.available_on,
+        paid_out_at: r.paid_out_at,
+        paid_out_reference: r.paid_out_reference,
         stripe_balance_transaction_id: r.stripe_balance_transaction_id,
          stripe_climate_transaction_id: r.stripe_climate_transaction_id,
       })),
@@ -356,8 +363,11 @@ router.get("/pool/my-ledger", requireAuth, async (req, res) => {
         stripe_fee_cents: communityPoolFinancialEventsTable.stripe_fee_cents,
         climate_contribution_cents: communityPoolFinancialEventsTable.climate_contribution_cents,
         net_amount_cents: communityPoolFinancialEventsTable.net_amount_cents,
+         stripe_verification_status: communityPoolFinancialEventsTable.stripe_verification_status,
         settlement_status: communityPoolFinancialEventsTable.settlement_status,
         available_on: communityPoolFinancialEventsTable.available_on,
+         paid_out_at: communityPoolFinancialEventsTable.paid_out_at,
+         paid_out_reference: communityPoolFinancialEventsTable.paid_out_reference,
         stripe_balance_transaction_id: communityPoolFinancialEventsTable.stripe_balance_transaction_id,
          stripe_climate_transaction_id: communityPoolFinancialEventsTable.stripe_climate_transaction_id,
       })
@@ -465,7 +475,7 @@ router.post("/pool/donate", paymentLimiter, async (req, res) => {
   if (!_stripe) {
     return res.status(503).json({
       error: "Anonymous donations require Stripe to be configured.",
-      setup: "Ask the admin to add the STRIPE_SECRET_KEY to enable real donations.",
+      setup: "Ask the admin to configure Stripe payments to enable real donations.",
     });
   }
 

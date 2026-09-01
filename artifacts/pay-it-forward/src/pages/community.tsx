@@ -1656,8 +1656,11 @@ export default function CommunityScreen() {
                   stripe_fee_cents?: number | null;
                   climate_contribution_cents?: number | null;
                   net_amount_cents?: number | null;
+                  stripe_verification_status?: string | null;
                   settlement_status?: string | null;
                   available_on?: string | Date | null;
+                  paid_out_at?: string | Date | null;
+                  paid_out_reference?: string | null;
                   stripe_balance_transaction_id?: string | null;
                    stripe_climate_transaction_id?: string | null;
                 }) => {
@@ -1690,8 +1693,11 @@ export default function CommunityScreen() {
                           stripeFeeCents={entry.stripe_fee_cents ?? 0}
                           climateContributionCents={entry.climate_contribution_cents ?? 0}
                           netAmountCents={entry.net_amount_cents}
+                          stripeVerificationStatus={entry.stripe_verification_status}
                           settlementStatus={entry.settlement_status}
                           availableOn={entry.available_on}
+                          paidOutAt={entry.paid_out_at}
+                          paidOutReference={entry.paid_out_reference}
                           stripeBalanceTransactionId={entry.stripe_balance_transaction_id}
                           stripeClimateTransactionId={entry.stripe_climate_transaction_id}
                         />

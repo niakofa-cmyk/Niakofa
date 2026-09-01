@@ -27,6 +27,7 @@ import { eq, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE, type CashoutJobData } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey } from "../lib/stripe-config";
 import { isAmbiguousStripeError } from "../lib/stripe-errors";
 import { buildCashoutTransferParams, cashoutIdempotencyKey } from "../lib/stripe-cashout";
 import { trackWorker } from "../lib/worker-lifecycle";
@@ -34,7 +35,7 @@ import { trackWorker } from "../lib/worker-lifecycle";
 async function processCashout(job: Job<CashoutJobData>): Promise<void> {
   const { cashout_id, user_id, amount_cents, stripe_account_id } = job.data;
 
-  const stripeKey = process.env["STRIPE_SECRET_KEY"];
+  const stripeKey = getStripeSecretKey();
   if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not configured");
 
   const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
@@ -186,7 +187,7 @@ async function handleCashoutFailure(job: Job<CashoutJobData>, err: Error): Promi
     // - Transfer returned (new or cached) → Stripe sent funds, mark completed (DO NOT refund)
     // - Stripe error that is definitively NOT a duplicate (e.g. invalid_account) → refund
     // - Ambiguous error (timeout, network, etc.) → mark 'reconciliation_required' (fail-closed)
-    const stripeKey = process.env["STRIPE_SECRET_KEY"];
+    const stripeKey = getStripeSecretKey();
     if (stripeKey) {
       try {
         const stripeClient = new Stripe(stripeKey, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });

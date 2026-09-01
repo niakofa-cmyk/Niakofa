@@ -25,11 +25,12 @@ import { z } from "zod";
 import { moderatePostText } from "../lib/post-moderation";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey } from "../lib/stripe-config";
 import { recordPoolContribution, processPendingMinimums, getHubReservedBalance } from "../lib/community-pool";
 
 // Same graceful-degradation pattern as pool.ts / wallet.ts / stripe.ts —
 // pledges work in dev mode without a Stripe key, but real charges require it.
-const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"] ?? "";
+const STRIPE_SECRET_KEY = getStripeSecretKey();
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion })
   : null;

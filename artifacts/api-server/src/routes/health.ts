@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey, getStripeWebhookSecret } from "../lib/stripe-config";
 import { getWorkerHealth, areAllCriticalWorkersRunning } from "../lib/worker-registry";
 import { isRedisConfigured, getRedisUrlStatus, getRedisConnection } from "../lib/queue";
 import { requireAuth } from "../middlewares/auth";
@@ -206,8 +207,8 @@ router.get("/readiness", async (req, res) => {
   const redisRequired = process.env.NODE_ENV === "production";
   const mapConfigured = Boolean(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
   const stripeConfigured =
-    Boolean(process.env.STRIPE_SECRET_KEY) &&
-    Boolean(process.env.STRIPE_WEBHOOK_SECRET);
+    Boolean(getStripeSecretKey()) &&
+    Boolean(getStripeWebhookSecret());
   const livekit = getLiveKitReadiness();
   const dependencies = {
     database: {

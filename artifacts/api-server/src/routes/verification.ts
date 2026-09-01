@@ -6,12 +6,13 @@ import { db, usersTable, reportsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import Stripe from "stripe";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey } from "../lib/stripe-config";
 import { sendSms } from "../lib/sms";
 import { broadcast } from "../lib/ws-hub";
 
 const router = Router();
 
-const STRIPE_SK = process.env["STRIPE_SECRET_KEY"] ?? "";
+const STRIPE_SK = getStripeSecretKey();
 const stripe = STRIPE_SK ? new Stripe(STRIPE_SK, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion }) : null;
 const APP_URL = process.env["APP_URL"] ?? "https://niakofa.com";
 

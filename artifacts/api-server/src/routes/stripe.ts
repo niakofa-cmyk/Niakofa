@@ -9,13 +9,14 @@ import { sendPushToUser } from "./push";
 import { wasRequestFronted, recordPoolContributionSettlement, getPoolBalance, processPendingMinimums, syncHubReservedBalance } from "../lib/community-pool";
 import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey, getStripeWebhookSecret } from "../lib/stripe-config";
 import { paymentLimiter } from "../middlewares/rate-limit";
 import { reversePoolContributionOnRefund } from "../lib/pool-contribution-refund";
 
 const router = Router();
 
-const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"] ?? "";
-const STRIPE_WEBHOOK_SECRET = process.env["STRIPE_WEBHOOK_SECRET"] ?? "";
+const STRIPE_SECRET_KEY = getStripeSecretKey();
+const STRIPE_WEBHOOK_SECRET = getStripeWebhookSecret();
 const APP_URL = process.env["APP_URL"] ?? "http://localhost:5000";
 
 // Stripe client — null if not configured (graceful degradation)

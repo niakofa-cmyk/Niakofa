@@ -5,11 +5,12 @@ import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey, getStripeWebhookSecret } from "../lib/stripe-config";
 import { recordPoolContributionSettlement } from "../lib/community-pool";
 import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
 
 const router = Router();
-const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"] ?? "";
+const STRIPE_SECRET_KEY = getStripeSecretKey();
 const STRIPE_REQUEST_TIMEOUT_MS = 10_000;
 const RECONCILIATION_MAX_PAGES = 5;
 const stripe = STRIPE_SECRET_KEY
@@ -30,7 +31,7 @@ router.get("/pool/stripe/config-health", requireAdmin(), adminLimiter, async (_r
       livemode: STRIPE_SECRET_KEY.startsWith("sk_live_"),
       charges_enabled: Boolean(account.charges_enabled),
       payouts_enabled: Boolean(account.payouts_enabled),
-      webhook_secret_configured: Boolean(process.env["STRIPE_WEBHOOK_SECRET"]),
+      webhook_secret_configured: Boolean(getStripeWebhookSecret()),
       app_url: process.env["APP_URL"] ?? null,
       allowed_origin: process.env["ALLOWED_ORIGIN"] ?? null,
       expected_webhook_path: "/api/stripe/webhook",

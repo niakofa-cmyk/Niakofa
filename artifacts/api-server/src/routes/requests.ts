@@ -27,13 +27,14 @@ import { getTrustTier, meetsQualityGate, TIER_RANK, tierAtLeast, isSensitiveCate
 import type { TrustTier } from "@workspace/trust-tiers";
 import { stripTags } from "../lib/sanitize";
 import { logger } from "../lib/logger";
+import { getStripeSecretKey } from "../lib/stripe-config";
 import { sendReceipt } from "../lib/mailer";
 import { moderateRequestText } from "../lib/post-moderation";
 import Stripe from "stripe";
 import type { repaymentPlansTable as RepaymentPlansTable } from "@workspace/db";
 
 // Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
-const _STRIPE_SK = process.env["STRIPE_SECRET_KEY"] ?? "";
+const _STRIPE_SK = getStripeSecretKey();
 const _stripe = _STRIPE_SK
   ? new Stripe(_STRIPE_SK, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion })
   : null;
