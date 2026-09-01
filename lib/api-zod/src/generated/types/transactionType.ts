@@ -7,7 +7,7 @@
  */
 
 /**
- * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act
+ * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act, pool_contribution=user funded the Community Pool; amount is gross and metadata contains the settlement breakdown
  */
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 
@@ -18,4 +18,5 @@ export const TransactionType = {
   pledge_sent: 'pledge_sent',
   pledge_repayment: 'pledge_repayment',
   goodwill: 'goodwill',
+  pool_contribution: 'pool_contribution',
 } as const;

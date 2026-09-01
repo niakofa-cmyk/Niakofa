@@ -13,6 +13,7 @@ import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 import { MAX_POOL_AMOUNT, MIN_POOL_AMOUNT, PoolContributionPanel } from "@/components/PoolContributionPanel";
 import { CommunityPoolFinancialBreakdown } from "@/components/CommunityPoolFinancialBreakdown";
+import { PoolHealthStrip } from "@/components/PoolHealthStrip";
 import { useCivicResources } from "@/hooks/useCivicResources";
 
 interface GratitudePost {
@@ -1598,6 +1599,25 @@ export default function CommunityScreen() {
                 </motion.div>
               );
             })()}
+
+            {poolStats && (
+              <PoolHealthStrip
+                stats={{
+                  balance: poolStats.balance ?? 0,
+                  required_reserve: poolStats.required_reserve ?? 0,
+                  spendable: poolStats.spendable ?? 0,
+                  coverage_helper_hours: poolStats.coverage_helper_hours ?? 0,
+                  pool_health_pct: poolStats.pool_health_pct ?? 100,
+                  pool_status: poolStats.pool_status ?? "healthy",
+                  minimum_hourly_rate: poolStats.minimum_hourly_rate ?? 15,
+                  reserve_policy: {
+                    helpers_covered: poolStats.reserve_policy?.helpers_covered ?? 10,
+                    guaranteed_hours: poolStats.reserve_policy?.guaranteed_hours ?? 4,
+                    safety_multiplier: poolStats.reserve_policy?.safety_multiplier ?? 1.25,
+                  },
+                }}
+              />
+            )}
 
             {/* Pending minimums — pool ran dry, helpers waiting on backfill */}
             {(poolStats?.pending_minimums_count ?? 0) > 0 && (

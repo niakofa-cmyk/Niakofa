@@ -1,3 +1,4 @@
+- [Pool History accounting](pool-history-accounting.md) — Pool History is a linked projection: show gross, retain settlement details, and update corrections in place.
 - [Backend test wiring](backend-test-wiring.md) — API Jest config, serialized ESM mocks, and split test runners must be explicit.
 - [Circle media hardening](circle-media-hardening.md) — preserve LiveKit-only media, independent mic/camera lifecycles, bounded recovery, and real-device certification as the release gate.
 - [Fresh development database readiness](fresh-development-db-readiness.md) — connectivity can succeed while the schema is empty; run the canonical dev migration flow before diagnosing API readiness.

@@ -169,6 +169,10 @@ router.post(
     const recorded = await recordPoolContribution({
       amount,
       userId: req.authenticatedUserId!,
+      // The authenticated admin records the funding, but is not the
+      // government sponsor. Avoid attributing the sponsor's money to the
+      // administrator's personal History.
+      historyUserId: null,
       notes,
       governmentSponsorId: sponsorId,
     });

@@ -5,6 +5,8 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+import type { MyPoolStatsPoolStatus } from './myPoolStatsPoolStatus';
+import type { MyPoolStatsReservePolicy } from './myPoolStatsReservePolicy';
 
 export interface MyPoolStats {
   community_id: number;
@@ -23,4 +25,15 @@ export interface MyPoolStats {
      */
   pool_pct: number;
   target_reserve_amount: number;
+  minimum_hourly_rate?: number;
+  required_reserve?: number;
+  spendable?: number;
+  coverage_helper_hours?: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  pool_health_pct?: number;
+  pool_status?: MyPoolStatsPoolStatus;
+  reserve_policy?: MyPoolStatsReservePolicy;
 }

@@ -46,7 +46,24 @@ function txTypeLabel(type: Transaction["type"]): { label: string; action: string
     case "pledge_received": return { label: "Niakofa", action: "Received", color: "text-primary" };
     case "pledge_sent": return { label: "Contributed", action: "Contributed", color: "text-yellow-400" };
     case "goodwill": return { label: "Goodwill", action: "Volunteered", color: "text-purple-400" };
+    case "pool_contribution": return { label: "Community Pool", action: "Contributed", color: "text-yellow-400" };
+    case "pledge_repayment": return { label: "Repayment", action: "Repaid", color: "text-primary" };
     default: return { label: type, action: "Activity", color: "text-muted-foreground" };
+  }
+}
+
+/** Cents → "$X.XX" for the Community Pool settlement breakdown. */
+function fmtCents(cents: unknown): string {
+  const value = typeof cents === "number" ? cents : Number(cents);
+  return `$${((Number.isFinite(value) ? value : 0) / 100).toFixed(2)}`;
+}
+
+function settlementStatusLabel(status: unknown): string {
+  switch (status) {
+    case "available": return "Available";
+    case "paid_out": return "Paid out";
+    case "failed": return "Failed";
+    default: return "Pending";
   }
 }
 
@@ -1443,11 +1460,13 @@ export default function ProfileScreen() {
                     tx.type === "earned" ? "bg-green-500/10" :
                     tx.type === "pledge_received" ? "bg-primary/10" :
                     tx.type === "pledge_sent" ? "bg-yellow-500/10" :
+                    tx.type === "pool_contribution" ? "bg-yellow-500/10" :
                     "bg-purple-500/10"
                   }`}>
                     {tx.type === "earned" ? <Heart className="w-4 h-4 text-green-400" /> :
                      tx.type === "pledge_received" ? <Heart className="w-4 h-4 text-primary" /> :
                      tx.type === "pledge_sent" ? <DollarSign className="w-4 h-4 text-yellow-400" /> :
+                     tx.type === "pool_contribution" ? <DollarSign className="w-4 h-4 text-yellow-400" /> :
                      <Gift className="w-4 h-4 text-purple-400" />}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -1466,6 +1485,26 @@ export default function ProfileScreen() {
                         }
                       </span>
                     </div>
+                    {tx.type === "pool_contribution" && tx.metadata && (
+                      <div className="mt-2 pt-2 border-t border-border/60 space-y-0.5 text-[11px] text-muted-foreground">
+                        <div className="flex justify-between">
+                          <span>Processing fee</span>
+                          <span>-{fmtCents(tx.metadata["stripe_fee_cents"])}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Climate contribution</span>
+                          <span>-{fmtCents(tx.metadata["climate_contribution_cents"])}</span>
+                        </div>
+                        <div className="flex justify-between font-semibold text-foreground/80">
+                          <span>Net added to Pool</span>
+                          <span>{fmtCents(tx.metadata["net_amount_cents"])}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Status</span>
+                          <span>{settlementStatusLabel(tx.metadata["settlement_status"])}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

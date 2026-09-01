@@ -107,6 +107,12 @@ jest.unstable_mockModule("../lib/community-pool", () => ({
   getPoolBalance: jest.fn(),
   getGuaranteedMinimum: jest.fn(),
   getHourlyMinimumRate: jest.fn(),
+  getPoolReservePolicy: jest.fn().mockResolvedValue({
+    helpersCovered: 10,
+    guaranteedHours: 4,
+    safetyMultiplier: 1.25,
+  }),
+  roundMoney: jest.fn((amount: number) => Math.round(amount * 100) / 100),
   isPoolEnabled: jest.fn(),
   processPendingMinimums: jest.fn(),
   syncHubReservedBalance: jest.fn(),

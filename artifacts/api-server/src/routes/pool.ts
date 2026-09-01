@@ -21,6 +21,8 @@ import {
   isPoolEnabled,
   recordPoolContribution,
   processPendingMinimums,
+  getPoolReservePolicy,
+  roundMoney,
 } from "../lib/community-pool";
 import Stripe from "stripe";
 
@@ -91,7 +93,7 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
           AND COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`
       );
 
-    const [enabled, guaranteed_minimum, minimum_hourly_rate, [pendingTotals]] = await Promise.all([
+    const [enabled, guaranteed_minimum, minimum_hourly_rate, [pendingTotals], reservePolicy] = await Promise.all([
       isPoolEnabled(),
       getGuaranteedMinimum(),     // flat per-task floor
       getHourlyMinimumRate(),     // per-hour rate (scales with estimated_hours)
@@ -102,6 +104,7 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
         })
         .from(poolPendingMinimumsTable)
         .where(eq(poolPendingMinimumsTable.status, "pending")),
+      getPoolReservePolicy(),
     ]);
 
     const balance = totals?.balance ?? 0;
@@ -110,6 +113,21 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
     // null = infinite runway (nothing spent in the last 30 days).
     const daily_burn = outflow_30d / 30;
     const runway_days = daily_burn > 0 ? Math.round(balance / daily_burn) : null;
+    const required_reserve = roundMoney(
+      reservePolicy.helpersCovered *
+        reservePolicy.guaranteedHours *
+        minimum_hourly_rate *
+        reservePolicy.safetyMultiplier,
+    );
+    const spendable = Math.max(0, roundMoney(balance - required_reserve));
+    const coverage_helper_hours = minimum_hourly_rate > 0
+      ? roundMoney(balance / minimum_hourly_rate)
+      : 0;
+    const pool_health_pct = required_reserve > 0
+      ? Math.min(100, Math.round((balance / required_reserve) * 100))
+      : 100;
+    const pool_status: "healthy" | "low" | "critical" =
+      pool_health_pct >= 100 ? "healthy" : pool_health_pct >= 40 ? "low" : "critical";
 
     res.json({
       enabled,
@@ -135,6 +153,16 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
       // Weekly transparency — "good people paid every day" promise
       helpers_earned_7d: totals?.helpers_earned_7d ?? 0,
       helpers_paid_7d: totals?.helpers_paid_7d ?? 0,
+      required_reserve,
+      spendable,
+      coverage_helper_hours,
+      pool_health_pct,
+      pool_status,
+      reserve_policy: {
+        helpers_covered: reservePolicy.helpersCovered,
+        guaranteed_hours: reservePolicy.guaranteedHours,
+        safety_multiplier: reservePolicy.safetyMultiplier,
+      },
     });
   } catch (err) {
     logger.error({ err }, "Failed to load pool stats");
@@ -226,12 +254,17 @@ router.get("/pool/my-stats", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "Your account is not assigned to a Community Pool yet." });
     }
 
-    const communityResult = await db.execute<{ name: string }>(
-      sql`SELECT name FROM communities WHERE id = ${communityId} LIMIT 1`,
+    const communityResult = await db.execute<{
+      name: string;
+      target_reserve_amount: number | null;
+    }>(
+      sql`SELECT name, target_reserve_amount FROM communities WHERE id = ${communityId} LIMIT 1`,
     );
-    const communityName = communityResult.rows[0]?.name;
+    const community = communityResult.rows[0];
+    const communityName = community?.name;
 
-    const [totals] = await db
+    const [[totals], minimum_hourly_rate, reservePolicy] = await Promise.all([
+      db
       .select({
         balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8`,
          total_contributed: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN COALESCE(${communityPoolFinancialEventsTable.gross_amount_cents} / 100.0, ${communityPoolLedgerTable.amount}) ELSE 0 END), 0)::float8`,
@@ -247,10 +280,28 @@ router.get("/pool/my-stats", requireAuth, async (req, res) => {
         communityPoolFinancialEventsTable,
         eq(communityPoolFinancialEventsTable.community_pool_ledger_id, communityPoolLedgerTable.id),
       )
-      .where(eq(communityPoolLedgerTable.community_id, communityId));
+      .where(eq(communityPoolLedgerTable.community_id, communityId)),
+      getHourlyMinimumRate(communityId),
+      getPoolReservePolicy(),
+    ]);
 
     const balance = totals?.balance ?? 0;
-    const target = 500;
+    const target = Number(community?.target_reserve_amount ?? 500);
+    const required_reserve = roundMoney(
+      reservePolicy.helpersCovered *
+        reservePolicy.guaranteedHours *
+        minimum_hourly_rate *
+        reservePolicy.safetyMultiplier,
+    );
+    const spendable = Math.max(0, roundMoney(balance - required_reserve));
+    const coverage_helper_hours = minimum_hourly_rate > 0
+      ? roundMoney(balance / minimum_hourly_rate)
+      : 0;
+    const pool_health_pct = required_reserve > 0
+      ? Math.min(100, Math.round((balance / required_reserve) * 100))
+      : 100;
+    const pool_status: "healthy" | "low" | "critical" =
+      pool_health_pct >= 100 ? "healthy" : pool_health_pct >= 40 ? "low" : "critical";
     return res.json({
       community_id: communityId,
       community_name: communityName ?? "Your Community",
@@ -264,6 +315,17 @@ router.get("/pool/my-stats", requireAuth, async (req, res) => {
       sponsor_count: totals?.sponsor_count ?? 0,
       pool_pct: Math.max(0, Math.min(Math.round((balance / target) * 100), 100)),
       target_reserve_amount: target,
+      minimum_hourly_rate,
+      required_reserve,
+      spendable,
+      coverage_helper_hours,
+      pool_health_pct,
+      pool_status,
+      reserve_policy: {
+        helpers_covered: reservePolicy.helpersCovered,
+        guaranteed_hours: reservePolicy.guaranteedHours,
+        safety_multiplier: reservePolicy.safetyMultiplier,
+      },
     });
   } catch (err) {
     logger.error({ err }, "Failed to load member Community Pool stats");

@@ -2557,6 +2557,35 @@ components:
         helpers_paid_7d:
           type: integer
           description: Count of unique helpers paid in the last 7 days
+        required_reserve:
+          type: number
+          description: Required reserve = helpers covered × guaranteed hours × hourly rate × safety multiplier.
+        spendable:
+          type: number
+          description: Funds above the protected reserve that are available for new guaranteed helper payments.
+        coverage_helper_hours:
+          type: number
+          description: Approximate helper-hours covered by the current balance at the effective hourly rate.
+        pool_health_pct:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Current balance as a percentage of required reserve, capped at 100.
+        pool_status:
+          type: string
+          enum: [healthy, low, critical]
+          description: healthy = reserve fully covered; low = 40-99%; critical = below 40%.
+        reserve_policy:
+          type: object
+          description: Tunable reserve policy inputs used to calculate required_reserve.
+          required: [helpers_covered, guaranteed_hours, safety_multiplier]
+          properties:
+            helpers_covered:
+              type: number
+            guaranteed_hours:
+              type: number
+            safety_multiplier:
+              type: number
 
     PoolLedgerEntry:
       type: object
@@ -2647,6 +2676,31 @@ components:
           maximum: 100
         target_reserve_amount:
           type: number
+        minimum_hourly_rate:
+          type: number
+        required_reserve:
+          type: number
+        spendable:
+          type: number
+        coverage_helper_hours:
+          type: number
+        pool_health_pct:
+          type: integer
+          minimum: 0
+          maximum: 100
+        pool_status:
+          type: string
+          enum: [healthy, low, critical]
+        reserve_policy:
+          type: object
+          required: [helpers_covered, guaranteed_hours, safety_multiplier]
+          properties:
+            helpers_covered:
+              type: number
+            guaranteed_hours:
+              type: number
+            safety_multiplier:
+              type: number
 
     PoolContributeBody:
       type: object
@@ -3535,10 +3589,17 @@ components:
           type: ["integer", "null"]
         type:
           type: string
-          enum: [earned, pledge_received, pledge_sent, pledge_repayment, goodwill]
-          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act
+          enum: [earned, pledge_received, pledge_sent, pledge_repayment, goodwill, pool_contribution]
+          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act, pool_contribution=user funded the Community Pool; amount is gross and metadata contains the settlement breakdown
         amount:
           type: number
+        related_pool_ledger_id:
+          type: ["integer", "null"]
+        related_financial_event_id:
+          type: ["integer", "null"]
+        metadata:
+          type: ["object", "null"]
+          additionalProperties: true
         description:
           type: ["string", "null"]
         created_at:

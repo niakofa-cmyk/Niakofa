@@ -5,6 +5,27 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+/**
+ * healthy = reserve fully covered; low = 40-99%; critical = below 40%.
+ */
+export type PoolStatsPoolStatus = typeof PoolStatsPoolStatus[keyof typeof PoolStatsPoolStatus];
+
+
+export const PoolStatsPoolStatus = {
+  healthy: 'healthy',
+  low: 'low',
+  critical: 'critical',
+} as const;
+
+/**
+ * Tunable reserve policy inputs used to calculate required_reserve.
+ */
+export type PoolStatsReservePolicy = {
+  helpers_covered: number;
+  guaranteed_hours: number;
+  safety_multiplier: number;
+};
+
 export interface PoolStats {
   enabled: boolean;
   guaranteed_minimum: number;
@@ -40,6 +61,22 @@ export interface PoolStats {
   helpers_earned_7d?: number;
   /** Count of unique helpers paid in the last 7 days */
   helpers_paid_7d?: number;
+  /** Required reserve = helpers covered × guaranteed hours × hourly rate × safety multiplier. */
+  required_reserve?: number;
+  /** Funds above the protected reserve that are available for new guaranteed helper payments. */
+  spendable?: number;
+  /** Approximate helper-hours covered by the current balance at the effective hourly rate. */
+  coverage_helper_hours?: number;
+  /**
+     * Current balance as a percentage of required reserve, capped at 100.
+     * @minimum 0
+     * @maximum 100
+     */
+  pool_health_pct?: number;
+  /** healthy = reserve fully covered; low = 40-99%; critical = below 40%. */
+  pool_status?: PoolStatsPoolStatus;
+  /** Tunable reserve policy inputs used to calculate required_reserve. */
+  reserve_policy?: PoolStatsReservePolicy;
 }
 
 export type PoolLedgerEntryEntryType = typeof PoolLedgerEntryEntryType[keyof typeof PoolLedgerEntryEntryType];
@@ -85,6 +122,21 @@ export interface PoolLedgerResponse {
   entries: PoolLedgerEntry[];
 }
 
+export type MyPoolStatsPoolStatus = typeof MyPoolStatsPoolStatus[keyof typeof MyPoolStatsPoolStatus];
+
+
+export const MyPoolStatsPoolStatus = {
+  healthy: 'healthy',
+  low: 'low',
+  critical: 'critical',
+} as const;
+
+export type MyPoolStatsReservePolicy = {
+  helpers_covered: number;
+  guaranteed_hours: number;
+  safety_multiplier: number;
+};
+
 export interface MyPoolStats {
   community_id: number;
   community_name: string;
@@ -102,6 +154,17 @@ export interface MyPoolStats {
      */
   pool_pct: number;
   target_reserve_amount: number;
+  minimum_hourly_rate?: number;
+  required_reserve?: number;
+  spendable?: number;
+  coverage_helper_hours?: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  pool_health_pct?: number;
+  pool_status?: MyPoolStatsPoolStatus;
+  reserve_policy?: MyPoolStatsReservePolicy;
 }
 
 export interface PoolContributeBody {
@@ -989,7 +1052,7 @@ export interface RouteData {
 }
 
 /**
- * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act
+ * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act, pool_contribution=user funded the Community Pool; amount is gross and metadata contains the settlement breakdown
  */
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 
@@ -1000,16 +1063,28 @@ export const TransactionType = {
   pledge_sent: 'pledge_sent',
   pledge_repayment: 'pledge_repayment',
   goodwill: 'goodwill',
+  pool_contribution: 'pool_contribution',
 } as const;
+
+/**
+ * @nullable
+ */
+export type TransactionMetadata = { [key: string]: unknown } | null;
 
 export interface Transaction {
   id: number;
   user_id: number;
   /** @nullable */
   request_id?: number | null;
-  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act */
+  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act, pool_contribution=user funded the Community Pool; amount is gross and metadata contains the settlement breakdown */
   type: TransactionType;
   amount: number;
+  /** @nullable */
+  related_pool_ledger_id?: number | null;
+  /** @nullable */
+  related_financial_event_id?: number | null;
+  /** @nullable */
+  metadata?: TransactionMetadata;
   /** @nullable */
   description?: string | null;
   created_at: string;

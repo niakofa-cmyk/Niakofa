@@ -5,6 +5,7 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+import type { TransactionMetadata } from './transactionMetadata';
 import type { TransactionType } from './transactionType';
 
 export interface Transaction {
@@ -12,9 +13,15 @@ export interface Transaction {
   user_id: number;
   /** @nullable */
   request_id?: number | null;
-  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act */
+  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act, pool_contribution=user funded the Community Pool; amount is gross and metadata contains the settlement breakdown */
   type: TransactionType;
   amount: number;
+  /** @nullable */
+  related_pool_ledger_id?: number | null;
+  /** @nullable */
+  related_financial_event_id?: number | null;
+  /** @nullable */
+  metadata?: TransactionMetadata;
   /** @nullable */
   description?: string | null;
   created_at: string;

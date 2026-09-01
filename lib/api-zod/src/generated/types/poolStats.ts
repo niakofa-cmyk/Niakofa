@@ -5,6 +5,8 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+import type { PoolStatsPoolStatus } from './poolStatsPoolStatus';
+import type { PoolStatsReservePolicy } from './poolStatsReservePolicy';
 
 export interface PoolStats {
   enabled: boolean;
@@ -41,4 +43,20 @@ export interface PoolStats {
   helpers_earned_7d?: number;
   /** Count of unique helpers paid in the last 7 days */
   helpers_paid_7d?: number;
+  /** Required reserve = helpers covered × guaranteed hours × hourly rate × safety multiplier. */
+  required_reserve?: number;
+  /** Funds above the protected reserve that are available for new guaranteed helper payments. */
+  spendable?: number;
+  /** Approximate helper-hours covered by the current balance at the effective hourly rate. */
+  coverage_helper_hours?: number;
+  /**
+     * Current balance as a percentage of required reserve, capped at 100.
+     * @minimum 0
+     * @maximum 100
+     */
+  pool_health_pct?: number;
+  /** healthy = reserve fully covered; low = 40-99%; critical = below 40%. */
+  pool_status?: PoolStatsPoolStatus;
+  /** Tunable reserve policy inputs used to calculate required_reserve. */
+  reserve_policy?: PoolStatsReservePolicy;
 }

@@ -9,7 +9,7 @@ import {
   communitiesTable,
   diasporaHubsTable,
 } from "@workspace/db";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { broadcast } from "./ws-hub";
 import { getEffectiveTier, getTierWageMultiplier } from "@workspace/trust-tiers";
@@ -742,6 +742,39 @@ export async function processPendingMinimums(): Promise<number> {
 const LOW_BALANCE_ALERT_INTERVAL_MS = 6 * 60 * 60 * 1000; // at most once per 6h
 let _lastLowBalanceAlertAt = 0;
 
+/**
+ * Tunable reserve policy used by both global and community-scoped pool
+ * health. These settings intentionally do not change the per-contribution
+ * $1–$10,000 validation limits.
+ */
+export async function getPoolReservePolicy(): Promise<{
+  helpersCovered: number;
+  guaranteedHours: number;
+  safetyMultiplier: number;
+}> {
+  const defaults = { helpersCovered: 10, guaranteedHours: 4, safetyMultiplier: 1.25 };
+  try {
+    const rows = await db
+      .select({ key: systemSettingsTable.key, value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(
+        sql`${systemSettingsTable.key} IN ('pool_reserve_helpers_covered', 'pool_reserve_guaranteed_hours', 'pool_reserve_safety_multiplier')`,
+      );
+    const byKey = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+    const helpersCovered = Number.parseFloat(byKey["pool_reserve_helpers_covered"] ?? "");
+    const guaranteedHours = Number.parseFloat(byKey["pool_reserve_guaranteed_hours"] ?? "");
+    const safetyMultiplier = Number.parseFloat(byKey["pool_reserve_safety_multiplier"] ?? "");
+    return {
+      helpersCovered: Number.isFinite(helpersCovered) && helpersCovered > 0 ? helpersCovered : defaults.helpersCovered,
+      guaranteedHours: Number.isFinite(guaranteedHours) && guaranteedHours > 0 ? guaranteedHours : defaults.guaranteedHours,
+      safetyMultiplier: Number.isFinite(safetyMultiplier) && safetyMultiplier >= 1 ? safetyMultiplier : defaults.safetyMultiplier,
+    };
+  } catch (err) {
+    logger.error({ err }, "community-pool: reserve policy lookup failed — using defaults");
+    return defaults;
+  }
+}
+
 export async function getLowBalanceThreshold(): Promise<number> {
   try {
     const [row] = await db
@@ -806,14 +839,30 @@ export async function recordPoolContribution(params: {
    * Null = unrestricted/global pool contribution.
    */
   hubId?: number | null;
+  /**
+   * Optional personal History attribution. Government sponsor funding keeps
+   * its ledger/audit user_id but can opt out of attributing the admin who
+   * recorded it as the contributor.
+   */
+  historyUserId?: number | null;
   settlement?: PoolContributionSettlement;
 }): Promise<boolean> {
-  const { userId, stripePaymentIntentId, notes, governmentSponsorId, communityId, hubId, settlement } = params;
+  const {
+    userId,
+    stripePaymentIntentId,
+    notes,
+    governmentSponsorId,
+    communityId,
+    hubId,
+    historyUserId = userId,
+    settlement,
+  } = params;
   if (settlement) {
     return (
       await recordPoolContributionSettlement({
         settlement,
         userId,
+        historyUserId,
         communityId,
         notes,
       })
@@ -823,7 +872,7 @@ export async function recordPoolContribution(params: {
   if (amount <= 0) return false;
   try {
     await db.transaction(async (tx) => {
-      await tx.insert(communityPoolLedgerTable).values({
+      const [ledgerEntry] = await tx.insert(communityPoolLedgerTable).values({
         entry_type: "sponsor_contribution",
         amount,
         user_id: userId,
@@ -832,9 +881,18 @@ export async function recordPoolContribution(params: {
         stripe_payment_intent_id: stripePaymentIntentId ?? null,
         notes: notes ?? "Sponsor contribution to the Community Pool",
         government_sponsor_id: governmentSponsorId ?? null,
-      });
+      }).returning({ id: communityPoolLedgerTable.id });
       if (hubId != null) {
         await syncHubReservedBalance(hubId, tx);
+      }
+      if (historyUserId != null) {
+        await tx.insert(transactionsTable).values({
+          user_id: historyUserId,
+          type: "pool_contribution",
+          amount,
+          description: `You contributed $${amount.toFixed(2)} to the Community Pool`,
+          related_pool_ledger_id: ledgerEntry?.id ?? null,
+        });
       }
     });
     return true;
@@ -872,10 +930,11 @@ export interface PoolContributionSettlement {
 export async function recordPoolContributionSettlement(params: {
   settlement: PoolContributionSettlement;
   userId: number | null;
+  historyUserId?: number | null;
   communityId?: number | null;
   notes?: string;
 }): Promise<{ recorded: boolean; alreadyRecorded: boolean; ledgerId: number | null }> {
-  const { settlement, userId, communityId, notes } = params;
+  const { settlement, userId, historyUserId = userId, communityId, notes } = params;
   if (settlement.grossAmountCents <= 0 || settlement.netAmountCents < 0) {
     throw new Error("Invalid Stripe settlement amounts");
   }
@@ -937,7 +996,7 @@ export async function recordPoolContributionSettlement(params: {
       }
 
       if (!ledgerId) throw new Error("Pool settlement could not create or find a ledger entry");
-      await tx.insert(communityPoolFinancialEventsTable).values({
+      const [financialEvent] = await tx.insert(communityPoolFinancialEventsTable).values({
         community_pool_ledger_id: ledgerId,
         user_id: userId,
         community_id: communityId ?? null,
@@ -953,7 +1012,54 @@ export async function recordPoolContributionSettlement(params: {
         settlement_status: settlement.settlementStatus,
         available_on: settlement.availableOn,
         stripe_livemode: settlement.stripeLivemode,
-      });
+      }).returning({ id: communityPoolFinancialEventsTable.id });
+
+      // History is a linked projection of the authoritative pool records.
+      // Update a pre-existing row when this is a settlement correction so the
+      // contributor sees one accurate activity item, not a duplicate line.
+      if (historyUserId != null) {
+        const grossAmount = roundMoney(settlement.grossAmountCents / 100);
+        const metadata = {
+          gross_amount_cents: settlement.grossAmountCents,
+          stripe_fee_cents: settlement.stripeFeeCents,
+          climate_contribution_cents: settlement.climateContributionCents,
+          net_amount_cents: settlement.netAmountCents,
+          currency: settlement.currency,
+          settlement_status: settlement.settlementStatus,
+          available_on: settlement.availableOn,
+        };
+        const [existingHistory] = await tx
+          .select({ id: transactionsTable.id })
+          .from(transactionsTable)
+          .where(and(
+            eq(transactionsTable.user_id, historyUserId),
+            eq(transactionsTable.type, "pool_contribution"),
+            eq(transactionsTable.related_pool_ledger_id, ledgerId),
+          ))
+          .limit(1);
+
+        if (existingHistory) {
+          await tx
+            .update(transactionsTable)
+            .set({
+              amount: grossAmount,
+              description: `You contributed $${grossAmount.toFixed(2)} to the Community Pool`,
+              related_financial_event_id: financialEvent?.id ?? null,
+              metadata,
+            })
+            .where(eq(transactionsTable.id, existingHistory.id));
+        } else {
+          await tx.insert(transactionsTable).values({
+            user_id: historyUserId,
+            type: "pool_contribution",
+            amount: grossAmount,
+            description: `You contributed $${grossAmount.toFixed(2)} to the Community Pool`,
+            related_pool_ledger_id: ledgerId,
+            related_financial_event_id: financialEvent?.id ?? null,
+            metadata,
+          });
+        }
+      }
       return { recorded: true, alreadyRecorded: false, ledgerId };
     });
   } catch (err: unknown) {

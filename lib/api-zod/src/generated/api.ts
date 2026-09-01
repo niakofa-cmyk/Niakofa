@@ -748,8 +748,11 @@ export const GetUserTransactionsResponseItem = zod.object({
   "id": zod.number(),
   "user_id": zod.number(),
   "request_id": zod.number().nullish(),
-  "type": zod.enum(['earned', 'pledge_received', 'pledge_sent', 'pledge_repayment', 'goodwill']).describe('earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act'),
+  "type": zod.enum(['earned', 'pledge_received', 'pledge_sent', 'pledge_repayment', 'goodwill', 'pool_contribution']).describe('earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, pledge_repayment=wallet-funded installment payment toward an existing pledge, goodwill=volunteer act, pool_contribution=user funded the Community Pool; amount is gross and metadata contains the settlement breakdown'),
   "amount": zod.number(),
+  "related_pool_ledger_id": zod.number().nullish(),
+  "related_financial_event_id": zod.number().nullish(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
   "description": zod.string().nullish(),
   "created_at": zod.string()
 })
@@ -1579,6 +1582,11 @@ export const UpdateHelperApplicationResponse = zod.object({
 /**
  * @summary Get Community Pool balance and transparency stats
  */
+export const getPoolStatsResponsePoolHealthPctMin = 0;
+export const getPoolStatsResponsePoolHealthPctMax = 100;
+
+
+
 export const GetPoolStatsResponse = zod.object({
   "enabled": zod.boolean(),
   "guaranteed_minimum": zod.number(),
@@ -1600,7 +1608,17 @@ export const GetPoolStatsResponse = zod.object({
   "runway_days": zod.number().nullish().describe('Estimated days of runway left at the current 30-day burn rate. Null = no burn in the last 30 days (effectively infinite).'),
   "outstanding_pif_total": zod.number().optional().describe('Total outstanding pay-it-forward pledges owed back to the pool'),
   "helpers_earned_7d": zod.number().optional().describe('Total dollars paid out to helpers in the last 7 days'),
-  "helpers_paid_7d": zod.number().optional().describe('Count of unique helpers paid in the last 7 days')
+  "helpers_paid_7d": zod.number().optional().describe('Count of unique helpers paid in the last 7 days'),
+  "required_reserve": zod.number().optional().describe('Required reserve = helpers covered × guaranteed hours × hourly rate × safety multiplier.'),
+  "spendable": zod.number().optional().describe('Funds above the protected reserve that are available for new guaranteed helper payments.'),
+  "coverage_helper_hours": zod.number().optional().describe('Approximate helper-hours covered by the current balance at the effective hourly rate.'),
+  "pool_health_pct": zod.number().min(getPoolStatsResponsePoolHealthPctMin).max(getPoolStatsResponsePoolHealthPctMax).optional().describe('Current balance as a percentage of required reserve, capped at 100.'),
+  "pool_status": zod.enum(['healthy', 'low', 'critical']).optional().describe('healthy = reserve fully covered; low = 40-99%; critical = below 40%.'),
+  "reserve_policy": zod.object({
+  "helpers_covered": zod.number(),
+  "guaranteed_hours": zod.number(),
+  "safety_multiplier": zod.number()
+}).optional().describe('Tunable reserve policy inputs used to calculate required_reserve.')
 })
 
 
@@ -1642,6 +1660,9 @@ export const GetPoolLedgerResponse = zod.object({
 export const getMyPoolStatsResponsePoolPctMin = 0;
 export const getMyPoolStatsResponsePoolPctMax = 100;
 
+export const getMyPoolStatsResponsePoolHealthPctMin = 0;
+export const getMyPoolStatsResponsePoolHealthPctMax = 100;
+
 
 
 export const GetMyPoolStatsResponse = zod.object({
@@ -1656,7 +1677,18 @@ export const GetMyPoolStatsResponse = zod.object({
   "total_repaid": zod.number(),
   "sponsor_count": zod.number(),
   "pool_pct": zod.number().min(getMyPoolStatsResponsePoolPctMin).max(getMyPoolStatsResponsePoolPctMax),
-  "target_reserve_amount": zod.number()
+  "target_reserve_amount": zod.number(),
+  "minimum_hourly_rate": zod.number().optional(),
+  "required_reserve": zod.number().optional(),
+  "spendable": zod.number().optional(),
+  "coverage_helper_hours": zod.number().optional(),
+  "pool_health_pct": zod.number().min(getMyPoolStatsResponsePoolHealthPctMin).max(getMyPoolStatsResponsePoolHealthPctMax).optional(),
+  "pool_status": zod.enum(['healthy', 'low', 'critical']).optional(),
+  "reserve_policy": zod.object({
+  "helpers_covered": zod.number(),
+  "guaranteed_hours": zod.number(),
+  "safety_multiplier": zod.number()
+}).optional()
 })
 
 
