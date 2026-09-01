@@ -16,3 +16,16 @@ the settlement breakdown in metadata. Link by pool ledger ID, and update the
 existing History projection when a settlement adjustment arrives instead of
 creating a duplicate. Government sponsor funds should not be attributed to the
 administrator who recorded them as a personal contribution.
+
+Refunds from Stripe are cumulative at the Charge level; reverse only the
+incremental net amount against the pool and create separately linked,
+idempotent refund History projections. A full refund marks the financial event
+failed, while partial refunds preserve the original settlement state.
+
+**Why:** A charge can receive multiple partial refunds and repeated webhook
+deliveries. Reversing the cumulative amount on every delivery would overdraw
+the pool and duplicate member History.
+
+**How to apply:** Serialize refund calculations on the original financial
+event, derive the target reversal from the cumulative refund ratio, subtract
+prior refund adjustments, and use a stable refund identity for inserts.

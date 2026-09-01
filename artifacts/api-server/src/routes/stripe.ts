@@ -10,6 +10,7 @@ import { wasRequestFronted, recordPoolContributionSettlement, getPoolBalance, pr
 import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
 import { logger } from "../lib/logger";
 import { paymentLimiter } from "../middlewares/rate-limit";
+import { reversePoolContributionOnRefund } from "../lib/pool-contribution-refund";
 
 const router = Router();
 
@@ -596,8 +597,28 @@ router.post("/stripe/webhook", async (req, res) => {
         // Idempotency: the state guard (`!= 'failed'`) ensures duplicate
         // webhook deliveries skip after the first one processes.
         const charge = event.data.object as Stripe.Charge;
-        const piId = charge.payment_intent as string | null;
+        const piId = typeof charge.payment_intent === "string"
+          ? charge.payment_intent
+          : charge.payment_intent?.id ?? null;
         if (!piId) break;
+
+        // Pool contributions do not have a payment_transactions row. Stripe's
+        // amount_refunded is cumulative, so the helper reverses only the
+        // incremental net amount and remains safe for partial refund updates.
+        const poolRefund = await reversePoolContributionOnRefund({
+          stripePaymentIntentId: piId,
+          amountRefundedCents: charge.amount_refunded,
+          chargeAmountCents: charge.amount,
+          refundIdempotencyKey: `refund:${charge.id}:${charge.amount_refunded}`,
+        });
+        if (poolRefund.reversed) {
+          const balance = await getPoolBalance();
+          broadcast({ type: "pool_updated", payload: { balance } });
+          logger.warn(
+            { pi: piId, charge: charge.id, net_reversed: poolRefund.netReversedDollars },
+            "Community Pool contribution refunded — net reversed from ledger",
+          );
+        }
 
         const [txRow] = await db
           .update(paymentTransactionsTable)

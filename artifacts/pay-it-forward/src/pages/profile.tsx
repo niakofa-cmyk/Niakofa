@@ -25,8 +25,8 @@ import {
 import type { Transaction } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCivicResources } from "@/hooks/useCivicResources";
+import { usePoolHistoryRefresh } from "@/lib/usePoolHistoryRefresh";
 
 type ProfileTab = "overview" | "history" | "settings";
 
@@ -1022,9 +1022,8 @@ export default function ProfileScreen() {
   const [openDialog, setOpenDialog] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [isVerifyingIdentity, setIsVerifyingIdentity] = useState(false);
-  const _queryClient = useQueryClient();
-
   const userId = currentUser?.id;
+  usePoolHistoryRefresh(userId);
 
   const startIdentityVerification = useCallback(async () => {
     if (!userId) return;
@@ -1453,7 +1452,10 @@ export default function ProfileScreen() {
             )}
 
             {transactions.map(tx => {
-              const { label, action, color } = txTypeLabel(tx.type);
+              const isPoolRefund = tx.type === "pool_contribution" && tx.metadata?.["kind"] === "pool_contribution_refund";
+              const { label, action, color } = isPoolRefund
+                ? { label: "Pool refund", action: "Refunded", color: "text-red-400" }
+                : txTypeLabel(tx.type);
               return (
                 <div key={tx.id} className="bg-card border border-border rounded-xl p-4 flex items-start gap-3">
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
@@ -1485,7 +1487,7 @@ export default function ProfileScreen() {
                         }
                       </span>
                     </div>
-                    {tx.type === "pool_contribution" && tx.metadata && (
+                    {tx.type === "pool_contribution" && tx.metadata && !isPoolRefund && (
                       <div className="mt-2 pt-2 border-t border-border/60 space-y-0.5 text-[11px] text-muted-foreground">
                         <div className="flex justify-between">
                           <span>Processing fee</span>
@@ -1498,6 +1500,18 @@ export default function ProfileScreen() {
                         <div className="flex justify-between font-semibold text-foreground/80">
                           <span>Net added to Pool</span>
                           <span>{fmtCents(tx.metadata["net_amount_cents"])}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Status</span>
+                          <span>{settlementStatusLabel(tx.metadata["settlement_status"])}</span>
+                        </div>
+                      </div>
+                    )}
+                    {isPoolRefund && tx.metadata && (
+                      <div className="mt-2 pt-2 border-t border-border/60 space-y-0.5 text-[11px] text-muted-foreground">
+                        <div className="flex justify-between">
+                          <span>Net removed from Pool</span>
+                          <span>{fmtCents(tx.metadata["net_reversed_cents"])}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Status</span>

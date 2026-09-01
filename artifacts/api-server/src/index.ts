@@ -27,6 +27,7 @@ import { startGriotTranscriptionWorker } from "./workers/griot-transcription-wor
 import { startNiaPushQueueWorker } from "./workers/nia-push-queue-worker";
 import { startPoolMinimumsWorker } from "./workers/pool-minimums-worker";
 import { startDailyKindnessWorker } from "./workers/daily-kindness-worker";
+import { startPoolSettlementStatusWorker } from "./lib/advance-pool-settlement-status";
 import { processRecurringRequests } from "./routes/recurring";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
@@ -139,6 +140,7 @@ server.listen(port, async () => {
   registerWorker("net30-invoices",      "NET30 Invoice Reminders",false);
   registerWorker("daily-kindness",      "Daily Kindness Engine",  false);
   registerWorker("payment-reminder",    "Payment Reminder",       false);
+  registerWorker("pool-settlement",     "Pool Settlement Status",  false);
 
   if (isRedisConfigured()) {
     logger.info("redis: configured — starting BullMQ workers");
@@ -197,6 +199,9 @@ server.listen(port, async () => {
   startNet30InvoiceReminderWorker(); workerStarted("net30-invoices", "NET30 Invoice Reminders", false);
   // Daily Kindness Engine — morning push to active helpers with nearby open requests
   startDailyKindnessWorker(); workerStarted("daily-kindness", "Daily Kindness Engine", false);
+  // Stripe Balance Transactions move from pending to available after the
+  // webhook; keep the financial event and linked History projection current.
+  startPoolSettlementStatusWorker(); workerStarted("pool-settlement", "Pool Settlement Status", false);
   // Recurring requests — fire any due recurring requests every hour
   processRecurringRequests().catch((err: unknown) =>
     logger.error({ err }, "recurring-worker: initial run failed — non-fatal")

@@ -30,6 +30,7 @@ const stripeBalanceTransactionRetrieve = jest.fn();
 const stripeAccountsRetrieve = jest.fn();
 const recordPoolContribution = jest.fn();
 const recordPoolContributionSettlement = jest.fn();
+const reversePoolContributionOnRefund = jest.fn();
 const drizzleEq = jest.fn();
 
 jest.unstable_mockModule("@workspace/db", () => ({
@@ -116,6 +117,10 @@ jest.unstable_mockModule("../lib/community-pool", () => ({
   isPoolEnabled: jest.fn(),
   processPendingMinimums: jest.fn(),
   syncHubReservedBalance: jest.fn(),
+}));
+
+jest.unstable_mockModule("../lib/pool-contribution-refund", () => ({
+  reversePoolContributionOnRefund,
 }));
 
 jest.unstable_mockModule("../lib/logger", () => ({
@@ -401,6 +406,43 @@ describe("POST /api/stripe/webhook", () => {
       error: "Webhook processing failed; Stripe should retry.",
     });
     expect(db.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("reverses a pool contribution refund even without a payment transaction row", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_pool_refund",
+      livemode: true,
+      type: "charge.refunded",
+      data: {
+        object: {
+          id: "ch_pool_refund",
+          payment_intent: "pi_pool_refund",
+          amount: 1000,
+          amount_refunded: 500,
+        },
+      },
+    });
+    reversePoolContributionOnRefund.mockResolvedValueOnce({
+      reversed: true,
+      alreadyReversed: false,
+      netReversedDollars: 4.55,
+    });
+    db.returning.mockResolvedValueOnce([]);
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_pool_refund", type: "charge.refunded" }));
+
+    expect(response.status).toBe(200);
+    expect(reversePoolContributionOnRefund).toHaveBeenCalledWith({
+      stripePaymentIntentId: "pi_pool_refund",
+      amountRefundedCents: 500,
+      chargeAmountCents: 1000,
+      refundIdempotencyKey: "refund:ch_pool_refund:500",
+    });
+    expect(db.update).toHaveBeenCalledTimes(1);
   });
 
   it("keeps invalid signatures as 400 and does not record an unverified event", async () => {
