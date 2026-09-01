@@ -107,10 +107,10 @@ export async function getHourlyMinimumRate(communityId?: number | null): Promise
  * Resolution order:
  *   1. system_settings.default_community_id, if set and it references a real
  *      community row (lets an admin designate a primary county explicitly).
- *   2. The lowest-id community row — the seeded "Tarrant County" row on a
+ *   2. The lowest-id community row — the seeded primary community on a
  *      fresh install.
- *   3. null — no communities exist yet; new user falls back to the legacy
- *      global pool bucket, exactly as every user did before this change.
+ *   3. null — no communities exist yet; callers must fail closed for
+ *      community-scoped money movement until one is configured.
  */
 export async function getDefaultCommunityId(): Promise<number | null> {
   try {
@@ -296,10 +296,14 @@ export async function getGuaranteedMinimum(
   }
 }
 
-export async function getPoolBalance(): Promise<number> {
-  const result = await db
+export async function getPoolBalance(communityId?: number | null): Promise<number> {
+  let query = db
     .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
     .from(communityPoolLedgerTable);
+  if (communityId != null) {
+    query = query.where(eq(communityPoolLedgerTable.community_id, communityId)) as typeof query;
+  }
+  const result = await query;
   const row = Array.isArray(result) ? result[0] : undefined;
   return row?.balance ?? 0;
 }
@@ -340,11 +344,19 @@ export async function syncHubReservedBalance(hubId: number, tx: DbOrTx): Promise
  * Used to compute the "unrestricted" balance available for non-hub-scoped
  * spending: unrestricted = totalBalance - sumOfAllPositiveHubReserves.
  */
-async function getTotalHubReservedBalance(tx: DbOrTx = db): Promise<number> {
+async function getTotalHubReservedBalance(
+  tx: DbOrTx = db,
+  communityId?: number | null,
+): Promise<number> {
   const [row] = await tx
     .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
     .from(communityPoolLedgerTable)
-    .where(sql`${communityPoolLedgerTable.hub_id} IS NOT NULL`);
+    .where(
+      communityId == null
+        ? sql`${communityPoolLedgerTable.hub_id} IS NOT NULL`
+        : sql`${communityPoolLedgerTable.hub_id} IS NOT NULL
+          AND ${communityPoolLedgerTable.community_id} = ${communityId}`,
+    );
   // Only positive reserves count as "locked away" — a hub that has gone
   // negative (shouldn't normally happen) doesn't free up extra global funds.
   const reserved = row?.balance ?? 0;
@@ -382,15 +394,38 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPa
   const { entryType, requestId, helperId, requestTitle, communityId, hubId } = params;
   const amount = roundMoney(params.amount);
   if (amount <= 0) return "error";
+  // New payouts must name their fund. A null community plus a null hub would
+  // silently draw from the historical global bucket and can leak money across
+  // counties, so fail closed instead.
+  if (communityId == null && hubId == null) {
+    logger.error({ request_id: requestId, helper_id: helperId, entry_type: entryType }, "Pool payout rejected: missing community or hub scope");
+    return "error";
+  }
 
   try {
     return await db.transaction(async (tx): Promise<PoolPayOutcome> => {
       // Serialize pool debits — balance check + debit must be atomic.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${POOL_LOCK_KEY})`);
 
-      const [balRow] = await tx
+      if (hubId != null && communityId != null) {
+        const [hub] = await tx
+          .select({ community_id: diasporaHubsTable.community_id })
+          .from(diasporaHubsTable)
+          .where(eq(diasporaHubsTable.id, hubId))
+          .limit(1);
+        if (!hub || (hub.community_id != null && hub.community_id !== communityId)) {
+          logger.error({ request_id: requestId, hub_id: hubId, community_id: communityId }, "Pool payout rejected: hub/community scope mismatch");
+          return "error";
+        }
+      }
+
+      let balanceQuery = tx
         .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
         .from(communityPoolLedgerTable);
+      if (communityId != null) {
+        balanceQuery = balanceQuery.where(eq(communityPoolLedgerTable.community_id, communityId)) as typeof balanceQuery;
+      }
+      const [balRow] = await balanceQuery;
       const balance = balRow?.balance ?? 0;
 
       // ── Ring-fencing guard (migration 0057) ──────────────────────────────
@@ -415,7 +450,7 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPa
           return "insufficient";
         }
       } else {
-        const totalReserved = await getTotalHubReservedBalance(tx);
+        const totalReserved = await getTotalHubReservedBalance(tx, communityId);
         const unrestricted = balance - totalReserved;
         if (toCents(unrestricted) < toCents(amount)) {
           logger.warn(
@@ -521,15 +556,35 @@ export async function payHelpersFromPool(params: {
   if (shares.length === 0) return "error";
   const totalAmount = roundMoney(shares.reduce((sum, s) => sum + s.amount, 0));
   if (totalAmount <= 0) return "error";
+  if (communityId == null && hubId == null) {
+    logger.error({ request_id: requestId, entry_type: entryType }, "Split pool payout rejected: missing community or hub scope");
+    return "error";
+  }
   const primaryHelperId = shares[0].helperId;
 
   try {
     return await db.transaction(async (tx): Promise<PoolPayOutcome> => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${POOL_LOCK_KEY})`);
 
-      const [balRow] = await tx
+      if (hubId != null && communityId != null) {
+        const [hub] = await tx
+          .select({ community_id: diasporaHubsTable.community_id })
+          .from(diasporaHubsTable)
+          .where(eq(diasporaHubsTable.id, hubId))
+          .limit(1);
+        if (!hub || (hub.community_id != null && hub.community_id !== communityId)) {
+          logger.error({ request_id: requestId, hub_id: hubId, community_id: communityId }, "Split pool payout rejected: hub/community scope mismatch");
+          return "error";
+        }
+      }
+
+      let balanceQuery = tx
         .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
         .from(communityPoolLedgerTable);
+      if (communityId != null) {
+        balanceQuery = balanceQuery.where(eq(communityPoolLedgerTable.community_id, communityId)) as typeof balanceQuery;
+      }
+      const [balRow] = await balanceQuery;
       const balance = balRow?.balance ?? 0;
 
       let spendableCeiling = balance;
@@ -543,7 +598,7 @@ export async function payHelpersFromPool(params: {
           return "insufficient";
         }
       } else {
-        const totalReserved = await getTotalHubReservedBalance(tx);
+        const totalReserved = await getTotalHubReservedBalance(tx, communityId);
         const unrestricted = balance - totalReserved;
         if (toCents(unrestricted) < toCents(totalAmount)) {
           logger.warn(
@@ -626,16 +681,21 @@ export async function recordPoolRepayment(params: {
   /** Community scope — must match the original debit's community_id so per-community
    *  balance queries remain accurate when the repayment arrives. */
   communityId?: number | null;
+  hubId?: number | null;
 }): Promise<void> {
-  const { requestId, requesterId, stripePaymentIntentId, communityId } = params;
+  const { requestId, requesterId, stripePaymentIntentId, communityId, hubId } = params;
   const amount = roundMoney(params.amount);
   if (amount <= 0) return;
+  if (communityId == null && hubId == null) {
+    throw new Error("Pool repayment requires the original community or hub scope");
+  }
   await db.insert(communityPoolLedgerTable).values({
     entry_type: "pledge_repayment",
     amount,
     request_id: requestId,
     user_id: requesterId,
     community_id: communityId ?? null,
+    hub_id: hubId ?? null,
     stripe_payment_intent_id: stripePaymentIntentId ?? null,
     notes: "Requester repaid a pool-fronted pledge — pool replenished",
   });
@@ -651,6 +711,8 @@ export async function queuePendingMinimum(params: {
   helperId: number;
   amount: number;
   requestTitle: string;
+  communityId?: number | null;
+  hubId?: number | null;
 }): Promise<void> {
   const amount = roundMoney(params.amount);
   if (amount <= 0) return;
@@ -662,6 +724,8 @@ export async function queuePendingMinimum(params: {
         helper_id: params.helperId,
         amount,
         request_title: params.requestTitle,
+        community_id: params.communityId ?? null,
+        hub_id: params.hubId ?? null,
       })
       .onConflictDoNothing();
     logger.warn(
@@ -697,6 +761,8 @@ export async function processPendingMinimums(): Promise<number> {
         requestId: row.request_id,
         helperId: row.helper_id,
         requestTitle: row.request_title,
+        communityId: row.community_id,
+        hubId: row.hub_id,
       });
 
       if (outcome === "paid" || outcome === "duplicate") {
@@ -830,7 +896,7 @@ export async function recordPoolContribution(params: {
   stripePaymentIntentId?: string;
   notes?: string;
   governmentSponsorId?: number;
-  /** Community this contribution is designated for. Null = global/Tarrant County bucket. */
+  /** Community this contribution is designated for. Required for non-General-Fund money. */
   communityId?: number | null;
   /**
    * Diaspora hub scope (migration 0057 ring-fencing). When set, this
@@ -870,6 +936,9 @@ export async function recordPoolContribution(params: {
   }
   const amount = roundMoney(params.amount);
   if (amount <= 0) return false;
+  if (communityId == null) {
+    throw new Error("Pool contribution requires an explicit community scope");
+  }
   try {
     await db.transaction(async (tx) => {
       const [ledgerEntry] = await tx.insert(communityPoolLedgerTable).values({
@@ -932,9 +1001,18 @@ export async function recordPoolContributionSettlement(params: {
   userId: number | null;
   historyUserId?: number | null;
   communityId?: number | null;
+  /** Explicit opt-in for the platform-wide anonymous General Fund. */
+  poolDestination?: "general";
   notes?: string;
 }): Promise<{ recorded: boolean; alreadyRecorded: boolean; ledgerId: number | null }> {
-  const { settlement, userId, historyUserId = userId, communityId, notes } = params;
+  const {
+    settlement,
+    userId,
+    historyUserId = userId,
+    communityId,
+    poolDestination,
+    notes,
+  } = params;
   // Automatic Stripe processing must never confirm a Niakofa payout.
   if ((settlement as { settlementStatus: string }).settlementStatus === "paid_out") {
     throw new Error(
@@ -944,6 +1022,9 @@ export async function recordPoolContributionSettlement(params: {
   }
   if (settlement.grossAmountCents <= 0 || settlement.netAmountCents < 0) {
     throw new Error("Invalid Stripe settlement amounts");
+  }
+  if (communityId == null && poolDestination !== "general") {
+    throw new Error("Pool settlement requires an explicit community or General Fund destination");
   }
   if (
     !Number.isInteger(settlement.grossAmountCents) ||

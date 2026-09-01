@@ -409,6 +409,11 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
       .where(eq(usersTable.id, userId))
       .limit(1);
     const communityId = contributor?.community_id ?? null;
+    if (communityId == null) {
+      return res.status(409).json({
+        error: "Your account is not assigned to a Community Pool. Contributions require an explicit community.",
+      });
+    }
 
     if (_stripe) {
       const idempotencyKey = getPoolIdempotencyKey(req.header("Idempotency-Key"));
@@ -419,7 +424,7 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
         metadata: {
           pool_contribution: "true",
           user_id: String(userId),
-          community_id: communityId == null ? "" : String(communityId),
+          community_id: String(communityId),
         },
       }, { idempotencyKey });
       return res.json({
@@ -462,8 +467,8 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
  * require login" limits public/grassroots funding. Anonymous donations are
  * Stripe-only (no dev-mode direct credit) to prevent abuse.
  *
- * The Stripe webhook at /stripe/webhook already handles pool_contribution=true
- * and gracefully accepts a null user_id, so no webhook changes are needed.
+ * The Stripe webhook at /stripe/webhook records this as an explicit
+ * platform-wide Niakofa General Fund destination.
  */
 router.post("/pool/donate", paymentLimiter, async (req, res) => {
   const amount = typeof req.body?.amount === "number" ? req.body.amount : NaN;
@@ -488,8 +493,10 @@ router.post("/pool/donate", paymentLimiter, async (req, res) => {
       metadata: {
         pool_contribution: "true",
         anonymous_donation: "true",
+        pool_destination: "general",
+        destination_label: "Niakofa General Fund",
         // user_id intentionally omitted — anonymous contribution
-        // The webhook handles this: parseInt("") || null → records userId as null
+        // The webhook handles this as an explicit platform-wide destination.
       },
     }, { idempotencyKey });
 

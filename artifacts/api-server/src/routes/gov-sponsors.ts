@@ -23,6 +23,18 @@ import { broadcast } from "../lib/ws-hub";
 
 const router = Router();
 
+async function findCommunityId(county: string, state: string): Promise<number | null> {
+  const result = await db.execute<{ id: number }>(sql`
+    SELECT id
+    FROM communities
+    WHERE LOWER(TRIM(county)) = LOWER(TRIM(${county}))
+      AND LOWER(TRIM(state)) = LOWER(TRIM(${state}))
+    ORDER BY id ASC
+    LIMIT 1
+  `);
+  return result.rows[0]?.id ?? null;
+}
+
 // ── POST /gov-sponsors — submit a government/county sponsor application ─────────
 router.post("/gov-sponsors", requireAuth, generalApiLimiter, async (req, res) => {
   const submittedBy = req.authenticatedUserId!;
@@ -150,7 +162,13 @@ router.post(
     }
 
     const [sponsor] = await db
-      .select({ id: governmentSponsorsTable.id, entity_name: governmentSponsorsTable.entity_name, approval_status: governmentSponsorsTable.approval_status })
+      .select({
+        id: governmentSponsorsTable.id,
+        entity_name: governmentSponsorsTable.entity_name,
+        county: governmentSponsorsTable.county,
+        state: governmentSponsorsTable.state,
+        approval_status: governmentSponsorsTable.approval_status,
+      })
       .from(governmentSponsorsTable)
       .where(eq(governmentSponsorsTable.id, sponsorId))
       .limit(1);
@@ -160,6 +178,12 @@ router.post(
       return res.status(403).json({
         error: `"${sponsor.entity_name}" is not yet approved. Approve the sponsor before recording a pool contribution.`,
         approval_status: sponsor.approval_status,
+      });
+    }
+    const communityId = await findCommunityId(sponsor.county, sponsor.state);
+    if (communityId == null) {
+      return res.status(409).json({
+        error: `No Community Pool is configured for ${sponsor.county}, ${sponsor.state}. Configure the community before recording sponsor funds.`,
       });
     }
 
@@ -175,6 +199,7 @@ router.post(
       historyUserId: null,
       notes,
       governmentSponsorId: sponsorId,
+      communityId,
     });
 
     if (!recorded) {
@@ -235,7 +260,13 @@ router.post(
 
     // Validate the sponsor is approved before doing anything
     const [sponsor] = await db
-      .select({ id: governmentSponsorsTable.id, entity_name: governmentSponsorsTable.entity_name, approval_status: governmentSponsorsTable.approval_status })
+      .select({
+        id: governmentSponsorsTable.id,
+        entity_name: governmentSponsorsTable.entity_name,
+        county: governmentSponsorsTable.county,
+        state: governmentSponsorsTable.state,
+        approval_status: governmentSponsorsTable.approval_status,
+      })
       .from(governmentSponsorsTable)
       .where(eq(governmentSponsorsTable.id, sponsorId))
       .limit(1);
@@ -263,6 +294,20 @@ router.post(
       .limit(1);
 
     if (!helpRequest) return res.status(404).json({ error: "Help request not found." });
+    const sponsorCommunityId = await findCommunityId(sponsor.county, sponsor.state);
+    if (sponsorCommunityId == null) {
+      return res.status(409).json({
+        error: `No Community Pool is configured for ${sponsor.county}, ${sponsor.state}. Configure the community before subsidizing a pledge.`,
+      });
+    }
+    const requesterCommunity = await db.execute<{ community_id: number | null }>(sql`
+      SELECT community_id FROM users WHERE id = ${helpRequest.requester_id} LIMIT 1
+    `);
+    if (requesterCommunity.rows[0]?.community_id !== sponsorCommunityId) {
+      return res.status(409).json({
+        error: "The sponsor and request must belong to the same Community Pool.",
+      });
+    }
     if (helpRequest.payment_type !== "pay_it_forward") {
       return res.status(400).json({ error: "This request does not have a pay-it-forward pledge." });
     }
@@ -307,6 +352,7 @@ router.post(
       userId: req.authenticatedUserId!,
       notes,
       governmentSponsorId: sponsorId,
+      communityId: sponsorCommunityId,
     });
 
     if (recorded) {

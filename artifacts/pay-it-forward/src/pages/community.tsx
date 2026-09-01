@@ -1413,7 +1413,7 @@ export default function CommunityScreen() {
                 pending={anonPending}
                 onContinue={submitAnonDonation}
                 title="Support the Community"
-                subtitle="No account needed — every dollar goes directly to helpers serving Tarrant County neighbors."
+                subtitle="No account needed — every dollar supports the Niakofa General Fund for community helpers."
               />
             ) : null}
             {(contributeMsg || anonMsg) && (
@@ -1829,7 +1829,7 @@ export default function CommunityScreen() {
               <StripePaymentModal
                 clientSecret={anonSecret}
                 amount={parseFloat(anonAmount) || 0}
-                description="Anonymous Community Pool donation — your gift goes directly to helpers serving Tarrant County neighbors."
+                description="Anonymous Community Pool donation — your gift supports the Niakofa General Fund for community helpers."
                 returnUrl={createPoolPaymentReturnUrl("donation")}
                 onSuccess={() => {
                   setAnonSecret(null);

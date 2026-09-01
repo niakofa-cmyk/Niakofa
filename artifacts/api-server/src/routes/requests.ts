@@ -1448,6 +1448,8 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
             helperId,
             amount: owed,
             requestTitle: request.title,
+            communityId: helperBefore?.community_id ?? null,
+            hubId: request.hub_id ?? null,
           });
         }
       }
@@ -2222,12 +2224,45 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
         });
       }
 
-      // Record the repayment in the pool ledger for the audit trail.
+       // Preserve the original fund scope from the pool front. Repayments must
+       // replenish the same community/hub reserve that funded the request,
+       // rather than being reclassified from the requester's current profile.
+       const [frontLedger] = await tx
+         .select({
+           community_id: communityPoolLedgerTable.community_id,
+           hub_id: communityPoolLedgerTable.hub_id,
+         })
+         .from(communityPoolLedgerTable)
+         .where(and(
+           eq(communityPoolLedgerTable.request_id, requestId),
+           eq(communityPoolLedgerTable.entry_type, "helper_front"),
+         ))
+         .limit(1);
+       if (!frontLedger || (frontLedger.community_id == null && frontLedger.hub_id == null)) {
+         throw Object.assign(new Error("fund_scope_required"), { status: 409 });
+       }
+
+       const [requester] = await tx
+        .select({ community_id: usersTable.community_id })
+        .from(usersTable)
+        .where(eq(usersTable.id, requesterId))
+        .limit(1);
+       if (
+         frontLedger.community_id != null &&
+         requester?.community_id != null &&
+         frontLedger.community_id !== requester.community_id
+       ) {
+         throw Object.assign(new Error("fund_scope_mismatch"), { status: 409 });
+      }
+
+       // Record the repayment in the same pool community/hub for the audit trail.
       await tx.insert(communityPoolLedgerTable).values({
         entry_type: "pledge_repayment",
         amount: amountActuallyApplied > 0 ? amountActuallyApplied : safeAmount,
         request_id: requestId,
         user_id: requesterId,
+         community_id: frontLedger.community_id,
+         hub_id: frontLedger.hub_id,
         notes: `Self-service repayment — pledge ${row.pledge_status === "repaid" ? "fully paid" : "reinstated from defaulted"}`,
       });
 

@@ -7,7 +7,7 @@
  *     already uses: benevolence_wallet, trust_score, help_count, goodwill_score)
  *   - "My Recent Activity" merges GET /requests?requester_id= and
  *     GET /requests?helper_id= (real personal request history)
- *   - "Community Pool" comes from GET /pool/stats (public, real ledger totals)
+ *   - "My Community Pool" comes from GET /pool/my-stats (member-scoped ledger totals)
  *   - "Diaspora Activity" comes from GET /diaspora/activity (real family
  *     memory feed) when the user belongs to a family space; hidden otherwise
  * No invented data, no placeholder numbers.
@@ -40,6 +40,7 @@ interface DiasporaActivity {
 
 interface PoolStats {
   balance: number;
+  community_name?: string;
 }
 
 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -65,7 +66,7 @@ export default function DashboardPage() {
             .then(r => (r.ok ? r.json() : [])).catch(() => []),
           fetch(`${base}/api/diaspora/activity`, { headers: authHeaders() })
             .then(r => (r.ok ? r.json() : { activities: [] })).catch(() => ({ activities: [] })),
-          fetch(`${base}/api/pool/stats`)
+          fetch(`${base}/api/pool/my-stats`, { headers: authHeaders() })
             .then(r => (r.ok ? r.json() : null)).catch(() => null),
         ]);
 
@@ -235,9 +236,11 @@ export default function DashboardPage() {
                   className="w-full flex items-center justify-between gap-3 p-4 bg-gradient-to-br from-primary/15 to-background border border-primary/30 rounded-2xl text-left hover:border-primary/50 transition-colors"
                 >
                   <div>
-                    <div className="text-xs font-black uppercase tracking-widest text-primary/80">Community Pool</div>
+                    <div className="text-xs font-black uppercase tracking-widest text-primary/80">
+                      {pool.community_name ?? "My Community Pool"}
+                    </div>
                     <div className="text-lg font-black mt-1">${pool.balance.toFixed(2)}</div>
-                    <div className="text-xs text-muted-foreground">Fueling pay-it-forward help across Niakofa</div>
+                    <div className="text-xs text-muted-foreground">Fueling pay-it-forward help in your community</div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-primary shrink-0" />
                 </button>

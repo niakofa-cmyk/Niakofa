@@ -182,6 +182,29 @@ describe("GET /pool/my-stats", () => {
       _eq: [poolColumns.community_id, 42],
     });
   });
+
+  it("does not expose a platform-wide balance when the member is in another community", async () => {
+    mockDb.limit.mockResolvedValueOnce([{ community_id: 99 }]);
+    mockDb.execute.mockResolvedValueOnce({ rows: [{ name: "Kansas City" }] });
+    awaitedQueryResults.push([{
+      balance: 15,
+      total_contributed: 15,
+      total_fronted: 0,
+      total_repaid: 0,
+      sponsor_count: 1,
+    }]);
+
+    const response = await request(makeApp()).get("/pool/my-stats");
+
+    expect(response.status).toBe(200);
+    expect(response.body.community_id).toBe(99);
+    expect(response.body.community_name).toBe("Kansas City");
+    expect(response.body.balance).toBe(15);
+    expect(mockDb.where).toHaveBeenCalledWith({
+      _eq: [poolColumns.community_id, 99],
+    });
+    expect(response.body.balance).not.toBe(125);
+  });
 });
 
 describe("GET /pool/my-ledger", () => {

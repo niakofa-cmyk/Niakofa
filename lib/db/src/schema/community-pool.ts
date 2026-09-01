@@ -120,6 +120,10 @@ export const poolPendingMinimumsTable = pgTable("pool_pending_minimums", {
   helper_id: integer("helper_id").notNull(),
   amount: real("amount").notNull(),
   request_title: text("request_title").notNull().default(""),
+  // Scope is copied from the completed request's payout attempt so a queued
+  // minimum can never be backfilled from a different community.
+  community_id: integer("community_id"),
+  hub_id: integer("hub_id"),
   status: text("status").notNull().default("pending"),
   created_at: timestamp("created_at", { withTimezone: true })
     .notNull()

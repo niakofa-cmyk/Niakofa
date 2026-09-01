@@ -132,6 +132,12 @@ router.post("/pool/stripe/reconciliation/:paymentIntentId/repair", requireAdmin(
 
     const userId = Number(pi.metadata?.["user_id"]) || null;
     const communityId = Number(pi.metadata?.["community_id"]) || null;
+    const isGeneralFund = pi.metadata?.["pool_destination"] === "general";
+    if (communityId == null && !isGeneralFund) {
+      return res.status(409).json({
+        error: "PaymentIntent is missing an explicit Community Pool or General Fund destination.",
+      });
+    }
     const body = (req.body ?? {}) as {
       climate_contribution_cents?: number;
       stripe_climate_transaction_id?: string;
@@ -151,10 +157,13 @@ router.post("/pool/stripe/reconciliation/:paymentIntentId/repair", requireAdmin(
     const recorded = await recordPoolContributionSettlement({
       userId,
       communityId,
+      poolDestination: isGeneralFund ? "general" : undefined,
       settlement: {
         ...settlement,
       },
-      notes: "Reconciled Stripe Community Pool contribution",
+      notes: isGeneralFund
+        ? "Reconciled anonymous donation to Niakofa General Fund"
+        : "Reconciled Stripe Community Pool contribution",
     });
 
     logger.warn(

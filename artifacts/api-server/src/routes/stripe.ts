@@ -89,6 +89,10 @@ router.post("/stripe/webhook", async (req, res) => {
         if (pi.metadata?.["pool_contribution"] === "true") {
           const contributorId = parseInt(pi.metadata["user_id"] ?? "") || null;
           const communityId = parseInt(pi.metadata["community_id"] ?? "") || null;
+          const isGeneralFund = pi.metadata?.["pool_destination"] === "general";
+          if (communityId == null && !isGeneralFund && pi.metadata?.["anonymous_donation"] !== "true") {
+            throw new Error(`Pool contribution ${pi.id} is missing an explicit community destination`);
+          }
           const settlementIntent = await stripe!.paymentIntents.retrieve(pi.id, {
             expand: ["latest_charge"],
           });
@@ -103,7 +107,10 @@ router.post("/stripe/webhook", async (req, res) => {
           const recorded = await recordPoolContributionSettlement({
             userId: contributorId,
             communityId,
-            notes: "Sponsor contribution via Stripe",
+            poolDestination: isGeneralFund ? "general" : undefined,
+            notes: isGeneralFund
+              ? "Anonymous donation to Niakofa General Fund"
+              : "Sponsor contribution via Stripe",
             settlement: {
               ...settlement,
             },
@@ -256,6 +263,20 @@ router.post("/stripe/webhook", async (req, res) => {
               .where(eq(requestsTable.id, requestId));
 
             if (fronted) {
+              const [frontLedger] = await tx
+                .select({
+                  community_id: communityPoolLedgerTable.community_id,
+                  hub_id: communityPoolLedgerTable.hub_id,
+                })
+                .from(communityPoolLedgerTable)
+                .where(and(
+                  eq(communityPoolLedgerTable.request_id, requestId),
+                  eq(communityPoolLedgerTable.entry_type, "helper_front"),
+                ))
+                .limit(1);
+              if (!frontLedger || (frontLedger.community_id == null && frontLedger.hub_id == null)) {
+                throw new Error(`Pool-fronted request ${requestId} is missing a fund scope`);
+              }
               // Repayment flows back into the pool. onConflictDoNothing +
               // unique index on stripe_payment_intent_id = retry-safe.
               await tx
@@ -265,6 +286,8 @@ router.post("/stripe/webhook", async (req, res) => {
                   amount,
                   request_id: requestId,
                   user_id: txRow.requester_id ?? null,
+                  community_id: frontLedger.community_id,
+                  hub_id: frontLedger.hub_id,
                   stripe_payment_intent_id: pi.id,
                   notes: "Requester repaid a pool-fronted pledge — pool replenished",
                 })
@@ -657,11 +680,27 @@ router.post("/stripe/webhook", async (req, res) => {
         // If the pool fronted this payment, reverse the pool ledger entry
         const fronted = await wasRequestFronted(txRow.request_id);
         if (fronted && refundAmount > 0) {
+          const [frontLedger] = await db
+            .select({
+              community_id: communityPoolLedgerTable.community_id,
+              hub_id: communityPoolLedgerTable.hub_id,
+            })
+            .from(communityPoolLedgerTable)
+            .where(and(
+              eq(communityPoolLedgerTable.request_id, txRow.request_id),
+              eq(communityPoolLedgerTable.entry_type, "helper_front"),
+            ))
+            .limit(1);
+          if (!frontLedger || (frontLedger.community_id == null && frontLedger.hub_id == null)) {
+            throw new Error(`Refund for pool-fronted request ${txRow.request_id} is missing a fund scope`);
+          }
           await db.insert(communityPoolLedgerTable).values({
             entry_type: "pledge_repayment",
             amount: -refundAmount,
             request_id: txRow.request_id,
             user_id: txRow.requester_id ?? null,
+            community_id: frontLedger.community_id,
+            hub_id: frontLedger.hub_id,
             stripe_payment_intent_id: piId,
             notes: "Refund reversed from pool (Stripe charge.refunded)",
           }).onConflictDoNothing();

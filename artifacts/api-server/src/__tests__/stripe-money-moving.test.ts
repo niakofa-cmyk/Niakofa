@@ -170,7 +170,7 @@ beforeEach(() => {
     livemode: true,
     status: "succeeded",
     latest_charge: "ch_pool_test",
-    metadata: { pool_contribution: "true", user_id: "42" },
+    metadata: { pool_contribution: "true", user_id: "42", community_id: "7" },
   });
   stripeChargeRetrieve.mockResolvedValue({
     id: "ch_pool_test",
@@ -214,6 +214,7 @@ describe("POST /api/stripe/payment-intent", () => {
 
 describe("POST /api/pool/contribute", () => {
   it("uses a distinct Stripe idempotency key for each unkeyed payment attempt", async () => {
+    db.limit.mockResolvedValue([{ community_id: 7 }]);
     const first = await request(app)
       .post("/api/pool/contribute")
       .send({ amount: 25 });
@@ -253,6 +254,7 @@ describe("POST /api/pool/contribute", () => {
   });
 
   it("preserves the caller's idempotency key for safe retries", async () => {
+    db.limit.mockResolvedValueOnce([{ community_id: 7 }]);
     const response = await request(app)
       .post("/api/pool/contribute")
       .set("Idempotency-Key", "pool-attempt-123")
@@ -262,6 +264,37 @@ describe("POST /api/pool/contribute", () => {
     expect(stripePaymentIntentCreate).toHaveBeenLastCalledWith(
       expect.objectContaining({ amount: 2500 }),
       { idempotencyKey: "pool-attempt-123" },
+    );
+  });
+
+  it("fails closed when the contributor has no assigned community", async () => {
+    db.limit.mockResolvedValueOnce([{ community_id: null }]);
+
+    const response = await request(app)
+      .post("/api/pool/contribute")
+      .send({ amount: 25 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/explicit community/i);
+    expect(stripePaymentIntentCreate).not.toHaveBeenCalled();
+  });
+
+  it("marks anonymous donations for the Niakofa General Fund", async () => {
+    const response = await request(app)
+      .post("/api/pool/donate")
+      .send({ amount: 25 });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          pool_contribution: "true",
+          anonymous_donation: "true",
+          pool_destination: "general",
+          destination_label: "Niakofa General Fund",
+        }),
+      }),
+      expect.any(Object),
     );
   });
 
@@ -310,6 +343,7 @@ describe("POST /api/stripe/webhook", () => {
           metadata: {
             pool_contribution: "true",
             user_id: "42",
+            community_id: "7",
             climate_contribution_cents: "5",
             stripe_climate_transaction_id: "txn_climate",
           },
@@ -388,7 +422,7 @@ describe("POST /api/stripe/webhook", () => {
         object: {
           id: "pi_pool_failure",
           amount: 500,
-          metadata: { pool_contribution: "true", user_id: "42" },
+          metadata: { pool_contribution: "true", user_id: "42", community_id: "7" },
         },
       },
     });
