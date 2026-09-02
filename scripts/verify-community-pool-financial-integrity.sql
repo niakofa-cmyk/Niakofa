@@ -11,9 +11,20 @@ WHERE filename IN (
   '0115_community_pool_financial_events.sql',
   '0116_pool_contribution_user_history.sql',
   '0117_pool_settlement_verification_and_payout.sql',
-  '0118_pool_pending_scope.sql'
+  '0118_pool_pending_scope.sql',
+  '0118_community_pool_financial_integrity.sql'
 )
 ORDER BY filename;
+
+-- Migration sequence collision visibility. The repository currently contains two
+-- migrations with the 0118 prefix. This query does not fail the preflight because
+-- migration runners may track full filenames, but operators must verify that both
+-- exact filenames are applied in deterministic order before declaring the schema
+-- production-complete.
+SELECT '0118_collision_status' AS check_name,
+       count(*) FILTER (WHERE filename = '0118_pool_pending_scope.sql') AS pending_scope_applied,
+       count(*) FILTER (WHERE filename = '0118_community_pool_financial_integrity.sql') AS financial_integrity_applied
+FROM _migrations_applied;
 
 SELECT 'ledger_type' AS check_name, table_name, column_name, data_type,
        numeric_precision, numeric_scale
