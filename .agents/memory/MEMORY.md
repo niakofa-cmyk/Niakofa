@@ -54,3 +54,4 @@
 - [Workspace dependency linking](niakofa-workspace-dependency-linking.md) — this checkout can lose pnpm worker/bin links during managed installs; standalone checks may need isolated cached Node tooling.
 - [Circles media state](niakofa-circles-lifecycle.md) — media-connected status must come from the WebRTC session, with bounded ICE recovery, not REST presence alone.
 - [Civic jurisdiction matching](civic-jurisdiction-matching.md) — normalize external geocoder metadata before matching canonical civic coverage, and version caches when matching changes.
+- [Legacy launch bridge](legacy-launch-bridge.md) — standalone launches use one-use opaque tickets and narrow context; separate-origin hosting needs an explicit API boundary.

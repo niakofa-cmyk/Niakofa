@@ -1,17 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
+import { requireAuth } from "../middlewares/auth.js";
+import { generalApiLimiter } from "../middlewares/rate-limit.js";
+import { getQueueConnection } from "../lib/queue.js";
+import { logger } from "../lib/logger.js";
 import {
-  db,
-  familyMembersTable,
-} from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
-import { requireAuth } from "../middlewares/auth";
-import { generalApiLimiter } from "../middlewares/rate-limit";
-import { getQueueConnection } from "../lib/queue";
-import { logger } from "../lib/logger";
-
-const router = Router();
+  getFamilyCharacter as getStoredFamilyCharacter,
+  getFamilyMembership as getStoredFamilyMembership,
+} from "../lib/legacy-launch-db.js";
 
 const LAUNCH_TICKET_TTL_SECONDS = 60;
 const LAUNCH_TICKET_PREFIX = "legacy:launch-ticket:";
@@ -88,30 +85,22 @@ async function consumeLaunchTicket(ticket: string): Promise<StoredLegacyLaunch |
   return payload;
 }
 
-async function findFamilyMember(
-  familyId: number,
-  characterId: string,
-): Promise<{ id: number } | undefined> {
-  const numericId = Number(characterId);
-  if (!Number.isSafeInteger(numericId) || numericId <= 0) return undefined;
-
-  const [member] = await db
-    .select({ id: familyMembersTable.id })
-    .from(familyMembersTable)
-    .where(
-      and(
-        eq(familyMembersTable.id, numericId),
-        eq(familyMembersTable.family_id, familyId),
-        inArray(familyMembersTable.status, ["active", "invited"]),
-      ),
-    )
-    .limit(1);
-  return member;
+export interface LegacyLaunchDataSource {
+  getFamilyMembership: typeof getStoredFamilyMembership;
+  getFamilyCharacter: typeof getStoredFamilyCharacter;
 }
 
-// POST /legacy/launch-ticket — create a one-use launch credential for the
-// standalone RPG. The credential itself contains no readable family data.
-router.post("/legacy/launch-ticket", generalApiLimiter, requireAuth, async (req, res) => {
+export function createLegacyLaunchRouter(
+  dataSource: LegacyLaunchDataSource = {
+    getFamilyMembership: getStoredFamilyMembership,
+    getFamilyCharacter: getStoredFamilyCharacter,
+  },
+): Router {
+  const router = Router();
+
+  // POST /legacy/launch-ticket — create a one-use launch credential for the
+  // standalone RPG. The credential itself contains no readable family data.
+  router.post("/legacy/launch-ticket", generalApiLimiter, requireAuth, async (req, res) => {
   const parsed = LaunchTicketRequest.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "familyId, characterId, and a valid gameHour are required" });
@@ -119,23 +108,13 @@ router.post("/legacy/launch-ticket", generalApiLimiter, requireAuth, async (req,
 
   const userId = req.authenticatedUserId!;
   const { familyId, gameHour } = parsed.data;
-  const [membership] = await db
-    .select({ id: familyMembersTable.id })
-    .from(familyMembersTable)
-    .where(
-      and(
-        eq(familyMembersTable.family_id, familyId),
-        eq(familyMembersTable.user_id, userId),
-        inArray(familyMembersTable.status, ["active", "invited"]),
-      ),
-    )
-    .limit(1);
+  const membership = await dataSource.getFamilyMembership(familyId, userId);
 
   if (!membership) {
     return res.status(403).json({ error: "You are not a member of this family" });
   }
 
-  const character = await findFamilyMember(familyId, parsed.data.characterId ?? "");
+  const character = await dataSource.getFamilyCharacter(familyId, parsed.data.characterId ?? "");
   if (!character) {
     return res.status(404).json({ error: "That Legacy character is not in this family" });
   }
@@ -163,7 +142,7 @@ router.post("/legacy/launch-ticket", generalApiLimiter, requireAuth, async (req,
 // GET /legacy/launch-context — exchange the one-use ticket. This endpoint is
 // intentionally not authenticated with the platform cookie: the ticket is the
 // short-lived proof carried to a separately hosted RPG origin.
-router.get("/legacy/launch-context", generalApiLimiter, async (req, res) => {
+  router.get("/legacy/launch-context", generalApiLimiter, async (req, res) => {
   const ticket = typeof req.query.ticket === "string" ? req.query.ticket.trim() : "";
   if (ticket.length < 32 || ticket.length > 256) {
     return res.status(400).json({ error: "A valid Legacy launch ticket is required" });
@@ -189,10 +168,14 @@ router.get("/legacy/launch-context", generalApiLimiter, async (req, res) => {
       gameHour: payload.gameHour,
     },
   });
-});
+  });
+
+  return router;
+}
 
 export function __resetLegacyLaunchTicketsForTests(): void {
   memoryTickets.clear();
 }
 
+const router = createLegacyLaunchRouter();
 export default router;

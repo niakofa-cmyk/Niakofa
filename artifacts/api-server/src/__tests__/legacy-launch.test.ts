@@ -2,29 +2,11 @@ import { jest, describe, it, expect, beforeEach, beforeAll } from "@jest/globals
 import request from "supertest";
 import express, { type Request, type Response, type NextFunction } from "express";
 
-const db: Record<string, jest.Mock> = {
-  select: jest.fn().mockReturnThis(),
-  from: jest.fn().mockReturnThis(),
-  where: jest.fn().mockReturnThis(),
-  limit: jest.fn(),
-};
-
-jest.unstable_mockModule("@workspace/db", () => ({
-  db,
-  familyMembersTable: {
-    id: "id",
-    family_id: "family_id",
-    user_id: "user_id",
-    status: "status",
-  },
-}));
+const getFamilyMembership = jest.fn();
+const getFamilyCharacter = jest.fn();
 
 jest.unstable_mockModule("../middlewares/rate-limit", () => ({
   generalApiLimiter: (_req: Request, _res: Response, next: NextFunction) => next(),
-}));
-
-jest.unstable_mockModule("../lib/queue", () => ({
-  getQueueConnection: () => null,
 }));
 
 let app: express.Express;
@@ -34,12 +16,18 @@ let signTokenById: (userId: number) => string;
 beforeAll(async () => {
   const auth = await import("../middlewares/auth.js");
   signTokenById = auth.signTokenById;
-  const { default: router, __resetLegacyLaunchTicketsForTests } = await import("../routes/legacy-launch.js");
+  const {
+    createLegacyLaunchRouter,
+    __resetLegacyLaunchTicketsForTests,
+  } = await import("../routes/legacy-launch.js");
   resetTickets = __resetLegacyLaunchTicketsForTests;
   app = express();
   app.use(express.json());
   app.use(auth.parseAuth);
-  app.use("/api", router);
+  app.use("/api", createLegacyLaunchRouter({
+    getFamilyMembership,
+    getFamilyCharacter,
+  }));
 });
 
 function authHeader(): string {
@@ -47,22 +35,21 @@ function authHeader(): string {
 }
 
 beforeEach(() => {
-  db.limit.mockReset();
+  getFamilyMembership.mockReset();
+  getFamilyCharacter.mockReset();
   resetTickets();
 });
 
 describe("Legacy authenticated launch bridge", () => {
   it("issues a one-use ticket and returns only narrow live context", async () => {
-    db.limit
-      .mockResolvedValueOnce([{ id: 9001 }])
-      .mockResolvedValueOnce([{ id: 17 }]);
+    getFamilyMembership.mockResolvedValueOnce({ id: 9001 });
+    getFamilyCharacter.mockResolvedValueOnce({ id: 17 });
 
     const issue = await request(app)
       .post("/api/legacy/launch-ticket")
       .set("Authorization", authHeader())
       .send({ familyId: 9, characterId: "17", gameHour: 16 });
 
-    console.error("launch issue debug", issue.status, issue.body, db.limit.mock.calls.length);
     expect(issue.status).toBe(201);
     expect(issue.body).toEqual({
       ticket: expect.any(String),
@@ -86,9 +73,8 @@ describe("Legacy authenticated launch bridge", () => {
   });
 
   it("rejects replay of an exchanged ticket", async () => {
-    db.limit
-      .mockResolvedValueOnce([{ id: 9001 }])
-      .mockResolvedValueOnce([{ id: 17 }]);
+    getFamilyMembership.mockResolvedValueOnce({ id: 9001 });
+    getFamilyCharacter.mockResolvedValueOnce({ id: 17 });
 
     const issue = await request(app)
       .post("/api/legacy/launch-ticket")
@@ -101,7 +87,7 @@ describe("Legacy authenticated launch bridge", () => {
   });
 
   it("fails closed for a caller outside the requested family", async () => {
-    db.limit.mockResolvedValueOnce([]);
+    getFamilyMembership.mockResolvedValueOnce(undefined);
 
     const issue = await request(app)
       .post("/api/legacy/launch-ticket")

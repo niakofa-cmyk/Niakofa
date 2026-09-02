@@ -1,8 +1,15 @@
 # Legacy RPG extraction contract
 
 Status: **Phase 2/3 — controlled standalone copy verified**
-Last verified against: `origin/main` at commit `96c718d6`
+Last verified: **2026-09-01**
 Canonical source: `artifacts/pay-it-forward`
+
+The controlled standalone copy is maintained in the separate
+`niakofa-cmyk/niakofa-legacy-rpg` repository. This platform checkout does not
+contain a tracked `artifacts/pay-it-forward/src/legacy-runtime` tree; the
+historical runtime paths below remain frozen contract references and must be
+revalidated against the standalone repository before any further source
+relocation.
 
 This document freezes the boundary between Niakofa's family platform and the
 Legacy RPG runtime before any folders are copied or moved. The first extraction
@@ -52,7 +59,7 @@ runtime merely because they share the route prefix.
 
 ### `LegacyGameCanvasProps`
 
-Current source:
+Frozen reference:
 `artifacts/pay-it-forward/src/legacy-runtime/LegacyGameCanvas.tsx`
 
 ```ts
@@ -77,7 +84,7 @@ externally controlled so the platform can later supply world time, while
 
 ### Mensah Compound scene
 
-Current source:
+Frozen reference:
 `artifacts/pay-it-forward/src/legacy-runtime/scene-mensah-compound.ts`
 
 Frozen exports:
@@ -93,7 +100,7 @@ scene before any authenticated family bridge is introduced.
 
 ### Character sheets
 
-Current source:
+Frozen reference:
 `artifacts/pay-it-forward/src/legacy-runtime/kwame-sheet-manifest.ts`
 
 Frozen export: `KWAME_SHEET_MANIFEST`.
@@ -124,15 +131,21 @@ interface LegacyLaunchContext {
   mode: "mock" | "live";
   familyId?: string;
   characterId?: string;
-  sessionToken?: string;
   gameHour?: number;
 }
 ```
 
 Initial standalone mode is mock-first and must not require authentication.
-Live mode must pass an opaque session reference or token through a secure
-integration boundary; it must not put family biography into a URL or local
-runtime blob.
+Live mode uses the platform's authenticated
+`POST /api/legacy/launch-ticket` issuer followed by the one-use
+`GET /api/legacy/launch-context` exchange. The ticket is short-lived,
+opaque, and never contains family biography or a raw session credential. The
+exchange returns only the narrow context above.
+
+The current standalone bridge calls the platform API through a relative
+`/api` path. Until it accepts a configured platform origin, a separately
+hosted RPG requires a same-origin reverse proxy; this is a cutover gate, not a
+reason to redirect `/legacy/world` early.
 
 ## Save and state boundaries
 
@@ -167,11 +180,12 @@ behavior.
 
 ## Current implementation checkpoint
 
-The controlled copy now lives at `apps/legacy-rpg`. It has its own Vite entry,
+The controlled copy now lives in the separate
+`niakofa-cmyk/niakofa-legacy-rpg` repository. It has its own Vite entry,
 mock-first launch bridge, plain-CSS boundary, copied Pixi runtime, and the
 production environment and character-sheet asset roots. Shared launch/save
-contracts live in `packages/shared-types`, and the future generation boundary
-is stubbed in `services/world-engine`.
+contracts live in that repository's `packages/shared-types`, and the future
+generation boundary is stubbed in its `services/world-engine`.
 
 Verified on 2026-08-21:
 
@@ -179,11 +193,15 @@ Verified on 2026-08-21:
 - standalone `vite build`
 - standalone landing HTML response on port 5174
 - representative `environment-assets` PNG response on port 5174
+- Mensah Compound validation: standalone typecheck, build, runtime assets,
+  authored interactions, collision-constrained movement, NPC dialogue,
+  fishing, local resume, and ticket-only bridge checks
 
-The original `artifacts/pay-it-forward` runtime remains untouched and is still
-the in-app fallback. The `/legacy/world` launch has not been redirected yet;
-that is intentionally gated on interactive parity checks for movement,
-collision, NPCs, interactions, fishing, and local resume.
+The `/legacy/world` launch has not been redirected. The existing platform
+Legacy tables and routes remain in place, while the standalone repository is
+the controlled validation target. Redirection remains gated on interactive
+parity, authenticated ticket exchange from the hosted origin, and the
+same-origin/configured-origin bridge decision.
 
 ## Explicit non-goals
 
