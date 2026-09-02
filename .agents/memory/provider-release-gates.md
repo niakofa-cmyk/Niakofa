@@ -16,4 +16,7 @@ that Stripe readiness is wired correctly.
 
 **How to apply:** Never claim provider production readiness from env-var
 existence alone; use the restarted workflow logs, scoped readiness response,
-and release smoke result as the evidence.
+and release smoke result as the evidence. Verify the deployed URL separately
+from the local preview: production can be healthy while the development
+database is unreachable, and the development environment must not be pointed
+at production just to make its preview green.
