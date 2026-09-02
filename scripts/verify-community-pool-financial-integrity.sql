@@ -1,7 +1,12 @@
 -- Production-safe, read-only Community Pool financial integrity preflight.
 --
--- Every result set below should be empty (except the migration/status checks)
--- before applying 0118_community_pool_financial_integrity.sql.
+-- Every result set below should be empty (except migration/status checks)
+-- before declaring the Community Pool financial schema production-complete.
+--
+-- HISTORY (2026-09-02): migration_presence previously omitted
+-- 0118_community_pool_financial_integrity.sql. Both existing 0118-prefixed
+-- files are checked explicitly by full filename. Do not rename an already-
+-- applied migration solely to make numeric prefixes unique.
 BEGIN;
 SET TRANSACTION READ ONLY;
 
@@ -15,12 +20,9 @@ WHERE filename IN (
   '0118_community_pool_financial_integrity.sql'
 )
 ORDER BY filename;
+-- Expect 5 rows once fully migrated. If financial-integrity migration is
+-- missing, downstream clean checks are unverified rather than a database pass.
 
--- Migration sequence collision visibility. The repository currently contains two
--- migrations with the 0118 prefix. This query does not fail the preflight because
--- migration runners may track full filenames, but operators must verify that both
--- exact filenames are applied in deterministic order before declaring the schema
--- production-complete.
 SELECT '0118_collision_status' AS check_name,
        count(*) FILTER (WHERE filename = '0118_pool_pending_scope.sql') AS pending_scope_applied,
        count(*) FILTER (WHERE filename = '0118_community_pool_financial_integrity.sql') AS financial_integrity_applied
@@ -32,6 +34,7 @@ FROM information_schema.columns
 WHERE table_schema = 'public'
   AND table_name IN ('community_pool_ledger', 'pool_pending_minimums')
   AND column_name = 'amount';
+-- Expect numeric(12,2) on both after financial integrity migration.
 
 SELECT 'ledger_amount_conversion_risk' AS check_name, id, amount
 FROM community_pool_ledger
