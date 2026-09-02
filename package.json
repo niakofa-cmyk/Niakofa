@@ -19,7 +19,9 @@
     "verify:livekit": "bash scripts/verify-livekit-env.sh",
     "release-smoke": "node scripts/src/release-smoke.mjs",
     "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "production-gate": "node scripts/production-gate.mjs",
+    "test:production-gate": "node --test scripts/production-gate.test.mjs"
   },
   "private": true,
   "devDependencies": {
