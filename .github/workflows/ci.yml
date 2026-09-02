@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   architectural-boundary:
     name: App/AI Boundary Check
@@ -28,12 +35,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Run ESLint
-        run: npx eslint . --max-warnings 0 || echo "ESLint warnings found (non-blocking)"
+      - name: Run ESLint (blocking)
+        run: npx eslint . --max-warnings 0
 
   typecheck-and-test:
     name: Typecheck + Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -64,6 +72,7 @@ jobs:
   release-validation:
     name: Release Validation
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [architectural-boundary, lint, typecheck-and-test]
     if: github.ref == 'refs/heads/main'
     steps:
@@ -77,4 +86,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Pre-deployment validation
-        run: node scripts/src/release-validate.js
+        run: pnpm run release-validate
