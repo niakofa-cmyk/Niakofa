@@ -1,6 +1,6 @@
 # Legacy RPG extraction contract
 
-Status: **Phase 2/3 — controlled standalone copy verified**
+Status: **Phase 2/3 — standalone runtime verified; RPG reference migration staged**
 Last verified: **2026-09-01**
 Canonical source: `artifacts/pay-it-forward`
 
@@ -12,10 +12,10 @@ revalidated against the standalone repository before any further source
 relocation.
 
 This document freezes the boundary between Niakofa's family platform and the
-Legacy RPG runtime before any folders are copied or moved. The first extraction
-must be a controlled copy: the existing in-app world remains the production
-reference until a standalone runtime boots, renders Mensah Compound, and passes
-the same gameplay contracts.
+Legacy RPG runtime during the staged extraction. The standalone runtime is now
+the controlled validation target, while the existing platform APIs, tables, and
+authenticated launch surfaces remain the production fallback until cutover
+gates pass.
 
 ## Product boundary
 
@@ -32,6 +32,29 @@ The RPG may consume family context through a typed bridge or API. It must not
 own the Vault database or create a second source of truth for family members.
 RPG saves should reference stable `family_member_id` values rather than copy
 biographical records.
+
+## Reference and source migration boundary
+
+RPG-owned textual references and the archived Supabase RPG prototype are being
+moved to the standalone repository under `docs/from-niakofa/` and
+`archive/legacy-mode-supabase-prototype-*`. The complete transfer inventory,
+including SHA-256 checksums and source-to-target paths, is maintained at:
+
+`https://github.com/niakofa-cmyk/niakofa-legacy-rpg/blob/main/docs/niakofa-migration-manifest.json`
+
+The following remain in this repository because they are platform-owned or
+still required for release safety:
+
+- `artifacts/api-server/src/routes/legacy-*` and their supporting services
+- `artifacts/api-server/src/routes/legacy-launch.ts`
+- Legacy database schemas, migrations, and family/Vault persistence
+- Platform launch/session routes and compatibility fallbacks
+- `scripts/src/release-validate.js` and the platform asset-provenance audits
+- `.agents/memory/` and unresolved uploaded binary provenance
+
+The standalone repository receives reference copies of platform contracts where
+needed, but it does not become an owner of authentication, family records,
+Stripe, Community Pool, or Legacy database state.
 
 ## Frozen routes
 
@@ -197,6 +220,15 @@ Verified on 2026-08-21:
   authored interactions, collision-constrained movement, NPC dialogue,
   fishing, local resume, and ticket-only bridge checks
 
+Reference migration staged on 2026-09-01:
+
+- 157 RPG-owned textual reference/code files copied to the standalone
+  repository with SHA-256 checksums
+- Archived Supabase RPG prototype copied outside the standalone runtime
+- No credential-shaped values found in the staged textual transfer
+- Platform-owned API, database, authentication, release checks, and unresolved
+  binary provenance intentionally retained here
+
 The `/legacy/world` launch has not been redirected. The existing platform
 Legacy tables and routes remain in place, while the standalone repository is
 the controlled validation target. Redirection remains gated on interactive
@@ -205,7 +237,6 @@ same-origin/configured-origin bridge decision.
 
 ## Explicit non-goals
 
-- Do not create disconnected GitHub repositories yet.
 - Do not move Sankofa Bird, mutual aid, Mapbox, Vault capture, Stripe, or
   community features into the RPG.
 - Do not start world-engine AI generation as part of this extraction.

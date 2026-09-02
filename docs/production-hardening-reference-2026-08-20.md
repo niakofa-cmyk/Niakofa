@@ -33,8 +33,9 @@ services after all migration retries fail.
 - `artifacts/pay-it-forward/` is the canonical web application.
 - `artifacts/api-server/` is the canonical API and WebSocket service.
 - `lib/` contains shared database, API contract, and trust-tier packages.
-- `docs/legacy-mode-reference/` and `reference/` preserve source material and
-  provenance records; archive material is not automatically promoted to runtime.
+- The standalone `niakofa-cmyk/niakofa-legacy-rpg` repository now owns the
+  migrated RPG reference corpus; archive material is not automatically promoted
+  to runtime.
 
 ## This pass
 
