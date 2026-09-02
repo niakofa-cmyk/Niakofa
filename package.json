@@ -18,7 +18,8 @@
     "audit:routes": "node scripts/src/audit-routes.mjs",
     "verify:livekit": "bash scripts/verify-livekit-env.sh",
     "release-smoke": "node scripts/src/release-smoke.mjs",
-    "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js"
+    "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js",
+    "test:browser": "playwright test"
   },
   "private": true,
   "devDependencies": {
@@ -28,6 +29,7 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "prettier": "^3.8.3",
+    "@playwright/test": "^1.55.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.0.0"
   },

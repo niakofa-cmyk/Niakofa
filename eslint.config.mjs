@@ -16,7 +16,10 @@ export default tseslint.config(
   {
     ignores: [
       "node_modules/**",
+      ".cache/**",
       "**/dist/**",
+      "test-results/**",
+      "playwright-report/**",
       "**/node_modules/**",
       "**/generated/**",
       "niakofa-repo/**",
