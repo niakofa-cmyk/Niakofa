@@ -77,3 +77,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Pre-deployment validation
         run: node scripts/src/release-validate.js
+      - name: Production gate fail-closed tests
+        run: pnpm run test:production-gate
