@@ -56,6 +56,7 @@ const DnaConnectionsPage   = lazy(() => import("@/pages/dna-connections"));
 const HeritageCollectionsPage = lazy(() => import("@/pages/heritage-collections"));
 const ResearchCenterPage    = lazy(() => import("@/pages/research-center"));
 const PreserveCulturePage   = lazy(() => import("@/pages/preserve-culture"));
+const LegacyTimelinePage    = lazy(() => import("@/pages/legacy-timeline"));
 
 function PageFallback() {
   return (
@@ -249,6 +250,7 @@ function AppShell() {
             <Route path="/diaspora/heritage/globe" component={GlobePage} />
             <Route path="/diaspora/research" component={ResearchCenterPage} />
             <Route path="/diaspora/preserve" component={PreserveCulturePage} />
+            <Route path="/diaspora/timeline" component={LegacyTimelinePage} />
             <Route path="/diaspora" component={DiasporaDashboardPage} />
             <Route component={NotFound} />
           </Switch>
