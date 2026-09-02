@@ -19,6 +19,7 @@ import {
   Globe, Star, BookOpen, Layers, Users, ArrowRight,
   ChevronRight, BookHeart, Mic, FileText, Send, CheckCircle2, X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
