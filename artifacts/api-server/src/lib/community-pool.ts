@@ -13,6 +13,8 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { broadcast } from "./ws-hub";
 import { getEffectiveTier, getTierWageMultiplier } from "@workspace/trust-tiers";
+import { isPoolSettlementAccountingInvariant } from "./pool-financial-integrity";
+import { groupPendingMinimumsByScope } from "./pool-pending-queue";
 
 /**
  * Community Pool service.
@@ -165,6 +167,49 @@ export async function resolveCommunityIdForCoords(lat: number, lng: number): Pro
     LIMIT 1
   `);
   return result.rows[0]?.id ?? null;
+}
+
+export type ClaimScopeDecision =
+  | { ok: true; resolvedCommunityId?: number }
+  | { ok: false; reason: "community_unresolved" };
+
+/**
+ * Decide whether a helper claiming a request has a resolvable Community
+ * Pool scope, and auto-resolve it from their own coordinates when possible.
+ *
+ * Pulled out of the /requests/:id/claim route handler so the decision can
+ * be unit tested without mounting the full requests router. Does not touch
+ * the database itself -- resolvedCommunityId is returned for the caller to
+ * persist, keeping this function's only side effect the (already isolated)
+ * reverseGeocode lookup inside resolveCommunityIdForCoords().
+ */
+export async function resolveHelperClaimScope(params: {
+  requestHubId: number | null;
+  claimerCommunityId: number | null;
+  claimerLat: number | null;
+  claimerLng: number | null;
+}): Promise<ClaimScopeDecision> {
+  const { requestHubId, claimerCommunityId, claimerLat, claimerLng } = params;
+
+  // Hub-scoped requests are already isolated by hub_id; the helper's own
+  // community doesn't matter for scoping this payout.
+  if (requestHubId != null) return { ok: true };
+
+  const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
+  const looksUnresolved =
+    claimerCommunityId == null ||
+    (defaultCommunityId != null && claimerCommunityId === defaultCommunityId);
+
+  if (!looksUnresolved) return { ok: true };
+
+  const resolved =
+    claimerLat != null && claimerLng != null
+      ? await resolveCommunityIdForCoords(claimerLat, claimerLng).catch(() => null)
+      : null;
+
+  if (resolved != null) return { ok: true, resolvedCommunityId: resolved };
+
+  return { ok: false, reason: "community_unresolved" };
 }
 
 /**
@@ -773,46 +818,52 @@ export async function processPendingMinimums(): Promise<number> {
       .select()
       .from(poolPendingMinimumsTable)
       .where(eq(poolPendingMinimumsTable.status, "pending"))
-      .orderBy(asc(poolPendingMinimumsTable.created_at))
+      .orderBy(asc(poolPendingMinimumsTable.created_at), asc(poolPendingMinimumsTable.id))
       .limit(50);
 
-    for (const row of pending) {
-      const outcome = await payHelperFromPool({
-        entryType: "guaranteed_minimum",
-        amount: row.amount,
-        requestId: row.request_id,
-        helperId: row.helper_id,
-        requestTitle: row.request_title,
-        communityId: row.community_id,
-        hubId: row.hub_id,
-      });
+    // FIFO is guaranteed within each isolated fund, not across every
+    // community/hub in the platform. A depleted community must not block a
+    // different community whose pool can cover its older obligation.
+    for (const queue of groupPendingMinimumsByScope(pending)) {
+      for (const row of queue) {
+        const outcome = await payHelperFromPool({
+          entryType: "guaranteed_minimum",
+          amount: row.amount,
+          requestId: row.request_id,
+          helperId: row.helper_id,
+          requestTitle: row.request_title,
+          communityId: row.community_id,
+          hubId: row.hub_id,
+        });
 
-      if (outcome === "paid" || outcome === "duplicate") {
-        // duplicate = a minimum already exists for this request — mark satisfied
-        await db
-          .update(poolPendingMinimumsTable)
-          .set({ status: "paid", paid_at: new Date() })
-          .where(eq(poolPendingMinimumsTable.id, row.id));
-        if (outcome === "paid") {
-          paidCount++;
-          logger.info(
-            { request_id: row.request_id, helper_id: row.helper_id, amount: row.amount },
-            "Backfilled guaranteed minimum from replenished pool"
-          );
-          // Lazy import avoids a circular dependency (routes/push imports lib modules)
-          const { sendPushToUser } = await import("../routes/push");
-          sendPushToUser(row.helper_id, {
-            title: "💙 Community Pool Thank-You (backfilled)",
-            body: `The pool was replenished — $${row.amount.toFixed(2)} was just added to your Goodwill Fund for: "${row.request_title}".`,
-            requestId: row.request_id,
-            notifType: "wallet" as const,
-          }).catch(err => logger.warn({ err, helper_id: row.helper_id }, "sendPushToUser (backfill): non-critical side effect failed — continuing"));
+        if (outcome === "paid" || outcome === "duplicate") {
+          // duplicate = a minimum already exists for this request — mark satisfied
+          await db
+            .update(poolPendingMinimumsTable)
+            .set({ status: "paid", paid_at: new Date() })
+            .where(eq(poolPendingMinimumsTable.id, row.id));
+          if (outcome === "paid") {
+            paidCount++;
+            logger.info(
+              { request_id: row.request_id, helper_id: row.helper_id, amount: row.amount },
+              "Backfilled guaranteed minimum from replenished pool"
+            );
+            // Lazy import avoids a circular dependency (routes/push imports lib modules)
+            const { sendPushToUser } = await import("../routes/push");
+            sendPushToUser(row.helper_id, {
+              title: "💙 Community Pool Thank-You (backfilled)",
+              body: `The pool was replenished — $${row.amount.toFixed(2)} was just added to your Goodwill Fund for: "${row.request_title}".`,
+              requestId: row.request_id,
+              notifType: "wallet" as const,
+            }).catch(err => logger.warn({ err, helper_id: row.helper_id }, "sendPushToUser (backfill): non-critical side effect failed — continuing"));
+          }
+        } else if (outcome === "insufficient") {
+          // FIFO within this scope: stop this queue, but keep processing every
+          // other scope independently.
+          break;
         }
-      } else if (outcome === "insufficient") {
-        // FIFO: stop at the first one the pool can't cover
-        break;
+        // "error": leave pending, move on next cycle
       }
-      // "error": leave pending, move on next cycle
     }
 
     if (paidCount > 0) {
@@ -1049,17 +1100,25 @@ export async function recordPoolContributionSettlement(params: {
     throw new Error("Pool settlement requires an explicit community or General Fund destination");
   }
   if (
-    !Number.isInteger(settlement.grossAmountCents) ||
-    !Number.isInteger(settlement.stripeFeeCents) ||
-    settlement.stripeFeeCents < 0 ||
-    !Number.isInteger(settlement.climateContributionCents) ||
-    settlement.climateContributionCents < 0 ||
-    !Number.isInteger(settlement.netAmountCents) ||
-    settlement.netAmountCents !==
-      settlement.grossAmountCents -
-        settlement.stripeFeeCents -
-        settlement.climateContributionCents
+    !isPoolSettlementAccountingInvariant({
+      grossAmountCents: settlement.grossAmountCents,
+      stripeFeeCents: settlement.stripeFeeCents,
+      climateContributionCents: settlement.climateContributionCents,
+      netAmountCents: settlement.netAmountCents,
+    })
   ) {
+    if (
+      !Number.isSafeInteger(settlement.grossAmountCents) ||
+      !Number.isSafeInteger(settlement.stripeFeeCents) ||
+      settlement.stripeFeeCents < 0 ||
+      !Number.isSafeInteger(settlement.climateContributionCents) ||
+      settlement.climateContributionCents < 0 ||
+      !Number.isSafeInteger(settlement.netAmountCents) ||
+      settlement.grossAmountCents <= 0 ||
+      settlement.netAmountCents < 0
+    ) {
+      throw new Error("Invalid Stripe settlement amounts");
+    }
     throw new Error("Stripe settlement gross, fee, Climate deduction, and net do not reconcile");
   }
 

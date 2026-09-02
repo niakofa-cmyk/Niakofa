@@ -28,6 +28,7 @@ export async function advancePendingPoolSettlements(
       and(
         inArray(communityPoolFinancialEventsTable.settlement_status, ["pending"]),
         isNotNull(communityPoolFinancialEventsTable.stripe_balance_transaction_id),
+        eq(communityPoolFinancialEventsTable.stripe_verification_status, "verified"),
       ),
     )
     .limit(options?.limit ?? 50);

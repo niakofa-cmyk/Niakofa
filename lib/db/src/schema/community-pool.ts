@@ -1,4 +1,4 @@
-import { pgTable, serial, text, real, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -23,7 +23,9 @@ import { sql } from "drizzle-orm";
 export const communityPoolLedgerTable = pgTable("community_pool_ledger", {
   id: serial("id").primaryKey(),
   entry_type: text("entry_type").notNull(),
-  amount: real("amount").notNull(),
+  // Monetary dollars must be exact to cents. The signed ledger amount is
+  // positive for credits and negative for pool debits.
+  amount: numeric("amount", { precision: 12, scale: 2, mode: "number" }).notNull(),
   request_id: integer("request_id"),
   user_id: integer("user_id"),
   payment_transaction_id: integer("payment_transaction_id"),
@@ -118,7 +120,7 @@ export const poolPendingMinimumsTable = pgTable("pool_pending_minimums", {
   id: serial("id").primaryKey(),
   request_id: integer("request_id").notNull(),
   helper_id: integer("helper_id").notNull(),
-  amount: real("amount").notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2, mode: "number" }).notNull(),
   request_title: text("request_title").notNull().default(""),
   // Scope is copied from the completed request's payout attempt so a queued
   // minimum can never be backfilled from a different community.

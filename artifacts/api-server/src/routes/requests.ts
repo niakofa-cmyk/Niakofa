@@ -21,7 +21,7 @@ import { broadcast, broadcastRequestEvent, sendToUser, sendToRequestParticipants
 import { requestCreationLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
-import { payHelperFromPool, payHelpersFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance, getHourlyMinimumRate, roundMoney } from "../lib/community-pool";
+import { payHelperFromPool, payHelpersFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance, getHourlyMinimumRate, roundMoney, resolveHelperClaimScope } from "../lib/community-pool";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { getTrustTier, meetsQualityGate, TIER_RANK, tierAtLeast, isSensitiveCategory, getHubLeadershipTrustBonus } from "@workspace/trust-tiers";
 import type { TrustTier } from "@workspace/trust-tiers";
@@ -826,41 +826,36 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   }
 
   // Community Pool payouts are scoped by community_id or hub_id at
-  // completion time. A non-null community_id can still be only the generic
-  // registration default, so resolve that ambiguity before allowing a claim.
-  // Hub-scoped requests are already isolated by hub_id and do not need this
-  // helper-location check.
-  if (existingFull && existingFull.hub_id === null && (await isPoolEnabled())) {
-    const { getDefaultCommunityId, resolveCommunityIdForCoords } = await import("../lib/community-pool");
+  // completion time. Decision logic lives in resolveHelperClaimScope() so
+  // it's unit-tested without mounting this entire router -- see
+  // community-pool-claim-scope.test.ts.
+  if (existingFull && (await isPoolEnabled())) {
     const [claimer] = await db
       .select({ community_id: usersTable.community_id, lat: usersTable.lat, lng: usersTable.lng })
       .from(usersTable)
       .where(eq(usersTable.id, helperId))
       .limit(1);
-    const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
-    const looksUnresolved =
-      claimer?.community_id == null ||
-      (defaultCommunityId != null && claimer.community_id === defaultCommunityId);
-    if (looksUnresolved) {
-      const resolved =
-        claimer?.lat != null && claimer?.lng != null
-          ? await resolveCommunityIdForCoords(claimer.lat, claimer.lng).catch(() => null)
-          : null;
-      if (resolved != null) {
-        await db.update(usersTable).set({ community_id: resolved }).where(eq(usersTable.id, helperId));
-        logger.info(
-          { helper_id: helperId, community_id: resolved },
-          "Auto-resolved helper community at claim time",
-        );
-      } else {
-        return res.status(403).json({
-          error:
-            "Your account isn't linked to a Community Pool region yet, so we can't guarantee your pay-it-forward payout for this request. " +
-            "This usually resolves itself once you post a request from your area (it auto-detects your community), or an admin can set it manually. " +
-            "Please resolve that first, then try claiming again.",
-          reason: "community_unresolved",
-        });
-      }
+    const scopeDecision = await resolveHelperClaimScope({
+      requestHubId: existingFull.hub_id,
+      claimerCommunityId: claimer?.community_id ?? null,
+      claimerLat: claimer?.lat ?? null,
+      claimerLng: claimer?.lng ?? null,
+    });
+    if (!scopeDecision.ok) {
+      return res.status(403).json({
+        error:
+          "Your account isn't linked to a Community Pool region yet, so we can't guarantee your pay-it-forward payout for this request. " +
+          "This usually resolves itself once you post a request from your area (it auto-detects your community), or an admin can set it manually. " +
+          "Please resolve that first, then try claiming again.",
+        reason: scopeDecision.reason,
+      });
+    }
+    if (scopeDecision.resolvedCommunityId != null) {
+      await db.update(usersTable).set({ community_id: scopeDecision.resolvedCommunityId }).where(eq(usersTable.id, helperId));
+      logger.info(
+        { helper_id: helperId, community_id: scopeDecision.resolvedCommunityId },
+        "Auto-resolved helper community at claim time",
+      );
     }
   }
 
