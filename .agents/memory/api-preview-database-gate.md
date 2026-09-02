@@ -7,4 +7,4 @@ The managed API workflow is intentionally migration-first. If the configured dev
 
 **Why:** A green preview with an unapplied schema would hide a production-readiness failure and can make money-moving or recording flows appear valid when their tables are unavailable.
 
-**How to apply:** When the API workflow fails before opening its port, verify database DNS/connectivity and migration logs first. Keep `/api/healthz` and `/api/readiness` fail-closed.
+**How to apply:** When the API workflow fails before opening its port, verify database DNS/connectivity and migration logs first. A `*.railway.internal` hostname may be valid inside Railway but unreachable from a Replit preview, so run the preflight/migration from a network location that can reach the target database. Keep `/api/healthz` and `/api/readiness` fail-closed.
