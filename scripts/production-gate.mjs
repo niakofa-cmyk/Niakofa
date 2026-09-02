@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 import process from "node:process";
 
-const required = ["NIAKOFA_API_ORIGIN", "LEGACY_RPG_ORIGIN"];\nconst timeoutMs = Number(process.env.GATE_TIMEOUT_MS ?? 10000);\nif (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {\n  console.error("GATE_TIMEOUT_MS must be an integer between 1000 and 60000.");\n  process.exit(2);\n}
+const required = ["NIAKOFA_API_ORIGIN", "LEGACY_RPG_ORIGIN"];
+const timeoutMs = Number(process.env.GATE_TIMEOUT_MS ?? 10000);
+
+if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
+  console.error("GATE_TIMEOUT_MS must be an integer between 1000 and 60000.");
+  process.exit(2);
+}
+
 for (const key of required) {
   if (!process.env[key]) {
     console.error(`Missing required environment variable: ${key}`);
@@ -9,26 +16,48 @@ for (const key of required) {
   }
 }
 
-const apiOrigin = new URL(process.env.NIAKOFA_API_ORIGIN);
-const rpgOrigin = new URL(process.env.LEGACY_RPG_ORIGIN);
-if (!["http:", "https:"].includes(apiOrigin.protocol) || !["http:", "https:"].includes(rpgOrigin.protocol)) {
-  console.error("NIAKOFA_API_ORIGIN and LEGACY_RPG_ORIGIN must be HTTP(S) URLs.");
-  process.exit(2);
+function parseOrigin(name) {
+  try {
+    const origin = new URL(process.env[name]);
+    if (!["http:", "https:"].includes(origin.protocol)) {
+      throw new Error("unsupported_protocol");
+    }
+    return origin;
+  } catch {
+    console.error(`${name} must be a valid HTTP(S) URL.`);
+    process.exit(2);
+  }
 }
 
+const apiOrigin = parseOrigin("NIAKOFA_API_ORIGIN");
+const rpgOrigin = parseOrigin("LEGACY_RPG_ORIGIN");
+
 const checks = [];
+
 async function check(name, url, options = {}) {
   const started = Date.now();
+
   try {
     const response = await fetch(url, {
       redirect: "manual",
       signal: AbortSignal.timeout(timeoutMs),
       ...options,
     });
-    const body = await response.text();
-    checks.push({ name, ok: response.ok, status: response.status, ms: Date.now() - started, body: body.slice(0, 500) });
+
+    checks.push({
+      name,
+      ok: response.ok,
+      status: response.status,
+      ms: Date.now() - started,
+    });
   } catch (error) {
-    checks.push({ name, ok: false, status: 0, ms: Date.now() - started, error: error instanceof Error ? error.name : "request_error" });
+    checks.push({
+      name,
+      ok: false,
+      status: 0,
+      ms: Date.now() - started,
+      error: error instanceof Error ? error.name : "request_error",
+    });
   }
 }
 
@@ -49,13 +78,15 @@ await check(
   },
 );
 
-console.table(checks.map(({ name, ok, status, ms, error }) => ({ name, ok, status, ms, ...(error ? { error } : {}) })));
+console.table(checks);
 
-const failed = checks.filter((check) => !check.ok);
+const failed = checks.filter((checkResult) => !checkResult.ok);
 if (failed.length) {
   console.error(`Production gate failed: ${failed.length} check(s).`);
   process.exit(1);
 }
 
 console.log("Production gate network checks passed.");
-console.log("Authenticated community-pool matrix and live launch-ticket exchange still require real test identities/credentials and must be run by the deployment operator.");
+console.log(
+  "Authenticated community-pool matrix and live launch-ticket exchange still require real test identities/credentials and must be run by the deployment operator.",
+);
