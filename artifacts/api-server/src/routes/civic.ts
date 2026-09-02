@@ -70,7 +70,7 @@ interface MapboxGeocodingResponse {
   features: MapboxFeature[];
 }
 
-interface ResolvedPlace {
+export interface ResolvedPlace {
   city: string | null;
   county: string | null;
   state: string | null;
@@ -78,7 +78,7 @@ interface ResolvedPlace {
   place_name: string;
 }
 
-async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace | null> {
+export async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace | null> {
   if (!MAPBOX_TOKEN) {
     // Fail fast instead of firing a doomed request at Mapbox with an empty
     // token — avoids per-request network latency + log noise when the token

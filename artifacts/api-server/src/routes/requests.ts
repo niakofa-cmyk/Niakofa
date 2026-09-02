@@ -808,7 +808,7 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   // Emergency requests bypass this check by design (consistent with the
   // rest of the urgency-based bypass pattern used elsewhere in this file).
   const [existingFull] = await db
-    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, category: requestsTable.category, requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id, status: requestsTable.status })
+    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, category: requestsTable.category, requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id, status: requestsTable.status, hub_id: requestsTable.hub_id })
     .from(requestsTable)
     .where(eq(requestsTable.id, pParsed.data.id))
     .limit(1);
@@ -823,6 +823,45 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   if (existingFull?.status === "claimed" && existingFull.helper_id === helperId) {
     const [claimed] = await db.select().from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
     return res.json({ ...claimed, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null });
+  }
+
+  // Community Pool payouts are scoped by community_id or hub_id at
+  // completion time. A non-null community_id can still be only the generic
+  // registration default, so resolve that ambiguity before allowing a claim.
+  // Hub-scoped requests are already isolated by hub_id and do not need this
+  // helper-location check.
+  if (existingFull && existingFull.hub_id === null && (await isPoolEnabled())) {
+    const { getDefaultCommunityId, resolveCommunityIdForCoords } = await import("../lib/community-pool");
+    const [claimer] = await db
+      .select({ community_id: usersTable.community_id, lat: usersTable.lat, lng: usersTable.lng })
+      .from(usersTable)
+      .where(eq(usersTable.id, helperId))
+      .limit(1);
+    const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
+    const looksUnresolved =
+      claimer?.community_id == null ||
+      (defaultCommunityId != null && claimer.community_id === defaultCommunityId);
+    if (looksUnresolved) {
+      const resolved =
+        claimer?.lat != null && claimer?.lng != null
+          ? await resolveCommunityIdForCoords(claimer.lat, claimer.lng).catch(() => null)
+          : null;
+      if (resolved != null) {
+        await db.update(usersTable).set({ community_id: resolved }).where(eq(usersTable.id, helperId));
+        logger.info(
+          { helper_id: helperId, community_id: resolved },
+          "Auto-resolved helper community at claim time",
+        );
+      } else {
+        return res.status(403).json({
+          error:
+            "Your account isn't linked to a Community Pool region yet, so we can't guarantee your pay-it-forward payout for this request. " +
+            "This usually resolves itself once you post a request from your area (it auto-detects your community), or an admin can set it manually. " +
+            "Please resolve that first, then try claiming again.",
+          reason: "community_unresolved",
+        });
+      }
+    }
   }
 
   // Sensitive categories (childcare, senior_care, medical) involve vulnerable

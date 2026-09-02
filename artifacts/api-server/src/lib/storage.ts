@@ -208,6 +208,29 @@ export async function streamOrRedirectAsset(key: string, res: Response): Promise
   res.sendFile(abs);
 }
 
+/**
+ * Serve an asset without ever routing through the optional public CDN.
+ * Recording playback must use this path so a private recording cannot become
+ * publicly reachable just because STORAGE_CDN_URL is configured.
+ */
+export async function streamOrRedirectPrivateAsset(key: string, res: Response): Promise<void> {
+  res.setHeader("Cache-Control", "private, no-store");
+  if (isCloudStorageConfigured()) {
+    res.redirect(307, await getPrivateAssetUrl(key));
+    return;
+  }
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (!existsSync(abs)) {
+    res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+  res.sendFile(abs);
+}
+
 // ─── deleteAsset ──────────────────────────────────────────────────────────────
 
 /**
@@ -235,4 +258,30 @@ export async function deleteAsset(key: string): Promise<void> {
     const { unlinkSync } = await import("fs");
     unlinkSync(path.resolve(UPLOADS_BASE, key));
   } catch { /* ignore */ }
+}
+
+/**
+ * Delete an asset and surface provider failures to retention cleanup.
+ * The regular deleteAsset API remains best-effort for non-retention assets.
+ */
+export async function deleteAssetStrict(key: string): Promise<void> {
+  if (isCloudStorageConfigured()) {
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"]!,
+        Key: key,
+      }),
+    );
+    logger.debug({ key }, "storage: deleteAssetStrict → s3");
+    return;
+  }
+  try {
+    const { unlinkSync } = await import("fs");
+    unlinkSync(path.resolve(UPLOADS_BASE, key));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") throw err;
+  }
 }

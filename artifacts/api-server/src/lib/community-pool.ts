@@ -146,6 +146,28 @@ export async function getDefaultCommunityId(): Promise<number | null> {
 }
 
 /**
+ * Resolve a community from stored coordinates without changing any data.
+ * Claim-time callers persist the result only after a successful match, which
+ * keeps this lookup safe to run speculatively.
+ */
+export async function resolveCommunityIdForCoords(lat: number, lng: number): Promise<number | null> {
+  // Keep this route dependency lazy: community-pool is imported by many
+  // isolated API modules and should not eagerly load the whole civic router.
+  const { reverseGeocode } = await import("../routes/civic");
+  const place = await reverseGeocode(lat, lng).catch(() => null);
+  if (!place?.county || !place.state) return null;
+  const result = await db.execute<{ id: number }>(sql`
+    SELECT id
+    FROM communities
+    WHERE LOWER(TRIM(county)) = LOWER(TRIM(${place.county}))
+      AND LOWER(TRIM(state)) = LOWER(TRIM(${place.state}))
+    ORDER BY id ASC
+    LIMIT 1
+  `);
+  return result.rows[0]?.id ?? null;
+}
+
+/**
  * Compute the guaranteed minimum for a completed task.
  *
  * When `estimatedHours` is supplied (from `help_requests.estimated_hours`),

@@ -1,14 +1,15 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
 import {
   audioCircleParticipantsTable,
   circleRecordingConsentTable,
   circleRecordingsTable,
   db,
 } from "@workspace/db";
-import { deleteAsset, getPrivateAssetUrl, putAsset } from "./storage";
+import { deleteAssetStrict, getPrivateAssetUrl, putAsset } from "./storage";
 import { logger } from "./logger";
 
-export const RECORDING_RETENTION_DAYS = 30;
+export const RECORDING_RETENTION_DAYS = 90;
 export const ACTIVE_RECORDING_STATUSES = [
   "RECORDING_REQUESTED",
   "RECORDING_AUTHORIZED",
@@ -18,7 +19,10 @@ export const ACTIVE_RECORDING_STATUSES = [
 
 export function calculateRetentionUntil(
   createdAt = new Date(),
-  retentionDays = Number(process.env["CIRCLE_RECORDING_RETENTION_DAYS"]) || RECORDING_RETENTION_DAYS,
+  retentionDays = Number(
+    process.env["CIRCLES_RECORDING_RETENTION_DAYS"]
+      ?? process.env["CIRCLE_RECORDING_RETENTION_DAYS"],
+  ) || RECORDING_RETENTION_DAYS,
 ): Date {
   const safeDays = Math.max(1, Math.min(3650, Math.floor(retentionDays)));
   return new Date(createdAt.getTime() + safeDays * 24 * 60 * 60 * 1000);
@@ -115,7 +119,8 @@ export async function finalizeRecording(input: {
   if (!recording) throw new Error("Recording is not active");
 
   const extension = input.mimeType === "audio/mp4" ? "m4a" : input.mimeType === "audio/ogg" ? "ogg" : "webm";
-  const storageKey = `circles/recordings/${recording.id}/${crypto.randomUUID()}.${extension}`;
+  const storageKey = `circles/recordings/${recording.id}/${randomUUID()}.${extension}`;
+  const checksumSha256 = createHash("sha256").update(input.buffer).digest("hex");
   await db
     .update(circleRecordingsTable)
     .set({ status: "RECORDING_FINALIZING", updated_at: new Date() })
@@ -131,6 +136,7 @@ export async function finalizeRecording(input: {
         mime_type: input.mimeType || "audio/webm",
         byte_size: input.buffer.length,
         storage_key: storageKey,
+        checksum_sha256: checksumSha256,
         updated_at: new Date(),
       })
       .where(eq(circleRecordingsTable.id, recording.id))
@@ -148,11 +154,20 @@ export async function finalizeRecording(input: {
 
 export async function getRecordingPlaybackUrl(recordingId: number) {
   const [recording] = await db
-    .select({ storage_key: circleRecordingsTable.storage_key, status: circleRecordingsTable.status })
+    .select({
+      storage_key: circleRecordingsTable.storage_key,
+      status: circleRecordingsTable.status,
+      retention_until: circleRecordingsTable.retention_until,
+    })
     .from(circleRecordingsTable)
     .where(eq(circleRecordingsTable.id, recordingId))
     .limit(1);
-  if (!recording || recording.status !== "RECORDING_ARCHIVED" || !recording.storage_key) {
+  if (
+    !recording ||
+    recording.status !== "RECORDING_ARCHIVED" ||
+    !recording.storage_key ||
+    recording.retention_until <= new Date()
+  ) {
     throw new Error("Recording is not available");
   }
   return getPrivateAssetUrl(recording.storage_key, 300);
@@ -162,6 +177,6 @@ export async function deleteExpiredRecording(recording: {
   id: number;
   storage_key: string | null;
 }) {
-  if (recording.storage_key) await deleteAsset(recording.storage_key);
+  if (recording.storage_key) await deleteAssetStrict(recording.storage_key);
   await db.delete(circleRecordingsTable).where(eq(circleRecordingsTable.id, recording.id));
 }

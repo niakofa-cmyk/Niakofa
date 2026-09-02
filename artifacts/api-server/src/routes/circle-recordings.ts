@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { getPrivateAssetUrl, streamOrRedirectAsset } from "../lib/storage";
+import { getPrivateAssetUrl, streamOrRedirectPrivateAsset } from "../lib/storage";
 import {
   authorizeRecording,
   finalizeRecording,
@@ -289,7 +289,12 @@ router.get(
 );
 
 router.get("/audio-circle-recording-assets", requireAuth, generalApiLimiter, async (req, res) => {
-  const key = typeof req.query.key === "string" ? decodeURIComponent(req.query.key) : "";
+  let key = "";
+  try {
+    key = typeof req.query.key === "string" ? decodeURIComponent(req.query.key) : "";
+  } catch {
+    return res.status(404).json({ error: "Not found" });
+  }
   if (!key.startsWith("circles/recordings/")) return res.status(404).json({ error: "Not found" });
   const [recording] = await db.select().from(circleRecordingsTable).where(eq(circleRecordingsTable.storage_key, key)).limit(1);
   if (!recording || recording.storage_key !== key || recording.status !== "RECORDING_ARCHIVED") {
@@ -303,7 +308,7 @@ router.get("/audio-circle-recording-assets", requireAuth, generalApiLimiter, asy
   if (!participant.length && recording.host_id !== req.authenticatedUserId && !(await approvedAdmin(req.authenticatedUserId!))) {
     return res.status(403).json({ error: "Forbidden" });
   }
-  return streamOrRedirectAsset(key, res);
+  return streamOrRedirectPrivateAsset(key, res);
 });
 
 export default router;
