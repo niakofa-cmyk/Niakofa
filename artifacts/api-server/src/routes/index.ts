@@ -59,6 +59,7 @@ import legacyFamilyQuestsRouter from "./legacy-family-quests";
 import legacyCoopRouter from "./legacy-coop";
 import legacyInterviewQuestRouter from "./legacy-interview-quest";
 import legacyAutoJournalRouter from "./legacy-auto-journal";
+import legacyLaunchRouter from "./legacy-launch";
 
 const router: IRouter = Router();
 
@@ -122,5 +123,6 @@ router.use(legacyFamilyQuestsRouter);
 router.use(legacyCoopRouter);
 router.use(legacyInterviewQuestRouter);
 router.use(legacyAutoJournalRouter);
+router.use(legacyLaunchRouter);
 
 export default router;
