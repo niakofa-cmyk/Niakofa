@@ -48,7 +48,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd artifacts/api-server && node ../../lib/db/scripts/run-migrations.mjs && ../../node_modules/.bin/tsx ../../scripts/src/seed-if-empty.ts && NODE_ENV=development PORT=8080 node build.mjs && NODE_ENV=development PORT=8080 node --enable-source-maps dist/index.mjs"
+args = "cd artifacts/api-server && NODE_ENV=development PORT=8080 node build.mjs && NODE_ENV=development PORT=8080 node --enable-source-maps dist/index.mjs"
 waitForPort = 8080
 
 

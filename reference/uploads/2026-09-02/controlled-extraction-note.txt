@@ -1,0 +1,114 @@
+This is still a controlled-copy / phased extraction, not a completed move. We should not delete the remaining Legacy API, database, or platform documentation yet. The safe next step is to create a complete migration inventory, copy the RPG-specific documents and references into niakofa-cmyk/niakofa-legacy-rpg, update cross-references, and explicitly classify each remaining main-repository item as either:
+1. Move to the standalone RPG repository
+2. Keep in Niakofa as platform infrastructure
+3. Archive and remove from active source paths
+
+Worked for 48 seconds
+Proceed
+
+Free
+15 minutes ago
+
+2 actions
+I’m proceeding with a controlled migration rather than deleting anything blindly: first I’ll inventory RPG-specific code/docs/assets, compare them with the standalone repository, then copy only the missing RPG-owned material and retain platform-owned auth/API/database boundary files in Niakofa.
+
+5 actions
+The audit shows the standalone repository has the active RPG runtime and assets, but the main repository still holds the larger historical/reference corpus and archived RPG prototype code. I’m using a read-only inventory pass to classify what can move outright versus what must remain as Niakofa platform infrastructure.
+
+14 actions
+The migration boundary is clear now: the standalone repository already owns the active game runtime/assets, while Niakofa still owns the historical RPG reference corpus and archived prototype. I’m preparing a manifest-backed transfer of RPG-owned docs/reference text and archived game code; platform API, auth, database, and release-audit files will remain in Niakofa by design.
+
+2 actions
+I’m treating “move” as a controlled repository migration: copy and verify RPG-owned docs/reference text in the standalone repo, remove only those copied materials from Niakofa, and leave auth, family/Vault, API, database, release checks, agent memory, and unresolved binary provenance in Niakofa. Before syncing, I’m scanning the transfer set for credential-shaped content.
+
+11 actions
+The first documentation patch did not apply cleanly because the file’s current wording differs from the earlier snapshot. I’m re-reading the exact sections and applying smaller, safer edits before syncing the transfer.
+
+14 actions
+The standalone copy now has checksum-verified content and an ownership README. I also updated Niakofa’s extraction contract and production-hardening reference to point at the standalone corpus. Next I’m removing only the verified textual/archive-code transfer set from the main checkout; platform code and binary provenance stay untouched.
+
+5 actions
+GitHub access is working through the configured OAuth connection, and the standalone remote is still at the validated base commit. I’m publishing the checksum-verified 157-file migration as one atomic commit, then I’ll commit the corresponding removals and boundary updates in the main Niakofa repository.
+
+1 action
+The first GitHub publish call failed before execution because the sandbox rejected a template-string pattern in the request script; no repository write occurred. I’m retrying with a simpler API script and will verify the remote head afterward.
+
+2 actions
+The retry hit the same sandbox validation issue before any execution. I’m removing the remaining complex callback plumbing and running the publish from the sandbox’s filesystem directly; this avoids the parser path that failed while keeping the GitHub credential inside the managed connection.
+
+12 actions
+The blob upload did not start: the managed GitHub proxy returned an HTML error page while reading the repository metadata, so no migration commit was created. I’m diagnosing that response first and will avoid retrying uploads until the API endpoint is confirmed healthy.
+
+2 actions
+Use a more capable model when needed for this request?
+Got it, staying on Free.
+
+Worked for 6 minutes
+Checkpoint made
+9 minutes ago
+The GitHub proxy is healthy for direct requests, but the sandbox rejects the larger loop wrapper before it runs. I’m reducing the operation to a single-file write test, then I’ll batch the transfer with the same minimal request shape rather than risk partial or malformed commits.
+
+4 actions
+The failed batch exposed a path-mapping issue, not a repository problem: I had generated the upload list from the original Niakofa paths, while the standalone working tree stores non-archive files under docs/from-niakofa/. I’m correcting the upload list to use the standalone target paths; the remote branch is still unchanged.
+
+7 actions
+GitHub accepted the first two batches, then the managed proxy returned a Cloudflare-style 403 on one generated HTML reference file. The standalone branch still has no commit or ref update, so the migration remains atomic. I’m checking whether this is a transient request/rate-limit response; if it persists, I’ll exclude only generated HTML artifacts and preserve the textual/code transfer.
+
+5 actions
+The generated HTML exports are the only problematic artifacts, so I excluded those three non-Markdown files and updated the manifest accordingly. The remaining transfer is 156 standalone files, including 154 checksum-tracked source/reference entries plus the migration README and manifest. I’m uploading the remaining blob batches now, without updating the branch until every batch succeeds.
+
+I’ll first inventory the workspace, read the uploaded reference file completely, inspect the existing Niakofa app and recent Git history, and verify the GitHub remote/status before changing anything. I’ll also check the project memory and configuration so the implementation follows the app’s current structure rather than overwriting it.
+
+8 actions
+The uploaded reference is a migration-status note, not a product specification: it requires a controlled RPG extraction, an inventory/classification manifest, preservation of Niakofa platform infrastructure, and no blind deletion. The workspace currently contains no application source files, and .agents/memory/MEMORY.md is absent, so I’m verifying the remote history and repository contents next before deciding whether the app must be restored from origin/main.
+
+4 actions
+GitHub is reachable and origin/main contains the real application; the local checkout is only a stale empty bootstrap commit, 613 commits behind. I’m not editing or resetting yet. I’m reviewing the remote’s current structure, roadmap commits, README, package/deploy configuration, and the remote memory index first, then I’ll restore the verified remote baseline while preserving the uploaded reference.
+
+6 actions
+The remote baseline is a mature monorepo with the React/Vite frontend, Express API, Nia service, database migrations, Circle/LiveKit, Community Pool/Stripe, maps, Legacy Mode, release checks, and a large reference corpus. I also confirmed there is no separately attached ZIP in this session; the repository itself contains two large reference ZIPs, which I’ll inventory without extracting over the app. I’m now restoring local main to the verified remote origin/main and keeping the uploaded note for reference.
+
+Reset changes
+The managed preview workflows are now configured for the two real services (web on 5000, API on 8080). Before changing code, I’m reading the current project guidance and production handoff, checking the full memory index, and locating the app entry points, health/readiness routes, and release checks. This will let me target an actual remaining gap instead of duplicating completed work.
+
+18 actions
+The codebase guidance confirms the canonical source and the key release boundaries: artifacts/ only, no RPG runtime reintroduction, production Redis/Stripe/LiveKit fail-closed, and verification through the artifact workflows. I’m starting those workflows now to validate the current landing page/API baseline and surface real runtime errors before making a focused hardening change.
+
+4 actions
+Both workflows failed before serving because the fresh checkout has no installed package binaries (vite/tsx are missing), not because the app code crashed. I’m checking the exact workflow logs and the repository’s package-management guidance, then I’ll perform the documented one-time install and rerun validation.
+
+12 actions
+The dependency install completed and the frontend/API workflows now start successfully; full TypeScript validation also completed without errors. I’m doing the first live verification pass now: inspect service logs, capture the landing screen, and query the local readiness/health endpoints so any actual runtime gap is visible before I edit.
+
+5 actions
+The live app landing page renders correctly, and the release checks pass. The concrete runtime issue is now clear: the API is intentionally degraded in this workspace because Redis and LiveKit provider credentials are not configured; this is a valid development state, not a code failure. I’m addressing a separate production-build warning before pushing: pnpm 11 is ignoring the repository’s root dependency overrides because they are stored in the old package.json location, which can make fresh installs resolve the wrong dependency graph.
+
+10 actions
+The app itself is healthy, and the existing workspace.yaml already contains the canonical override policy; the duplicate package.json block is ignored by current pnpm and only creates a misleading install warning. I’m removing that stale duplicate (without changing resolved dependencies), then I’ll reinstall with the frozen lockfile, rebuild, rerun release checks, and verify the landing/API again.
+
+6 actions
+The stale override block is now removed while the canonical pnpm-workspace.yaml remains untouched. I’m validating that this produces the same frozen dependency graph, then I’ll run the full build/lint/release checks. After that I’ll commit and use the project’s authenticated GitHub sync path, independently fetch origin/main, and compare the remote/local commit and tree before declaring it finished.
+
+11 actions
+Validation is clean: frozen install now completes with no ignored-config warning, typecheck/build/lint pass, route/boundary/release checks pass, and the running landing page remains intact. I’m running the repository’s direct frontend/API test suites next, then I’ll commit the manifest cleanup and publish it through the authenticated GitHub workflow required by this project (not a raw unauthenticated push).
+
+3 actions
+All direct tests pass: API 315 tests, frontend 487 tests, and the repayment-date checks pass. Build, lint, route, boundary, and release validation are also green. I’m committing this single-scope production-install cleanup now, then publishing and independently comparing the GitHub branch to the local commit.
+
+3 actions
+The repository’s documented gitPush callback is not available in this session, so that publish attempt did not run and no token was exposed. I’m falling back to the configured origin transport without printing or embedding any credential, then I’ll independently fetch GitHub’s main and compare hashes/tree state; if GitHub rejects the transport, I’ll report the exact push boundary rather than claim it landed.
+
+1 action
+The unauthenticated origin push was rejected by GitHub, as expected; local code remains committed and unchanged. I’m now using the already-managed GITHUB_PERSONAL_ACCESS_TOKEN only as an in-process HTTP authorization header (the value will not be printed or written to Git config), then I’ll fetch the public remote and verify exact parity.
+
+1 action
+GitHub rejected the managed token as invalid, so the remote branch is still unchanged; I will not keep retrying credentials blindly. I’m checking the live Replit integration inventory for the authenticated GitHub connection the project guidance expects. If none is available, I’ll leave the verified commit local and clearly mark the push as the only blocked step rather than risk exposing or mishandling the token.
+
+2 actions
+Worked for 15 minutes
+push landed
+Free
+Just now
+Verifying push origin
+Verifying push origin
+I’m independently verifying the claimed landing now by fetching origin/main and comparing its commit and tree with the local commit, then I’ll do one final workflow/log/landing check.

@@ -42,6 +42,16 @@ including SHA-256 checksums and source-to-target paths, is maintained at:
 
 `https://github.com/niakofa-cmyk/niakofa-legacy-rpg/blob/main/docs/niakofa-migration-manifest.json`
 
+The current Niakofa-side review packet preserves the uploaded migration note and
+the path-level classification used for this checkout:
+
+`reference/uploads/2026-09-02/README.md`
+
+That packet is an audit reference, not a second source of truth. The standalone
+repository manifest remains authoritative for files already transferred, while
+this repository retains the platform-owned contracts and unresolved binary
+provenance listed below.
+
 The following remain in this repository because they are platform-owned or
 still required for release safety:
 
