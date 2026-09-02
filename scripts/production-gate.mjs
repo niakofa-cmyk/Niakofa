@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 
-const required = ["NIAKOFA_API_ORIGIN", "LEGACY_RPG_ORIGIN"];
+const required = ["NIAKOFA_API_ORIGIN", "LEGACY_RPG_ORIGIN"];\nconst timeoutMs = Number(process.env.GATE_TIMEOUT_MS ?? 10000);\nif (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {\n  console.error("GATE_TIMEOUT_MS must be an integer between 1000 and 60000.");\n  process.exit(2);\n}
 for (const key of required) {
   if (!process.env[key]) {
     console.error(`Missing required environment variable: ${key}`);
@@ -22,13 +22,13 @@ async function check(name, url, options = {}) {
   try {
     const response = await fetch(url, {
       redirect: "manual",
-      signal: AbortSignal.timeout(Number(process.env.GATE_TIMEOUT_MS ?? 10000)),
+      signal: AbortSignal.timeout(timeoutMs),
       ...options,
     });
     const body = await response.text();
     checks.push({ name, ok: response.ok, status: response.status, ms: Date.now() - started, body: body.slice(0, 500) });
   } catch (error) {
-    checks.push({ name, ok: false, status: 0, ms: Date.now() - started, body: error instanceof Error ? error.message : String(error) });
+    checks.push({ name, ok: false, status: 0, ms: Date.now() - started, error: error instanceof Error ? error.name : "request_error" });
   }
 }
 
@@ -49,7 +49,7 @@ await check(
   },
 );
 
-console.table(checks.map(({ name, ok, status, ms, body }) => ({ name, ok, status, ms, body })));
+console.table(checks.map(({ name, ok, status, ms, error }) => ({ name, ok, status, ms, ...(error ? { error } : {}) })));
 
 const failed = checks.filter((check) => !check.ok);
 if (failed.length) {
