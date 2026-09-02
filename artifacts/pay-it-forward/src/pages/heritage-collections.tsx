@@ -12,12 +12,12 @@
  *  - Heritage Globe featured as centerpiece of Heritage section
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useLocation, useParams } from "wouter";
 import {
   ArrowLeft, Library, Search, Loader2,
   Globe, Star, BookOpen, Layers, Users, ArrowRight,
-  ChevronRight, BookHeart, Mic, FileText,
+  ChevronRight, BookHeart, Mic, FileText, Send, CheckCircle2, X,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -38,7 +38,14 @@ interface CollectionItem {
   description: string | null;
   media_type: string;
   source_name: string | null;
+  media_url?: string | null;
   created_at: string;
+}
+
+interface FamilySpaceOption {
+  id: number;
+  name: string;
+  status: "active" | "invited";
 }
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -107,6 +114,14 @@ export default function HeritageCollectionsPage() {
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [currentCollection, setCurrentCollection] = useState<Collection | null>(null);
+  const [familySpaces, setFamilySpaces] = useState<FamilySpaceOption[]>([]);
+  const [showContribution, setShowContribution] = useState(false);
+  const [contributionKind, setContributionKind] = useState<"photo" | "story" | "note" | "link">("story");
+  const [contributionTitle, setContributionTitle] = useState("");
+  const [contributionBody, setContributionBody] = useState("");
+  const [contributionUrl, setContributionUrl] = useState("");
+  const [contributionFamilyId, setContributionFamilyId] = useState<number | null>(null);
+  const [contributionSaving, setContributionSaving] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -117,6 +132,7 @@ export default function HeritageCollectionsPage() {
   useEffect(() => {
     if (!slug || !currentUser) return;
     loadCollectionItems(slug);
+    loadFamilySpaces();
   }, [slug, currentUser]);
 
   async function loadCollections() {
@@ -148,6 +164,55 @@ export default function HeritageCollectionsPage() {
       setItems([]);
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function loadFamilySpaces() {
+    try {
+      const res = await fetch("/api/family/mine", { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const active = (data.families ?? []).filter((family: FamilySpaceOption) => family.status === "active");
+      setFamilySpaces(active);
+      if (active.length > 0) setContributionFamilyId(active[0].id);
+    } catch {
+      // Family linking is optional; the contribution form remains available.
+    }
+  }
+
+  function resetContributionForm() {
+    setShowContribution(false);
+    setContributionKind("story");
+    setContributionTitle("");
+    setContributionBody("");
+    setContributionUrl("");
+    setContributionSaving(false);
+  }
+
+  async function submitContribution(event: FormEvent) {
+    event.preventDefault();
+    if (!slug || !contributionTitle.trim()) return;
+    setContributionSaving(true);
+    try {
+      const res = await fetch(`/api/diaspora/heritage/${slug}/contributions`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: contributionKind,
+          title: contributionTitle.trim(),
+          body: contributionBody.trim() || undefined,
+          media_url: contributionUrl.trim() || undefined,
+          family_id: contributionFamilyId ?? undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Couldn't submit contribution");
+      toast.success("Contribution submitted for review");
+      resetContributionForm();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't submit contribution");
+    } finally {
+      setContributionSaving(false);
     }
   }
 
@@ -197,6 +262,19 @@ export default function HeritageCollectionsPage() {
             </div>
           </div>
 
+           <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-teal-400/20 bg-teal-400/[0.06] p-4">
+             <div className="min-w-0">
+               <p className="text-sm font-semibold">Add to this collection</p>
+               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Share a family story or source. New contributions stay private until reviewed.</p>
+             </div>
+             <button
+               onClick={() => setShowContribution(true)}
+               className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-300 px-3 py-2 text-xs font-bold text-[#042f2e] active:opacity-80"
+             >
+               <Send className="h-3.5 w-3.5" /> Share
+             </button>
+           </div>
+
           {detailLoading && (
             <div className="flex justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -228,6 +306,11 @@ export default function HeritageCollectionsPage() {
                     )}
                   </div>
                   <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                   {item.media_url && (
+                     <a href={item.media_url} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()} className="text-xs text-teal-500 hover:underline">
+                       Open
+                     </a>
+                   )}
                 </div>
               ))}
             </div>
@@ -244,6 +327,61 @@ export default function HeritageCollectionsPage() {
             </div>
           )}
         </div>
+
+         {showContribution && (
+           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center">
+             <div className="w-full max-w-lg rounded-2xl bg-card p-5 shadow-2xl">
+               <div className="mb-4 flex items-start justify-between gap-3">
+                 <div>
+                   <h2 className="text-lg font-bold">Share with the collection</h2>
+                   <p className="mt-1 text-xs text-muted-foreground">Every contribution is reviewed before it becomes visible to the community.</p>
+                 </div>
+                 <button onClick={resetContributionForm} className="rounded-lg p-1 active:bg-muted" aria-label="Close contribution form">
+                   <X className="h-5 w-5" />
+                 </button>
+               </div>
+               <form onSubmit={submitContribution} className="space-y-3">
+                 <div>
+                   <label className="mb-1 block text-sm font-medium">What are you sharing?</label>
+                   <select value={contributionKind} onChange={event => setContributionKind(event.target.value as typeof contributionKind)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" style={{ fontSize: "16px" }}>
+                     <option value="story">Story</option>
+                     <option value="photo">Photo link</option>
+                     <option value="note">Research note</option>
+                     <option value="link">External source link</option>
+                   </select>
+                 </div>
+                 <div>
+                   <label className="mb-1 block text-sm font-medium">Title *</label>
+                   <input value={contributionTitle} onChange={event => setContributionTitle(event.target.value)} maxLength={200} required placeholder="A title people can remember" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" style={{ fontSize: "16px" }} />
+                 </div>
+                 <div>
+                   <label className="mb-1 block text-sm font-medium">{contributionKind === "link" ? "Description" : "Story or note"}</label>
+                   <textarea value={contributionBody} onChange={event => setContributionBody(event.target.value)} maxLength={8000} rows={4} placeholder="Tell the story behind this contribution…" className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm" style={{ fontSize: "16px" }} />
+                 </div>
+                 {(contributionKind === "link" || contributionKind === "photo") && (
+                   <div>
+                     <label className="mb-1 block text-sm font-medium">{contributionKind === "link" ? "Source URL *" : "Photo URL (optional)"}</label>
+                     <input type="url" value={contributionUrl} onChange={event => setContributionUrl(event.target.value)} required={contributionKind === "link"} placeholder="https://…" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" style={{ fontSize: "16px" }} />
+                   </div>
+                 )}
+                 <div>
+                   <label className="mb-1 block text-sm font-medium">Family Space (optional)</label>
+                   <select value={contributionFamilyId ?? ""} onChange={event => setContributionFamilyId(event.target.value ? Number(event.target.value) : null)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" style={{ fontSize: "16px" }}>
+                     <option value="">No family link</option>
+                     {familySpaces.map(family => <option key={family.id} value={family.id}>{family.name}</option>)}
+                   </select>
+                   <p className="mt-1 text-xs text-muted-foreground">Linking a Family Space helps your relatives recognize the source.</p>
+                 </div>
+                 <div className="flex gap-2 pt-1">
+                   <button type="button" onClick={resetContributionForm} className="flex-1 rounded-lg border border-input py-2.5 text-sm font-medium">Cancel</button>
+                   <button type="submit" disabled={contributionSaving || !contributionTitle.trim()} className="flex-1 rounded-lg bg-teal-300 py-2.5 text-sm font-bold text-[#042f2e] disabled:opacity-50">
+                     {contributionSaving ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : <span className="flex items-center justify-center gap-1.5"><CheckCircle2 className="h-4 w-4" /> Submit</span>}
+                   </button>
+                 </div>
+               </form>
+             </div>
+           </div>
+         )}
       </div>
     );
   }

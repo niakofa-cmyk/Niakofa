@@ -6,7 +6,7 @@
  * Route: /diaspora/family (also accessible at legacy /family)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import {
   Users, Plus, ChevronRight, BookHeart, Lock, Globe, Loader2,
@@ -15,6 +15,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { parseOralHistoryIntent } from "@/lib/diaspora/oralHistoryDeepLink";
 
 interface FamilySpace {
   id: number;
@@ -48,6 +49,8 @@ export default function FamilySpacesPage() {
   const [formDesc, setFormDesc] = useState("");
   const [spaceTab, setSpaceTab] = useState<SpaceTab>("mine");
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const oralHistoryRedirected = useRef(false);
+  const oralHistoryIntent = typeof window !== "undefined" && parseOralHistoryIntent(window.location.search);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -143,6 +146,13 @@ export default function FamilySpacesPage() {
       setSpaceTab("invitations");
     }
   }, [loading, mySpaces.length, invitations.length]);
+
+  useEffect(() => {
+    if (!loading && oralHistoryIntent && mySpaces.length > 0 && !oralHistoryRedirected.current) {
+      oralHistoryRedirected.current = true;
+      navigate(`/family/${mySpaces[0].id}?tab=record`);
+    }
+  }, [loading, mySpaces, oralHistoryIntent, navigate]);
 
   if (!currentUser) {
     return (

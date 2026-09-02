@@ -23,6 +23,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { parseOralHistoryIntent } from "@/lib/diaspora/oralHistoryDeepLink";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -153,7 +154,8 @@ export default function FamilyVaultPage() {
   const [, navigate] = useLocation();
   const familyId = Number(id ?? fidParam);
 
-  const [tab, setTab]             = useState<TabId>("memories");
+  const oralHistoryIntent = typeof window !== "undefined" && parseOralHistoryIntent(window.location.search);
+  const [tab, setTab]             = useState<TabId>(() => oralHistoryIntent ? "interviews" : "memories");
   const [family, setFamily]       = useState<Family | null>(null);
   const [myRole, setMyRole]       = useState<string>("contributor");
   const [members, setMembers]     = useState<FamilyMember[]>([]);
@@ -682,8 +684,8 @@ export default function FamilyVaultPage() {
         )}
 
         {/* Interviews tab */}
-        {tab === "interviews" && (
-          <InterviewsTab familyId={familyId} canWrite={canWrite} />
+          {tab === "interviews" && (
+            <InterviewsTab familyId={familyId} canWrite={canWrite} autoOpen={oralHistoryIntent} />
         )}
       </div>
 
@@ -1475,10 +1477,14 @@ interface OralHistoryInterview {
   prompts_used?: string[];
 }
 
-function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boolean }) {
+function InterviewsTab({ familyId, canWrite, autoOpen = false }: { familyId: number; canWrite: boolean; autoOpen?: boolean }) {
   const [interviews, setInterviews]   = useState<OralHistoryInterview[]>([]);
   const [loading, setLoading]         = useState(true);
   const [showRecord, setShowRecord]   = useState(false);
+
+  useEffect(() => {
+    if (autoOpen) setShowRecord(true);
+  }, [autoOpen]);
 
   // Interview loading is scoped to this tab's mount; familyId is stable here.
   useEffect(() => { loadInterviews();

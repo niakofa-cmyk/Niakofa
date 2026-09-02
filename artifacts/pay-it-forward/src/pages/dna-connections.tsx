@@ -6,7 +6,7 @@
  *  - DNA Match cards with name, relationship, shared cM amount
  *  - Ethnicity breakdown bars
  *  - Provider import flow
- *  - Demo match data as fallback when no real matches exist
+ *  - Trust gate: never show estimated results without a parsed dataset
  */
 
 import { useState, useEffect } from "react";
@@ -18,6 +18,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { safeDnaPresentation, type DnaConnectionState } from "@/lib/diaspora/dnaTrustGate";
 
 const PROVIDERS = [
   { id: "AncestryDNA", label: "AncestryDNA", color: "text-green-400", bg: "bg-green-400/10", border: "border-green-400/20" },
@@ -25,16 +26,6 @@ const PROVIDERS = [
   { id: "MyHeritage", label: "MyHeritage", color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20" },
   { id: "LivingDNA", label: "LivingDNA", color: "text-purple-400", bg: "bg-purple-400/10", border: "border-purple-400/20" },
   { id: "FamilyTreeDNA", label: "FamilyTreeDNA", color: "text-red-400", bg: "bg-red-400/10", border: "border-red-400/20" },
-];
-
-const ETHNICITY_REGIONS = [
-  { region: "West Africa", percentage: 42, color: "bg-amber-500" },
-  { region: "Cameroon & Congo", percentage: 18, color: "bg-orange-500" },
-  { region: "Nigeria", percentage: 15, color: "bg-yellow-500" },
-  { region: "Mali", percentage: 8, color: "bg-amber-400" },
-  { region: "Benin & Togo", percentage: 7, color: "bg-orange-400" },
-  { region: "England & NW Europe", percentage: 6, color: "bg-blue-400" },
-  { region: "Scotland", percentage: 4, color: "bg-teal-400" },
 ];
 
 interface DnaMatch {
@@ -46,14 +37,6 @@ interface DnaMatch {
   confidence: "high" | "medium" | "low";
   avatar_color: string;
 }
-
-const DEMO_MATCHES: DnaMatch[] = [
-  { id: "m1", name: "Shawn Davis", relationship: "1st Cousin", shared_cm: 327, predicted_relation: "First Cousin", confidence: "high", avatar_color: "bg-amber-500/20 text-amber-400" },
-  { id: "m2", name: "Angela Brooks", relationship: "2nd Cousin", shared_cm: 166, predicted_relation: "Second Cousin", confidence: "high", avatar_color: "bg-emerald-500/20 text-emerald-400" },
-  { id: "m3", name: "Marcus Johnson", relationship: "2nd Cousin", shared_cm: 112, predicted_relation: "Second Cousin", confidence: "medium", avatar_color: "bg-blue-500/20 text-blue-400" },
-  { id: "m4", name: "Patricia Williams", relationship: "3rd Cousin", shared_cm: 78, predicted_relation: "Third Cousin", confidence: "medium", avatar_color: "bg-purple-500/20 text-purple-400" },
-  { id: "m5", name: "David Carter", relationship: "3rd Cousin", shared_cm: 54, predicted_relation: "Third Cousin", confidence: "low", avatar_color: "bg-rose-500/20 text-rose-400" },
-];
 
 const CONFIDENCE_STYLES: Record<string, { label: string; bg: string; text: string }> = {
   high:   { label: "High Confidence",   bg: "bg-green-500/10", text: "text-green-500" },
@@ -71,6 +54,7 @@ export default function DnaConnectionsPage() {
     unreviewed?: number;
   } | null>(null);
   const [matches, setMatches] = useState<DnaMatch[]>([]);
+  const [connectionState, setConnectionState] = useState<DnaConnectionState | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
   const [dnaFile, setDnaFile] = useState<File | null>(null);
@@ -89,10 +73,17 @@ export default function DnaConnectionsPage() {
       if (!res.ok) throw new Error();
       const data = await res.json();
       setSummary(data.summary ?? { total_matches: 0, close_family: 0, distant_cousins: 0 });
-      setMatches(data.matches?.length ? data.matches : DEMO_MATCHES);
+      setMatches(Array.isArray(data.matches) ? data.matches : []);
+      setConnectionState({
+        status: data.status ?? "not_connected",
+        hasParsedDataset: data.has_parsed_dataset === true,
+        matchCount: typeof data.match_count === "number" ? data.match_count : null,
+        ethnicityAvailable: data.ethnicity_available === true,
+      });
     } catch {
-      setSummary({ total_matches: 5, close_family: 1, distant_cousins: 4 });
-      setMatches(DEMO_MATCHES);
+      setSummary({ total_matches: 0, close_family: 0, distant_cousins: 0 });
+      setMatches([]);
+      setConnectionState(null);
     } finally {
       setLoading(false);
     }
@@ -116,16 +107,10 @@ export default function DnaConnectionsPage() {
         }),
       });
       if (!res.ok) throw new Error();
-      setImportStep("done");
-      setTimeout(() => {
-        setShowImport(false);
-        setImportStep("select");
-        setSelectedProvider(null);
-        setDnaFile(null);
-        loadData();
-      }, 2000);
-    } catch {
-      toast.error("Import failed — please try again");
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message ?? data.error ?? "Import failed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Secure DNA ingestion is not available yet");
       setImportStep("upload");
     }
   }
@@ -171,41 +156,42 @@ export default function DnaConnectionsPage() {
 
         {!loading && (
           <>
-            {/* Stats Cards */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-card border border-border rounded-2xl p-4 text-center">
-                <p className="text-2xl font-bold text-blue-500">{summary?.total_matches ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-1">Total Matches</p>
-              </div>
-              <div className="bg-card border border-border rounded-2xl p-4 text-center">
-                <p className="text-2xl font-bold text-emerald-500">{summary?.close_family ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-1">Close Family</p>
-              </div>
-              <div className="bg-card border border-border rounded-2xl p-4 text-center">
-                <p className="text-2xl font-bold text-amber-500">{summary?.distant_cousins ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-1">Distant Cousins</p>
-              </div>
-            </div>
+             {(() => {
+               const presentation = safeDnaPresentation(connectionState);
+               return presentation.connected ? (
+                 <>
+                   <div className="grid grid-cols-3 gap-3">
+                     <div className="bg-card border border-border rounded-2xl p-4 text-center">
+                       <p className="text-2xl font-bold text-blue-500">{summary?.total_matches ?? 0}</p>
+                       <p className="text-xs text-muted-foreground mt-1">Total Matches</p>
+                     </div>
+                     <div className="bg-card border border-border rounded-2xl p-4 text-center">
+                       <p className="text-2xl font-bold text-emerald-500">{summary?.close_family ?? 0}</p>
+                       <p className="text-xs text-muted-foreground mt-1">Close Family</p>
+                     </div>
+                     <div className="bg-card border border-border rounded-2xl p-4 text-center">
+                       <p className="text-2xl font-bold text-amber-500">{summary?.distant_cousins ?? 0}</p>
+                       <p className="text-xs text-muted-foreground mt-1">Distant Cousins</p>
+                     </div>
+                   </div>
 
-            {/* Ethnicity Breakdown */}
-            <section>
-              <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3">
-                Your Ethnicity Estimate
-              </h2>
-              <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-                {ETHNICITY_REGIONS.map(r => (
-                  <div key={r.region}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium">{r.region}</span>
-                      <span className="text-sm text-muted-foreground">{r.percentage}%</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div className={`h-full ${r.color} rounded-full transition-all duration-500`} style={{ width: `${r.percentage}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+                   {presentation.showEthnicity && (
+                     <section className="rounded-2xl border border-border bg-card p-4">
+                       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide">Your ethnicity estimate</h2>
+                       <p className="text-xs text-muted-foreground">Your connected provider’s parsed ethnicity results will appear here.</p>
+                     </section>
+                   )}
+                 </>
+               ) : (
+                 <section className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
+                   <div className="flex items-center gap-2 mb-2">
+                     <Dna className="h-5 w-5 text-blue-400" />
+                     <h2 className="text-sm font-semibold">{presentation.headline}</h2>
+                   </div>
+                   <p className="text-sm leading-relaxed text-muted-foreground">{presentation.body}</p>
+                 </section>
+               );
+             })()}
 
             {/* DNA Matches */}
             <section>
@@ -213,10 +199,15 @@ export default function DnaConnectionsPage() {
                 <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
                   Your DNA Matches
                 </h2>
-                <span className="text-xs text-muted-foreground">{matches.length} matches</span>
+                 <span className="text-xs text-muted-foreground">{matches.length} matches</span>
               </div>
-              <div className="space-y-3">
-                {matches.map(m => {
+               <div className="space-y-3">
+                 {matches.length === 0 && (
+                   <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">
+                     No verified matches are available yet.
+                   </div>
+                 )}
+                 {matches.map(m => {
                   const initials = m.name.split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
                   const conf = CONFIDENCE_STYLES[m.confidence];
                   return (
@@ -258,8 +249,8 @@ export default function DnaConnectionsPage() {
                   <Sparkles className="w-4 h-4 text-blue-500" />
                   <p className="text-sm font-semibold">Connect Your DNA</p>
                 </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Import raw DNA data from your testing provider to discover matches and trace your ancestry across the African diaspora.
+                 <p className="text-xs text-muted-foreground mb-3">
+                   Secure provider ingestion is being prepared. We will not store your DNA file or show estimated results from file metadata alone.
                 </p>
                 <div className="grid grid-cols-3 gap-2 text-center">
                   {["AncestryDNA", "23andMe", "MyHeritage"].map(p => (
@@ -272,7 +263,7 @@ export default function DnaConnectionsPage() {
                   onClick={() => setShowImport(true)}
                   className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-500 text-white rounded-xl py-2.5 text-sm font-medium active:opacity-80"
                 >
-                  <Upload className="w-4 h-4" /> Import DNA Data
+                   <Upload className="w-4 h-4" /> Check secure import
                 </button>
               </div>
             </section>
@@ -295,7 +286,7 @@ export default function DnaConnectionsPage() {
 
             {importStep === "select" && (
               <>
-                <p className="text-sm text-muted-foreground mb-4">Select your DNA testing provider:</p>
+                 <p className="text-sm text-muted-foreground mb-4">Secure DNA ingestion is not available yet. Selecting a provider will not upload or store your file.</p>
                 <div className="space-y-2 mb-4">
                   {PROVIDERS.map(p => (
                     <button
@@ -315,13 +306,9 @@ export default function DnaConnectionsPage() {
                     </button>
                   ))}
                 </div>
-                <button
-                  disabled={!selectedProvider}
-                  onClick={() => setImportStep("upload")}
-                  className="w-full bg-primary text-primary-foreground rounded-xl py-3 text-sm font-bold disabled:opacity-40 active:opacity-80"
-                >
-                  Continue
-                </button>
+                 <button disabled className="w-full rounded-xl bg-muted py-3 text-sm font-bold text-muted-foreground">
+                   Secure import coming soon
+                 </button>
               </>
             )}
 

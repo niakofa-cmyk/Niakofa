@@ -4,10 +4,13 @@
  * Routes (all under /api/diaspora/...):
  *
  *  GET  /diaspora/dashboard              — stats + recent activity for the dashboard
- *  GET  /diaspora/dna/connections        — DNA match list (demo seed data)
- *  POST /diaspora/dna/import             — import DNA CSV from AncestryDNA / 23andMe
+ *  GET  /diaspora/dna/connections        — connected DNA data status
+ *  POST /diaspora/dna/import             — reserved until secure ingestion is available
  *  GET  /diaspora/heritage               — curated heritage collection list
- *  GET  /diaspora/heritage/:slug         — single collection items
+ *  GET  /diaspora/heritage/:slug         — single collection + published items
+ *  GET  /diaspora/heritage/:slug/items   — published community contributions
+ *  POST /diaspora/heritage/:slug/contributions — submit a pending contribution
+ *  PATCH /diaspora/heritage/contributions/:id/moderate — publish/reject (admin)
  *  GET  /diaspora/research/guides        — research guide list
  *  GET  /diaspora/preserve/cards         — preserve-the-culture card deck
  *  POST /diaspora/preserve/scan          — QR scan → link to memory
@@ -21,7 +24,8 @@
 
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
-import { generalApiLimiter } from "../middlewares/rate-limit";
+import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import {
   db,
   familyMembersTable,
@@ -29,6 +33,7 @@ import {
   familyMemoryTagsTable,
   familyInterviewsTable,
   familyTreeRelationsTable,
+  heritageContributionsTable,
 } from "@workspace/db";
 import { eq, and, desc, sql, inArray, or, like } from "drizzle-orm";
 import { z } from "zod";
@@ -36,6 +41,10 @@ import { logger } from "../lib/logger";
 import { logWorldEvolution } from "../lib/legacy-world-evolution";
 
 const router = Router();
+
+function pathParam(value: string | string[]): string {
+  return Array.isArray(value) ? value[0] ?? "" : value;
+}
 
 // ─── Dashboard stats ───────────────────────────────────────────────────────────
 router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, res) => {
@@ -148,26 +157,21 @@ router.get("/diaspora/activity", requireAuth, generalApiLimiter, async (req, res
   }
 });
 
-// ─── DNA Connections (demo seed data — real import added later) ────────────────
-const DEMO_DNA_MATCHES = [
-  { id: "m1", name: "Shawn Davis", relationship: "1st Cousin", shared_cm: 327, predicted_relation: "First Cousin", confidence: "high", avatar_color: "bg-amber-500/20 text-amber-400" },
-  { id: "m2", name: "Angela Brooks", relationship: "2nd Cousin", shared_cm: 166, predicted_relation: "Second Cousin", confidence: "high", avatar_color: "bg-emerald-500/20 text-emerald-400" },
-  { id: "m3", name: "Marcus Johnson", relationship: "2nd Cousin", shared_cm: 112, predicted_relation: "Second Cousin", confidence: "medium", avatar_color: "bg-blue-500/20 text-blue-400" },
-  { id: "m4", name: "Patricia Williams", relationship: "3rd Cousin", shared_cm: 78, predicted_relation: "Third Cousin", confidence: "medium", avatar_color: "bg-purple-500/20 text-purple-400" },
-  { id: "m5", name: "David Carter", relationship: "3rd Cousin", shared_cm: 54, predicted_relation: "Third Cousin", confidence: "low", avatar_color: "bg-rose-500/20 text-rose-400" },
-];
-
 router.get("/diaspora/dna/connections", requireAuth, generalApiLimiter, async (_req, res) => {
   return res.json({
+    status: "not_connected",
+    has_parsed_dataset: false,
+    match_count: null,
+    ethnicity_available: false,
     summary: {
-      total_matches: 5,
-      close_family: 1,
-      distant_cousins: 4,
+      total_matches: 0,
+      close_family: 0,
+      distant_cousins: 0,
       unreviewed: 0,
     },
-    matches: DEMO_DNA_MATCHES,
+    matches: [],
     import_providers: ["AncestryDNA", "23andMe", "MyHeritage", "LivingDNA", "FamilyTreeDNA"],
-    info: "Import your DNA data CSV to discover matches and relatives across the African diaspora.",
+    info: "Secure DNA ingestion is not available yet. Niakofa will not show match counts or ethnicity results until a supported dataset is parsed.",
   });
 });
 
@@ -181,19 +185,17 @@ router.post("/diaspora/dna/import", requireAuth, generalApiLimiter, async (req, 
   const body = schema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: "Invalid request" });
 
-  const fileName = body.data.file_name ?? "unknown";
-  const fileSize = body.data.file_size ?? 0;
-
-  logger.info(
-    { userId: req.authenticatedUserId, provider: body.data.provider, fileName, fileSize },
-    "diaspora_dna_import_queued",
+  // The former endpoint accepted only file metadata and then claimed the file
+  // was queued. Fail closed until the app has a real encrypted upload,
+  // provider-specific parser, retention policy, and persisted result model.
+  logger.warn(
+    { userId: req.authenticatedUserId, provider: body.data.provider },
+    "diaspora_dna_import_unavailable",
   );
-
-  return res.json({
-    status: "queued",
-    message: `DNA data file "${fileName}" (${(fileSize / 1024).toFixed(0)} KB) from ${body.data.provider} queued for processing. You'll be notified when matches are found.`,
-    estimated_time: "24-48 hours",
-    file_received: true,
+  return res.status(501).json({
+    error: "Secure DNA ingestion is not available yet",
+    code: "DNA_INGESTION_UNAVAILABLE",
+    message: "Your DNA file was not uploaded or stored. Niakofa will not show estimated matches or ethnicity results until secure parsing is available.",
   });
 });
 
@@ -215,9 +217,146 @@ router.get("/diaspora/heritage", requireAuth, generalApiLimiter, (_req, res) => 
 });
 
 router.get("/diaspora/heritage/:slug", requireAuth, generalApiLimiter, (req, res) => {
-  const collection = HERITAGE_COLLECTIONS.find(c => c.slug === req.params.slug);
+  const slug = pathParam(req.params.slug);
+  const collection = HERITAGE_COLLECTIONS.find(c => c.slug === slug);
   if (!collection) return res.status(404).json({ error: "Collection not found" });
-  return res.json({ collection, items: [], message: "Community members can contribute items from their personal Family Vaults to shared Heritage Collections." });
+  return listPublishedHeritageItems(slug).then(items => {
+    return res.json({
+      collection,
+      items,
+      message: "Community members can contribute items from their personal Family Vaults to shared Heritage Collections.",
+    });
+  }).catch(err => {
+    logger.error({ err, slug }, "heritage collection detail error");
+    return res.status(500).json({ error: "Failed to load heritage collection" });
+  });
+});
+
+const contributionSchema = z.object({
+  kind: z.enum(["photo", "story", "note", "link"]),
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().max(8000).optional(),
+  media_url: z.string().url().optional(),
+  family_id: z.number().int().positive().optional(),
+}).refine(
+  (data) => data.kind !== "link" || Boolean(data.media_url),
+  { message: "A URL is required for link contributions", path: ["media_url"] },
+);
+
+async function listPublishedHeritageItems(slug: string) {
+  const rows = await db
+    .select({
+      id: heritageContributionsTable.id,
+      title: heritageContributionsTable.title,
+      body: heritageContributionsTable.body,
+      kind: heritageContributionsTable.kind,
+      media_url: heritageContributionsTable.media_url,
+      created_at: heritageContributionsTable.created_at,
+    })
+    .from(heritageContributionsTable)
+    .where(and(
+      eq(heritageContributionsTable.collection_slug, slug),
+      eq(heritageContributionsTable.status, "published"),
+    ))
+    .orderBy(desc(heritageContributionsTable.created_at))
+    .limit(50);
+
+  return rows.map(item => ({
+    id: item.id,
+    title: item.title,
+    description: item.body,
+    media_type: item.kind,
+    source_name: "Community contribution",
+    media_url: item.media_url,
+    created_at: item.created_at.toISOString(),
+  }));
+}
+
+router.get("/diaspora/heritage/:slug/items", requireAuth, generalApiLimiter, async (req, res) => {
+  const slug = pathParam(req.params.slug);
+  const collection = HERITAGE_COLLECTIONS.find(c => c.slug === slug);
+  if (!collection) return res.status(404).json({ error: "Collection not found" });
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 20));
+    const items = await listPublishedHeritageItems(slug);
+    const start = (page - 1) * pageSize;
+    return res.json({ items: items.slice(start, start + pageSize), page, pageSize, total: items.length });
+  } catch (err) {
+    logger.error({ err, slug }, "heritage contribution list error");
+    return res.status(500).json({ error: "Failed to load contributions" });
+  }
+});
+
+router.post("/diaspora/heritage/:slug/contributions", requireAuth, generalApiLimiter, async (req, res) => {
+  try {
+    const slug = pathParam(req.params.slug);
+    const collection = HERITAGE_COLLECTIONS.find(c => c.slug === slug);
+    if (!collection) return res.status(404).json({ error: "Collection not found" });
+
+    const parsed = contributionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid contribution" });
+    }
+
+    const userId = req.authenticatedUserId!;
+    const { kind, title, body, media_url, family_id } = parsed.data;
+    if (family_id != null) {
+      const membership = await db
+        .select({ role: familyMembersTable.role })
+        .from(familyMembersTable)
+        .where(and(
+          eq(familyMembersTable.family_id, family_id),
+          eq(familyMembersTable.user_id, userId),
+          eq(familyMembersTable.status, "active"),
+        ))
+        .limit(1);
+      if (!membership.length) return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    const [contribution] = await db.insert(heritageContributionsTable).values({
+      collection_slug: slug,
+      family_id: family_id ?? null,
+      user_id: userId,
+      kind,
+      title,
+      body: body || null,
+      media_url: media_url ?? null,
+      status: "pending",
+    }).returning();
+
+    logger.info({ userId, contributionId: contribution.id, collectionSlug: slug }, "heritage_contribution_created");
+    return res.status(201).json({ contribution });
+  } catch (err) {
+    logger.error({ err }, "heritage contribution create error");
+    return res.status(500).json({ error: "Failed to create contribution" });
+  }
+});
+
+router.patch("/diaspora/heritage/contributions/:id/moderate", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const contributionId = Number(req.params.id);
+  const parsed = z.object({
+    status: z.enum(["published", "rejected"]),
+    rejection_reason: z.string().trim().max(1000).optional(),
+  }).safeParse(req.body);
+  if (!Number.isInteger(contributionId) || contributionId <= 0 || !parsed.success) {
+    return res.status(400).json({ error: "Valid status and contribution id are required" });
+  }
+
+  try {
+    const [contribution] = await db.update(heritageContributionsTable).set({
+      status: parsed.data.status,
+      moderated_by: req.authenticatedUserId!,
+      moderated_at: new Date(),
+      rejection_reason: parsed.data.status === "rejected" ? parsed.data.rejection_reason ?? null : null,
+    }).where(eq(heritageContributionsTable.id, contributionId)).returning();
+    if (!contribution) return res.status(404).json({ error: "Contribution not found" });
+    logger.info({ contributionId, status: parsed.data.status, moderatorId: req.authenticatedUserId }, "heritage_contribution_moderated");
+    return res.json({ contribution });
+  } catch (err) {
+    logger.error({ err, contributionId }, "heritage contribution moderation error");
+    return res.status(500).json({ error: "Failed to moderate contribution" });
+  }
 });
 
 // ─── Research Center ───────────────────────────────────────────────────────────
