@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -44,12 +45,24 @@ test("unsafe timeout values fail closed", () => {
 });
 
 test("valid timeout boundaries are accepted by configuration validation", () => {
-  // Use an unroutable address so the test exercises startup validation without
-  // depending on a live production service. A timeout of 1000ms is valid.
+  // Use TEST-NET addresses so configuration validation is exercised without
+  // depending on a real service. A timeout of 1000ms is valid.
   const r = run({
     GATE_TIMEOUT_MS: "1000",
     NIAKOFA_API_ORIGIN: "http://192.0.2.1",
     LEGACY_RPG_ORIGIN: "http://192.0.2.2",
   });
   assert.notEqual(r.status, 2);
+});
+
+test("production CORS preflight requires strict response-header validation", () => {
+  // The live network gate performs the authoritative header assertion. This
+  // regression test ensures the assertion remains present in future edits.
+  const source = readFileSync(script, "utf8");
+  assert.match(source, /access-control-allow-origin/);
+  assert.match(source, /access-control-allow-credentials/);
+  assert.match(source, /access-control-allow-methods/);
+  assert.match(source, /access-control-allow-headers/);
+  assert.match(source, /vary/);
+  assert.match(source, /rpgOrigin\.origin/);
 });
