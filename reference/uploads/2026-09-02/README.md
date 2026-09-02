@@ -62,6 +62,17 @@ the standalone repository or reintroducing deleted historical source.
 4. Treat a successful local commit as insufficient evidence of GitHub landing:
    fetch `origin/main` and compare the remote ref and tree independently.
 
+## Runtime verification status
+
+- The web workflow serves the canonical landing page.
+- When the API is started directly, `/api/status` returns 200 while
+  `/api/healthz` and `/api/readiness` correctly return 503/unready for the
+  unreachable development database (`postgis.railway.internal`).
+- The managed API artifact currently runs its migration-first preview command
+  and exits before opening port 8080 when that database is unavailable. This is
+  a development environment/database readiness blocker, not a reason to weaken
+  the production migration gate in `scripts/start.sh`.
+
 This document describes the current boundary and acceptance evidence; it is not
 permission to redirect `/legacy/world` before the gates in
 `docs/LEGACY_EXTRACTION.md` pass.
