@@ -114,6 +114,21 @@ jest.unstable_mockModule("../lib/ws-hub.js", () => ({
   getHubMetrics: jest.fn().mockReturnValue({}),
 }));
 
+// This suite isolates max-travel and check-in behavior. Claim-scope
+// resolution has its own focused coverage in community-pool-claim-scope.test.ts
+// and should not consume this suite's ordered DB fixtures.
+jest.unstable_mockModule("../lib/community-pool.js", () => ({
+  payHelperFromPool: jest.fn().mockResolvedValue({ outcome: "ok" }),
+  payHelpersFromPool: jest.fn().mockResolvedValue({ outcome: "ok" }),
+  getGuaranteedMinimum: jest.fn().mockResolvedValue(0),
+  isPoolEnabled: jest.fn().mockResolvedValue(false),
+  queuePendingMinimum: jest.fn().mockResolvedValue(undefined),
+  maybeAlertLowBalance: jest.fn().mockResolvedValue(undefined),
+  getHourlyMinimumRate: jest.fn().mockResolvedValue(0),
+  roundMoney: jest.fn((amount: number) => amount),
+  resolveHelperClaimScope: jest.fn().mockResolvedValue({ ok: true }),
+}));
+
 jest.unstable_mockModule("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
   getRedisConnection: jest.fn().mockReturnValue(null),

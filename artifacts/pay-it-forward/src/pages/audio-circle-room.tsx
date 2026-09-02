@@ -1045,7 +1045,7 @@ export default function AudioCircleRoomScreen() {
   // Recording authorization is server-side state. Loading it after a
   // refresh ensures a participant cannot bypass the consent banner.
   useEffect(() => {
-    if (!session || !myUserId) return;
+    if (!session?.id || !myUserId) return;
     fetch(`${base}/api/audio-circle-sessions/${session.id}/recording/current`, {
       headers: authHeaders(),
     })
@@ -1063,7 +1063,7 @@ export default function AudioCircleRoomScreen() {
         setRecordingPendingCount(Number(current.missing_consent_count) || 0);
       })
       .catch(() => {});
-  }, [base, myUserId, session?.id]);
+  }, [base, myUserId, session]);
 
   useWebSocket("ws_reconnected", () => {
     void resync();
@@ -1073,7 +1073,7 @@ export default function AudioCircleRoomScreen() {
   // If the user backgrounds the app for a while the WS may have gone quiet and
   // the participant list can be stale. Re-sync the moment the tab is foregrounded.
   useEffect(() => {
-    if (!session || !myUserId) return;
+    if (!session?.id || !myUserId) return;
     const handler = () => {
       if (!document.hidden) {
         setConnectionStatus("reconnecting");
@@ -1082,8 +1082,7 @@ export default function AudioCircleRoomScreen() {
     };
     document.addEventListener("visibilitychange", handler);
     return () => document.removeEventListener("visibilitychange", handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, myUserId]);
+  }, [myUserId, resync, session]);
 
   // Start browser-side certification sampling once the media session exists. This is
   // intentionally local-only: media stats never pass through the API.

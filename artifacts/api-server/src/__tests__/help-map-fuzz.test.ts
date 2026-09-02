@@ -119,6 +119,7 @@ jest.unstable_mockModule("../lib/community-pool.js", () => ({
   maybeAlertLowBalance: jest.fn(),
   getHourlyMinimumRate: jest.fn(),
   roundMoney: jest.fn((n: number) => Math.round(n * 100) / 100),
+  resolveHelperClaimScope: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
 jest.unstable_mockModule("@workspace/trust-tiers", () => ({

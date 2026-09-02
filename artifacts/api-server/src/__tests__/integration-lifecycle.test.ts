@@ -276,6 +276,7 @@ describe("Full Request Lifecycle", () => {
       lat: 32.7767,
       lng: -96.7970,
       neighborhood: "Downtown Dallas",
+      hub_id: 1,
       pay_it_forward_amount: null,
       pledge_amount: null,
     };
@@ -312,7 +313,7 @@ describe("Full Request Lifecycle", () => {
     const claimedRequest = { ...newRequest, status: "claimed", helper_id: helperId, claimed_at: new Date() };
     (db.limit as jest.Mock)
       .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]) // requireApproved
-      .mockResolvedValueOnce([{ requester_id: requesterId, urgency: "medium", lat: 32.7767, lng: -96.7970, category: "groceries" }]) // existingFull
+      .mockResolvedValueOnce([{ requester_id: requesterId, urgency: "medium", lat: 32.7767, lng: -96.7970, category: "groceries", hub_id: 1 }]) // existingFull
       .mockResolvedValueOnce([])                                 // no userSettings (default 15 miles)
       .mockResolvedValueOnce([{ id: helperId, lat: 32.78, lng: -96.80 }]) // helper location
       .mockResolvedValueOnce([{ name: "Helper" }]);               // final helper-name lookup

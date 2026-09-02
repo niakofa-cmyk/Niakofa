@@ -158,6 +158,7 @@ jest.unstable_mockModule("../src/lib/community-pool.js", () => ({
   getHourlyMinimumRate:      jest.fn().mockResolvedValue(0),
   getDefaultCommunityId:     jest.fn().mockResolvedValue(null),
   getHubReservedBalance:     jest.fn().mockResolvedValue(0),
+  resolveHelperClaimScope:   jest.fn().mockResolvedValue({ ok: true }),
   recordPoolContribution:    jest.fn().mockResolvedValue(undefined),
   processPendingMinimums:    jest.fn().mockResolvedValue(0),
   getLowBalanceThreshold:    jest.fn().mockResolvedValue(25),

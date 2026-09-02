@@ -224,7 +224,7 @@ describe("POST /api/requests/:id/claim", () => {
     // Call order: existingFull -> userSettings (none -> default 15mi) ->
     // helperUser (no lat/lng -> distance check skipped) -> [update+returning]
     // -> final helper-name lookup.
-    const existingFull = { requester_id: 10, urgency: "normal", lat: null, lng: null, category: "errands" };
+    const existingFull = { requester_id: 10, urgency: "normal", lat: null, lng: null, category: "errands", hub_id: 1 };
     const claimedReq = { id: 1, status: "claimed", helper_id: 20, requester_id: 10 };
     (db.limit as jest.Mock)
       .mockResolvedValueOnce([existingFull])
