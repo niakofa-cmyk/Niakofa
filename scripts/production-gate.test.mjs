@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -54,11 +55,10 @@ test("valid timeout boundaries are accepted by configuration validation", () => 
   assert.notEqual(r.status, 2);
 });
 
-test("production CORS preflight requires an exact origin and credential support", () => {
-  // The network gate performs the authoritative live-header assertion. This
-  // regression test documents the contract so future edits cannot silently
-  // reduce it to an OPTIONS-only reachability check.
-  const source = require("node:fs").readFileSync(script, "utf8");
+test("production CORS preflight requires strict response-header validation", () => {
+  // The live network gate performs the authoritative header assertion. This
+  // regression test ensures the assertion remains present in future edits.
+  const source = readFileSync(script, "utf8");
   assert.match(source, /access-control-allow-origin/);
   assert.match(source, /access-control-allow-credentials/);
   assert.match(source, /access-control-allow-methods/);
