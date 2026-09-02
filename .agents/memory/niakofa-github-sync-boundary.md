@@ -22,6 +22,19 @@ hashes independently; never paste or print a token.
 workspace, while the supported GitHub connection could read and confirm the
 public ref without exposing credentials.
 
+The authenticated GitHub API publication path is confirmed to work for this
+repository: it can upload the local tree, advance `main` without force, and
+the public Git remote can then independently fetch and verify the resulting
+content.
+
+**Why:** The shell credential helper may reject an otherwise valid installed
+GitHub connection, but the connection-backed API can publish safely without
+accessing the token value.
+
+**How to apply:** Treat matching tree and changed-file blob IDs as the
+content-parity check when the API-generated commit SHA differs from the local
+commit SHA.
+
 When the authenticated GitHub API creates a commit but the shell remote cannot
 fetch it, the API's ISO timestamp may normalize the commit's original timezone
 offset and omit details such as the final message newline. Use the API's tree,
