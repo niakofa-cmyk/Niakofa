@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { useCachedList } from "@/hooks/useCachedList";
 import { acquireCircleDevice } from "@/lib/circleMediaReadiness";
+import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";
 
 interface LiveSessionSummary {
   id: number;
@@ -115,7 +116,7 @@ const SPEAKER_LIMIT_OPTIONS = [4, 8, 12, 18, 24] as const;
 interface HostModalProps {
   circle: CircleSummary;
   onClose: () => void;
-  onStart: (circle: CircleSummary, videoEnabled: boolean, title: string, description: string, topic: string, maxSpeakers: number) => void;
+  onStart: (circle: CircleSummary, videoEnabled: boolean, title: string, description: string, topic: string, maxSpeakers: number, recordingAllowed: boolean) => void;
   starting: boolean;
 }
 
@@ -127,6 +128,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
   const [description, setDescription] = useState("");
   const [topic, setTopic] = useState("");
   const [maxSpeakers, setMaxSpeakers] = useState<number>(12);
+  const [recordingAllowed, setRecordingAllowed] = useState(false);
   const [micReady, setMicReady] = useState<boolean | null>(null);
   const [camReady, setCamReady] = useState<boolean | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
@@ -309,10 +311,25 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
         </div>
 
         {/* Start button */}
+        <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground">
+          Hosting requires a fresh, accurate GPS check for this Circle’s city. Joining never requires your location.
+        </div>
+        <label className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={recordingAllowed}
+            onChange={(event) => setRecordingAllowed(event.target.checked)}
+            className="mt-0.5 accent-primary"
+          />
+          <span className="text-xs text-muted-foreground">
+            <span className="block font-semibold text-foreground">Allow recording for this session</span>
+            Recording is off unless you explicitly enable it. Everyone in the Circle must acknowledge before recording can begin.
+          </span>
+        </label>
         <Button
           className="w-full"
           disabled={starting || !canStart}
-          onClick={() => onStart(circle, format === "video", title.trim(), description.trim(), topic.trim(), maxSpeakers)}
+          onClick={() => onStart(circle, format === "video", title.trim(), description.trim(), topic.trim(), maxSpeakers, recordingAllowed)}
         >
           {starting ? "Starting…" : `Start ${format === "audio" ? "Audio" : "Video"} Circle`}
         </Button>
@@ -411,14 +428,15 @@ export default function AudioCirclesScreen() {
     }
   }, [neighborhoodParam, circles]);
 
-  const startRoom = async (circle: CircleSummary, video_enabled = false, title: string, description: string, topic: string, maxSpeakers = 12) => {
+  const startRoom = async (circle: CircleSummary, video_enabled = false, title: string, description: string, topic: string, maxSpeakers = 12, recordingAllowed = false) => {
     setStartingId(circle.id);
     setHostModal(null);
     try {
+      const location = await getFreshCircleStartLocation();
       const res = await fetch(`${base}/api/audio-circles/${circle.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ title, video_enabled, description: description || undefined, topic: topic || undefined, max_speakers: maxSpeakers }),
+        body: JSON.stringify({ title, video_enabled, description: description || undefined, topic: topic || undefined, max_speakers: maxSpeakers, recording_allowed: recordingAllowed, location }),
       });
       const data = await res.json();
       if (res.status === 409 && data.session_id) {
@@ -431,8 +449,12 @@ export default function AudioCirclesScreen() {
       }
       await refresh();
       setLocation(`/audio-circle/${data.session.id}`);
-    } catch {
-      toast({ title: "Couldn't start the circle", description: "Check your connection and try again.", variant: "destructive" });
+    } catch (error) {
+      if (error instanceof CircleStartLocationError) {
+        toast({ title: "Location needed to host", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Couldn't start the circle", description: "Check your connection and try again.", variant: "destructive" });
+      }
     } finally {
       setStartingId(null);
     }

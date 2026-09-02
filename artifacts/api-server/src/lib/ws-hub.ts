@@ -96,6 +96,8 @@ export type WsEventType =
   | "circle_role_changed"
   | "circle_reaction"
   | "circle_recording_changed"
+  | "circle_recording_authorized"
+  | "circle_recording_consent_updated"
   | "circle_recording_available"
   | "circle_recording_status_updated"
   | "circle_host_disconnected"

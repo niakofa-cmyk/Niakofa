@@ -51,6 +51,7 @@ export * from "./family-knowledge-versions";
 export * from "./family-tree-relations";
 export * from "./geography";
 export * from "./audio-circles";
+export * from "./circle-recordings";
 export * from "./legacy-engine";
 export * from "./legacy-place-discoveries";
 export * from "./legacy-phase5";

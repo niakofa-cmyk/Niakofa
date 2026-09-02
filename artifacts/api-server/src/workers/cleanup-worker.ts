@@ -24,13 +24,14 @@
  *     it silently vanish from the map.
  */
 import { Worker, type Job } from "bullmq";
-import { db, requestsTable } from "@workspace/db";
+import { db, requestsTable, circleRecordingsTable } from "@workspace/db";
 import { eq, and, lt, isNull } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { trackWorker } from "../lib/worker-lifecycle";
 import { sendPushToUser } from "../routes/push";
+import { deleteExpiredRecording } from "../lib/circleRecordingPolicy";
 
 const CLEANUP_JOB_NAME = "daily-request-cleanup";
 const CLEANUP_REPEAT   = { pattern: "0 3 * * *" }; // 3 AM daily (low traffic)
@@ -93,6 +94,29 @@ async function runCleanupCore(): Promise<void> {
   logger.info({ at: now.toISOString() }, "cleanup-worker: starting");
 
   let totalExpired = 0;
+
+  // Delete expired Circle recording objects before their metadata. A failed
+  // object deletion leaves the row in place so the next run can retry safely.
+  const expiredRecordings = await db
+    .select({
+      id: circleRecordingsTable.id,
+      storage_key: circleRecordingsTable.storage_key,
+    })
+    .from(circleRecordingsTable)
+    .where(lt(circleRecordingsTable.retention_until, now))
+    .limit(100);
+  let recordingsDeleted = 0;
+  for (const recording of expiredRecordings) {
+    try {
+      await deleteExpiredRecording(recording);
+      recordingsDeleted++;
+    } catch (err) {
+      logger.error({ err, recordingId: recording.id }, "cleanup-worker: expired Circle recording deletion failed — will retry");
+    }
+  }
+  if (recordingsDeleted > 0) {
+    logger.info({ recordingsDeleted }, "cleanup-worker: deleted expired Circle recordings");
+  }
 
   // 0. Nudge requesters whose open request is halfway to expiring with no claim
   await sendPreExpiryNudges(now).catch(err =>

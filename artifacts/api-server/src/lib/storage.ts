@@ -135,6 +135,28 @@ export async function getAssetUrl(key: string): Promise<string> {
   return `/api/family/assets/${key}`;
 }
 
+/**
+ * Return a private playback URL. Unlike getAssetUrl(), this deliberately
+ * bypasses STORAGE_CDN_URL so a recording can never become a permanent public
+ * CDN link. Local development uses an authenticated API asset route.
+ */
+export async function getPrivateAssetUrl(key: string, expiresInSeconds = 300): Promise<string> {
+  if (!isCloudStorageConfigured()) {
+    return `/api/audio-circle-recording-assets?key=${encodeURIComponent(key)}`;
+  }
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  const client = await getS3Client();
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"]!,
+      Key: key,
+    }),
+    { expiresIn: expiresInSeconds },
+  );
+}
+
 // ─── assetExists ─────────────────────────────────────────────────────────────
 
 export async function assetExists(key: string): Promise<boolean> {

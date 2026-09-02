@@ -13,6 +13,24 @@ import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals
 import request from "supertest";
 import type { Express } from "express";
 import express from "express";
+import { z } from "zod";
+
+jest.unstable_mockModule("../lib/circleLocationPolicy.js", () => ({
+  CircleStartLocationBody: z.object({
+    latitude: z.number(),
+    longitude: z.number(),
+    accuracy_meters: z.number(),
+    captured_at: z.string(),
+  }),
+  verifyCircleStartLocation: jest.fn().mockResolvedValue({
+    ok: true,
+    cityKey: "test_city",
+    cityDisplay: "Test City",
+    countyDisplay: null,
+    stateCode: null,
+    accuracyBucket: "good",
+  }),
+}));
 
 jest.unstable_mockModule("@workspace/db", () => {
   const mockDb: Record<string, unknown> = {
@@ -56,6 +74,14 @@ jest.unstable_mockModule("@workspace/db", () => {
     },
     circleBlocksTable: { id: "id", host_id: "host_id", blocked_user_id: "blocked_user_id", session_id: "session_id" },
     circleReportsTable: { id: "id", session_id: "session_id", reporter_id: "reporter_id", reported_id: "reported_id", reason: "reason" },
+    circleRecordingsTable: {
+      id: "id", session_id: "session_id", circle_id: "circle_id", host_id: "host_id",
+      status: "status", storage_key: "storage_key", retention_until: "retention_until",
+    },
+    circleRecordingConsentTable: {
+      id: "id", recording_id: "recording_id", session_id: "session_id",
+      user_id: "user_id", consented_at: "consented_at",
+    },
   };
 });
 
@@ -96,6 +122,15 @@ beforeAll(async () => {
 
 function bearerToken(userId: number): string {
   return `Bearer ${signTokenById(userId)}`;
+}
+
+function validStartLocation() {
+  return {
+    latitude: 32.75,
+    longitude: -97.33,
+    accuracy_meters: 20,
+    captured_at: new Date().toISOString(),
+  };
 }
 
 beforeEach(() => {
@@ -193,7 +228,7 @@ describe("Audio Circles — auth gates", () => {
     const res = await request(app)
       .post("/api/audio-circles/1/start")
       .set("Authorization", bearerToken(42))
-      .send({ title: "Neighborhood check-in" });
+      .send({ title: "Neighborhood check-in", location: validStartLocation() });
     expect(res.status).toBe(404);
   });
 
@@ -205,7 +240,7 @@ describe("Audio Circles — auth gates", () => {
     const res = await request(app)
       .post("/api/audio-circles/1/start")
       .set("Authorization", bearerToken(42))
-      .send({ title: "Neighborhood check-in" });
+      .send({ title: "Neighborhood check-in", location: validStartLocation() });
     expect(res.status).toBe(409);
     expect(res.body.session_id).toBe(77);
   });
@@ -268,30 +303,28 @@ describe("Audio Circles — auth gates", () => {
     expect(res.status).toBe(403);
   });
 
-  it("blocks attaching a recording URL when the caller isn't the host", async () => {
-    (db.limit as jest.Mock).mockImplementationOnce(() => Promise.resolve([{ id: 1, host_id: 99 }])); // session
+  it("rejects attaching a recording URL through the legacy endpoint", async () => {
     const res = await request(app)
       .post("/api/audio-circle-sessions/1/recording-url")
       .set("Authorization", bearerToken(42))
       .send({ recording_url: "https://example.com/recording.mp3" });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(410);
   });
 
-  it("404s attaching a recording URL to a session that doesn't exist", async () => {
-    (db.limit as jest.Mock).mockImplementationOnce(() => Promise.resolve([])); // session lookup
+  it("rejects attaching a recording URL even for a missing session", async () => {
     const res = await request(app)
       .post("/api/audio-circle-sessions/1/recording-url")
       .set("Authorization", bearerToken(42))
       .send({ recording_url: "https://example.com/recording.mp3" });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(410);
   });
 
-  it("rejects a malformed recording URL", async () => {
+  it("rejects malformed recording URL payloads through the legacy endpoint", async () => {
     const res = await request(app)
       .post("/api/audio-circle-sessions/1/recording-url")
       .set("Authorization", bearerToken(42))
       .send({ recording_url: "not-a-url" });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(410);
   });
 
   it("blocks the host from demoting themselves — must end the session instead", async () => {

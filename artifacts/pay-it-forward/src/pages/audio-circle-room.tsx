@@ -71,6 +71,7 @@ import {
   CircleEnduranceCollector,
 } from "@/lib/circleEnduranceMetrics";
 import { canPublishCircleMedia } from "@/lib/circleMediaPolicy";
+import { RecordingConsentBanner } from "@/components/RecordingConsentBanner";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,7 @@ interface SessionInfo {
   video_enabled: boolean;
   media_publish_policy?: "open" | "moderated";
   is_recording: boolean;
+  recording_allowed?: boolean;
   max_speakers: number;
   topic?: string | null;
   description?: string | null;
@@ -789,6 +791,10 @@ export default function AudioCircleRoomScreen() {
   const [micOn, setMicOn] = useState(false);
   const [videoOn, setVideoOn] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [recordingId, setRecordingId] = useState<number | null>(null);
+  const [recordingConsented, setRecordingConsented] = useState(false);
+  const [recordingPendingCount, setRecordingPendingCount] = useState(0);
+  const [recordingConsentSubmitting, setRecordingConsentSubmitting] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState<
     { id: string; emoji: string; x: number; drift: number }[]
   >([]);
@@ -1035,6 +1041,29 @@ export default function AudioCircleRoomScreen() {
       // Next reconnect will retry
     }
   }, [base, sessionId]);
+
+  // Recording authorization is server-side state. Loading it after a
+  // refresh ensures a participant cannot bypass the consent banner.
+  useEffect(() => {
+    if (!session || !myUserId) return;
+    fetch(`${base}/api/audio-circle-sessions/${session.id}/recording/current`, {
+      headers: authHeaders(),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const current = data?.recording;
+        if (!current) {
+          setRecordingId(null);
+          setRecordingConsented(false);
+          setRecordingPendingCount(0);
+          return;
+        }
+        setRecordingId(current.id);
+        setRecordingConsented(Boolean(current.consented));
+        setRecordingPendingCount(Number(current.missing_consent_count) || 0);
+      })
+      .catch(() => {});
+  }, [base, myUserId, session?.id]);
 
   useWebSocket("ws_reconnected", () => {
     void resync();
@@ -1425,7 +1454,9 @@ export default function AudioCircleRoomScreen() {
         try {
           const token = getToken();
           const duration = elapsedSeconds ?? recordingElapsedSecondsRef.current;
-          const uploadUrl = `${base}/api/audio-circle-sessions/${sessionId}/recording-upload${duration > 0 ? `?duration=${duration}` : ""}`;
+          const uploadUrl = recordingId
+            ? `${base}/api/audio-circle-sessions/${sessionId}/recording/${recordingId}/finalize${duration > 0 ? `?duration=${duration}` : ""}`
+            : `${base}/api/audio-circle-sessions/${sessionId}/recording-upload${duration > 0 ? `?duration=${duration}` : ""}`;
           const res = await fetch(uploadUrl, {
             method: "POST",
             headers: {
@@ -1443,7 +1474,7 @@ export default function AudioCircleRoomScreen() {
             });
             // Send metadata (duration + size) to the backend so the archive
             // can show it even before AI processing completes.
-            if (duration > 0) {
+            if (duration > 0 && !recordingId) {
               try {
                 await fetch(
                   `${base}/api/audio-circle-sessions/${sessionId}/recording-metadata`,
@@ -1492,7 +1523,7 @@ export default function AudioCircleRoomScreen() {
       }
       setUploading(false);
     },
-    [base, sessionId, isHost],
+    [base, sessionId, isHost, recordingId],
   );
 
   // ── Leave / cleanup ────────────────────────────────────────────────────────
@@ -1728,8 +1759,13 @@ export default function AudioCircleRoomScreen() {
   });
 
   useWebSocket("circle_recording_changed", (e) => {
-    const p = e.payload as { session_id: number; is_recording: boolean };
+    const p = e.payload as {
+      session_id: number;
+      recording_id?: number;
+      is_recording: boolean;
+    };
     if (p.session_id !== sessionId) return;
+    if (p.recording_id) setRecordingId(p.recording_id);
     const wasRecording = isRecordingRef.current;
     isRecordingRef.current = p.is_recording;
     setSession((prev) =>
@@ -1771,6 +1807,28 @@ export default function AudioCircleRoomScreen() {
         }
       }
     }
+  });
+
+  useWebSocket("circle_recording_authorized", (e) => {
+    const p = e.payload as { session_id: number; recording_id: number };
+    if (p.session_id !== sessionId) return;
+    setRecordingId(p.recording_id);
+    setRecordingConsented(false);
+    setRecordingPendingCount(participants.length);
+    toast({
+      title: "Recording consent requested",
+      description: "Acknowledge below if you agree to this Circle being recorded.",
+    });
+  });
+
+  useWebSocket("circle_recording_consent_updated", (e) => {
+    const p = e.payload as {
+      session_id: number;
+      recording_id: number;
+      missing_consent_count: number;
+    };
+    if (p.session_id !== sessionId || p.recording_id !== recordingId) return;
+    setRecordingPendingCount(p.missing_consent_count);
   });
 
   useEffect(() => {
@@ -2094,6 +2152,56 @@ export default function AudioCircleRoomScreen() {
         variant: "destructive",
       });
       return false;
+    }
+  };
+
+  const acknowledgeRecording = async () => {
+    if (!recordingId) return;
+    setRecordingConsentSubmitting(true);
+    try {
+      const consentResponse = await fetch(
+        `${base}/api/audio-circle-sessions/${sessionId}/recording/${recordingId}/consent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: "{}",
+        },
+      );
+      const consentData = await consentResponse.json().catch(() => ({}));
+      if (!consentResponse.ok) {
+        throw new Error(consentData.error ?? "Could not save consent");
+      }
+      setRecordingConsented(true);
+
+      if (isHost) {
+        const startResponse = await fetch(
+          `${base}/api/audio-circle-sessions/${sessionId}/recording/${recordingId}/start`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: "{}",
+          },
+        );
+        const startData = await startResponse.json().catch(() => ({}));
+        if (!startResponse.ok && startResponse.status !== 409) {
+          throw new Error(startData.error ?? "Could not start recording");
+        }
+        if (startResponse.status === 409) {
+          // Keep the host's consent banner actionable so they can retry after
+          // the remaining participants acknowledge.
+          setRecordingConsented(false);
+          setRecordingPendingCount(Number(startData.missing_consent_count) || 0);
+          toast({ title: "Waiting for consent", description: startData.error });
+        }
+      }
+    } catch (error) {
+      toast({
+        title: "Consent was not saved",
+        description: error instanceof Error ? error.message : "Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setRecordingConsentSubmitting(false);
     }
   };
 
@@ -2734,22 +2842,38 @@ export default function AudioCircleRoomScreen() {
         });
         return;
       }
-      isRecordingRef.current = true;
-      recordingElapsedSecondsRef.current = 0;
-      setSession((prev) => (prev ? { ...prev, is_recording: true } : prev));
-      try {
-        sessionManagerRef.current?.startRecording();
-      } catch {
-        isRecordingRef.current = false;
-        setSession((prev) => (prev ? { ...prev, is_recording: false } : prev));
-        toast({ title: "Couldn't start recording", variant: "destructive" });
+      if (!session?.recording_allowed) {
+        toast({
+          title: "Recording is off",
+          description: "Recording was not enabled when this Circle was created.",
+          variant: "destructive",
+        });
         return;
       }
-      const ok = await post("/recording", { is_recording: true });
-      if (!ok) {
-        isRecordingRef.current = false;
-        setSession((prev) => (prev ? { ...prev, is_recording: false } : prev));
-        await sessionManagerRef.current?.stopRecording();
+      try {
+        const response = await fetch(
+          `${base}/api/audio-circle-sessions/${sessionId}/recording/authorize`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: "{}",
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error ?? "Could not request recording consent");
+        setRecordingId(data.recording_id);
+        setRecordingConsented(false);
+        setRecordingPendingCount(participants.length);
+        toast({
+          title: "Consent requested",
+          description: "Everyone must acknowledge before recording begins.",
+        });
+      } catch (error) {
+        toast({
+          title: "Couldn't request recording",
+          description: error instanceof Error ? error.message : "Try again.",
+          variant: "destructive",
+        });
       }
       return;
     }
@@ -3100,6 +3224,15 @@ export default function AudioCircleRoomScreen() {
             </button>
           </div>
         )}
+
+        <div className="mt-2">
+          <RecordingConsentBanner
+            isVisible={Boolean(recordingId && !recordingConsented && !session.is_recording)}
+            pendingCount={recordingPendingCount}
+            onAcknowledge={() => void acknowledgeRecording()}
+            isSubmitting={recordingConsentSubmitting}
+          />
+        </div>
 
         {/* Recording bar */}
         {session.is_recording && (

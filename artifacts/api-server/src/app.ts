@@ -163,6 +163,10 @@ app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
 
 // Circle recording upload — raw audio body parsed before the json() middleware
 app.use("/api/audio-circle-sessions/:id/recording-upload", express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+app.use(
+  "/api/audio-circle-sessions/:sessionId/recording/:recordingId/finalize",
+  express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }),
+);
 
 // Legacy interview media is uploaded as raw audio/video bytes. Mount this
 // before express.json() so the recording is never coerced into a JSON body.

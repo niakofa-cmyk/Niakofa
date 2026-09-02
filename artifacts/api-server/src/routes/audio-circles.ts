@@ -16,10 +16,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
-import { mkdirSync } from "fs";
-import { writeFile } from "fs/promises";
-import path from "path";
-import { putAsset, getAssetUrl, isCloudStorageConfigured } from "../lib/storage";
+import { putAsset, getPrivateAssetUrl } from "../lib/storage";
 import {
   db,
   audioCirclesTable,
@@ -29,10 +26,11 @@ import {
   audioCircleMessagesTable,
   circleBlocksTable,
   circleReportsTable,
+  circleRecordingsTable,
   cityNeighborhoodsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, and, isNull, desc, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { normalizeCityKey, ensureNeighborhoodsForCity } from "./community-neighborhoods";
@@ -44,6 +42,8 @@ import {
   clearCircleSession,
 } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { CircleStartLocationBody, verifyCircleStartLocation } from "../lib/circleLocationPolicy";
+import { calculateRetentionUntil } from "../lib/circleRecordingPolicy";
 
 const router = Router();
 
@@ -400,6 +400,7 @@ const StartSessionBody = z.object({
   }).optional(),
   chat_enabled: z.boolean().optional(),
   recording_allowed: z.boolean().optional(),
+  location: CircleStartLocationBody,
 });
 
 // POST /audio-circles/:id/start — any approved user can host.
@@ -411,6 +412,14 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
 
   const [circle] = await db.select().from(audioCirclesTable).where(eq(audioCirclesTable.id, circleId)).limit(1);
   if (!circle) return res.status(404).json({ error: "Circle not found" });
+
+  const locationCheck = await verifyCircleStartLocation(circle.city_key, parsed.data.location, {
+    userId: req.authenticatedUserId!,
+    circleId,
+  });
+  if (!locationCheck.ok) {
+    return res.status(403).json({ error: locationCheck.reason, code: locationCheck.code });
+  }
 
   const existingLive = await getLiveSession(circleId);
   if (existingLive) return res.status(409).json({ error: "This circle already has a live session — join it instead", session_id: existingLive.id });
@@ -428,7 +437,7 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
       media_publish_policy: parsed.data.media_publish_policy ?? "open",
       max_speakers: parsed.data.max_speakers ?? 13,
       chat_enabled: parsed.data.chat_enabled ?? true,
-      recording_allowed: parsed.data.recording_allowed ?? true,
+      recording_allowed: parsed.data.recording_allowed ?? false,
     })
     .returning();
   if (!session) return res.status(500).json({ error: "Failed to start session" });
@@ -1046,6 +1055,12 @@ router.post("/audio-circle-sessions/:id/recording", requireAuth, generalApiLimit
   if (parsed.data.is_recording && !session.recording_allowed) {
     return res.status(403).json({ error: "Recording has been disabled for this session" });
   }
+  if (parsed.data.is_recording) {
+    return res.status(410).json({
+      error: "Recording now requires participant consent. Use the recording authorization flow.",
+      error_code: "RECORDING_CONSENT_REQUIRED",
+    });
+  }
 
   const newStatus = parsed.data.is_recording ? "recording" : "none";
   await db.update(audioCircleSessionsTable).set({
@@ -1086,22 +1101,36 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
 
   const contentType = String(req.headers["content-type"] ?? "").split(";")[0].toLowerCase();
   const extension = contentType === "audio/mp4" ? "m4a" : contentType === "audio/ogg" ? "ogg" : "webm";
-  const filename = `${sessionId}-${randomUUID()}.${extension}`;
-  const storageKey = `recordings/${filename}`;
-
-  let recording_url: string;
-  if (isCloudStorageConfigured()) {
-    await putAsset(storageKey, body, contentType || "audio/webm");
-    recording_url = await getAssetUrl(storageKey);
-  } else {
-    const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "..", "uploads", "recordings");
-    mkdirSync(uploadsDir, { recursive: true });
-    const filePath = path.join(uploadsDir, filename);
-    await writeFile(filePath, body);
-    recording_url = `/uploads/recordings/${filename}`;
-  }
-
   const durationSeconds = parseInt(String(req.query.duration ?? ""), 10);
+  const [recording] = await db.insert(circleRecordingsTable).values({
+    session_id: sessionId,
+    circle_id: session.circle_id,
+    host_id: userId,
+    status: "RECORDING_FINALIZING",
+    retention_until: calculateRetentionUntil(),
+  }).returning();
+  if (!recording) return res.status(500).json({ error: "Could not create recording metadata" });
+
+  const filename = `${sessionId}-${randomUUID()}.${extension}`;
+  const storageKey = `circles/recordings/${recording.id}/${filename}`;
+  try {
+    await putAsset(storageKey, body, contentType || "audio/webm");
+    await db.update(circleRecordingsTable).set({
+      status: "RECORDING_ARCHIVED",
+      ended_at: new Date(),
+      duration_seconds: !isNaN(durationSeconds) && durationSeconds > 0 ? durationSeconds : null,
+      mime_type: contentType || "audio/webm",
+      byte_size: body.length,
+      storage_key: storageKey,
+      updated_at: new Date(),
+    }).where(eq(circleRecordingsTable.id, recording.id));
+  } catch (err) {
+    await db.update(circleRecordingsTable)
+      .set({ status: "RECORDING_FAILED", updated_at: new Date() })
+      .where(eq(circleRecordingsTable.id, recording.id));
+    throw err;
+  }
+  const recording_url = await getPrivateAssetUrl(storageKey);
   const updateData: Partial<typeof audioCircleSessionsTable.$inferInsert> = {
     recording_url,
     recording_status: "processing",
@@ -1121,7 +1150,7 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
     .where(eq(audioCircleParticipantsTable.session_id, sessionId));
   sendToCircleParticipants(allParticipants.map(p => p.user_id), {
     type: "circle_recording_available",
-    payload: { session_id: sessionId, circle_id: session.circle_id, recording_url },
+    payload: { session_id: sessionId, circle_id: session.circle_id },
   });
   sendToCircleParticipants(allParticipants.map(p => p.user_id), {
     type: "circle_recording_status_updated",
@@ -1226,21 +1255,11 @@ function broadcastRecordingStatus(sessionId: number, status: string) {
     .catch(err => { logger.warn({ err, sessionId }, "audio-circles: recording status WS notification failed"); });
 }
 
-const RecordingUrlBody = z.object({ recording_url: z.string().url().max(2048) });
-
 router.post("/audio-circle-sessions/:id/recording-url", requireAuth, generalApiLimiter, async (req, res) => {
-  const sessionId = parseInt(String(req.params.id ?? ""), 10);
-  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
-  const parsed = RecordingUrlBody.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "recording_url must be a valid URL" });
-
-  const userId = req.authenticatedUserId!;
-  const [session] = await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1);
-  if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.host_id !== userId) return res.status(403).json({ error: "Only the host can attach a recording" });
-
-  await db.update(audioCircleSessionsTable).set({ recording_url: parsed.data.recording_url }).where(eq(audioCircleSessionsTable.id, sessionId));
-  return res.json({ ok: true });
+  return res.status(410).json({
+    error: "Recording URLs are server-issued after a private recording is finalized.",
+    error_code: "PRIVATE_RECORDING_URLS_REQUIRED",
+  });
 });
 
 const RecordingMetadataBody = z.object({
@@ -1304,7 +1323,30 @@ router.get("/audio-circles/:id/recordings", requireAuth, generalApiLimiter, asyn
     .orderBy(desc(audioCircleSessionsTable.ended_at))
     .limit(50);
 
-  return res.json({ recordings });
+  const [viewer] = await db
+    .select({ is_admin: usersTable.is_admin, approval_status: usersTable.approval_status })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.authenticatedUserId!))
+    .limit(1);
+  const isApprovedAdmin = viewer?.is_admin === true && viewer.approval_status === "approved";
+  if (isApprovedAdmin || recordings.length === 0) return res.json({ recordings });
+
+  const sessionIds = recordings.map((recording) => recording.id);
+  const participantSessions = await db
+    .select({ session_id: audioCircleParticipantsTable.session_id })
+    .from(audioCircleParticipantsTable)
+    .where(and(
+      eq(audioCircleParticipantsTable.user_id, req.authenticatedUserId!),
+      inArray(audioCircleParticipantsTable.session_id, sessionIds),
+    ));
+  const allowedSessions = new Set(participantSessions.map((row) => row.session_id));
+  const visibleRecordings = recordings.filter((recording) =>
+    allowedSessions.has(recording.id) || recording.host_id === req.authenticatedUserId,
+  );
+  if (visibleRecordings.length === 0) {
+    return res.status(403).json({ error: "Only Circle participants can view recordings" });
+  }
+  return res.json({ recordings: visibleRecordings });
 });
 
 // ── Mid-session settings update ──────────────────────────────────────────────
