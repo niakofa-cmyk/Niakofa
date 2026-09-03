@@ -175,6 +175,4 @@ overrides:
   "orval>js-yaml": "^4.1.2"
 
 allowBuilds:
-  esbuild: true
-  msgpackr-extract: true
-  unrs-resolver: false
+  '@pnpm/exe': true

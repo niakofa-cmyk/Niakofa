@@ -18,6 +18,7 @@ export type ParsedDnaDataset = {
   sourceFormat: "csv" | "txt" | "json";
   markerCount: number;
   fingerprint: string;
+  markerSketch: number[];
 };
 
 export class DnaImportError extends Error {
@@ -157,10 +158,17 @@ export function parseDnaExport(
   }
 
   const canonical = [...new Set(validMarkers)].sort().join("\n");
+  // Keep only the lowest 128 32-bit digests. This permits a privacy-conscious
+  // cohort similarity check without retaining raw marker records. It is a
+  // matching heuristic, not an IBD segment calculation.
+  const markerSketch = [...new Set([...new Set(validMarkers)].map((marker) =>
+    createHash("sha256").update(marker).digest().readUInt32BE(0),
+  ))].sort((a, b) => a - b).slice(0, 128);
   return {
     provider: providerValue,
     sourceFormat: extension as ParsedDnaDataset["sourceFormat"],
     markerCount: new Set(validMarkers).size,
     fingerprint: createHash("sha256").update(canonical).digest("hex"),
+    markerSketch,
   };
 }

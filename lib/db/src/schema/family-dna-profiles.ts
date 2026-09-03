@@ -8,6 +8,7 @@ import {
   pgEnum,
   uniqueIndex,
   index,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { familiesTable } from "./families";
 import { usersTable } from "./users";
@@ -39,6 +40,9 @@ export const familyDnaProfilesTable = pgTable("family_dna_profiles", {
   source_format: text("source_format").notNull(),
   dataset_fingerprint: text("dataset_fingerprint").notNull(),
   marker_count: integer("marker_count").notNull().default(0),
+  // One-way MinHash-style sketch of canonical marker records. This is a
+  // derived comparison aid, never a copy of the provider genotype export.
+  marker_sketch: jsonb("marker_sketch").$type<number[]>(),
   raw_data_retained: boolean("raw_data_retained").notNull().default(false),
   ethnicity_available: boolean("ethnicity_available").notNull().default(false),
   match_count: integer("match_count"),

@@ -43,6 +43,7 @@ import webrtcIceRouter from "./webrtc-ice";
 import coverageInterestRouter from "./coverage-interest";
 import familyRouter from "./family";
 import familyConsentRouter from "./family-consent";
+import dnaMatchingRouter from "./dna-matching";
 import diasporaCompletionRouter from "./diaspora-completion";
 import diasporaRouter from "./diaspora";
 import legacyRouter from "./legacy";
@@ -110,6 +111,7 @@ router.use(webrtcIceRouter);
 router.use(coverageInterestRouter);
 router.use(familyRouter);
 router.use(familyConsentRouter);
+router.use(dnaMatchingRouter);
 // Must precede diasporaRouter so the corrected aggregate dashboard and
 // durable Preserve endpoints win over the older bounded implementations.
 router.use(diasporaCompletionRouter);

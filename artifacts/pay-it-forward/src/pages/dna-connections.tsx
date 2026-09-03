@@ -12,12 +12,13 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Dna, Upload,
-  Loader2, CheckCircle2, X, Sparkles, User, Trash2,
+  Loader2, CheckCircle2, X, Sparkles, Trash2,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
 import { safeDnaPresentation, type DnaConnectionState } from "@/lib/diaspora/dnaTrustGate";
+import { DnaMatchingPanel } from "@/components/DnaMatchingPanel";
 
 const PROVIDERS = [
   { id: "AncestryDNA", label: "AncestryDNA", color: "text-green-400", bg: "bg-green-400/10", border: "border-green-400/20" },
@@ -26,16 +27,6 @@ const PROVIDERS = [
   { id: "LivingDNA", label: "LivingDNA", color: "text-purple-400", bg: "bg-purple-400/10", border: "border-purple-400/20" },
   { id: "FamilyTreeDNA", label: "FamilyTreeDNA", color: "text-red-400", bg: "bg-red-400/10", border: "border-red-400/20" },
 ];
-
-interface DnaMatch {
-  id: string;
-  name: string;
-  relationship: string;
-  shared_cm: number;
-  predicted_relation: string;
-  confidence: "high" | "medium" | "low";
-  avatar_color: string;
-}
 
 interface DnaFamilyProfile {
   id: number;
@@ -55,16 +46,9 @@ interface DnaFamily {
   profile: DnaFamilyProfile | null;
 }
 
-const CONFIDENCE_STYLES: Record<string, { label: string; bg: string; text: string }> = {
-  high:   { label: "High Confidence",   bg: "bg-green-500/10", text: "text-green-500" },
-  medium: { label: "Medium Confidence", bg: "bg-amber-500/10", text: "text-amber-500" },
-  low:    { label: "Low Confidence",    bg: "bg-muted", text: "text-muted-foreground" },
-};
-
 export default function DnaConnectionsPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
-  const [matches, setMatches] = useState<DnaMatch[]>([]);
   const [families, setFamilies] = useState<DnaFamily[]>([]);
   const [connectionState, setConnectionState] = useState<DnaConnectionState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,7 +69,6 @@ export default function DnaConnectionsPage() {
       const res = await fetch("/api/diaspora/dna/connections", { headers: authHeaders() });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setMatches(Array.isArray(data.matches) ? data.matches : []);
       const availableFamilies = Array.isArray(data.families) ? data.families : [];
       setFamilies(availableFamilies);
       setSelectedFamilyId((current) => current ?? availableFamilies[0]?.id ?? null);
@@ -96,7 +79,6 @@ export default function DnaConnectionsPage() {
         ethnicityAvailable: data.ethnicity_available === true,
       });
     } catch {
-      setMatches([]);
       setFamilies([]);
       setConnectionState(null);
     } finally {
@@ -268,56 +250,10 @@ export default function DnaConnectionsPage() {
                </section>
              )}
 
-            {/* DNA Matches */}
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-                  Your DNA Matches
-                </h2>
-                 <span className="text-xs text-muted-foreground">{matches.length ? `${matches.length} verified matches` : "No result source connected"}</span>
-              </div>
-               <div className="space-y-3">
-                 {matches.length === 0 && (
-                    <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">
-                      {presentation.connected
-                        ? "This parsed export is connected, but Niakofa does not yet have a supported relative-matching dataset to compare it with."
-                        : "No verified matches are available because no parsed DNA dataset is connected."}
-                   </div>
-                 )}
-                 {matches.map(m => {
-                  const initials = m.name.split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
-                  const conf = CONFIDENCE_STYLES[m.confidence];
-                  return (
-                    <div
-                      key={m.id}
-                      className="bg-card border border-border rounded-2xl p-4 active:opacity-70 transition-opacity"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${m.avatar_color}`}>
-                          {initials || <User className="w-5 h-5" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p className="font-semibold text-sm truncate">{m.name}</p>
-                            <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">{m.relationship}</span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs font-medium text-blue-500">{m.shared_cm} cM</span>
-                            <span className="text-xs text-muted-foreground">shared DNA</span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${conf.bg} ${conf.text}`}>
-                              {conf.label}
-                            </span>
-                            <span className="text-xs text-muted-foreground">{m.predicted_relation}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
+            {/* Matching is deliberately separate from import consent. */}
+            {connectedFamilies.map((family) => (
+              <DnaMatchingPanel key={family.id} familyId={family.id} familyName={family.name} />
+            ))}
 
             {/* Import CTA */}
             <section>
