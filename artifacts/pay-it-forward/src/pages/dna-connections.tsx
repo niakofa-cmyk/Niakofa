@@ -19,6 +19,7 @@ import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
 import { safeDnaPresentation, type DnaConnectionState } from "@/lib/diaspora/dnaTrustGate";
 import { DnaMatchingPanel } from "@/components/DnaMatchingPanel";
+import { diasporaTheme } from "@/lib/diaspora/theme";
 
 const PROVIDERS = [
   { id: "AncestryDNA", label: "AncestryDNA", color: "text-green-400", bg: "bg-green-400/10", border: "border-green-400/20" },
@@ -152,11 +153,11 @@ export default function DnaConnectionsPage() {
   const connectedFamilies = families.filter((family) => family.profile?.status === "ready");
 
   return (
-    <div className="min-h-screen bg-background pb-28">
+     <div className={`${diasporaTheme.page} min-h-screen pb-28`}>
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
+       <div className="sticky top-0 z-10 bg-[#071312]/95 backdrop-blur border-b border-white/10">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate("/diaspora")} className="p-2 -ml-2 rounded-lg active:bg-muted">
+           <button onClick={() => navigate("/diaspora")} className={`p-2 -ml-2 rounded-lg active:bg-white/10 ${diasporaTheme.focus}`}>
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0">

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  and, desc, eq, gt, lt, ne,
+  and, desc, eq, gt, lt, ne, or,
 } from "drizzle-orm";
 import {
   db,
@@ -126,10 +126,18 @@ router.post("/diaspora/dna/matching/consent", requireAuth, generalApiLimiter, as
 
   // Revocation is immediate and removes previously computed relationship rows.
   if (!optedIn) {
-    await db.delete(dnaMatchResultsTable).where(and(
-      eq(dnaMatchResultsTable.family_id, familyId),
-      eq(dnaMatchResultsTable.user_id, userId),
-    ));
+    await db.transaction(async (tx) => {
+      await tx.delete(dnaMatchResultsTable).where(or(
+        and(
+          eq(dnaMatchResultsTable.family_id, familyId),
+          eq(dnaMatchResultsTable.user_id, userId),
+        ),
+        and(
+          eq(dnaMatchResultsTable.matched_family_id, familyId),
+          eq(dnaMatchResultsTable.matched_user_id, userId),
+        ),
+      ));
+    });
   }
   logger.info({ userId, familyId, optedIn }, "dna_matching_consent_updated");
   return res.json({ consent: publicConsent(consent), matches: [] });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Dna, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { diasporaTheme } from "@/lib/diaspora/theme";
 
 type Consent = {
   opted_in: boolean;
@@ -15,6 +16,7 @@ type Match = {
   relationship_band: string;
   confidence: string;
   similarity_score: number;
+  source?: string;
   expires_at?: string;
 };
 
@@ -102,7 +104,7 @@ export function DnaMatchingPanel({ familyId, familyName }: MatchingPanelProps) {
   }
 
   return (
-    <section className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-4">
+    <section className={`${diasporaTheme.radius} border border-teal-300/20 bg-teal-300/[0.06] p-4`}>
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-500/15">
           <Dna className="h-5 w-5 text-teal-400" />
@@ -131,7 +133,7 @@ export function DnaMatchingPanel({ familyId, familyName }: MatchingPanelProps) {
           {!loading && enabled && hasReadyProfile && !consent.opted_in && (
             <div className="mt-3 space-y-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Opt in only if you want Niakofa to compare your derived marker sketch with other consenting, active members of this Family Space. Importing DNA does not opt you in.
+                 Opt in only if you want Niakofa to compare your derived marker sketch with other consenting, active members who have connected DNA. Matching can include members of other Family Spaces; importing DNA does not opt you in.
               </p>
               <label className="flex items-start gap-2 text-xs leading-relaxed text-foreground">
                 <input
@@ -157,7 +159,7 @@ export function DnaMatchingPanel({ familyId, familyName }: MatchingPanelProps) {
             <div className="mt-3 space-y-3">
               <div className="flex items-center gap-2 text-xs text-teal-300">
                 <ShieldCheck className="h-4 w-4" />
-                <span>Opted in · Family Space only · derived data only</span>
+                 <span>Opted in · consented members only · derived data only</span>
               </div>
               {matches.length === 0 ? (
                 <p className="rounded-xl border border-border/70 bg-background/40 p-3 text-xs leading-relaxed text-muted-foreground">
@@ -172,7 +174,7 @@ export function DnaMatchingPanel({ familyId, familyName }: MatchingPanelProps) {
                         <span className="text-xs capitalize text-muted-foreground">{match.confidence} confidence</span>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Similarity signal: {Math.round(match.similarity_score * 100)}%
+                         Similarity signal: {Math.round(match.similarity_score * 100)}% · source: {match.source ?? "derived sketch"}
                       </p>
                     </div>
                   ))}

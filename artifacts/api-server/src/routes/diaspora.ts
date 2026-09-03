@@ -39,6 +39,7 @@ import {
   familyDnaProfilesTable,
   dnaMatchResultsTable,
   dnaMatchingConsentTable,
+  usersTable,
 } from "@workspace/db";
 import { eq, and, desc, sql, inArray, or, like, lt } from "drizzle-orm";
 import { z } from "zod";
@@ -315,39 +316,56 @@ router.post("/diaspora/dna/import", requireAuth, generalApiLimiter, async (req, 
   try {
     const parsed = parseDnaExport(provider, fileName, buffer);
     const retentionExpiresAt = new Date(Date.now() + DNA_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-    const [profile] = await db.insert(familyDnaProfilesTable).values({
-      family_id: familyId,
-      user_id: userId,
-      provider: parsed.provider,
-      status: "ready",
-      source_file_name: fileName,
-      source_format: parsed.sourceFormat,
-      dataset_fingerprint: parsed.fingerprint,
-      marker_count: parsed.markerCount,
-      marker_sketch: parsed.markerSketch,
-      raw_data_retained: false,
-      ethnicity_available: false,
-      match_count: null,
-      error_code: null,
-      retention_expires_at: retentionExpiresAt,
-      updated_at: new Date(),
-    }).onConflictDoUpdate({
-      target: [familyDnaProfilesTable.family_id, familyDnaProfilesTable.user_id],
-      set: {
+    const profile = await db.transaction(async (tx) => {
+      const [nextProfile] = await tx.insert(familyDnaProfilesTable).values({
+        family_id: familyId,
+        user_id: userId,
         provider: parsed.provider,
         status: "ready",
         source_file_name: fileName,
         source_format: parsed.sourceFormat,
         dataset_fingerprint: parsed.fingerprint,
         marker_count: parsed.markerCount,
+        marker_sketch: parsed.markerSketch,
         raw_data_retained: false,
         ethnicity_available: false,
         match_count: null,
         error_code: null,
         retention_expires_at: retentionExpiresAt,
         updated_at: new Date(),
-      },
-    }).returning();
+      }).onConflictDoUpdate({
+        target: [familyDnaProfilesTable.family_id, familyDnaProfilesTable.user_id],
+        set: {
+          provider: parsed.provider,
+          status: "ready",
+          source_file_name: fileName,
+          source_format: parsed.sourceFormat,
+          dataset_fingerprint: parsed.fingerprint,
+          marker_count: parsed.markerCount,
+          marker_sketch: parsed.markerSketch,
+          raw_data_retained: false,
+          ethnicity_available: false,
+          match_count: null,
+          error_code: null,
+          retention_expires_at: retentionExpiresAt,
+          updated_at: new Date(),
+        },
+      }).returning();
+
+      // A replacement export changes the derived profile. Remove both sides of
+      // prior results so nobody sees a result calculated from the old sketch.
+      await tx.delete(dnaMatchResultsTable).where(or(
+        and(
+          eq(dnaMatchResultsTable.family_id, familyId),
+          eq(dnaMatchResultsTable.user_id, userId),
+        ),
+        and(
+          eq(dnaMatchResultsTable.matched_family_id, familyId),
+          eq(dnaMatchResultsTable.matched_user_id, userId),
+        ),
+      ));
+      return nextProfile;
+    });
 
     logger.info(
       { userId, familyId, provider: parsed.provider, markerCount: parsed.markerCount },
@@ -428,6 +446,47 @@ const HERITAGE_COLLECTIONS = [
 
 router.get("/diaspora/heritage", requireAuth, generalApiLimiter, (_req, res) => {
   return res.json({ collections: HERITAGE_COLLECTIONS });
+});
+
+router.get("/diaspora/admin/heritage/contributions", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const requestedStatus = typeof req.query.status === "string" ? req.query.status : "pending";
+  const status = requestedStatus === "all"
+    ? null
+    : ["pending", "published", "rejected", "archived"].includes(requestedStatus)
+      ? requestedStatus as "pending" | "published" | "rejected" | "archived"
+      : null;
+  if (requestedStatus !== "all" && !status) {
+    return res.status(400).json({ error: "Invalid contribution status" });
+  }
+
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 20));
+  try {
+    const rows = await db
+      .select({
+        id: heritageContributionsTable.id,
+        collection_slug: heritageContributionsTable.collection_slug,
+        kind: heritageContributionsTable.kind,
+        title: heritageContributionsTable.title,
+        body: heritageContributionsTable.body,
+        media_url: heritageContributionsTable.media_url,
+        status: heritageContributionsTable.status,
+        rejection_reason: heritageContributionsTable.rejection_reason,
+        created_at: heritageContributionsTable.created_at,
+        contributor_name: usersTable.name,
+      })
+      .from(heritageContributionsTable)
+      .leftJoin(usersTable, eq(usersTable.id, heritageContributionsTable.user_id))
+      .where(status ? eq(heritageContributionsTable.status, status) : undefined)
+      .orderBy(desc(heritageContributionsTable.created_at))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+
+    return res.json({ contributions: rows, page, pageSize });
+  } catch (err) {
+    logger.error({ err, status }, "heritage moderation queue error");
+    return res.status(500).json({ error: "Failed to load moderation queue" });
+  }
 });
 
 router.get("/diaspora/heritage/:slug", requireAuth, generalApiLimiter, (req, res) => {

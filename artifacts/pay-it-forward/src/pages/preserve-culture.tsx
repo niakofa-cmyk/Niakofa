@@ -14,6 +14,7 @@ import { ArrowLeft, BookHeart, ChevronLeft, ChevronRight, Layers, Loader2, Mic, 
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { buildOralHistoryHref } from "@/lib/diaspora/oralHistoryDeepLink";
+import { diasporaTheme } from "@/lib/diaspora/theme";
 import { toast } from "sonner";
 
 interface CultureCard {
@@ -107,10 +108,10 @@ export default function PreserveCulturePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#071312] pb-28 text-white">
+    <div className={`${diasporaTheme.page} min-h-screen pb-28`}>
       <header className="sticky top-0 z-20 border-b border-white/10 bg-[#071312]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3 sm:px-6">
-          <button onClick={() => navigate("/diaspora")} className="rounded-xl p-2 text-white/60 hover:bg-white/5 hover:text-white" aria-label="Back to Diaspora">
+           <button onClick={() => navigate("/diaspora")} className={`rounded-xl p-2 text-white/60 hover:bg-white/5 hover:text-white ${diasporaTheme.focus}`} aria-label="Back to Diaspora">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="min-w-0 flex-1">

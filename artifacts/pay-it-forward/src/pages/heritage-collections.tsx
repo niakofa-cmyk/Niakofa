@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
+import { diasporaTheme } from "@/lib/diaspora/theme";
 
 interface Collection {
   slug: string;
@@ -47,6 +48,19 @@ interface FamilySpaceOption {
   id: number;
   name: string;
   status: "active" | "invited";
+}
+
+interface ModerationContribution {
+  id: number;
+  collection_slug: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  media_url: string | null;
+  status: "pending" | "published" | "rejected" | "archived";
+  rejection_reason: string | null;
+  created_at: string;
+  contributor_name: string | null;
 }
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -123,10 +137,14 @@ export default function HeritageCollectionsPage() {
   const [contributionUrl, setContributionUrl] = useState("");
   const [contributionFamilyId, setContributionFamilyId] = useState<number | null>(null);
   const [contributionSaving, setContributionSaving] = useState(false);
+  const [moderationQueue, setModerationQueue] = useState<ModerationContribution[]>([]);
+  const [moderationLoading, setModerationLoading] = useState(false);
+  const [moderatingId, setModeratingId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
     loadCollections();
+    if (currentUser.is_admin) void loadModerationQueue();
   }, [currentUser]);
 
   // Load collection detail when slug changes
@@ -181,6 +199,42 @@ export default function HeritageCollectionsPage() {
     }
   }
 
+  async function loadModerationQueue() {
+    setModerationLoading(true);
+    try {
+      const res = await fetch("/api/diaspora/admin/heritage/contributions?status=pending", { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      setModerationQueue(Array.isArray(data.contributions) ? data.contributions : []);
+    } catch {
+      setModerationQueue([]);
+    } finally {
+      setModerationLoading(false);
+    }
+  }
+
+  async function moderateContribution(id: number, status: "published" | "rejected") {
+    const rejectionReason = status === "rejected"
+      ? window.prompt("Why is this contribution being rejected? (optional)")?.trim() ?? ""
+      : "";
+    setModeratingId(id);
+    try {
+      const res = await fetch(`/api/diaspora/heritage/contributions/${id}/moderate`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ status, rejection_reason: rejectionReason || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Could not update contribution");
+      toast.success(status === "published" ? "Contribution published" : "Contribution rejected");
+      setModerationQueue(queue => queue.filter(item => item.id !== id));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update contribution");
+    } finally {
+      setModeratingId(null);
+    }
+  }
+
   function resetContributionForm() {
     setShowContribution(false);
     setContributionKind("story");
@@ -232,8 +286,8 @@ export default function HeritageCollectionsPage() {
     const imageUrl = COLLECTION_IMAGES[slug];
 
     return (
-      <div className="min-h-screen bg-background pb-28">
-        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
+       <div className={`${diasporaTheme.page} min-h-screen pb-28`}>
+         <div className="sticky top-0 z-10 bg-[#071312]/95 backdrop-blur border-b border-white/10">
           <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
             <button onClick={() => navigate("/diaspora/heritage")} className="p-2 -ml-2 rounded-lg active:bg-muted">
               <ArrowLeft className="w-5 h-5" />
@@ -395,9 +449,9 @@ export default function HeritageCollectionsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-background pb-28">
+     <div className={`${diasporaTheme.page} min-h-screen pb-28`}>
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
+       <div className="sticky top-0 z-10 bg-[#071312]/95 backdrop-blur border-b border-white/10">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
           <button onClick={() => navigate("/diaspora")} className="p-2 -ml-2 rounded-lg active:bg-muted">
             <ArrowLeft className="w-5 h-5" />
@@ -520,6 +574,56 @@ export default function HeritageCollectionsPage() {
                 Share from Family Vault
               </button>
             </div>
+
+             {currentUser.is_admin && (
+               <section className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
+                 <div className="mb-3 flex items-center justify-between gap-3">
+                   <div>
+                     <p className="text-sm font-semibold text-amber-200">Heritage moderation</p>
+                     <p className="text-xs text-muted-foreground">Review community contributions before publication.</p>
+                   </div>
+                   {moderationLoading && <Loader2 className="h-4 w-4 animate-spin text-amber-300" />}
+                 </div>
+                 {moderationQueue.length === 0 && !moderationLoading ? (
+                   <p className="text-xs text-muted-foreground">No pending contributions.</p>
+                 ) : (
+                   <div className="space-y-2">
+                     {moderationQueue.map(item => (
+                       <div key={item.id} className="rounded-xl border border-white/10 bg-black/10 p-3">
+                         <div className="flex items-start justify-between gap-3">
+                           <div className="min-w-0">
+                             <p className="text-sm font-medium">{item.title}</p>
+                             <p className="text-xs text-muted-foreground">
+                               {item.collection_slug} · {item.kind} · {item.contributor_name ?? "Community member"}
+                             </p>
+                           </div>
+                           <span className="shrink-0 text-[11px] uppercase tracking-wide text-amber-200">Pending</span>
+                         </div>
+                         {item.body && <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground">{item.body}</p>}
+                         <div className="mt-3 flex gap-2">
+                           <button
+                             type="button"
+                             disabled={moderatingId === item.id}
+                             onClick={() => void moderateContribution(item.id, "published")}
+                             className={`flex-1 rounded-lg bg-emerald-300 px-3 py-2 text-xs font-bold text-emerald-950 disabled:opacity-50 ${diasporaTheme.focus}`}
+                           >
+                             Publish
+                           </button>
+                           <button
+                             type="button"
+                             disabled={moderatingId === item.id}
+                             onClick={() => void moderateContribution(item.id, "rejected")}
+                             className={`flex-1 rounded-lg border border-rose-300/30 px-3 py-2 text-xs font-semibold text-rose-200 disabled:opacity-50 ${diasporaTheme.focus}`}
+                           >
+                             Reject
+                           </button>
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+                 )}
+               </section>
+             )}
           </>
         )}
       </div>
