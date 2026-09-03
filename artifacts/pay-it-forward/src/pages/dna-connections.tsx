@@ -64,12 +64,6 @@ const CONFIDENCE_STYLES: Record<string, { label: string; bg: string; text: strin
 export default function DnaConnectionsPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
-  const [summary, setSummary] = useState<{
-    total_matches: number | null;
-    close_family: number | null;
-    distant_cousins: number | null;
-    unreviewed?: number | null;
-  } | null>(null);
   const [matches, setMatches] = useState<DnaMatch[]>([]);
   const [families, setFamilies] = useState<DnaFamily[]>([]);
   const [connectionState, setConnectionState] = useState<DnaConnectionState | null>(null);
@@ -91,7 +85,6 @@ export default function DnaConnectionsPage() {
       const res = await fetch("/api/diaspora/dna/connections", { headers: authHeaders() });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setSummary(data.summary ?? { total_matches: 0, close_family: 0, distant_cousins: 0 });
       setMatches(Array.isArray(data.matches) ? data.matches : []);
       const availableFamilies = Array.isArray(data.families) ? data.families : [];
       setFamilies(availableFamilies);
@@ -103,7 +96,6 @@ export default function DnaConnectionsPage() {
         ethnicityAvailable: data.ethnicity_available === true,
       });
     } catch {
-      setSummary({ total_matches: 0, close_family: 0, distant_cousins: 0 });
       setMatches([]);
       setFamilies([]);
       setConnectionState(null);
