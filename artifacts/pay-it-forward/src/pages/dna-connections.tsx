@@ -1,11 +1,10 @@
 /**
- * DNA Connections — Import DNA data and discover relatives
+ * DNA Connections — Import validated provider data into a Family Space
  * Route: /diaspora/dna
  *
  * Enhancements:
- *  - DNA Match cards with name, relationship, shared cM amount
- *  - Ethnicity breakdown bars
- *  - Provider import flow
+ *  - Family-scoped provider import flow
+ *  - Explicit derived-data retention and deletion
  *  - Trust gate: never show estimated results without a parsed dataset
  */
 
@@ -13,7 +12,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Dna, Upload,
-  Loader2, CheckCircle2, X, Sparkles, User,
+  Loader2, CheckCircle2, X, Sparkles, User, Trash2,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -38,6 +37,24 @@ interface DnaMatch {
   avatar_color: string;
 }
 
+interface DnaFamilyProfile {
+  id: number;
+  family_id: number;
+  provider: string;
+  status: "failed" | "ready";
+  source_file_name: string;
+  source_format: string;
+  marker_count: number;
+  raw_data_retained: boolean;
+  retention_expires_at: string;
+}
+
+interface DnaFamily {
+  id: number;
+  name: string;
+  profile: DnaFamilyProfile | null;
+}
+
 const CONFIDENCE_STYLES: Record<string, { label: string; bg: string; text: string }> = {
   high:   { label: "High Confidence",   bg: "bg-green-500/10", text: "text-green-500" },
   medium: { label: "Medium Confidence", bg: "bg-amber-500/10", text: "text-amber-500" },
@@ -48,17 +65,19 @@ export default function DnaConnectionsPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
   const [summary, setSummary] = useState<{
-    total_matches: number;
-    close_family: number;
-    distant_cousins: number;
-    unreviewed?: number;
+    total_matches: number | null;
+    close_family: number | null;
+    distant_cousins: number | null;
+    unreviewed?: number | null;
   } | null>(null);
   const [matches, setMatches] = useState<DnaMatch[]>([]);
+  const [families, setFamilies] = useState<DnaFamily[]>([]);
   const [connectionState, setConnectionState] = useState<DnaConnectionState | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
   const [dnaFile, setDnaFile] = useState<File | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [selectedFamilyId, setSelectedFamilyId] = useState<number | null>(null);
   const [importStep, setImportStep] = useState<"select" | "upload" | "processing" | "done">("select");
 
   useEffect(() => {
@@ -74,6 +93,9 @@ export default function DnaConnectionsPage() {
       const data = await res.json();
       setSummary(data.summary ?? { total_matches: 0, close_family: 0, distant_cousins: 0 });
       setMatches(Array.isArray(data.matches) ? data.matches : []);
+      const availableFamilies = Array.isArray(data.families) ? data.families : [];
+      setFamilies(availableFamilies);
+      setSelectedFamilyId((current) => current ?? availableFamilies[0]?.id ?? null);
       setConnectionState({
         status: data.status ?? "not_connected",
         hasParsedDataset: data.has_parsed_dataset === true,
@@ -83,6 +105,7 @@ export default function DnaConnectionsPage() {
     } catch {
       setSummary({ total_matches: 0, close_family: 0, distant_cousins: 0 });
       setMatches([]);
+      setFamilies([]);
       setConnectionState(null);
     } finally {
       setLoading(false);
@@ -91,27 +114,55 @@ export default function DnaConnectionsPage() {
 
   async function handleImport() {
     if (!selectedProvider) return;
+    if (!selectedFamilyId) {
+      toast.error("Choose a Family Space first");
+      return;
+    }
     if (!dnaFile) {
       toast.error("Please select a DNA data file first");
       return;
     }
+    if (dnaFile.size > 30 * 1024 * 1024) {
+      toast.error("DNA files must be 30 MB or smaller");
+      return;
+    }
     setImportStep("processing");
     try {
+      const fileBytes = await dnaFile.arrayBuffer();
       const res = await fetch("/api/diaspora/dna/import", {
         method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: selectedProvider,
-          file_name: dnaFile.name,
-          file_size: dnaFile.size,
-        }),
+        headers: {
+          ...authHeaders(),
+          "Content-Type": "application/octet-stream",
+          "x-dna-provider": selectedProvider,
+          "x-dna-family-id": String(selectedFamilyId),
+          "x-dna-file-name": dnaFile.name,
+        },
+        body: fileBytes,
       });
-      if (!res.ok) throw new Error();
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.message ?? data.error ?? "Import failed");
+      const data = await res.json().catch(() => ({})) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "Import failed");
+      setImportStep("done");
+      toast.success("DNA export validated");
+      await loadData();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Secure DNA ingestion is not available yet");
+      toast.error(error instanceof Error ? error.message : "DNA import failed");
       setImportStep("upload");
+    }
+  }
+
+  async function handleDelete(profileId: number) {
+    if (!window.confirm("Delete this derived DNA profile? The original file was not stored.")) return;
+    try {
+      const res = await fetch(`/api/diaspora/dna/connections/${profileId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error("Could not delete DNA profile");
+      toast.success("DNA profile deleted");
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete DNA profile");
     }
   }
 
@@ -122,6 +173,9 @@ export default function DnaConnectionsPage() {
       </div>
     );
   }
+
+  const presentation = safeDnaPresentation(connectionState);
+  const connectedFamilies = families.filter((family) => family.profile?.status === "ready");
 
   return (
     <div className="min-h-screen bg-background pb-28">
@@ -156,24 +210,21 @@ export default function DnaConnectionsPage() {
 
         {!loading && (
           <>
-             {(() => {
-               const presentation = safeDnaPresentation(connectionState);
-               return presentation.connected ? (
+             {presentation.connected ? (
                  <>
-                   <div className="grid grid-cols-3 gap-3">
-                     <div className="bg-card border border-border rounded-2xl p-4 text-center">
-                       <p className="text-2xl font-bold text-blue-500">{summary?.total_matches ?? 0}</p>
-                       <p className="text-xs text-muted-foreground mt-1">Total Matches</p>
-                     </div>
-                     <div className="bg-card border border-border rounded-2xl p-4 text-center">
-                       <p className="text-2xl font-bold text-emerald-500">{summary?.close_family ?? 0}</p>
-                       <p className="text-xs text-muted-foreground mt-1">Close Family</p>
-                     </div>
-                     <div className="bg-card border border-border rounded-2xl p-4 text-center">
-                       <p className="text-2xl font-bold text-amber-500">{summary?.distant_cousins ?? 0}</p>
-                       <p className="text-xs text-muted-foreground mt-1">Distant Cousins</p>
-                     </div>
-                   </div>
+                    <section className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+                      <div className="flex items-start gap-3">
+                        <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
+                        <div>
+                          <h2 className="text-sm font-semibold">DNA data connected</h2>
+                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                            {presentation.matchCount == null
+                              ? "Your export was parsed into a private marker summary. Relative matching and ethnicity results are not available from this dataset alone."
+                              : `${presentation.matchCount} verified matches are available.`}
+                          </p>
+                        </div>
+                      </div>
+                    </section>
 
                    {presentation.showEthnicity && (
                      <section className="rounded-2xl border border-border bg-card p-4">
@@ -190,8 +241,40 @@ export default function DnaConnectionsPage() {
                    </div>
                    <p className="text-sm leading-relaxed text-muted-foreground">{presentation.body}</p>
                  </section>
-               );
-             })()}
+                )}
+
+             {connectedFamilies.length > 0 && (
+               <section>
+                 <div className="mb-3 flex items-center justify-between">
+                   <h2 className="text-sm font-semibold uppercase tracking-wide">Connected Family Spaces</h2>
+                   <span className="text-xs text-muted-foreground">{connectedFamilies.length}</span>
+                 </div>
+                 <div className="space-y-2">
+                   {connectedFamilies.map((family) => (
+                     <div key={family.id} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
+                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10">
+                         <Dna className="h-4 w-4 text-blue-400" />
+                       </div>
+                       <div className="min-w-0 flex-1">
+                         <p className="truncate text-sm font-semibold">{family.name}</p>
+                         <p className="mt-1 text-xs text-muted-foreground">
+                           {family.profile?.provider} · {family.profile?.marker_count.toLocaleString()} markers · raw file discarded
+                         </p>
+                       </div>
+                       {family.profile && (
+                         <button
+                           onClick={() => void handleDelete(family.profile!.id)}
+                           className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                           aria-label={`Delete DNA profile from ${family.name}`}
+                         >
+                           <Trash2 className="h-4 w-4" />
+                         </button>
+                       )}
+                     </div>
+                   ))}
+                 </div>
+               </section>
+             )}
 
             {/* DNA Matches */}
             <section>
@@ -199,12 +282,14 @@ export default function DnaConnectionsPage() {
                 <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
                   Your DNA Matches
                 </h2>
-                 <span className="text-xs text-muted-foreground">{matches.length} matches</span>
+                 <span className="text-xs text-muted-foreground">{matches.length ? `${matches.length} verified matches` : "No result source connected"}</span>
               </div>
                <div className="space-y-3">
                  {matches.length === 0 && (
-                   <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">
-                     No verified matches are available yet.
+                    <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">
+                      {presentation.connected
+                        ? "This parsed export is connected, but Niakofa does not yet have a supported relative-matching dataset to compare it with."
+                        : "No verified matches are available because no parsed DNA dataset is connected."}
                    </div>
                  )}
                  {matches.map(m => {
@@ -250,7 +335,7 @@ export default function DnaConnectionsPage() {
                   <p className="text-sm font-semibold">Connect Your DNA</p>
                 </div>
                  <p className="text-xs text-muted-foreground mb-3">
-                   Secure provider ingestion is being prepared. We will not store your DNA file or show estimated results from file metadata alone.
+                    Upload a raw export from a supported provider. We parse it in memory, retain only a derived marker summary for 90 days, and never store the original file.
                 </p>
                 <div className="grid grid-cols-3 gap-2 text-center">
                   {["AncestryDNA", "23andMe", "MyHeritage"].map(p => (
@@ -263,7 +348,7 @@ export default function DnaConnectionsPage() {
                   onClick={() => setShowImport(true)}
                   className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-500 text-white rounded-xl py-2.5 text-sm font-medium active:opacity-80"
                 >
-                   <Upload className="w-4 h-4" /> Check secure import
+                    <Upload className="w-4 h-4" /> Import raw DNA export
                 </button>
               </div>
             </section>
@@ -286,7 +371,7 @@ export default function DnaConnectionsPage() {
 
             {importStep === "select" && (
               <>
-                 <p className="text-sm text-muted-foreground mb-4">Secure DNA ingestion is not available yet. Selecting a provider will not upload or store your file.</p>
+                 <p className="text-sm text-muted-foreground mb-4">Choose the provider and Family Space for this upload. The file is parsed in memory and discarded after validation.</p>
                 <div className="space-y-2 mb-4">
                   {PROVIDERS.map(p => (
                     <button
@@ -306,8 +391,12 @@ export default function DnaConnectionsPage() {
                     </button>
                   ))}
                 </div>
-                 <button disabled className="w-full rounded-xl bg-muted py-3 text-sm font-bold text-muted-foreground">
-                   Secure import coming soon
+                 <button
+                   disabled={!selectedProvider || families.length === 0}
+                   onClick={() => setImportStep("upload")}
+                   className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground disabled:opacity-40"
+                 >
+                    Continue to secure upload
                  </button>
               </>
             )}
@@ -316,9 +405,20 @@ export default function DnaConnectionsPage() {
               <div className="text-center py-6">
                 <Upload className="w-12 h-12 text-blue-500/40 mx-auto mb-3" />
                 <p className="font-semibold mb-1">Upload your DNA data file</p>
-                <p className="text-sm text-muted-foreground mb-4 max-w-xs mx-auto">
-                  Download your raw DNA data from {PROVIDERS.find(p => p.id === selectedProvider)?.label}, then upload the CSV file here.
+                 <p className="text-sm text-muted-foreground mb-4 max-w-xs mx-auto">
+                   Download your raw DNA data from {PROVIDERS.find(p => p.id === selectedProvider)?.label}, then upload the CSV, TXT, or JSON file here.
                 </p>
+                 <label className="mb-4 block text-left">
+                   <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Family Space</span>
+                   <select
+                     value={selectedFamilyId ?? ""}
+                     onChange={(event) => setSelectedFamilyId(Number(event.target.value) || null)}
+                     className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm"
+                   >
+                     <option value="" disabled>Select a Family Space</option>
+                     {families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}
+                   </select>
+                 </label>
                 <label className="block border-2 border-dashed border-border rounded-2xl py-8 px-4 mb-4 cursor-pointer active:bg-muted/50">
                   <input
                     type="file"
@@ -361,16 +461,16 @@ export default function DnaConnectionsPage() {
             {importStep === "processing" && (
               <div className="text-center py-8">
                 <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto mb-3" />
-                <p className="font-semibold">Processing your DNA data…</p>
-                <p className="text-sm text-muted-foreground mt-1">Analyzing markers and finding matches</p>
+                   <p className="font-semibold">Validating your DNA export…</p>
+                   <p className="text-sm text-muted-foreground mt-1">The file is processed in memory and not saved.</p>
               </div>
             )}
 
             {importStep === "done" && (
               <div className="text-center py-8">
                 <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                <p className="font-semibold">Import complete!</p>
-                <p className="text-sm text-muted-foreground mt-1">Your DNA matches are now available.</p>
+                <p className="font-semibold">DNA export connected</p>
+                <p className="text-sm text-muted-foreground mt-1">Your derived marker summary is ready. Matching and ethnicity results remain unavailable until a supported result source is connected.</p>
               </div>
             )}
           </div>

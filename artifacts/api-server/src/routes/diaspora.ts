@@ -5,7 +5,8 @@
  *
  *  GET  /diaspora/dashboard              — stats + recent activity for the dashboard
  *  GET  /diaspora/dna/connections        — connected DNA data status
- *  POST /diaspora/dna/import             — reserved until secure ingestion is available
+ *  POST /diaspora/dna/import             — parse a provider export in memory
+ *  DELETE /diaspora/dna/connections/:id  — delete the caller's derived profile
  *  GET  /diaspora/heritage               — curated heritage collection list
  *  GET  /diaspora/heritage/:slug         — single collection + published items
  *  GET  /diaspora/heritage/:slug/items   — published community contributions
@@ -34,11 +35,20 @@ import {
   familyInterviewsTable,
   familyTreeRelationsTable,
   heritageContributionsTable,
+  familiesTable,
+  familyDnaProfilesTable,
 } from "@workspace/db";
-import { eq, and, desc, sql, inArray, or, like } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, or, like, lt } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../lib/logger";
 import { logWorldEvolution } from "../lib/legacy-world-evolution";
+import {
+  DNA_PROVIDERS,
+  DNA_RETENTION_DAYS,
+  DnaImportError,
+  MAX_DNA_FILE_BYTES,
+  parseDnaExport,
+} from "../lib/dna-ingestion";
 
 const router = Router();
 
@@ -62,9 +72,10 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
     let memories: Array<{ id: number; title: string | null; created_at: string; family_id: number }> = [];
     let interviews: Array<{ id: number; family_id: number; created_at: string }> = [];
     let memberCount = 0;
+    let dnaConnections = 0;
 
     if (familyIds.length > 0) {
-      const [memRows, ivRows] = await Promise.all([
+      const [memRows, ivRows, memberCountRows, dnaRows] = await Promise.all([
         db.select({
           id: familyMemoriesTable.id,
           title: familyMemoriesTable.title,
@@ -88,11 +99,20 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
 
         db.select({ count: sql<number>`count(*)` })
         .from(familyMembersTable)
-        .where(inArray(familyMembersTable.family_id, familyIds))
-        .then(rows => { memberCount = Number(rows[0]?.count ?? 0); }),
+        .where(inArray(familyMembersTable.family_id, familyIds)),
+
+        db.select({ id: familyDnaProfilesTable.id })
+          .from(familyDnaProfilesTable)
+          .where(and(
+            eq(familyDnaProfilesTable.user_id, userId),
+            eq(familyDnaProfilesTable.status, "ready"),
+            inArray(familyDnaProfilesTable.family_id, familyIds),
+          )),
       ]);
       memories = memRows;
       interviews = ivRows;
+      memberCount = Number(memberCountRows[0]?.count ?? 0);
+      dnaConnections = dnaRows.length;
       vaultItems = memories.length;
     }
 
@@ -102,7 +122,7 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
         vault_items: vaultItems,
         oral_histories: interviews.length,
         family_tree_people: memberCount,
-        dna_connections: 5,
+        dna_connections: dnaConnections,
         heritage_collections: 9,
       },
       recent_activity: memories.slice(0, 5).map(m => ({
@@ -157,46 +177,210 @@ router.get("/diaspora/activity", requireAuth, generalApiLimiter, async (req, res
   }
 });
 
-router.get("/diaspora/dna/connections", requireAuth, generalApiLimiter, async (_req, res) => {
-  return res.json({
-    status: "not_connected",
-    has_parsed_dataset: false,
-    match_count: null,
-    ethnicity_available: false,
-    summary: {
-      total_matches: 0,
-      close_family: 0,
-      distant_cousins: 0,
-      unreviewed: 0,
-    },
-    matches: [],
-    import_providers: ["AncestryDNA", "23andMe", "MyHeritage", "LivingDNA", "FamilyTreeDNA"],
-    info: "Secure DNA ingestion is not available yet. Niakofa will not show match counts or ethnicity results until a supported dataset is parsed.",
-  });
+function publicDnaProfile(profile: typeof familyDnaProfilesTable.$inferSelect) {
+  return {
+    id: profile.id,
+    family_id: profile.family_id,
+    provider: profile.provider,
+    status: profile.status,
+    source_file_name: profile.source_file_name,
+    source_format: profile.source_format,
+    marker_count: profile.marker_count,
+    raw_data_retained: profile.raw_data_retained,
+    ethnicity_available: profile.ethnicity_available,
+    match_count: profile.match_count,
+    imported_at: profile.created_at,
+    retention_expires_at: profile.retention_expires_at,
+  };
+}
+
+async function activeFamilyIdsForUser(userId: number) {
+  const memberships = await db
+    .select({ family_id: familyMembersTable.family_id })
+    .from(familyMembersTable)
+    .where(and(
+      eq(familyMembersTable.user_id, userId),
+      eq(familyMembersTable.status, "active"),
+    ));
+  return memberships.map((membership) => membership.family_id);
+}
+
+router.get("/diaspora/dna/connections", requireAuth, generalApiLimiter, async (req, res) => {
+  try {
+    const userId = req.authenticatedUserId!;
+    const familyIds = await activeFamilyIdsForUser(userId);
+
+    if (familyIds.length > 0) {
+      // Retention is enforced opportunistically as well as by the indexed
+      // expiry column. Expired derived profiles cannot be presented.
+      await db.delete(familyDnaProfilesTable).where(and(
+        lt(familyDnaProfilesTable.retention_expires_at, new Date()),
+        inArray(familyDnaProfilesTable.family_id, familyIds),
+      ));
+    }
+
+    const [families, profiles] = familyIds.length === 0
+      ? [[], []]
+      : await Promise.all([
+          db.select({
+            id: familiesTable.id,
+            name: familiesTable.name,
+          }).from(familiesTable).where(inArray(familiesTable.id, familyIds)),
+          db.select().from(familyDnaProfilesTable).where(and(
+            eq(familyDnaProfilesTable.user_id, userId),
+            inArray(familyDnaProfilesTable.family_id, familyIds),
+          )),
+        ]);
+
+    const readyProfile = profiles.find((profile) => profile.status === "ready");
+    const latestProfile = readyProfile ?? profiles[0];
+    const connected = Boolean(readyProfile);
+    const familyData = families.map((family) => {
+      const profile = profiles.find((candidate) => candidate.family_id === family.id);
+      return {
+        id: family.id,
+        name: family.name,
+        profile: profile ? publicDnaProfile(profile) : null,
+      };
+    });
+
+    return res.json({
+      status: connected ? "ready" : (latestProfile?.status ?? "not_connected"),
+      has_parsed_dataset: connected,
+      match_count: connected ? readyProfile?.match_count ?? null : null,
+      ethnicity_available: connected && readyProfile?.ethnicity_available === true,
+      marker_count: connected ? readyProfile?.marker_count ?? null : null,
+      summary: {
+        // A parsed genotype export is not a relative-match database. Keep
+        // these null until a real matching source produces provenance-backed
+        // results.
+        total_matches: null,
+        close_family: null,
+        distant_cousins: null,
+        unreviewed: null,
+      },
+      matches: [],
+      families: familyData,
+      import_providers: DNA_PROVIDERS,
+      raw_data_retained: false,
+      retention_days: DNA_RETENTION_DAYS,
+      info: connected
+        ? "Your provider export was validated and reduced to a derived marker summary. Niakofa has not generated relative or ethnicity results because no supported matching source is connected."
+        : "Upload a supported raw genotype export to connect it to one of your active Family Spaces. Niakofa will not show match counts or ethnicity results without a real parsed result.",
+    });
+  } catch (err) {
+    logger.error({ err, userId: req.authenticatedUserId }, "diaspora DNA connections error");
+    return res.status(500).json({ error: "Failed to load DNA connections" });
+  }
 });
 
 router.post("/diaspora/dna/import", requireAuth, generalApiLimiter, async (req, res) => {
-  const schema = z.object({
-    provider: z.enum(["AncestryDNA", "23andMe", "MyHeritage", "LivingDNA", "FamilyTreeDNA"]),
-    sample_id: z.string().optional(),
-    file_name: z.string().optional(),
-    file_size: z.number().optional(),
-  });
-  const body = schema.safeParse(req.body);
-  if (!body.success) return res.status(400).json({ error: "Invalid request" });
+  const rawProvider = req.headers["x-dna-provider"];
+  const provider = Array.isArray(rawProvider) ? rawProvider[0] : rawProvider;
+  const rawFamilyId = req.headers["x-dna-family-id"] ?? req.query.family_id;
+  const familyId = Number(Array.isArray(rawFamilyId) ? rawFamilyId[0] : rawFamilyId);
+  const rawFileName = req.headers["x-dna-file-name"];
+  const fileName = Array.isArray(rawFileName) ? rawFileName[0] : rawFileName;
+  const buffer = req.body;
 
-  // The former endpoint accepted only file metadata and then claimed the file
-  // was queued. Fail closed until the app has a real encrypted upload,
-  // provider-specific parser, retention policy, and persisted result model.
-  logger.warn(
-    { userId: req.authenticatedUserId, provider: body.data.provider },
-    "diaspora_dna_import_unavailable",
-  );
-  return res.status(501).json({
-    error: "Secure DNA ingestion is not available yet",
-    code: "DNA_INGESTION_UNAVAILABLE",
-    message: "Your DNA file was not uploaded or stored. Niakofa will not show estimated matches or ethnicity results until secure parsing is available.",
-  });
+  if (!Number.isInteger(familyId) || familyId <= 0) {
+    return res.status(400).json({ error: "A valid Family Space is required", code: "FAMILY_REQUIRED" });
+  }
+  if (!provider || !fileName || !Buffer.isBuffer(buffer)) {
+    return res.status(400).json({
+      error: "Send the raw DNA file bytes with x-dna-provider, x-dna-family-id, and x-dna-file-name headers.",
+      code: "DNA_FILE_REQUIRED",
+    });
+  }
+  if (fileName.length > 200 || fileName.includes("/") || fileName.includes("\\")) {
+    return res.status(400).json({ error: "Invalid DNA file name", code: "DNA_FILE_NAME_INVALID" });
+  }
+  if (buffer.length > MAX_DNA_FILE_BYTES) {
+    return res.status(413).json({ error: "DNA files must be 30 MB or smaller.", code: "DNA_FILE_TOO_LARGE" });
+  }
+
+  const userId = req.authenticatedUserId!;
+  const [membership] = await db.select({ id: familyMembersTable.id })
+    .from(familyMembersTable)
+    .where(and(
+      eq(familyMembersTable.family_id, familyId),
+      eq(familyMembersTable.user_id, userId),
+      eq(familyMembersTable.status, "active"),
+    ))
+    .limit(1);
+  if (!membership) return res.status(403).json({ error: "Not a member of this Family Space" });
+
+  try {
+    const parsed = parseDnaExport(provider, fileName, buffer);
+    const retentionExpiresAt = new Date(Date.now() + DNA_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const [profile] = await db.insert(familyDnaProfilesTable).values({
+      family_id: familyId,
+      user_id: userId,
+      provider: parsed.provider,
+      status: "ready",
+      source_file_name: fileName,
+      source_format: parsed.sourceFormat,
+      dataset_fingerprint: parsed.fingerprint,
+      marker_count: parsed.markerCount,
+      raw_data_retained: false,
+      ethnicity_available: false,
+      match_count: null,
+      error_code: null,
+      retention_expires_at: retentionExpiresAt,
+      updated_at: new Date(),
+    }).onConflictDoUpdate({
+      target: [familyDnaProfilesTable.family_id, familyDnaProfilesTable.user_id],
+      set: {
+        provider: parsed.provider,
+        status: "ready",
+        source_file_name: fileName,
+        source_format: parsed.sourceFormat,
+        dataset_fingerprint: parsed.fingerprint,
+        marker_count: parsed.markerCount,
+        raw_data_retained: false,
+        ethnicity_available: false,
+        match_count: null,
+        error_code: null,
+        retention_expires_at: retentionExpiresAt,
+        updated_at: new Date(),
+      },
+    }).returning();
+
+    logger.info(
+      { userId, familyId, provider: parsed.provider, markerCount: parsed.markerCount },
+      "diaspora_dna_import_parsed",
+    );
+    return res.status(201).json({
+      profile: profile ? publicDnaProfile(profile) : null,
+      message: "DNA export validated. The raw file was discarded after in-memory parsing.",
+      matches_available: false,
+      ethnicity_available: false,
+    });
+  } catch (err) {
+    if (err instanceof DnaImportError) {
+      return res.status(err.code === "DNA_FILE_TOO_LARGE" ? 413 : 422).json({
+        error: err.message,
+        code: err.code,
+        raw_data_retained: false,
+      });
+    }
+    logger.error({ err, userId, familyId }, "diaspora DNA import failed");
+    return res.status(500).json({ error: "DNA import failed without retaining the file" });
+  }
+});
+
+router.delete("/diaspora/dna/connections/:profileId", requireAuth, generalApiLimiter, async (req, res) => {
+  const profileId = Number(req.params.profileId);
+  if (!Number.isInteger(profileId) || profileId <= 0) {
+    return res.status(400).json({ error: "Invalid DNA profile id" });
+  }
+  const [deleted] = await db.delete(familyDnaProfilesTable).where(and(
+    eq(familyDnaProfilesTable.id, profileId),
+    eq(familyDnaProfilesTable.user_id, req.authenticatedUserId!),
+  )).returning({ id: familyDnaProfilesTable.id });
+  if (!deleted) return res.status(404).json({ error: "DNA profile not found" });
+  logger.info({ userId: req.authenticatedUserId, profileId }, "diaspora_dna_profile_deleted");
+  return res.status(204).send();
 });
 
 // ─── Heritage Collections ──────────────────────────────────────────────────────

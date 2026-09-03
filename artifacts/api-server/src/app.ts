@@ -175,6 +175,16 @@ app.use(
   express.raw({ type: ["audio/*", "video/*", "application/octet-stream"], limit: "20mb" }),
 );
 
+// DNA exports are parsed in memory by the authenticated route. The raw bytes
+// must reach that route before express.json() and are never passed to storage.
+app.use(
+  "/api/diaspora/dna/import",
+  express.raw({
+    type: ["text/csv", "text/plain", "application/json", "application/octet-stream"],
+    limit: "30mb",
+  }),
+);
+
 // ── Body parsing ───────────────────────────────────────────────────────────────
 // 10mb to allow base64 avatar uploads
 app.use(express.json({ limit: "10mb" }));

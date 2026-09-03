@@ -48,6 +48,7 @@ export * from "./family-memories";
 export * from "./family-memory-assets";
 export * from "./family-interviews";
 export * from "./heritage-contributions";
+export * from "./family-dna-profiles";
 export * from "./family-knowledge-versions";
 export * from "./family-tree-relations";
 export * from "./geography";
