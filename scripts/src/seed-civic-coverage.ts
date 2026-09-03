@@ -5,7 +5,7 @@
  * directories, a Texas Census-place verification queue, and verified 311
  * resources for Fort Worth and Dallas. It never invents municipal URLs.
  */
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import {
@@ -156,10 +156,24 @@ async function upsertResource(values: InsertCivicResource): Promise<"inserted" |
   return "inserted";
 }
 
+async function repairResourceSequence(): Promise<void> {
+  // Imported/legacy civic rows can leave the serial sequence behind the
+  // highest stored id. Repair it before the idempotent seed starts inserting,
+  // otherwise a valid missing resource can fail with a duplicate primary key.
+  await db.execute(sql`
+    SELECT setval(
+      pg_get_serial_sequence('civic_resources', 'id'),
+      COALESCE((SELECT MAX(id) FROM civic_resources), 0) + 1,
+      false
+    )
+  `);
+}
+
 export default async function runSeed(): Promise<void> {
   try {
     let inserted = 0;
     let updated = 0;
+    await repairResourceSequence();
     const upsert = async (values: InsertCivicResource) => {
       const result = await upsertResource(values);
       if (result === "inserted") inserted++;
