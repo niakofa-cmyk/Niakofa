@@ -14,7 +14,7 @@ import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 
-const RouterInstance = Router();
+const router = Router();
 
 const CULTURE_CARDS = [
   { id: "card-001", title: "The Sunday Dinner", category: "Traditions", prompt: "Describe a Sunday dinner at your grandparents' house. What was cooked? Who was there? What was the conversation?", follow_up: "What recipe from that table do you most want to preserve?", color: "amber" },
@@ -59,7 +59,7 @@ async function assertFamilyMember(userId: number, familyId: number) {
   return Boolean(membership);
 }
 
-RouterInstance.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, res) => {
+router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, res) => {
   try {
     const userId = req.authenticatedUserId!;
     const familyIds = await activeFamilyIds(userId);
@@ -126,7 +126,7 @@ RouterInstance.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async 
   }
 });
 
-RouterInstance.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (req, res) => {
+router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (req, res) => {
   const parsed = ScanSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid QR code" });
 
@@ -192,7 +192,7 @@ RouterInstance.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, a
   }
 });
 
-RouterInstance.post("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
+router.post("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const linkId = Number(req.params.id);
   const parsed = LinkSchema.safeParse(req.body);
   if (!Number.isInteger(linkId) || linkId <= 0 || !parsed.success) {
@@ -240,7 +240,7 @@ RouterInstance.post("/diaspora/preserve/links/:id", requireAuth, generalApiLimit
   }
 });
 
-RouterInstance.get("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
+router.get("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const linkId = Number(req.params.id);
   if (!Number.isInteger(linkId) || linkId <= 0) return res.status(400).json({ error: "Invalid scan id" });
   const userId = req.authenticatedUserId!;
@@ -254,4 +254,4 @@ RouterInstance.get("/diaspora/preserve/links/:id", requireAuth, generalApiLimite
   return res.json({ link });
 });
 
-export default RouterInstance;
+export default router;

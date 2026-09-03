@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
+import { sanitizeConnectionsPayload } from "../lib/sanitize-dna-connections";
 
 const router = Router();
 const FEATURE_ENABLED = process.env.DNA_MATCHING_ENABLED === "true";
@@ -116,12 +117,12 @@ router.get("/diaspora/dna/connections", requireAuth, generalApiLimiter, async (r
     };
   }));
 
-  return res.json({
+  return res.json(sanitizeConnectionsPayload({
     enabled: true,
     opted_in: true,
     candidates,
     caveat: "These are low-confidence derived-sketch similarity signals. They are not shared-cM, identity, parentage, paternity, legal, forensic, or ethnicity findings. Review with documentary/genealogical evidence before linking a tree relationship.",
-  });
+  }));
 });
 
 export default router;

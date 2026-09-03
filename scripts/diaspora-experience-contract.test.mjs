@@ -8,7 +8,9 @@ test("Diaspora Research API is registered and persists cases/evidence", () => {
   const routes = read("artifacts/api-server/src/routes/index.ts");
   const research = read("artifacts/api-server/src/routes/diaspora-research.ts");
   assert.match(routes, /diasporaResearchRouter/);
-  assert.match(research, /diaspora_research_cases/);
+  assert.match(research, /diasporaResearchCasesTable/);
+  assert.match(research, /diasporaResearchEvidenceTable/);
+  assert.match(research, /diasporaResearchNotesTable/);
   assert.match(research, /\/handoff\/timeline/);
   assert.match(research, /requireAuth/);
 });

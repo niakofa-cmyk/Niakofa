@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db, diasporaResearchCasesTable, diasporaResearchEvidenceTable, diasporaResearchNotesTable, familyEventsTable, familyMembersTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
+import { assertTransition } from "../lib/research-case-status";
 
 const router = Router();
 const STATUSES = new Set(["open", "paused", "resolved"]);
@@ -68,6 +69,10 @@ router.patch("/diaspora/research/cases/:caseId", requireAuth, generalApiLimiter,
   const nextStatus = req.body?.status == null ? row.status : String(req.body.status); const nextConfidence = req.body?.confidence == null ? row.confidence : String(req.body.confidence);
   const nextPerson = req.body?.person_member_id === null ? null : (req.body?.person_member_id == null ? row.person_member_id : id(req.body.person_member_id));
   if (!STATUSES.has(nextStatus) || !CONFIDENCE.has(nextConfidence)) return res.status(400).json({ error: "Invalid status or confidence." });
+  if (req.body?.status != null) {
+    const transition = assertTransition(row.status, nextStatus);
+    if (!transition.ok) return res.status(400).json({ error: transition.error });
+  }
   if (req.body?.person_member_id !== undefined && nextPerson !== null && !await familyPerson(row.family_id, nextPerson)) return res.status(400).json({ error: "person_member_id does not belong to this family." });
   const [updated] = await db.update(diasporaResearchCasesTable).set({ status: nextStatus, confidence: nextConfidence, person_member_id: nextPerson, updated_at: new Date() }).where(eq(diasporaResearchCasesTable.id, caseId)).returning();
   return res.json({ case: updated });
