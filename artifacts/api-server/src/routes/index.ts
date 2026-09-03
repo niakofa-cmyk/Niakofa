@@ -44,6 +44,7 @@ import coverageInterestRouter from "./coverage-interest";
 import familyRouter from "./family";
 import familyConsentRouter from "./family-consent";
 import dnaMatchingRouter from "./dna-matching";
+import diasporaResearchRouter from "./diaspora-research";
 import diasporaCompletionRouter from "./diaspora-completion";
 import diasporaRouter from "./diaspora";
 import legacyRouter from "./legacy";
@@ -112,8 +113,8 @@ router.use(coverageInterestRouter);
 router.use(familyRouter);
 router.use(familyConsentRouter);
 router.use(dnaMatchingRouter);
-// Must precede diasporaRouter so the corrected aggregate dashboard and
-// durable Preserve endpoints win over the older bounded implementations.
+router.use(diasporaResearchRouter);
+// Must precede diasporaRouter so corrected aggregate dashboard and durable Preserve endpoints win.
 router.use(diasporaCompletionRouter);
 router.use(diasporaRouter);
 router.use(legacyRouter);
