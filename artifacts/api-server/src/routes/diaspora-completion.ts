@@ -5,10 +5,10 @@ import { z } from "zod";
 import {
   db,
   diasporaPreserveLinksTable,
+  familyDnaProfilesTable,
   familyInterviewsTable,
   familyMembersTable,
   familyMemoriesTable,
-  familyTreeRelationsTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
@@ -59,9 +59,6 @@ async function assertFamilyMember(userId: number, familyId: number) {
   return Boolean(membership);
 }
 
-// This route is intentionally registered before the legacy dashboard route.
-// Recent activity stays bounded, while all headline statistics use aggregate
-// COUNT/DISTINCT queries and therefore cannot be capped by a feed limit.
 router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, res) => {
   try {
     const userId = req.authenticatedUserId!;
@@ -69,20 +66,13 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
 
     if (familyIds.length === 0) {
       return res.json({
-        stats: {
-          family_spaces: 0,
-          vault_items: 0,
-          oral_histories: 0,
-          family_tree_people: 0,
-          dna_connections: 0,
-          heritage_collections: 9,
-        },
+        stats: { family_spaces: 0, vault_items: 0, oral_histories: 0, family_tree_people: 0, dna_connections: 0, heritage_collections: 9 },
         recent_activity: [],
         stats_source: "aggregate",
       });
     }
 
-    const [memoryCount, interviewCount, memberCount, recentMemories] = await Promise.all([
+    const [memoryCount, interviewCount, memberCount, dnaCount, recentMemories] = await Promise.all([
       db.select({ count: sql<number>`count(*)::int` })
         .from(familyMemoriesTable)
         .where(inArray(familyMemoriesTable.family_id, familyIds)),
@@ -92,6 +82,13 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
       db.select({ count: sql<number>`count(*)::int` })
         .from(familyMembersTable)
         .where(inArray(familyMembersTable.family_id, familyIds)),
+      db.select({ count: sql<number>`count(*)::int` })
+        .from(familyDnaProfilesTable)
+        .where(and(
+          eq(familyDnaProfilesTable.user_id, userId),
+          eq(familyDnaProfilesTable.status, "ready"),
+          inArray(familyDnaProfilesTable.family_id, familyIds),
+        )),
       db.select({
         title: familyMemoriesTable.title,
         created_at: sql<string>`${familyMemoriesTable.created_at}::text`,
@@ -109,7 +106,7 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
         vault_items: Number(memoryCount[0]?.count ?? 0),
         oral_histories: Number(interviewCount[0]?.count ?? 0),
         family_tree_people: Number(memberCount[0]?.count ?? 0),
-        dna_connections: 0,
+        dna_connections: Number(dnaCount[0]?.count ?? 0),
         heritage_collections: 9,
       },
       recent_activity: recentMemories.map((memory) => ({
@@ -192,8 +189,6 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
   }
 });
 
-// Complete the second half of the Preserve loop after the user creates or
-// selects a memory. This endpoint is idempotent for the same user/memory.
 router.post("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const linkId = Number(req.params.id);
   const parsed = LinkSchema.safeParse(req.body);
@@ -242,8 +237,6 @@ router.post("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, asyn
   }
 });
 
-// Read a pending/linked scan so a Family Vault flow can resume after a
-// navigation or recorder handoff without carrying the raw QR payload around.
 router.get("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const linkId = Number(req.params.id);
   if (!Number.isInteger(linkId) || linkId <= 0) return res.status(400).json({ error: "Invalid scan id" });
