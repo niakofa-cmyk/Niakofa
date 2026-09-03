@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, index, check, sql } from "drizzle-orm/pg-core";
 import { familiesTable, familyMembersTable } from "./families";
 import { usersTable } from "./users";
 
@@ -17,6 +17,8 @@ export const diasporaResearchCasesTable = pgTable("diaspora_research_cases", {
   index("idx_diaspora_research_cases_family").on(t.family_id),
   index("idx_diaspora_research_cases_creator").on(t.created_by),
   index("idx_diaspora_research_cases_person").on(t.person_member_id),
+  check("diaspora_research_cases_status_check", sql`${t.status} IN ('open', 'paused', 'resolved')`),
+  check("diaspora_research_cases_confidence_check", sql`${t.confidence} IN ('unreviewed', 'possible', 'supported', 'strong')`),
 ]);
 
 export const diasporaResearchEvidenceTable = pgTable("diaspora_research_evidence", {
@@ -34,6 +36,8 @@ export const diasporaResearchEvidenceTable = pgTable("diaspora_research_evidence
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("idx_diaspora_research_evidence_case").on(t.case_id),
+  check("diaspora_research_evidence_type_check", sql`${t.evidence_type} IN ('document', 'shared_segment', 'pedigree', 'oral_history', 'place_history', 'dna_profile')`),
+  check("diaspora_research_evidence_confidence_check", sql`${t.confidence} IN ('unreviewed', 'possible', 'supported', 'strong')`),
 ]);
 
 export const diasporaResearchNotesTable = pgTable("diaspora_research_notes", {
