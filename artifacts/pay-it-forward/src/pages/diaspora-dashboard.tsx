@@ -124,7 +124,6 @@ export default function DiasporaDashboardPage() {
   }
 
   const user = currentUser as unknown as Record<string, unknown>;
-  const displayName = (user.display_name as string | undefined) ?? (user.username as string | undefined) ?? "Friend";
   const locale = (user.city as string | undefined) ?? (user.locale as string | undefined);
   const oralHistoryHref = buildOralHistoryHref(activity[0]?.family_id);
 
@@ -154,7 +153,7 @@ export default function DiasporaDashboardPage() {
         <div className="mx-auto flex max-w-3xl gap-1 overflow-x-auto px-3 py-2 [scrollbar-width:none] sm:px-5">
           {JOURNEY.map(({ label, icon: Icon, href, tone }) => (
             <button key={label} onClick={() => navigate(href)} className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white/50 hover:bg-white/5 hover:text-white ${diasporaTheme.focus}`}>
-              <Icon className={`h-3.5 w-3.5 ${tone.split(" ").at(-1)}`} />{label}
+              <Icon className={`h-3.5 w-3.5 ${tone.text}`} />{label}
             </button>
           ))}
         </div>
@@ -190,8 +189,8 @@ export default function DiasporaDashboardPage() {
           <div className="mb-3"><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300/70">One journey</p><h2 className="mt-1 text-xl font-black text-white">Preserve. Connect. Discover.</h2></div>
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
             {JOURNEY.map(({ label, note, icon: Icon, href, tone }) => (
-              <button key={label} onClick={() => navigate(href)} className={`rounded-2xl border ${tone.split(" ")[0]} ${tone.split(" ")[1]} p-4 text-left ${diasporaTheme.focus}`}>
-                <Icon className={`h-5 w-5 ${tone.split(" ").at(-1)}`} /><p className="mt-3 text-sm font-bold text-white">{label}</p><p className="mt-0.5 text-[11px] text-white/40">{note}</p>
+              <button key={label} onClick={() => navigate(href)} className={`rounded-2xl border ${tone.border} ${tone.soft} p-4 text-left ${diasporaTheme.focus}`}>
+                <Icon className={`h-5 w-5 ${tone.text}`} /><p className="mt-3 text-sm font-bold text-white">{label}</p><p className="mt-0.5 text-[11px] text-white/40">{note}</p>
               </button>
             ))}
           </div>
