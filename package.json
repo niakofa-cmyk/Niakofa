@@ -19,6 +19,7 @@
     "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js",
     "test:browser": "playwright test",
     "test:diaspora-data-loop": "node --test scripts/diaspora-data-loop-contract.test.mjs",
+    "test:diaspora-experience": "node --test scripts/diaspora-experience-contract.test.mjs",
     "test:dna-matching": "node --import tsx/esm --test scripts/dna-matching-contract.test.mjs",
     "production-gate": "node scripts/production-gate.mjs",
     "test:production-gate": "node --test scripts/production-gate.test.mjs"
