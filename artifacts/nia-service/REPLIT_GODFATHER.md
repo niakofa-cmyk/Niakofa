@@ -838,3 +838,31 @@ application has persisted `stripe_transfer_id`, so matching only on the transfer
 ID could leave an otherwise successful payout unlinked. Transfers without a
 resolvable source charge retain the transfer-ID fallback for already-recorded
 rows. A regression test covers the early-delivery ordering case.
+
+---
+
+### Session: September 2, 2026 — Production release certification
+
+The release pipeline was brought back to a clean, verifiable state:
+
+- Removed accidental root manifest dependency drift that caused frozen-lockfile
+  CI failure; the canonical pnpm lockfile remains aligned with the workspace
+  manifest.
+- Hardened the compatibility health probe so malformed `NIA_SERVICE_URL`
+  values use the local development service default instead of producing an
+  invalid request.
+- Removed unused frontend DNA connection state while preserving DNA import,
+  trust gating, deletion, and display behavior.
+- GitHub CI and deployment verification both passed for the published
+  revision. Production `/api/healthz`, `/api/status`, and `/api/readiness`
+  confirmed database connectivity, migrated schema, Redis/BullMQ readiness, and
+  the exact served commit.
+- Local and remote `main` were independently compared and matched exactly; the
+  working tree was clean. The managed web preview was also restarted and
+  visually verified on its assigned artifact port.
+
+**Release lesson:** health and readiness are necessary but not sufficient
+deployment evidence. A production endpoint can remain healthy while serving
+an older revision, so release certification must compare the served commit to
+the pushed commit and verify the public deployment separately from the local
+preview.

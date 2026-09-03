@@ -5,7 +5,7 @@
 - [Fresh development database readiness](fresh-development-db-readiness.md) — connectivity can succeed while the schema is empty; run the canonical dev migration flow before diagnosing API readiness.
 - [Civic Census coverage](civic-census-coverage.md) — Census may return non-JSON missing-key HTML; keep verified offline county fallback explicit and use an optional key for full refresh.
 - [Census ACS geography endpoint](census-acs-endpoint.md) — use available ACS5 geography data; normalize ACS state suffixes and do not assume PEP paths exist.
-- [Provider release gates](provider-release-gates.md) — secret presence is not certification; restart the API and require scoped readiness plus authenticated release smoke.
+- [Provider release gates](provider-release-gates.md) — secret presence is not certification; require readiness, authenticated smoke, and served-commit parity.
 - [Circles release certification](niakofa-release-certification.md) — automated smoke checks and real-browser WebRTC evidence are separate release gates.
 - [Platform deployment boundary](platform-deployment-boundary.md) — deployment smoke checks cover Niakofa SPA/API contracts, never the separate Legacy RPG runtime.
 - [ESLint hook warning policy](eslint-hook-warning-policy.md) — preserve intentional effect lifecycles with narrow, explained dependency exceptions only when real dependencies are unsafe.
