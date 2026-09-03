@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { estimateDnaRelationship } from "../artifacts/api-server/src/lib/dna-matching-engine.ts";
 
 test("DNA matching fails closed when a profile has no derived sketch", () => {
@@ -26,4 +27,12 @@ test("DNA matching suppresses weak sketch overlap", () => {
     estimateDnaRelationship({ markerSketch: left, markerCount: 1000 }, { markerSketch: right, markerCount: 1000 }),
     null,
   );
+});
+
+test("DNA profile deletion removes consent and result rows in both directions", async () => {
+  const source = await readFile(new URL("../artifacts/api-server/src/routes/diaspora.ts", import.meta.url), "utf8");
+  assert.match(source, /tx\.delete\(dnaMatchingConsentTable\)/);
+  assert.match(source, /eq\(dnaMatchResultsTable\.family_id, profile\.family_id\)/);
+  assert.match(source, /eq\(dnaMatchResultsTable\.matched_family_id, profile\.family_id\)/);
+  assert.match(source, /await db\.transaction\(async \(tx\)/);
 });

@@ -37,6 +37,8 @@ import {
   heritageContributionsTable,
   familiesTable,
   familyDnaProfilesTable,
+  dnaMatchResultsTable,
+  dnaMatchingConsentTable,
 } from "@workspace/db";
 import { eq, and, desc, sql, inArray, or, like, lt } from "drizzle-orm";
 import { z } from "zod";
@@ -375,11 +377,38 @@ router.delete("/diaspora/dna/connections/:profileId", requireAuth, generalApiLim
   if (!Number.isInteger(profileId) || profileId <= 0) {
     return res.status(400).json({ error: "Invalid DNA profile id" });
   }
-  const [deleted] = await db.delete(familyDnaProfilesTable).where(and(
+  const userId = req.authenticatedUserId!;
+  const [profile] = await db.select({
+    id: familyDnaProfilesTable.id,
+    family_id: familyDnaProfilesTable.family_id,
+    user_id: familyDnaProfilesTable.user_id,
+  }).from(familyDnaProfilesTable).where(and(
     eq(familyDnaProfilesTable.id, profileId),
-    eq(familyDnaProfilesTable.user_id, req.authenticatedUserId!),
-  )).returning({ id: familyDnaProfilesTable.id });
-  if (!deleted) return res.status(404).json({ error: "DNA profile not found" });
+    eq(familyDnaProfilesTable.user_id, userId),
+  ));
+  if (!profile) return res.status(404).json({ error: "DNA profile not found" });
+
+  await db.transaction(async (tx) => {
+    // A result can reference this profile as either the requesting user or the
+    // matched candidate. Remove both directions so deletion is complete even
+    // when another Family Space refreshed its results first.
+    await tx.delete(dnaMatchResultsTable).where(or(
+      and(
+        eq(dnaMatchResultsTable.family_id, profile.family_id),
+        eq(dnaMatchResultsTable.user_id, profile.user_id),
+      ),
+      and(
+        eq(dnaMatchResultsTable.matched_family_id, profile.family_id),
+        eq(dnaMatchResultsTable.matched_user_id, profile.user_id),
+      ),
+    ));
+    await tx.delete(dnaMatchingConsentTable).where(and(
+      eq(dnaMatchingConsentTable.family_id, profile.family_id),
+      eq(dnaMatchingConsentTable.user_id, profile.user_id),
+    ));
+    await tx.delete(familyDnaProfilesTable).where(eq(familyDnaProfilesTable.id, profile.id));
+  });
+
   logger.info({ userId: req.authenticatedUserId, profileId }, "diaspora_dna_profile_deleted");
   return res.status(204).send();
 });

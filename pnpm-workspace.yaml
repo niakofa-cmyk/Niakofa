@@ -73,12 +73,6 @@ catalog:
 
 autoInstallPeers: false
 
-onlyBuiltDependencies:
-  - '@swc/core'
-  - esbuild
-  - msw
-  - unrs-resolver
-
 overrides:
   # pin ioredis to a single version to avoid BullMQ type conflicts
   "ioredis": "^5.6.0"
@@ -176,3 +170,8 @@ overrides:
 
 allowBuilds:
   '@pnpm/exe': true
+  '@swc/core': true
+  esbuild: true
+  'msgpackr-extract': true
+  msw: true
+  unrs-resolver: true
