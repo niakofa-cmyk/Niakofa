@@ -51,6 +51,7 @@ export * from "./heritage-contributions";
 export * from "./family-dna-profiles";
 export * from "./family-knowledge-versions";
 export * from "./family-tree-relations";
+export * from "./diaspora-preserve-links";
 export * from "./geography";
 export * from "./audio-circles";
 export * from "./circle-recordings";
