@@ -1,4 +1,5 @@
 import { integer, pgTable, serial, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 import { familiesTable } from "./families";
 import { familyMemoriesTable } from "./family-memories";
@@ -23,7 +24,7 @@ export const diasporaPreserveLinksTable = pgTable("diaspora_preserve_links", {
   index("idx_diaspora_preserve_links_user").on(t.user_id),
   index("idx_diaspora_preserve_links_family").on(t.family_id),
   index("idx_diaspora_preserve_links_memory").on(t.memory_id),
-  uniqueIndex("diaspora_preserve_links_user_memory_unique").on(t.user_id, t.memory_id),
+  uniqueIndex("diaspora_preserve_links_user_memory_unique").on(t.user_id, t.memory_id).where(sql`${t.memory_id} IS NOT NULL`),
 ]);
 
 export type DiasporaPreserveLink = typeof diasporaPreserveLinksTable.$inferSelect;
