@@ -9,6 +9,11 @@ const STATUSES = new Set(["open", "paused", "resolved"]);
 const CONFIDENCE = new Set(["unreviewed", "possible", "supported", "strong"]);
 const EVIDENCE_TYPES = new Set(["document", "shared_segment", "pedigree", "oral_history", "place_history", "dna_profile"]);
 function id(value: unknown): number | null { const n = Number(value); return Number.isInteger(n) && n > 0 ? n : null; }
+function validDate(value: unknown): Date | null {
+  if (value == null || value === "") return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 async function memberOf(familyId: number, userId: number) {
   const [m] = await db.select().from(familyMembersTable).where(and(eq(familyMembersTable.family_id, familyId), eq(familyMembersTable.user_id, userId), eq(familyMembersTable.status, "active"))).limit(1);
   return m ?? null;
@@ -49,7 +54,11 @@ router.get("/diaspora/research/cases/:caseId", requireAuth, generalApiLimiter, a
     db.select().from(diasporaResearchEvidenceTable).where(eq(diasporaResearchEvidenceTable.case_id, caseId)).orderBy(desc(diasporaResearchEvidenceTable.created_at)),
     db.select().from(diasporaResearchNotesTable).where(eq(diasporaResearchNotesTable.case_id, caseId)).orderBy(desc(diasporaResearchNotesTable.created_at)),
   ]);
-  let person = null; if (row.person_member_id) { const [p] = await db.select({ id: familyMembersTable.id, display_name: familyMembersTable.display_name, relation_note: familyMembersTable.relation_note }).from(familyMembersTable).where(eq(familyMembersTable.id, row.person_member_id)).limit(1); person = p ?? null; }
+  let person = null;
+  if (row.person_member_id) {
+    const [p] = await db.select({ id: familyMembersTable.id, display_name: familyMembersTable.display_name, relation_note: familyMembersTable.relation_note }).from(familyMembersTable).where(and(eq(familyMembersTable.id, row.person_member_id), eq(familyMembersTable.family_id, row.family_id))).limit(1);
+    person = p ?? null;
+  }
   return res.json({ case: row, person, evidence, notes });
 });
 
@@ -68,7 +77,9 @@ router.post("/diaspora/research/cases/:caseId/evidence", requireAuth, generalApi
   const caseId = id(req.params.caseId); const title = String(req.body?.title ?? "").trim(); const evidenceType = String(req.body?.evidence_type ?? "document");
   if (!caseId || !title) return res.status(400).json({ error: "case id and title are required." }); if (!EVIDENCE_TYPES.has(evidenceType)) return res.status(400).json({ error: "Invalid evidence_type." });
   const row = await getCase(caseId, req.authenticatedUserId!); if (!row) return res.status(404).json({ error: "Research case not found." }); const confidence = String(req.body?.confidence ?? "possible"); if (!CONFIDENCE.has(confidence)) return res.status(400).json({ error: "Invalid confidence." });
-  const [created] = await db.insert(diasporaResearchEvidenceTable).values({ case_id: caseId, created_by: req.authenticatedUserId!, title: title.slice(0, 240), source_url: req.body?.source_url ? String(req.body.source_url).slice(0, 2000) : null, citation: req.body?.citation ? String(req.body.citation).slice(0, 4000) : null, evidence_type: evidenceType, confidence, notes: req.body?.notes ? String(req.body.notes).slice(0, 6000) : null, source_date: req.body?.source_date ? new Date(String(req.body.source_date)) : null }).returning();
+  const sourceDate = req.body?.source_date == null ? null : validDate(req.body.source_date);
+  if (req.body?.source_date != null && !sourceDate) return res.status(400).json({ error: "source_date must be a valid date." });
+  const [created] = await db.insert(diasporaResearchEvidenceTable).values({ case_id: caseId, created_by: req.authenticatedUserId!, title: title.slice(0, 240), source_url: req.body?.source_url ? String(req.body.source_url).slice(0, 2000) : null, citation: req.body?.citation ? String(req.body.citation).slice(0, 4000) : null, evidence_type: evidenceType, confidence, notes: req.body?.notes ? String(req.body.notes).slice(0, 6000) : null, source_date: sourceDate }).returning();
   await db.update(diasporaResearchCasesTable).set({ updated_at: new Date() }).where(eq(diasporaResearchCasesTable.id, caseId)); return res.status(201).json({ evidence: created });
 });
 
@@ -81,9 +92,13 @@ router.post("/diaspora/research/cases/:caseId/notes", requireAuth, generalApiLim
 router.post("/diaspora/research/cases/:caseId/handoff/timeline", requireAuth, generalApiLimiter, async (req, res) => {
   const caseId = id(req.params.caseId); if (!caseId) return res.status(400).json({ error: "Invalid case id." }); const row = await getCase(caseId, req.authenticatedUserId!); if (!row) return res.status(404).json({ error: "Research case not found." });
   if (!row.person_member_id) return res.status(409).json({ error: "Attach a family person to the case before handing off to the Timeline." });
-  const title = String(req.body?.title ?? row.title).trim().slice(0, 240); const description = String(req.body?.description ?? row.research_question).trim().slice(0, 6000); const eventDate = req.body?.event_date ? new Date(String(req.body.event_date)) : null;
-  const [event] = await db.insert(familyEventsTable).values({ family_id: row.family_id, member_id: row.person_member_id, title, description, event_date: eventDate, event_date_precision: req.body?.event_date ? "day" : "year", category: "other", metadata: { source: "diaspora_research", research_case_id: caseId, confidence: row.confidence } }).returning();
-  await db.update(diasporaResearchCasesTable).set({ status: "resolved", updated_at: new Date() }).where(eq(diasporaResearchCasesTable.id, caseId)); return res.status(201).json({ event });
+  const title = String(req.body?.title ?? row.title).trim().slice(0, 240); const description = String(req.body?.description ?? row.research_question).trim().slice(0, 6000); const eventDate = req.body?.event_date == null ? null : validDate(req.body.event_date);
+  if (req.body?.event_date != null && !eventDate) return res.status(400).json({ error: "event_date must be a valid date." });
+  const [event] = await db.insert(familyEventsTable).values({ family_id: row.family_id, member_id: row.person_member_id, title, description, event_date: eventDate, event_date_precision: eventDate ? "day" : "year", category: "other", metadata: { source: "diaspora_research", research_case_id: caseId, confidence: row.confidence } }).returning();
+  // A handoff creates a Timeline artifact; it does not mean the research case
+  // is resolved. Users must explicitly resolve the case after reviewing it.
+  await db.update(diasporaResearchCasesTable).set({ updated_at: new Date() }).where(eq(diasporaResearchCasesTable.id, caseId));
+  return res.status(201).json({ event });
 });
 
 export default router;

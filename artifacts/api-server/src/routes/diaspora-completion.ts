@@ -14,7 +14,7 @@ import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 
-const router = Router();
+const RouterInstance = Router();
 
 const CULTURE_CARDS = [
   { id: "card-001", title: "The Sunday Dinner", category: "Traditions", prompt: "Describe a Sunday dinner at your grandparents' house. What was cooked? Who was there? What was the conversation?", follow_up: "What recipe from that table do you most want to preserve?", color: "amber" },
@@ -59,7 +59,7 @@ async function assertFamilyMember(userId: number, familyId: number) {
   return Boolean(membership);
 }
 
-router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, res) => {
+RouterInstance.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, res) => {
   try {
     const userId = req.authenticatedUserId!;
     const familyIds = await activeFamilyIds(userId);
@@ -81,7 +81,10 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
         .where(inArray(familyInterviewsTable.family_id, familyIds)),
       db.select({ count: sql<number>`count(*)::int` })
         .from(familyMembersTable)
-        .where(inArray(familyMembersTable.family_id, familyIds)),
+        .where(and(
+          inArray(familyMembersTable.family_id, familyIds),
+          eq(familyMembersTable.status, "active"),
+        )),
       db.select({ count: sql<number>`count(*)::int` })
         .from(familyDnaProfilesTable)
         .where(and(
@@ -123,7 +126,7 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
   }
 });
 
-router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (req, res) => {
+RouterInstance.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (req, res) => {
   const parsed = ScanSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid QR code" });
 
@@ -189,7 +192,7 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
   }
 });
 
-router.post("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
+RouterInstance.post("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const linkId = Number(req.params.id);
   const parsed = LinkSchema.safeParse(req.body);
   if (!Number.isInteger(linkId) || linkId <= 0 || !parsed.success) {
@@ -237,7 +240,7 @@ router.post("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, asyn
   }
 });
 
-router.get("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
+RouterInstance.get("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const linkId = Number(req.params.id);
   if (!Number.isInteger(linkId) || linkId <= 0) return res.status(400).json({ error: "Invalid scan id" });
   const userId = req.authenticatedUserId!;
@@ -251,4 +254,4 @@ router.get("/diaspora/preserve/links/:id", requireAuth, generalApiLimiter, async
   return res.json({ link });
 });
 
-export default router;
+export default RouterInstance;

@@ -13,6 +13,14 @@ test("Diaspora Research API is registered and persists cases/evidence", () => {
   assert.match(research, /requireAuth/);
 });
 
+test("Research Timeline handoff creates an artifact without falsely resolving the case", () => {
+  const research = read("artifacts/api-server/src/routes/diaspora-research.ts");
+  assert.match(research, /event_date must be a valid date/);
+  assert.match(research, /source: \"diaspora_research\"/);
+  assert.match(research, /A handoff creates a Timeline artifact/);
+  assert.doesNotMatch(research, /set\(\{ status: \"resolved\"/);
+});
+
 test("DNA Connections remains consent-first and non-biometric", () => {
   const page = read("artifacts/pay-it-forward/src/pages/dna-connections.tsx");
   const api = read("artifacts/api-server/src/routes/diaspora-connections.ts");
@@ -20,6 +28,8 @@ test("DNA Connections remains consent-first and non-biometric", () => {
   assert.match(page, /No biometric matching/);
   assert.match(api, /opted_in/);
   assert.match(api, /low-confidence derived-sketch similarity/);
+  assert.match(api, /FEATURE_ENABLED/);
+  assert.doesNotMatch(api, /return \{ \.\.\.r,/);
 });
 
 test("Globe uses live hub/story APIs and real audio playback", () => {
