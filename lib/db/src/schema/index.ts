@@ -53,6 +53,7 @@ export * from "./dna-matching";
 export * from "./family-knowledge-versions";
 export * from "./family-tree-relations";
 export * from "./diaspora-preserve-links";
+export * from "./diaspora-research";
 export * from "./geography";
 export * from "./audio-circles";
 export * from "./circle-recordings";
