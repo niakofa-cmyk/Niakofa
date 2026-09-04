@@ -10,24 +10,31 @@
  * endpoint), while DNA consent ends revoked and Preserve repeat-scan leaves a
  * single pending idempotent scan row by design.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const base = process.env.BASE_URL || "http://127.0.0.1:5000";
 const state = process.env.USER_A_STATE;
 const mutate = process.env.ALLOW_MUTATING_E2E === "1";
+
+async function authHeaders(page: Page): Promise<Record<string, string>> {
+  const token = await page.evaluate(() => localStorage.getItem("niakofa_token"));
+  expect(token).toBeTruthy();
+  return { Authorization: `Bearer ${token}` };
+}
 
 test.describe("Diaspora final wiring — live authenticated integration", () => {
   test.skip(!state || !mutate, "Set USER_A_STATE and ALLOW_MUTATING_E2E=1 for real DB writes.");
   test.use({ storageState: state });
 
   test("Research evidence creation persists the selected type", async ({ page }) => {
-    const families = await page.request.get(new URL("/api/family/mine", base).toString());
+    const headers = await authHeaders(page);
+    const families = await page.request.get(new URL("/api/family/mine", base).toString(), { headers });
     expect(families.ok()).toBeTruthy();
     const familyData = await families.json();
     const family = (familyData.families ?? []).find((item: { status?: string }) => item.status === "active") ?? familyData.families?.[0];
     expect(family?.id).toBeTruthy();
 
-    const casesRes = await page.request.get(new URL(`/api/diaspora/research/cases?family_id=${family.id}`, base).toString());
+    const casesRes = await page.request.get(new URL(`/api/diaspora/research/cases?family_id=${family.id}`, base).toString(), { headers });
     expect(casesRes.ok()).toBeTruthy();
     const casesData = await casesRes.json();
     const researchCase = casesData.cases?.[0];
@@ -35,6 +42,7 @@ test.describe("Diaspora final wiring — live authenticated integration", () => 
 
     const title = `E2E evidence ${Date.now()}`;
     const evidenceRes = await page.request.post(new URL(`/api/diaspora/research/cases/${researchCase.id}/evidence`, base).toString(), {
+      headers,
       data: {
         title,
         evidence_type: "oral_history",
@@ -52,19 +60,20 @@ test.describe("Diaspora final wiring — live authenticated integration", () => 
   });
 
   test("Preserve repeat scans are idempotent and return the same scan id", async ({ page }) => {
-    const families = await page.request.get(new URL("/api/family/mine", base).toString());
+    const headers = await authHeaders(page);
+    const families = await page.request.get(new URL("/api/family/mine", base).toString(), { headers });
     expect(families.ok()).toBeTruthy();
     const familyData = await families.json();
     const family = (familyData.families ?? []).find((item: { status?: string }) => item.status === "active") ?? familyData.families?.[0];
     expect(family?.id).toBeTruthy();
 
     const qr = `NIakofa-E2E-Preserve-${Date.now()}`;
-    const first = await page.request.post(new URL("/api/diaspora/preserve/scan", base).toString(), { data: { qr_code: qr, family_id: family.id } });
+    const first = await page.request.post(new URL("/api/diaspora/preserve/scan", base).toString(), { headers, data: { qr_code: qr, family_id: family.id } });
     const firstData = await first.json();
     expect(first.status()).toBe(200);
     expect(firstData.scan_id).toBeTruthy();
 
-    const second = await page.request.post(new URL("/api/diaspora/preserve/scan", base).toString(), { data: { qr_code: qr, family_id: family.id } });
+    const second = await page.request.post(new URL("/api/diaspora/preserve/scan", base).toString(), { headers, data: { qr_code: qr, family_id: family.id } });
     const secondData = await second.json();
     expect(second.status()).toBe(200);
     expect(secondData.scan_id).toBe(firstData.scan_id);
@@ -75,21 +84,22 @@ test.describe("Diaspora final wiring — live authenticated integration", () => 
   });
 
   test("DNA opt-in then revoke persists the final revoked state", async ({ page }) => {
-    const families = await page.request.get(new URL("/api/family/mine", base).toString());
+    const headers = await authHeaders(page);
+    const families = await page.request.get(new URL("/api/family/mine", base).toString(), { headers });
     expect(families.ok()).toBeTruthy();
     const familyData = await families.json();
     const family = (familyData.families ?? []).find((item: { status?: string }) => item.status === "active") ?? familyData.families?.[0];
     expect(family?.id).toBeTruthy();
 
-    const optIn = await page.request.post(new URL("/api/diaspora/dna/matching/consent", base).toString(), { data: { family_id: family.id, opted_in: true } });
+    const optIn = await page.request.post(new URL("/api/diaspora/dna/matching/consent", base).toString(), { headers, data: { family_id: family.id, opted_in: true } });
     expect(optIn.ok()).toBeTruthy();
     expect((await optIn.json()).consent.opted_in).toBe(true);
 
-    const revoke = await page.request.post(new URL("/api/diaspora/dna/matching/consent", base).toString(), { data: { family_id: family.id, opted_in: false } });
+    const revoke = await page.request.post(new URL("/api/diaspora/dna/matching/consent", base).toString(), { headers, data: { family_id: family.id, opted_in: false } });
     expect(revoke.ok()).toBeTruthy();
     expect((await revoke.json()).consent.opted_in).toBe(false);
 
-    const status = await page.request.get(new URL(`/api/diaspora/dna/matching/status?family_id=${family.id}`, base).toString());
+    const status = await page.request.get(new URL(`/api/diaspora/dna/matching/status?family_id=${family.id}`, base).toString(), { headers });
     expect(status.ok()).toBeTruthy();
     const statusData = await status.json();
     expect(statusData.consent.opted_in).toBe(false);
