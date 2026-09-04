@@ -24,6 +24,10 @@ const mockDb: Record<string, jest.Mock> = {
   orderBy: jest.fn().mockReturnThis(),
   limit: jest.fn().mockResolvedValue([]),
   execute: jest.fn().mockResolvedValue({ rows: [] }),
+  insert: jest.fn().mockReturnThis(),
+  values: jest.fn().mockReturnThis(),
+  onConflictDoNothing: jest.fn().mockReturnThis(),
+  returning: jest.fn().mockResolvedValue([]),
 };
 
 jest.unstable_mockModule("@workspace/db", () => {
@@ -57,7 +61,7 @@ jest.unstable_mockModule("../src/routes/civic.js", () => ({
   reverseGeocode: reverseGeocodeMock,
 }));
 
-let db: unknown;
+const db = mockDb;
 let resolveCommunityFromFreshLocation: (params: {
   currentCommunityId: number | null;
   lat: number | null;
@@ -74,7 +78,6 @@ const FORT_WORTH = { lat: 32.7555, lng: -97.3308 };
 const KANSAS_CITY = { lat: 39.0997, lng: -94.5786 };
 
 beforeAll(async () => {
-  ({ db } = await import("@workspace/db"));
   ({ resolveCommunityFromFreshLocation, isUnresolvedCommunityAssignment } = await import(
     "../src/lib/community-pool.js"
   ));
@@ -87,6 +90,10 @@ beforeEach(() => {
   (db.orderBy as jest.Mock).mockReset().mockReturnThis();
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.execute as jest.Mock).mockReset().mockImplementation(() => Promise.resolve({ rows: [] }));
+  (db.insert as jest.Mock).mockReset().mockReturnThis();
+  (db.values as jest.Mock).mockReset().mockReturnThis();
+  (db.onConflictDoNothing as jest.Mock).mockReset().mockReturnThis();
+  (db.returning as jest.Mock).mockReset().mockResolvedValue([]);
   reverseGeocodeMock.mockReset();
 });
 
@@ -116,14 +123,15 @@ describe("resolveCommunityFromFreshLocation", () => {
     expect(reverseGeocodeMock).not.toHaveBeenCalled();
   });
 
-  it("skips the Mapbox lookup entirely when the user is already resolved to a real community", async () => {
-    (db.limit as jest.Mock).mockImplementationOnce(() => Promise.resolve([{ value: "1" }])); // default = 1
+  it("re-resolves a previously assigned user after they travel", async () => {
+    reverseGeocodeMock.mockResolvedValueOnce({ county: "Jackson", state: "Missouri" });
+    (db.execute as jest.Mock).mockImplementationOnce(() => Promise.resolve({ rows: [{ id: 7 }] }));
     const result = await resolveCommunityFromFreshLocation({
       currentCommunityId: 7, // already resolved, and not the default
       ...FORT_WORTH,
     });
-    expect(result).toBeNull();
-    expect(reverseGeocodeMock).not.toHaveBeenCalled();
+    expect(result).toBe(7);
+    expect(reverseGeocodeMock).toHaveBeenCalledWith(FORT_WORTH.lat, FORT_WORTH.lng);
   });
 
   it("resolves a Fort Worth fix to the seeded Tarrant County community", async () => {
@@ -142,30 +150,55 @@ describe("resolveCommunityFromFreshLocation", () => {
     expect(reverseGeocodeMock).toHaveBeenCalledWith(FORT_WORTH.lat, FORT_WORTH.lng);
   });
 
-  it("fails closed to null for Kansas City rather than inheriting the Fort Worth default", async () => {
+  it("creates a dedicated Kansas City community rather than inheriting the Fort Worth default", async () => {
     (db.limit as jest.Mock)
       .mockImplementationOnce(() => Promise.resolve([{ value: "1" }])) // default_community_id = 1 (Fort Worth)
       .mockImplementationOnce(() => Promise.resolve([{ id: 1 }])); // that default community exists
     reverseGeocodeMock.mockResolvedValueOnce({ county: "Jackson", state: "Missouri" });
-    // No community row for Jackson County, MO exists yet.
-    (db.execute as jest.Mock).mockImplementationOnce(() => Promise.resolve({ rows: [] }));
+    // No community row for Jackson County, MO exists yet, so this fresh
+    // location provisions that county's isolated pool.
+    (db.execute as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve({ rows: [] }))
+      .mockImplementationOnce(() => Promise.resolve({ rows: [] }));
+    (db.returning as jest.Mock).mockResolvedValueOnce([{
+      id: 2,
+      name: "Jackson County, MO",
+      county: "Jackson",
+      state: "MO",
+    }]);
 
     const result = await resolveCommunityFromFreshLocation({
       currentCommunityId: null, // a Kansas City requester who never claims a job
       ...KANSAS_CITY,
     });
 
-    // The critical assertion: this must be null (unscoped global bucket),
-    // never 1 (the Fort Worth admin default).
-    expect(result).toBeNull();
+    // The critical assertion: this must be a new county pool, never 1
+    // (the Fort Worth admin default).
+    expect(result).toBe(2);
     expect(result).not.toBe(1);
     expect(reverseGeocodeMock).toHaveBeenCalledWith(KANSAS_CITY.lat, KANSAS_CITY.lng);
   });
 
+  it("returns the winning county pool when two first visits race to create it", async () => {
+    reverseGeocodeMock.mockResolvedValueOnce({ county: "Jackson County", state: "Missouri" });
+    (db.execute as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve({ rows: [] }))
+      .mockImplementationOnce(() => Promise.resolve({ rows: [] }))
+      .mockImplementationOnce(() => Promise.resolve({
+        rows: [{ id: 9, name: "Jackson County, MO", county: "Jackson", state: "MO" }],
+      }));
+    (db.returning as jest.Mock).mockResolvedValueOnce([]);
+
+    const result = await resolveCommunityFromFreshLocation({
+      currentCommunityId: null,
+      ...KANSAS_CITY,
+    });
+
+    expect(result).toBe(9);
+    expect(db.onConflictDoNothing).toHaveBeenCalledTimes(1);
+  });
+
   it("propagates geocoder outages so location callers can preserve the current assignment", async () => {
-    (db.limit as jest.Mock)
-      .mockImplementationOnce(() => Promise.resolve([{ value: "1" }]))
-      .mockImplementationOnce(() => Promise.resolve([{ id: 1 }]));
     reverseGeocodeMock.mockRejectedValueOnce(new Error("Mapbox timeout"));
 
     await expect(resolveCommunityFromFreshLocation({
@@ -187,19 +220,24 @@ describe("resolveCommunityFromFreshLocation", () => {
     });
 
     // Reset mocks to the identical starting state, then run Kansas City.
-    (db.limit as jest.Mock)
-      .mockReset()
-      .mockImplementationOnce(() => Promise.resolve([{ value: "1" }]))
-      .mockImplementationOnce(() => Promise.resolve([{ id: 1 }]));
     reverseGeocodeMock.mockReset().mockResolvedValueOnce({ county: "Jackson", state: "Missouri" });
-    (db.execute as jest.Mock).mockReset().mockImplementationOnce(() => Promise.resolve({ rows: [] }));
+    (db.execute as jest.Mock)
+      .mockReset()
+      .mockImplementationOnce(() => Promise.resolve({ rows: [] }))
+      .mockImplementationOnce(() => Promise.resolve({ rows: [] }));
+    (db.returning as jest.Mock).mockResolvedValueOnce([{
+      id: 2,
+      name: "Jackson County, MO",
+      county: "Jackson",
+      state: "MO",
+    }]);
     const kansasCityResult = await resolveCommunityFromFreshLocation({
       currentCommunityId: null,
       ...KANSAS_CITY,
     });
 
     expect(fortWorthResult).toBe(1);
-    expect(kansasCityResult).toBeNull();
+    expect(kansasCityResult).toBe(2);
     expect(fortWorthResult).not.toBe(kansasCityResult);
   });
 });

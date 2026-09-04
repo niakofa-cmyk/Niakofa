@@ -29,3 +29,15 @@ the pool and duplicate member History.
 **How to apply:** Serialize refund calculations on the original financial
 event, derive the target reversal from the cumulative refund ratio, subtract
 prior refund adjustments, and use a stable refund identity for inserts.
+
+Repayments always replenish the immutable community or hub scope recorded by
+the original helper-front ledger entry, even if the requester later travels or
+changes their profile community.
+
+**Why:** Current GPS location is routing context, not ownership of historical
+funds. Rejecting a repayment after travel strands valid debt and disagrees with
+the Stripe webhook accounting path.
+
+**How to apply:** Authorize the requester and repayment amount, then post to the
+original front-ledger scope without comparing it to the requester's current
+community assignment.

@@ -15,6 +15,7 @@ import { broadcast } from "./ws-hub";
 import { getEffectiveTier, getTierWageMultiplier } from "@workspace/trust-tiers";
 import { isPoolSettlementAccountingInvariant } from "./pool-financial-integrity";
 import { groupPendingMinimumsByScope } from "./pool-pending-queue";
+import { canonicalCountyState, findOrCreateCommunityForJurisdiction } from "./community-scope";
 
 /**
  * Community Pool service.
@@ -152,7 +153,11 @@ export async function getDefaultCommunityId(): Promise<number | null> {
  * Claim-time callers persist the result only after a successful match, which
  * keeps this lookup safe to run speculatively.
  */
-export async function resolveCommunityIdForCoords(lat: number, lng: number): Promise<number | null> {
+export async function resolveCommunityIdForCoords(
+  lat: number,
+  lng: number,
+  options: { createIfMissing?: boolean } = {},
+): Promise<number | null> {
   // Keep this route dependency lazy: community-pool is imported by many
   // isolated API modules and should not eagerly load the whole civic router.
   const { reverseGeocode } = await import("../routes/civic");
@@ -160,16 +165,23 @@ export async function resolveCommunityIdForCoords(lat: number, lng: number): Pro
   // unavailability. Callers that mutate a user's assignment must not turn a
   // transient Mapbox outage into a destructive NULL/global assignment.
   const place = await reverseGeocode(lat, lng);
-  if (!place?.county || !place.state) return null;
+  if (!place) return null;
+  const jurisdiction = canonicalCountyState(place);
+  if (!jurisdiction) return null;
+
   const result = await db.execute<{ id: number }>(sql`
     SELECT id
     FROM communities
-    WHERE LOWER(TRIM(county)) = LOWER(TRIM(${place.county}))
-      AND LOWER(TRIM(state)) = LOWER(TRIM(${place.state}))
+    WHERE LOWER(TRIM(REGEXP_REPLACE(county, '\\s+County$', '', 'i'))) = LOWER(TRIM(${jurisdiction.county}))
+      AND UPPER(TRIM(state)) = UPPER(TRIM(${jurisdiction.state}))
     ORDER BY id ASC
     LIMIT 1
   `);
-  return result.rows[0]?.id ?? null;
+  if (result.rows[0]?.id) return result.rows[0].id;
+  if (!options.createIfMissing) return null;
+
+  const created = await findOrCreateCommunityForJurisdiction(jurisdiction);
+  return created.communityId;
 }
 
 export type ClaimScopeDecision =
@@ -233,21 +245,15 @@ export async function resolveHelperClaimScope(params: {
 }
 
 /**
- * Cheap, idempotent community resolver for a fresh (lat, lng) fix.
+ * Idempotent community resolver for a fresh (lat, lng) fix.
  *
- * Registration and every subsequent GPS ping (PATCH /users/:id/location) can
- * call this with the user's current community_id: it only ever calls Mapbox
- * when that community_id still looks unresolved (see
- * isUnresolvedCommunityAssignment above), so it's safe to call opportunistically
- * on every location update without hammering the geocoder for users who are
- * already correctly scoped.
+ * Registration and every subsequent GPS ping (PATCH /users/:id/location) call
+ * this with the user's current coordinates. A valid county change is
+ * authoritative: the pool and civic surfaces must move with the user.
  *
- * Fails closed to the NULL/global bucket -- never to the admin default -- when
- * no community row matches the resolved county/state. This is the specific
- * guarantee that keeps a Kansas City signup out of Fort Worth's pool by
- * default: if there's no configured Kansas City community yet, the user sits
- * in the unscoped global bucket rather than silently inheriting whichever
- * community an admin happened to configure as default.
+ * A verified US county creates its own community row on first use. A verified
+ * non-US or incomplete place returns null; a provider outage is thrown so
+ * callers can preserve the user's previous assignment.
  *
  * Returns null when no re-resolution was needed or possible, so callers can
  * distinguish "nothing to do" from "resolved to community X" without a
@@ -258,15 +264,9 @@ export async function resolveCommunityFromFreshLocation(params: {
   lat: number | null;
   lng: number | null;
 }): Promise<number | null> {
-  const { currentCommunityId, lat, lng } = params;
+  const { lat, lng } = params;
   if (lat == null || lng == null) return null;
-
-  const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
-  if (!isUnresolvedCommunityAssignment(currentCommunityId, defaultCommunityId)) {
-    return null;
-  }
-
-  return resolveCommunityIdForCoords(lat, lng);
+  return resolveCommunityIdForCoords(lat, lng, { createIfMissing: true });
 }
 
 /**

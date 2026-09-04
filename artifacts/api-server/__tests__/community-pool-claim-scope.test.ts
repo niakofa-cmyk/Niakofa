@@ -54,7 +54,7 @@ jest.unstable_mockModule("../src/routes/civic.js", () => ({
   reverseGeocode: reverseGeocodeMock,
 }));
 
-let db: unknown;
+const db = mockDb;
 let resolveHelperClaimScope: (params: {
   requestHubId: number | null;
   claimerCommunityId: number | null;
@@ -66,7 +66,6 @@ let resolveHelperClaimScope: (params: {
 >;
 
 beforeAll(async () => {
-  ({ db } = await import("@workspace/db"));
   ({ resolveHelperClaimScope } = await import("../src/lib/community-pool.js"));
 });
 

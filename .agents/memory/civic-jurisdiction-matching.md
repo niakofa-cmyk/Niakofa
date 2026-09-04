@@ -14,3 +14,9 @@ Geocoder provider unavailability is a different outcome from a valid no-match. P
 **Why:** Collapsing timeouts, missing credentials, and provider HTTP errors into `null` caused GPS updates to erase an existing assignment even though the user’s location had not been disproven.
 
 **How to apply:** Let assignment callers handle provider failures as non-destructive retries, while registration remains non-blocking and valid no-match resolution continues to fail closed.
+
+Canonical county/state identity must be database-unique, and first-visit provisioning must tolerate concurrent inserts by returning the winning row.
+
+**Why:** A read-then-insert race can split one county's users and money across multiple pools even when later lookups consistently choose only one row.
+
+**How to apply:** Normalize every automatic and admin jurisdiction write, enforce a canonical unique index, and use conflict-safe insertion followed by a winner lookup.

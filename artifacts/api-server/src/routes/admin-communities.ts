@@ -22,6 +22,7 @@ import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { getSystemSetting, setSystemSetting } from "../lib/db-helpers";
+import { normalizeMapboxStateCode } from "../lib/civic-geo";
 
 const router = Router();
 
@@ -29,6 +30,10 @@ const MAX_NAME_LEN = 120;
 
 function isValidTargetReserve(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function normalizeCounty(value: string): string {
+  return value.replace(/\s+County$/i, "").replace(/\s+/g, " ").trim();
 }
 
 // GET /admin/communities — list all communities with live pool balance,
@@ -96,10 +101,12 @@ router.get("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asyn
 
 // POST /admin/communities — create a new county/region pool
 router.post("/admin/communities", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
-  const { name, target_reserve_amount, hourly_rate } = req.body as {
+  const { name, target_reserve_amount, hourly_rate, county: rawCounty, state: rawState } = req.body as {
     name?: string;
     target_reserve_amount?: number;
     hourly_rate?: number | null;
+    county?: string;
+    state?: string;
   };
 
   const trimmedName = name?.trim();
@@ -119,15 +126,39 @@ router.post("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asy
     return res.status(400).json({ error: "hourly_rate must be a positive number or null" });
   }
 
+  const county = rawCounty?.trim() ? normalizeCounty(rawCounty) : null;
+  const state = rawState?.trim()
+    ? normalizeMapboxStateCode(undefined, rawState.trim())
+    : null;
+  if ((rawCounty !== undefined || rawState !== undefined) && (!county || !state)) {
+    return res.status(400).json({ error: "county and a valid US state are required together" });
+  }
+  if (county && state) {
+    const duplicate = await db.execute<{ id: number }>(sql`
+      SELECT id FROM communities
+      WHERE LOWER(TRIM(REGEXP_REPLACE(county, '\\s+County$', '', 'i'))) = LOWER(TRIM(${county}))
+        AND UPPER(TRIM(state)) = UPPER(TRIM(${state}))
+      LIMIT 1
+    `);
+    if (duplicate.rows[0]) {
+      return res.status(409).json({ error: "A community pool already exists for this county and state" });
+    }
+  }
+
   const [created] = await db
     .insert(communitiesTable)
     .values({
       name: trimmedName,
       ...(target_reserve_amount !== undefined ? { target_reserve_amount } : {}),
       ...(hourly_rate !== undefined ? { hourly_rate } : {}),
+      ...(county && state ? { county, state } : {}),
     })
+    .onConflictDoNothing()
     .returning();
 
+  if (!created) {
+    return res.status(409).json({ error: "A community pool already exists for this county and state" });
+  }
   logger.info({ community_id: created?.id, name: created?.name }, "admin-communities: created new community");
   return res.status(201).json(created);
 });
@@ -138,6 +169,13 @@ router.post("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asy
 router.patch("/admin/communities/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  const [existingCommunity] = await db
+    .select({ county: communitiesTable.county, state: communitiesTable.state })
+    .from(communitiesTable)
+    .where(eq(communitiesTable.id, id))
+    .limit(1);
+  if (!existingCommunity) return res.status(404).json({ error: "Not found" });
 
   const {
     name,
@@ -183,8 +221,34 @@ router.patch("/admin/communities/:id", requireAuth, requireAdmin(), adminLimiter
   if (description !== undefined) patch.description = description;
   if (sponsor_name !== undefined) patch.sponsor_name = sponsor_name;
   if (sponsor_logo_url !== undefined) patch.sponsor_logo_url = sponsor_logo_url;
-  if (county !== undefined) patch.county = county;
-  if (state !== undefined) patch.state = state;
+  if (county !== undefined || state !== undefined) {
+    const requestedCounty = county === undefined ? existingCommunity.county : county;
+    const requestedState = state === undefined ? existingCommunity.state : state;
+    const nextCounty = requestedCounty?.trim() ? normalizeCounty(requestedCounty) : null;
+    const nextState = requestedState?.trim()
+      ? normalizeMapboxStateCode(undefined, requestedState.trim())
+      : null;
+
+    if ((nextCounty === null) !== (nextState === null)) {
+      return res.status(400).json({ error: "county and a valid US state are required together" });
+    }
+
+    if (nextCounty && nextState) {
+      const duplicate = await db.execute<{ id: number }>(sql`
+        SELECT id FROM communities
+        WHERE id <> ${id}
+          AND LOWER(TRIM(REGEXP_REPLACE(county, '\\s+County$', '', 'i'))) = LOWER(TRIM(${nextCounty}))
+          AND UPPER(TRIM(state)) = UPPER(TRIM(${nextState}))
+        LIMIT 1
+      `);
+      if (duplicate.rows[0]) {
+        return res.status(409).json({ error: "A community pool already exists for this county and state" });
+      }
+    }
+
+    patch.county = nextCounty;
+    patch.state = nextState;
+  }
 
   if (Object.keys(patch).length === 0) {
     return res.status(400).json({ error: "No updatable fields provided" });

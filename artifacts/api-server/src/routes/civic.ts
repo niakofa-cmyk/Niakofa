@@ -55,6 +55,11 @@ function normalizeJurisdiction(value: string | null | undefined): string | null 
   return normalized ? normalized : null;
 }
 
+function normalizeCounty(value: string | null | undefined): string | null {
+  const normalized = normalizeJurisdiction(value);
+  return normalized?.replace(/\s+County$/i, "").trim() || null;
+}
+
 const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? process.env.VITE_MAPBOX_TOKEN ?? "";
 
 interface MapboxFeature {
@@ -275,7 +280,7 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
   const lngRounded = Math.round(lng * 10) / 10;
   // Bump when jurisdiction matching changes so a pre-fix empty response
   // cannot remain authoritative for the full location-cache TTL.
-  const locationCacheKey = `civic:v5:loc:${latRounded}:${lngRounded}`;
+  const locationCacheKey = `civic:v6:loc:${latRounded}:${lngRounded}`;
   const locationCached = await cacheGet(locationCacheKey);
   if (locationCached) return res.json(locationCached);
 
@@ -293,7 +298,7 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
     });
   }
 
-  if (!place || !place.state_short) {
+  if (!place) {
     // We couldn't determine the user's location at all — showing an
     // arbitrary sample of whatever happens to be in the table would be
     // misleading: it could be labeled "your area" while belonging to a
@@ -303,8 +308,8 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
     return res.json(result);
   }
 
-  const state = normalizeJurisdiction(place.state_short)?.toUpperCase() ?? null;
-  const county = normalizeJurisdiction(place.county);
+  const state = normalizeMapboxStateCode(place.state_short, place.state)?.toUpperCase() ?? null;
+  const county = normalizeCounty(place.county);
   const city = normalizeJurisdiction(place.city);
 
   if (!state) {
@@ -350,7 +355,10 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
     if (resources.length > 0) matchLevel = "county";
   }
 
-  if (resources.length === 0) {
+  // A county-qualified location must never fall back to another county's
+  // state-wide rows. State-level resources are only eligible when the
+  // geocoder did not return a county at all.
+  if (resources.length === 0 && !county) {
     resources = await db
       .select()
       .from(civicResourcesTable)
@@ -404,9 +412,20 @@ router.get("/civic/resources/nearby", generalApiLimiter, async (req, res) => {
   const radius = Math.min(50, Math.max(0.1, parsed.data.radius_miles));
   const category = parsed.data.category?.trim().toLowerCase() || null;
 
+  let place: ResolvedPlace | null;
+  try {
+    place = await reverseGeocode(lat, lng);
+  } catch (err) {
+    logger.warn({ err, lat, lng }, "nearby civic resources geocoding unavailable");
+    return res.json([]);
+  }
+  const state = normalizeMapboxStateCode(place?.state_short, place?.state);
+  const county = normalizeCounty(place?.county);
+  if (!state || !county) return res.json([]);
+
   const latR = Math.round(lat * 100) / 100;
   const lngR = Math.round(lng * 100) / 100;
-  const cacheKey = `civic:v2:nearby:${latR}:${lngR}:${radius}:${category ?? "*"}`;
+  const cacheKey = `civic:v3:nearby:${latR}:${lngR}:${radius}:${category ?? "*"}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return res.json(cached);
 
@@ -420,6 +439,8 @@ router.get("/civic/resources/nearby", generalApiLimiter, async (req, res) => {
   const conditions = [
     isNotNull(civicResourcesTable.latitude),
     isNotNull(civicResourcesTable.longitude),
+    eq(civicResourcesTable.state, state),
+    eq(civicResourcesTable.county, county),
     sql`${civicResourcesTable.latitude} BETWEEN ${lat - latDelta} AND ${lat + latDelta}`,
     sql`${civicResourcesTable.longitude} BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}`,
   ];
@@ -900,7 +921,9 @@ router.post("/civic/needs", requireAuth, generalApiLimiter, async (req, res) => 
   return res.status(201).json(created);
 });
 
-// GET /civic/needs — public/authenticated browse of open civic needs (helpers/businesses looking to claim)
+// GET /civic/needs — browse civic needs for the caller's current county.
+// Use the authenticated user's most recent persisted GPS fix. Arbitrary query
+// coordinates must not turn this jurisdiction feed into a cross-county index.
 router.get("/civic/needs", requireAuth, generalApiLimiter, async (req, res) => {
   const statusParam = (req.query.status as string | undefined) ?? "open";
   const VALID_STATUSES = ["open", "claimed", "completed", "cancelled"];
@@ -909,6 +932,31 @@ router.get("/civic/needs", requireAuth, generalApiLimiter, async (req, res) => {
   }
   const limit = Math.min(Number(req.query.limit ?? 50), 200);
   const offset = Number(req.query.offset ?? 0);
+
+  const [caller] = await db
+    .select({ lat: usersTable.lat, lng: usersTable.lng })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.authenticatedUserId!))
+    .limit(1);
+  const lat = caller?.lat ?? NaN;
+  const lng = caller?.lng ?? NaN;
+
+  if (!isValidCoordinate(lat, lng)) {
+    // A county-specific feed must fail closed rather than return another
+    // county's needs when the user's location is unavailable.
+    return res.json([]);
+  }
+
+  let place: ResolvedPlace | null;
+  try {
+    place = await reverseGeocode(lat, lng);
+  } catch (err) {
+    logger.warn({ err, lat, lng }, "civic needs browse geocoding unavailable");
+    return res.json([]);
+  }
+  const state = normalizeMapboxStateCode(place?.state_short, place?.state);
+  const county = normalizeCounty(place?.county);
+  if (!state || !county) return res.json([]);
 
   const rows = await db
     .select({
@@ -929,7 +977,11 @@ router.get("/civic/needs", requireAuth, generalApiLimiter, async (req, res) => {
     })
     .from(civicNeedsTable)
     .innerJoin(governmentSponsorsTable, eq(civicNeedsTable.government_sponsor_id, governmentSponsorsTable.id))
-    .where(eq(civicNeedsTable.status, statusParam))
+    .where(and(
+      eq(civicNeedsTable.status, statusParam),
+      eq(governmentSponsorsTable.county, county),
+      eq(governmentSponsorsTable.state, state),
+    ))
     .orderBy(desc(civicNeedsTable.created_at))
     .limit(limit)
     .offset(offset);
@@ -959,6 +1011,21 @@ router.get("/civic/needs/nearby", requireAuth, generalApiLimiter, async (req, re
   const { lat, lng } = parsed.data;
   const radius = Math.min(100, Math.max(0.1, parsed.data.radius_miles));
 
+  let place: ResolvedPlace | null;
+  try {
+    place = await reverseGeocode(lat, lng);
+  } catch (err) {
+    logger.warn({ err, lat, lng }, "civic needs geocoding unavailable");
+    return res.json([]);
+  }
+  const state = normalizeMapboxStateCode(place?.state_short, place?.state);
+  const county = normalizeCounty(place?.county);
+  if (!state || !county) {
+    // Do not broaden a county-scoped dispatch feed when the current
+    // jurisdiction cannot be verified.
+    return res.json([]);
+  }
+
   const openNeeds = await db
     .select({
       id: civicNeedsTable.id,
@@ -976,7 +1043,11 @@ router.get("/civic/needs/nearby", requireAuth, generalApiLimiter, async (req, re
     })
     .from(civicNeedsTable)
     .innerJoin(governmentSponsorsTable, eq(civicNeedsTable.government_sponsor_id, governmentSponsorsTable.id))
-    .where(eq(civicNeedsTable.status, "open"))
+    .where(and(
+      eq(civicNeedsTable.status, "open"),
+      eq(governmentSponsorsTable.county, county),
+      eq(governmentSponsorsTable.state, state),
+    ))
     .limit(300);
 
   // Lazily resolve any missing coordinates in parallel, then fold the

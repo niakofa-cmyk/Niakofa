@@ -2276,19 +2276,6 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
          throw Object.assign(new Error("fund_scope_required"), { status: 409 });
        }
 
-       const [requester] = await tx
-        .select({ community_id: usersTable.community_id })
-        .from(usersTable)
-        .where(eq(usersTable.id, requesterId))
-        .limit(1);
-       if (
-         frontLedger.community_id != null &&
-         requester?.community_id != null &&
-         frontLedger.community_id !== requester.community_id
-       ) {
-         throw Object.assign(new Error("fund_scope_mismatch"), { status: 409 });
-      }
-
        // Record the repayment in the same pool community/hub for the audit trail.
       await tx.insert(communityPoolLedgerTable).values({
         entry_type: "pledge_repayment",

@@ -26,7 +26,6 @@ import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
 import {
   getDefaultCommunityId,
-  isUnresolvedCommunityAssignment,
   resolveCommunityFromFreshLocation,
 } from "../lib/community-pool";
 import { isValidSpiritAnimal } from "../lib/spirit-animal";
@@ -238,9 +237,9 @@ router.post("/users/register", authLimiter, async (req, res) => {
   // block registration — fall back to null (legacy global bucket) exactly
   // like before this change.
   const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
-  // A fresh location is authoritative for initial community assignment. If
-  // it does not match a configured community, keep the user in the NULL/global
-  // bucket rather than silently assigning the admin's default community.
+  // A fresh location is authoritative for initial community assignment. A
+  // verified county gets its own community row; an incomplete/unmatched
+  // location stays unassigned instead of inheriting an admin default.
   let community_id = defaultCommunityId;
   if (lat != null && lng != null) {
     try {
@@ -648,31 +647,24 @@ router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnershi
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  // Re-resolve users who still carry the untouched registration default (or
-  // no community at all). This lets requesters, not only helpers at claim
-  // time, move into the correct pool after a later GPS fix. An unmatched
-  // location intentionally clears the default assignment to the NULL/global
-  // bucket.
-  const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
-  if (
-    isUnresolvedCommunityAssignment(user.community_id ?? null, defaultCommunityId)
-  ) {
-    try {
-      const resolvedCommunityId = await resolveCommunityFromFreshLocation({
-        currentCommunityId: user.community_id ?? null,
-        lat,
-        lng,
-      });
-      [user] = await db.update(usersTable)
-        .set({ community_id: resolvedCommunityId, updated_at: new Date() })
-        .where(eq(usersTable.id, user.id))
-        .returning();
-    } catch (err) {
-      logger.warn(
-        { err, user_id: user.id },
-        "location community geocoding unavailable — preserving current assignment",
-      );
-    }
+  // Every verified GPS fix is authoritative. This is what moves a user from
+  // one county pool to another when they travel; a geocoder outage is the
+  // only case where the previous assignment is preserved.
+  try {
+    const resolvedCommunityId = await resolveCommunityFromFreshLocation({
+      currentCommunityId: user.community_id ?? null,
+      lat,
+      lng,
+    });
+    [user] = await db.update(usersTable)
+      .set({ community_id: resolvedCommunityId, updated_at: new Date() })
+      .where(eq(usersTable.id, user.id))
+      .returning();
+  } catch (err) {
+    logger.warn(
+      { err, user_id: user.id },
+      "location community geocoding unavailable — preserving current assignment",
+    );
   }
 
   if (user.helper_mode_active) {
