@@ -19,6 +19,7 @@ import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
 import { db, chatMessagesTable, requestsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { buildWsOriginAllowlist, isWsOriginAllowed } from "./ws-origin";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
 export type WsEventType =
@@ -545,13 +546,6 @@ function getClientIp(req: IncomingMessage): string {
 let wss: WebSocketServer | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-// Build the allowlist once at startup from ALLOWED_ORIGIN.
-// In dev (no env var) all origins are permitted — Railway always sets this in prod.
-function buildWsOriginAllowlist(): Set<string> | null {
-  const raw = process.env["ALLOWED_ORIGIN"];
-  if (!raw) return null; // open (dev)
-  return new Set(raw.split(",").map(s => s.trim().replace(/\/$/, "")));
-}
 const WS_ORIGIN_ALLOWLIST = buildWsOriginAllowlist();
 
 export function initWebSocketServer(server: HttpServer): WebSocketServer {
@@ -575,8 +569,8 @@ export function initWebSocketServer(server: HttpServer): WebSocketServer {
 
     // ── Origin check (production only) ─────────────────────────────────────────
     if (WS_ORIGIN_ALLOWLIST) {
-      const origin = (req.headers["origin"] ?? "").replace(/\/$/, "");
-      if (!WS_ORIGIN_ALLOWLIST.has(origin)) {
+      const origin = req.headers["origin"];
+      if (!isWsOriginAllowed(Array.isArray(origin) ? origin[0] : origin, WS_ORIGIN_ALLOWLIST)) {
         logger.warn({ ip, origin }, "WS: rejected — origin not in ALLOWED_ORIGIN");
         socket.close(1008, "Origin not allowed");
         return;
