@@ -23,7 +23,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
-import { parseOralHistoryIntent } from "@/lib/diaspora/oralHistoryDeepLink";
+import { parseOralHistoryIntent, persistPreserveScanContext, readPreserveScanIdFromSearch } from "@/lib/diaspora/oralHistoryDeepLink";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -155,6 +155,7 @@ export default function FamilyVaultPage() {
   const familyId = Number(id ?? fidParam);
 
   const oralHistoryIntent = typeof window !== "undefined" && parseOralHistoryIntent(window.location.search);
+  const preserveScanId = typeof window !== "undefined" ? readPreserveScanIdFromSearch(window.location.search) : null;
   const [tab, setTab]             = useState<TabId>(() => oralHistoryIntent ? "interviews" : "memories");
   const [family, setFamily]       = useState<Family | null>(null);
   const [myRole, setMyRole]       = useState<string>("contributor");
@@ -196,6 +197,10 @@ export default function FamilyVaultPage() {
 
   // Translation modal
   const [translateMemory, setTranslateMemory] = useState<Memory | null>(null);
+
+  useEffect(() => {
+    if (preserveScanId) persistPreserveScanContext(preserveScanId);
+  }, [preserveScanId]);
 
   useEffect(() => {
     if (!currentUser || !familyId) return;

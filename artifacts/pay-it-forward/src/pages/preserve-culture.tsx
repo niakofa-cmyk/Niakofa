@@ -41,7 +41,19 @@ export default function PreserveCulturePage() {
       const res = await fetch("/api/diaspora/preserve/scan", { method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ qr_code: value }) });
       const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.error ?? "Couldn't read QR code");
       setQrOpen(false); setQrCode("");
-      if (data.type === "card" && data.card?.id) { const found = cards.findIndex(card => card.id === data.card.id); if (found >= 0) setIndex(found); setFlipped(false); toast.success("Card found. Your next step is to record the story."); return; }
+      if (data.type === "card" && data.card?.id) {
+        const found = cards.findIndex(card => card.id === data.card.id);
+        if (found >= 0) setIndex(found);
+        setFlipped(false);
+        const scanId = persistPreserveScanContext(data.scan_id);
+        if (data.action === "record_story") {
+          toast.success(scanId ? "Card found. Your preservation context will follow you into the recorder." : "Card found. Choose a Family Space to record the story.");
+          navigate(`/diaspora/family?intent=oral-history${scanId ? `&preserve_scan_id=${encodeURIComponent(scanId)}` : ""}`);
+        } else {
+          toast.success("Card found. Your next step is to record the story.");
+        }
+        return;
+      }
       if (data.action === "link_memory") {
         const scanId = persistPreserveScanContext(data.scan_id);
         toast.success(scanId ? "QR recognized. Your preservation context will follow you into the recorder." : "QR recognized. Choose a Family Space to preserve the memory.");

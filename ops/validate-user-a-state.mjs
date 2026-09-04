@@ -34,10 +34,24 @@ if (state.origins.length === 0) fail("origins must not be empty.");
 
 let tokenCount = 0;
 let userCount = 0;
+const origins = new Set();
 for (const origin of state.origins) {
   if (!origin || typeof origin !== "object" || typeof origin.origin !== "string") {
     fail("each origin must contain an origin string.");
   }
+  let parsedOrigin;
+  try {
+    parsedOrigin = new URL(origin.origin);
+  } catch {
+    fail("each origin must be a valid URL.");
+  }
+  if (!["http:", "https:"].includes(parsedOrigin.protocol) || parsedOrigin.username || parsedOrigin.password || parsedOrigin.search || parsedOrigin.hash) {
+    fail("origins must be credential-free http(s) origins without query, hash, or path data.");
+  }
+  if (parsedOrigin.pathname !== "/") fail("origins must contain only the origin, not a path.");
+  const normalizedOrigin = parsedOrigin.origin;
+  if (origins.has(normalizedOrigin)) fail("storage state must not repeat an origin.");
+  origins.add(normalizedOrigin);
   if (!Array.isArray(origin.localStorage)) {
     fail("each origin must contain a localStorage array.");
   }

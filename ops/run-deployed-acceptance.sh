@@ -19,7 +19,15 @@ node ops/validate-user-a-state.mjs "$USER_A_STATE"
 BASE_URL="$BASE_URL" USER_A_STATE="$USER_A_STATE" node --input-type=module <<'NODE'
 import fs from "node:fs";
 
-const base = new URL(process.env.BASE_URL);
+let base;
+try {
+  base = new URL(process.env.BASE_URL);
+} catch {
+  throw new Error("BASE_URL must be a valid http(s) URL");
+}
+if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
+  throw new Error("BASE_URL must be a credential-free http(s) origin without query or hash");
+}
 const state = JSON.parse(fs.readFileSync(process.env.USER_A_STATE, "utf8"));
 const entries = state.origins.flatMap((origin) => origin.localStorage ?? []);
 const token = entries.find((entry) => entry.name === "niakofa_token")?.value;
@@ -28,6 +36,10 @@ const user = userJson ? JSON.parse(userJson) : null;
 
 if (!token || !Number.isInteger(Number(user?.id))) {
   throw new Error("storage state does not contain an authenticated Niakofa user");
+}
+const stateOrigins = new Set(state.origins.map((origin) => new URL(origin.origin).origin));
+if (!stateOrigins.has(base.origin)) {
+  throw new Error(`USER_A_STATE does not contain the BASE_URL origin (${base.origin})`);
 }
 
 async function get(pathname) {

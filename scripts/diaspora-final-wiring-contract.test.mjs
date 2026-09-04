@@ -22,6 +22,10 @@ test("Preserve scan context has durable browser handoff and recorder association
   assert.match(link, /api.*family.*memories/, "expected family memory API route");
   assert.match(preserve, /data\.scan_id/);
   assert.match(preserve, /preserve_scan_id/);
+  assert.match(preserve, /data\.action === "record_story"/, "expected culture-card scans to enter the recorder");
+  const familySpaces = read("../artifacts/pay-it-forward/src/pages/family-spaces.tsx");
+  assert.match(familySpaces, /readPreserveScanIdFromSearch/);
+  assert.match(familySpaces, /preserve_scan_id/);
 });
 
 test("Dashboard labels and derives the curated Heritage catalog metric", () => {

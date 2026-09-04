@@ -15,7 +15,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
-import { parseOralHistoryIntent } from "@/lib/diaspora/oralHistoryDeepLink";
+import { parseOralHistoryIntent, persistPreserveScanContext, readPreserveScanIdFromSearch } from "@/lib/diaspora/oralHistoryDeepLink";
 
 interface FamilySpace {
   id: number;
@@ -51,6 +51,7 @@ export default function FamilySpacesPage() {
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const oralHistoryRedirected = useRef(false);
   const oralHistoryIntent = typeof window !== "undefined" && parseOralHistoryIntent(window.location.search);
+  const preserveScanId = typeof window !== "undefined" ? readPreserveScanIdFromSearch(window.location.search) : null;
 
   useEffect(() => {
     if (!currentUser) return;
@@ -150,9 +151,10 @@ export default function FamilySpacesPage() {
   useEffect(() => {
     if (!loading && oralHistoryIntent && mySpaces.length > 0 && !oralHistoryRedirected.current) {
       oralHistoryRedirected.current = true;
-      navigate(`/family/${mySpaces[0].id}?tab=record`);
+      const scanId = preserveScanId ? persistPreserveScanContext(preserveScanId) : null;
+      navigate(`/family/${mySpaces[0].id}?tab=record${scanId ? `&preserve_scan_id=${encodeURIComponent(scanId)}` : ""}`);
     }
-  }, [loading, mySpaces, oralHistoryIntent, navigate]);
+  }, [loading, mySpaces, oralHistoryIntent, navigate, preserveScanId]);
 
   if (!currentUser) {
     return (
