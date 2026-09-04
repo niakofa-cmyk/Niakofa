@@ -25,6 +25,10 @@ export const paymentTransactionsTable = pgTable("payment_transactions", {
   // Amount already paid back (for pay_it_forward partial repayments)
   amount_repaid: real("amount_repaid").notNull().default(0),
 
+  // Cumulative amount refunded by Stripe. Stripe's refund events are cumulative,
+  // so this lets webhook retries and partial refunds apply only the delta.
+  amount_refunded: real("amount_refunded").notNull().default(0),
+
   // Optional sponsor reference (county pool, nonprofit, etc.)
   sponsored_by: text("sponsored_by"),
 

@@ -12,6 +12,7 @@ import { logger } from "../lib/logger";
 import { getStripeSecretKey, getStripeWebhookSecret } from "../lib/stripe-config";
 import { paymentLimiter } from "../middlewares/rate-limit";
 import { reversePoolContributionOnRefund } from "../lib/pool-contribution-refund";
+import { z } from "zod";
 
 const router = Router();
 
@@ -501,7 +502,6 @@ router.post("/stripe/webhook", async (req, res) => {
             .update(paymentTransactionsTable)
             .set({
               stripe_transfer_id: transfer.id,
-              state: "completed",
               updated_at: new Date(),
             })
             .where(
@@ -618,8 +618,9 @@ router.post("/stripe/webhook", async (req, res) => {
       case "charge.refunded": {
         // A Stripe charge was refunded. Update the payment_transactions row
         // and the associated help_request so the system reflects the refund.
-        // Idempotency: the state guard (`!= 'failed'`) ensures duplicate
-        // webhook deliveries skip after the first one processes.
+        // Stripe sends cumulative amount_refunded values. The row-level
+        // transaction below records that cumulative watermark and applies only
+        // the newly refunded delta to the helper wallet/pool ledger.
         const charge = event.data.object as Stripe.Charge;
         const piId = typeof charge.payment_intent === "string"
           ? charge.payment_intent
@@ -644,21 +645,115 @@ router.post("/stripe/webhook", async (req, res) => {
           );
         }
 
-        const [txRow] = await db
-          .update(paymentTransactionsTable)
-          .set({ state: "failed", updated_at: new Date() })
-          .where(and(
-            eq(paymentTransactionsTable.stripe_payment_intent_id, piId),
-            sql`${paymentTransactionsTable.state} != 'failed'`
-          ))
-          .returning();
+        const refundAmountCents = Math.max(0, Number(charge.amount_refunded) || 0);
+        const chargeAmountCents = Math.max(0, Number(charge.amount) || 0);
 
-        if (!txRow) {
+        const refundResult = await db.transaction(async (tx) => {
+          const [existing] = await tx
+            .select()
+            .from(paymentTransactionsTable)
+            .where(eq(paymentTransactionsTable.stripe_payment_intent_id, piId))
+            .limit(1);
+
+          if (!existing) return null;
+
+          const priorRefundedCents = Math.round((existing.amount_refunded ?? 0) * 100);
+          const incrementalRefundCents = Math.max(0, refundAmountCents - priorRefundedCents);
+          if (incrementalRefundCents <= 0) return null;
+
+          const fullyRefunded = chargeAmountCents > 0 && refundAmountCents >= chargeAmountCents;
+          const [updated] = await tx
+            .update(paymentTransactionsTable)
+            .set({
+              amount_refunded: refundAmountCents / 100,
+              state: fullyRefunded ? "failed" : "disputed",
+              updated_at: new Date(),
+            })
+            .where(and(
+              eq(paymentTransactionsTable.id, existing.id),
+              sql`${paymentTransactionsTable.amount_refunded} < ${refundAmountCents / 100}`,
+            ))
+            .returning();
+
+          if (!updated) return null;
+
+          const incrementalRefund = incrementalRefundCents / 100;
+          // Pay-it-forward repayments and tips credit the helper's goodwill
+          // wallet only after Stripe success. Reverse that credit on refund.
+          // The ledger idempotency key is unique per cumulative Stripe refund
+          // watermark, so partial refunds and webhook retries are safe.
+          if (
+            existing.helper_id &&
+            (existing.payment_type === "pay_it_forward" || existing.payment_type === "tip")
+          ) {
+            const fronted = await wasRequestFronted(existing.request_id);
+            if (!fronted) {
+              await tx
+                .update(usersTable)
+                .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} - ${incrementalRefund}` })
+                .where(eq(usersTable.id, existing.helper_id));
+
+              await tx
+                .insert(transactionsTable)
+                .values({
+                  user_id: existing.helper_id,
+                  request_id: existing.request_id,
+                  type: existing.payment_type === "tip" ? "tip_refunded" : "goodwill",
+                  amount: -incrementalRefund,
+                  description: `Stripe refund reversed helper wallet credit (${piId})`,
+                  idempotency_key: `stripe-refund:${piId}:${refundAmountCents}`,
+                  metadata: {
+                    kind: "stripe_payment_refund",
+                    payment_intent_id: piId,
+                    charge_id: charge.id,
+                    refunded_cents: refundAmountCents,
+                  },
+                })
+                .onConflictDoNothing();
+            } else {
+              const [frontLedger] = await tx
+                .select({
+                  community_id: communityPoolLedgerTable.community_id,
+                  hub_id: communityPoolLedgerTable.hub_id,
+                })
+                .from(communityPoolLedgerTable)
+                .where(and(
+                  eq(communityPoolLedgerTable.request_id, existing.request_id),
+                  eq(communityPoolLedgerTable.entry_type, "helper_front"),
+                ))
+                .limit(1);
+              if (!frontLedger || (frontLedger.community_id == null && frontLedger.hub_id == null)) {
+                throw new Error(`Refund for pool-fronted request ${existing.request_id} is missing a fund scope`);
+              }
+              await tx
+                .insert(communityPoolLedgerTable)
+                .values({
+                  entry_type: "pledge_repayment",
+                  amount: -incrementalRefund,
+                  request_id: existing.request_id,
+                  user_id: existing.requester_id ?? null,
+                  community_id: frontLedger.community_id,
+                  hub_id: frontLedger.hub_id,
+                  stripe_payment_intent_id: `refund:${charge.id}:${refundAmountCents}`,
+                  notes: "Refund reversed from pool (Stripe charge.refunded)",
+                })
+                .onConflictDoNothing();
+            }
+          }
+
+          return {
+            txRow: updated,
+            incrementalRefund,
+            fullyRefunded,
+          };
+        });
+
+        if (!refundResult) {
           logger.info({ pi: piId }, "charge.refunded: no unprocessed transaction row — skipping");
           break;
         }
 
-        const refundAmount = charge.amount_refunded / 100;
+        const { txRow, incrementalRefund, fullyRefunded } = refundResult;
 
         // Update the help_request status if the request was completed
         const [reqRow] = await db
@@ -667,7 +762,7 @@ router.post("/stripe/webhook", async (req, res) => {
           .where(eq(requestsTable.id, txRow.request_id))
           .limit(1);
 
-        if (reqRow && reqRow.status === "completed") {
+        if (fullyRefunded && reqRow && reqRow.status === "completed") {
           await db
             .update(requestsTable)
             .set({
@@ -677,46 +772,17 @@ router.post("/stripe/webhook", async (req, res) => {
             .where(eq(requestsTable.id, txRow.request_id));
         }
 
-        // If the pool fronted this payment, reverse the pool ledger entry
-        const fronted = await wasRequestFronted(txRow.request_id);
-        if (fronted && refundAmount > 0) {
-          const [frontLedger] = await db
-            .select({
-              community_id: communityPoolLedgerTable.community_id,
-              hub_id: communityPoolLedgerTable.hub_id,
-            })
-            .from(communityPoolLedgerTable)
-            .where(and(
-              eq(communityPoolLedgerTable.request_id, txRow.request_id),
-              eq(communityPoolLedgerTable.entry_type, "helper_front"),
-            ))
-            .limit(1);
-          if (!frontLedger || (frontLedger.community_id == null && frontLedger.hub_id == null)) {
-            throw new Error(`Refund for pool-fronted request ${txRow.request_id} is missing a fund scope`);
-          }
-          await db.insert(communityPoolLedgerTable).values({
-            entry_type: "pledge_repayment",
-            amount: -refundAmount,
-            request_id: txRow.request_id,
-            user_id: txRow.requester_id ?? null,
-            community_id: frontLedger.community_id,
-            hub_id: frontLedger.hub_id,
-            stripe_payment_intent_id: piId,
-            notes: "Refund reversed from pool (Stripe charge.refunded)",
-          }).onConflictDoNothing();
-        }
-
         broadcast({
           type: "payment_refunded",
           payload: {
             request_id: txRow.request_id,
-            amount: refundAmount,
+            amount: incrementalRefund,
             payment_intent_id: piId,
           },
         });
 
         logger.warn(
-          { request_id: txRow.request_id, pi: piId, amount: refundAmount },
+          { request_id: txRow.request_id, pi: piId, amount: incrementalRefund, cumulative_amount: refundAmountCents / 100 },
           "Stripe charge refunded — payment marked failed, request cancelled"
         );
         break;
@@ -796,16 +862,19 @@ router.post("/stripe/webhook", async (req, res) => {
 router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwnership("requesterId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
-  const { requestId, amount, helperId, paymentType } = req.body as {
-    requestId: number;
-    amount: number;
-    helperId?: number;
-    paymentType?: "immediate" | "pay_it_forward" | "tip";
-  };
-
-  if (!requestId || !amount || amount <= 0) {
-    return res.status(400).json({ error: "requestId and amount (> 0) required" });
+  const parsedBody = z.object({
+    requestId: z.number().int().positive(),
+    amount: z.number().finite().min(0.5).max(10000),
+    helperId: z.number().int().positive().optional(),
+    paymentType: z.enum(["immediate", "pay_it_forward", "tip"]).optional(),
+  }).safeParse(req.body);
+  if (!parsedBody.success) {
+    return res.status(400).json({
+      error: "requestId, amount, and optional helperId/paymentType are invalid",
+      details: parsedBody.error.flatten().fieldErrors,
+    });
   }
+  const { requestId, amount, helperId, paymentType } = parsedBody.data;
 
   // Cross-check the client-sent amount/request against the request's own stored
   // state — requireOwnership only verifies the caller IS the requester, not that
@@ -1118,14 +1187,37 @@ router.post("/stripe/payout", requireAuth, requireApproved, requireOwnership("he
     });
   }
 
+  // If a previous attempt already linked a transfer, return it instead of
+  // creating another payout. The Stripe idempotency key below is the second
+  // backstop for the lost-response/retry window.
+  const [existingPayout] = await db
+    .select({ stripe_transfer_id: paymentTransactionsTable.stripe_transfer_id })
+    .from(paymentTransactionsTable)
+    .where(and(
+      eq(paymentTransactionsTable.request_id, requestId),
+      eq(paymentTransactionsTable.state, "completed"),
+    ))
+    .limit(1);
+  if (existingPayout?.stripe_transfer_id) {
+    return res.json({
+      transferId: existingPayout.stripe_transfer_id,
+      amount: requestedCents / 100,
+      destination: acct.stripe_account_id,
+      alreadyCompleted: true,
+    });
+  }
+
   // Create a transfer to the helper's connected account
-  const transfer = await stripe!.transfers.create({
-    amount: requestedCents,
-    currency: "usd",
-    destination: acct.stripe_account_id,
-    description: description ?? `Niakofa — ${request.title}`,
-    metadata: { helperId: helperId.toString(), requestId: String(requestId) },
-  });
+  const transfer = await stripe!.transfers.create(
+    {
+      amount: requestedCents,
+      currency: "usd",
+      destination: acct.stripe_account_id,
+      description: description ?? `Niakofa — ${request.title}`,
+      metadata: { helperId: helperId.toString(), requestId: String(requestId) },
+    },
+    { idempotencyKey: `payout-request-${requestId}-helper-${helperId}` },
+  );
 
   // Update payment transaction state
   if (requestId) {
