@@ -305,7 +305,9 @@ export const RegisterUserBody = zod.object({
   "neighborhood": zod.string().optional(),
   "account_type": zod.enum(['individual', 'organization', 'business', 'sponsor']).default(registerUserBodyAccountTypeDefault).describe('Self-reported account type; business\/sponsor\/organization require admin review.'),
   "organization_name": zod.string().nullish().describe('Required when account_type is organization, business, or sponsor.'),
-  "organization_description": zod.string().nullish().describe('Optional mission\/description for organizations, businesses, and sponsors.')
+  "organization_description": zod.string().nullish().describe('Optional mission\/description for organizations, businesses, and sponsors.'),
+  "lat": zod.number().optional().describe('Optional fresh GPS latitude used to resolve the user\'s community at registration.'),
+  "lng": zod.number().optional().describe('Optional fresh GPS longitude used to resolve the user\'s community at registration.')
 })
 
 export const registerUserResponseNoShowCountDefault = 0;

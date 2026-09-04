@@ -32,4 +32,8 @@ export interface UserRegistration {
      * @nullable
      */
   organization_description?: string | null;
+  /** Optional fresh GPS latitude used to resolve the user's community at registration. */
+  lat?: number;
+  /** Optional fresh GPS longitude used to resolve the user's community at registration. */
+  lng?: number;
 }
