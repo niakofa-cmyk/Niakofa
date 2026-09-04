@@ -28,7 +28,10 @@ import { signTokenById } from "../middlewares/auth";
 import { authLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
-import { getDefaultCommunityId } from "../lib/community-pool";
+import {
+  getDefaultCommunityId,
+  resolveCommunityFromFreshLocation,
+} from "../lib/community-pool";
 
 const router = Router();
 
@@ -43,7 +46,11 @@ function getOAuthClient(): OAuth2Client {
 }
 
 router.post("/auth/google", authLimiter, async (req: Request, res: Response) => {
-  const { id_token } = req.body as { id_token?: string };
+  const { id_token, lat, lng } = req.body as {
+    id_token?: string;
+    lat?: unknown;
+    lng?: unknown;
+  };
 
   if (!id_token) {
     return res.status(400).json({ error: "id_token is required" });
@@ -159,9 +166,20 @@ router.post("/auth/google", authLimiter, async (req: Request, res: Response) => 
       // We catch that violation and re-fetch the row that won the race,
       // returning a successful login rather than a 500.
       try {
-        // Same default-community assignment as email/password registration
-        // (users.ts) — must never block account creation on failure.
-        const community_id = await getDefaultCommunityId().catch(() => null);
+        // Prefer a fresh client location when available; an unmatched
+        // location fails closed to the NULL/global bucket instead of
+        // inheriting the admin's default community.
+        const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
+        const freshLat = typeof lat === "number" && Number.isFinite(lat) ? lat : null;
+        const freshLng = typeof lng === "number" && Number.isFinite(lng) ? lng : null;
+        const community_id =
+          freshLat != null && freshLng != null
+            ? await resolveCommunityFromFreshLocation({
+                currentCommunityId: defaultCommunityId,
+                lat: freshLat,
+                lng: freshLng,
+              })
+            : defaultCommunityId;
 
         const [created_user] = await db
           .insert(usersTable)

@@ -1,8 +1,8 @@
-# Niakofa — Community Help Platform
+# Niakofa — The Global Village
 
 ## Project Overview
 
-Map-first, pay-it-forward community mutual aid platform for Tarrant County, TX. Residents request help with groceries, rides, errands, etc; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map.
+Map-first, pay-it-forward mutual-aid platform built around "The Global Village" — every neighborhood connected as one community, one city at a time. Residents request help with groceries, rides, errands, etc; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map. First live community: Tarrant County, TX. See `docs/GLOBAL_VILLAGE_REBRAND.md` for what's rebranded vs. what's still Fort Worth-specific under the hood (civic resource seed data, legal jurisdiction in the waiver, GPS fallback default).
 
 **Current phase:** Phase 27 complete — SankofaBird “Living Feathers & Natural Light” (77 DB migrations applied, 446 frontend tests passing, 182 API tests passing).
 

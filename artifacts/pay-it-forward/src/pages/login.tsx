@@ -354,7 +354,7 @@ function LoginGhostMoon() {
 export default function LoginScreen() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { setCurrentUser, niaEnabled } = useAppContext();
+  const { setCurrentUser, niaEnabled, myLocation } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
   // Reset ToS acceptance when switching between login and register modes so
   // a user can't accidentally carry over a stale checkbox state.
@@ -489,6 +489,8 @@ export default function LoginScreen() {
             account_type: accountType,
             organization_name: organizationName.trim() || undefined,
             organization_description: organizationDescription.trim() || undefined,
+            lat: myLocation?.lat,
+            lng: myLocation?.lng,
           }),
         });
         const data = await res.json().catch(() => ({})) as ApiAuthResponse;
@@ -707,7 +709,11 @@ export default function LoginScreen() {
       const res = await fetch("/api/auth/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_token: credential }),
+        body: JSON.stringify({
+          id_token: credential,
+          lat: myLocation?.lat,
+          lng: myLocation?.lng,
+        }),
       });
       const data = await res.json().catch(() => ({})) as {
         user?: AppUser;

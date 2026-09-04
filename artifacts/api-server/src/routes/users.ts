@@ -24,7 +24,11 @@ import { requireOwnership, requireAdmin, resolveMeParam } from "../middlewares/a
 import { signTokenById } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
-import { getDefaultCommunityId } from "../lib/community-pool";
+import {
+  getDefaultCommunityId,
+  isUnresolvedCommunityAssignment,
+  resolveCommunityFromFreshLocation,
+} from "../lib/community-pool";
 import { isValidSpiritAnimal } from "../lib/spirit-animal";
 
 // Constant-time string comparison to prevent timing-based enumeration of
@@ -180,6 +184,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
     account_type: rawAccountType,
     organization_name,
     organization_description,
+    lat,
+    lng,
   } = parsed.data;
 
   // "business" and "sponsor" are valid self-reported account types the
@@ -231,7 +237,18 @@ router.post("/users/register", authLimiter, async (req, res) => {
   // never actually differentiated anything. A lookup failure here must never
   // block registration — fall back to null (legacy global bucket) exactly
   // like before this change.
-  const community_id = await getDefaultCommunityId().catch(() => null);
+  const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
+  // A fresh location is authoritative for initial community assignment. If
+  // it does not match a configured community, keep the user in the NULL/global
+  // bucket rather than silently assigning the admin's default community.
+  const community_id =
+    lat != null && lng != null
+      ? await resolveCommunityFromFreshLocation({
+          currentCommunityId: defaultCommunityId,
+          lat,
+          lng,
+        })
+      : defaultCommunityId;
 
   const [user] = await db.insert(usersTable).values({
     name, email: normalizedEmail,
@@ -620,11 +637,32 @@ router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnershi
   const bParsed = UpdateUserLocationBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { lat, lng, heading, speed } = bParsed.data;
-  const [user] = await db.update(usersTable)
+  let [user] = await db.update(usersTable)
     .set({ lat, lng, heading: heading ?? null, speed: speed ?? null })
     .where(eq(usersTable.id, pParsed.data.id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
+
+  // Re-resolve users who still carry the untouched registration default (or
+  // no community at all). This lets requesters, not only helpers at claim
+  // time, move into the correct pool after a later GPS fix. An unmatched
+  // location intentionally clears the default assignment to the NULL/global
+  // bucket.
+  const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
+  if (
+    isUnresolvedCommunityAssignment(user.community_id ?? null, defaultCommunityId)
+  ) {
+    const resolvedCommunityId = await resolveCommunityFromFreshLocation({
+      currentCommunityId: user.community_id ?? null,
+      lat,
+      lng,
+    });
+    [user] = await db.update(usersTable)
+      .set({ community_id: resolvedCommunityId, updated_at: new Date() })
+      .where(eq(usersTable.id, user.id))
+      .returning();
+  }
+
   if (user.helper_mode_active) {
     broadcast({
       type: "helper_location",

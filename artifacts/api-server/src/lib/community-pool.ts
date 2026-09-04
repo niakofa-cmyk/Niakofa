@@ -174,6 +174,25 @@ export type ClaimScopeDecision =
   | { ok: false; reason: "community_unresolved" };
 
 /**
+ * Shared "does this community_id actually mean anything" check.
+ *
+ * A user whose community_id is NULL, or whose community_id is merely the
+ * untouched system default, has never had their real location resolved.
+ * Both claim-time scoping and the location-driven resolvers below need this
+ * exact definition of "unresolved" so a Fort Worth default doesn't quietly
+ * masquerade as a Kansas City user's real community.
+ */
+export function isUnresolvedCommunityAssignment(
+  communityId: number | null,
+  defaultCommunityId: number | null,
+): boolean {
+  return (
+    communityId == null ||
+    (defaultCommunityId != null && communityId === defaultCommunityId)
+  );
+}
+
+/**
  * Decide whether a helper claiming a request has a resolvable Community
  * Pool scope, and auto-resolve it from their own coordinates when possible.
  *
@@ -196,11 +215,9 @@ export async function resolveHelperClaimScope(params: {
   if (requestHubId != null) return { ok: true };
 
   const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
-  const looksUnresolved =
-    claimerCommunityId == null ||
-    (defaultCommunityId != null && claimerCommunityId === defaultCommunityId);
-
-  if (!looksUnresolved) return { ok: true };
+  if (!isUnresolvedCommunityAssignment(claimerCommunityId, defaultCommunityId)) {
+    return { ok: true };
+  }
 
   const resolved =
     claimerLat != null && claimerLng != null
@@ -210,6 +227,43 @@ export async function resolveHelperClaimScope(params: {
   if (resolved != null) return { ok: true, resolvedCommunityId: resolved };
 
   return { ok: false, reason: "community_unresolved" };
+}
+
+/**
+ * Cheap, idempotent community resolver for a fresh (lat, lng) fix.
+ *
+ * Registration and every subsequent GPS ping (PATCH /users/:id/location) can
+ * call this with the user's current community_id: it only ever calls Mapbox
+ * when that community_id still looks unresolved (see
+ * isUnresolvedCommunityAssignment above), so it's safe to call opportunistically
+ * on every location update without hammering the geocoder for users who are
+ * already correctly scoped.
+ *
+ * Fails closed to the NULL/global bucket -- never to the admin default -- when
+ * no community row matches the resolved county/state. This is the specific
+ * guarantee that keeps a Kansas City signup out of Fort Worth's pool by
+ * default: if there's no configured Kansas City community yet, the user sits
+ * in the unscoped global bucket rather than silently inheriting whichever
+ * community an admin happened to configure as default.
+ *
+ * Returns null when no re-resolution was needed or possible, so callers can
+ * distinguish "nothing to do" from "resolved to community X" without a
+ * separate lookup.
+ */
+export async function resolveCommunityFromFreshLocation(params: {
+  currentCommunityId: number | null;
+  lat: number | null;
+  lng: number | null;
+}): Promise<number | null> {
+  const { currentCommunityId, lat, lng } = params;
+  if (lat == null || lng == null) return null;
+
+  const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
+  if (!isUnresolvedCommunityAssignment(currentCommunityId, defaultCommunityId)) {
+    return null;
+  }
+
+  return resolveCommunityIdForCoords(lat, lng).catch(() => null);
 }
 
 /**

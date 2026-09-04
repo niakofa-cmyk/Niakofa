@@ -1742,7 +1742,7 @@ export default function CommunityScreen() {
                 {sponsorHistory.loading && <RefreshCw className="w-3 h-3 text-yellow-400/60 animate-spin" />}
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Businesses and individuals can sponsor the community pool directly. Your contributions go directly to helpers serving Fort Worth neighbors.
+                Businesses and individuals can sponsor the community pool directly. Your contributions go directly to helpers serving your Global Village neighbors — right now, that's Fort Worth.
                 Use the <span className="font-bold text-foreground">Fund the Community Pool</span> panel above to contribute — your history shows up below.
               </p>
 

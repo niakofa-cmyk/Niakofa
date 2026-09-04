@@ -1,8 +1,10 @@
-# Niakofa — Community Help Platform
+# Niakofa — The Global Village
 
-A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX. Residents can request help with groceries, rides, errands, and more; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map. Includes Nia AI (Claude-powered cultural assistant), Family Vault (family-history preservation), and live Circles for community conversation.
+A map-first, pay-it-forward mutual-aid platform for **The Global Village** — the idea that every neighborhood is part of one connected human community. Residents can request help with groceries, rides, errands, and more; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map that starts local and scales to any city. Includes Nia AI (Claude-powered cultural assistant), Family Vault (family-history preservation), and live Circles for community conversation.
 
-> **Mission:** Help Today. Pay It Forward Tomorrow. Building community one act of kindness at a time in Fort Worth, TX.
+> **Mission:** Help Today. Pay It Forward Tomorrow. Building the Global Village one act of kindness at a time — starting in Fort Worth, TX, and built to grow anywhere.
+
+> **Note:** Niakofa currently operates its first community in Fort Worth / Tarrant County, TX. "The Global Village" is the platform's identity and long-term vision, not a claim of current worldwide coverage — city-specific data (civic resources, local partners, legal jurisdiction) still needs real work before onboarding additional cities. See `docs/GLOBAL_VILLAGE_REBRAND.md` for the full rollout plan.
 
 ---
 

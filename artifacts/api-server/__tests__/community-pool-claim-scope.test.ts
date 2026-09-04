@@ -12,20 +12,18 @@
  */
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 
-jest.unstable_mockModule("@workspace/db", () => {
-  const mockDb: Record<string, unknown> = {
-    select: jest.fn().mockReturnThis(),
-    update: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    set: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn(),
-    execute: jest.fn(),
-  };
-  (mockDb.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
-  (mockDb.execute as jest.Mock).mockImplementation(() => Promise.resolve({ rows: [] }));
+const mockDb: Record<string, jest.Mock> = {
+  select: jest.fn().mockReturnThis(),
+  update: jest.fn().mockReturnThis(),
+  from: jest.fn().mockReturnThis(),
+  where: jest.fn().mockReturnThis(),
+  set: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
+  limit: jest.fn().mockResolvedValue([]),
+  execute: jest.fn().mockResolvedValue({ rows: [] }),
+};
 
+jest.unstable_mockModule("@workspace/db", () => {
   return {
     db: mockDb,
     communitiesTable: { id: "id", county: "county", state: "state" },

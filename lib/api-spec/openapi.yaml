@@ -3262,6 +3262,12 @@ components:
         organization_description:
           type: ["string", "null"]
           description: Optional mission/description for organizations, businesses, and sponsors.
+        lat:
+          type: number
+          description: Optional fresh GPS latitude used to resolve the user's community at registration.
+        lng:
+          type: number
+          description: Optional fresh GPS longitude used to resolve the user's community at registration.
 
     LocationUpdate:
       type: object
