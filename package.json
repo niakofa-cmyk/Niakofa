@@ -18,6 +18,7 @@
     "release-smoke": "node scripts/src/release-smoke.mjs",
     "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js",
     "test:browser": "playwright test",
+    "test:user-a-state": "node --test ops/user-a-state.test.mjs",
     "test:diaspora-data-loop": "node --test scripts/diaspora-data-loop-contract.test.mjs",
     "test:diaspora-experience": "node --test scripts/diaspora-experience-contract.test.mjs",
     "test:dna-matching": "node --import tsx/esm --test scripts/dna-matching-contract.test.mjs",

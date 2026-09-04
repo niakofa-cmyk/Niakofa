@@ -40,6 +40,8 @@ node_modules
 /coverage
 /test-results/
 /playwright-report/
+/playwright/.auth/
+/test-results/
 /libpeerconnection.log
 npm-debug.log
 yarn-error.log
