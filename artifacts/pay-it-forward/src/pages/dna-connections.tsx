@@ -14,6 +14,7 @@ import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { diasporaTheme } from "@/lib/diaspora/theme";
+import { DnaProvenanceNotice } from "@/components/diaspora/DnaProvenanceNotice";
 import { buildDnaEvidencePayload } from "@/lib/diaspora/dnaEvidenceTemplate";
 import { relationshipBandCopy, DNA_ENGINE_DISCLAIMER } from "@/lib/diaspora/relationshipBandCopy";
 import { dnaImportReadiness } from "@/lib/diaspora/importReadiness";
@@ -233,6 +234,8 @@ export default function DnaConnectionsPage() {
             Niakofa compares compact derived DNA sketches only when everyone has opted in. The current engine produces a similarity signal; it does not calculate shared cM, IBD segments, paternity, ethnicity, legal identity, or a guaranteed relationship.
           </p>
         </section>
+
+        <DnaProvenanceNotice />
 
         {message && <div className="rounded-xl border border-teal-300/20 bg-teal-300/10 text-sm text-teal-100 px-4 py-3">{message}</div>}
 
