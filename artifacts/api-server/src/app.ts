@@ -66,6 +66,7 @@ app.use(
           "https://maps.googleapis.com",
           "https://oauth2.googleapis.com",
           "https://accounts.google.com",
+          "https://ipapi.co",
           process.env.NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app",
         ].filter(Boolean),
         frameSrc: [
