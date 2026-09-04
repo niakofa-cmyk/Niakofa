@@ -24,3 +24,17 @@ generate the SAME name twice — once as a Zod const in `api.ts` and once as a T
 `export type * from "./generated/types"` then collide with TS2308 "already exported a member".
 **Fix:** always define request/response bodies as named `components/schemas/*Input` and reference
 them via `$ref`, matching every other route in the spec — never inline a `type: object` body.
+
+## Generated registration types must be refreshed after contract changes
+When a route implementation starts reading a newly added OpenAPI field, run the
+contract codegen before typechecking. The source YAML alone is not enough:
+server and client generated registration types can otherwise remain stale and
+fail CI even though the route and schema look correct.
+
+**Why:** the registration endpoint is consumed through generated server and
+client contracts; changing only the contract source creates a compile-time
+split between runtime code and generated interfaces.
+
+**How to apply:** after every registration schema change, run the api-spec
+codegen command, inspect the generated diff, and include the generated files in
+the same commit as the route change.
