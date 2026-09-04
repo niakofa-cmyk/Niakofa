@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Router } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -166,7 +166,7 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
         eq(diasporaPreserveLinksTable.qr_digest, qrDigest),
         requestedMemoryId !== undefined
           ? eq(diasporaPreserveLinksTable.memory_id, requestedMemoryId)
-          : eq(diasporaPreserveLinksTable.memory_id, null),
+          : isNull(diasporaPreserveLinksTable.memory_id),
       ))
       .orderBy(desc(diasporaPreserveLinksTable.id))
       .limit(1);
