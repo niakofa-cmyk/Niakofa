@@ -18,7 +18,8 @@ test("Preserve scan context has durable browser handoff and recorder association
   const preserve = read("../artifacts/pay-it-forward/src/pages/preserve-culture.tsx");
   assert.match(link, /persistPreserveScanContext/);
   assert.match(link, /preserve\/links\//);
-  assert.match(link, /api\/family\\\/(\\d\+)\\\/memories/);
+  // Match the source-level route expression without over-escaping the slash characters.
+  assert.match(link, /api\\/family\\/\(\\d\+\)\\/memories/);
   assert.match(preserve, /data\.scan_id/);
   assert.match(preserve, /preserve_scan_id/);
 });
