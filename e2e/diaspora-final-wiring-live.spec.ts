@@ -17,7 +17,13 @@ const state = process.env.USER_A_STATE;
 const mutate = process.env.ALLOW_MUTATING_E2E === "1";
 
 async function authHeaders(page: Page): Promise<Record<string, string>> {
-  const token = await page.evaluate(() => localStorage.getItem("niakofa_token"));
+  // Read the fixture directly from the browser context. Calling page.evaluate
+  // before navigation runs in about:blank, where localStorage access is
+  // forbidden even when the context has a valid storageState.
+  const storageState = await page.context().storageState();
+  const token = storageState.origins
+    .flatMap((origin) => origin.localStorage)
+    .find((entry) => entry.name === "niakofa_token")?.value;
   expect(token).toBeTruthy();
   return { Authorization: `Bearer ${token}` };
 }
