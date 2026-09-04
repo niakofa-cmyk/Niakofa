@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const root = new URL("..", import.meta.url).pathname;
 const read = (file) => fs.readFileSync(new URL(file, import.meta.url), "utf8");
 
 test("Research page uses the six-type evidence selector and posts evidence_type", () => {
