@@ -63,10 +63,11 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
   try {
     const userId = req.authenticatedUserId!;
     const familyIds = await activeFamilyIds(userId);
+    const heritageCatalogCount = CULTURE_CARDS.length;
 
     if (familyIds.length === 0) {
       return res.json({
-        stats: { family_spaces: 0, vault_items: 0, oral_histories: 0, family_tree_people: 0, dna_connections: 0, heritage_collections: 9 },
+        stats: { family_spaces: 0, vault_items: 0, oral_histories: 0, family_tree_people: 0, dna_connections: 0, heritage_collections: heritageCatalogCount },
         recent_activity: [],
         stats_source: "aggregate",
       });
@@ -110,7 +111,7 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
         oral_histories: Number(interviewCount[0]?.count ?? 0),
         family_tree_people: Number(memberCount[0]?.count ?? 0),
         dna_connections: Number(dnaCount[0]?.count ?? 0),
-        heritage_collections: 9,
+        heritage_collections: heritageCatalogCount,
       },
       recent_activity: recentMemories.map((memory) => ({
         type: "memory",
