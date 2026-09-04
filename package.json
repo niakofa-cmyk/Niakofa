@@ -25,6 +25,8 @@
     "test:diaspora-triple-enhancement": "node --import tsx --test scripts/diaspora-triple-enhancement-contract.test.mjs",
     "test:diaspora-finalization": "node --import tsx --test scripts/diaspora-finalization-contract.test.mjs",
     "test:diaspora-experience-completion": "node --test scripts/diaspora-experience-completion-contract.test.mjs",
+    "test:diaspora-final-wiring": "node --test scripts/diaspora-final-wiring-contract.test.mjs",
+    "test:diaspora-final-wiring-live": "playwright test e2e/diaspora-final-wiring-live.spec.ts",
     "test:diaspora": "bash scripts/run-repo-diaspora-contracts.sh",
     "production-gate": "node scripts/production-gate.mjs"
   },
