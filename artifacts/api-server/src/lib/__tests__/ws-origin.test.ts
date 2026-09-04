@@ -14,6 +14,8 @@ describe("WebSocket origin policy", () => {
 
     expect(isWsOriginAllowed("https://preview.example.replit.dev", allowlist)).toBe(true);
     expect(isWsOriginAllowed("https://niakofa.example/", allowlist)).toBe(true);
+    expect(isWsOriginAllowed("http://127.0.0.1:18848", allowlist, true)).toBe(true);
+    expect(isWsOriginAllowed("http://localhost:4173", allowlist, true)).toBe(true);
     expect(isWsOriginAllowed("https://untrusted.example", allowlist)).toBe(false);
   });
 
@@ -26,6 +28,7 @@ describe("WebSocket origin policy", () => {
 
     expect(isWsOriginAllowed("https://niakofa.example", allowlist)).toBe(true);
     expect(isWsOriginAllowed("https://preview.example.replit.dev", allowlist)).toBe(false);
+    expect(isWsOriginAllowed("http://127.0.0.1:18848", allowlist, false)).toBe(false);
     expect(isWsOriginAllowed(undefined, allowlist)).toBe(false);
   });
 });

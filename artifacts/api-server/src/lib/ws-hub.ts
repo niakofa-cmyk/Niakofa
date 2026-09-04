@@ -570,7 +570,11 @@ export function initWebSocketServer(server: HttpServer): WebSocketServer {
     // ── Origin check (production only) ─────────────────────────────────────────
     if (WS_ORIGIN_ALLOWLIST) {
       const origin = req.headers["origin"];
-      if (!isWsOriginAllowed(Array.isArray(origin) ? origin[0] : origin, WS_ORIGIN_ALLOWLIST)) {
+      if (!isWsOriginAllowed(
+        Array.isArray(origin) ? origin[0] : origin,
+        WS_ORIGIN_ALLOWLIST,
+        process.env["NODE_ENV"] === "development",
+      )) {
         logger.warn({ ip, origin }, "WS: rejected — origin not in ALLOWED_ORIGIN");
         socket.close(1008, "Origin not allowed");
         return;

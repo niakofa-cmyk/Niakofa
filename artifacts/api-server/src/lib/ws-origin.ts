@@ -47,8 +47,21 @@ export function buildWsOriginAllowlist(config: WsOriginConfig = {}): Set<string>
   return origins;
 }
 
-export function isWsOriginAllowed(origin: string | undefined, allowlist: Set<string> | null): boolean {
+export function isWsOriginAllowed(
+  origin: string | undefined,
+  allowlist: Set<string> | null,
+  allowDevelopmentLoopback = false,
+): boolean {
   if (!allowlist) return true;
   if (!origin) return false;
-  return allowlist.has(normalizeOrigin(origin) ?? origin.replace(/\/$/, ""));
+  const normalized = normalizeOrigin(origin);
+  if (allowlist.has(normalized ?? origin.replace(/\/$/, ""))) return true;
+  if (!allowDevelopmentLoopback || !normalized) return false;
+
+  try {
+    const hostname = new URL(normalized).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
 }
