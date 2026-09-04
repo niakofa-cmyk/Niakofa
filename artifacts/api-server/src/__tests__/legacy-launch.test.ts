@@ -55,7 +55,10 @@ describe("Legacy authenticated launch bridge", () => {
       ticket: expect.any(String),
       expiresInSeconds: 60,
     });
-    expect(issue.body.ticket).not.toContain("17");
+    // The ticket is an opaque bearer credential. Validate its shape rather
+    // than asserting that a random token never happens to contain "17".
+    expect(issue.body.ticket).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    expect(issue.body.ticket).not.toBe("17");
 
     const exchange = await request(app)
       .get(`/api/legacy/launch-context?ticket=${encodeURIComponent(issue.body.ticket)}`);

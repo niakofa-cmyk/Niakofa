@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Router } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -132,6 +132,7 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
 
   const userId = req.authenticatedUserId!;
   const { qr_code: qrCode, family_id: requestedFamilyId, memory_id: requestedMemoryId } = parsed.data;
+  const qrDigest = createHash("sha256").update(qrCode).digest("hex");
   const card = CULTURE_CARDS.find((candidate) => qrCode.includes(candidate.id));
   const resolvedType = card ? "card" : "memory_link";
 
@@ -157,11 +158,47 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
       }
     }
 
+    const [existing] = await db
+      .select()
+      .from(diasporaPreserveLinksTable)
+      .where(and(
+        eq(diasporaPreserveLinksTable.user_id, userId),
+        eq(diasporaPreserveLinksTable.qr_digest, qrDigest),
+        requestedMemoryId !== undefined
+          ? eq(diasporaPreserveLinksTable.memory_id, requestedMemoryId)
+          : isNull(diasporaPreserveLinksTable.memory_id),
+      ))
+      .orderBy(desc(diasporaPreserveLinksTable.id))
+      .limit(1);
+
+    if (existing) {
+      if (card) {
+        return res.json({
+          type: "card",
+          card,
+          action: existing.memory_id !== null ? "linked_memory" : "record_story",
+          scan_id: existing.id,
+          persisted: existing.memory_id !== null,
+          idempotent: true,
+        });
+      }
+      return res.json({
+        type: "memory_link",
+        message: existing.memory_id !== null
+          ? "QR code linked to the selected Family Vault memory."
+          : "QR code recognized. Choose a Family Space and memory to preserve this story.",
+        action: existing.memory_id !== null ? "linked_memory" : "link_memory",
+        scan_id: existing.id,
+        persisted: existing.memory_id !== null,
+        idempotent: true,
+      });
+    }
+
     const [scan] = await db.insert(diasporaPreserveLinksTable).values({
       user_id: userId,
       family_id: familyId ?? null,
       memory_id: requestedMemoryId ?? null,
-      qr_digest: createHash("sha256").update(qrCode).digest("hex"),
+      qr_digest: qrDigest,
       card_id: card?.id ?? null,
       resolved_type: resolvedType,
       linked_at: requestedMemoryId !== undefined ? new Date() : null,
@@ -174,6 +211,7 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
         action: requestedMemoryId !== undefined ? "linked_memory" : "record_story",
         scan_id: scan.id,
         persisted: requestedMemoryId !== undefined,
+        idempotent: false,
       });
     }
 
@@ -185,6 +223,7 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
       action: requestedMemoryId !== undefined ? "linked_memory" : "link_memory",
       scan_id: scan.id,
       persisted: requestedMemoryId !== undefined,
+      idempotent: false,
     });
   } catch (err) {
     logger.error({ err, userId }, "diaspora preserve scan error");
