@@ -18,6 +18,7 @@ const router = Router();
 const CONSENT_VERSION = "dna-matching-v1";
 const FEATURE_ENABLED = process.env.DNA_MATCHING_ENABLED === "true";
 const MIN_SKETCH_MARKERS = 32;
+const MAX_MATCH_RESULTS = 50;
 
 function parseFamilyId(value: unknown): number | null {
   const id = Number(value);
@@ -74,8 +75,6 @@ function publicConsent(consent: Awaited<ReturnType<typeof getConsent>>) {
   };
 }
 
-// Status is available even while the experiment is disabled so the UI can
-// explain the boundary without asking users to consent to an unavailable path.
 router.get("/diaspora/dna/matching/status", requireAuth, generalApiLimiter, async (req, res) => {
   const familyId = parseFamilyId(req.query.family_id);
   if (!familyId) return res.status(400).json({ error: "A valid family_id is required." });
@@ -92,6 +91,7 @@ router.get("/diaspora/dna/matching/status", requireAuth, generalApiLimiter, asyn
     has_ready_profile: Boolean(profile && Array.isArray(profile.marker_sketch) && profile.marker_sketch.length >= MIN_SKETCH_MARKERS),
     matching_source: FEATURE_ENABLED ? "private_derived_sketch_v1" : null,
     retention_days: 90,
+    result_limit: MAX_MATCH_RESULTS,
   });
 });
 
@@ -124,20 +124,17 @@ router.post("/diaspora/dna/matching/consent", requireAuth, generalApiLimiter, as
     },
   }).returning();
 
-  // Revocation is immediate and removes previously computed relationship rows.
   if (!optedIn) {
-    await db.transaction(async (tx) => {
-      await tx.delete(dnaMatchResultsTable).where(or(
-        and(
-          eq(dnaMatchResultsTable.family_id, familyId),
-          eq(dnaMatchResultsTable.user_id, userId),
-        ),
-        and(
-          eq(dnaMatchResultsTable.matched_family_id, familyId),
-          eq(dnaMatchResultsTable.matched_user_id, userId),
-        ),
-      ));
-    });
+    await db.delete(dnaMatchResultsTable).where(or(
+      and(
+        eq(dnaMatchResultsTable.family_id, familyId),
+        eq(dnaMatchResultsTable.user_id, userId),
+      ),
+      and(
+        eq(dnaMatchResultsTable.matched_family_id, familyId),
+        eq(dnaMatchResultsTable.matched_user_id, userId),
+      ),
+    ));
   }
   logger.info({ userId, familyId, optedIn }, "dna_matching_consent_updated");
   return res.json({ consent: publicConsent(consent), matches: [] });
@@ -161,7 +158,6 @@ router.post("/diaspora/dna/matching/refresh", requireAuth, generalApiLimiter, as
 
   const cohort = await db.select({
     profile: familyDnaProfilesTable,
-    consent: dnaMatchingConsentTable,
   }).from(familyDnaProfilesTable)
     .innerJoin(dnaMatchingConsentTable, and(
       eq(dnaMatchingConsentTable.family_id, familyDnaProfilesTable.family_id),
@@ -185,33 +181,40 @@ router.post("/diaspora/dna/matching/refresh", requireAuth, generalApiLimiter, as
       { markerSketch: candidate.marker_sketch, markerCount: candidate.marker_count },
     );
     return estimate ? { candidate, estimate } : null;
-  }).filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }).filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .sort((a, b) => b.estimate.similarityScore - a.estimate.similarityScore)
+    .slice(0, MAX_MATCH_RESULTS);
 
-  await db.delete(dnaMatchResultsTable).where(and(
-    eq(dnaMatchResultsTable.family_id, familyId),
-    eq(dnaMatchResultsTable.user_id, userId),
-  ));
-  if (estimates.length > 0) {
-    const expiresAt = new Date(Math.min(
-      profile.retention_expires_at.getTime(),
-      ...estimates.map(({ candidate }) => candidate.retention_expires_at.getTime()),
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    await tx.delete(dnaMatchResultsTable).where(and(
+      eq(dnaMatchResultsTable.family_id, familyId),
+      eq(dnaMatchResultsTable.user_id, userId),
     ));
-    await db.insert(dnaMatchResultsTable).values(estimates.map(({ candidate, estimate }) => ({
-      family_id: familyId,
-      user_id: userId,
-      matched_family_id: candidate.family_id,
-      matched_user_id: candidate.user_id,
-      similarity_score: estimate.similarityScore,
-      shared_cm_est: null,
-      relationship_band: estimate.relationshipBand,
-      confidence: estimate.confidence,
-      source: estimate.source,
-      expires_at: expiresAt,
-    })));
-  }
-  await db.update(familyDnaProfilesTable)
-    .set({ match_count: estimates.length, updated_at: new Date() })
-    .where(eq(familyDnaProfilesTable.id, profile.id));
+
+    if (estimates.length > 0) {
+      const expiresAt = new Date(Math.min(
+        profile.retention_expires_at.getTime(),
+        ...estimates.map(({ candidate }) => candidate.retention_expires_at.getTime()),
+      ));
+      await tx.insert(dnaMatchResultsTable).values(estimates.map(({ candidate, estimate }) => ({
+        family_id: familyId,
+        user_id: userId,
+        matched_family_id: candidate.family_id,
+        matched_user_id: candidate.user_id,
+        similarity_score: estimate.similarityScore,
+        shared_cm_est: null,
+        relationship_band: estimate.relationshipBand,
+        confidence: estimate.confidence,
+        source: estimate.source,
+        expires_at: expiresAt,
+      })));
+    }
+
+    await tx.update(familyDnaProfilesTable)
+      .set({ match_count: estimates.length, updated_at: now })
+      .where(eq(familyDnaProfilesTable.id, profile.id));
+  });
 
   return res.json({
     matches: estimates.map(({ candidate, estimate }) => ({
@@ -222,7 +225,7 @@ router.post("/diaspora/dna/matching/refresh", requireAuth, generalApiLimiter, as
       similarity_score: estimate.similarityScore,
       source: estimate.source,
     })),
-    generated_at: new Date().toISOString(),
+    generated_at: now.toISOString(),
     caveat: "Similarity signals only; no shared-cM, relationship, legal, forensic, paternity, or ethnicity result is calculated.",
   });
 });
@@ -244,7 +247,8 @@ router.get("/diaspora/dna/matching/results", requireAuth, generalApiLimiter, asy
       eq(dnaMatchResultsTable.user_id, userId),
       gt(dnaMatchResultsTable.expires_at, new Date()),
     ))
-    .orderBy(desc(dnaMatchResultsTable.similarity_score));
+    .orderBy(desc(dnaMatchResultsTable.similarity_score))
+    .limit(MAX_MATCH_RESULTS);
   return res.json({
     enabled: true,
     matches: matches.map((match) => ({
