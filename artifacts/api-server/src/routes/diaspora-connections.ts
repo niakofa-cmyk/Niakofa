@@ -13,6 +13,7 @@ import { sanitizeConnectionsPayload } from "../lib/sanitize-dna-connections";
 
 const router = Router();
 const FEATURE_ENABLED = process.env.DNA_MATCHING_ENABLED === "true";
+const MAX_CONNECTIONS = 50;
 
 function parseId(value: unknown) {
   const parsed = Number(value);
@@ -68,54 +69,33 @@ router.get("/diaspora/dna/connections", requireAuth, generalApiLimiter, async (r
     });
   }
 
-  // Select only fields needed by the review UI. Never spread the database row
-  // into the API response: internal user/family identifiers and timestamps
-  // should not become an accidental public contract.
-  const results = await db
+  // Join the candidate identity in one query instead of issuing one database
+  // lookup per result. Only fields needed by the review UI are selected.
+  const candidates = await db
     .select({
       id: dnaMatchResultsTable.id,
-      matchedFamilyId: dnaMatchResultsTable.matched_family_id,
-      matchedUserId: dnaMatchResultsTable.matched_user_id,
-      similarityScore: dnaMatchResultsTable.similarity_score,
+      candidate_name: familyMembersTable.display_name,
+      candidate_family_name: familiesTable.name,
+      relation_note: familyMembersTable.relation_note,
+      similarity_score: dnaMatchResultsTable.similarity_score,
       confidence: dnaMatchResultsTable.confidence,
       source: dnaMatchResultsTable.source,
-      relationshipBand: dnaMatchResultsTable.relationship_band,
+      relationship_band: dnaMatchResultsTable.relationship_band,
     })
     .from(dnaMatchResultsTable)
+    .innerJoin(familyMembersTable, and(
+      eq(familyMembersTable.family_id, dnaMatchResultsTable.matched_family_id),
+      eq(familyMembersTable.user_id, dnaMatchResultsTable.matched_user_id),
+      eq(familyMembersTable.status, "active"),
+    ))
+    .innerJoin(familiesTable, eq(familiesTable.id, familyMembersTable.family_id))
     .where(and(
       eq(dnaMatchResultsTable.family_id, familyId),
       eq(dnaMatchResultsTable.user_id, userId),
       gt(dnaMatchResultsTable.expires_at, new Date()),
     ))
-    .orderBy(desc(dnaMatchResultsTable.similarity_score));
-
-  const candidates = await Promise.all(results.map(async (result) => {
-    const [member] = await db
-      .select({
-        displayName: familyMembersTable.display_name,
-        relationNote: familyMembersTable.relation_note,
-        familyName: familiesTable.name,
-      })
-      .from(familyMembersTable)
-      .innerJoin(familiesTable, eq(familiesTable.id, familyMembersTable.family_id))
-      .where(and(
-        eq(familyMembersTable.family_id, result.matchedFamilyId),
-        eq(familyMembersTable.user_id, result.matchedUserId),
-        eq(familyMembersTable.status, "active"),
-      ))
-      .limit(1);
-
-    return {
-      id: result.id,
-      candidate_name: member?.displayName ?? "Another opted-in member",
-      candidate_family_name: member?.familyName ?? "Another Family Space",
-      relation_note: member?.relationNote ?? null,
-      similarity_score: result.similarityScore,
-      confidence: result.confidence,
-      source: result.source,
-      relationship_band: result.relationshipBand,
-    };
-  }));
+    .orderBy(desc(dnaMatchResultsTable.similarity_score))
+    .limit(MAX_CONNECTIONS);
 
   return res.json(sanitizeConnectionsPayload({
     enabled: true,

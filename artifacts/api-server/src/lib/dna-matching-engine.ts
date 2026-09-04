@@ -6,11 +6,13 @@ export type DnaProfileForMatching = {
 export type DnaMatchEstimate = {
   similarityScore: number;
   relationshipBand: string;
-  confidence: "high" | "medium" | "low";
+  confidence: "low";
   source: "niakofa_derived_sketch_v1";
 };
 
 const SOURCE = "niakofa_derived_sketch_v1" as const;
+const MIN_SKETCH_MARKERS = 32;
+const MIN_SIMILARITY = 0.12;
 
 function validSketch(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
@@ -20,9 +22,12 @@ function validSketch(value: unknown): number[] {
 }
 
 /**
- * Compare only the compact derived marker sketches. This deliberately does
- * not manufacture results when an older profile has no sketch and does not
- * claim to calculate IBD segments, ethnicity, paternity, or legal identity.
+ * Compare only the compact derived marker sketches.
+ *
+ * The score is Jaccard similarity (intersection / union), which is symmetric
+ * and avoids the old min-set denominator inflating scores when one sketch is
+ * largely contained by another. It remains a discovery heuristic, not a
+ * genetic relationship calculation.
  */
 export function estimateDnaRelationship(
   left: DnaProfileForMatching,
@@ -30,25 +35,26 @@ export function estimateDnaRelationship(
 ): DnaMatchEstimate | null {
   const a = validSketch(left.markerSketch);
   const b = validSketch(right.markerSketch);
-  if (a.length < 32 || b.length < 32) return null;
+  if (a.length < MIN_SKETCH_MARKERS || b.length < MIN_SKETCH_MARKERS) return null;
+
   const bSet = new Set(b);
   const overlap = a.reduce((count, item) => count + (bSet.has(item) ? 1 : 0), 0);
-  const similarityScore = overlap / Math.min(a.length, b.length);
-  if (similarityScore < 0.18) return null;
+  const union = a.length + b.length - overlap;
+  if (union === 0) return null;
 
-  // These are intentionally broad product bands over a similarity heuristic,
-  // not the provider's shared-cM calculation.
-  const relationshipBand = similarityScore >= 0.82
+  const similarityScore = overlap / union;
+  if (similarityScore < MIN_SIMILARITY) return null;
+
+  const relationshipBand = similarityScore >= 0.70
     ? "Higher similarity signal"
-    : similarityScore >= 0.62
+    : similarityScore >= 0.40
       ? "Moderate similarity signal"
       : "Lower similarity signal";
-  const confidence = "low";
 
   return {
     similarityScore: Number(similarityScore.toFixed(4)),
     relationshipBand,
-    confidence,
+    confidence: "low",
     source: SOURCE,
   };
 }
