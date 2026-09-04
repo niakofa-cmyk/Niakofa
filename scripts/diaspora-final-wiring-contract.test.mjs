@@ -24,10 +24,13 @@ test("Preserve scan context has durable browser handoff and recorder association
   assert.match(preserve, /preserve_scan_id/);
 });
 
-test("Dashboard labels the nine-item value as a curated Heritage catalog", () => {
+test("Dashboard labels and derives the curated Heritage catalog metric", () => {
   const page = read("../artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx");
+  const api = read("../artifacts/api-server/src/routes/diaspora-completion.ts");
   assert.match(page, /Curated heritage catalog/);
   assert.match(page, /heritage_collections/);
+  assert.match(api, /const heritageCatalogCount = CULTURE_CARDS\.length/);
+  assert.match(api, /heritage_collections: heritageCatalogCount/);
 });
 
 test("Globe renders migration arcs from the great-circle geometry helper", () => {
