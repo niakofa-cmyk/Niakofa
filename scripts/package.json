@@ -14,7 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed-crisis": "tsx ./src/seed-regional-crisis.ts",
     "seed-businesses": "tsx ./src/seed-businesses.ts",
-    "seed-test-accounts": "tsx ./src/seed-test-accounts.ts"
+    "seed-test-accounts": "tsx ./src/seed-test-accounts.ts",
+    "test:seed-guard": "node --test ./src/seed-test-accounts.test.mjs"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",

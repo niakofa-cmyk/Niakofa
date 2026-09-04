@@ -28,6 +28,32 @@ and the **artifacts/pay-it-forward: web** workflow.
 
 ---
 
+## 🔎 RELEASE GATE VARIABLES — NOT APP RUNTIME SECRETS
+
+These values are required only when running the repository's production network
+gate (`pnpm run production-gate`). They must match the deployed origins exactly;
+they are not a replacement for `APP_URL` or `ALLOWED_ORIGIN`, and the gate does
+not create or update Railway variables automatically.
+
+| Variable | Purpose |
+|---|---|
+| `NIAKOFA_API_ORIGIN` | HTTPS origin of the deployed Niakofa API used by the gate |
+| `LEGACY_RPG_ORIGIN` | HTTPS origin of the separately deployed Legacy RPG used for CORS preflight validation |
+| `VITE_NIAKOFA_API_ORIGIN` | Build-time API origin for a separately hosted Legacy RPG; omit when Legacy is served same-origin |
+
+Run the gate only after setting all required values:
+
+```bash
+NIAKOFA_API_ORIGIN=https://<niakofa-api-origin> \
+LEGACY_RPG_ORIGIN=https://<legacy-rpg-origin> \
+pnpm run production-gate
+```
+
+Do not paste tokens or passwords into shell history or chat. Use the deployment
+provider's secret/variable manager for sensitive values.
+
+---
+
 ## 🟡 CONDITIONAL / OPTIONAL — Capabilities and Enhancements
 
 | Secret Name | Where to Get It | Used For |
@@ -92,8 +118,13 @@ an in-process scheduler. Development preview may use the explicit fallback.
 
 ## Verifying Configuration
 
-Once running, log in as admin (`admin@niakofa.app` / `NiakofaAdmin2026!`) and go to:
+Once running, use an explicitly seeded admin account and go to:
 **Admin panel → System tab → Global Ops section → Feature Verification**
+
+The manual test-account seeder requires `SEED_ADMIN_PASSWORD`,
+`SEED_HELPER_PASSWORD`, and `SEED_USER_PASSWORD` for any non-local database.
+It refuses to use the repository's local-only defaults against a public or
+non-local target.
 
 The Feature Verification grid shows which secrets are configured (✅ green) vs.
 missing (❌ red). The banner above the grid tells you exactly which critical

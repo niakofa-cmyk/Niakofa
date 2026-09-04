@@ -16,9 +16,9 @@
  * WHAT'S NEW IN THIS VERSION
  * ──────────────────────────────────────────────────────────────────────────
  * 1. Passwords are read from environment variables (SEED_ADMIN_PASSWORD,
- *    SEED_HELPER_PASSWORD, SEED_USER_PASSWORD), falling back to the
- *    original defaults only if unset. This means the real production
- *    passwords never have to live in a hardcoded string in a public repo.
+ *    SEED_HELPER_PASSWORD, SEED_USER_PASSWORD). Local/dev databases may use
+ *    the historical test defaults, but non-local databases fail closed unless
+ *    all three passwords are explicitly supplied.
  * 2. A production guard: if DATABASE_URL doesn't look like a local/dev
  *    database, the script refuses to run unless you pass
  *    `--i-know-this-is-production` on the command line. This is the one
@@ -85,23 +85,36 @@ if (!looksLocal && !hasProdFlag) {
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
 const db = drizzle(pool);
 
-// ── Passwords — env override, shared defaults as fallback ───────────────────
-// Defaults match the ones already documented for local/dev use. For any
-// real, publicly-reachable deployment, set these env vars to something only
-// you know — never rely on the fallback in that case.
-const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || "NiakofaAdmin2026!";
-const HELPER_PASSWORD = process.env.SEED_HELPER_PASSWORD || "NiakofaHelper2026!";
-const USER_PASSWORD = process.env.SEED_USER_PASSWORD || "NiakofaUser2026!";
+// ── Passwords ────────────────────────────────────────────────────────────────
+// Local/dev databases may use the historical test defaults. A non-local
+// database must never receive a known fallback password, even when the
+// operator remembered to pass the explicit production confirmation flag.
+const adminPasswordInput = process.env.SEED_ADMIN_PASSWORD?.trim();
+const helperPasswordInput = process.env.SEED_HELPER_PASSWORD?.trim();
+const userPasswordInput = process.env.SEED_USER_PASSWORD?.trim();
 
-if (!looksLocal && (ADMIN_PASSWORD === "NiakofaAdmin2026!")) {
-  console.warn(
-    "\n⚠  WARNING: You're seeding a non-local database using the DEFAULT admin\n" +
-    "   password. Anyone who has ever seen this script (git history, a chat\n" +
-    "   transcript, a shared zip) knows this password. Strongly consider\n" +
-    "   setting SEED_ADMIN_PASSWORD to something unique before continuing,\n" +
-    "   or plan to log in and change it immediately after this runs.\n"
-  );
+if (!looksLocal) {
+  const missingPasswords = [
+    ["SEED_ADMIN_PASSWORD", adminPasswordInput],
+    ["SEED_HELPER_PASSWORD", helperPasswordInput],
+    ["SEED_USER_PASSWORD", userPasswordInput],
+  ]
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+
+  if (missingPasswords.length > 0) {
+    console.error(
+      "\nERROR: non-local account seeding requires explicit passwords for every test account.\n" +
+        `Missing: ${missingPasswords.join(", ")}\n` +
+        "Set unique values in the environment and rerun with --i-know-this-is-production.\n",
+    );
+    process.exit(1);
+  }
 }
+
+const ADMIN_PASSWORD = adminPasswordInput || "NiakofaAdmin2026!";
+const HELPER_PASSWORD = helperPasswordInput || "NiakofaHelper2026!";
+const USER_PASSWORD = userPasswordInput || "NiakofaUser2026!";
 
 // ── Account definitions ───────────────────────────────────────────────────────
 // Each account has separate `insertFields` (first-time creation) and
@@ -308,9 +321,9 @@ async function main() {
   console.log("  ℹ  User account:   standard requester flow end-to-end.");
   if (!looksLocal) {
     console.log(
-      "\n  ⚠  This ran against a non-local database. If you used the default\n" +
-      "     admin password, log in now and change it from the profile/settings\n" +
-      "     page — don't leave a published password on a live admin account.\n"
+      "\n  ⚠  This ran against a non-local database. Treat these accounts as\n" +
+      "     disposable verification identities and remove or rotate them before\n" +
+      "     opening the deployment to real users.\n"
     );
   }
   console.log("");
