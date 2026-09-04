@@ -46,7 +46,7 @@ export function bindPreserveMemoryHandoff(): void {
         const memoryId = Number(payload.memory?.id);
         const familyId = Number(match[1]);
         if (Number.isInteger(memoryId) && memoryId > 0 && Number.isInteger(familyId) && familyId > 0) {
-          const token = (() => { try { return window.localStorage.getItem("token"); } catch { return null; } })();
+          const token = (() => { try { return window.localStorage.getItem("niakofa_token"); } catch { return null; } })();
           const linkResponse = await originalFetch(`/api/diaspora/preserve/links/${scanId}`, {
             method: "POST",
             headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -56,8 +56,7 @@ export function bindPreserveMemoryHandoff(): void {
         }
       }
     } catch {
-      // Preservation association is best-effort here; the original memory
-      // response is never blocked or replaced because of the handoff bridge.
+      // The original memory response is never blocked or replaced by handoff errors.
     }
     return response;
   };
@@ -83,6 +82,4 @@ export function readPreserveScanIdFromSearch(search: string): string | null {
   return value && /^\d+$/.test(value) ? value : null;
 }
 
-// The Family Vault imports this module, so the bridge becomes active before
-// the recorder's first memory POST. It is deliberately narrow and one-shot.
 bindPreserveMemoryHandoff();
