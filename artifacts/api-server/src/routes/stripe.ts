@@ -13,6 +13,7 @@ import { getStripeSecretKey, getStripeWebhookSecret } from "../lib/stripe-config
 import { paymentLimiter } from "../middlewares/rate-limit";
 import { reversePoolContributionOnRefund } from "../lib/pool-contribution-refund";
 import { z } from "zod";
+import { executeHelperPayout } from "../lib/payout-service";
 
 const router = Router();
 
@@ -915,7 +916,10 @@ router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwner
 
   // Check if helper has a Connect account for direct transfer
   let transferData: { destination: string } | undefined;
-  if (helperId) {
+  // Immediate payments are platform charges and are paid out exactly once by
+  // executeHelperPayout after request completion. Only tips use a destination
+  // charge because they do not enter the completion payout flow.
+  if (helperId && paymentType === "tip") {
     const [acct] = await db
       .select()
       .from(stripeAccountsTable)
@@ -1187,45 +1191,15 @@ router.post("/stripe/payout", requireAuth, requireApproved, requireOwnership("he
     });
   }
 
-  // If a previous attempt already linked a transfer, return it instead of
-  // creating another payout. The Stripe idempotency key below is the second
-  // backstop for the lost-response/retry window.
-  const [existingPayout] = await db
-    .select({ stripe_transfer_id: paymentTransactionsTable.stripe_transfer_id })
-    .from(paymentTransactionsTable)
-    .where(and(
-      eq(paymentTransactionsTable.request_id, requestId),
-      eq(paymentTransactionsTable.state, "completed"),
-    ))
-    .limit(1);
-  if (existingPayout?.stripe_transfer_id) {
-    return res.json({
-      transferId: existingPayout.stripe_transfer_id,
-      amount: requestedCents / 100,
-      destination: acct.stripe_account_id,
-      alreadyCompleted: true,
-    });
-  }
-
-  // Create a transfer to the helper's connected account
-  const transfer = await stripe!.transfers.create(
-    {
-      amount: requestedCents,
-      currency: "usd",
-      destination: acct.stripe_account_id,
-      description: description ?? `Niakofa — ${request.title}`,
-      metadata: { helperId: helperId.toString(), requestId: String(requestId) },
-    },
-    { idempotencyKey: `payout-request-${requestId}-helper-${helperId}` },
-  );
-
-  // Update payment transaction state
-  if (requestId) {
-    await db
-      .update(paymentTransactionsTable)
-      .set({ stripe_transfer_id: transfer.id, state: "completed", updated_at: new Date() })
-      .where(eq(paymentTransactionsTable.request_id, requestId));
-  }
+  const transfer = await executeHelperPayout({
+    request_id: requestId,
+    helper_id: helperId,
+    requester_id: request.requester_id,
+    amount_cents: amountCents,
+    platform_fee_cents: platformFeeCents,
+    stripe_account_id: acct.stripe_account_id,
+    request_title: description ?? request.title,
+  }, 1, stripe!);
 
   return res.json({
     transferId: transfer.id,

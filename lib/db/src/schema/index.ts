@@ -39,6 +39,7 @@ export * from "./nia-toggle-audit";
 export * from "./system-settings";
 export * from "./push-subscriptions";
 export * from "./payment-states";
+export * from "./payout-operations";
 export * from "./families";
 export * from "./family-consent";
 export * from "./family-events";

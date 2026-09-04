@@ -8,25 +8,15 @@
  * On final failure: marks the paymentTransactions row as "failed" and alerts admin.
  */
 import { Worker, type Job } from "bullmq";
-import Stripe from "stripe";
-import { db, paymentTransactionsTable, transactionsTable } from "@workspace/db";
+import { db, payoutOperationsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
-import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
-import { getStripeSecretKey } from "../lib/stripe-config";
 import { trackWorker } from "../lib/worker-lifecycle";
+import { executeHelperPayout } from "../lib/payout-service";
 
-async function processPayout(job: Job<PayoutJobData>): Promise<void> {
-  const {
-    request_id, helper_id, requester_id,
-    amount_cents, platform_fee_cents, stripe_account_id,
-    request_title,
-  } = job.data;
-
-  const stripeKey = getStripeSecretKey();
-  if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not configured");
-
-  const stripe = new Stripe(stripeKey);
+export async function processPayout(job: Job<PayoutJobData>): Promise<void> {
+  const { request_id, helper_id, amount_cents, platform_fee_cents } = job.data;
   const payoutCents = amount_cents - platform_fee_cents;
 
   logger.info(
@@ -34,53 +24,7 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     "payout-worker: processing"
   );
 
-  const transfer = await stripe.transfers.create({
-    amount: payoutCents,
-    currency: "usd",
-    destination: stripe_account_id,
-    description: `Niakofa — Pay It Forward: ${request_title}`,
-    metadata: {
-      request_id:          String(request_id),
-      helper_id:           String(helper_id),
-      platform_fee_cents:  String(platform_fee_cents),
-      retried:             "true",
-      attempt:             String(job.attemptsMade + 1),
-    },
-  }, {
-    idempotencyKey: `payout-${request_id}-${helper_id}`,
-  });
-
-  // Record in payment ledger
-  await db.insert(paymentTransactionsTable).values({
-    request_id,
-    helper_id,
-    requester_id,
-    amount: payoutCents / 100,
-    state: "completed",
-    payment_type: "immediate",
-    stripe_transfer_id: transfer.id,
-    notes: `Retry payout (attempt ${job.attemptsMade + 1}). Platform fee: $${(platform_fee_cents / 100).toFixed(2)}`,
-  });
-
-  // Record in helper's earnings history
-  await db.insert(transactionsTable).values({
-    user_id: helper_id,
-    request_id,
-    type: "payout_sent",
-    amount: payoutCents / 100,
-    description: `[Retry] ${request_title}`,
-  });
-
-  broadcast({
-    type: "payout_sent",
-    payload: {
-      request_id,
-      helper_id,
-      amount: payoutCents / 100,
-      transfer_id: transfer.id,
-      retried: true,
-    },
-  });
+  const transfer = await executeHelperPayout(job.data, job.attemptsMade + 1);
 
   logger.info({ request_id, transfer_id: transfer.id }, "payout-worker: succeeded");
 }
@@ -93,16 +37,18 @@ async function handlePayoutFailure(job: Job<PayoutJobData>, err: Error): Promise
       "payout-worker: all retries exhausted — manual intervention required"
     );
 
-    // Mark a failed paymentTransactions row so the admin dashboard can surface it
-    await db.insert(paymentTransactionsTable).values({
-      request_id:   job.data.request_id,
-      helper_id:    job.data.helper_id,
-      requester_id: job.data.requester_id,
-      amount:       job.data.amount_cents / 100,
-      state:        "failed",
-      payment_type: "immediate",
-      notes:        `Payout failed after ${job.attemptsMade + 1} attempts: ${err.message}`,
-    }).onConflictDoNothing();
+    await db
+      .update(payoutOperationsTable)
+      .set({
+        state: "failed",
+        last_attempt: job.attemptsMade + 1,
+        notes: `Payout failed after ${job.attemptsMade + 1} attempts: ${err.message}`,
+        updated_at: new Date(),
+      })
+      .where(eq(
+        payoutOperationsTable.operation_key,
+        `payout-${job.data.request_id}-${job.data.helper_id}`,
+      ));
   }
 }
 

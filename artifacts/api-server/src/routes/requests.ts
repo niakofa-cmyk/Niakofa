@@ -1520,7 +1520,6 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
       } else if (stripeAcct.stripe_account_id) {
         const amountCents = Math.round(request.pay_it_forward_amount * 100);
         const platformFeeCents = Math.round(amountCents * 0.05); // 5% platform fee
-        const payoutCents = amountCents - platformFeeCents;
 
         logger.info({ 
           helper_id: helperId, 
@@ -1529,44 +1528,29 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
           platform_fee_usd: (platformFeeCents / 100).toFixed(2)
         }, "Processing Stripe transfer");
 
-        const transfer = await _stripe.transfers.create(
-          {
-            amount: payoutCents,
-            currency: "usd",
-            destination: stripeAcct.stripe_account_id,
-            metadata: {
-              request_id: String(request.id),
-              helper_id: String(helperId),
-              platform_fee_cents: String(platformFeeCents),
-            },
-          },
-          { idempotencyKey: `payout-${request.id}-${helperId}` }
-        );
-
-        // Record the completed payout
-        await db.insert(paymentTransactionsTable).values({
+        const { executeHelperPayout } = await import("../lib/payout-service");
+        const transfer = await executeHelperPayout({
           request_id: request.id,
           helper_id: helperId,
           requester_id: request.requester_id,
-          amount: request.pay_it_forward_amount,
-          state: "completed",
-          payment_type: "immediate",
-          stripe_transfer_id: transfer.id,
-          notes: `Auto-payout on completion. Platform fee: $${(platformFeeCents / 100).toFixed(2)}`,
-        });
+          amount_cents: amountCents,
+          platform_fee_cents: platformFeeCents,
+          stripe_account_id: stripeAcct.stripe_account_id,
+          request_title: request.title,
+        }, 1, _stripe);
 
         logger.info({ 
           helper_id: helperId, 
           request_id: request.id,
           transfer_id: transfer.id,
-          amount_transferred: (payoutCents / 100).toFixed(2)
+          amount_transferred: ((amountCents - platformFeeCents) / 100).toFixed(2)
         }, "Stripe transfer completed successfully");
 
         broadcast({
           type: "payout_sent",
           payload: {
             helper_id: helperId,
-            amount: payoutCents / 100,
+            amount: (amountCents - platformFeeCents) / 100,
             transfer_id: transfer.id,
           },
         });

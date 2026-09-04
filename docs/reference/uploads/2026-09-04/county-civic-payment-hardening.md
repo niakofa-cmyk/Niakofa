@@ -10,6 +10,8 @@ The original continuation and payment-review notes remain in `attached_assets/`:
 
 - `Pasted-Continue-to-build-the-Niakofa-app-and-use-the-documents_1788558806944.txt`
 - `Pasted-I-ll-keep-the-secrets-in-place-as-requested-but-I-need-_1788558545327.txt`
+- `Pasted-Where-do-I-get-the-USER-A-STATE-JSON-USER-A-STATE-is-no_1788564529028.txt`
+- `Pasted-Last-login-Thu-Sep-3-08-11-56-on-ttys000-treazurenewhou_1788564557208.txt`
 
 Existing uploaded Legacy images, ZIP archives, and their manifests remain in
 `attached_assets/`, `docs/reference/`, `docs/references/`, and `reference/`.
@@ -29,6 +31,10 @@ runtime without the existing provenance and licensing review.
   jurisdiction and indexed for location lookup.
 - Existing Stripe settlement, refund, payout, cashout, and idempotency behavior
   remains the financial source of truth.
+- BullMQ payout retries use the same Stripe idempotency key and atomically
+  repair both the payment ledger and helper History after an API restart.
+- Deployed mutation acceptance refuses unknown commits, missing storage state,
+  and accounts that have not been explicitly confirmed as disposable.
 
 ## Verification recorded for this checkpoint
 
@@ -45,3 +51,43 @@ runtime without the existing provenance and licensing review.
   charges, signed webhook delivery, refunds, transfers, and cashout evidence.
 - Production Redis/BullMQ and Railway provider health remain separate
   environment/operator gates; code verification does not certify them.
+
+## Safe certification commands
+
+Generate storage state without displaying or committing it:
+
+```bash
+BASE_URL=https://deployment.example \
+DISPOSABLE_EMAIL=... DISPOSABLE_PASSWORD=... \
+CONFIRM_DISPOSABLE_ACCOUNT=1 \
+OUT="$PWD/playwright/.auth/user-a.json" \
+node ops/generate-user-a-state.mjs
+```
+
+Run the deployed authenticated suite:
+
+```bash
+BASE_URL=https://deployment.example \
+USER_A_STATE="$PWD/playwright/.auth/user-a.json" \
+EXPECTED_COMMIT=<deployed-commit> \
+ALLOW_MUTATING_E2E=1 CONFIRM_DISPOSABLE_ACCOUNT=1 \
+bash ops/run-deployed-acceptance.sh
+```
+
+Run Stripe provider certification only with test-mode credentials:
+
+```bash
+STRIPE_TEST_SECRET_KEY=... STRIPE_TEST_WEBHOOK_SECRET=... \
+BASE_URL=https://deployment.example \
+EXPECTED_COMMIT=<deployed-commit> \
+ALLOW_STRIPE_TEST_MUTATIONS=1 \
+node ops/certify-stripe-test-mode.mjs
+```
+
+Production `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are intentionally
+ignored by this script. The September 4 safety run confirmed the configured
+production key is live mode, and therefore correctly performed no mutation.
+
+The raw terminal transcripts remain reference-only because they contain local
+machine paths and operational context. Credential-bearing storage-state JSON
+must never be copied into this manifest or committed.

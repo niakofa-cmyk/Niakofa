@@ -3,7 +3,8 @@
  *
  * This suite intentionally performs real authenticated API writes against the
  * configured deployment. Run only with a disposable/approved Family Space:
- *   BASE_URL=https://... USER_A_STATE=... ALLOW_MUTATING_E2E=1 \
+ *   BASE_URL=https://... USER_A_STATE=... EXPECTED_COMMIT=... \
+ *   ALLOW_MUTATING_E2E=1 CONFIRM_DISPOSABLE_ACCOUNT=1 \
  *   npx playwright test e2e/diaspora-final-wiring-live.spec.ts
  *
  * It leaves Research evidence behind (there is currently no evidence-delete
@@ -14,7 +15,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 const base = process.env.BASE_URL || "http://127.0.0.1:5000";
 const state = process.env.USER_A_STATE;
-const mutate = process.env.ALLOW_MUTATING_E2E === "1";
+const mutate =
+  process.env.ALLOW_MUTATING_E2E === "1" &&
+  process.env.CONFIRM_DISPOSABLE_ACCOUNT === "1";
 
 async function authHeaders(page: Page): Promise<Record<string, string>> {
   // Read the fixture directly from the browser context. Calling page.evaluate
@@ -29,7 +32,7 @@ async function authHeaders(page: Page): Promise<Record<string, string>> {
 }
 
 test.describe("Diaspora final wiring — live authenticated integration", () => {
-  test.skip(!state || !mutate, "Set USER_A_STATE and ALLOW_MUTATING_E2E=1 for real DB writes.");
+  test.skip(!state || !mutate, "Requires an explicitly confirmed disposable authenticated account.");
   test.use({ storageState: state });
 
   test("Research evidence creation persists the selected type", async ({ page }) => {

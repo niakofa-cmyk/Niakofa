@@ -7,6 +7,7 @@ const baseUrl = process.env.BASE_URL;
 const email = process.env.DISPOSABLE_EMAIL;
 const password = process.env.DISPOSABLE_PASSWORD;
 const outputPath = process.env.OUT;
+const disposableConfirmed = process.env.CONFIRM_DISPOSABLE_ACCOUNT === "1";
 
 function fail(message) {
   console.error(`USER_A_STATE generation failed: ${message}`);
@@ -15,6 +16,9 @@ function fail(message) {
 
 if (!baseUrl || !email || !password || !outputPath) {
   fail("BASE_URL, DISPOSABLE_EMAIL, DISPOSABLE_PASSWORD, and OUT are required.");
+}
+if (!disposableConfirmed) {
+  fail("set CONFIRM_DISPOSABLE_ACCOUNT=1 only when these credentials belong to an approved disposable account.");
 }
 
 let base;

@@ -30,6 +30,7 @@ const stripePaymentIntentRetrieve = jest.fn();
 const stripeBalanceTransactionRetrieve = jest.fn();
 const stripeAccountsRetrieve = jest.fn();
 const stripeTransferCreate = jest.fn();
+const executeHelperPayout = jest.fn();
 const recordPoolContribution = jest.fn();
 const recordPoolContributionSettlement = jest.fn();
 const reversePoolContributionOnRefund = jest.fn();
@@ -134,6 +135,10 @@ jest.unstable_mockModule("../lib/logger", () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
+jest.unstable_mockModule("../lib/payout-service", () => ({
+  executeHelperPayout,
+}));
+
 let app: express.Express;
 let requireApproved: jest.Mock;
 let canRecordPoolContributionWithoutStripe: (nodeEnv?: string) => boolean;
@@ -217,6 +222,11 @@ beforeEach(() => {
         available_on: 1_756_000_000,
       });
   stripeAccountsRetrieve.mockResolvedValue({ id: "acct_test" });
+  executeHelperPayout.mockResolvedValue({
+    id: "tr_once",
+    amount: 950,
+    destination: "acct_helper",
+  });
 });
 
 describe("POST /api/stripe/payment-intent", () => {
@@ -242,10 +252,32 @@ describe("POST /api/stripe/payment-intent", () => {
     expect(db.select).not.toHaveBeenCalled();
     expect(stripePaymentIntentCreate).not.toHaveBeenCalled();
   });
+
+  it("keeps immediate payments on the platform for one completion payout", async () => {
+    db.limit.mockResolvedValueOnce([{
+      id: 1,
+      helper_id: 7,
+      requester_id: 42,
+      payment_type: "immediate",
+      pay_it_forward_amount: 10,
+      status: "open",
+    }]);
+    db.returning.mockResolvedValueOnce([{ id: 99 }]);
+
+    const response = await request(app)
+      .post("/api/stripe/payment-intent")
+      .send({ requestId: 1, helperId: 7, amount: 10, paymentType: "immediate" });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ transfer_data: expect.anything() }),
+      expect.anything(),
+    );
+  });
 });
 
 describe("POST /api/stripe/payout", () => {
-  it("uses one durable Stripe idempotency key and returns an existing transfer on retry", async () => {
+  it("delegates every payout attempt to the durable payout protocol", async () => {
     const requestRow = {
       id: 1,
       helper_id: 7,
@@ -262,15 +294,8 @@ describe("POST /api/stripe/payout", () => {
     db.limit
       .mockResolvedValueOnce([requestRow])
       .mockResolvedValueOnce([accountRow])
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([accountRow])
-      .mockResolvedValueOnce([{ stripe_transfer_id: "tr_once" }]);
-    stripeTransferCreate.mockResolvedValueOnce({
-      id: "tr_once",
-      amount: 950,
-      destination: "acct_helper",
-    });
+      .mockResolvedValueOnce([accountRow]);
 
     const first = await request(app)
       .post("/api/stripe/payout")
@@ -281,11 +306,17 @@ describe("POST /api/stripe/payout", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(second.body.alreadyCompleted).toBe(true);
-    expect(stripeTransferCreate).toHaveBeenCalledTimes(1);
-    expect(stripeTransferCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 950, destination: "acct_helper" }),
-      { idempotencyKey: "payout-request-1-helper-7" },
+    expect(executeHelperPayout).toHaveBeenCalledTimes(2);
+    expect(executeHelperPayout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request_id: 1,
+        helper_id: 7,
+        amount_cents: 1000,
+        platform_fee_cents: 50,
+        stripe_account_id: "acct_helper",
+      }),
+      1,
+      expect.anything(),
     );
   });
 });

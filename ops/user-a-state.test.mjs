@@ -57,6 +57,7 @@ test("generates a verified approved storage state without leaking the password",
       DISPOSABLE_EMAIL: "approved@example.test",
       DISPOSABLE_PASSWORD: password,
       OUT: outputPath,
+      CONFIRM_DISPOSABLE_ACCOUNT: "1",
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /PASS: storage state written/);
@@ -84,6 +85,7 @@ test("refuses a pending account before writing storage state", async () => {
       DISPOSABLE_EMAIL: "pending@example.test",
       DISPOSABLE_PASSWORD: "not-persisted",
       OUT: outputPath,
+      CONFIRM_DISPOSABLE_ACCOUNT: "1",
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /not approved/);
