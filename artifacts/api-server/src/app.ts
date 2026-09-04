@@ -101,6 +101,11 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
 // ALLOWED_ORIGIN is a comma-separated list of allowed origins for production.
 // In development, the Vite dev server (localhost:3000) and Replit preview are
 // allowed. In production, only ALLOWED_ORIGIN is allowed.
+//
+// Keep this mounted on the API boundary. Browser module and stylesheet requests
+// can include an Origin header even when they are same-origin; applying the API
+// CORS validator to /assets makes a valid SPA deployment fail closed as a 500
+// when the public host is not also repeated in ALLOWED_ORIGIN.
 const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? "")
   .split(",")
   .map((s) => s.trim())
@@ -132,7 +137,7 @@ const corsOptions: cors.CorsOptions = {
   maxAge: 600,
 };
 
-app.use(cors(corsOptions));
+app.use("/api", cors(corsOptions));
 
 // ── Request logging ───────────────────────────────────────────────────────────
 app.use(pinoHttp({ logger }));
