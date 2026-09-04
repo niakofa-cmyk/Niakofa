@@ -29,6 +29,24 @@ test("Dashboard labels the nine-item value as a curated Heritage catalog", () =>
   assert.match(page, /heritage_collections/);
 });
 
+test("Globe renders migration arcs from the great-circle geometry helper", () => {
+  const page = read("../artifacts/pay-it-forward/src/pages/globe.tsx");
+  const geometry = read("../artifacts/pay-it-forward/src/lib/diaspora/greatCircle.ts");
+  assert.match(page, /greatCirclePath/);
+  assert.match(page, /projection=\"globe\"/);
+  assert.match(geometry, /greatCirclePath/);
+  assert.match(geometry, /Math\.acos/);
+});
+
+test("DNA Connections surfaces the explicit provenance boundary", () => {
+  const page = read("../artifacts/pay-it-forward/src/pages/dna-connections.tsx");
+  const notice = read("../artifacts/pay-it-forward/src/components/diaspora/DnaProvenanceNotice.tsx");
+  assert.match(page, /DnaProvenanceNotice/);
+  assert.match(notice, /derived-sketch similarity/);
+  assert.match(notice, /shared-cM/);
+  assert.match(notice, /IBD/);
+});
+
 test("Live E2E suite is explicitly gated for authenticated DB writes", () => {
   const spec = read("../e2e/diaspora-final-wiring-live.spec.ts");
   assert.match(spec, /ALLOW_MUTATING_E2E/);
