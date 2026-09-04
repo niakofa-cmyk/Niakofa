@@ -1,6 +1,15 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, Dna, FileSearch, Link2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Dna,
+  FileSearch,
+  Link2,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -8,20 +17,388 @@ import { diasporaTheme } from "@/lib/diaspora/theme";
 import { buildDnaEvidencePayload } from "@/lib/diaspora/dnaEvidenceTemplate";
 import { relationshipBandCopy, DNA_ENGINE_DISCLAIMER } from "@/lib/diaspora/relationshipBandCopy";
 import { dnaImportReadiness } from "@/lib/diaspora/importReadiness";
+import { dnaPrimaryCta } from "@/lib/diaspora/dnaPrimaryCta";
+import { DNA_PROVIDERS, contentTypeForDnaFile, type DnaProvider } from "@/lib/diaspora/dnaProviders";
 
 type Family = { id: number; name: string };
-type Candidate = { id: number; matched_family_id: number; matched_user_id: number; candidate_name: string; candidate_family_name: string; relation_note: string | null; similarity_score: number; confidence: string; source: string; relationship_band: string };
+type Candidate = {
+  id: number;
+  matched_family_id: number;
+  matched_user_id: number;
+  candidate_name: string;
+  candidate_family_name: string;
+  relation_note: string | null;
+  similarity_score: number;
+  confidence: string;
+  source: string;
+  relationship_band: string;
+};
 type Case = { id: number; title: string; research_question: string };
+
 export default function DnaConnectionsPage() {
-  const { currentUser } = useAppContext(); const [, navigate] = useLocation();
-  const [families, setFamilies] = useState<Family[]>([]); const [familyId, setFamilyId] = useState<number | null>(null); const [optedIn, setOptedIn] = useState(false); const [hasProfile, setHasProfile] = useState(false); const [enabled, setEnabled] = useState(false); const [candidates, setCandidates] = useState<Candidate[]>([]); const [cases, setCases] = useState<Case[]>([]); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
-  async function api(path: string, init?: RequestInit) { const r = await fetch(path, { ...init, headers: { ...authHeaders(), ...(init?.headers ?? {}) } }); const b = await r.json().catch(() => ({})); if (!r.ok) throw new Error(b.error ?? "Request failed"); return b; }
-  async function load(family: number) { const [status, connection, research] = await Promise.all([api(`/api/diaspora/dna/matching/status?family_id=${family}`), api(`/api/diaspora/dna/connections?family_id=${family}`), api(`/api/diaspora/research/cases?family_id=${family}`)]); setEnabled(Boolean(status.enabled)); setOptedIn(Boolean(status.consent?.opted_in)); setHasProfile(Boolean(status.has_ready_profile)); setCandidates(connection.candidates ?? []); setCases(research.cases ?? []); }
-  useEffect(() => { if (!currentUser) return; (async () => { try { const d = await api("/api/family/mine"); const fs = (d.families ?? []).map((f: Family) => ({ id: f.id, name: f.name })); setFamilies(fs); if (fs[0]) { setFamilyId(fs[0].id); await load(fs[0].id); } } catch (e) { setMessage(e instanceof Error ? e.message : "Couldn't load DNA Connections"); } finally { setLoading(false); } })(); }, [currentUser]);
-  async function consent(next: boolean) { if (!familyId) return; setBusy(true); try { await api("/api/diaspora/dna/matching/consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ family_id: familyId, opted_in: next }) }); await load(familyId); setMessage(next ? "DNA matching is now opt-in for this Family Space." : "DNA matching revoked; stored match results were removed."); } catch (e) { setMessage(e instanceof Error ? e.message : "Consent update failed"); } finally { setBusy(false); } }
-  async function refresh() { if (!familyId) return; setBusy(true); try { await api("/api/diaspora/dna/matching/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ family_id: familyId }) }); await load(familyId); setMessage("Connection signals refreshed. Review them against genealogy evidence before linking anyone."); } catch (e) { setMessage(e instanceof Error ? e.message : "Refresh failed"); } finally { setBusy(false); } }
-  async function saveToCase(candidate: Candidate, caseId: number) { setBusy(true); try { await api(`/api/diaspora/research/cases/${caseId}/evidence`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildDnaEvidencePayload(candidate)) }); setMessage("DNA profile signal saved to the research case."); } catch (e) { setMessage(e instanceof Error ? e.message : "Couldn't save signal"); } finally { setBusy(false); } }
-  const readiness = dnaImportReadiness({ engineEnabled: enabled, hasReadyProfile: hasProfile, optedIn });
-  if (!currentUser) return <div className="min-h-screen flex items-center justify-center">Sign in to access Connections.</div>;
-  return <div className={`${diasporaTheme.page} min-h-screen pb-24`}><header className="sticky top-0 z-20 border-b border-white/10 bg-[#071312]/90 backdrop-blur-xl"><div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3"><button onClick={() => navigate("/diaspora")} className={`p-2 rounded-xl ${diasporaTheme.focus}`}><ArrowLeft className="w-5 h-5" /></button><div className="flex-1"><p className="font-semibold flex items-center gap-2"><Dna className="w-4 h-4 text-rose-300" /> DNA Connections</p><p className="text-xs text-white/45">Consent-first signals for genealogy review</p></div>{families.length > 0 && <select value={familyId ?? ""} onChange={async e => { const n = Number(e.target.value); setFamilyId(n); await load(n); }} className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm">{families.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>}</div></header><main className="max-w-5xl mx-auto px-4 pt-6 space-y-5"><section className={`${diasporaTheme.radiusHero} border border-rose-300/20 bg-gradient-to-br from-rose-300/10 via-white/[0.03] to-teal-300/10 p-6 ${diasporaTheme.shadow}`}><p className="text-xs uppercase tracking-[0.2em] text-rose-300">Connections, not conclusions</p><h1 className="text-3xl md:text-4xl font-bold mt-2">Let DNA add a clue to the family story.</h1><p className="text-sm text-white/60 mt-3 max-w-3xl">Niakofa compares compact derived DNA sketches only when everyone has opted in. The current engine produces a similarity signal; it does not calculate shared cM, IBD segments, paternity, ethnicity, legal identity, or a guaranteed relationship.</p></section>{message && <div className="rounded-xl border border-teal-300/20 bg-teal-300/10 text-sm text-teal-100 px-4 py-3">{message}</div>}{loading ? <div className="flex justify-center py-12"><Loader2 className="animate-spin" /></div> : <><section className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}><div className="flex items-start gap-3"><ShieldCheck className="w-5 h-5 text-teal-300 mt-0.5" /><div className="flex-1"><h2 className="font-semibold">Privacy & consent</h2><p className="text-xs text-white/50 mt-1">Opt-in is scoped to this Family Space. Revoking consent deletes your stored relationship rows immediately.</p></div><button disabled={busy || !enabled} onClick={() => consent(!optedIn)} className={`px-3 py-2 rounded-lg text-xs font-semibold ${optedIn ? "bg-rose-300/10 text-rose-200" : "bg-teal-300 text-black"}`}>{optedIn ? "Revoke" : "Opt in"}</button></div><div className="flex flex-wrap gap-2 mt-4 text-[11px]"><span className="px-2 py-1 rounded-full bg-white/5">Engine {enabled ? "available" : "operator disabled"}</span><span className="px-2 py-1 rounded-full bg-white/5">Profile {hasProfile ? "ready" : "not ready"}</span><span className="px-2 py-1 rounded-full bg-white/5">Consent {optedIn ? "on" : "off"}</span></div><div className="mt-4 border-t border-white/10 pt-4"><p className="text-xs font-medium text-white/60">Readiness checklist</p><ul className="mt-2 space-y-1.5">{readiness.steps.map(step => <li key={step.key} className="flex items-center gap-2 text-[11px] text-white/50"><span className={`inline-block h-1.5 w-1.5 rounded-full ${step.ok ? "bg-emerald-300" : "bg-white/20"}`} />{step.label}</li>)}</ul><p className="text-[11px] text-teal-200 mt-2">{readiness.nextAction}</p><p className="text-[11px] text-white/35 mt-3">{DNA_ENGINE_DISCLAIMER}</p></div></section><section className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}><div className="flex items-center justify-between"><div><h2 className="font-semibold">Connection candidates</h2><p className="text-xs text-white/45 mt-1">{candidates.length} reviewable signal{candidates.length === 1 ? "" : "s"}</p></div><button disabled={busy || !optedIn || !hasProfile || !enabled} onClick={refresh} className="inline-flex items-center gap-2 rounded-lg bg-amber-300 text-black px-3 py-2 text-xs font-semibold"><RefreshCw className="w-3 h-3" /> Refresh</button></div><div className="space-y-3 mt-4">{candidates.map(c => <article key={c.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4"><div className="flex items-start gap-3"><div className="w-10 h-10 rounded-full bg-rose-300/10 border border-rose-300/20 flex items-center justify-center"><Dna className="w-4 h-4 text-rose-300" /></div><div className="flex-1"><p className="font-semibold">{c.candidate_name}</p><p className="text-xs text-white/45">{c.candidate_family_name}{c.relation_note ? ` · ${c.relation_note}` : ""}</p><div className="flex flex-wrap gap-2 mt-3"><span className="px-2 py-1 rounded-full bg-rose-300/10 text-rose-200 text-[11px]">{Math.round(c.similarity_score * 100)}% sketch similarity</span><span className="px-2 py-1 rounded-full bg-white/5 text-[11px]">{c.confidence} confidence</span><span className="px-2 py-1 rounded-full bg-white/5 text-[11px]">{relationshipBandCopy(c.relationship_band, c.confidence)}</span></div><p className="text-xs text-white/45 mt-3">Treat this as a DNA-profile lead. Confirm with records, oral history, pedigree structure, and other evidence.</p>{cases.length > 0 && <div className="flex flex-wrap gap-2 mt-3">{cases.slice(0, 3).map(k => <button key={k.id} disabled={busy} onClick={() => saveToCase(c, k.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-300/10 text-teal-200 text-[11px]"><FileSearch className="w-3 h-3" /> Save to {k.title}</button>)}</div>}</div></div></article>)}{!candidates.length && <div className="text-sm text-white/45 text-center py-8">{optedIn ? "No current candidates. Refresh after another opted-in profile is ready." : "Opt in to see consented candidates."}</div>}</div></section><section className="grid md:grid-cols-3 gap-3"><button onClick={() => navigate("/diaspora/research")} className="p-4 rounded-xl border border-teal-300/20 bg-teal-300/10 text-left"><FileSearch className="w-5 h-5 text-teal-300" /><p className="font-semibold mt-3">Research cases</p><p className="text-xs text-white/45 mt-1">Document what the signal means — and what it does not.</p></button><button onClick={() => navigate("/diaspora/tree")} className="p-4 rounded-xl border border-emerald-300/20 bg-emerald-300/10 text-left"><Link2 className="w-5 h-5 text-emerald-300" /><p className="font-semibold mt-3">Family Tree</p><p className="text-xs text-white/45 mt-1">Only add relationships after human review.</p></button><div className="p-4 rounded-xl border border-amber-300/20 bg-amber-300/10"><CheckCircle2 className="w-5 h-5 text-amber-300" /><p className="font-semibold mt-3">No biometric matching</p><p className="text-xs text-white/45 mt-1">Fingerprints are for authentication, not genealogy.</p></div></section></>}</main></div>;
+  const { currentUser } = useAppContext();
+  const [, navigate] = useLocation();
+  const [families, setFamilies] = useState<Family[]>([]);
+  const [familyId, setFamilyId] = useState<number | null>(null);
+  const [optedIn, setOptedIn] = useState(false);
+  const [hasProfile, setHasProfile] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [importProvider, setImportProvider] = useState<DnaProvider>(DNA_PROVIDERS[0]);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+
+  async function api(path: string, init?: RequestInit) {
+    const response = await fetch(path, {
+      ...init,
+      headers: { ...authHeaders(), ...(init?.headers ?? {}) },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "Request failed");
+    return body;
+  }
+
+  async function load(nextFamilyId: number) {
+    const [status, connection, research] = await Promise.all([
+      api(`/api/diaspora/dna/matching/status?family_id=${nextFamilyId}`),
+      api(`/api/diaspora/dna/connections?family_id=${nextFamilyId}`),
+      api(`/api/diaspora/research/cases?family_id=${nextFamilyId}`),
+    ]);
+    setEnabled(Boolean(status.enabled));
+    setOptedIn(Boolean(status.consent?.opted_in));
+    setHasProfile(Boolean(status.has_ready_profile));
+    setCandidates(connection.candidates ?? []);
+    setCases(research.cases ?? []);
+  }
+
+  useEffect(() => {
+    if (!currentUser) return;
+    (async () => {
+      try {
+        const data = await api("/api/family/mine");
+        const nextFamilies = (data.families ?? []).map((family: Family) => ({
+          id: family.id,
+          name: family.name,
+        }));
+        setFamilies(nextFamilies);
+        if (nextFamilies[0]) {
+          setFamilyId(nextFamilies[0].id);
+          await load(nextFamilies[0].id);
+        }
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Couldn't load DNA Connections");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [currentUser]);
+
+  async function consent(next: boolean) {
+    if (!familyId) return;
+    setBusy(true);
+    try {
+      await api("/api/diaspora/dna/matching/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ family_id: familyId, opted_in: next }),
+      });
+      await load(familyId);
+      setMessage(
+        next
+          ? "DNA matching is now opt-in for this Family Space."
+          : "DNA matching revoked; stored match results were removed.",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Consent update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refresh() {
+    if (!familyId) return;
+    setBusy(true);
+    try {
+      await api("/api/diaspora/dna/matching/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ family_id: familyId }),
+      });
+      await load(familyId);
+      setMessage("Connection signals refreshed. Review them against genealogy evidence before linking anyone.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Refresh failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveToCase(candidate: Candidate, caseId: number) {
+    setBusy(true);
+    try {
+      await api(`/api/diaspora/research/cases/${caseId}/evidence`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildDnaEvidencePayload(candidate)),
+      });
+      setMessage("DNA profile signal saved to the research case.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Couldn't save signal");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importProfile() {
+    if (!familyId || !importFile) return;
+    setImporting(true);
+    setImportError("");
+    try {
+      const bytes = await importFile.arrayBuffer();
+      const response = await fetch("/api/diaspora/dna/import", {
+        method: "POST",
+        headers: {
+          ...authHeaders(),
+          "Content-Type": contentTypeForDnaFile(importFile.name),
+          "x-dna-provider": importProvider,
+          "x-dna-family-id": String(familyId),
+          "x-dna-file-name": importFile.name,
+        },
+        body: bytes,
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Import failed");
+      setImportFile(null);
+      setMessage(body.message ?? "DNA export validated. The raw file was discarded after in-memory parsing.");
+      await load(familyId);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Couldn't import that file");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  const readiness = dnaImportReadiness({
+    engineEnabled: enabled,
+    hasReadyProfile: hasProfile,
+    optedIn,
+  });
+  const primaryCta = dnaPrimaryCta({ enabled, hasProfile, optedIn });
+
+  if (!currentUser) {
+    return <div className="min-h-screen flex items-center justify-center">Sign in to access Connections.</div>;
+  }
+
+  return (
+    <div className={`${diasporaTheme.page} min-h-screen pb-24`}>
+      <header className="sticky top-0 z-20 border-b border-white/10 bg-[#071312]/90 backdrop-blur-xl">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+          <button onClick={() => navigate("/diaspora")} className={`p-2 rounded-xl ${diasporaTheme.focus}`}>
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex-1">
+            <p className="font-semibold flex items-center gap-2">
+              <Dna className="w-4 h-4 text-rose-300" /> DNA Connections
+            </p>
+            <p className="text-xs text-white/45">Consent-first signals for genealogy review</p>
+          </div>
+          {families.length > 0 && (
+            <select
+              value={familyId ?? ""}
+              onChange={async (event) => {
+                const nextFamilyId = Number(event.target.value);
+                setFamilyId(nextFamilyId);
+                await load(nextFamilyId);
+              }}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm"
+            >
+              {families.map((family) => (
+                <option key={family.id} value={family.id}>{family.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 pt-6 space-y-5">
+        <section className={`${diasporaTheme.radiusHero} border border-rose-300/20 bg-gradient-to-br from-rose-300/10 via-white/[0.03] to-teal-300/10 p-6 ${diasporaTheme.shadow}`}>
+          <p className="text-xs uppercase tracking-[0.2em] text-rose-300">Connections, not conclusions</p>
+          <h1 className="text-3xl md:text-4xl font-bold mt-2">Let DNA add a clue to the family story.</h1>
+          <p className="text-sm text-white/60 mt-3 max-w-3xl">
+            Niakofa compares compact derived DNA sketches only when everyone has opted in. The current engine produces a similarity signal; it does not calculate shared cM, IBD segments, paternity, ethnicity, legal identity, or a guaranteed relationship.
+          </p>
+        </section>
+
+        {message && <div className="rounded-xl border border-teal-300/20 bg-teal-300/10 text-sm text-teal-100 px-4 py-3">{message}</div>}
+
+        {!loading && primaryCta === "import" && (
+          <section className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5 border border-amber-300/25`}>
+            <h2 className="font-semibold flex items-center gap-2">
+              <Dna className="w-4 h-4 text-amber-300" /> Import a DNA export to get started
+            </h2>
+            <p className="text-xs text-white/50 mt-1">
+              Upload a raw export from a supported provider. Niakofa parses it in memory into a derived marker sketch and discards the raw file — nothing is retained beyond that summary.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-4">
+              <select
+                value={importProvider}
+                onChange={(event) => setImportProvider(event.target.value as DnaProvider)}
+                disabled={importing}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm"
+              >
+                {DNA_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+              </select>
+              <input
+                type="file"
+                accept=".csv,.txt,.json"
+                disabled={importing}
+                onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+                className="text-xs text-white/60 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:text-white/80"
+              />
+              <button
+                onClick={importProfile}
+                disabled={importing || !importFile}
+                className="inline-flex items-center gap-2 rounded-lg bg-amber-300 text-black px-3 py-2 text-xs font-semibold disabled:opacity-40"
+              >
+                {importing ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileSearch className="w-3 h-3" />}
+                Import export
+              </button>
+            </div>
+            {importError && <p className="text-[11px] text-rose-300 mt-2">{importError}</p>}
+            <p className="text-[11px] text-white/35 mt-3">
+              Supported today: {DNA_PROVIDERS.join(", ")}. Files stay under 30&nbsp;MB and are never written to disk.
+            </p>
+          </section>
+        )}
+
+        {loading ? (
+          <div className="flex justify-center py-12"><Loader2 className="animate-spin" /></div>
+        ) : (
+          <>
+            <section className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}>
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-teal-300 mt-0.5" />
+                <div className="flex-1">
+                  <h2 className="font-semibold">Privacy & consent</h2>
+                  <p className="text-xs text-white/50 mt-1">Opt-in is scoped to this Family Space. Revoking consent deletes your stored relationship rows immediately.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {primaryCta === "opt_in" && <span className="text-[10px] uppercase tracking-wide text-amber-300">Next step</span>}
+                  <button
+                    disabled={busy || !enabled}
+                    onClick={() => consent(!optedIn)}
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold ${optedIn ? "bg-rose-300/10 text-rose-200" : "bg-teal-300 text-black"}`}
+                  >
+                    {optedIn ? "Revoke" : "Opt in"}
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-4 text-[11px]">
+                <span className="px-2 py-1 rounded-full bg-white/5">Engine {enabled ? "available" : "operator disabled"}</span>
+                <span className="px-2 py-1 rounded-full bg-white/5">Profile {hasProfile ? "ready" : "not ready"}</span>
+                <span className="px-2 py-1 rounded-full bg-white/5">Consent {optedIn ? "on" : "off"}</span>
+              </div>
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <p className="text-xs font-medium text-white/60">Readiness checklist</p>
+                <ul className="mt-2 space-y-1.5">
+                  {readiness.steps.map((step) => (
+                    <li key={step.key} className="flex items-center gap-2 text-[11px] text-white/50">
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${step.ok ? "bg-emerald-300" : "bg-white/20"}`} />
+                      {step.label}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11px] text-teal-200 mt-2">{readiness.nextAction}</p>
+                <p className="text-[11px] text-white/35 mt-3">{DNA_ENGINE_DISCLAIMER}</p>
+              </div>
+            </section>
+
+            <section className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-semibold">Connection candidates</h2>
+                  <p className="text-xs text-white/45 mt-1">{candidates.length} reviewable signal{candidates.length === 1 ? "" : "s"}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {primaryCta === "refresh" && <span className="text-[10px] uppercase tracking-wide text-amber-300">Next step</span>}
+                  <button
+                    disabled={busy || !optedIn || !hasProfile || !enabled}
+                    onClick={refresh}
+                    className="inline-flex items-center gap-2 rounded-lg bg-amber-300 text-black px-3 py-2 text-xs font-semibold"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Refresh
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-3 mt-4">
+                {candidates.map((candidate) => (
+                  <article key={candidate.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full bg-rose-300/10 border border-rose-300/20 flex items-center justify-center">
+                        <Dna className="w-4 h-4 text-rose-300" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold">{candidate.candidate_name}</p>
+                        <p className="text-xs text-white/45">
+                          {candidate.candidate_family_name}{candidate.relation_note ? ` · ${candidate.relation_note}` : ""}
+                        </p>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <span className="px-2 py-1 rounded-full bg-rose-300/10 text-rose-200 text-[11px]">{Math.round(candidate.similarity_score * 100)}% sketch similarity</span>
+                          <span className="px-2 py-1 rounded-full bg-white/5 text-[11px]">{candidate.confidence} confidence</span>
+                          <span className="px-2 py-1 rounded-full bg-white/5 text-[11px]">{relationshipBandCopy(candidate.relationship_band, candidate.confidence)}</span>
+                        </div>
+                        <p className="text-xs text-white/45 mt-3">Treat this as a DNA-profile lead. Confirm with records, oral history, pedigree structure, and other evidence.</p>
+                        {cases.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {cases.slice(0, 3).map((researchCase) => (
+                              <button
+                                key={researchCase.id}
+                                disabled={busy}
+                                onClick={() => saveToCase(candidate, researchCase.id)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-300/10 text-teal-200 text-[11px]"
+                              >
+                                <FileSearch className="w-3 h-3" /> Save to {researchCase.title}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+                {!candidates.length && (
+                  <div className="text-sm text-white/45 text-center py-8">
+                    {optedIn ? "No current candidates. Refresh after another opted-in profile is ready." : "Opt in to see consented candidates."}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="grid md:grid-cols-3 gap-3">
+              <button onClick={() => navigate("/diaspora/research")} className="p-4 rounded-xl border border-teal-300/20 bg-teal-300/10 text-left">
+                <FileSearch className="w-5 h-5 text-teal-300" />
+                <p className="font-semibold mt-3">Research cases</p>
+                <p className="text-xs text-white/45 mt-1">Document what the signal means — and what it does not.</p>
+              </button>
+              <button onClick={() => navigate("/diaspora/tree")} className="p-4 rounded-xl border border-emerald-300/20 bg-emerald-300/10 text-left">
+                <Link2 className="w-5 h-5 text-emerald-300" />
+                <p className="font-semibold mt-3">Family Tree</p>
+                <p className="text-xs text-white/45 mt-1">Only add relationships after human review.</p>
+              </button>
+              <div className="p-4 rounded-xl border border-amber-300/20 bg-amber-300/10">
+                <CheckCircle2 className="w-5 h-5 text-amber-300" />
+                <p className="font-semibold mt-3">No biometric matching</p>
+                <p className="text-xs text-white/45 mt-1">Fingerprints are for authentication, not genealogy.</p>
+              </div>
+            </section>
+          </>
+        )}
+      </main>
+    </div>
+  );
 }

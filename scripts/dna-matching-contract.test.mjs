@@ -47,7 +47,8 @@ test("DNA re-import replaces the sketch and invalidates old results", async () =
 
 test("DNA consent revocation removes rows where the user is the matched candidate", async () => {
   const source = await readFile(new URL("../artifacts/api-server/src/routes/dna-matching.ts", import.meta.url), "utf8");
-  assert.match(source, /if \(!optedIn\) \{\s+await db\.transaction\(async \(tx\)/);
+  // One DELETE with an OR predicate is atomic; verify both match directions.
+  assert.match(source, /if \(!optedIn\) \{\s+await db\.delete\(dnaMatchResultsTable\)\.where\(or\(/);
   assert.match(source, /eq\(dnaMatchResultsTable\.matched_family_id, familyId\)/);
   assert.match(source, /eq\(dnaMatchResultsTable\.matched_user_id, userId\)/);
 });

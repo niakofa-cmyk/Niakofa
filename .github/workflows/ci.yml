@@ -74,6 +74,8 @@ jobs:
         run: pnpm --filter @workspace/scripts run test:civic-seed
         env:
           CIVIC_SEED_TEST_DATABASE_URL: postgresql://test:test@localhost:5432/test
+      - name: Run Diaspora source contracts
+        run: pnpm run test:diaspora
       - name: Run nia-service tests
         run: pnpm --filter nia-service run test
         env:

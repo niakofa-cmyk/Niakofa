@@ -31,6 +31,8 @@ test("Research evidence selector exposes every backend-supported evidence kind",
 test("DNA remains explicitly provenance-safe", () => {
   const source = read("artifacts/api-server/src/routes/dna-matching.ts");
   assert.match(source, /shared-cM/);
-  assert.match(source, /derived-sketch/);
+  // Route identifiers use snake_case (private_derived_sketch_v1), not a
+  // hyphenated phrase.
+  assert.match(source, /derived_sketch/);
   assert.match(source, /confidence/);
 });

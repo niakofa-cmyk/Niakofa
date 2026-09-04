@@ -24,6 +24,7 @@
     "test:production-gate": "node --test scripts/production-gate.test.mjs",
     "test:diaspora-triple-enhancement": "node --import tsx --test scripts/diaspora-triple-enhancement-contract.test.mjs",
     "test:diaspora-finalization": "node --import tsx --test scripts/diaspora-finalization-contract.test.mjs",
+    "test:diaspora": "bash scripts/run-repo-diaspora-contracts.sh",
     "production-gate": "node scripts/production-gate.mjs"
   },
   "private": true,
