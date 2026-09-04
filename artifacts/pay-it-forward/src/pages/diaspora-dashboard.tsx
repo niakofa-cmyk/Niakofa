@@ -3,7 +3,7 @@
  * Route: /diaspora
  *
  * The dashboard is intentionally a doorway, not a feature directory:
- * Globe → Family → Oral History → Tree → Heritage → Research → Legacy.
+ * Globe → Family → Stories → Tree → Research → Connections → Heritage → Legacy.
  */
 
 import { useEffect, useState } from "react";
@@ -42,8 +42,9 @@ const JOURNEY = [
   { label: "Family", note: "Gather", icon: Users, href: "/diaspora/family", tone: diasporaTheme.gold },
   { label: "Stories", note: "Record", icon: Mic, href: "/diaspora/family?intent=oral-history", tone: diasporaTheme.rose },
   { label: "Tree", note: "Connect", icon: TreePine, href: "/diaspora/tree", tone: diasporaTheme.emerald },
-  { label: "Heritage", note: "Explore", icon: Layers3, href: "/diaspora/heritage", tone: diasporaTheme.teal },
   { label: "Research", note: "Discover", icon: GraduationCap, href: "/diaspora/research", tone: diasporaTheme.teal },
+  { label: "Connections", note: "Review", icon: Dna, href: "/diaspora/dna", tone: diasporaTheme.gold },
+  { label: "Heritage", note: "Explore", icon: Layers3, href: "/diaspora/heritage", tone: diasporaTheme.teal },
   { label: "Legacy", note: "Preserve", icon: History, href: "/diaspora/timeline", tone: diasporaTheme.gold },
 ] as const;
 
@@ -202,7 +203,7 @@ export default function DiasporaDashboardPage() {
         </section>
 
         <section className="grid gap-3 sm:grid-cols-2">
-          <button onClick={() => navigate("/diaspora/dna")} className={`rounded-2xl border border-blue-300/15 bg-blue-300/[0.05] p-5 text-left ${diasporaTheme.focus}`}><Dna className="h-5 w-5 text-blue-300" /><p className="mt-3 text-sm font-bold text-white">DNA Connections</p><p className="mt-1 text-xs leading-relaxed text-white/40">Connect a supported dataset. No match or ethnicity result is shown unless a real source provides it.</p><span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-blue-300">Connect data <ArrowRight className="h-3.5 w-3.5" /></span></button>
+          <button onClick={() => navigate("/diaspora/dna")} className={`rounded-2xl border border-amber-300/15 bg-amber-300/[0.05] p-5 text-left ${diasporaTheme.focus}`}><Dna className="h-5 w-5 text-amber-300" /><p className="mt-3 text-sm font-bold text-white">DNA Connections</p><p className="mt-1 text-xs leading-relaxed text-white/40">Review consented derived-sketch signals as leads for research. Provider shared-cM and IBD results are not inferred.</p><span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-amber-300">Review connections <ArrowRight className="h-3.5 w-3.5" /></span></button>
           <button onClick={() => window.openNia?.("Help me preserve a family story.")} className={`rounded-2xl border border-amber-300/15 bg-gradient-to-br from-amber-300/[0.08] to-teal-300/[0.04] p-5 text-left ${diasporaTheme.focus}`}><Sparkles className="h-5 w-5 text-amber-300" /><p className="mt-3 text-sm font-bold text-white">Ask Nia</p><p className="mt-1 text-xs leading-relaxed text-white/40">Use the global Nia guide without duplicating the full chat interface on the dashboard.</p><span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-amber-300">Open Nia <ArrowRight className="h-3.5 w-3.5" /></span></button>
         </section>
 
