@@ -25,6 +25,7 @@ export const diasporaPreserveLinksTable = pgTable("diaspora_preserve_links", {
   index("idx_diaspora_preserve_links_family").on(t.family_id),
   index("idx_diaspora_preserve_links_memory").on(t.memory_id),
   uniqueIndex("diaspora_preserve_links_user_memory_unique").on(t.user_id, t.memory_id).where(sql`${t.memory_id} IS NOT NULL`),
+  uniqueIndex("diaspora_preserve_pending_user_qr_unique").on(t.user_id, t.qr_digest).where(sql`${t.memory_id} IS NULL`),
 ]);
 
 export type DiasporaPreserveLink = typeof diasporaPreserveLinksTable.$inferSelect;
