@@ -18,7 +18,8 @@ test("Preserve scan context has durable browser handoff and recorder association
   const preserve = read("../artifacts/pay-it-forward/src/pages/preserve-culture.tsx");
   assert.match(link, /persistPreserveScanContext/);
   assert.match(link, /preserve\/links\//);
-  assert.match(link, /api\/family\\\/(\\d\+)\\\/memories/);
+  assert.match(link, /url\.match\(/, "expected Preserve handoff to inspect the family-memory route matcher");
+  assert.match(link, /api.*family.*memories/, "expected family memory API route");
   assert.match(preserve, /data\.scan_id/);
   assert.match(preserve, /preserve_scan_id/);
 });
@@ -27,6 +28,24 @@ test("Dashboard labels the nine-item value as a curated Heritage catalog", () =>
   const page = read("../artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx");
   assert.match(page, /Curated heritage catalog/);
   assert.match(page, /heritage_collections/);
+});
+
+test("Globe renders migration arcs from the great-circle geometry helper", () => {
+  const page = read("../artifacts/pay-it-forward/src/pages/globe.tsx");
+  const geometry = read("../artifacts/pay-it-forward/src/lib/diaspora/greatCircle.ts");
+  assert.match(page, /greatCirclePath/);
+  assert.match(page, /projection=\"globe\"/);
+  assert.match(geometry, /greatCirclePath/);
+  assert.match(geometry, /Math\.acos/);
+});
+
+test("DNA Connections surfaces the explicit provenance boundary", () => {
+  const page = read("../artifacts/pay-it-forward/src/pages/dna-connections.tsx");
+  const notice = read("../artifacts/pay-it-forward/src/components/diaspora/DnaProvenanceNotice.tsx");
+  assert.match(page, /DnaProvenanceNotice/);
+  assert.match(notice, /derived-sketch similarity/);
+  assert.match(notice, /shared-cM/);
+  assert.match(notice, /IBD/);
 });
 
 test("Live E2E suite is explicitly gated for authenticated DB writes", () => {

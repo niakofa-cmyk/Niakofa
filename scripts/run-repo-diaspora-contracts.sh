@@ -4,8 +4,11 @@ set -euo pipefail
 
 node --import tsx --test scripts/diaspora-data-loop-contract.test.mjs
 node --import tsx --test scripts/diaspora-experience-contract.test.mjs
+node --import tsx --test scripts/diaspora-experience-completion-contract.test.mjs
 node --import tsx --test scripts/diaspora-finalization-contract.test.mjs
 node --import tsx --test scripts/diaspora-final-polish-contract.test.mjs
+node --import tsx --test scripts/diaspora-final-wiring-contract.test.mjs
+node --import tsx --test scripts/diaspora-globe-geometry-contract.test.mjs
 node --import tsx --test scripts/diaspora-preserve-idempotency-contract.test.mjs
 node --import tsx --test scripts/diaspora-triple-enhancement-contract.test.mjs
 node --import tsx --test scripts/dna-matching-contract.test.mjs
