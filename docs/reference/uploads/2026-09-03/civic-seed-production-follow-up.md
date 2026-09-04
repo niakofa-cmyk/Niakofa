@@ -31,7 +31,9 @@ second run to produce the identical row set. The schema is dropped in teardown.
 CI uses a PostGIS-enabled PostgreSQL service and applies the canonical
 migrations before running the civic regression. A plain PostgreSQL image is not
 an adequate migration gate because the migration chain optionally creates and
-uses PostGIS objects.
+uses PostGIS objects. The migration runner keeps its production TLS default;
+CI explicitly opts out with `DATABASE_SSL=false` because GitHub service
+containers are local non-TLS connections.
 
 The legacy hand-drawn art archive is tracked through Git LFS. If GitHub LFS
 authorization is unavailable, keep the committed pointer intact and do not

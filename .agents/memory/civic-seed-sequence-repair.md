@@ -25,4 +25,6 @@ ever exercises the seed.
 
 **How to apply:** Run the canonical migration command against the PostGIS
 service before the isolated civic-seed regression; keep the test's own schema
-disposable and separate from production.
+disposable and separate from production. Local CI may set the explicit
+`DATABASE_SSL=false` override for its non-TLS service container; production
+must retain the default TLS-compatible setting.
