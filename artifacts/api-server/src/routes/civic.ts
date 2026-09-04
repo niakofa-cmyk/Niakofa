@@ -78,13 +78,24 @@ export interface ResolvedPlace {
   place_name: string;
 }
 
+export class ReverseGeocodeUnavailableError extends Error {
+  readonly code = "REVERSE_GEOCODE_UNAVAILABLE";
+
+  constructor(message = "Reverse geocoding is temporarily unavailable") {
+    super(message);
+    this.name = "ReverseGeocodeUnavailableError";
+  }
+}
+
 export async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace | null> {
   if (!MAPBOX_TOKEN) {
     // Fail fast instead of firing a doomed request at Mapbox with an empty
     // token — avoids per-request network latency + log noise when the token
-    // is misconfigured, and keeps the fallback (statewide resources) path fast.
+    // is misconfigured. Callers distinguish this outage from a valid
+    // no-feature response so a transient provider failure cannot clear an
+    // existing community assignment.
     logger.warn("reverseGeocode called with no MAPBOX_TOKEN configured");
-    return null;
+    throw new ReverseGeocodeUnavailableError("Mapbox token is not configured");
   }
   const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=place,district,region&access_token=${MAPBOX_TOKEN}`;
   const controller = new AbortController();
@@ -93,7 +104,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Resolved
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) {
       logger.warn({ status: res.status }, "Mapbox geocoding non-200");
-      return null;
+      throw new ReverseGeocodeUnavailableError(`Mapbox returned HTTP ${res.status}`);
     }
     const data = await res.json() as MapboxGeocodingResponse;
     if (!data.features || data.features.length === 0) return null;
@@ -144,8 +155,9 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Resolved
 
     return { city, county, state_short, state, place_name: place_name || `${city ?? ""}, ${state_short ?? ""}`.trim() };
   } catch (err) {
+    if (err instanceof ReverseGeocodeUnavailableError) throw err;
     logger.warn({ err }, "Mapbox reverse geocode failed");
-    return null;
+    throw new ReverseGeocodeUnavailableError();
   } finally {
     clearTimeout(timeout);
   }
@@ -267,7 +279,19 @@ router.get("/civic/resources", generalApiLimiter, async (req, res) => {
   const locationCached = await cacheGet(locationCacheKey);
   if (locationCached) return res.json(locationCached);
 
-  const place = await reverseGeocode(lat, lng);
+  let place: ResolvedPlace | null;
+  try {
+    place = await reverseGeocode(lat, lng);
+  } catch (err) {
+    logger.warn({ err, lat, lng }, "civic resources geocoding unavailable");
+    // Do not cache an outage as a verified location result. A later request
+    // should retry once Mapbox recovers.
+    return res.json({
+      resources: [],
+      place_name: "location could not be verified",
+      match_level: "fallback" as const,
+    });
+  }
 
   if (!place || !place.state_short) {
     // We couldn't determine the user's location at all — showing an

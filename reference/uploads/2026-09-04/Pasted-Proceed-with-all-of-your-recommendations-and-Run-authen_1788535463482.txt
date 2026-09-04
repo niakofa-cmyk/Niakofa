@@ -1,0 +1,112 @@
+Proceed with all of your recommendations , and Run authenticated Chromium against the currently deployed revision.
+1. Run the gated Research/Preserve/DNA mutation suite against a disposable Family Space.
+2. Verify Globe Mapbox/story/audio runtime.
+3. Verify Preserve QR → recorder → memory association.
+4. Verify Research evidence survives reload.
+5. Verify DNA opt-in → refresh → revoke → results disappear.
+6. Record the exact deployed commit and results as the release acceptance artifact.
+After that, I would freeze this Diaspora milestone and move provider-grade DNA into its own separately governed integration project. Provide the improved and enhanced code for me to download
+I proceeded with the verification pass against the updated GitHub repository.
+Current release revision
+The current main is:
+b8a231636269c8c4f4594e456fda0cd32ac42a50
+Latest change locks the Heritage metric to the actual curated catalog rather than a hard-coded value.
+What I can verify from GitHub
+```
+| Gate                                              | Result                                          |
+| ------------------------------------------------- | ----------------------------------------------- |
+| Current main identified                           | ✅ b8a231636...                                  |
+| Heritage metric tied to catalog                   | ✅                                               |
+| Research six evidence types                       | ✅                                               |
+| Research family/member authorization              | ✅                                               |
+| Research Timeline handoff                         | ✅                                               |
+| Globe great-circle implementation                 | ✅                                               |
+| DNA consent/provenance boundary                   | ✅                                               |
+| Preserve persistence/idempotency implementation   | ✅                                               |
+| Railway deployment status                         | ✅ Successful previously reported                |
+| Authenticated Chromium against current deployment | ⚠️ Not executable from this environment         |
+| Disposable Family Space mutation suite            | ⚠️ Requires USER_A_STATE + ALLOW_MUTATING_E2E=1 |
+| Provider-grade DNA                                | ⛔ Intentionally not enabled                     |
+```
+The Research backend currently validates all six evidence types and requires active Family Space membership before accessing or mutating a case.
+The Globe source currently uses the live Griot APIs and Mapbox globe projection with the great-circle geometry helper.
+Why I am not falsely marking the remaining gates PASS
+I don't have access through the GitHub connector to an authenticated browser session, USER_A_STATE, or a disposable Family Space identity. Those are runtime credentials/data, not repository code. I will not fabricate the results of:
+* creating Research evidence in the live DB,
+* writing a Preserve scan,
+* creating/associating a real memory,
+* changing DNA consent,
+* checking the resulting database state,
+* or playing a deployed Mapbox/audio resource.
+Likewise, the workflow lookup for the current commit does not expose a completed Actions run through the available commit-run endpoint, so I cannot manufacture a CI/deployment result for b8a231636.
+Production acceptance status
+I would therefore keep the release in “deployment verified / acceptance pending,” rather than falsely declaring it production-complete.
+The implementation itself is now at the point where the remaining work is execution of the acceptance gate, not another broad Globe/Research/DNA rewrite.
+Once a real authenticated Chromium environment with the approved disposable Family Space is available, the exact acceptance sequence should be:
+1. Load deployed revision and confirm commit = b8a231636....
+2. Globe → verify Mapbox globe renders.
+3. Select hub → verify live hub data.
+4. Open story → verify story details.
+5. Play audio → verify actual audio playback.
+6. Research → create evidence → reload → verify persistence.
+7. Preserve → scan same QR twice → verify identical scan_id / idempotency.
+8. Record memory → verify durable Preserve association.
+9. DNA → opt in → refresh → inspect candidates → revoke → verify candidates disappear.
+10. Capture screenshots/logs/results.
+11. Produce the signed-off release acceptance artifact.
+12. Freeze this Diaspora milestone.
+13. Move provider-grade shared-cM/IBD into a separate governed integration project.
+I would not make additional feature changes before that acceptance run. The current repository has already crossed the important architectural threshold; changing it now would make the acceptance baseline move underneath us.
+
+
+Honest execution status
+I cannot run authenticated Chromium or disposable Family Space mutations from this environment. There is no USER_A_STATE, no browser login to your Railway deployment, and no right to invent DB writes. Your own assessment is correct.
+What I did verify from GitHub:
+Item	Result
+Current main	✅ b8a231636269c8c4f4594e456fda0cd32ac42a50
+Heritage → curated catalog	✅
+Live E2E suite	✅ e2e/diaspora-final-wiring-live.spec.ts (gated)
+Research / Preserve / DNA contracts in source	✅
+Provider-grade DNA	⛔ Intentionally not enabled
+
+Official status: DEPLOYMENT VERIFIED / ACCEPTANCE PENDING
+— not production-complete.
+
+Are implementations close to envisioned?
+Yes. No further Globe / Research / DNA rewrite before acceptance.
+All Diaspora E2E?
+In code: yes for core loops.
+On the live deployment with auth: still your gate to run.
+
+What you run next (exact)
+Bash
+
+export BASE_URL="https://YOUR_DEPLOYMENT"
+export USER_A_STATE="playwright/.auth/disposable-a.json"
+export ALLOW_MUTATING_E2E=1
+export EXPECTED_COMMIT="b8a231636269c8c4f4594e456fda0cd32ac42a50"
+
+# From monorepo root:
+bash ops/run-mutating-acceptance.sh   # or use the copy in the ZIP
+# then complete acceptance/RESULTS_TEMPLATE.md
+
+
+Sequence remains:
+1. Confirm deployed commit
+2. Globe Mapbox / hub / story / audio
+3. Research evidence + reload
+4. Preserve dual-scan idempotency
+5. Preserve → recorder → memory
+6. DNA opt-in → refresh → revoke
+7. Sign RESULTS template → freeze milestone
+8. Provider-grade DNA → separate project (dna-project/CHARTER.md in ZIP)
+
+What’s in the ZIP
+Path	Purpose
+ACCEPTANCE_ARTIFACT.md	Signed matrix with PASS / PENDING (no false Chromium PASS)
+acceptance/OPERATOR_RUNBOOK.md	Full step list
+acceptance/RESULTS_TEMPLATE.md	Operator sign-off form
+ops/run-mutating-acceptance.sh	Gated Playwright runner
+dna-project/CHARTER.md	Separate governed DNA integration project
+
+Recommendation: freeze feature work; run the operator acceptance against disposable data only; after PASS, freeze this Diaspora milestone and keep provider-grade shared-cM/IBD out of this release baseline.

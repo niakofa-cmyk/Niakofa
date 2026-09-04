@@ -156,7 +156,10 @@ export async function resolveCommunityIdForCoords(lat: number, lng: number): Pro
   // Keep this route dependency lazy: community-pool is imported by many
   // isolated API modules and should not eagerly load the whole civic router.
   const { reverseGeocode } = await import("../routes/civic");
-  const place = await reverseGeocode(lat, lng).catch(() => null);
+  // Preserve the distinction between a valid no-match and provider
+  // unavailability. Callers that mutate a user's assignment must not turn a
+  // transient Mapbox outage into a destructive NULL/global assignment.
+  const place = await reverseGeocode(lat, lng);
   if (!place?.county || !place.state) return null;
   const result = await db.execute<{ id: number }>(sql`
     SELECT id
@@ -263,7 +266,7 @@ export async function resolveCommunityFromFreshLocation(params: {
     return null;
   }
 
-  return resolveCommunityIdForCoords(lat, lng).catch(() => null);
+  return resolveCommunityIdForCoords(lat, lng);
 }
 
 /**

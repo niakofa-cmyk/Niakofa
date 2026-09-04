@@ -172,14 +172,19 @@ router.post("/auth/google", authLimiter, async (req: Request, res: Response) => 
         const defaultCommunityId = await getDefaultCommunityId().catch(() => null);
         const freshLat = typeof lat === "number" && Number.isFinite(lat) ? lat : null;
         const freshLng = typeof lng === "number" && Number.isFinite(lng) ? lng : null;
-        const community_id =
-          freshLat != null && freshLng != null
-            ? await resolveCommunityFromFreshLocation({
-                currentCommunityId: defaultCommunityId,
-                lat: freshLat,
-                lng: freshLng,
-              })
-            : defaultCommunityId;
+        let community_id = defaultCommunityId;
+        if (freshLat != null && freshLng != null) {
+          try {
+            community_id = await resolveCommunityFromFreshLocation({
+              currentCommunityId: defaultCommunityId,
+              lat: freshLat,
+              lng: freshLng,
+            });
+          } catch (err) {
+            logger.warn({ err }, "Google registration community geocoding unavailable — using global bucket");
+            community_id = null;
+          }
+        }
 
         const [created_user] = await db
           .insert(usersTable)

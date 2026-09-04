@@ -162,6 +162,18 @@ describe("resolveCommunityFromFreshLocation", () => {
     expect(reverseGeocodeMock).toHaveBeenCalledWith(KANSAS_CITY.lat, KANSAS_CITY.lng);
   });
 
+  it("propagates geocoder outages so location callers can preserve the current assignment", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ value: "1" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1 }]));
+    reverseGeocodeMock.mockRejectedValueOnce(new Error("Mapbox timeout"));
+
+    await expect(resolveCommunityFromFreshLocation({
+      currentCommunityId: 1,
+      ...FORT_WORTH,
+    })).rejects.toThrow("Mapbox timeout");
+  });
+
   it("proves Fort Worth and Kansas City resolve differently from the same starting state", async () => {
     // Fort Worth run.
     (db.limit as jest.Mock)

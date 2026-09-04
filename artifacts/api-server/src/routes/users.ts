@@ -241,14 +241,19 @@ router.post("/users/register", authLimiter, async (req, res) => {
   // A fresh location is authoritative for initial community assignment. If
   // it does not match a configured community, keep the user in the NULL/global
   // bucket rather than silently assigning the admin's default community.
-  const community_id =
-    lat != null && lng != null
-      ? await resolveCommunityFromFreshLocation({
-          currentCommunityId: defaultCommunityId,
-          lat,
-          lng,
-        })
-      : defaultCommunityId;
+  let community_id = defaultCommunityId;
+  if (lat != null && lng != null) {
+    try {
+      community_id = await resolveCommunityFromFreshLocation({
+        currentCommunityId: defaultCommunityId,
+        lat,
+        lng,
+      });
+    } catch (err) {
+      logger.warn({ err }, "registration community geocoding unavailable — using global bucket");
+      community_id = null;
+    }
+  }
 
   const [user] = await db.insert(usersTable).values({
     name, email: normalizedEmail,
@@ -652,15 +657,22 @@ router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnershi
   if (
     isUnresolvedCommunityAssignment(user.community_id ?? null, defaultCommunityId)
   ) {
-    const resolvedCommunityId = await resolveCommunityFromFreshLocation({
-      currentCommunityId: user.community_id ?? null,
-      lat,
-      lng,
-    });
-    [user] = await db.update(usersTable)
-      .set({ community_id: resolvedCommunityId, updated_at: new Date() })
-      .where(eq(usersTable.id, user.id))
-      .returning();
+    try {
+      const resolvedCommunityId = await resolveCommunityFromFreshLocation({
+        currentCommunityId: user.community_id ?? null,
+        lat,
+        lng,
+      });
+      [user] = await db.update(usersTable)
+        .set({ community_id: resolvedCommunityId, updated_at: new Date() })
+        .where(eq(usersTable.id, user.id))
+        .returning();
+    } catch (err) {
+      logger.warn(
+        { err, user_id: user.id },
+        "location community geocoding unavailable — preserving current assignment",
+      );
+    }
   }
 
   if (user.helper_mode_active) {
