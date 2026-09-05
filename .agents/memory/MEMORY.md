@@ -1,3 +1,4 @@
+- [LiveKit media boundary](livekit-media-boundary.md) — production Circles/Spirals use LiveKit only; legacy TURN/ICE remains compatibility infrastructure.
 - [API preview database gate](api-preview-database-gate.md) — migration-first API previews must fail closed when the development database is unreachable.
 - [Pool History accounting](pool-history-accounting.md) — Pool History is a linked projection: show gross, retain settlement details, and update corrections in place.
 - [Backend test wiring](backend-test-wiring.md) — API Jest config, serialized ESM mocks, and split test runners must be explicit.
