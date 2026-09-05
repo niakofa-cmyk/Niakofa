@@ -41,6 +41,8 @@ node_modules
 /test-results/
 /playwright-report/
 /playwright/.auth/
+/.auth/
+/.acceptance-state-*/
 /test-results/
 /libpeerconnection.log
 npm-debug.log

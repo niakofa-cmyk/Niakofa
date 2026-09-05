@@ -46,8 +46,7 @@ async function requestJson(pathname, options = {}) {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const detail = typeof body?.error === "string" ? body.error : `HTTP ${response.status}`;
-      throw new Error(detail);
+      throw new Error(`HTTP ${response.status}`);
     }
     return body;
   } finally {
@@ -109,6 +108,10 @@ const state = {
 };
 
 const resolvedOutput = path.resolve(outputPath);
+const repoRoot = path.resolve(import.meta.dirname, "..");
+if (resolvedOutput === repoRoot || resolvedOutput.startsWith(`${repoRoot}${path.sep}`)) {
+  fail("OUT must be outside the repository; use a runtime temporary directory.");
+}
 const temporaryOutput = `${resolvedOutput}.tmp-${process.pid}`;
 try {
   fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });

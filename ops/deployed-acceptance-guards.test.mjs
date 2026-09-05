@@ -7,10 +7,12 @@ function runAcceptance(overrides = {}) {
     const env = { ...process.env };
     for (const key of [
       "BASE_URL",
+      "NIAKOFA_API_ORIGIN",
       "USER_A_STATE",
       "EXPECTED_COMMIT",
       "ALLOW_MUTATING_E2E",
       "CONFIRM_DISPOSABLE_ACCOUNT",
+      "ALLOW_COUNTY_TRAVEL_E2E",
     ]) {
       delete env[key];
     }
@@ -25,10 +27,13 @@ function runAcceptance(overrides = {}) {
 
 const base = {
   BASE_URL: "https://example.test",
+  NIAKOFA_API_ORIGIN: "https://example.test",
   USER_A_STATE: "/tmp/does-not-exist.json",
+  USER_B_STATE: "/tmp/does-not-exist-b.json",
   EXPECTED_COMMIT: "6a889169",
   ALLOW_MUTATING_E2E: "1",
   CONFIRM_DISPOSABLE_ACCOUNT: "1",
+  ALLOW_COUNTY_TRAVEL_E2E: "1",
 };
 
 test("requires exact deployed commit intent", async () => {
@@ -54,5 +59,12 @@ test("rejects invalid commit identifiers before reading auth state", async () =>
 test("refuses a missing credential-bearing storage-state file", async () => {
   const result = await runAcceptance(base);
   assert.notEqual(result.status, 0);
-  assert.match(result.output, /not a readable file path/);
+  assert.match(result.output, /USER_A_STATE validation failed: the file is missing/);
+});
+
+test("county travel has a separate explicit mutation gate", async () => {
+  const { ALLOW_COUNTY_TRAVEL_E2E: _removed, ...withoutCountyGate } = base;
+  const result = await runAcceptance(withoutCountyGate);
+  assert.notEqual(result.status, 0);
+  assert.match(result.output, /ALLOW_COUNTY_TRAVEL_E2E=1/);
 });

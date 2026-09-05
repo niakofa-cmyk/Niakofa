@@ -11,7 +11,8 @@ const base = process.env.BASE_URL || "http://127.0.0.1:5000";
 const state = process.env.USER_A_STATE;
 const allowed =
   process.env.ALLOW_MUTATING_E2E === "1" &&
-  process.env.CONFIRM_DISPOSABLE_ACCOUNT === "1";
+  process.env.CONFIRM_DISPOSABLE_ACCOUNT === "1" &&
+  process.env.ALLOW_COUNTY_TRAVEL_E2E === "1";
 
 function authFromState(storageState: Awaited<ReturnType<APIRequestContext["storageState"]>>) {
   return storageState.origins
@@ -20,7 +21,7 @@ function authFromState(storageState: Awaited<ReturnType<APIRequestContext["stora
 }
 
 test.describe("County travel — live authenticated integration", () => {
-  test.skip(!state || !allowed, "Requires an explicitly confirmed disposable authenticated account.");
+  test.skip(!state || !allowed, "Requires a disposable authenticated account and ALLOW_COUNTY_TRAVEL_E2E=1.");
   test.use({ storageState: state });
 
   test("fresh GPS fixes move between independent county pools", async ({ request }) => {
@@ -53,10 +54,27 @@ test.describe("County travel — live authenticated integration", () => {
     try {
       const tarrant = await updateLocation(32.7555, -97.3308);
       expect(tarrant.community_id).toBeTruthy();
+      const tarrantPoolResponse = await request.get(new URL("/api/pool/my-stats", base).toString(), { headers });
+      expect(tarrantPoolResponse.ok()).toBeTruthy();
+      const tarrantPool = await tarrantPoolResponse.json();
+      expect(tarrantPool.community_id).toBe(tarrant.community_id);
+      const tarrantLedgerResponse = await request.get(new URL("/api/pool/my-ledger", base).toString(), { headers });
+      expect(tarrantLedgerResponse.ok()).toBeTruthy();
+      const tarrantLedger = await tarrantLedgerResponse.json();
+      expect(Array.isArray(tarrantLedger.entries)).toBe(true);
 
       const jackson = await updateLocation(39.0997, -94.5786);
       expect(jackson.community_id).toBeTruthy();
       expect(jackson.community_id).not.toBe(tarrant.community_id);
+      const jacksonPoolResponse = await request.get(new URL("/api/pool/my-stats", base).toString(), { headers });
+      expect(jacksonPoolResponse.ok()).toBeTruthy();
+      const jacksonPool = await jacksonPoolResponse.json();
+      expect(jacksonPool.community_id).toBe(jackson.community_id);
+      expect(jacksonPool.community_id).not.toBe(tarrantPool.community_id);
+      const jacksonLedgerResponse = await request.get(new URL("/api/pool/my-ledger", base).toString(), { headers });
+      expect(jacksonLedgerResponse.ok()).toBeTruthy();
+      const jacksonLedger = await jacksonLedgerResponse.json();
+      expect(Array.isArray(jacksonLedger.entries)).toBe(true);
 
       const countyFeed = await request.get(new URL("/api/civic/needs", base).toString(), { headers });
       expect(countyFeed.ok()).toBeTruthy();

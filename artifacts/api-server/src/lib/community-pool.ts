@@ -253,7 +253,8 @@ export async function resolveHelperClaimScope(params: {
  *
  * A verified US county creates its own community row on first use. A verified
  * non-US or incomplete place returns null; a provider outage is thrown so
- * callers can preserve the user's previous assignment.
+ * callers can explicitly clear a potentially stale assignment rather than
+ * routing money through the county the member just left.
  *
  * Returns null when no re-resolution was needed or possible, so callers can
  * distinguish "nothing to do" from "resolved to community X" without a

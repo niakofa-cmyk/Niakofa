@@ -35,3 +35,15 @@ database-backed active-operation reservation.
 **How to apply:** Keep the active authorized repayment unique in the database,
 release it only through terminal payment state transitions, and make webhook
 claims atomic with every wallet and ledger effect.
+
+Application PaymentIntent success events received before their local transaction
+row exists must fail retryably; never acknowledge and discard them. Refunds
+after helper cashout become explicit negative wallet debt, and cashout remains
+blocked until later earnings repay it.
+
+**Why:** Stripe can deliver success before the creating request commits locally,
+and a post-cashout refund must not silently leave the platform overpaying.
+
+**How to apply:** Distinguish unknown external intents from Niakofa intents by
+server-owned metadata, retain failed webhook receipts for retry/reconciliation,
+and surface wallet debt rather than capping reversals at zero.

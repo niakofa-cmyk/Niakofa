@@ -64,6 +64,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   communityPoolFinancialEventsTable: {},
   poolPendingMinimumsTable: {},
   walletCashoutsTable: { id: "id", state: "state" },
+  systemSettingsTable: { key: "key", value: "value" },
   diasporaHubsTable: { id: "id" },
   diasporaHubPledgesTable: { id: "id" },
 }));
@@ -72,6 +73,7 @@ jest.unstable_mockModule("drizzle-orm", () => ({
   and: jest.fn(),
   desc: jest.fn(),
   eq: drizzleEq,
+  inArray: jest.fn(),
   sql: jest.fn(),
 }));
 
@@ -159,12 +161,14 @@ beforeAll(async () => {
   const auth = await import("../middlewares/auth");
   requireApproved = auth.requireApproved as unknown as jest.Mock;
   const { default: stripeRouter } = await import("../routes/stripe");
+  const { default: walletRouter } = await import("../routes/wallet");
   const pool = await import("../routes/pool");
   const { default: poolStripeReconciliationRouter } = await import("../routes/pool-stripe-reconciliation");
   canRecordPoolContributionWithoutStripe = pool.canRecordPoolContributionWithoutStripe;
   app = express();
   app.use(express.json());
   app.use("/api", stripeRouter);
+  app.use("/api", walletRouter);
   app.use("/api", pool.default);
   app.use("/api", poolStripeReconciliationRouter);
 });
@@ -505,6 +509,28 @@ describe("GET /api/pool/stripe/reconciliation", () => {
 });
 
 describe("POST /api/stripe/webhook", () => {
+  it("does not acknowledge a success webhook that arrives before its transaction row", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_success_before_insert",
+      livemode: true,
+      type: "payment_intent.succeeded",
+      data: { object: { id: "pi_before_insert", amount: 1000, metadata: { requestId: "12" } } },
+    });
+    db.limit.mockResolvedValueOnce([]);
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_success_before_insert", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(500);
+    expect(response.body.received).toBe(false);
+    // Receipt, failed-status, and the later Stripe retry make this race
+    // recoverable rather than acknowledging and losing the settlement.
+    expect(db.execute).toHaveBeenCalledTimes(2);
+  });
+
   it("records authoritative gross, Stripe fee, Climate deduction, and net pool funds", async () => {
     stripeConstructEvent.mockReturnValue({
       id: "evt_pool_settlement",
@@ -769,5 +795,23 @@ describe("POST /api/stripe/webhook", () => {
     expect(db.update).toHaveBeenCalledTimes(1);
     expect(db.where).toHaveBeenCalled();
     expect(db.set).toHaveBeenCalledWith(expect.not.objectContaining({ state: "completed" }));
+  });
+});
+
+describe("POST /api/wallet/cashout", () => {
+  it("surfaces refund debt and blocks another cashout", async () => {
+    db.execute.mockResolvedValueOnce([{ id: 42, benevolence_wallet: -3.25, is_helper: true }]);
+
+    const response = await request(app)
+      .post("/api/wallet/cashout")
+      .send({ amount: 1 });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      code: "wallet_refund_debt",
+      balance: -3.25,
+      debt: 3.25,
+    });
+    expect(stripeTransferCreate).not.toHaveBeenCalled();
   });
 });

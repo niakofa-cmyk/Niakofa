@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, BookOpen, ExternalLink, FileSearch, Loader2, Plus, Save, StickyNote, UserRound } from "lucide-react";
+import { ArrowLeft, BookOpen, ExternalLink, FileSearch, Loader2, Plus, Save, StickyNote } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -30,9 +30,12 @@ export default function ResearchCenterPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [caseTitle, setCaseTitle] = useState("");
   const [question, setQuestion] = useState("");
   const [personId, setPersonId] = useState("");
+  const [caseStatus, setCaseStatus] = useState("open");
+  const [caseConfidence, setCaseConfidence] = useState("unreviewed");
   const [evidenceTitle, setEvidenceTitle] = useState("");
   const [evidenceType, setEvidenceType] = useState<ResearchEvidenceType>("document");
   const [evidenceConfidence, setEvidenceConfidence] = useState("possible");
@@ -78,6 +81,9 @@ export default function ResearchCenterPage() {
     if (!res.ok) throw new Error("Unable to open research case.");
     const data = await res.json();
     setSelectedCase(data.case);
+    setCaseStatus(data.case.status);
+    setCaseConfidence(data.case.confidence);
+    setPersonId(data.case.person_member_id ? String(data.case.person_member_id) : "");
     setEvidence(data.evidence ?? []);
     setNotes(data.notes ?? []);
     setError("");
@@ -96,7 +102,7 @@ export default function ResearchCenterPage() {
 
   async function createCase() {
     if (!familyId || !caseTitle.trim() || !question.trim()) return;
-    setSaving(true); setError("");
+    setSaving(true); setError(""); setSuccess("");
     try {
       const res = await api("/api/diaspora/research/cases", { method: "POST", body: JSON.stringify({ family_id: familyId, person_member_id: personId ? Number(personId) : null, title: caseTitle.trim(), research_question: question.trim() }) });
       if (!res.ok) throw new Error((await res.json()).error ?? "Could not create research case.");
@@ -104,33 +110,52 @@ export default function ResearchCenterPage() {
       setCaseTitle(""); setQuestion(""); setPersonId("");
       await loadFamilyData(familyId);
       await openCase(data.case.id);
+      setSuccess("Research case opened.");
     } catch (err) { setError(err instanceof Error ? err.message : "Could not create research case."); } finally { setSaving(false); }
+  }
+
+  async function updateCase(updates: Partial<ResearchCase>) {
+    if (!selectedCase) return;
+    setSaving(true); setError(""); setSuccess("");
+    try {
+      const res = await api(`/api/diaspora/research/cases/${selectedCase.id}`, { method: "PATCH", body: JSON.stringify(updates) });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Could not update research case.");
+      const data = await res.json();
+      if (familyId) await loadFamilyData(familyId);
+      setSelectedCase(data.case);
+      setCaseStatus(data.case.status);
+      setCaseConfidence(data.case.confidence);
+      setPersonId(data.case.person_member_id ? String(data.case.person_member_id) : "");
+      setSuccess("Case updated.");
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not update research case."); } finally { setSaving(false); }
   }
 
   async function addEvidence() {
     if (!selectedCase || !evidenceTitle.trim()) return;
-    setSaving(true); setError("");
+    setSaving(true); setError(""); setSuccess("");
     try {
       const res = await api(`/api/diaspora/research/cases/${selectedCase.id}/evidence`, { method: "POST", body: JSON.stringify({ title: evidenceTitle.trim(), evidence_type: evidenceType, confidence: evidenceConfidence, source_url: sourceUrl.trim() || undefined, citation: citation.trim() || undefined, notes: evidenceNotes.trim() || undefined }) });
       if (!res.ok) throw new Error((await res.json()).error ?? "Could not save evidence.");
       setEvidenceTitle(""); setSourceUrl(""); setCitation(""); setEvidenceNotes("");
       await openCase(selectedCase.id);
+      setSuccess("Evidence saved.");
     } catch (err) { setError(err instanceof Error ? err.message : "Could not save evidence."); } finally { setSaving(false); }
   }
 
   async function addNote() {
     if (!selectedCase || !noteBody.trim()) return;
-    setSaving(true); setError("");
+    setSaving(true); setError(""); setSuccess("");
     try {
       const res = await api(`/api/diaspora/research/cases/${selectedCase.id}/notes`, { method: "POST", body: JSON.stringify({ body: noteBody.trim() }) });
       if (!res.ok) throw new Error((await res.json()).error ?? "Could not save note.");
       setNoteBody(""); await openCase(selectedCase.id);
+      setSuccess("Note saved.");
     } catch (err) { setError(err instanceof Error ? err.message : "Could not save note."); } finally { setSaving(false); }
   }
 
   async function handoffTimeline() {
     if (!selectedCase) return;
-    setSaving(true); setError("");
+    setSaving(true); setError(""); setSuccess("");
     try {
       const res = await api(`/api/diaspora/research/cases/${selectedCase.id}/handoff/timeline`, { method: "POST", body: JSON.stringify({ title: selectedCase.title, description: selectedCase.research_question }) });
       if (!res.ok) throw new Error((await res.json()).error ?? "Timeline handoff failed.");
@@ -152,6 +177,7 @@ export default function ResearchCenterPage() {
         </header>
 
         {error && <div className="mb-5 rounded-xl border border-rose-300/20 bg-rose-300/10 p-3 text-sm text-rose-100">{error}</div>}
+        {success && <div className="mb-5 rounded-xl border border-teal-300/20 bg-teal-300/10 p-3 text-sm text-teal-100">{success}</div>}
 
         <section className="grid gap-5 lg:grid-cols-[280px_1fr]">
           <aside className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-4`}>
@@ -173,17 +199,43 @@ export default function ResearchCenterPage() {
                 <select value={personId} onChange={(e) => setPersonId(e.target.value)} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white"><option value="" className="bg-[#0b1917]">No person attached yet</option>{people.map((p) => <option key={p.id} value={p.id} className="bg-[#0b1917]">{p.display_name}</option>)}</select>
                 <textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="What are you trying to learn?" rows={5} className="md:col-span-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30" />
               </div>
-              <button disabled={saving || !caseTitle.trim() || !question.trim()} onClick={createCase} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-teal-300 px-4 py-3 text-sm font-semibold text-[#071312] disabled:opacity-40"><Save size={16} /> Create case</button>
+              <div className="mt-4 flex items-center gap-3">
+                <button disabled={saving || !caseTitle.trim() || !question.trim()} onClick={createCase} className="inline-flex items-center gap-2 rounded-xl bg-teal-300 px-4 py-3 text-sm font-semibold text-[#071312] disabled:opacity-40"><Save size={16} /> Create case</button>
+                {saving && <Loader2 className="w-5 h-5 animate-spin text-teal-300/50"/>}
+              </div>
             </section> : <>
               <section className={`${diasporaTheme.panelStrong} ${diasporaTheme.radiusHero} p-6 md:p-8`}>
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"><div><p className={`text-xs uppercase tracking-[0.2em] ${diasporaTheme.teal.text}`}>Active case</p><h2 className="mt-2 text-2xl font-semibold">{selectedCase.title}</h2><p className="mt-2 text-white/60">{selectedCase.research_question}</p></div><button onClick={() => setSelectedCase(null)} className="text-sm text-white/50 hover:text-white">New case</button></div>
-                <div className="mt-5 flex flex-wrap gap-2"><span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs">{selectedCase.status}</span><span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">{selectedCase.confidence}</span>{selectedCase.person_member_id && <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100"><UserRound className="mr-1 inline" size={12} /> Person attached</span>}</div>
-                <div className="mt-5 flex flex-wrap gap-2"><button disabled={!selectedCase.person_member_id || saving} onClick={handoffTimeline} className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm text-amber-100 disabled:opacity-40">Send to Legacy Timeline</button></div>
+
+                <div className="mt-6 border-t border-white/10 pt-6">
+                  <div className="flex items-center gap-2 mb-4"><FileSearch size={16} className="text-amber-300"/><h3 className="text-sm font-semibold text-white/80">Case status & resolution</h3></div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select disabled={saving} value={caseStatus} onChange={(e) => updateCase({ status: e.target.value })} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+                      <option value="open" className="bg-[#0b1917]">Status: Open</option>
+                      <option value="paused" className="bg-[#0b1917]">Status: Paused</option>
+                      <option value="resolved" className="bg-[#0b1917]">Status: Resolved</option>
+                    </select>
+                    <select disabled={saving} value={caseConfidence} onChange={(e) => updateCase({ confidence: e.target.value })} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+                      <option value="unreviewed" className="bg-[#0b1917]">Confidence: Unreviewed</option>
+                      <option value="possible" className="bg-[#0b1917]">Confidence: Possible</option>
+                      <option value="supported" className="bg-[#0b1917]">Confidence: Supported</option>
+                      <option value="strong" className="bg-[#0b1917]">Confidence: Strong</option>
+                    </select>
+                    <select disabled={saving} value={personId} onChange={(e) => updateCase({ person_member_id: e.target.value ? Number(e.target.value) : null })} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+                      <option value="" className="bg-[#0b1917]">No person attached</option>
+                      {people.map((p) => <option key={p.id} value={p.id} className="bg-[#0b1917]">{p.display_name}</option>)}
+                    </select>
+                    {selectedCase.status !== 'resolved' && <button disabled={saving} onClick={() => updateCase({ status: 'resolved' })} className="rounded-xl border border-teal-300/20 bg-teal-300/10 px-4 py-2 text-sm font-medium text-teal-100 disabled:opacity-40 hover:bg-teal-300/20 transition-colors">Resolve after review</button>}
+                    {saving && <Loader2 className="w-4 h-4 animate-spin text-white/50"/>}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2"><button disabled={!selectedCase.person_member_id || saving} onClick={handoffTimeline} className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm text-amber-100 disabled:opacity-40 hover:bg-amber-300/20 transition-colors">Send to Legacy Timeline</button></div>
               </section>
 
               <section className="grid gap-5 xl:grid-cols-2">
-                <div className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}><div className="flex items-center gap-2"><FileSearch size={18} className={diasporaTheme.teal.text} /><h3 className="font-semibold">Add evidence</h3></div><div className="mt-4 space-y-3"><input value={evidenceTitle} onChange={(e) => setEvidenceTitle(e.target.value)} placeholder="Evidence title" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><ResearchEvidenceTypeSelect value={evidenceType} onChange={setEvidenceType} disabled={saving} /><select value={evidenceConfidence} onChange={(e) => setEvidenceConfidence(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white"><option value="unreviewed" className="bg-[#0b1917]">Unreviewed</option><option value="possible" className="bg-[#0b1917]">Possible</option><option value="supported" className="bg-[#0b1917]">Supported</option><option value="strong" className="bg-[#0b1917]">Strong</option></select><input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="Source URL (optional)" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><input value={citation} onChange={(e) => setCitation(e.target.value)} placeholder="Citation / archive reference (optional)" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><textarea value={evidenceNotes} onChange={(e) => setEvidenceNotes(e.target.value)} rows={3} placeholder="Why does this matter?" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><button disabled={saving || !evidenceTitle.trim()} onClick={addEvidence} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#071312] disabled:opacity-40"><Plus size={16} /> Save evidence</button></div></div>
-                <div className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}><div className="flex items-center gap-2"><StickyNote size={18} className="text-amber-300" /><h3 className="font-semibold">Research notes</h3></div><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} rows={4} placeholder="Record your reasoning, contradiction, next step, or family clue…" className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><button disabled={saving || !noteBody.trim()} onClick={addNote} className="mt-2 inline-flex items-center gap-2 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm text-amber-100 disabled:opacity-40"><Save size={16} /> Save note</button><div className="mt-4 space-y-2">{notes.map((note) => <div key={note.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm text-white/65">{note.body}</div>)}</div></div>
+                <div className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}><div className="flex items-center gap-2"><FileSearch size={18} className={diasporaTheme.teal.text} /><h3 className="font-semibold">Add evidence</h3></div><div className="mt-4 space-y-3"><input value={evidenceTitle} onChange={(e) => setEvidenceTitle(e.target.value)} placeholder="Evidence title" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><ResearchEvidenceTypeSelect value={evidenceType} onChange={setEvidenceType} disabled={saving} /><select value={evidenceConfidence} onChange={(e) => setEvidenceConfidence(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white"><option value="unreviewed" className="bg-[#0b1917]">Unreviewed</option><option value="possible" className="bg-[#0b1917]">Possible</option><option value="supported" className="bg-[#0b1917]">Supported</option><option value="strong" className="bg-[#0b1917]">Strong</option></select><input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="Source URL (optional)" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><input value={citation} onChange={(e) => setCitation(e.target.value)} placeholder="Citation / archive reference (optional)" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><textarea value={evidenceNotes} onChange={(e) => setEvidenceNotes(e.target.value)} rows={3} placeholder="Why does this matter?" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><div className="flex items-center gap-3"><button disabled={saving || !evidenceTitle.trim()} onClick={addEvidence} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#071312] disabled:opacity-40"><Plus size={16} /> Save evidence</button>{saving && <Loader2 className="w-4 h-4 animate-spin text-white/50"/>}</div></div></div>
+                <div className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}><div className="flex items-center gap-2"><StickyNote size={18} className="text-amber-300" /><h3 className="font-semibold">Research notes</h3></div><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} rows={4} placeholder="Record your reasoning, contradiction, next step, or family clue…" className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white placeholder:text-white/30" /><div className="mt-2 flex items-center gap-3"><button disabled={saving || !noteBody.trim()} onClick={addNote} className="inline-flex items-center gap-2 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm text-amber-100 disabled:opacity-40"><Save size={16} /> Save note</button>{saving && <Loader2 className="w-4 h-4 animate-spin text-amber-100/50"/>}</div><div className="mt-4 space-y-2">{notes.map((note) => <div key={note.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm text-white/65">{note.body}</div>)}</div></div>
               </section>
 
               <section className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5`}><h3 className="font-semibold">Evidence ledger</h3><div className="mt-4 grid gap-3">{evidence.length ? evidence.map((item) => <article key={item.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div className="font-medium">{item.title}</div><div className="flex gap-2 text-[11px]"><span className="rounded-full bg-white/5 px-2 py-1">{RESEARCH_EVIDENCE_LABELS[item.evidence_type]}</span><span className="rounded-full bg-amber-300/10 px-2 py-1 text-amber-100">{item.confidence}</span></div></div>{item.citation && <p className="mt-2 text-sm text-white/50">{item.citation}</p>}{item.notes && <p className="mt-2 text-sm text-white/55">{item.notes}</p>}{item.source_url && <a href={item.source_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-teal-300">Open source <ExternalLink size={12} /></a>}</article>) : <p className="text-sm text-white/40">No evidence captured yet.</p>}</div></section>

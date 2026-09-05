@@ -1,0 +1,95 @@
+Live + GitHub (checked now)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ItemResultDeployhttps://niakofa.com + Railway origin healthyCommit9ccff8d0a19aac6eb6cc26bf2744ec7b1a42936fDB / mapoperationalOpen PRsnoneRecent maincounty pool isolation, Stripe hardening, PIF repayments, restart-safe payouts, Diaspora acceptance tooling
+
+Diaspora — close to vision? E2E?
+Yes, for the production boundary we agreed on.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+AreaStatusGlobe / Family / Vault / Tree / Research / Preserve / DNA / TimelineWired in codeYour live runPreserve PASS, DNA PASS, Research SKIPPED (no case)Provider-grade shared-cM/IBDFuture (correct — not claimed)
+Do not start another large Globe / Research / DNA rewrite on top of this. Optional: create one Research case → re-run for 3/3.
+USER_A_STATE is local (~/niakofa-acceptance/playwright/.auth/user-a.json). Grok cannot upload it; you already regenerated successfully (has_token True).
+
+Community Pools + county isolation (verified)
+Live helper probe:
+text/api/pool/my-stats → community_id=1, community_name="Tarrant County", balance=4.55
+Code on main:
+
+Ledger balance scoped by community_id
+resolveCommunityFromFreshLocation / claim-scope fail-closed when unresolved
+GPS update path is designed so pool/civic follow the user’s county
+
+Important: /api/pool/stats is still a platform aggregate. With only one funded community it shows the same $4.55. User-facing “My Pool” must use /api/pool/my-stats only.
+Travel test (you run): change GPS to another US county → my-stats should show a different community_id / balance, not Tarrant’s ledger.
+
+Payments
+Recent commits harden Stripe movement, refund watermarks, restart-safe payouts, PIF repayments. Full gateway E2E still needs your Stripe test/live webhook run — not inventable from GitHub alone.
+
+Railway env vars
+Grok cannot set Railway variables (no Railway connector). In the dashboard for the service behind niakofa.com / zesty-ambition-…, set from .env.railway.example, including:
+
+APP_URL / ALLOWED_ORIGIN / NIAKOFA_API_ORIGIN = https://niakofa.com
+MAPBOX_TOKEN + VITE_MAPBOX_TOKEN (rebuild after Vite changes)
+Stripe keys + VITE_STRIPE_PUBLISHABLE_KEY
+SESSION_SECRET, etc.
+
+Do not put USER_A_STATE or passwords in Railway.
+
+Recommendations (order)
+
+Freeze Diaspora mutation milestone on 9ccff8d (Preserve + DNA accepted).
+Optional Research case → third live test.
+County travel matrix (Tarrant vs second county) for pool/civic switch.
+Confirm all pool UI uses my-stats.
+One Stripe test-mode webhook → ledger → payout walkthrough.
+Rotate helper test password.
+Provider-grade DNA = separate project.
+
+Bottom line: Deploy matches main; Diaspora live acceptance is already green for the mutation paths that had data; county pools are scoped in architecture and live my-stats shows Tarrant — finish multi-county proof with a second GPS/community, not another feature rewrite.

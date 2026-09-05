@@ -14,6 +14,10 @@ const payoutOperationsTable = {
   id: "payout_operation_id",
   request_id: "request_id",
   helper_id: "helper_id",
+  requester_id: "requester_id",
+  amount_cents: "amount_cents",
+  platform_fee_cents: "platform_fee_cents",
+  stripe_account_id: "stripe_account_id",
   state: "state",
   stripe_transfer_id: "stripe_transfer_id",
   operation_key: "operation_key",
@@ -121,7 +125,12 @@ beforeEach(() => {
   claimInsertResult = [{
     id: 1,
     state: "authorized",
+    request_id: 10,
     helper_id: 20,
+    requester_id: 30,
+    amount_cents: 10000,
+    platform_fee_cents: 500,
+    stripe_account_id: "acct_test",
     stripe_transfer_id: null,
   }];
   existingOperation = [];
@@ -158,12 +167,31 @@ describe("payout worker restart idempotency", () => {
     ]);
   });
 
+  it("uses an identical Stripe payload when a payout job is retried", async () => {
+    await processPayout(job);
+    await processPayout({ ...job, attemptsMade: 2 });
+
+    expect(stripeTransferCreate).toHaveBeenCalledTimes(2);
+    const [firstParams, firstOptions] = stripeTransferCreate.mock.calls[0];
+    const [retryParams, retryOptions] = stripeTransferCreate.mock.calls[1];
+    expect(retryParams).toEqual(firstParams);
+    expect(retryOptions).toEqual(firstOptions);
+    expect(firstParams).toEqual(expect.not.objectContaining({
+      metadata: expect.objectContaining({ attempt: expect.anything() }),
+    }));
+  });
+
   it("repairs missing helper history without duplicating the completed payment", async () => {
     claimInsertResult = [];
     existingOperation = [{
       id: 1,
       state: "completed",
+      request_id: 10,
       helper_id: 20,
+      requester_id: 30,
+      amount_cents: 10000,
+      platform_fee_cents: 500,
+      stripe_account_id: "acct_test",
       stripe_transfer_id: "tr_restart_safe",
     }];
 
@@ -181,14 +209,26 @@ describe("payout worker restart idempotency", () => {
     existingOperation = [{
       id: 1,
       state: "authorized",
+      request_id: 10,
       helper_id: 20,
+      requester_id: 30,
+      amount_cents: 10000,
+      platform_fee_cents: 500,
+      stripe_account_id: "acct_test",
       stripe_transfer_id: null,
     }];
     stripeTransferList.mockResolvedValue({
       data: [{
         id: "tr_restart_safe",
         destination: "acct_test",
-        metadata: { request_id: "10", helper_id: "20" },
+        amount: 9500,
+        currency: "usd",
+        metadata: {
+          request_id: "10",
+          helper_id: "20",
+          operation_key: "payout-10-20",
+          platform_fee_cents: "500",
+        },
       }],
     });
 
@@ -203,7 +243,12 @@ describe("payout worker restart idempotency", () => {
     existingOperation = [{
       id: 1,
       state: "authorized",
+      request_id: 10,
       helper_id: 99,
+      requester_id: 30,
+      amount_cents: 10000,
+      platform_fee_cents: 500,
+      stripe_account_id: "acct_test",
       stripe_transfer_id: null,
     }];
 

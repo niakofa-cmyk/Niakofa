@@ -10,12 +10,20 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const base = process.env.BASE_URL || "http://127.0.0.1:5000";
+const isDeployed = !["127.0.0.1", "localhost", "::1"].includes(new URL(base).hostname);
+
+function requireAuthenticatedState(name: "USER_A_STATE" | "USER_B_STATE") {
+  if (isDeployed && !process.env[name]) {
+    throw new Error(`${name} is required for deployed Chromium acceptance.`);
+  }
+}
 
 async function goto(page: Page, path: string) {
   await page.goto(new URL(path, base).toString(), { waitUntil: "networkidle" });
 }
 
 test.describe("Diaspora journeys — User A", () => {
+  test.beforeAll(() => requireAuthenticatedState("USER_A_STATE"));
   test.use({ storageState: process.env.USER_A_STATE });
 
   test("Dashboard loads aggregate stats", async ({ page }) => {
@@ -60,6 +68,11 @@ test.describe("Diaspora journeys — User A", () => {
 });
 
 test.describe("DNA dual-user consent path", () => {
+  test.beforeAll(() => {
+    requireAuthenticatedState("USER_A_STATE");
+    requireAuthenticatedState("USER_B_STATE");
+  });
+
   test("User A consent surface is visible when engine is enabled", async ({ browser }) => {
     if (!process.env.USER_A_STATE) test.skip();
     const context = await browser.newContext({ storageState: process.env.USER_A_STATE });

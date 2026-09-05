@@ -873,10 +873,10 @@ export default function CommunityScreen() {
   }, [tab, countyLoaded, loadCountyData]);
 
   // ── Community Pool: live stats, transparency ledger, contribute flow ──────
-  const { data: poolStats, refetch: refetchPoolStats } = useGetPoolStats({
+  const { data: platformPoolStats, refetch: refetchPlatformPoolStats } = useGetPoolStats({
     query: { queryKey: getGetPoolStatsQueryKey(), staleTime: 15000 }
   });
-  const { data: poolLedger, refetch: refetchPoolLedger } = useGetPoolLedger(
+  const { data: platformPoolLedger, refetch: refetchPlatformPoolLedger } = useGetPoolLedger(
     { limit: 15 },
     { query: { queryKey: getGetPoolLedgerQueryKey({ limit: 15 }), staleTime: 15000 } }
   );
@@ -916,19 +916,45 @@ export default function CommunityScreen() {
           outflow_30d: 0,
           created_at: new Date().toISOString(),
         });
+      } else {
+        // A location change can intentionally clear an unresolved community.
+        // Do not keep displaying the prior county's financial data.
+        setMyPoolStats(null);
       }
       if (ledgerRes.ok) {
         const data = await ledgerRes.json();
         setMyPoolLedger(Array.isArray(data.entries) ? data.entries : []);
+      } else {
+        setMyPoolLedger([]);
       }
     } catch {
-      // Keep the public transparency data visible if the scoped request fails.
+      // Never replace a member's scoped pool with platform transparency data.
+      setMyPoolStats(null);
+      setMyPoolLedger([]);
     }
   }, [currentUser, base]);
 
   useEffect(() => {
     if (tab === "pool") void refreshMyPool();
   }, [tab, refreshMyPool]);
+
+  // The member Pool tab must never fall through to platform aggregates while
+  // its county data is loading or unresolved. Public aggregate data remains
+  // available only to explicitly administrative/platform surfaces.
+  const poolStats = currentUser
+    ? (myPoolStats as unknown as typeof platformPoolStats)
+    : platformPoolStats;
+  const poolLedger = currentUser
+    ? ({ entries: myPoolLedger ?? [] } as typeof platformPoolLedger)
+    : platformPoolLedger;
+  const refreshPool = useCallback(() => {
+    if (currentUser) {
+      void refreshMyPool();
+      return;
+    }
+    void refetchPlatformPoolStats();
+    void refetchPlatformPoolLedger();
+  }, [currentUser, refreshMyPool, refetchPlatformPoolStats, refetchPlatformPoolLedger]);
 
   const [contributePending, setContributePending] = useState(false);
   const [contributeAmount, setContributeAmount] = useState("");
@@ -974,11 +1000,17 @@ export default function CommunityScreen() {
     }
     let refreshTimer: number | undefined;
     if (completed) {
-      void refetchPoolStats();
-      void refetchPoolLedger();
+      if (currentUser) void refreshMyPool();
+      else {
+        void refetchPlatformPoolStats();
+        void refetchPlatformPoolLedger();
+      }
       refreshTimer = window.setTimeout(() => {
-        void refetchPoolStats();
-        void refetchPoolLedger();
+        if (currentUser) void refreshMyPool();
+        else {
+          void refetchPlatformPoolStats();
+          void refetchPlatformPoolLedger();
+        }
       }, 2500);
     }
 
@@ -988,11 +1020,16 @@ export default function CommunityScreen() {
     return () => {
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
     };
-  }, [refetchPoolLedger, refetchPoolStats]);
+  }, [
+    currentUser,
+    refreshMyPool,
+    refetchPlatformPoolLedger,
+    refetchPlatformPoolStats,
+  ]);
 
-  useWebSocket("pool_updated", () => { refetchPoolStats(); refetchPoolLedger(); });
-  useWebSocket("pool_front_paid", () => { refetchPoolStats(); refetchPoolLedger(); });
-  useWebSocket("pool_low_balance", () => { refetchPoolStats(); });
+  useWebSocket("pool_updated", refreshPool);
+  useWebSocket("pool_front_paid", refreshPool);
+  useWebSocket("pool_low_balance", refreshPool);
 
   const submitContribution = async () => {
     const amt = Number(contributeAmount);
@@ -1017,8 +1054,7 @@ export default function CommunityScreen() {
       } else {
         setContributeMsg(`Thank you! $${formatPoolCurrency(amt)} added to the pool. 💙`);
         setContributeAmount("");
-        refetchPoolStats();
-        refetchPoolLedger();
+        refreshPool();
       }
     } catch {
       setContributeMsg("Contribution failed. Please try again.");
@@ -1817,7 +1853,7 @@ export default function CommunityScreen() {
                   setContributeSecret(null);
                   setContributeMsg("Thank you! Your contribution is on its way to the pool. 💙");
                   setContributeAmount("");
-                  setTimeout(() => { refetchPoolStats(); refetchPoolLedger(); }, 2500);
+                  setTimeout(refreshPool, 2500);
                 }}
                 onSkip={() => setContributeSecret(null)}
                 onClose={() => setContributeSecret(null)}
@@ -1835,7 +1871,7 @@ export default function CommunityScreen() {
                   setAnonSecret(null);
                   setAnonMsg("Thank you for supporting the community! Your donation is on its way to the pool. 💙");
                   setAnonAmount("");
-                  setTimeout(() => { refetchPoolStats(); refetchPoolLedger(); }, 2500);
+                  setTimeout(refreshPool, 2500);
                 }}
                 onSkip={() => setAnonSecret(null)}
                 onClose={() => setAnonSecret(null)}

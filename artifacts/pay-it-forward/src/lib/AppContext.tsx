@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@workspace/api-client-react";
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
@@ -84,6 +85,7 @@ function emaSmooth(prev: number, next: number, alpha = 0.3): number {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   // ── All useState calls first ─────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -450,12 +452,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
           heading: loc.heading ?? null,
           speed: loc.speed ?? null,
         },
+      }, {
+        onSuccess: (fresh) => {
+          // Location PATCH is also a county switch. Replace the stored user
+          // and discard county-derived query caches so pool/civic/map surfaces
+          // cannot render data from the county just left.
+          if (!fresh) return;
+          setCurrentUser(previous => {
+            const changedCounty = previous?.community_id !== fresh.community_id;
+            if (changedCounty) void queryClient.invalidateQueries();
+            try { localStorage.setItem("niakofa_user", JSON.stringify(fresh)); } catch {}
+            return fresh;
+          });
+        },
       });
     }, interval);
 
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id, helperModeActive, activeRequestId]);
+  }, [currentUser?.id, helperModeActive, activeRequestId, queryClient, updateLocation]);
 
   // Start the shared WS singleton and register/unregister as the user changes.
   // This effect is LAST so it never disturbs the hook order above.

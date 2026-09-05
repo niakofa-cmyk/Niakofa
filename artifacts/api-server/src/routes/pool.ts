@@ -268,7 +268,13 @@ router.get("/pool/my-stats", requireAuth, async (req, res) => {
       sql`SELECT name, target_reserve_amount FROM communities WHERE id = ${communityId} LIMIT 1`,
     );
     const community = communityResult.rows[0];
-    const communityName = community?.name;
+    // A dangling ID is not a valid financial scope. This can occur after an
+    // admin removes a community; never return a zeroed "pool" that could be
+    // mistaken for a real ledger.
+    if (!community) {
+      return res.status(409).json({ error: "Your Community Pool assignment needs to be refreshed." });
+    }
+    const communityName = community.name;
 
     const [[totals], minimum_hourly_rate, reservePolicy] = await Promise.all([
       db
@@ -311,7 +317,7 @@ router.get("/pool/my-stats", requireAuth, async (req, res) => {
       pool_health_pct >= 100 ? "healthy" : pool_health_pct >= 40 ? "low" : "critical";
     return res.json({
       community_id: communityId,
-      community_name: communityName ?? "Your Community",
+      community_name: communityName,
       balance,
       total_contributed: totals?.total_contributed ?? 0,
       net_contributed: totals?.net_contributed ?? totals?.total_contributed ?? 0,
@@ -349,7 +355,9 @@ router.get("/pool/my-ledger", requireAuth, async (req, res) => {
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
-    if (member?.community_id == null) return res.json({ entries: [] });
+    if (member?.community_id == null) {
+      return res.status(404).json({ error: "Your account is not assigned to a Community Pool yet." });
+    }
 
     const limit = Math.min(Math.max(parseInt(String(req.query["limit"] ?? "25")) || 25, 1), 50);
     const rows = await db

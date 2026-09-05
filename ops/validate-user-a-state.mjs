@@ -1,15 +1,47 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import path from "node:path";
 
-const statePath = process.argv[2] || process.env.USER_A_STATE;
+const stateName = process.argv[3] || "USER_A_STATE";
+const statePath = process.argv[2] || process.env[stateName];
 
 function fail(message) {
-  console.error(`USER_A_STATE validation failed: ${message}`);
+  console.error(`${stateName} validation failed: ${message}`);
   process.exit(1);
 }
 
-if (!statePath) fail("provide a storage-state path as the first argument or USER_A_STATE.");
+if (!statePath) fail(`provide a storage-state path as the first argument or ${stateName}.`);
+
+const repositoryRoot = path.resolve(import.meta.dirname, "..");
+const resolvedPath = path.resolve(statePath);
+let fileInfo;
+try {
+  fileInfo = fs.lstatSync(resolvedPath);
+} catch {
+  fail("the file is missing.");
+}
+if (fileInfo.isSymbolicLink()) fail("symbolic links are not allowed.");
+if (!fileInfo.isFile()) fail("the path must be a regular file.");
+if ((fileInfo.mode & 0o077) !== 0) fail("file permissions must be 0600 (not group/world accessible).");
+try {
+  if (fs.realpathSync(resolvedPath) !== resolvedPath) fail("paths through symbolic links are not allowed.");
+} catch {
+  fail("the file could not be resolved safely.");
+}
+if (resolvedPath === repositoryRoot || resolvedPath.startsWith(`${repositoryRoot}${path.sep}`)) {
+  fail("in-repository state files are not allowed.");
+}
+try {
+  const { spawnSync } = await import("node:child_process");
+  const result = spawnSync("git", ["-C", repositoryRoot, "ls-files", "--error-unmatch", "--", resolvedPath], {
+    encoding: "utf8",
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+  if (result.status === 0) fail("tracked state files are not allowed.");
+} catch (error) {
+  if (error?.message?.includes("tracked state")) throw error;
+}
 
 let state;
 try {

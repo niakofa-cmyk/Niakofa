@@ -231,9 +231,28 @@ router.post("/stripe/webhook", async (req, res) => {
           .where(eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id))
           .limit(1);
 
-        if (!txRow || txRow.state === "completed") {
-          // Already processed (retry) or no matching transaction — nothing to do
-          logger.info({ pi: pi.id }, "payment_intent.succeeded: no unprocessed transaction row — skipping");
+        if (!txRow) {
+          // Ignore PaymentIntents that do not identify an application payment;
+          // this endpoint may receive events for other Stripe products. Every
+          // request/tip/repayment intent created below carries requestId.
+          if (!pi.metadata?.["requestId"]) {
+            logger.info({ pi: pi.id }, "payment_intent.succeeded: unknown non-application intent — skipping");
+            break;
+          }
+          // Never acknowledge a successful charge until its local settlement
+          // row exists. There is a small, unavoidable interval after Stripe
+          // creates an intent and before this process commits
+          // payment_transactions; Stripe can deliver the success webhook in
+          // that interval.  Returning 500 keeps the event retryable, while
+          // stripe_webhook_events retains a durable failed receipt for
+          // reconciliation.  A 2xx/no-op here would permanently lose the
+          // helper credit when delivery precedes the insert.
+          throw new Error(`payment_intent.succeeded received before payment transaction insertion (${pi.id})`);
+        }
+
+        if (txRow.state === "completed") {
+          // Already processed on a webhook retry.
+          logger.info({ pi: pi.id }, "payment_intent.succeeded: transaction already completed — skipping");
           break;
         }
 
@@ -735,6 +754,10 @@ router.post("/stripe/webhook", async (req, res) => {
           ) {
             const fronted = await wasRequestFronted(existing.request_id);
             if (!fronted) {
+              // Do not cap at zero: if this credit was already cashed out, the
+              // negative wallet is an explicit refund debt. wallet/cashout
+              // rejects negative balances, so the helper cannot withdraw
+              // further funds until later earnings repay the debt.
               await tx
                 .update(usersTable)
                 .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} - ${incrementalRefund}` })

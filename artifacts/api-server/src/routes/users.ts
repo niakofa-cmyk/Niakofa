@@ -647,9 +647,10 @@ router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnershi
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  // Every verified GPS fix is authoritative. This is what moves a user from
-  // one county pool to another when they travel; a geocoder outage is the
-  // only case where the previous assignment is preserved.
+  // Every GPS fix is authoritative. This is what moves a user from one county
+  // pool to another when they travel.  Do not retain the previous county when
+  // this fix cannot be resolved: doing so would let money and county feeds use
+  // a stale jurisdiction after a member has crossed a county boundary.
   try {
     const resolvedCommunityId = await resolveCommunityFromFreshLocation({
       currentCommunityId: user.community_id ?? null,
@@ -663,8 +664,12 @@ router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnershi
   } catch (err) {
     logger.warn(
       { err, user_id: user.id },
-      "location community geocoding unavailable — preserving current assignment",
+      "location community geocoding unavailable — clearing stale assignment",
     );
+    [user] = await db.update(usersTable)
+      .set({ community_id: null, updated_at: new Date() })
+      .where(eq(usersTable.id, user.id))
+      .returning();
   }
 
   if (user.helper_mode_active) {

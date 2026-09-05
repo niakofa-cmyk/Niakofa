@@ -230,13 +230,15 @@ describe("GET /pool/my-ledger", () => {
     expect(mockDb.limit).toHaveBeenLastCalledWith(50);
   });
 
-  it("returns an empty ledger for an unassigned member", async () => {
+  it("fails closed for an unassigned member", async () => {
     mockDb.limit.mockResolvedValueOnce([{ community_id: null }]);
 
     const response = await request(makeApp()).get("/pool/my-ledger");
 
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ entries: [] });
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: "Your account is not assigned to a Community Pool yet.",
+    });
     expect(mockDb.limit).toHaveBeenCalledTimes(1);
   });
 });

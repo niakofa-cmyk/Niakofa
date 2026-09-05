@@ -114,6 +114,24 @@ router.post(
         }
 
         walletBalanceBefore = user.benevolence_wallet ?? 0;
+        // Refunds are allowed to reverse a credit after the helper has already
+        // cashed it out.  That deliberately creates a visible wallet debt
+        // rather than silently capping the reversal (which would overpay the
+        // helper).  A debtor cannot initiate another cashout until subsequent
+        // earnings bring this balance back above the requested amount.
+        if (walletBalanceBefore < 0) {
+          throw Object.assign(
+            new Error("Cashouts are blocked while your Goodwill Fund has a refund debt. New earnings will first repay the debt."),
+            {
+              statusCode: 409,
+              extra: {
+                code: "wallet_refund_debt",
+                balance: walletBalanceBefore,
+                debt: Math.abs(walletBalanceBefore),
+              },
+            },
+          );
+        }
         if (requestedAmount > walletBalanceBefore) {
           throw Object.assign(new Error("Insufficient wallet balance"), {
             statusCode: 400,

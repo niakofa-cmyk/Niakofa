@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 
-const required = ["NIAKOFA_API_ORIGIN", "LEGACY_RPG_ORIGIN"];
+const required = ["BASE_URL", "NIAKOFA_API_ORIGIN", "LEGACY_RPG_ORIGIN"];
 const timeoutMs = Number(process.env.GATE_TIMEOUT_MS ?? 10000);
 
 if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
@@ -22,15 +22,23 @@ function parseOrigin(name) {
     if (!["http:", "https:"].includes(origin.protocol)) {
       throw new Error("unsupported_protocol");
     }
+    if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
+      throw new Error("not_an_origin");
+    }
     return origin;
   } catch {
-    console.error(`${name} must be a valid HTTP(S) URL.`);
+    console.error(`${name} must be a credential-free HTTP(S) origin without path, query, or hash.`);
     process.exit(2);
   }
 }
 
 const apiOrigin = parseOrigin("NIAKOFA_API_ORIGIN");
 const rpgOrigin = parseOrigin("LEGACY_RPG_ORIGIN");
+const baseUrl = parseOrigin("BASE_URL");
+if (baseUrl.origin !== apiOrigin.origin) {
+  console.error("BASE_URL and NIAKOFA_API_ORIGIN must have the same origin.");
+  process.exit(2);
+}
 
 const checks = [];
 

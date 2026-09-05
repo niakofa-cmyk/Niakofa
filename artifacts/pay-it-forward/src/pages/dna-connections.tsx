@@ -49,6 +49,7 @@ export default function DnaConnectionsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [errorState, setErrorState] = useState("");
   const [importProvider, setImportProvider] = useState<DnaProvider>(DNA_PROVIDERS[0]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
@@ -92,7 +93,7 @@ export default function DnaConnectionsPage() {
           await load(nextFamilies[0].id);
         }
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Couldn't load DNA Connections");
+        setErrorState(error instanceof Error ? error.message : "Couldn't load DNA Connections");
       } finally {
         setLoading(false);
       }
@@ -114,8 +115,10 @@ export default function DnaConnectionsPage() {
           ? "DNA matching is now opt-in for this Family Space."
           : "DNA matching revoked; stored match results were removed.",
       );
+      setErrorState("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Consent update failed");
+      setErrorState(error instanceof Error ? error.message : "Consent update failed");
+      setMessage("");
     } finally {
       setBusy(false);
     }
@@ -132,8 +135,10 @@ export default function DnaConnectionsPage() {
       });
       await load(familyId);
       setMessage("Connection signals refreshed. Review them against genealogy evidence before linking anyone.");
+      setErrorState("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Refresh failed");
+      setErrorState(error instanceof Error ? error.message : "Refresh failed");
+      setMessage("");
     } finally {
       setBusy(false);
     }
@@ -148,8 +153,10 @@ export default function DnaConnectionsPage() {
         body: JSON.stringify(buildDnaEvidencePayload(candidate)),
       });
       setMessage("DNA profile signal saved to the research case.");
+      setErrorState("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Couldn't save signal");
+      setErrorState(error instanceof Error ? error.message : "Couldn't save signal");
+      setMessage("");
     } finally {
       setBusy(false);
     }
@@ -176,6 +183,7 @@ export default function DnaConnectionsPage() {
       if (!response.ok) throw new Error(body.error ?? "Import failed");
       setImportFile(null);
       setMessage(body.message ?? "DNA export validated. The raw file was discarded after in-memory parsing.");
+      setErrorState("");
       await load(familyId);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Couldn't import that file");
@@ -238,6 +246,7 @@ export default function DnaConnectionsPage() {
         <DnaProvenanceNotice />
 
         {message && <div className="rounded-xl border border-teal-300/20 bg-teal-300/10 text-sm text-teal-100 px-4 py-3">{message}</div>}
+        {errorState && <div className="rounded-xl border border-rose-300/20 bg-rose-300/10 text-sm text-rose-100 px-4 py-3">{errorState}</div>}
 
         {!loading && primaryCta === "import" && (
           <section className={`${diasporaTheme.panel} ${diasporaTheme.radius} p-5 border border-amber-300/25`}>

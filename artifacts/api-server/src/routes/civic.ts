@@ -60,6 +60,30 @@ function normalizeCounty(value: string | null | undefined): string | null {
   return normalized?.replace(/\s+County$/i, "").trim() || null;
 }
 
+type VerifiedJurisdiction = { lat: number; lng: number; county: string; state: string };
+
+/** Resolve jurisdiction only from the authenticated user's persisted fix.
+ * County-sensitive reads and claims must not accept a client-selected county. */
+async function getVerifiedCallerJurisdiction(userId: number): Promise<VerifiedJurisdiction | null> {
+  const [caller] = await db
+    .select({ lat: usersTable.lat, lng: usersTable.lng })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  const lat = caller?.lat ?? NaN;
+  const lng = caller?.lng ?? NaN;
+  if (!isValidCoordinate(lat, lng)) return null;
+  try {
+    const place = await reverseGeocode(lat, lng);
+    const state = normalizeMapboxStateCode(place?.state_short, place?.state);
+    const county = normalizeCounty(place?.county);
+    return state && county ? { lat, lng, county, state } : null;
+  } catch (err) {
+    logger.warn({ err, user_id: userId }, "civic jurisdiction geocoding unavailable");
+    return null;
+  }
+}
+
 const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? process.env.VITE_MAPBOX_TOKEN ?? "";
 
 interface MapboxFeature {
@@ -933,30 +957,12 @@ router.get("/civic/needs", requireAuth, generalApiLimiter, async (req, res) => {
   const limit = Math.min(Number(req.query.limit ?? 50), 200);
   const offset = Number(req.query.offset ?? 0);
 
-  const [caller] = await db
-    .select({ lat: usersTable.lat, lng: usersTable.lng })
-    .from(usersTable)
-    .where(eq(usersTable.id, req.authenticatedUserId!))
-    .limit(1);
-  const lat = caller?.lat ?? NaN;
-  const lng = caller?.lng ?? NaN;
-
-  if (!isValidCoordinate(lat, lng)) {
+  const jurisdiction = await getVerifiedCallerJurisdiction(req.authenticatedUserId!);
+  if (!jurisdiction) {
     // A county-specific feed must fail closed rather than return another
     // county's needs when the user's location is unavailable.
     return res.json([]);
   }
-
-  let place: ResolvedPlace | null;
-  try {
-    place = await reverseGeocode(lat, lng);
-  } catch (err) {
-    logger.warn({ err, lat, lng }, "civic needs browse geocoding unavailable");
-    return res.json([]);
-  }
-  const state = normalizeMapboxStateCode(place?.state_short, place?.state);
-  const county = normalizeCounty(place?.county);
-  if (!state || !county) return res.json([]);
 
   const rows = await db
     .select({
@@ -979,8 +985,8 @@ router.get("/civic/needs", requireAuth, generalApiLimiter, async (req, res) => {
     .innerJoin(governmentSponsorsTable, eq(civicNeedsTable.government_sponsor_id, governmentSponsorsTable.id))
     .where(and(
       eq(civicNeedsTable.status, statusParam),
-      eq(governmentSponsorsTable.county, county),
-      eq(governmentSponsorsTable.state, state),
+      eq(governmentSponsorsTable.county, jurisdiction.county),
+      eq(governmentSponsorsTable.state, jurisdiction.state),
     ))
     .orderBy(desc(civicNeedsTable.created_at))
     .limit(limit)
@@ -1008,23 +1014,13 @@ router.get("/civic/needs/nearby", requireAuth, generalApiLimiter, async (req, re
   ) {
     return res.status(400).json({ error: "lat and lng must be valid geographic coordinates" });
   }
-  const { lat, lng } = parsed.data;
+  // The query coordinates are only validated for backwards-compatible API
+  // shape. Scope and distance always use the caller's persisted location.
+  const jurisdiction = await getVerifiedCallerJurisdiction(req.authenticatedUserId!);
+  if (!jurisdiction) return res.json([]);
+  const { lat, lng } = jurisdiction;
   const radius = Math.min(100, Math.max(0.1, parsed.data.radius_miles));
-
-  let place: ResolvedPlace | null;
-  try {
-    place = await reverseGeocode(lat, lng);
-  } catch (err) {
-    logger.warn({ err, lat, lng }, "civic needs geocoding unavailable");
-    return res.json([]);
-  }
-  const state = normalizeMapboxStateCode(place?.state_short, place?.state);
-  const county = normalizeCounty(place?.county);
-  if (!state || !county) {
-    // Do not broaden a county-scoped dispatch feed when the current
-    // jurisdiction cannot be verified.
-    return res.json([]);
-  }
+  const { county, state } = jurisdiction;
 
   const openNeeds = await db
     .select({
@@ -1093,6 +1089,29 @@ router.patch("/civic/needs/:id/claim", requireAuth, generalApiLimiter, async (re
   const userId = req.authenticatedUserId!;
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  // Look up the target's jurisdiction before mutating it. A need ID alone is
+  // not authority to claim work in another county.
+  const [target] = await db
+    .select({
+      county: governmentSponsorsTable.county,
+      state: governmentSponsorsTable.state,
+    })
+    .from(civicNeedsTable)
+    .innerJoin(governmentSponsorsTable, eq(civicNeedsTable.government_sponsor_id, governmentSponsorsTable.id))
+    .where(eq(civicNeedsTable.id, id))
+    .limit(1);
+  if (!target) return res.status(404).json({ error: "Civic need not found." });
+  const jurisdiction = await getVerifiedCallerJurisdiction(userId);
+  if (
+    !jurisdiction ||
+    normalizeCounty(target.county) !== jurisdiction.county ||
+    normalizeMapboxStateCode(target.state, target.state) !== jurisdiction.state
+  ) {
+    return res.status(409).json({
+      error: "Your current county could not be verified for this civic need. Update your location and try again.",
+    });
+  }
 
   // Atomic status guard — WHERE status='open' prevents a claim race.
   const [claimed] = await db.update(civicNeedsTable)
