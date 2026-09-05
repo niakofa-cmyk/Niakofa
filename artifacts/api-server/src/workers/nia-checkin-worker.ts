@@ -49,8 +49,7 @@ import { eq, sql } from "drizzle-orm";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
 
-const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:3001";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "";
+import { requestNia } from "../lib/nia-client";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -162,13 +161,11 @@ async function processNiaCheckins(): Promise<void> {
 
       // We POST and let it stream; we don't need to read the response here
       // because nia-service saves the conversation to nia_conversations itself.
-      fetch(`${NIA_SERVICE_URL}/checkin`, {
+      requestNia("/checkin", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-secret": INTERNAL_SECRET,
-        },
         body: JSON.stringify(niaPayload),
+      }).then((response) => {
+        if (!response.ok) throw new Error(`Nia check-in returned ${response.status}`);
       }).catch((err) =>
         logger.warn({ err, requestId: req.id }, "nia-checkin: nia-service call failed")
       );

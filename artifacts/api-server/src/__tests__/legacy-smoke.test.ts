@@ -84,6 +84,8 @@ jest.unstable_mockModule("@workspace/db", () => ({
   familyMemoryTagsTable: { id: "id", memory_id: "memory_id", tag: "tag" },
   // Auth middleware needs usersTable
   usersTable: { id: "id", name: "name", email: "email", avatar_url: "avatar_url", is_helper: "is_helper", is_admin: "is_admin", is_suspended: "is_suspended", trust_score: "trust_score", approval_status: "approval_status", token_version: "token_version" },
+  // Legacy AI policy reads the shared kill-switch settings table
+  systemSettingsTable: { key: "key", value: "value" },
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({

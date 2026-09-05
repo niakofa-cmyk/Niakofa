@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import { pino } from "pino";
 import chatRouter from "./routes/chat.js";
 import circleSummaryRouter from "./routes/circle-summary.js";
+import internalAiRouter from "./routes/internal-ai.js";
 import crisisResourcesRouter from "./routes/crisis-resources.js";
 import neighborhoodsRouter from "./routes/neighborhoods.js";
 import memoryRouter from "./routes/memory.js";
@@ -55,6 +56,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/", chatRouter);
 app.use("/", circleSummaryRouter);
+app.use("/", internalAiRouter);
 app.use("/", crisisResourcesRouter);
 app.use("/", neighborhoodsRouter);
 app.use("/", memoryRouter);

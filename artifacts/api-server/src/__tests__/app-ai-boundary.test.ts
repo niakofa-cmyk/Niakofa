@@ -17,16 +17,16 @@ import { describe, it, expect, jest, beforeEach, beforeAll } from "@jest/globals
 // does (see lifecycle.test.ts for the fuller rationale). Everything that
 // touches "@workspace/db" must be imported dynamically, after the mock is
 // registered.
+const limitMock = jest.fn();
+const mockDbRef: Record<string, unknown> = {
+  select: () => mockDbRef,
+  from: () => mockDbRef,
+  where: () => mockDbRef,
+  limit: limitMock,
+};
+
 jest.unstable_mockModule("@workspace/db", () => ({
-  db: {
-    select: jest.fn(() => ({
-      from: jest.fn(() => ({
-        where: jest.fn(() => ({
-          limit: jest.fn(() => Promise.resolve([{ value: "false" }])),
-        })),
-      })),
-    })),
-  },
+  db: mockDbRef,
   systemSettingsTable: { key: "key", value: "value" },
   usersTable: { id: "id", name: "name", avatar_url: "avatar_url", is_admin: "is_admin", approval_status: "approval_status" },
 }));
@@ -57,45 +57,24 @@ beforeAll(async () => {
 
 describe("App/AI Boundary: Nia Proxy", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   describe("isNiaEnabled (DB-backed kill switch)", () => {
     it("returns false when DB value is 'false'", async () => {
-      const { db } = await import("@workspace/db");
-      (db.select as jest.Mock).mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve([{ value: "false" }]),
-          }),
-        }),
-      });
+      limitMock.mockResolvedValueOnce([{ value: "false" }]);
       const result = await isNiaEnabled();
       expect(result).toBe(false);
     });
 
     it("returns false when DB value is missing (fail-closed)", async () => {
-      const { db } = await import("@workspace/db");
-      (db.select as jest.Mock).mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve([]),
-          }),
-        }),
-      });
+      limitMock.mockResolvedValueOnce([]);
       const result = await isNiaEnabled();
       expect(result).toBe(false);
     });
 
     it("returns true only when DB value is exactly 'true'", async () => {
-      const { db } = await import("@workspace/db");
-      (db.select as jest.Mock).mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve([{ value: "true" }]),
-          }),
-        }),
-      });
+      limitMock.mockResolvedValueOnce([{ value: "true" }]);
       const result = await isNiaEnabled();
       expect(result).toBe(true);
     });

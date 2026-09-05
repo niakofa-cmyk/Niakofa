@@ -39,6 +39,7 @@ import { eq, and, desc, sql, inArray, asc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
 import { legacyAI } from "../lib/legacy-ai-gateway";
+import { isNiaEnabledForLegacy } from "./nia-proxy";
 
 const router = Router();
 
@@ -335,9 +336,8 @@ function buildFallbackQuests(r: FamilyReservoir): AiQuest[] {
 // Returns validated AiQuest[] or falls back to template quests on any error.
 
 async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    logger.warn("legacy: ANTHROPIC_API_KEY not set — using fallback quests");
+  if (!(await isNiaEnabledForLegacy())) {
+    logger.warn("legacy: Nia is disabled — using fallback quests");
     return buildFallbackQuests(r);
   }
 
@@ -471,7 +471,7 @@ router.get(
         quests:      cachedQuests,
         fingerprint: reservoir.fingerprint,
         fromCache:   true,
-        isAiEnabled: Boolean(process.env.ANTHROPIC_API_KEY),
+        isAiEnabled: await isNiaEnabledForLegacy(),
       });
     }
 
@@ -482,7 +482,7 @@ router.get(
       quests,
       fingerprint: reservoir.fingerprint,
       fromCache:   false,
-      isAiEnabled: Boolean(process.env.ANTHROPIC_API_KEY),
+      isAiEnabled: await isNiaEnabledForLegacy(),
     });
   },
 );
@@ -524,7 +524,7 @@ router.post(
       quests,
       fingerprint: reservoir.fingerprint,
       refreshed:   true,
-      isAiEnabled: Boolean(process.env.ANTHROPIC_API_KEY),
+      isAiEnabled: await isNiaEnabledForLegacy(),
     });
   },
 );

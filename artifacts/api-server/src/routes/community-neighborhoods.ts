@@ -15,11 +15,9 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
+import { requestNia } from "../lib/nia-client";
 
 const router = Router();
-
-const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "http://localhost:3001";
-const INTERNAL_SECRET = process.env["INTERNAL_SECRET"] ?? process.env["SESSION_SECRET"];
 
 export function normalizeCityKey(city: string): string {
   return city.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -58,18 +56,11 @@ export async function ensureNeighborhoodsForCity(cityRaw: string, cityKey: strin
   if (existing.length > 0) return existing;
 
   // Cache miss — generate via nia-service, store as unverified, return.
-  if (!INTERNAL_SECRET) {
-    logger.warn("community/neighborhoods: SESSION_SECRET not set — cannot call nia-service generator");
-    return [];
-  }
-
   try {
-    const genRes = await fetch(`${NIA_SERVICE_URL}/generate-neighborhoods`, {
+    const genRes = await requestNia("/generate-neighborhoods", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Internal-Secret": INTERNAL_SECRET },
       body: JSON.stringify({ city: cityRaw }),
-      signal: AbortSignal.timeout(30_000),
-    });
+    }, 30_000);
 
     if (!genRes.ok) {
       logger.warn({ status: genRes.status, city: cityRaw }, "community/neighborhoods: generation request failed");

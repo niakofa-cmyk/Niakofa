@@ -5,8 +5,8 @@
  */
 import type { Request, Response, NextFunction } from "express";
 import { Router } from "express";
-import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../lib/logger";
+import { requestNia } from "../lib/nia-client";
 
 const router = Router();
 
@@ -44,46 +44,21 @@ router.post("/", verifyInternalSecret, async (req: Request, res: Response) => {
   }
 
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
-    const helperContext = helperName
-      ? `A helper named ${helperName} helped them complete this.`
-      : "No helper was assigned, but the request was completed.";
-
-    const userPrompt = `A user just completed a request we posted on Niakofa 24 hours ago.
-Request: "${requestTitle}" (category: ${category})
-${helperContext}
-
-Generate a warm, genuine 1-2 sentence check-in message. Ask how it went. Be brief and conversational.
-No markdown, no emoji, just human warmth.`;
-
-    // Hard timeout: haiku check-ins should complete in < 5s. Guard against
-    // Anthropic API hangs to prevent stalling the response indefinitely.
-    const controller = new AbortController();
-    const timeoutHandle = setTimeout(() => controller.abort(), 15_000);
-
-    let message: Awaited<ReturnType<typeof anthropic.messages.create>>;
-    try {
-      message = await anthropic.messages.create(
-        {
-          // haiku is the right model for a short warm check-in message —
-          // opus-4-8 was significantly over-spec (and over-budget) for 150 tokens.
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 150,
-          messages: [{ role: "user", content: userPrompt }],
-        },
-        { signal: controller.signal },
-      );
-    } finally {
-      clearTimeout(timeoutHandle);
+    const response = await requestNia("/checkin", {
+      method: "POST",
+      body: JSON.stringify({ userId, requestId, requestTitle, category, helperName, sessionId }),
+    }, 15_000);
+    const result = await response.json().catch(() => ({})) as { nia_response?: string; error?: string };
+    if (!response.ok || typeof result.nia_response !== "string") {
+      return res.status(response.status >= 400 ? response.status : 502).json({
+        error: result.error ?? "Failed to generate check-in message",
+      });
     }
 
-    const niaResponse =
-      message.content[0]?.type === "text" ? message.content[0].text : "How did it go? I'd love to hear!";
-
-    res.status(200).json({ success: true, userId, requestId, sessionId, nia_response: niaResponse });
+    return res.status(200).json({ success: true, userId, requestId, sessionId, nia_response: result.nia_response });
   } catch (err) {
     logger.error({ err, userId, requestId, sessionId }, "checkin: failed to generate message");
-    res.status(500).json({ error: "Failed to generate check-in message" });
+    return res.status(500).json({ error: "Failed to generate check-in message" });
   }
 });
 

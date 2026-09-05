@@ -14,6 +14,7 @@ import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
 import { getSystemSettings, setSystemSettings, getUserById } from "../lib/db-helpers";
 import { cacheGet, cacheSet } from "../lib/cache";
+import { requestNia } from "../lib/nia-client";
 
 const router = Router();
 
@@ -508,12 +509,7 @@ router.get("/admin/nia-costs", requireAuth, requireAdmin(), adminLimiter, async 
   
   try {
     // Query nia-service for cost data via internal endpoint
-    const niaUrl = (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
-    const response = await fetch(`${niaUrl}/admin/costs?days=${days}`, {
-      headers: {
-        "x-internal-secret": process.env.INTERNAL_SECRET ?? "",
-      },
-    });
+    const response = await requestNia(`/admin/costs?days=${days}`, { method: "GET" });
     
     if (!response.ok) {
       return res.status(502).json({ error: "Failed to fetch cost data from NIA service" });
@@ -532,12 +528,7 @@ router.get("/admin/nia-cost-alert", requireAuth, requireAdmin(), adminLimiter, a
   const DAILY_COST_THRESHOLD = parseFloat(process.env.NIA_DAILY_COST_THRESHOLD ?? "50.00");
   
   try {
-    const niaUrl = (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
-    const response = await fetch(`${niaUrl}/admin/costs?days=1`, {
-      headers: {
-        "x-internal-secret": process.env.INTERNAL_SECRET ?? "",
-      },
-    });
+    const response = await requestNia("/admin/costs?days=1", { method: "GET" });
     
     if (!response.ok) {
       return res.status(502).json({ error: "Failed to fetch cost data" });

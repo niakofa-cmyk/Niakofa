@@ -59,6 +59,7 @@ import { eq, and, desc, sql, or, ilike, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { requestNia } from "../lib/nia-client";
 import { stripTags } from "../lib/sanitize";
 import { logWorldEvolution } from "../lib/legacy-world-evolution";
 
@@ -1026,14 +1027,6 @@ router.post(
       return res.status(400).json({ error: "text is required" });
     }
 
-    const apiKey = process.env["ANTHROPIC_API_KEY"];
-    if (!apiKey) {
-      return res.status(503).json({
-        error: "Translation unavailable — Nia is not configured for this deployment.",
-        nia_unavailable: true,
-      });
-    }
-
     const LANGUAGE_NAMES: Record<string, string> = {
       en: "English",
       es: "Spanish",
@@ -1050,27 +1043,29 @@ router.post(
     const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
 
     try {
-      const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      const anthropic = new Anthropic({ apiKey });
-
-      const message = await anthropic.messages.create({
-        model:      "claude-haiku-4-5",
-        max_tokens: 4096,
-        system:
-          "You are Nia, Niakofa's AI guide for Community, Diaspora, and Legacy. " +
-          "You specialize in oral history and family heritage preservation for the African diaspora. " +
-          `Translate the following family vault interview or oral history text into ${langName}. ` +
-          "Preserve the speaker's voice, warmth, cultural idioms, and emotional authenticity — " +
-          "this is a Family Vault oral history, not a business document. " +
-          "Output ONLY the translated text. No preamble, no notes, no quotation marks.",
-        messages: [{ role: "user", content: text.trim().slice(0, 8000) }],
+      const response = await requestNia("/internal/translate", {
+        method: "POST",
+        body: JSON.stringify({ text, targetLanguage }),
       });
-
-      const translated = message.content[0]?.type === "text" ? message.content[0].text : null;
-      if (!translated) throw new Error("Empty response from Nia");
+      const result = await response.json().catch(() => ({})) as {
+        translated?: unknown;
+        targetLanguage?: string;
+        langName?: string;
+        error?: string;
+      };
+      if (!response.ok || typeof result.translated !== "string" || !result.translated.trim()) {
+        return res.status(response.status >= 400 ? response.status : 502).json({
+          error: result.error ?? "Translation unavailable — Nia is not configured for this deployment.",
+          nia_unavailable: response.status === 503,
+        });
+      }
 
       logger.info({ familyId, memoryId, targetLanguage, userId }, "family_oral_history_translated");
-      return res.json({ translated, targetLanguage, langName });
+      return res.json({
+        translated: result.translated,
+        targetLanguage: result.targetLanguage ?? targetLanguage,
+        langName: result.langName ?? langName,
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error({ err: message, familyId, memoryId }, "family_translation_failed");

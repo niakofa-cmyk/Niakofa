@@ -22,11 +22,12 @@ jest.unstable_mockModule("../lib/logger.js", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-const mockCreate = jest.fn();
-jest.unstable_mockModule("@anthropic-ai/sdk", () => ({
-  default: jest.fn().mockImplementation(() => ({
-    messages: { create: mockCreate },
-  })),
+const mockRequestNia = jest.fn();
+jest.unstable_mockModule("../lib/nia-client", () => ({
+  requestNia: mockRequestNia,
+}));
+jest.unstable_mockModule("../lib/nia-client.js", () => ({
+  requestNia: mockRequestNia,
 }));
 
 let getHistoricalContext: typeof HistoricalContextModule["getHistoricalContext"];
@@ -41,50 +42,46 @@ describe("getHistoricalContext", () => {
     const result = await getHistoricalContext({ location: "Unknown", era: "1958" });
     expect(result).toBeNull();
     expect(mockCacheGet).not.toHaveBeenCalled();
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockRequestNia).not.toHaveBeenCalled();
   });
 
   it("returns null when era is unknown", async () => {
     const result = await getHistoricalContext({ location: "Nashville", era: "Unknown" });
     expect(result).toBeNull();
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockRequestNia).not.toHaveBeenCalled();
   });
 
-  it("returns null when ANTHROPIC_API_KEY is not configured", async () => {
-    const original = process.env["ANTHROPIC_API_KEY"];
-    delete process.env["ANTHROPIC_API_KEY"];
+  it("returns null when the Nia service is unavailable", async () => {
     mockCacheGet.mockResolvedValueOnce(null);
+    mockRequestNia.mockRejectedValueOnce(new Error("Nia unavailable"));
 
     const result = await getHistoricalContext({ location: "Nashville", era: "1958" });
 
     expect(result).toBeNull();
-    expect(mockCreate).not.toHaveBeenCalled();
-    if (original) process.env["ANTHROPIC_API_KEY"] = original;
+    expect(mockRequestNia).toHaveBeenCalledTimes(1);
   });
 
   it("returns a cached result without calling the AI again", async () => {
-    process.env["ANTHROPIC_API_KEY"] = "test-key";
     const cached = { summary: "cached summary", topics: ["a", "b"] };
     mockCacheGet.mockResolvedValueOnce(cached);
 
     const result = await getHistoricalContext({ location: "Nashville", era: "1958" });
 
     expect(result).toEqual(cached);
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockRequestNia).not.toHaveBeenCalled();
     expect(mockCacheSet).not.toHaveBeenCalled();
   });
 
   it("calls the AI, parses the JSON response, and caches the result on a cache miss", async () => {
-    process.env["ANTHROPIC_API_KEY"] = "test-key";
     mockCacheGet.mockResolvedValueOnce(null);
-    mockCreate.mockResolvedValueOnce({
-      content: [{
-        type: "text",
-        text: JSON.stringify({
+    mockRequestNia.mockResolvedValueOnce({
+      ok: true,
+      json: jest.fn().mockResolvedValueOnce({
+        content: JSON.stringify({
           summary: "Nashville in 1958 was shaped by segregation and a growing music industry.",
           topics: ["Civil Rights era", "Music City growth", "Segregated schools"],
         }),
-      }],
+      }),
     });
 
     const result = await getHistoricalContext({ location: "Nashville", era: "1958", country: "USA" });
@@ -93,13 +90,16 @@ describe("getHistoricalContext", () => {
       summary: "Nashville in 1958 was shaped by segregation and a growing music industry.",
       topics: ["Civil Rights era", "Music City growth", "Segregated schools"],
     });
-    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockRequestNia).toHaveBeenCalledTimes(1);
     // Never claims anything about a specific family — verify the prompt
     // instructs general/place-level context, not "your ancestor" narration.
-    const callArgs = mockCreate.mock.calls[0]![0] as { system: string; messages: { content: string }[] };
-    expect(callArgs.system).toMatch(/never invent or imply a\s+specific person/i);
-    expect(callArgs.messages[0]!.content).toContain("Nashville, USA");
-    expect(callArgs.messages[0]!.content).toContain("1958");
+    const callArgs = JSON.parse((mockRequestNia.mock.calls[0]![1] as { body: string }).body) as {
+      system: string;
+      userPrompt: string;
+    };
+    expect(callArgs.system).toMatch(/never invent\s+specific family facts/i);
+    expect(callArgs.userPrompt).toContain("Nashville, USA");
+    expect(callArgs.userPrompt).toContain("1958");
     expect(mockCacheSet).toHaveBeenCalledWith(
       expect.stringContaining("legacy:historical-context:v1:nashville:1958"),
       result,
@@ -108,10 +108,10 @@ describe("getHistoricalContext", () => {
   });
 
   it("returns null and does not cache when the AI response isn't valid JSON", async () => {
-    process.env["ANTHROPIC_API_KEY"] = "test-key";
     mockCacheGet.mockResolvedValueOnce(null);
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: "not json at all" }],
+    mockRequestNia.mockResolvedValueOnce({
+      ok: true,
+      json: jest.fn().mockResolvedValueOnce({ content: "not json at all" }),
     });
 
     const result = await getHistoricalContext({ location: "Nashville", era: "1958" });
@@ -121,9 +121,8 @@ describe("getHistoricalContext", () => {
   });
 
   it("returns null when the AI call throws, without propagating the error", async () => {
-    process.env["ANTHROPIC_API_KEY"] = "test-key";
     mockCacheGet.mockResolvedValueOnce(null);
-    mockCreate.mockRejectedValueOnce(new Error("network error"));
+    mockRequestNia.mockRejectedValueOnce(new Error("network error"));
 
     const result = await getHistoricalContext({ location: "Nashville", era: "1958" });
 
@@ -131,16 +130,15 @@ describe("getHistoricalContext", () => {
   });
 
   it("truncates an over-long summary and caps topics at 5", async () => {
-    process.env["ANTHROPIC_API_KEY"] = "test-key";
     mockCacheGet.mockResolvedValueOnce(null);
-    mockCreate.mockResolvedValueOnce({
-      content: [{
-        type: "text",
-        text: JSON.stringify({
+    mockRequestNia.mockResolvedValueOnce({
+      ok: true,
+      json: jest.fn().mockResolvedValueOnce({
+        content: JSON.stringify({
           summary: "x".repeat(600),
           topics: ["1", "2", "3", "4", "5", "6", "7"],
         }),
-      }],
+      }),
     });
 
     const result = await getHistoricalContext({ location: "Nashville", era: "1958" });

@@ -5,6 +5,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
+import { requestNia } from "../lib/nia-client";
 
 const router = Router();
 
@@ -33,9 +34,6 @@ function parseResources(raw: string): Resource[] {
 }
 
 
-const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "http://localhost:3001";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET;
-
 // Admin: ask Nia to suggest crisis resources for a pending region
 router.post("/admin/region-crisis-resources/:id/suggest", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
@@ -44,15 +42,11 @@ router.post("/admin/region-crisis-resources/:id/suggest", requireAuth, requireAd
   const [region] = await db.select().from(regionCrisisResourcesTable).where(eq(regionCrisisResourcesTable.id, id));
   if (!region) return res.status(404).json({ error: "Region not found" });
 
-  if (!INTERNAL_SECRET) return res.status(503).json({ error: "Internal secret not configured" });
-
   try {
-    const niaRes = await fetch(`${NIA_SERVICE_URL}/suggest-crisis-resources`, {
+    const niaRes = await requestNia("/suggest-crisis-resources", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Internal-Secret": INTERNAL_SECRET },
       body: JSON.stringify({ region: region.region_display }),
-      signal: AbortSignal.timeout(30_000),
-    });
+    }, 30_000);
 
     if (!niaRes.ok) {
       logger.warn({ status: niaRes.status, region: region.region_display }, "crisis suggest: nia-service error");

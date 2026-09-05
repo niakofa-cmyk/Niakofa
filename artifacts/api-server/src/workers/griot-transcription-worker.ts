@@ -31,8 +31,7 @@ import { eq, and } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { safeFetch } from "../lib/url-safety";
 
-const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:3001";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "";
+import { requestNia } from "../lib/nia-client";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const POLL_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
@@ -122,12 +121,8 @@ async function transcribeAudio(audioUrl: string): Promise<string> {
 }
 
 async function draftTranslations(storyId: number, textContent: string, sourceLanguage: string): Promise<void> {
-  const resp = await fetch(`${NIA_SERVICE_URL}/griot/translate`, {
+  const resp = await requestNia("/griot/translate", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-internal-secret": INTERNAL_SECRET,
-    },
     body: JSON.stringify({ storyId, textContent, sourceLanguage }),
   });
 

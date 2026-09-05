@@ -27,8 +27,9 @@
  * doesn't.
  */
 
-import { cacheGet, cacheSet } from "./cache";
-import { logger } from "./logger";
+import { cacheGet, cacheSet } from "./cache.js";
+import { logger } from "./logger.js";
+import { requestNia } from "./nia-client.js";
 
 export interface HistoricalContext {
   /** 1-2 sentence grounding paragraph, safe to render directly under the chapter. */
@@ -65,38 +66,24 @@ export async function getHistoricalContext(params: {
   const cached = await cacheGet<HistoricalContext>(key);
   if (cached) return cached;
 
-  const apiKey = process.env["ANTHROPIC_API_KEY"];
-  if (!apiKey) return null;
-
   try {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const anthropic = new Anthropic({ apiKey });
-
     const place = country ? `${location}, ${country}` : location;
-
-    const message = await anthropic.messages.create({
-      model:      "claude-haiku-4-5",
-      max_tokens: 500,
-      system:
-        "You are a historical reference tool for Niakofa's Legacy Mode, a family-history game. " +
-        "Given a place and a year or decade, provide well-documented, general historical " +
-        "context for that place and time — economic conditions, major social movements, " +
-        "migration patterns, schools, transportation, or culture that were broadly true of " +
-        "that place and era. " +
-        "CRITICAL RULES: " +
-        "(1) You know NOTHING about any specific family and must never invent or imply a " +
-        "specific person's actions, decisions, or experiences. Write about the place and " +
-        "era in general, the way a textbook or museum placard would — never 'your ancestor' " +
-        "or 'the family'. " +
-        "(2) Only include well-established historical facts. If you are not confident " +
-        "something is accurate for this specific place and era, omit it rather than guess. " +
-        "(3) Respond with ONLY a JSON object, no markdown fences, no preamble, in exactly " +
-        "this shape: " +
-        '{"summary": "1-2 sentence overview", "topics": ["short topic", "short topic", "short topic"]}',
-      messages: [{ role: "user", content: `Place: ${place}\nEra: ${era}` }],
+    const response = await requestNia("/internal/legacy-generate", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "claude-3-5-haiku-20241022",
+        maxTokens: 500,
+        system:
+          "You are a historical reference tool for Niakofa's Legacy Mode. Provide only " +
+          "well-documented general historical context for a place and era; never invent " +
+          "specific family facts. Return only JSON in the shape " +
+          '{"summary":"1-2 sentence overview","topics":["short topic"]}.',
+        userPrompt: `Place: ${place}\nEra: ${era}`,
+      }),
     });
-
-    const raw = message.content[0]?.type === "text" ? message.content[0].text : null;
+    if (!response.ok) return null;
+    const payload = await response.json() as { content?: unknown };
+    const raw = typeof payload.content === "string" ? payload.content : null;
     if (!raw) return null;
 
     const parsed = JSON.parse(raw.trim()) as Partial<HistoricalContext>;
