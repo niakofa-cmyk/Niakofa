@@ -76,6 +76,8 @@ const entries = state.origins.flatMap((origin) => origin.localStorage ?? []);
 const token = entries.find((entry) => entry.name === "niakofa_token")?.value;
 const userJson = entries.find((entry) => entry.name === "niakofa_user")?.value;
 const user = userJson ? JSON.parse(userJson) : null;
+let tokenB = null;
+let userB = null;
 
 if (!token || !Number.isInteger(Number(user?.id))) {
   throw new Error("storage state does not contain an authenticated Niakofa user");
@@ -83,23 +85,23 @@ if (!token || !Number.isInteger(Number(user?.id))) {
 if (process.env.USER_B_STATE) {
   const stateB = JSON.parse(fs.readFileSync(process.env.USER_B_STATE, "utf8"));
   const bEntries = stateB.origins.flatMap((origin) => origin.localStorage ?? []);
-  const tokenB = bEntries.find((entry) => entry.name === "niakofa_token")?.value;
+  tokenB = bEntries.find((entry) => entry.name === "niakofa_token")?.value ?? null;
   const userBJson = bEntries.find((entry) => entry.name === "niakofa_user")?.value;
-  const userB = userBJson ? JSON.parse(userBJson) : null;
+  userB = userBJson ? JSON.parse(userBJson) : null;
   if (!tokenB || !Number.isInteger(Number(userB?.id))) {
     throw new Error("USER_B_STATE does not contain an authenticated Niakofa user");
   }
   if (Number(user.id) === Number(userB.id)) {
     throw new Error("USER_A_STATE and USER_B_STATE must belong to different accounts");
   }
+  const stateBOrigins = new Set(stateB.origins.map((origin) => new URL(origin.origin).origin));
+  if (!stateBOrigins.has(base.origin)) {
+    throw new Error(`USER_B_STATE does not contain the BASE_URL origin (${base.origin})`);
+  }
 }
 const stateOrigins = new Set(state.origins.map((origin) => new URL(origin.origin).origin));
 if (!stateOrigins.has(base.origin)) {
   throw new Error(`USER_A_STATE does not contain the BASE_URL origin (${base.origin})`);
-}
-const stateBOrigins = new Set(stateB.origins.map((origin) => new URL(origin.origin).origin));
-if (!stateBOrigins.has(base.origin)) {
-  throw new Error(`USER_B_STATE does not contain the BASE_URL origin (${base.origin})`);
 }
 
 async function get(pathname, bearerToken = token) {
@@ -115,7 +117,7 @@ const [version, readiness, verifiedUser, verifiedUserB] = await Promise.all([
   get("/api/version"),
   get("/api/readiness"),
   get(`/api/users/${Number(user.id)}`),
-  get(`/api/users/${Number(userB.id)}`, tokenB),
+  userB && tokenB ? get(`/api/users/${Number(userB.id)}`, tokenB) : Promise.resolve(null),
 ]);
 
 const deployedCommit = typeof version.commit === "string" ? version.commit.trim().toLowerCase() : "";
@@ -132,7 +134,7 @@ if (readiness.ready !== true || readiness.status !== "ready") {
 if (verifiedUser.approval_status !== "approved") {
   throw new Error("USER_A_STATE belongs to an account that is not approved");
 }
-if (verifiedUserB.approval_status !== "approved") {
+if (verifiedUserB && verifiedUserB.approval_status !== "approved") {
   throw new Error("USER_B_STATE belongs to an account that is not approved");
 }
 

@@ -70,7 +70,6 @@ test.describe("Diaspora journeys — User A", () => {
 test.describe("DNA dual-user consent path", () => {
   test.beforeAll(() => {
     requireAuthenticatedState("USER_A_STATE");
-    requireAuthenticatedState("USER_B_STATE");
   });
 
   test("User A consent surface is visible when engine is enabled", async ({ browser }) => {

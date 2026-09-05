@@ -9,6 +9,7 @@ function runAcceptance(overrides = {}) {
       "BASE_URL",
       "NIAKOFA_API_ORIGIN",
       "USER_A_STATE",
+      "USER_B_STATE",
       "EXPECTED_COMMIT",
       "ALLOW_MUTATING_E2E",
       "CONFIRM_DISPOSABLE_ACCOUNT",

@@ -43,12 +43,26 @@ test.describe("County travel — live authenticated integration", () => {
       Number.isFinite(original.lng);
 
     const updateLocation = async (lat: number, lng: number) => {
-      const response = await request.patch(
-        new URL(`/api/users/${Number(before.id)}/location`, base).toString(),
-        { headers, data: { lat, lng } },
-      );
-      expect(response.ok()).toBeTruthy();
-      return response.json();
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const response = await request.patch(
+          new URL(`/api/users/${Number(before.id)}/location`, base).toString(),
+          { headers, data: { lat, lng } },
+        );
+        if (response.ok()) return response.json();
+
+        if (response.status() === 429 && attempt < 3) {
+          const retryAfter = Number(response.headers()["retry-after"]);
+          const delayMs = Number.isFinite(retryAfter)
+            ? Math.min(Math.max(retryAfter * 1_000, 250), 10_000)
+            : 3_250;
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        const body = await response.text();
+        throw new Error(`Location update failed with HTTP ${response.status()}: ${body.slice(0, 300)}`);
+      }
+      throw new Error("Location update retry budget exhausted");
     };
 
     try {
