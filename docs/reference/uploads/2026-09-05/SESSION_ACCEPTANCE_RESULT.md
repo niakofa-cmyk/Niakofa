@@ -7,9 +7,11 @@ provider responses.
 ## Source and served-commit parity
 
 - Repository: `https://github.com/niakofa-cmyk/Niakofa`
-- Local `main` and `origin/main`: `fa01f88c95e9570b77fb3439d2f978c319eca9bd`
+- Local `main` and `origin/main`: `890279de7cde21adb4099faf7e9e58e91907befc`
 - Canonical live host checked: `https://niakofa.com`
-- Live `/api/version` served the same commit.
+- Live `/api/version` served application commit
+  `fa01f88c95e9570b77fb3439d2f978c319eca9bd`; the newer GitHub commit is
+  documentation-only and does not require an application redeploy.
 - Live landing page returned HTTP 200 and the Niakofa SPA shell.
 
 ## Authenticated deployed acceptance
