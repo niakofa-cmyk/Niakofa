@@ -65,3 +65,4 @@
 - [Payout operation boundary](payout-operation-boundary.md) — helper payouts use a separate durable operation ledger and one shared Stripe reconciliation protocol.
 - [App-to-Nia HTTP boundary](niakofa-app-nia-http-boundary.md) — provider access and feature-service calls stay behind the authenticated Nia client.
 - [Stripe Accounts v2 recipient capability](stripe-v2-recipient-capability.md) — V1 transfers-active is insufficient; treat missing v2 recipient transfer capability as definitive.
+- [Release evidence commit boundary](release-evidence-commit-boundary.md) — keep deployed app SHAs separate from later documentation-only GitHub commits; avoid circular self-hashes.
