@@ -10,9 +10,9 @@ provider responses.
 - GitHub `main` was independently verified through the authenticated API and
   `git pull --ff-only`; local `main` and `origin/main` matched exactly.
 - Canonical live host checked: `https://niakofa.com`
-- Live `/api/version` served application commit
-  `fa01f88c95e9570b77fb3439d2f978c319eca9bd`; the newer GitHub commit is
-  documentation-only and does not require an application redeploy.
+- At the time of this acceptance record, live `/api/version` served
+  application commit `27221be3ba0f2bf000c3d4194fcbf6494b4289ee`; subsequent
+  GitHub commits only update documentation and memory.
 - Live landing page returned HTTP 200 and the Niakofa SPA shell.
 
 ## Authenticated deployed acceptance
