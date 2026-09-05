@@ -8,6 +8,7 @@
 - [Civic seed sequence repair](civic-seed-sequence-repair.md) — idempotent civic imports must realign serial IDs before inserting rows.
 - [Census ACS geography endpoint](census-acs-endpoint.md) — use available ACS5 geography data; normalize ACS state suffixes and do not assume PEP paths exist.
 - [Provider release gates](provider-release-gates.md) — secret presence is not certification; require readiness, authenticated smoke, and served-commit parity.
+- [Production host verification](production-host-verification.md) — verify the canonical domain and served commit; stale Railway service domains can return fallback 404s.
 - [Circles release certification](niakofa-release-certification.md) — automated smoke checks and real-browser WebRTC evidence are separate release gates.
 - [Platform deployment boundary](platform-deployment-boundary.md) — deployment smoke checks cover Niakofa SPA/API contracts, never the separate Legacy RPG runtime.
 - [ESLint hook warning policy](eslint-hook-warning-policy.md) — preserve intentional effect lifecycles with narrow, explained dependency exceptions only when real dependencies are unsafe.
