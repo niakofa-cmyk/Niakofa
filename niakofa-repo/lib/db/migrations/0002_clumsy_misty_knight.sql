@@ -1,1 +1,0 @@
-ALTER TABLE "scheduled_payments" ADD CONSTRAINT "scheduled_payments_request_id_help_requests_id_fk" FOREIGN KEY ("request_id") REFERENCES "public"."help_requests"("id") ON DELETE cascade ON UPDATE no action;

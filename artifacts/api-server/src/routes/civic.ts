@@ -799,15 +799,18 @@ router.get("/civic/portal/open-requests", requireAuth, generalApiLimiter, async 
     return res.status(400).json({ error: `urgency must be one of: ${VALID_URGENCIES.join(", ")}` });
   }
 
-  // COUNTY SCOPE: Find all communities whose name contains the sponsor's
-  // county name (case-insensitive). This is the MVP matching heuristic — a
-  // full geographic-boundary join awaits a county column on communitiesTable.
-  // If no matching community is found, we return an empty result rather than
-  // exposing requests from other counties (fail-closed on scope).
+  // COUNTY SCOPE: Match the sponsor to the canonical county/state columns.
+  // This is the same jurisdiction key used by GPS-driven pool resolution and
+  // admin community provisioning. Do not fuzzy-match against display names:
+  // names are user-facing text and can vary or accidentally overlap another
+  // county. If no exact normalized jurisdiction is found, fail closed.
   const matchingCommunities = await db
     .select({ id: communitiesTable.id, name: communitiesTable.name })
     .from(communitiesTable)
-    .where(sql`LOWER(${communitiesTable.name}) LIKE LOWER(${"%" + sponsor.county + "%"})`);
+    .where(sql`
+      LOWER(TRIM(REGEXP_REPLACE(${communitiesTable.county}, '\\s+County$', '', 'i'))) = LOWER(TRIM(${normalizeCounty(sponsor.county)}))
+      AND UPPER(TRIM(${communitiesTable.state})) = UPPER(TRIM(${sponsor.state}))
+    `);
 
   if (matchingCommunities.length === 0) {
     return res.json({

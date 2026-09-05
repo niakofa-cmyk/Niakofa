@@ -48,12 +48,12 @@ jest.unstable_mockModule("@workspace/db", () => ({
   transactionsTable:       { id: "id", user_id: "user_id", amount: "amount", type: "type", description: "description", created_at: "created_at" },
   griotStoriesTable:       { id: "id", author_id: "author_id", hub_id: "hub_id", status: "status" },
   civicNeedsTable:         { id: "id", title: "title", status: "status", lat: "lat", lng: "lng", government_sponsor_id: "government_sponsor_id", description: "description", category: "category", estimated_cost: "estimated_cost", due_date: "due_date", claimed_by_user_id: "claimed_by_user_id", claimed_at: "claimed_at", completed_at: "completed_at", created_at: "created_at", address: "address" },
-  governmentSponsorsTable: { id: "id", user_id: "user_id", entity_name: "entity_name" },
+  governmentSponsorsTable: { id: "id", user_id: "user_id", entity_name: "entity_name", county: "county", state: "state" },
   systemSettingsTable:     { key: "key", value: "value" },
   communityPoolLedgerTable: { id: "id", amount: "amount", hub_id: "hub_id", community_id: "community_id", type: "type", request_id: "request_id", user_id: "user_id", description: "description", created_at: "created_at" },
   communityPoolFinancialEventsTable: {},
   diasporaHubsTable:       { id: "id", community_id: "community_id", name: "name", reserved_balance: "reserved_balance" },
-  communitiesTable:        { id: "id", name: "name" },
+  communitiesTable:        { id: "id", name: "name", county: "county", state: "state" },
   stripeAccountsTable:     { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
   requestHelpersTable:     { id: "id", request_id: "request_id", helper_id: "helper_id" },
   ratingsTable:            { id: "id" },
@@ -92,7 +92,7 @@ jest.unstable_mockModule("drizzle-orm", () => ({
   lte:   jest.fn((a: unknown, b: unknown) => ({ _lte: [a, b] })),
   isNull: jest.fn((a: unknown) => ({ _isNull: a })),
   isNotNull: jest.fn((a: unknown) => ({ _isNotNull: a })),
-  sql:   jest.fn((s: unknown) => s),
+  sql:   Object.assign(jest.fn((s: unknown) => s), { join: jest.fn() }),
   desc:  jest.fn((a: unknown) => ({ _desc: a })),
   asc:   jest.fn((a: unknown) => ({ _asc: a })),
   inArray: jest.fn((a: unknown, b: unknown) => ({ _in: [a, b] })),
@@ -496,5 +496,40 @@ describe("GET /civic/needs/:id", () => {
       .get("/civic/needs/abc")
       .set("Authorization", "Bearer test");
     expect(res.status).toBe(400);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// GET /civic/portal/open-requests — canonical county/state scope
+// ════════════════════════════════════════════════════════════════════════════
+describe("GET /civic/portal/open-requests", () => {
+  it("uses the canonical jurisdiction fields instead of a display-name substring", async () => {
+    mockDb.limit
+      .mockResolvedValueOnce([{
+        entity_name: "Tarrant County Sponsor",
+        county: "Tarrant County",
+        state: "tx",
+      }])
+      .mockImplementation(() => mockDb);
+    mockDb.then
+      .mockImplementationOnce((resolve: unknown) => Promise.resolve([
+        { id: 7, name: "A differently formatted community label" },
+      ]).then(resolve))
+      .mockImplementationOnce((resolve: unknown) => Promise.resolve([]).then(resolve));
+
+    const app = makeApp(civicRouter);
+    const res = await request(app)
+      .get("/civic/portal/open-requests")
+      .set("Authorization", "Bearer test");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      requests: [],
+      sponsor: {
+        entity_name: "Tarrant County Sponsor",
+        county: "Tarrant County",
+        state: "tx",
+      },
+    });
   });
 });
