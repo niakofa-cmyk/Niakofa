@@ -28,11 +28,14 @@ import { getRedisConnection, QUEUE, type CashoutJobData } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { getStripeSecretKey } from "../lib/stripe-config";
-import { isAmbiguousStripeError } from "../lib/stripe-errors";
+import {
+  isAmbiguousStripeError,
+  isStripeTransferCapabilityError,
+} from "../lib/stripe-errors";
 import { buildCashoutTransferParams, cashoutIdempotencyKey } from "../lib/stripe-cashout";
 import { trackWorker } from "../lib/worker-lifecycle";
 
-async function processCashout(job: Job<CashoutJobData>): Promise<void> {
+export async function processCashout(job: Job<CashoutJobData>): Promise<void> {
   const { cashout_id, user_id, amount_cents, stripe_account_id } = job.data;
 
   const stripeKey = getStripeSecretKey();
@@ -60,10 +63,19 @@ async function processCashout(job: Job<CashoutJobData>): Promise<void> {
 
   // Fire Stripe transfer — idempotency key `cashout-${id}` is stable across retries
   // so Stripe returns the original transfer object if already created.
-  const transfer = await stripe.transfers.create(
-    buildCashoutTransferParams({ cashout_id, user_id, stripe_account_id, amount_cents }),
-    { idempotencyKey: cashoutIdempotencyKey(cashout_id) }
-  );
+  let transfer;
+  try {
+    transfer = await stripe.transfers.create(
+      buildCashoutTransferParams({ cashout_id, user_id, stripe_account_id, amount_cents }),
+      { idempotencyKey: cashoutIdempotencyKey(cashout_id) }
+    );
+  } catch (error) {
+    if (isStripeTransferCapabilityError(error)) {
+      job.discard();
+      await handleCashoutFailure(job, error as Error, true);
+    }
+    throw error;
+  }
 
   // Mark completed — state guard prevents duplicate ledger writes if concurrent
   // path (e.g. webhook) already completed the row.
@@ -108,12 +120,16 @@ async function processCashout(job: Job<CashoutJobData>): Promise<void> {
   logger.info({ cashout_id, transfer_id: transfer.id }, "cashout-worker: succeeded");
 }
 
-async function handleCashoutFailure(job: Job<CashoutJobData>, err: Error): Promise<void> {
+async function handleCashoutFailure(
+  job: Job<CashoutJobData>,
+  err: Error,
+  forceDefinitiveFailure = false,
+): Promise<void> {
   // Only fire on final failure (not intermediate retries).
   // BullMQ increments attemptsMade after each attempt. The job is truly finished
   // when attemptsMade >= the configured attempts limit (no more retries left).
   const maxAttempts = job.opts.attempts ?? 5;
-  if (job.attemptsMade < maxAttempts) return;
+  if (!forceDefinitiveFailure && job.attemptsMade < maxAttempts) return;
 
   const { cashout_id, user_id, amount_cents, stripe_account_id } = job.data;
   const requestedAmount = amount_cents / 100;
@@ -188,7 +204,7 @@ async function handleCashoutFailure(job: Job<CashoutJobData>, err: Error): Promi
     // - Stripe error that is definitively NOT a duplicate (e.g. invalid_account) → refund
     // - Ambiguous error (timeout, network, etc.) → mark 'reconciliation_required' (fail-closed)
     const stripeKey = getStripeSecretKey();
-    if (stripeKey) {
+    if (stripeKey && !isStripeTransferCapabilityError(err)) {
       try {
         const stripeClient = new Stripe(stripeKey, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
         const reconTransfer = await stripeClient.transfers.create(

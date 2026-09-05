@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import type { PayoutJobData } from "./queue";
 import { broadcast } from "./ws-hub";
 import { getStripeSecretKey } from "./stripe-config";
+import { isStripeTransferCapabilityError } from "./stripe-errors";
 
 export async function executeHelperPayout(
   data: PayoutJobData,
@@ -119,9 +120,26 @@ export async function executeHelperPayout(
       throw new Error("multiple exact Stripe transfers require payout reconciliation");
     }
 
-    transfer = exactMatches[0] ?? await stripe.transfers.create(transferParams, {
-      idempotencyKey: operationKey,
-    });
+    try {
+      transfer = exactMatches[0] ?? await stripe.transfers.create(transferParams, {
+        idempotencyKey: operationKey,
+      });
+    } catch (error) {
+      if (isStripeTransferCapabilityError(error)) {
+        await db
+          .update(payoutOperationsTable)
+          .set({
+            state: "failed",
+            last_attempt: attempt,
+            notes:
+              "Stripe rejected the destination: Accounts v2 recipient capability " +
+              "stripe_balance.stripe_transfers is not active. Re-onboard the payout account.",
+            updated_at: new Date(),
+          })
+          .where(eq(payoutOperationsTable.id, operation.id));
+      }
+      throw error;
+    }
   }
 
   await db.transaction(async (tx) => {

@@ -53,3 +53,15 @@ export function isAmbiguousStripeError(err: unknown): boolean {
 
   return false;
 }
+
+/**
+ * Stripe Accounts v2 can expose legacy `capabilities.transfers = active` while
+ * still rejecting Transfers because the recipient configuration lacks
+ * `stripe_balance.stripe_transfers`. Stripe rejects these requests before
+ * moving money, so retrying cannot help until account configuration changes.
+ */
+export function isStripeTransferCapabilityError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const code = (err as { code?: string }).code;
+  return code === "insufficient_capabilities_for_transfer";
+}

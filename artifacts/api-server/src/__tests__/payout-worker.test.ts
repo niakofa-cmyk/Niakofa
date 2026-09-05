@@ -6,6 +6,7 @@ const stripeTransferRetrieve = jest.fn();
 const broadcast = jest.fn();
 const paymentValues: unknown[] = [];
 const earningValues: unknown[] = [];
+const operationFailureValues: unknown[] = [];
 let claimInsertResult: unknown[] = [];
 let existingOperation: unknown[] = [];
 let completedUpdateResult: unknown[] = [];
@@ -70,6 +71,12 @@ const tx = {
 const db = {
   transaction: jest.fn(async (callback: (transaction: typeof tx) => Promise<void>) => callback(tx)),
   insert: jest.fn(),
+  update: jest.fn(() => ({
+    set: jest.fn((values: unknown) => {
+      operationFailureValues.push(values);
+      return { where: jest.fn(async () => undefined) };
+    }),
+  })),
 };
 
 jest.unstable_mockModule("@workspace/db", () => ({
@@ -122,6 +129,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   paymentValues.length = 0;
   earningValues.length = 0;
+  operationFailureValues.length = 0;
   claimInsertResult = [{
     id: 1,
     state: "authorized",
@@ -151,6 +159,7 @@ const job = {
     request_title: "Restart-safe help",
   },
   attemptsMade: 1,
+  discard: jest.fn(),
 };
 
 describe("payout worker restart idempotency", () => {
@@ -253,6 +262,25 @@ describe("payout worker restart idempotency", () => {
     }];
 
     await expect(processPayout(job)).rejects.toThrow("identity conflict");
+    expect(earningValues).toHaveLength(0);
+  });
+
+  it("fails fast when Stripe Accounts v2 recipient transfer capability is missing", async () => {
+    const capabilityError = Object.assign(
+      new Error("Destination recipient capability is not active"),
+      { code: "insufficient_capabilities_for_transfer" },
+    );
+    stripeTransferCreate.mockRejectedValueOnce(capabilityError);
+
+    await expect(processPayout(job)).rejects.toBe(capabilityError);
+
+    expect(job.discard).toHaveBeenCalledTimes(1);
+    expect(operationFailureValues).toEqual([
+      expect.objectContaining({
+        state: "failed",
+        notes: expect.stringContaining("stripe_balance.stripe_transfers"),
+      }),
+    ]);
     expect(earningValues).toHaveLength(0);
   });
 });

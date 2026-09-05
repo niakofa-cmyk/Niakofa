@@ -14,6 +14,7 @@ import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
 import { logger } from "../lib/logger";
 import { trackWorker } from "../lib/worker-lifecycle";
 import { executeHelperPayout } from "../lib/payout-service";
+import { isStripeTransferCapabilityError } from "../lib/stripe-errors";
 
 export async function processPayout(job: Job<PayoutJobData>): Promise<void> {
   const { request_id, helper_id, amount_cents, platform_fee_cents } = job.data;
@@ -24,7 +25,19 @@ export async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     "payout-worker: processing"
   );
 
-  const transfer = await executeHelperPayout(job.data, job.attemptsMade + 1);
+  let transfer;
+  try {
+    transfer = await executeHelperPayout(job.data, job.attemptsMade + 1);
+  } catch (error) {
+    if (isStripeTransferCapabilityError(error)) {
+      job.discard();
+      logger.error(
+        { request_id, helper_id },
+        "payout-worker: destination lacks Stripe Accounts v2 recipient transfer capability — retries discarded"
+      );
+    }
+    throw error;
+  }
 
   logger.info({ request_id, transfer_id: transfer.id }, "payout-worker: succeeded");
 }

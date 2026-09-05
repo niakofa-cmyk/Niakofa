@@ -61,3 +61,4 @@
 - [Civic jurisdiction matching](civic-jurisdiction-matching.md) — normalize external geocoder metadata before matching canonical civic coverage, and version caches when matching changes.
 - [Legacy launch bridge](legacy-launch-bridge.md) — standalone launches use one-use opaque tickets and narrow context; separate-origin hosting needs an explicit API boundary.
 - [Payout operation boundary](payout-operation-boundary.md) — helper payouts use a separate durable operation ledger and one shared Stripe reconciliation protocol.
+- [Stripe Accounts v2 recipient capability](stripe-v2-recipient-capability.md) — V1 transfers-active is insufficient; treat missing v2 recipient transfer capability as definitive.
