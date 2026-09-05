@@ -27,6 +27,7 @@ const stripeChargeRetrieve = jest.fn();
 const stripePaymentIntentCreate = jest.fn();
 const stripePaymentIntentList = jest.fn();
 const stripePaymentIntentRetrieve = jest.fn();
+const stripePaymentIntentCancel = jest.fn();
 const stripeBalanceTransactionRetrieve = jest.fn();
 const stripeAccountsRetrieve = jest.fn();
 const stripeTransferCreate = jest.fn();
@@ -48,7 +49,15 @@ jest.unstable_mockModule("@workspace/db", () => ({
     id: "id",
     amount_refunded: "amount_refunded",
   },
-  requestsTable: { id: "id", title: "title", status: "status" },
+  requestsTable: {
+    id: "id",
+    title: "title",
+    status: "status",
+    helper_id: "helper_id",
+    payment_type: "payment_type",
+    pay_it_forward_amount: "pay_it_forward_amount",
+    pledge_paid: "pledge_paid",
+  },
   usersTable: { id: "id", community_id: "community_id", benevolence_wallet: "benevolence_wallet" },
   transactionsTable: {},
   communityPoolLedgerTable: {},
@@ -74,6 +83,7 @@ jest.unstable_mockModule("stripe", () => ({
       create: stripePaymentIntentCreate,
       list: stripePaymentIntentList,
       retrieve: stripePaymentIntentRetrieve,
+      cancel: stripePaymentIntentCancel,
     };
     transfers = { create: stripeTransferCreate };
     balanceTransactions = { retrieve: stripeBalanceTransactionRetrieve };
@@ -273,6 +283,61 @@ describe("POST /api/stripe/payment-intent", () => {
       expect.not.objectContaining({ transfer_data: expect.anything() }),
       expect.anything(),
     );
+  });
+
+  it("allows a partial Pay It Forward repayment and gives the attempt a stable Stripe key", async () => {
+    db.limit.mockResolvedValueOnce([{
+      id: 1,
+      helper_id: 7,
+      requester_id: 42,
+      payment_type: "pay_it_forward",
+      pay_it_forward_amount: 10,
+      pledge_paid: 2,
+      status: "completed",
+    }]);
+    db.returning.mockResolvedValueOnce([{ id: 100 }]);
+    const operationId = "11111111-1111-4111-8111-111111111111";
+
+    const response = await request(app)
+      .post("/api/stripe/payment-intent")
+      .send({
+        requestId: 1,
+        amount: 5,
+        paymentType: "pay_it_forward",
+        operationId,
+      });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 500,
+        metadata: expect.objectContaining({
+          paymentType: "pay_it_forward",
+          helperId: "7",
+        }),
+      }),
+      expect.objectContaining({
+        idempotencyKey: "payment-intent-pif-1-42-200",
+      }),
+    );
+  });
+
+  it("rejects a Pay It Forward payment directed at anyone except the assigned helper", async () => {
+    db.limit.mockResolvedValueOnce([{
+      id: 1,
+      helper_id: 7,
+      payment_type: "pay_it_forward",
+      pay_it_forward_amount: 10,
+      pledge_paid: 0,
+      status: "completed",
+    }]);
+
+    const response = await request(app)
+      .post("/api/stripe/payment-intent")
+      .send({ requestId: 1, helperId: 8, amount: 5, paymentType: "pay_it_forward" });
+
+    expect(response.status).toBe(400);
+    expect(stripePaymentIntentCreate).not.toHaveBeenCalled();
   });
 });
 
@@ -656,7 +721,12 @@ describe("POST /api/stripe/webhook", () => {
       type: "payment_intent.succeeded",
       data: { object: { id: "pi_already_done", amount: 1000, metadata: {} } },
     });
-    db.returning.mockResolvedValueOnce([]);
+    db.limit.mockResolvedValueOnce([{
+      id: 9,
+      state: "completed",
+      request_id: 1,
+      payment_type: "pay_it_forward",
+    }]);
 
     const response = await request(app)
       .post("/api/stripe/webhook")
@@ -666,7 +736,8 @@ describe("POST /api/stripe/webhook", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ received: true });
-    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.update).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
   });
 

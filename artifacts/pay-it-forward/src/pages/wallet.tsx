@@ -69,8 +69,13 @@ export default function WalletScreen() {
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [schedulerRequest, setSchedulerRequest] = useState<HelpRequest | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<HelpRequest | null>(null);
+  const [paymentDestination, setPaymentDestination] = useState<"original_fund" | "helper">("original_fund");
   const [pledgeAmount, setPledgeAmount] = useState("");
-  const [pledgePayment, setPledgePayment] = useState<{ clientSecret: string; amount: number } | null>(null);
+  const [pledgePayment, setPledgePayment] = useState<{
+    clientSecret: string;
+    amount: number;
+    destination: "original_fund" | "helper";
+  } | null>(null);
   const [creatingPaymentIntent, setCreatingPaymentIntent] = useState(false);
 
   // Pay Now state (for fulfilling scheduled payments immediately via Stripe)
@@ -402,13 +407,14 @@ export default function WalletScreen() {
     }
     // Guard: never allow paying more than what's outstanding
     const outstanding = (selectedRequest.pledge_amount ?? 0) - (selectedRequest.pledge_paid ?? 0);
-    if (outstanding > 0 && amt > outstanding + 0.01) {
+    if (paymentDestination === "original_fund" && outstanding > 0 && amt > outstanding + 0.01) {
       toast({ title: `Maximum contribution is ${outstanding.toFixed(2)}`, variant: "destructive" });
       return;
     }
 
-    // When Stripe is configured, create a PaymentIntent and show the payment modal.
-    // On success (or skip), the DB pledge is still recorded via sendHonorSystemPledge.
+    // Stripe's signed webhook is the sole authority for recording a card-funded
+    // repayment. Never fall back to the honor-system endpoint after a card error:
+    // that would mark an unpaid attempt as paid.
     if (isStripeConfigured()) {
       setCreatingPaymentIntent(true);
       try {
@@ -421,26 +427,43 @@ export default function WalletScreen() {
             amount: amt,
             requesterId: currentUser.id,
             helperId: selectedRequest.helper_id ?? undefined,
+            paymentType: paymentDestination === "helper" ? "tip" : "pay_it_forward",
+            operationId: crypto.randomUUID(),
           }),
         });
         if (res.ok) {
           const { clientSecret } = await res.json() as { clientSecret: string };
-          setPledgePayment({ clientSecret, amount: amt });
+          setPledgePayment({ clientSecret, amount: amt, destination: paymentDestination });
           return; // payment modal takes over
         }
-        // 503 = Stripe not configured server-side — fall through to honor system
-        if (res.status !== 503) {
-          const err = await res.json() as { error?: string };
-          toast({ title: "Could not start payment", description: err.error ?? "Falling back to honor system." });
-        }
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({
+          title: "Could not start card payment",
+          description: err.error ?? "No payment was recorded. Please try again.",
+          variant: "destructive",
+        });
       } catch {
-        // network error — fall through to honor system
+        toast({
+          title: "Network error",
+          description: "No payment was recorded. Please try again.",
+          variant: "destructive",
+        });
       } finally {
         setCreatingPaymentIntent(false);
       }
+      return;
     }
 
-    // Stripe not configured or API call failed — proceed as honor system pledge
+    if (paymentDestination === "helper") {
+      toast({
+        title: "Card payment unavailable",
+        description: "Direct helper payments require Stripe. No payment was recorded.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Development/offline mode only: explicitly use the legacy honor-system path.
     sendHonorSystemPledge(amt);
   };
 
@@ -533,6 +556,7 @@ export default function WalletScreen() {
             amount: amt,
             requesterId: currentUser?.id,
             paymentType: "pay_it_forward",
+            operationId: crypto.randomUUID(),
           }),
         });
         if (res.ok) {
@@ -540,11 +564,22 @@ export default function WalletScreen() {
           setPayNowPayment({ clientSecret, amount: amt });
           return; // StripePaymentModal takes over
         }
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({
+          title: "Could not start card payment",
+          description: err.error ?? "Your scheduled payment is still pending.",
+          variant: "destructive",
+        });
       } catch {
-        // fall through to honor system
+        toast({
+          title: "Network error",
+          description: "No payment was recorded. Your scheduled payment is still pending.",
+          variant: "destructive",
+        });
       } finally {
         setCreatingPayNowIntent(false);
       }
+      return;
     }
 
     // Stripe not available — honor-system pledge
@@ -1328,7 +1363,10 @@ export default function WalletScreen() {
                           key={r.id}
                           onClick={() => {
                             setSelectedRequest(isSelected ? null : r);
-                            if (!isSelected) setPledgeAmount(""); // reset amount when switching requests
+                            if (!isSelected) {
+                              setPledgeAmount("");
+                              setPaymentDestination("original_fund");
+                            }
                           }}
                           className={`w-full text-left rounded-xl p-3.5 border transition-all ${
                             isSelected
@@ -1348,6 +1386,45 @@ export default function WalletScreen() {
               ) : (
                 <div className="bg-muted/50 rounded-xl p-4 text-center text-sm text-muted-foreground">
                   No outstanding pledges right now.
+                </div>
+              )}
+
+              {selectedRequest && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                    Where should this payment go?
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentDestination("original_fund")}
+                      className={`rounded-xl border p-3 text-left transition-all ${
+                        paymentDestination === "original_fund"
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-background hover:border-primary/50"
+                      }`}
+                    >
+                      <div className="text-sm font-bold">Repay the Community Fund</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Reduces your outstanding balance and replenishes the original pool.
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedRequest.helper_id || selectedRequest.status !== "completed"}
+                      onClick={() => setPaymentDestination("helper")}
+                      className={`rounded-xl border p-3 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                        paymentDestination === "helper"
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-background hover:border-primary/50"
+                      }`}
+                    >
+                      <div className="text-sm font-bold">Thank the Helper Directly</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Sends an extra tip to the assigned helper. This does not reduce a pool balance.
+                      </div>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1412,7 +1489,8 @@ export default function WalletScreen() {
               />
               {selectedRequest && (
                 <p className="text-xs text-muted-foreground -mt-2">
-                  Contributing to: <span className="text-primary font-semibold">{selectedRequest.title}</span>
+                  {paymentDestination === "helper" ? "Tipping the helper for" : "Repaying the fund for"}:{" "}
+                  <span className="text-primary font-semibold">{selectedRequest.title}</span>
                 </p>
               )}
               <Button
@@ -1427,7 +1505,8 @@ export default function WalletScreen() {
                 ) : (
                   <span className="flex items-center gap-2">
                     <Heart className="w-4 h-4" />
-                    Send {pledgeAmount ? `$${parseFloat(pledgeAmount || "0").toFixed(2)}` : "Contribution"}
+                    {paymentDestination === "helper" ? "Send Helper " : "Repay "}
+                    {pledgeAmount ? `$${parseFloat(pledgeAmount || "0").toFixed(2)}` : "Contribution"}
                   </span>
                 )}
               </Button>
@@ -1443,13 +1522,25 @@ export default function WalletScreen() {
           amount={pledgePayment.amount}
           description={
             selectedRequest
-              ? `Niakofa for: "${selectedRequest.title}". Your helper receives funds directly.`
+              ? pledgePayment.destination === "helper"
+                ? `Thank the assigned helper for: "${selectedRequest.title}". This is an extra direct tip.`
+                : `Repay the original Community Fund for: "${selectedRequest.title}".`
               : "Niakofa contribution"
           }
           onSuccess={() => {
-            const amt = pledgePayment.amount;
             setPledgePayment(null);
-            sendHonorSystemPledge(amt);
+            setSelectedRequest(null);
+            setPaymentDestination("original_fund");
+            setPledgeAmount("");
+            setPledgeOpen(false);
+            toast({
+              title: "Payment confirmed",
+              description: "Stripe confirmed your payment. Your Pay It Forward balance will update securely.",
+            });
+            window.setTimeout(() => {
+              fetchTransactions(0, false);
+              queryClient.invalidateQueries({ queryKey: getGetUserOutstandingPledgesQueryKey(userId) });
+            }, 1500);
           }}
           onSkip={() => {
             // NOTE: the /users/:id/pledge endpoint increments pledge_paid immediately —
@@ -1473,9 +1564,29 @@ export default function WalletScreen() {
           description={`Niakofa — fulfilling your scheduled $${payNowPayment.amount.toFixed(2)} contribution`}
           onSuccess={() => {
             const sp = payNowScheduled;
-            const amt = payNowPayment.amount;
             setPayNowPayment(null);
-            fulfillScheduledNow(sp, amt);
+            cancelMutation.mutate(
+              { paymentId: sp.id },
+              {
+                onSuccess: () => {
+                  toast({
+                    title: "Payment confirmed",
+                    description: "Stripe confirmed your payment and the scheduled item is complete.",
+                  });
+                  window.setTimeout(() => {
+                    fetchTransactions(0, false);
+                    queryClient.invalidateQueries({ queryKey: getGetUserOutstandingPledgesQueryKey(userId) });
+                  }, 1500);
+                  setPayNowScheduled(null);
+                },
+                onError: () => {
+                  toast({
+                    title: "Payment confirmed",
+                    description: "The payment succeeded, but the schedule could not be closed automatically.",
+                  });
+                },
+              },
+            );
           }}
           onSkip={() => {
             // Same issue as the pledge modal: fulfillScheduledNow records the pledge as

@@ -221,19 +221,17 @@ router.post("/stripe/webhook", async (req, res) => {
           break;
         }
 
-        // 1. Flip the payment_transactions row to completed — the state guard
-        // makes this the idempotency gate: webhook retries find state already
-        // "completed", get no row back, and skip every side effect below.
+        // Read the candidate first. Pay It Forward settlement claims this row
+        // inside the same DB transaction as every ledger mutation below, so a
+        // crash or rollback cannot leave a "completed" payment with no funds
+        // posted. The guarded update remains the concurrency/idempotency gate.
         const [txRow] = await db
-          .update(paymentTransactionsTable)
-          .set({ state: "completed", updated_at: new Date() })
-          .where(and(
-            eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id),
-            sql`${paymentTransactionsTable.state} != 'completed'`
-          ))
-          .returning();
+          .select()
+          .from(paymentTransactionsTable)
+          .where(eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id))
+          .limit(1);
 
-        if (!txRow) {
+        if (!txRow || txRow.state === "completed") {
           // Already processed (retry) or no matching transaction — nothing to do
           logger.info({ pi: pi.id }, "payment_intent.succeeded: no unprocessed transaction row — skipping");
           break;
@@ -258,11 +256,29 @@ router.post("/stripe/webhook", async (req, res) => {
 
           // All money mutations in ONE transaction so a mid-sequence failure
           // can't leave pledge_paid bumped without the matching ledger writes.
-          await db.transaction(async (tx) => {
+          const settlementClaimed = await db.transaction(async (tx) => {
+            const [claimed] = await tx
+              .update(paymentTransactionsTable)
+              .set({ state: "completed", updated_at: new Date() })
+              .where(and(
+                eq(paymentTransactionsTable.id, txRow.id),
+                sql`${paymentTransactionsTable.state} != 'completed'`,
+              ))
+              .returning({ id: paymentTransactionsTable.id });
+            if (!claimed) return false;
+
             await tx
               .update(requestsTable)
-              .set({ pledge_paid: sql`COALESCE(${requestsTable.pledge_paid}, 0) + ${amount}` })
-              .where(eq(requestsTable.id, requestId));
+              .set({
+                pledge_paid: sql`LEAST(
+                  COALESCE(${requestsTable.pay_it_forward_amount}, ${amount}),
+                  COALESCE(${requestsTable.pledge_paid}, 0) + ${amount}
+                )`,
+              })
+              .where(and(
+                eq(requestsTable.id, requestId),
+                sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pay_it_forward_amount}, ${amount})`,
+              ));
 
             if (fronted) {
               const [frontLedger] = await tx
@@ -324,7 +340,12 @@ router.post("/stripe/webhook", async (req, res) => {
                   : "Niakofa contribution (Stripe)",
               });
             }
+            return true;
           });
+          if (!settlementClaimed) {
+            logger.info({ pi: pi.id }, "payment_intent.succeeded: repayment already claimed — skipping");
+            break;
+          }
 
           // Requester reputation boost for honouring their pledge on time.
           // +2 trust points (capped at 80 — same ceiling as helper completions).
@@ -398,29 +419,44 @@ router.post("/stripe/webhook", async (req, res) => {
           // actually succeeded. The client-facing /requests/:id/tip endpoint
           // no longer credits directly — see requests.ts.
           const amount = txRow.amount;
+          const tipHelperId = txRow.helper_id;
 
-          await db
-            .update(usersTable)
-            .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
-            .where(eq(usersTable.id, txRow.helper_id));
+          const tipClaimed = await db.transaction(async (tx) => {
+            const [claimed] = await tx
+              .update(paymentTransactionsTable)
+              .set({ state: "completed", updated_at: new Date() })
+              .where(and(
+                eq(paymentTransactionsTable.id, txRow.id),
+                sql`${paymentTransactionsTable.state} != 'completed'`,
+              ))
+              .returning({ id: paymentTransactionsTable.id });
+            if (!claimed) return false;
 
-          await db.insert(transactionsTable).values({
-            user_id: txRow.helper_id,
-            request_id: txRow.request_id,
-            type: "tip_received",
-            amount,
-            description: "Tip received (Stripe)",
-          });
+            await tx
+              .update(usersTable)
+              .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
+              .where(eq(usersTable.id, tipHelperId));
 
-          if (txRow.requester_id) {
-            await db.insert(transactionsTable).values({
-              user_id: txRow.requester_id,
+            await tx.insert(transactionsTable).values({
+              user_id: tipHelperId,
               request_id: txRow.request_id,
-              type: "tip_sent",
-              amount: -amount,
-              description: "Tip sent (Stripe)",
+              type: "tip_received",
+              amount,
+              description: "Tip received (Stripe)",
             });
-          }
+
+            if (txRow.requester_id) {
+              await tx.insert(transactionsTable).values({
+                user_id: txRow.requester_id,
+                request_id: txRow.request_id,
+                type: "tip_sent",
+                amount: -amount,
+                description: "Tip sent (Stripe)",
+              });
+            }
+            return true;
+          });
+          if (!tipClaimed) break;
 
           broadcast({
             type: "tip_paid",
@@ -439,6 +475,16 @@ router.post("/stripe/webhook", async (req, res) => {
             notifType: "wallet" as const,
           }).catch(err => logger.warn({ err, helper_id: txRow.helper_id }, "sendPushToUser (tip): non-critical side effect failed — continuing"));
         } else {
+          const [claimed] = await db
+            .update(paymentTransactionsTable)
+            .set({ state: "completed", updated_at: new Date() })
+            .where(and(
+              eq(paymentTransactionsTable.id, txRow.id),
+              sql`${paymentTransactionsTable.state} != 'completed'`,
+            ))
+            .returning({ id: paymentTransactionsTable.id });
+          if (!claimed) break;
+
           broadcast({
             type: "payment_completed",
             payload: { paymentIntentId: pi.id, amount: pi.amount / 100 },
@@ -742,6 +788,18 @@ router.post("/stripe/webhook", async (req, res) => {
             }
           }
 
+          if (existing.payment_type === "pay_it_forward" && existing.request_id) {
+            await tx
+              .update(requestsTable)
+              .set({
+                pledge_paid: sql`GREATEST(
+                  0,
+                  COALESCE(${requestsTable.pledge_paid}, 0) - ${incrementalRefund}
+                )`,
+              })
+              .where(eq(requestsTable.id, existing.request_id));
+          }
+
           return {
             txRow: updated,
             incrementalRefund,
@@ -763,7 +821,12 @@ router.post("/stripe/webhook", async (req, res) => {
           .where(eq(requestsTable.id, txRow.request_id))
           .limit(1);
 
-        if (fullyRefunded && reqRow && reqRow.status === "completed") {
+        if (
+          fullyRefunded &&
+          txRow.payment_type === "immediate" &&
+          reqRow &&
+          reqRow.status === "completed"
+        ) {
           await db
             .update(requestsTable)
             .set({
@@ -868,6 +931,7 @@ router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwner
     amount: z.number().finite().min(0.5).max(10000),
     helperId: z.number().int().positive().optional(),
     paymentType: z.enum(["immediate", "pay_it_forward", "tip"]).optional(),
+    operationId: z.string().uuid().optional(),
   }).safeParse(req.body);
   if (!parsedBody.success) {
     return res.status(400).json({
@@ -885,8 +949,10 @@ router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwner
   const [targetRequest] = await db
     .select({
       pay_it_forward_amount: requestsTable.pay_it_forward_amount,
+      pledge_paid: requestsTable.pledge_paid,
       status: requestsTable.status,
       helper_id: requestsTable.helper_id,
+      payment_type: requestsTable.payment_type,
     })
     .from(requestsTable)
     .where(eq(requestsTable.id, requestId))
@@ -896,7 +962,13 @@ router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwner
     return res.status(404).json({ error: "Request not found" });
   }
 
-  if (paymentType === "tip") {
+  const effectivePaymentType = paymentType ?? targetRequest.payment_type ?? "immediate";
+  const effectiveHelperId =
+    effectivePaymentType === "pay_it_forward"
+      ? targetRequest.helper_id ?? undefined
+      : helperId;
+
+  if (effectivePaymentType === "tip") {
     // Tips can only be created for a completed request with an assigned
     // helper, and only for that helper — never a third party.
     if (targetRequest.status !== "completed") {
@@ -904,6 +976,22 @@ router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwner
     }
     if (!targetRequest.helper_id || helperId !== targetRequest.helper_id) {
       return res.status(400).json({ error: "helperId must match the request's assigned helper" });
+    }
+  } else if (effectivePaymentType === "pay_it_forward") {
+    if (!targetRequest.helper_id || (helperId != null && helperId !== targetRequest.helper_id)) {
+      return res.status(400).json({ error: "helperId must match the request's assigned helper" });
+    }
+    const outstanding = Math.max(
+      0,
+      (targetRequest.pay_it_forward_amount ?? 0) - (targetRequest.pledge_paid ?? 0),
+    );
+    if (outstanding <= 0) {
+      return res.status(409).json({ error: "This Pay It Forward balance is already repaid" });
+    }
+    if (amount > outstanding + 0.001) {
+      return res.status(400).json({
+        error: `amount exceeds the outstanding Pay It Forward balance of $${outstanding.toFixed(2)}`,
+      });
     }
   } else if (
     targetRequest.pay_it_forward_amount != null &&
@@ -914,43 +1002,28 @@ router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwner
     });
   }
 
-  // Check if helper has a Connect account for direct transfer
-  let transferData: { destination: string } | undefined;
-  // Immediate payments are platform charges and are paid out exactly once by
-  // executeHelperPayout after request completion. Only tips use a destination
-  // charge because they do not enter the completion payout flow.
-  if (helperId && paymentType === "tip") {
-    const [acct] = await db
-      .select()
-      .from(stripeAccountsTable)
-      .where(eq(stripeAccountsTable.user_id, helperId))
-      .limit(1);
-    if (acct?.stripe_account_id && acct.charges_enabled) {
-      transferData = { destination: acct.stripe_account_id };
-    }
-  }
-
   const pi = await stripe!.paymentIntents.create(
     {
       amount: Math.round(amount * 100), // convert to cents
       currency: "usd",
       metadata: {
         requestId: requestId.toString(),
-        helperId: helperId?.toString() ?? "",
+        helperId: effectiveHelperId?.toString() ?? "",
         requesterId: req.authenticatedUserId!.toString(),
-        paymentType: paymentType ?? "immediate",
+        paymentType: effectivePaymentType,
       },
       automatic_payment_methods: { enabled: true },
-      ...(transferData ? { transfer_data: transferData } : {}),
     },
     {
       // Tips are repeatable — the same requester may tip the same completed
       // request more than once, so the key must not collide across attempts.
       // Immediate/pledge payments are still one-per-request-per-payer.
       idempotencyKey:
-        paymentType === "tip"
+        effectivePaymentType === "tip"
           ? `payment-intent-tip-${requestId}-${req.authenticatedUserId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-          : `payment-intent-${requestId}-${req.authenticatedUserId}`,
+          : effectivePaymentType === "pay_it_forward"
+            ? `payment-intent-pif-${requestId}-${req.authenticatedUserId}-${Math.round((targetRequest.pledge_paid ?? 0) * 100)}`
+            : `payment-intent-${requestId}-${req.authenticatedUserId}`,
     }
   );
 
@@ -959,19 +1032,53 @@ router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwner
     .insert(paymentTransactionsTable)
     .values({
       request_id: requestId,
-      helper_id: helperId ?? null,
+      helper_id: effectiveHelperId ?? null,
       requester_id: req.authenticatedUserId!,
       amount,
       state: "authorized",
-      payment_type: paymentType ?? "immediate",
+      payment_type: effectivePaymentType,
       stripe_payment_intent_id: pi.id,
     })
+    .onConflictDoNothing()
     .returning();
 
+  let transaction = tx;
+  let responsePaymentIntent = pi;
+
+  if (!transaction && effectivePaymentType === "pay_it_forward") {
+    const [active] = await db
+      .select()
+      .from(paymentTransactionsTable)
+      .where(and(
+        eq(paymentTransactionsTable.request_id, requestId),
+        eq(paymentTransactionsTable.requester_id, req.authenticatedUserId!),
+        eq(paymentTransactionsTable.payment_type, "pay_it_forward"),
+        eq(paymentTransactionsTable.state, "authorized"),
+      ))
+      .limit(1);
+    if (active?.stripe_payment_intent_id) {
+      if (active.stripe_payment_intent_id !== pi.id) {
+        await stripe!.paymentIntents.cancel(pi.id);
+      }
+      responsePaymentIntent = await stripe!.paymentIntents.retrieve(active.stripe_payment_intent_id);
+      transaction = active;
+    }
+  }
+
+  transaction ??= (await db
+    .select()
+    .from(paymentTransactionsTable)
+    .where(eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id))
+    .limit(1))[0];
+
+  if (!transaction) {
+    throw new Error(`PaymentIntent ${pi.id} could not be linked to a payment transaction`);
+  }
+
   return res.json({
-    clientSecret: pi.client_secret,
-    paymentIntentId: pi.id,
-    transactionId: tx.id,
+    clientSecret: responsePaymentIntent.client_secret,
+    paymentIntentId: responsePaymentIntent.id,
+    transactionId: transaction.id,
   });
 });
 
