@@ -218,7 +218,7 @@ export class CircleRealtimeSessionManager {
    */
   async ensureMicrophone(): Promise<MediaStream> {
     const transport = this.transport;
-    if (!transport) throw new Error("Circle media is not connected");
+    if (!transport) throw new Error("Spiral media is not connected");
     this.micRequested = true;
 
     try {

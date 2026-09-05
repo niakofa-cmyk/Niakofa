@@ -10,6 +10,7 @@ import { useAppContext } from "@/lib/AppContext";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 import { Z_NAV } from "@/lib/zLayers";
+import { SPIRALS_PATHS } from "@/lib/spirals";
 
 type Tab = { path: string; icon: React.ElementType; labelKey: string; center?: boolean };
 
@@ -27,7 +28,7 @@ const BASE_TABS: Tab[] = [
   { path: "/community",     icon: Users,      labelKey: "nav.community" },
   { path: "/",              icon: Map,        labelKey: "nav.map"       },
   { path: "/diaspora",      icon: Globe2,     labelKey: "nav.diaspora"  },
-  { path: "/audio-circles", icon: Radio,      labelKey: "nav.circles"   },
+  { path: SPIRALS_PATHS.discovery, icon: Radio, labelKey: "nav.circles" },
 ];
 
 // Helper Mode ON — helper-facing nav: Active Job (center, most important
@@ -39,7 +40,7 @@ const HELPER_TABS: Tab[] = [
   { path: "/helper-dashboard", icon: DollarSign,   labelKey: "nav.earnings" },
   { path: "/",                 icon: Map,           labelKey: "nav.nearby"  },
   { path: "__active_job__",    icon: Navigation2,   labelKey: "nav.active_job", center: true },
-  { path: "/audio-circles",    icon: Radio,         labelKey: "nav.circles" },
+  { path: SPIRALS_PATHS.discovery, icon: Radio,      labelKey: "nav.circles" },
 ];
 
 export const SEED_NOTIFICATIONS: LiveNotification[] = [
@@ -167,7 +168,7 @@ export function BottomNav() {
         title: `🔴 ${p.circle_name} is live`,
         body: `"${p.title}" — hosted by ${p.host_name}${p.video_enabled ? " 🎥" : ""}`,
         time: new Date(),
-        actionUrl: `/audio-circle/${p.session_id}`,
+        actionUrl: SPIRALS_PATHS.room(p.session_id),
       });
     }
   });

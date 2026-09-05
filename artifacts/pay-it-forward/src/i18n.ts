@@ -9,7 +9,7 @@ const en = {
     community: "Community",
     wallet: "Wallet",
     profile: "Profile",
-    circles: "Circles",
+    circles: "Spirals",
     earnings: "Earnings",
     nearby: "Nearby",
     active_job: "Active Job",

@@ -98,7 +98,7 @@ export function classifyMediaError(error: unknown, device: MediaDeviceKind): Med
       ok: false,
       device,
       code: "connectivity_error",
-      message: `Your ${device} opened, but the live connection to the Circle failed. Check your network and try again.`,
+      message: `Your ${device} opened, but the live connection to the Spiral failed. Check your network and try again.`,
     };
   }
 

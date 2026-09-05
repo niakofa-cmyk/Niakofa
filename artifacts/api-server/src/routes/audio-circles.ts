@@ -30,7 +30,7 @@ import {
   cityNeighborhoodsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, and, isNull, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, asc, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { normalizeCityKey, ensureNeighborhoodsForCity } from "./community-neighborhoods";
@@ -43,8 +43,19 @@ import {
 } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { CircleStartLocationBody, verifyCircleStartLocation } from "../lib/circleLocationPolicy";
+import { requestCircleSummary } from "./nia-proxy";
 
 const router = Router();
+
+// Kept for direct router embedding in focused lifecycle tests and local
+// integrations. The application-wide normalizer in routes/index.ts is the
+// canonical path and covers the sibling Circle routers as well.
+router.use((req, _res, next) => {
+  req.url = req.url
+    .replace(/^\/audio-spiral-sessions(?=\/|$)/, "/audio-circle-sessions")
+    .replace(/^\/audio-spirals(?=\/|$)/, "/audio-circles");
+  next();
+});
 
 const MAX_TITLE_LEN = 140;
 const MAX_DESC_LEN = 500;
@@ -57,8 +68,13 @@ const MAX_CHAT_LEN = 500; // characters per ephemeral chat message
 // participant, while still not letting a session that's genuinely
 // abandoned by its host run forever.
 const HOST_GRACE_PERIOD_MS = 90_000;
+const HOST_FAILOVER_LOCK_KEY = 913_004;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// A room-state response must stay bounded even when a malicious or broken
+// client has produced an unusually large participant set.
+const MAX_PARTICIPANTS_PER_QUERY = 500;
 
 async function getActiveParticipants(sessionId: number) {
   return db
@@ -73,7 +89,37 @@ async function getActiveParticipants(sessionId: number) {
     })
     .from(audioCircleParticipantsTable)
     .innerJoin(usersTable, eq(usersTable.id, audioCircleParticipantsTable.user_id))
-    .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), isNull(audioCircleParticipantsTable.left_at)));
+    .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), isNull(audioCircleParticipantsTable.left_at)))
+    .limit(MAX_PARTICIPANTS_PER_QUERY);
+}
+
+async function getActiveParticipantCounts(
+  sessionIds: number[]
+): Promise<Map<number, { speaker_count: number; listener_count: number }>> {
+  const result = new Map<number, { speaker_count: number; listener_count: number }>();
+  if (sessionIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      session_id: audioCircleParticipantsTable.session_id,
+      role: audioCircleParticipantsTable.role,
+      count: sql<number>`count(*)`,
+    })
+    .from(audioCircleParticipantsTable)
+    .where(and(
+      inArray(audioCircleParticipantsTable.session_id, sessionIds),
+      isNull(audioCircleParticipantsTable.left_at),
+    ))
+    .groupBy(audioCircleParticipantsTable.session_id, audioCircleParticipantsTable.role);
+
+  for (const row of rows) {
+    const counts = result.get(row.session_id) ?? { speaker_count: 0, listener_count: 0 };
+    const count = Number(row.count);
+    if (row.role === "host" || row.role === "speaker" || row.role === "co_host") counts.speaker_count += count;
+    else if (row.role === "listener") counts.listener_count += count;
+    result.set(row.session_id, counts);
+  }
+  return result;
 }
 
 /**
@@ -92,31 +138,71 @@ async function expireIfHostGraceElapsed(session: typeof audioCircleSessionsTable
   const elapsed = Date.now() - new Date(session.host_disconnected_at).getTime();
   if (elapsed < HOST_GRACE_PERIOD_MS) return session;
 
-  // Check for a co-host to promote before ending the session.
-  const activeParticipants = await getActiveParticipants(session.id);
-  const cohost = activeParticipants.find(p => p.role === "co_host");
-  if (cohost) {
-    // Auto-promote the co-host to host.
-    await db
-      .update(audioCircleParticipantsTable)
-      .set({ role: "host" })
-      .where(and(
+  const outcome = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${HOST_FAILOVER_LOCK_KEY}, ${session.id})`);
+    const [current] = await tx.select().from(audioCircleSessionsTable)
+      .where(eq(audioCircleSessionsTable.id, session.id)).limit(1);
+    if (!current || !current.host_disconnected_at || current.status !== "live") {
+      return { status: "already_resolved" as const };
+    }
+    if (Date.now() - new Date(current.host_disconnected_at).getTime() < HOST_GRACE_PERIOD_MS) {
+      return { status: "not_expired" as const, session: current };
+    }
+    // Important: use the value read *after* acquiring the transaction lock;
+    // never apply an optimistic guard captured from the stale caller input.
+    const guard = current.host_disconnected_at;
+    // Co-host selection is deliberately independent of the bounded broadcast
+    // participant list: a room with many listeners must still promote the
+    // deterministic earliest active co-host.
+    const [cohost] = await tx.select({
+      user_id: audioCircleParticipantsTable.user_id,
+    }).from(audioCircleParticipantsTable).where(and(
+      eq(audioCircleParticipantsTable.session_id, session.id),
+      eq(audioCircleParticipantsTable.role, "co_host"),
+      isNull(audioCircleParticipantsTable.left_at),
+    )).orderBy(asc(audioCircleParticipantsTable.id)).limit(1);
+    if (cohost) {
+      const promoted = await tx.update(audioCircleSessionsTable)
+        .set({ host_id: cohost.user_id, host_disconnected_at: null })
+        .where(and(
+          eq(audioCircleSessionsTable.id, session.id),
+          eq(audioCircleSessionsTable.host_disconnected_at, guard),
+        ))
+        .returning({ id: audioCircleSessionsTable.id });
+      if (!promoted.length) return { status: "already_resolved" as const };
+      await tx.update(audioCircleParticipantsTable).set({ role: "host" }).where(and(
         eq(audioCircleParticipantsTable.session_id, session.id),
         eq(audioCircleParticipantsTable.user_id, cohost.user_id),
       ));
+      const activeParticipants = await tx.select({ user_id: audioCircleParticipantsTable.user_id })
+        .from(audioCircleParticipantsTable).where(and(
+          eq(audioCircleParticipantsTable.session_id, session.id),
+          isNull(audioCircleParticipantsTable.left_at),
+        )).limit(MAX_PARTICIPANTS_PER_QUERY);
+      return { status: "promoted" as const, newHostId: cohost.user_id, participantIds: activeParticipants.map((p) => p.user_id) };
+    }
+    const ended = await tx.update(audioCircleSessionsTable)
+      .set({ status: "ended", ended_at: new Date() })
+      .where(and(
+        eq(audioCircleSessionsTable.id, session.id),
+        eq(audioCircleSessionsTable.host_disconnected_at, guard),
+      ))
+      .returning({ id: audioCircleSessionsTable.id });
+    return ended.length ? { status: "ended" as const } : { status: "already_resolved" as const };
+  });
 
-    // Update the session's host_id and clear the disconnect flag.
-    await db
-      .update(audioCircleSessionsTable)
-      .set({ host_id: cohost.user_id, host_disconnected_at: null })
-      .where(eq(audioCircleSessionsTable.id, session.id));
-
-    // Notify all participants of the host transfer.
-    sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+  if (outcome.status === "already_resolved") {
+    const [fresh] = await db.select().from(audioCircleSessionsTable)
+      .where(eq(audioCircleSessionsTable.id, session.id)).limit(1);
+    return fresh ?? { ...session, status: "ended" as const };
+  }
+  if (outcome.status === "not_expired") return outcome.session;
+  if (outcome.status === "promoted") {
+    sendToCircleParticipants(outcome.participantIds, {
       type: "circle_host_transfer",
       payload: {
         session_id: session.id,
-        new_host_id: cohost.user_id,
+        new_host_id: outcome.newHostId,
         former_host_id: session.host_id,
         auto: true,
       },
@@ -125,14 +211,10 @@ async function expireIfHostGraceElapsed(session: typeof audioCircleSessionsTable
     logger.info({
       session_id: session.id,
       former_host_id: session.host_id,
-      new_host_id: cohost.user_id,
+      new_host_id: outcome.newHostId,
     }, "audio-circles: host failover — co-host auto-promoted");
-
-    // Return the updated session so callers see it as still live.
-    return { ...session, host_id: cohost.user_id, host_disconnected_at: null };
+    return { ...session, host_id: outcome.newHostId, host_disconnected_at: null };
   }
-
-  // No co-host — end the session.
   await endSessionInternal(session.id);
   return { ...session, status: "ended" as const };
 }
@@ -234,25 +316,34 @@ function logModerationAction(
  * treats failures as "don't erase what's on screen."
  */
 async function ensureCirclesForCity(cityRaw: string, cityKey: string) {
-  try {
-    await ensureNeighborhoodsForCity(cityRaw, cityKey);
+  await ensureNeighborhoodsForCity(cityRaw, cityKey);
 
-    await db.execute(sql`
-      INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
-      SELECT cn.city_key, cn.city_display, cn.id, cn.name || ' Circle'
-      FROM city_neighborhoods cn
-      WHERE cn.city_key = ${cityKey}
-      ON CONFLICT (neighborhood_id) WHERE neighborhood_id IS NOT NULL DO NOTHING
-    `);
+  await db.execute(sql`
+    INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
+    SELECT cn.city_key, cn.city_display, cn.id, cn.name || ' Circle'
+    FROM city_neighborhoods cn
+    WHERE cn.city_key = ${cityKey}
+    ON CONFLICT (neighborhood_id) WHERE neighborhood_id IS NOT NULL DO NOTHING
+  `);
 
-    await db.execute(sql`
-      INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
-      VALUES (${cityKey}, ${cityRaw}, NULL, ${cityRaw + " Circle"})
-      ON CONFLICT (city_key) WHERE neighborhood_id IS NULL DO NOTHING
-    `);
-  } catch (err) {
-    logger.error({ err, city: cityRaw }, "audio-circles: ensureCirclesForCity failed — showing whatever already exists");
-  }
+  await db.execute(sql`
+    INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
+    VALUES (${cityKey}, ${cityRaw}, NULL, ${cityRaw + " Circle"})
+    ON CONFLICT (city_key) WHERE neighborhood_id IS NULL DO NOTHING
+  `);
+}
+
+const PROVISION_COOLDOWN_MS = 60_000;
+const recentlyProvisionedCities = new Map<string, number>();
+function scheduleCityProvisioning(cityRaw: string, cityKey: string): void {
+  const now = Date.now();
+  const last = recentlyProvisionedCities.get(cityKey);
+  if (last !== undefined && now - last < PROVISION_COOLDOWN_MS) return;
+  recentlyProvisionedCities.set(cityKey, now);
+  void ensureCirclesForCity(cityRaw, cityKey).catch((err) => {
+    recentlyProvisionedCities.delete(cityKey);
+    logger.error({ err, city: cityRaw }, "audio-circles: city provisioning failed; next browse will retry");
+  });
 }
 
 // GET /audio-circles?city=Fort+Worth — every circle for this city (each
@@ -264,7 +355,7 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
   const cityKey = normalizeCityKey(cityRaw);
   if (!cityKey) return res.json({ circles: [] });
 
-  await ensureCirclesForCity(cityRaw, cityKey);
+  scheduleCityProvisioning(cityRaw, cityKey);
 
   const circles = await db
     .select({
@@ -281,38 +372,45 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
     .where(eq(audioCirclesTable.city_key, cityKey));
 
   const userId = req.authenticatedUserId!;
-  const withLiveInfo = await Promise.all(
-    circles.map(async (c) => {
-      const live = await getLiveSession(c.id);
-      const [follow] = await db
-        .select({ id: audioCircleFollowsTable.id })
-        .from(audioCircleFollowsTable)
-        .where(and(eq(audioCircleFollowsTable.user_id, userId), eq(audioCircleFollowsTable.circle_id, c.id)))
-        .limit(1);
-      if (!live) return { ...c, live_session: null, is_following: !!follow };
-      const participants = await getActiveParticipants(live.id);
-      const host = live.host_id != null
-        ? (await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, live.host_id)).limit(1))[0]
-        : undefined;
-      return {
-        ...c,
-        live_session: {
-          id: live.id,
-          title: live.title,
-          host_id: live.host_id,
-          host_name: host?.name ?? "Someone",
-          video_enabled: live.video_enabled,
-          is_recording: live.is_recording,
-          started_at: live.started_at,
-          topic: live.topic ?? null,
-          description: live.description ?? null,
-          speaker_count: participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host").length,
-          listener_count: participants.filter(p => p.role === "listener").length,
-        },
-        is_following: !!follow,
-      };
-    })
-  );
+  const circleIds = circles.map((circle) => circle.id);
+  const rawLiveSessions = circleIds.length
+    ? await db.select().from(audioCircleSessionsTable).where(and(
+      inArray(audioCircleSessionsTable.circle_id, circleIds),
+      eq(audioCircleSessionsTable.status, "live"),
+    ))
+    : [];
+  const liveSessions = (await Promise.all(rawLiveSessions.map(expireIfHostGraceElapsed)))
+    .filter((candidate): candidate is typeof audioCircleSessionsTable.$inferSelect => candidate.status === "live");
+  const liveByCircle = new Map(liveSessions.map((live) => [live.circle_id, live]));
+  const follows = circleIds.length
+    ? await db.select({ circle_id: audioCircleFollowsTable.circle_id }).from(audioCircleFollowsTable).where(and(
+      eq(audioCircleFollowsTable.user_id, userId),
+      inArray(audioCircleFollowsTable.circle_id, circleIds),
+    ))
+    : [];
+  const followedCircleIds = new Set(follows.map((follow) => follow.circle_id));
+  const countsBySession = await getActiveParticipantCounts(liveSessions.map((live) => live.id));
+  const hostIds = [...new Set(liveSessions.map((live) => live.host_id).filter((id): id is number => id != null))];
+  const hosts = hostIds.length
+    ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, hostIds))
+    : [];
+  const hostNames = new Map(hosts.map((host) => [host.id, host.name]));
+  const withLiveInfo = circles.map((circle) => {
+    const live = liveByCircle.get(circle.id);
+    if (!live) return { ...circle, live_session: null, is_following: followedCircleIds.has(circle.id) };
+    const counts = countsBySession.get(live.id) ?? { speaker_count: 0, listener_count: 0 };
+    return {
+      ...circle,
+      live_session: {
+        id: live.id, title: live.title, host_id: live.host_id,
+        host_name: (live.host_id == null ? undefined : hostNames.get(live.host_id)) ?? "Someone",
+        video_enabled: live.video_enabled, is_recording: live.is_recording,
+        started_at: live.started_at, topic: live.topic ?? null, description: live.description ?? null,
+        speaker_count: counts.speaker_count, listener_count: counts.listener_count,
+      },
+      is_following: followedCircleIds.has(circle.id),
+    };
+  });
 
   // Sort: circles with live sessions first ("Live Now" prioritization),
   // then by listener count (most active rooms first), then by name.
@@ -1164,61 +1262,23 @@ async function generateAiSummaryInBackground(sessionId: number) {
     const [session] = await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1);
     if (!session) return;
 
-    const apiKey = process.env["ANTHROPIC_API_KEY"];
-    if (!apiKey) {
-      await db.update(audioCircleSessionsTable)
-        .set({ recording_status: "ready" })
+    const resp = await requestCircleSummary({
+      title: session.title,
+      topic: session.topic ?? null,
+      duration_minutes: session.recording_duration_seconds
+        ? Math.round(session.recording_duration_seconds / 60)
+        : null,
+    });
+    if (!resp || resp.status === 503) {
+      await db.update(audioCircleSessionsTable).set({ recording_status: "ready" })
         .where(eq(audioCircleSessionsTable.id, sessionId));
       broadcastRecordingStatus(sessionId, "ready");
       return;
     }
-
-    const durationMin = session.recording_duration_seconds
-      ? Math.round(session.recording_duration_seconds / 60)
-      : null;
-
-    const prompt = `You are summarizing an audio recording of a community circle session.
-Title: ${session.title}
-Topic: ${session.topic ?? "General discussion"}
-Duration: ${durationMin ? `${durationMin} minutes` : "Unknown"}
-
-Provide:
-1. A concise 2-3 sentence summary of what was likely discussed.
-2. 3-6 chapter markers as JSON: [{"start": <seconds>, "title": "<short label>"}]
-
-Respond as valid JSON: {"summary": "...", "chapters": [...]}${'```'}
-
-Do not include any text outside the JSON block.`;
-
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 1024,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!resp.ok) throw new Error(`Anthropic API returned ${resp.status}`);
-
-    const data = await resp.json() as { content?: Array<{ text?: string }> };
-    const text = data?.content?.[0]?.text ?? "";
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    let aiSummary: string | null = null;
-    let chapterMarkers: unknown = null;
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        aiSummary = parsed.summary ?? null;
-        chapterMarkers = Array.isArray(parsed.chapters) ? parsed.chapters : null;
-      } catch { /* JSON parse failed — leave null */ }
-    }
-
+    if (!resp.ok) throw new Error(`nia-service circle-summary returned ${resp.status}`);
+    const data = await resp.json() as { summary?: unknown; chapters?: unknown };
+    const aiSummary = typeof data.summary === "string" ? data.summary : null;
+    const chapterMarkers = Array.isArray(data.chapters) ? data.chapters : null;
     await db.update(audioCircleSessionsTable)
       .set({
         recording_status: "ready",

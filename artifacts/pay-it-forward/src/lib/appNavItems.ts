@@ -10,6 +10,7 @@ import {
   Map, Users, ClipboardList, Landmark, Globe2,
   Sparkles, Bell, Settings, Wallet, Radio, LayoutDashboard,
 } from "lucide-react";
+import { SPIRALS_PATHS, isSpiralRoute } from "@/lib/spirals";
 
 export interface AppNavItem {
   key: string;
@@ -36,8 +37,8 @@ export function getAppNavItems(opts: { openNotifications: () => void }): AppNavI
       isActive: (l) =>
         l.startsWith("/diaspora") ||
         l.startsWith("/family") },
-    { key: "circles", label: "Circles", icon: Radio, href: "/audio-circles",
-      isActive: (l) => l.startsWith("/audio-circle") },
+    { key: "spirals", label: "Spirals", icon: Radio, href: SPIRALS_PATHS.discovery,
+      isActive: isSpiralRoute },
     { key: "wallet", label: "Wallet", icon: Wallet, href: "/wallet",
       isActive: (l) => l.startsWith("/wallet") },
     { key: "nia", label: "AI Assistant (Nia)", icon: Sparkles,

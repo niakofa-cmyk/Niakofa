@@ -69,6 +69,16 @@ import legacyLaunchRouter from "./legacy-launch";
 
 const router: IRouter = Router();
 
+// Normalize the public Spirals compatibility prefixes once, before every
+// Circle-related router below. This keeps lifecycle, LiveKit token, heartbeat,
+// recording, and location routes on their existing implementations.
+router.use((req, _res, next) => {
+  req.url = req.url
+    .replace(/^\/audio-spiral-sessions(?=\/|$)/, "/audio-circle-sessions")
+    .replace(/^\/audio-spirals(?=\/|$)/, "/audio-circles");
+  next();
+});
+
 router.use(healthRouter);
 router.use(verificationRouter);
 router.use(usersRouter);

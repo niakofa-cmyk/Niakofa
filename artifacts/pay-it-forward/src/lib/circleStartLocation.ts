@@ -35,7 +35,7 @@ export function getFreshCircleStartLocation(): Promise<CircleStartLocation> {
         reject(new CircleStartLocationError(
           code,
           code === "GPS_PERMISSION_DENIED"
-            ? "Location permission is required to host a Circle. You can still join Circles without sharing your location."
+            ? "Location permission is required to host a Spiral. You can still join Spirals without sharing your location."
             : "We couldn't get a fresh, accurate location. Move somewhere with a clearer GPS signal and try again.",
         ));
       },

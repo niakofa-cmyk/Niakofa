@@ -11,6 +11,7 @@ import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useServiceWorkerUpdate } from "@/hooks/useServiceWorkerUpdate";
 import { useAnimationPreference } from "@/hooks/useAnimationPreference";
+import { CIRCLE_ROUTE_ALIASES, SPIRAL_ROUTE_ALIASES } from "@/lib/spirals";
 
 import MapScreen from "@/pages/map";
 
@@ -155,8 +156,10 @@ function AppShell() {
   const [isLogin] = useRoute("/login");
   const [isOnboarding] = useRoute("/onboarding");
   const [isStripeConnected] = useRoute("/wallet/connected");
-  const [isAudioCircles] = useRoute("/audio-circles");
-  const [isAudioCircleRoom] = useRoute("/audio-circle/:id");
+  const [isAudioSpirals] = useRoute(SPIRAL_ROUTE_ALIASES.discovery[0]);
+  const [isAudioCirclesAlias] = useRoute(CIRCLE_ROUTE_ALIASES.discovery);
+  const [isAudioSpiralRoom] = useRoute(SPIRAL_ROUTE_ALIASES.room[0]);
+  const [isAudioCircleRoomAlias] = useRoute(CIRCLE_ROUTE_ALIASES.room);
 
   if (isAdmin) return (
     <Suspense fallback={<PageFallback />}>
@@ -182,7 +185,8 @@ function AppShell() {
   }
 
   const showShell = !isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin &&
-    !isOnboarding && !isStripeConnected && !isAudioCircles && !isAudioCircleRoom;
+    !isOnboarding && !isStripeConnected && !isAudioSpirals && !isAudioCirclesAlias &&
+    !isAudioSpiralRoom && !isAudioCircleRoomAlias;
 
   return (
     <>
@@ -232,8 +236,10 @@ function AppShell() {
             <Route path="/business/apply" component={BusinessApplyScreen} />
             <Route path="/gov-sponsor/apply" component={GovSponsorApplyScreen} />
             <Route path="/civic-portal" component={CivicPortalPage} />
-            <Route path="/audio-circles" component={AudioCirclesScreen} />
-            <Route path="/audio-circle/:id" component={AudioCircleRoomScreen} />
+            <Route path={SPIRAL_ROUTE_ALIASES.discovery[0]} component={AudioCirclesScreen} />
+            <Route path={CIRCLE_ROUTE_ALIASES.discovery} component={AudioCirclesScreen} />
+            <Route path={SPIRAL_ROUTE_ALIASES.room[0]} component={AudioCircleRoomScreen} />
+            <Route path={CIRCLE_ROUTE_ALIASES.room} component={AudioCircleRoomScreen} />
             <Route path="/civic-task-nav/:needId" component={CivicTaskNavPage} />
             <Route path="/civic-needs" component={CivicNeedsPage} />
             <Route path="/requests" component={RequestsBrowsePage} />

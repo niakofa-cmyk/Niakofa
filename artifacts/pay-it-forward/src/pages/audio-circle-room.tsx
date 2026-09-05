@@ -72,6 +72,7 @@ import {
 } from "@/lib/circleEnduranceMetrics";
 import { canPublishCircleMedia } from "@/lib/circleMediaPolicy";
 import { RecordingConsentBanner } from "@/components/RecordingConsentBanner";
+import { SPIRALS_PATHS } from "@/lib/spirals";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -311,26 +312,26 @@ function mediaTokenErrorMessage(error: unknown): string {
   if (!(error instanceof MediaTokenError)) {
     return error instanceof Error
       ? error.message
-      : "Couldn't connect to Circle media.";
+      : "Couldn't connect to Spiral media.";
   }
 
   switch (error.code) {
     case "reauthenticate":
-      return "Your sign-in expired. Sign in again, then rejoin the Circle.";
+      return "Your sign-in expired. Sign in again, then rejoin the Spiral.";
     case "not_authorized":
-      return "You no longer have access to this Circle.";
+      return "You no longer have access to this Spiral.";
     case "session_ended":
-      return "This Circle has ended.";
+      return "This Spiral has ended.";
     case "state_conflict":
-      return "The Circle changed while you were joining. Return to Circles and try again.";
+      return "The Spiral changed while you were joining. Return to Spirals and try again.";
     case "rate_limited":
       return error.retryAfterSeconds
-        ? `Circle media is rate-limited. Try again in ${error.retryAfterSeconds} seconds.`
-        : "Circle media is rate-limited. Wait a moment, then try again.";
+        ? `Spiral media is rate-limited. Try again in ${error.retryAfterSeconds} seconds.`
+        : "Spiral media is rate-limited. Wait a moment, then try again.";
     case "not_configured":
-      return "Live audio/video is not configured on the server yet. Please try again after the Circle host enables media.";
+      return "Live audio/video is not configured on the server yet. Please try again after the Spiral host enables media.";
     case "server_error":
-      return "Circle media is temporarily unavailable. Check your connection and try again.";
+      return "Spiral media is temporarily unavailable. Check your connection and try again.";
     default:
       return error.message;
   }
@@ -624,7 +625,7 @@ function HostHeroTile({
                 className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400"
                 onClick={onKick}
               >
-                <Flag className="w-3 h-3" /> Remove from Circle
+                <Flag className="w-3 h-3" /> Remove from Spiral
               </button>
             )}
             {onBlock && (
@@ -1129,18 +1130,18 @@ export default function AudioCircleRoomScreen() {
         if (!res.ok) {
           if (!cancelled)
             toast({
-              title: "Circle not found",
+              title: "Spiral not found",
               description: "This room may have ended.",
               variant: "destructive",
             });
-          setLocation("/audio-circles");
+          setLocation(SPIRALS_PATHS.discovery);
           return;
         }
         const data = await res.json();
         if (cancelled) return;
         if (data.session.status !== "live") {
-          toast({ title: "This circle has ended" });
-          setLocation("/audio-circles");
+          toast({ title: "This Spiral has ended" });
+          setLocation(SPIRALS_PATHS.discovery);
           return;
         }
         setSession(data.session);
@@ -1169,7 +1170,7 @@ export default function AudioCircleRoomScreen() {
         }
       } catch {
         if (!cancelled)
-          toast({ title: "Couldn't load the circle", variant: "destructive" });
+          toast({ title: "Couldn't load the Spiral", variant: "destructive" });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1253,7 +1254,7 @@ export default function AudioCircleRoomScreen() {
           case "lost":
             setConnectionStatus("lost");
             setMediaError(
-              "Media connection lost. Check your network or try rejoining the Circle.",
+              "Media connection lost. Check your network or try rejoining the Spiral.",
             );
             break;
         }
@@ -1469,7 +1470,7 @@ export default function AudioCircleRoomScreen() {
             toast({
               title: "Recording saved",
               description:
-                "The circle recording is now available in past recordings.",
+                "The Spiral recording is now available in past recordings.",
             });
             // Send metadata (duration + size) to the backend so the archive
             // can show it even before AI processing completes.
@@ -1691,10 +1692,10 @@ export default function AudioCircleRoomScreen() {
     if (p.session_id !== sessionId) return;
     if (p.user_id === myUserId) {
       toast({
-        title: "You were removed from this circle",
+        title: "You were removed from this Spiral",
         variant: "destructive",
       });
-      setLocation("/audio-circles");
+      setLocation(SPIRALS_PATHS.discovery);
       return;
     }
     setParticipants((prev) => prev.filter((x) => x.user_id !== p.user_id));
@@ -1799,7 +1800,7 @@ export default function AudioCircleRoomScreen() {
               toast({
                 title: "Recording could not be finalized",
                 description:
-                  "The Circle has stopped recording, but no audio file was produced.",
+                  "The Spiral has stopped recording, but no audio file was produced.",
                 variant: "destructive",
               });
             });
@@ -1816,7 +1817,7 @@ export default function AudioCircleRoomScreen() {
     setRecordingPendingCount(participants.length);
     toast({
       title: "Recording consent requested",
-      description: "Acknowledge below if you agree to this Circle being recorded.",
+      description: "Acknowledge below if you agree to this Spiral being recorded.",
     });
   });
 
@@ -1892,8 +1893,8 @@ export default function AudioCircleRoomScreen() {
   useWebSocket("circle_session_ended", (e) => {
     const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
-    toast({ title: "The host ended this circle" });
-    setLocation("/audio-circles");
+    toast({ title: "The host ended this Spiral" });
+    setLocation(SPIRALS_PATHS.discovery);
   });
 
   useWebSocket("circle_settings_updated", (e) => {
@@ -1922,7 +1923,7 @@ export default function AudioCircleRoomScreen() {
     setConnectionStatus("reconnecting");
     toast({
       title: "Host reconnecting…",
-      description: "The circle is still open — hang tight.",
+      description: "The Spiral is still open — hang tight.",
     });
   });
 
@@ -1941,11 +1942,10 @@ export default function AudioCircleRoomScreen() {
       circle_title: string;
       topic?: string | null;
       invited_by: string;
-      join_path?: string;
     };
     // This event is sent directly to the invited user. Show a persistent
     // (5s) toast with a join button so they can enter the room with one tap.
-    const joinPath = p.join_path ?? `/audio-circle/${p.session_id}`;
+    const joinPath = SPIRALS_PATHS.room(p.session_id);
     toast({
       title: `You've been invited to "${p.circle_title}"`,
       description: `${p.invited_by} invited you${p.topic ? ` · ${p.topic}` : ""}`,
@@ -1955,7 +1955,7 @@ export default function AudioCircleRoomScreen() {
     // Using two toasts avoids needing a ToastAction element import.
     setTimeout(() => {
       toast({
-        title: "Tap to join the circle",
+        title: "Tap to join the Spiral",
         description: p.circle_title,
         duration: 9000,
         action: (
@@ -2002,7 +2002,7 @@ export default function AudioCircleRoomScreen() {
       }),
     );
     if (p.new_host_id === myUserId) {
-      toast({ title: "You are now the host of this circle!" });
+      toast({ title: "You are now the host of this Spiral!" });
     } else if (p.former_host_id === myUserId) {
       toast({
         title: "Host role transferred",
@@ -2119,7 +2119,7 @@ export default function AudioCircleRoomScreen() {
         description: p.reason,
         variant: "destructive",
       });
-      setLocation("/audio-circles");
+      setLocation(SPIRALS_PATHS.discovery);
     }
   });
 
@@ -2320,7 +2320,7 @@ export default function AudioCircleRoomScreen() {
       toast({
         title: "User blocked",
         description:
-          "They have been removed from this circle and blocked from rejoining.",
+          "They have been removed from this Spiral and blocked from rejoining.",
       });
     }
   };
@@ -2673,7 +2673,7 @@ export default function AudioCircleRoomScreen() {
   };
 
   const shareCircle = () => {
-    const url = `${window.location.origin}/audio-circle/${sessionId}`;
+    const url = `${window.location.origin}${SPIRALS_PATHS.room(sessionId)}`;
     if (navigator.share) {
       navigator.share({ title: session?.title, url }).catch(() => {});
     } else {
@@ -2695,7 +2695,7 @@ export default function AudioCircleRoomScreen() {
     if (!collector && !rtcDiagnostics) {
       toast({
         title: "Diagnostics not ready",
-        description: "Media sampling starts when the Circle connects.",
+        description: "Media sampling starts when the Spiral connects.",
       });
       return;
     }
@@ -2726,7 +2726,7 @@ export default function AudioCircleRoomScreen() {
   };
 
   const copyInviteLink = () => {
-    const url = `${window.location.origin}/audio-circle/${sessionId}`;
+    const url = `${window.location.origin}${SPIRALS_PATHS.room(sessionId)}`;
     navigator.clipboard
       .writeText(url)
       .then(() => {
@@ -2747,13 +2747,13 @@ export default function AudioCircleRoomScreen() {
   const endSession = async () => {
     if (isRecordingRef.current) await toggleRecording();
     await post("/end");
-    setLocation("/audio-circles");
+    setLocation(SPIRALS_PATHS.discovery);
   };
 
   const leaveAndExit = async () => {
     if (isHost && isRecordingRef.current) await toggleRecording();
     leaveRoom();
-    setLocation("/audio-circles");
+    setLocation(SPIRALS_PATHS.discovery);
   };
 
   const toggleMic = () => {
@@ -2836,7 +2836,7 @@ export default function AudioCircleRoomScreen() {
         toast({
           title: "Recording is not supported",
           description:
-            "Use a current Safari, Chrome, or Firefox browser to record this Circle.",
+            "Use a current Safari, Chrome, or Firefox browser to record this Spiral.",
           variant: "destructive",
         });
         return;
@@ -2844,7 +2844,7 @@ export default function AudioCircleRoomScreen() {
       if (!session?.recording_allowed) {
         toast({
           title: "Recording is off",
-          description: "Recording was not enabled when this Circle was created.",
+          description: "Recording was not enabled when this Spiral was created.",
           variant: "destructive",
         });
         return;
@@ -3077,7 +3077,7 @@ export default function AudioCircleRoomScreen() {
   if (loading || !session) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">
-        Loading circle…
+        Loading Spiral…
       </div>
     );
   }
@@ -3098,7 +3098,7 @@ export default function AudioCircleRoomScreen() {
           onClick={leaveAndExit}
           className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground mb-2 lg:hidden"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Circles
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Spirals
         </button>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
@@ -3133,7 +3133,8 @@ export default function AudioCircleRoomScreen() {
             <button
               onClick={shareCircle}
               className="p-2 rounded-full hover:bg-muted"
-              title="Share this Circle"
+              title="Share this Spiral"
+              aria-label="Share this Spiral"
             >
               <Share2 className="w-4 h-4" />
             </button>
@@ -3155,7 +3156,8 @@ export default function AudioCircleRoomScreen() {
                   setShowManagePanel(true);
                 }}
                 className="p-2 rounded-full hover:bg-muted"
-                title="Manage circle"
+                title="Manage Spiral"
+                aria-label="Manage Spiral"
               >
                 <MoreVertical className="w-4 h-4" />
               </button>
@@ -3163,7 +3165,8 @@ export default function AudioCircleRoomScreen() {
             <button
               onClick={leaveAndExit}
               className="p-2 rounded-full hover:bg-muted hidden lg:inline-flex"
-              title="Back to Circles"
+              title="Back to Spirals"
+              aria-label="Back to Spirals"
             >
               <ChevronDown className="w-5 h-5" />
             </button>
@@ -3238,7 +3241,7 @@ export default function AudioCircleRoomScreen() {
           <div className="mt-3 flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-1.5">
             <CircleIcon className="w-3 h-3 text-red-500 fill-red-500 animate-pulse shrink-0" />
             <span className="text-xs text-red-400 font-bold flex-1">
-              This Circle is being recorded
+              This Spiral is being recorded
             </span>
             {isHost && (
               <span className="text-xs text-red-400 font-mono">
@@ -3340,9 +3343,9 @@ export default function AudioCircleRoomScreen() {
               className="bg-card border border-border rounded-2xl p-6 max-w-xs w-full space-y-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="text-base font-black">End this Circle?</div>
+              <div className="text-base font-black">End this Spiral?</div>
               <div className="text-sm text-muted-foreground">
-                This will end the Circle for everyone in the room.
+                This will end the Spiral for everyone in the room.
               </div>
               <div className="flex gap-3">
                 <Button
@@ -3360,7 +3363,7 @@ export default function AudioCircleRoomScreen() {
                     endSession();
                   }}
                 >
-                  End Circle
+                  End Spiral
                 </Button>
               </div>
             </motion.div>
@@ -3392,8 +3395,8 @@ export default function AudioCircleRoomScreen() {
                 <Ban className="w-5 h-5" /> Block this user?
               </div>
               <div className="text-sm text-muted-foreground">
-                They will be removed from this Circle and blocked from rejoining
-                any of your future Circles.
+                They will be removed from this Spiral and blocked from rejoining
+                any of your future Spirals.
               </div>
               <div className="flex gap-3">
                 <Button
@@ -3541,7 +3544,7 @@ export default function AudioCircleRoomScreen() {
                     </button>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-bold truncate">
-                        {selectedRecording.title || "Circle Recording"}
+                        {selectedRecording.title || "Spiral Recording"}
                       </div>
                       <div className="text-[11px] text-muted-foreground flex items-center gap-2">
                         <Clock className="w-3 h-3" />
@@ -3682,7 +3685,7 @@ export default function AudioCircleRoomScreen() {
                           <PlayCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
                           {archiveSearch
                             ? "No recordings match your search."
-                            : "No recordings yet for this circle."}
+                            : "No recordings yet for this Spiral."}
                         </div>
                       );
                     }
@@ -3707,7 +3710,7 @@ export default function AudioCircleRoomScreen() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-bold truncate">
-                              {rec.title || "Circle Recording"}
+                              {rec.title || "Spiral Recording"}
                             </div>
                             <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
                               <span>{startedAt}</span>
@@ -4433,7 +4436,7 @@ export default function AudioCircleRoomScreen() {
             >
               <div className="w-10 h-1.5 bg-muted rounded-full mx-auto mb-4" />
               <div className="flex items-center justify-between mb-4">
-                <div className="font-black text-base">Manage Circle</div>
+                <div className="font-black text-base">Manage Spiral</div>
                 <button
                   onClick={() => setShowManagePanel(false)}
                   className="p-1.5 rounded-full hover:bg-muted"
@@ -4528,7 +4531,7 @@ export default function AudioCircleRoomScreen() {
               {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="text-base font-black flex items-center gap-2">
-                  <UserPlus className="w-4 h-4 text-primary" /> Invite to Circle
+                  <UserPlus className="w-4 h-4 text-primary" /> Invite to Spiral
                 </div>
                 <button
                   onClick={() => setShowInviteModal(false)}
@@ -4624,7 +4627,7 @@ export default function AudioCircleRoomScreen() {
                 </div>
                 <div className="flex items-center gap-2 bg-muted rounded-xl px-3 py-2 border border-border">
                   <span className="flex-1 text-xs font-mono truncate text-muted-foreground select-all">
-                    {window.location.origin}/audio-circle/{sessionId}
+                    {window.location.origin}{SPIRALS_PATHS.room(sessionId)}
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -4828,7 +4831,7 @@ export default function AudioCircleRoomScreen() {
                     value={settingsDesc}
                     onChange={(e) => setSettingsDesc(e.target.value)}
                     maxLength={500}
-                    placeholder="Tell people what this circle is about…"
+                    placeholder="Tell people what this Spiral is about…"
                     className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm min-h-[72px] resize-none focus:outline-none focus:border-primary"
                     style={{ fontSize: "16px" }}
                   />
@@ -5299,7 +5302,7 @@ export default function AudioCircleRoomScreen() {
           >
             <PhoneOff className="w-5 h-5" />
             <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
-              {isHost ? "End Circle" : "Leave Room"}
+              {isHost ? "End Spiral" : "Leave Room"}
             </span>
           </button>
         </div>
@@ -6259,7 +6262,7 @@ function SpeakerTile({
               className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400"
               onClick={onKick}
             >
-              <Flag className="w-3 h-3" /> Remove from Circle
+              <Flag className="w-3 h-3" /> Remove from Spiral
             </button>
             <button
               className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-amber-400"
@@ -6473,7 +6476,7 @@ function ManagementPanelBody({
           )}
           <RoomControlButton
             icon={Share2}
-            label="Share Circle"
+            label="Share Spiral"
             onClick={onShare}
           />
           <RoomControlButton
@@ -6526,7 +6529,7 @@ function ManagementPanelBody({
             className="w-full flex items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 py-2.5 text-sm font-bold text-red-400 hover:bg-red-500/20 transition-colors"
           >
             <PhoneOff className="w-4 h-4" />
-            End Circle
+            End Spiral
           </button>
         </div>
       </div>

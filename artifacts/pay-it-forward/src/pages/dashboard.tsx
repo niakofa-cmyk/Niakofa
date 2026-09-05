@@ -19,6 +19,7 @@ import {
   Settings as SettingsIcon, ChevronRight, Loader2, Heart, Sparkles, ArrowRight,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
+import { SPIRALS_PATHS } from "@/lib/spirals";
 import { authHeaders } from "@/lib/auth";
 
 interface RequestRow {
@@ -101,7 +102,7 @@ export default function DashboardPage() {
     { key: "map", label: "Map", desc: "Nearby requests & live help", icon: MapIcon, href: "/" },
     { key: "diaspora", label: "Diaspora", desc: "Family spaces, DNA, heritage", icon: Globe2, href: "/diaspora" },
     { key: "civic", label: "Civic Engagement", desc: "Local needs & civic tasks", icon: Landmark, href: "/civic-needs" },
-    { key: "circles", label: "Circles", desc: "Live audio community rooms", icon: Radio, href: "/audio-circles" },
+    { key: "spirals", label: "Spirals", desc: "Live audio community rooms", icon: Radio, href: SPIRALS_PATHS.discovery },
     { key: "settings", label: "Settings", desc: "Account & Niakofa preferences", icon: SettingsIcon, href: "/settings" },
   ];
 

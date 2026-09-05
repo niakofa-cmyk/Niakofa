@@ -9,6 +9,8 @@ import { toast } from "@/hooks/use-toast";
 import { useCachedList } from "@/hooks/useCachedList";
 import { acquireCircleDevice } from "@/lib/circleMediaReadiness";
 import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";
+import { SPIRALS_PATHS } from "@/lib/spirals";
+import { SpiralMark } from "@/components/SpiralMark";
 
 interface LiveSessionSummary {
   id: number;
@@ -123,7 +125,7 @@ interface HostModalProps {
 function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps) {
   const [format, setFormat] = useState<"audio" | "video">("audio");
   const [title, setTitle] = useState(() =>
-    circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`
+    circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`
   );
   const [description, setDescription] = useState("");
   const [topic, setTopic] = useState("");
@@ -168,7 +170,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
     })();
   }, [format]);
 
-  const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`;
+  const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`;
 
   const canStart = title.trim().length > 0 && micReady === true && (format !== "video" ? true : camReady === true) && maxSpeakers > 0;
 
@@ -191,7 +193,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <div className="font-black text-base">Host a Circle</div>
+            <div className="font-black text-base">Host a Spiral</div>
             <div className="text-xs text-muted-foreground mt-0.5">{circleName}</div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-full hover:bg-muted -mt-1 -mr-1">
@@ -201,7 +203,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
 
         {/* Title input */}
         <div className="space-y-2">
-          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Circle Title</div>
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Spiral Title</div>
           <input
             value={title}
             onChange={e => setTitle(e.target.value.slice(0, 140))}
@@ -217,7 +219,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
           <textarea
             value={description}
             onChange={e => setDescription(e.target.value.slice(0, 500))}
-            placeholder="What's this circle about? e.g. Discuss neighborhood safety and development."
+            placeholder="What's this Spiral about? e.g. Discuss neighborhood safety and development."
             rows={2}
             className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary resize-none"
           />
@@ -273,7 +275,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
                 }`}
               >
                 <span className="text-2xl">{f === "audio" ? "🎤" : "🎥"}</span>
-                <span className="text-xs font-black">{f === "audio" ? "Audio Circle" : "Video Circle"}</span>
+                <span className="text-xs font-black">{f === "audio" ? "Audio Spiral" : "Video Spiral"}</span>
               </button>
             ))}
           </div>
@@ -312,7 +314,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
 
         {/* Start button */}
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground">
-          Hosting requires a fresh, accurate GPS check for this Circle’s city. Joining never requires your location.
+          Hosting requires a fresh, accurate GPS check for this Spiral’s city. Joining never requires your location.
         </div>
         <label className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5 cursor-pointer">
           <input
@@ -323,7 +325,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
           />
           <span className="text-xs text-muted-foreground">
             <span className="block font-semibold text-foreground">Allow recording for this session</span>
-            Recording is off unless you explicitly enable it. Everyone in the Circle must acknowledge before recording can begin.
+            Recording is off unless you explicitly enable it. Everyone in the Spiral must acknowledge before recording can begin.
           </span>
         </label>
         <Button
@@ -331,7 +333,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
           disabled={starting || !canStart}
           onClick={() => onStart(circle, format === "video", title.trim(), description.trim(), topic.trim(), maxSpeakers, recordingAllowed)}
         >
-          {starting ? "Starting…" : `Start ${format === "audio" ? "Audio" : "Video"} Circle`}
+          {starting ? "Starting…" : `Start ${format === "audio" ? "Audio" : "Video"} Spiral`}
         </Button>
       </motion.div>
     </motion.div>
@@ -440,37 +442,37 @@ export default function AudioCirclesScreen() {
       });
       const data = await res.json();
       if (res.status === 409 && data.session_id) {
-        setLocation(`/audio-circle/${data.session_id}`);
+        setLocation(SPIRALS_PATHS.room(data.session_id));
         return;
       }
       if (!res.ok) {
-        toast({ title: "Couldn't start the circle", description: data.error ?? "Try again in a moment.", variant: "destructive" });
+        toast({ title: "Couldn't start the Spiral", description: data.error ?? "Try again in a moment.", variant: "destructive" });
         return;
       }
       await refresh();
-      setLocation(`/audio-circle/${data.session.id}`);
+      setLocation(SPIRALS_PATHS.room(data.session.id));
     } catch (error) {
       if (error instanceof CircleStartLocationError) {
         toast({ title: "Location needed to host", description: error.message, variant: "destructive" });
       } else {
-        toast({ title: "Couldn't start the circle", description: "Check your connection and try again.", variant: "destructive" });
+        toast({ title: "Couldn't start the Spiral", description: "Check your connection and try again.", variant: "destructive" });
       }
     } finally {
       setStartingId(null);
     }
   };
 
-  const joinRoom = (sessionId: number) => setLocation(`/audio-circle/${sessionId}`);
+  const joinRoom = (sessionId: number) => setLocation(SPIRALS_PATHS.room(sessionId));
 
   const shareCircle = (circle: CircleSummary, live: LiveSessionSummary) => {
-    const url = `${window.location.origin}/audio-circle/${live.id}`;
+    const url = `${window.location.origin}${SPIRALS_PATHS.room(live.id)}`;
     if (navigator.share) {
-      navigator.share({ title: circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`, url }).catch(() => {});
+      navigator.share({ title: circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`, url }).catch(() => {});
     } else {
       navigator.clipboard.writeText(url).then(() => {
         toast({ title: "Link copied!", description: "Share it with your neighbors." });
       }).catch(() => {
-        toast({ title: "Circle link", description: url });
+        toast({ title: "Spiral link", description: url });
       });
     }
   };
@@ -494,8 +496,8 @@ export default function AudioCirclesScreen() {
       toast({
         title: isFollowing ? "Unfollowed" : "Following",
         description: isFollowing
-          ? "You won't get notified when this circle goes live."
-          : "You'll get notified when this circle goes live.",
+          ? "You won't get notified when this Spiral goes live."
+          : "You'll get notified when this Spiral goes live.",
       });
     } catch {
       // Revert on error
@@ -537,7 +539,7 @@ export default function AudioCirclesScreen() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="font-black text-lg flex items-center gap-2">
-            <Radio className="w-5 h-5 text-primary" /> Circles
+            <SpiralMark className="w-5 h-5 text-primary" /> Spirals
           </h1>
           <p className="text-xs text-muted-foreground">Live voice & video rooms for your neighborhood</p>
         </div>
@@ -553,7 +555,7 @@ export default function AudioCirclesScreen() {
         <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
           <p className="text-xs text-muted-foreground leading-relaxed">
             Think call-in radio, live. Host a room, raise your hand to speak, or just listen in —
-            every neighborhood (and your whole city) has its own circle. Follow a circle to get
+            every neighborhood (and your whole city) has its own Spiral. Follow a Spiral to get
             notified when it goes live.
           </p>
         </div>
@@ -741,8 +743,8 @@ export default function AudioCirclesScreen() {
             ) : followedCircles.length === 0 ? (
               <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-2">
                 <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto" />
-                <div className="text-sm font-bold text-muted-foreground">No followed circles yet</div>
-                <div className="text-xs text-muted-foreground/60">Follow a circle and you'll get notified the moment it goes live.</div>
+                <div className="text-sm font-bold text-muted-foreground">No followed Spirals yet</div>
+                <div className="text-xs text-muted-foreground/60">Follow a Spiral and you'll get notified the moment it goes live.</div>
               </div>
             ) : (
               followedCircles.map((circle) => {
@@ -792,13 +794,13 @@ export default function AudioCirclesScreen() {
         </form>
 
         {loading && (
-          <div className="text-center text-sm text-muted-foreground py-8">Loading circles…</div>
+          <div className="text-center text-sm text-muted-foreground py-8">Loading Spirals…</div>
         )}
 
         {!loading && !circles && hasFetchedOnce && (
           <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-3">
             <WifiOff className="w-8 h-8 text-muted-foreground/40 mx-auto" />
-            <div className="text-sm font-bold text-muted-foreground">Couldn't load circles</div>
+            <div className="text-sm font-bold text-muted-foreground">Couldn't load Spirals</div>
             <div className="text-xs text-muted-foreground/60">We had trouble reaching the server. Check your connection and try again.</div>
             <button
               onClick={refresh}
@@ -811,7 +813,7 @@ export default function AudioCirclesScreen() {
 
         {circles?.length === 0 && !loading && (
           <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center">
-            <div className="text-sm font-bold text-muted-foreground">No circles yet for {city}</div>
+            <div className="text-sm font-bold text-muted-foreground">No Spirals yet for {city}</div>
             <div className="text-xs text-muted-foreground/60 mt-1">Try a different city, or check back soon.</div>
           </div>
         )}
@@ -897,12 +899,13 @@ export default function AudioCirclesScreen() {
                     {live ? (
                       <>
                         <Button className="flex-1" onClick={() => joinRoom(live.id)}>
-                          Join Circle
+                          Join Spiral
                         </Button>
                         <button
                           onClick={() => shareCircle(circle, live)}
                           className="p-2.5 rounded-xl border border-border hover:border-primary/40 text-muted-foreground hover:text-primary transition-colors"
-                          title="Share this Circle"
+                          title="Share this Spiral"
+                          aria-label="Share this Spiral"
                         >
                           <Share2 className="w-4 h-4" />
                         </button>
@@ -913,7 +916,8 @@ export default function AudioCirclesScreen() {
                               ? "border-primary/40 text-primary"
                               : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
                           }`}
-                          title={isFollowing ? "Unfollow this Circle" : "Follow this Circle for live notifications"}
+                          title={isFollowing ? "Unfollow this Spiral" : "Follow this Spiral for live notifications"}
+                          aria-label={isFollowing ? "Unfollow this Spiral" : "Follow this Spiral for live notifications"}
                         >
                           {isFollowing ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
                         </button>
@@ -926,7 +930,7 @@ export default function AudioCirclesScreen() {
                           disabled={startingId === circle.id}
                           onClick={() => setHostModal(circle)}
                         >
-                          {startingId === circle.id ? "Starting…" : "Host a Circle"}
+                          {startingId === circle.id ? "Starting…" : "Host a Spiral"}
                         </Button>
                         <button
                           onClick={() => toggleFollow(circle)}
@@ -935,7 +939,8 @@ export default function AudioCirclesScreen() {
                               ? "border-primary/40 text-primary"
                               : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
                           }`}
-                          title={isFollowing ? "Unfollow this Circle" : "Follow this Circle for live notifications"}
+                          title={isFollowing ? "Unfollow this Spiral" : "Follow this Spiral for live notifications"}
+                          aria-label={isFollowing ? "Unfollow this Spiral" : "Follow this Spiral for live notifications"}
                         >
                           {isFollowing ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
                         </button>

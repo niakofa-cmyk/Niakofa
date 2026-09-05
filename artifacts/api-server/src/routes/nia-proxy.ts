@@ -46,6 +46,40 @@ export async function isNiaEnabled(): Promise<boolean> {
   }
 }
 
+export interface CircleSummaryRequest {
+  title: string;
+  topic: string | null;
+  duration_minutes: number | null;
+}
+
+/**
+ * Internal AI boundary for recording summaries. Keeping this request here
+ * ensures it has the same kill-switch, secret forwarding, and timeout policy
+ * as the rest of api-server's Nia traffic.
+ * Returns null when policy/configuration makes a summary unavailable; callers
+ * can safely mark recordings ready without treating that as a recording error.
+ */
+export async function requestCircleSummary(body: CircleSummaryRequest): Promise<globalThis.Response | null> {
+  if (!(await isNiaEnabled())) return null;
+  const internalSecret = process.env["INTERNAL_SECRET"];
+  if (!internalSecret) {
+    logger.error("nia-proxy: INTERNAL_SECRET missing; refusing circle-summary request");
+    return null;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    return await fetch(`${getNiaUrl()}/internal/circle-summary`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-secret": internalSecret },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── Legacy-specific Nia enabled check ────────────────────────────────────────
 // Nia AI is always available within Legacy game mode for narrative/quest
 // generation, even when the global toggle is off (global toggle only controls

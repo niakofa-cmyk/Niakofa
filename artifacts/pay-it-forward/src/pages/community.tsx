@@ -5,7 +5,7 @@ import { useNiaStory } from "@/hooks/useNiaStory";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
-import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock, AlertTriangle, ClipboardList, Radio } from "lucide-react";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock, AlertTriangle, ClipboardList, Radio } from "lucide-react";
 import { contributeToPool, useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey, useGetPoolStats, getGetPoolStatsQueryKey, useGetPoolLedger, getGetPoolLedgerQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -15,6 +15,8 @@ import { MAX_POOL_AMOUNT, MIN_POOL_AMOUNT, PoolContributionPanel } from "@/compo
 import { CommunityPoolFinancialBreakdown } from "@/components/CommunityPoolFinancialBreakdown";
 import { PoolHealthStrip } from "@/components/PoolHealthStrip";
 import { useCivicResources } from "@/hooks/useCivicResources";
+import { SPIRALS_PATHS } from "@/lib/spirals";
+import { SpiralMark } from "@/components/SpiralMark";
 
 interface GratitudePost {
   id: number;
@@ -440,9 +442,9 @@ function NeighborhoodCirclesTab() {
     const key = hoodKey(hood);
     const live = liveByHood.get(key);
     if (live?.session_id) {
-      setLocation(`/audio-circle/${live.session_id}`);
+      setLocation(SPIRALS_PATHS.room(live.session_id));
     } else {
-      setLocation(`/audio-circles?neighborhood=${encodeURIComponent(hood.name)}`);
+      setLocation(`${SPIRALS_PATHS.discovery}?neighborhood=${encodeURIComponent(hood.name)}`);
     }
   };
 
@@ -450,10 +452,10 @@ function NeighborhoodCirclesTab() {
     <div className="space-y-4">
       <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
         <h3 className="font-black text-sm flex items-center gap-2 mb-1">
-          <MapPin className="w-4 h-4 text-primary" /> Neighborhood Circles
+          <SpiralMark className="w-4 h-4 text-primary" /> Neighborhood Spirals
         </h3>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Tap your neighborhood to join or host a live Circle — voice and video rooms where neighbors talk in real time.
+          Tap your neighborhood to join or host a live Spiral — voice and video rooms where neighbors talk in real time.
         </p>
       </div>
 
@@ -468,7 +470,7 @@ function NeighborhoodCirclesTab() {
         <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-2">
           <AlertTriangle className="w-8 h-8 text-muted-foreground/40 mx-auto" />
           <div className="text-sm font-bold text-muted-foreground">Couldn't load neighborhoods</div>
-          <div className="text-xs text-muted-foreground/60">We had trouble reaching the server. You can still browse all circles below.</div>
+          <div className="text-xs text-muted-foreground/60">We had trouble reaching the server. You can still browse all Spirals below.</div>
         </div>
       )}
 
@@ -501,7 +503,7 @@ function NeighborhoodCirclesTab() {
                   <div className="font-black text-sm">{hood.name}</div>
                   {isYours && !isLive && (
                     <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
-                      Your Circle
+                      Your Spiral
                     </span>
                   )}
                   {isLive && (
@@ -522,7 +524,7 @@ function NeighborhoodCirclesTab() {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-muted-foreground mt-0.5">{hood.description ?? "Neighborhood Circle"}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{hood.description ?? "Neighborhood Spiral"}</div>
                 )}
               </div>
               {isLive ? (
@@ -540,15 +542,15 @@ function NeighborhoodCirclesTab() {
       })}
 
       <div
-        onClick={() => setLocation("/audio-circles")}
+        onClick={() => setLocation(SPIRALS_PATHS.discovery)}
         className="bg-gradient-to-br from-primary/15 via-card to-card border border-primary/30 rounded-2xl p-4 flex items-center gap-3 cursor-pointer hover:border-primary/50 transition-colors"
       >
         <div className="w-11 h-11 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-          <Radio className="w-5 h-5 text-primary" />
+          <SpiralMark className="w-5 h-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-black">Browse all Circles</div>
-          <div className="text-xs text-muted-foreground mt-0.5">See all neighborhoods + a city-wide Circle for all of {currentUser?.city?.trim() || "your city"}.</div>
+          <div className="text-sm font-black">Browse all Spirals</div>
+          <div className="text-xs text-muted-foreground mt-0.5">See all neighborhoods + a city-wide Spiral for all of {currentUser?.city?.trim() || "your city"}.</div>
         </div>
       </div>
     </div>
@@ -1127,7 +1129,7 @@ export default function CommunityScreen() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "feed",      label: "💙 Feed" },
-    { key: "circles",   label: "🏘️ Circles" },
+    { key: "circles",   label: "🌀 Spirals" },
     { key: "skills",    label: "🔧 Skills" },
     { key: "heroes",    label: "⭐ Heroes" },
     { key: "pool",      label: "🏦 Pool" },
