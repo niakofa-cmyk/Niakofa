@@ -2,13 +2,12 @@
  * WebRTC ICE server credentials — STUN (public, static) + TURN (short-lived,
  * minted per request).
  *
- * Why this exists: audioCircleWebRTC.ts previously read a static
- * VITE_TURN_USERNAME / VITE_TURN_CREDENTIAL pair baked into the client
- * bundle at build time. Since this is a Vite app, VITE_-prefixed env vars
- * are visible to anyone who opens dev tools — fine for STUN (which has no
- * secret), but wrong for TURN, since a permanent TURN credential shipped to
- * every visitor is a standing relay-abuse risk (anyone could extract it and
- * use your TURN server as an open relay for unrelated traffic).
+ * Compatibility endpoint for the retired browser-mesh transport.
+ *
+ * The production Circle/Spiral room uses LiveKit and does not call this route.
+ * It remains mounted for older clients and deliberate transport experiments.
+ * Credentials are still minted server-side so the long-lived TURN secret is
+ * never bundled into a browser build.
  *
  * The fix: use coturn's standard "static-auth-secret" REST API convention
  * (https://github.com/coturn/coturn/wiki/turnserver#turn-rest-api). The
@@ -23,8 +22,7 @@
  *
  * If TURN_STATIC_AUTH_SECRET isn't configured (e.g. local dev, or before a
  * TURN server has been provisioned), this endpoint still returns the STUN
- * servers alone — audioCircleWebRTC.ts already tolerates TURN being absent,
- * it just won't have a NAT-traversal fallback for symmetric-NAT peers.
+ * servers alone.
  */
 import { Router } from "express";
 import { createHmac, randomUUID } from "crypto";

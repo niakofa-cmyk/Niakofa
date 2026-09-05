@@ -1,17 +1,16 @@
 # Self-hosted TURN server for Circles (free-tier path)
 
-This gives Circles a TURN fallback for NAT types STUN alone can't traverse
-(mainly symmetric NAT — some cellular carriers and corporate networks),
-without paying a TURN vendor. It costs nothing beyond a free-tier VPS.
+This is a legacy TURN fallback for the retired browser-mesh transport. The
+production Circle/Spiral room uses LiveKit as its media plane; keep this
+document only for compatibility work or a deliberate future transport change.
 
 Related code (already merged, works with or without this being set up):
 - `artifacts/api-server/src/routes/webrtc-ice.ts` — mints short-lived TURN
   credentials from the shared secret you set up below. Falls back to
   STUN-only automatically if this isn't configured — nothing breaks in the
   meantime.
-- `artifacts/pay-it-forward/src/lib/audioCircleWebRTC.ts` — fetches those
-  credentials per room join instead of reading a static, bundle-baked env
-  var (the old `VITE_TURN_*` approach — no longer used).
+- The active LiveKit transport does not call this endpoint. Do not wire TURN
+  credentials into the production room unless the media architecture changes.
 
 ## 1. Get a free VPS with a public IPv4 address
 

@@ -53,7 +53,7 @@ import type { WsEvent } from "@/lib/wsClient";
 import {
   getAudioCircleMediaCapabilities,
   type AudioCircleMediaCapabilities,
-} from "@/lib/audioCircleWebRTC";
+} from "@/lib/circleMediaCapabilities";
 import {
   type CircleMediaTransport,
   type MediaTransportCallbacks,
