@@ -7,7 +7,8 @@ provider responses.
 ## Source and served-commit parity
 
 - Repository: `https://github.com/niakofa-cmyk/Niakofa`
-- Local `main` and `origin/main`: `890279de7cde21adb4099faf7e9e58e91907befc`
+- GitHub `main` was independently verified through the authenticated API and
+  `git pull --ff-only`; local `main` and `origin/main` matched exactly.
 - Canonical live host checked: `https://niakofa.com`
 - Live `/api/version` served application commit
   `fa01f88c95e9570b77fb3439d2f978c319eca9bd`; the newer GitHub commit is
