@@ -3,3 +3,4 @@ export * from "./generated/api";
 // generates both a Zod const (api.ts) and a TS interface (types/) with the
 // same identifier — e.g. InviteBusinessMemberBody.
 export type * from "./generated/types";
+export * from './generated/types';

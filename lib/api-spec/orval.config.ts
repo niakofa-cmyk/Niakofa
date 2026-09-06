@@ -58,6 +58,10 @@ export default defineConfig({
       prettier: true,
       override: {
         zod: {
+          // The workspace intentionally pins Zod 3. Keep generated schemas
+          // compatible with that runtime instead of letting newer Orval
+          // releases auto-detect and emit Zod 4-only helpers.
+          version: 3,
           coerce: {
             query: ['boolean', 'number', 'string'],
             param: ['boolean', 'number', 'string'],
