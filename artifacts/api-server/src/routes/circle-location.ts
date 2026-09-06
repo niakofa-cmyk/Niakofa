@@ -72,7 +72,11 @@ router.post(
       circleId,
     });
 
-    const spiralCityDisplay = result.spiralCityDisplay ?? circle.city_display ?? displayCityName(circle.city_key);
+    // Keep the route response anchored to the persisted Spiral metadata. The
+    // verifier's successful union branch intentionally does not need to carry
+    // a second copy of this display value, which also keeps the result type
+    // narrow and prevents a frontend-facing type leak from breaking CI.
+    const spiralCityDisplay = circle.city_display ?? displayCityName(circle.city_key);
     if (!result.ok) {
       return res.status(403).json({
         allowed: false,
