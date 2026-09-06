@@ -2,6 +2,7 @@
 - [API preview database gate](api-preview-database-gate.md) — migration-first API previews must fail closed when the development database is unreachable.
 - [Pool History accounting](pool-history-accounting.md) — Pool History is a linked projection: show gross, retain settlement details, and update corrections in place.
 - [Backend test wiring](backend-test-wiring.md) — API Jest config, serialized ESM mocks, and split test runners must be explicit.
+- [Orval Zod generation](orval-zod-generation.md) — pin generated Zod output to the workspace’s installed major; newer Orval auto-detection can emit incompatible helpers.
 - [Circle media hardening](circle-media-hardening.md) — preserve LiveKit-only media, independent mic/camera lifecycles, bounded recovery, and real-device certification as the release gate.
 - [Fresh development database readiness](fresh-development-db-readiness.md) — connectivity can succeed while the schema is empty; run the canonical dev migration flow before diagnosing API readiness.
 - [Civic Census coverage](civic-census-coverage.md) — Census may return non-JSON missing-key HTML; keep verified offline county fallback explicit and use an optional key for full refresh.
