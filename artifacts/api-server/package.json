@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "NODE_OPTIONS='--max-old-space-size=2048' tsc --build ../../lib/db/tsconfig.json && NODE_OPTIONS='--max-old-space-size=2048' tsc --build ../../lib/trust-tiers/tsconfig.json && NODE_OPTIONS='--max-old-space-size=2048' tsc --build ../../lib/api-zod/tsconfig.json && NODE_OPTIONS='--max-old-space-size=2048' tsc -p tsconfig.json --noEmit",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./jest.config.mjs --runInBand && node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./jest.config.mjs --runInBand __tests__/new-endpoints.test.ts && node --test __tests__/repayment-dates.test.mjs"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./jest.config.mjs --runInBand && node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./jest.config.mjs --runInBand __tests__/new-endpoints.test.ts && node --test __tests__/build-metadata.test.mjs __tests__/repayment-dates.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
