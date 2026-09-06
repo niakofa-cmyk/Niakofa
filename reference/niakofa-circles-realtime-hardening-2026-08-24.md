@@ -12,7 +12,7 @@ WebSocket signaling, and WebRTC media transport are separate concerns:
 - REST/WebSocket: membership, roles, moderation, presence, and signaling.
 - WebRTC: microphone/camera tracks, peer connections, remote streams, and ICE.
 
-The separate Legacy RPG repository remains outside this runtime.
+Retired gameplay artifacts remain outside this runtime.
 
 ## Reliability contract
 
@@ -43,5 +43,5 @@ Before calling Circles production-ready, verify with two real browsers:
 6. Host moderation, recording consent, and host failover remain server-enforced.
 
 The full source notes and supplied visual references are preserved under
-`attached_assets/` and `public/`; do not promote RPG-only assets or runtime
+`attached_assets/` and `public/`; do not promote retired-gameplay assets or runtime
 code into the platform.

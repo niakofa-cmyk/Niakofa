@@ -57,4 +57,4 @@ was never extracted over the application tree.
   `artifacts/api-server/src/routes/stripe.ts`, with regression coverage in
   `artifacts/api-server/src/__tests__/stripe-money-moving.test.ts`.
 - The application remains the existing pnpm monorepo and artifact workflow
-  structure; no Legacy RPG runtime was merged into the platform.
+  structure; no retired gameplay runtime was merged into the platform.

@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Scope: **Niakofa core app only** (map, help requests, volunteers, Stripe, Mapbox).
-Out of scope for this pass: Diaspora & Family module, Legacy RPG mode.
+The Diaspora & Family module remains a separate product surface.
 
 ## Positioning
 

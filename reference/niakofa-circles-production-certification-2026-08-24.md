@@ -3,7 +3,7 @@
 ## Scope
 
 This record applies to the first-class Niakofa Circles audio/video product.
-It does not certify the separate Niakofa Legacy RPG runtime.
+It certifies only the Circles runtime and its platform dependencies.
 
 The uploaded handoff specification is preserved at:
 

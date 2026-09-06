@@ -59,14 +59,3 @@ Successful live refreshes return `statusSource: "stripe"` and `statusStale: fals
 | Repository-wide lint | Existing baseline failure: 507 errors / 211 warnings outside this audit |
 
 The repository-wide lint baseline is documented rather than masked; this audit did not make unrelated broad refactors.
-
-## Reference assets
-
-The maintained Legacy reference bundle remains:
-
-- `docs/NIAKOFA_LEGACY_REFERENCE.md` — product/design/system index
-- `NIAKOFA_LEGACY_SESSION_REF.md` — session decisions and asset provenance
-- `docs/legacy-mode-design/reference-images/` — committed reference images
-- `artifacts/pay-it-forward/public/niakofa-legacy-*.png` — live-demo reference assets
-
-Uploaded assessment documents remain under `attached_assets/` as session evidence.

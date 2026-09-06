@@ -22,4 +22,4 @@ public repository.
 Niakofa remains the map-first community mutual-aid platform. The Community Pool
 continues to fund scoped helper payouts, while financial events remain the
 authoritative settlement record and personal History remains a linked
-projection. No Legacy RPG runtime is introduced into the platform.
+projection.

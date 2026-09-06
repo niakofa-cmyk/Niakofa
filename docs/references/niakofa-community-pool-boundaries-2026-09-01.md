@@ -1,9 +1,8 @@
 # Niakofa Community Pool boundary reference
 
-This record preserves the decisions from the uploaded Community Pool and Legacy
-RPG review materials supplied on 2026-09-01. The original text, patch, and ZIP
-archives remain in `attached_assets/` as reference material; none is treated as
-executable configuration.
+This record preserves the Community Pool boundary decisions supplied on
+2026-09-01. Uploaded source material is not treated as executable
+configuration.
 
 ## Money-boundary decisions
 
@@ -27,13 +26,6 @@ not layered on top of them because it would create a second source of truth.
 - Repayments and queued guaranteed minimums preserve the original community/hub
   scope. Historical nullable ledger rows are retained for audit compatibility,
   but new money movement does not silently use the legacy global bucket.
-
-## Legacy RPG boundary
-
-The Legacy RPG runtime and tables remain in the main application until the
-standalone deployment, authenticated bridge, and production verification gates
-in `docs/LEGACY_EXTRACTION.md` pass. The current phase is controlled-copy
-verification, not deletion or cutover.
 
 ## Regression targets
 
