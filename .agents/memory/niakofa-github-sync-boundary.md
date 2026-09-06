@@ -23,29 +23,26 @@ workspace, while the supported GitHub connection could read and confirm the
 public ref without exposing credentials.
 
 The authenticated GitHub API publication path is confirmed to work for this
-repository: it can upload the local tree, advance `main` without force, and
-the public Git remote can then independently fetch and verify the resulting
-content.
+repository: it can upload the local tree, advance `main`, and reproduce the
+local commit SHA when the tree, parent, author, committer, and message bytes
+are preserved exactly.
 
 **Why:** The shell credential helper may reject an otherwise valid installed
 GitHub connection, but the connection-backed API can publish safely without
 accessing the token value.
 
-**How to apply:** Treat matching tree and changed-file blob IDs as the
-content-parity check when the API-generated commit SHA differs from the local
-commit SHA.
+**How to apply:** Prefer the connector-backed Git Data API when the runtime
+does not expose the documented gitPush callback. Guard the ref update on an
+exact tree and commit SHA match; otherwise stop before moving `main`.
 
-When the authenticated GitHub API creates a commit but the shell remote cannot
-fetch it, the API's ISO timestamp may normalize the commit's original timezone
-offset and omit details such as the final message newline. Use the API's tree,
-parent, author, committer, and message metadata before treating a locally
-reconstructed commit as identical.
+The GitHub commit endpoint preserves the supplied message bytes, so a local
+Git commit's final newline matters. A message with no final newline or two
+final newlines creates a different SHA even when all files and metadata match.
 
 **Why:** A branch hash comparison is only meaningful when the local commit
 object itself matches the remote object; matching file contents alone is not
 enough.
 
-**How to apply:** Prefer an authenticated API read of the published commit
-object, then compare refs after synchronization. Do not create another remote
-commit just to repair local history unless exact object reconstruction is
-impossible.
+**How to apply:** Read the authenticated remote ref after synchronization and
+compare it to local `HEAD`; never infer a successful push from a local branch
+state alone.
