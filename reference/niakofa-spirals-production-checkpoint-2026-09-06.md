@@ -1,65 +1,63 @@
 # Niakofa Spirals — Production Checkpoint
 
-**Date:** 2026-09-06
-**Product term:** Niakofa Spirals 🌀
-**Compatibility boundary:** legacy Circle API/storage identifiers remain supported intentionally.
+Date: 2026-09-06
 
-## Verified repository baseline
+## Current repository baseline
 
-The repository was reviewed from current `main` at `d1f3e8e4aeb671bca9a3598839d4b5ed8a916cf2` and the current Spiral host-signal fix is tracked in PR #35.
+`origin/main` is currently **`750c409585a14f77c44c7f86286cbaf13967eff3`** (`Remove retired RPG runtime references and assets`). PR #35 (`fix: close Spiral GPS host-signal type boundary`) is merged; its merge commit is `f0216be3af97de289c5fe1cf43697b49f44bfd5f`.
 
-## Branding decision
+## Canonical product language
 
-User-facing product language is **Spirals**. New URLs use `/audio-spirals` and `/audio-spiral/:id`. Legacy `/audio-circles` and `/audio-circle/:id` aliases remain so existing links and deployed clients do not break.
+Niakofa's user-facing live community feature is **Niakofa Spirals 🌀**. Canonical routes are `/audio-spirals` and `/audio-spiral/:id`.
 
-Do **not** blindly rename database tables, migrations, persisted columns, or API identifiers such as `audio_circles`. Those identifiers are compatibility contracts until a separately planned database/API migration is approved.
+Circle-era API/storage identifiers remain compatibility internals. Do not perform a blind database rename while active sessions and legacy clients depend on those identifiers.
 
-## GPS hosting policy
+## Host versus join policy
 
-1. Hosting is server-authorized from a fresh high-accuracy GPS fix.
-2. A Spiral is hostable when the GPS-resolved city matches the Spiral's city policy.
-3. Joining a live Spiral does not require GPS.
-4. Fort Worth enclave aliases are explicitly supported without opening Fort Worth hosting to other cities.
-5. Mapbox Geocoding v6 reverse lookup is used; the old v5 `limit` + multi-type combination is not used.
-6. Location denials expose the Spiral city and resolved GPS city so the UI can explain the decision.
-7. The host signal may show Mapbox's neighborhood result as a **GPS neighborhood hint**.
+- **Host/start:** requires a fresh server-authoritative GPS check for the Spiral's city.
+- **Join:** does not require host-location eligibility; users may join from other locations.
+- A Fort Worth Spiral therefore cannot be hosted from Dallas/Kansas City/etc., but it can be joined from those locations.
+- Fort Worth enclave aliases are narrowly supported so a physically Fort Worth-area fix is not rejected merely because Mapbox names an incorporated enclave.
 
-## Neighborhood boundary truth
+## GPS failure history
 
-`city_neighborhoods` currently stores names/content and verification state, but it does not contain geographic boundary polygons or lat/lng/radius fields. Therefore Niakofa must not claim that a neighborhood is GPS-geofenced today.
+The original production `Can't start the Spiral — Niakofa can't verify your current location` failure came from an invalid Mapbox reverse-geocoding request: the old v5-style `limit` + multi-type filter was being sent to the v6 reverse endpoint and Mapbox returned HTTP 422. The current location policy uses the v6 reverse endpoint and fails closed when reverse geocoding is unavailable.
 
-The current safe product behavior is:
+PR #35 closed a separate TypeScript union-boundary failure in `circle-location.ts`: the route was attempting to read `spiralCityDisplay` from a successful verifier branch where that property was not exposed. The response now uses persisted Spiral metadata as the authoritative display value.
 
-- **Verified city host signal:** authoritative for hosting.
-- **Neighborhood Spiral identity:** identifies which neighborhood room is being hosted.
-- **GPS neighborhood hint:** informational reverse-geocode context only.
+## Neighborhood semantics
 
-A future true neighborhood host gate requires reviewed geofence data (preferably polygons) per neighborhood, plus a migration, seed data, tests, and an explicit product decision.
+`city_neighborhoods` is currently a neighborhood catalog, not a geographic boundary dataset. It does not contain authoritative polygon/radius geometry for per-neighborhood geofencing.
 
-## Production acceptance evidence already completed
+Therefore the current host signal intentionally distinguishes:
 
-- Spiral GPS Mapbox v6 fix merged/deployed previously.
+- **Verified host city:** authoritative for hosting.
+- **Spiral neighborhood identity:** identifies which neighborhood room is being hosted.
+- **GPS-resolved neighborhood hint:** informational reverse-geocode context only.
+
+The UI must not claim that a user is inside a verified neighborhood boundary until authoritative neighborhood geometry exists.
+
+## True neighborhood-hosting next phase
+
+Add reviewed polygon/radius geometry, source/version metadata, effective dates, and verification state to neighborhood records. The server should resolve a fresh GPS fix against that authoritative geometry and return a neighborhood verification status. Missing or stale geometry must fail closed rather than guessing.
+
+## Production verification already completed
+
+- Mapbox v6 reverse-geocode correction merged.
+- Fort Worth host-fence/enclave behavior covered by the location policy tests.
 - County travel acceptance passed.
-- Railway health/readiness returned 200 on the current production deployment.
-- LiveKit server readiness reported authenticated reachability.
-- Stripe live configuration was verified and 30-day reconciliation returned zero missing ledger entries and zero missing financial events.
+- Railway deployment verification for the current `main` SHA passed.
+- LiveKit server readiness previously reported authenticated reachability.
+- Stripe live configuration and 30-day reconciliation previously returned zero missing ledger entries and zero missing financial events.
 
-## Current known checkpoint issue
+## Remaining release gates
 
-The current main push introduced a TypeScript union-boundary failure in `circle-location.ts`: the route attempted to read `spiralCityDisplay` from a successful verifier branch that did not expose that property. PR #35 removes that type leak and anchors the response to persisted Spiral metadata.
+Do not call the Spiral media path fully device-certified until a real browser/device test confirms:
 
-## Release gate
+1. Fresh location permission succeeds in Fort Worth.
+2. A Fort Worth Spiral location-check returns `can_host: true` and a clear `Verified:` host signal.
+3. A genuinely outside-Fort-Worth location receives a blocked host signal showing the resolved city and required Spiral city.
+4. The outside-city user can still join the Spiral.
+5. Two browser/device clients connect through LiveKit and exchange microphone audio.
 
-Do not declare the release fully certified until:
-
-- PR #35 CI is green.
-- PR #35 is merged to main.
-- Railway production deploys the resulting main SHA.
-- Production `/api/version` and readiness report that SHA.
-- A real Fort Worth device location-check returns `can_host: true` for a Fort Worth Spiral.
-- A genuinely outside-Fort-Worth location receives a clear blocked host signal but can still join a live Spiral.
-- Two-browser/device LiveKit audio is tested end-to-end.
-
-## Reference files
-
-The repository contains earlier Circles/RTC references for historical implementation details. Those remain useful provenance documents; this checkpoint is the authoritative naming and GPS-policy handoff for the Spirals migration.
+These are physical-device acceptance gates, not things repository inspection can honestly substitute for.
