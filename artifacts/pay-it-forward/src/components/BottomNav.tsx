@@ -19,10 +19,10 @@ type Tab = { path: string; icon: React.ElementType; labelKey: string; center?: b
 // leaving the nav chrome the same. Profile stays reachable via the TopBar
 // avatar in both modes (see TopBar.tsx), so dropping it here isn't a
 // regression — it frees two slots for features that previously had zero
-// bottom-nav discoverability (Wallet, Circles).
+// bottom-nav discoverability (Wallet, Spirals).
 //
 // Helper Mode OFF — consumer-facing nav: Home/Community, Map (browse &
-// request — the map screen carries its own "Request Help" FAB), Circles,
+// request — the map screen carries its own "Request Help" FAB), Spirals,
 // Wallet. No navigation UI, no earnings, no background-check chrome.
 const BASE_TABS: Tab[] = [
   { path: "/community",     icon: Users,      labelKey: "nav.community" },
@@ -35,7 +35,7 @@ const BASE_TABS: Tab[] = [
 // action — jumps straight to the in-progress job, or to Nearby Requests if
 // there isn't one yet), Nearby Requests (map, already filters to claimable
 // requests when helperModeActive is true), Earnings (helper-dashboard is the
-// full earnings + payout home), Circles.
+// full earnings + payout home), Spirals.
 const HELPER_TABS: Tab[] = [
   { path: "/helper-dashboard", icon: DollarSign,   labelKey: "nav.earnings" },
   { path: "/",                 icon: Map,           labelKey: "nav.nearby"  },
@@ -165,7 +165,7 @@ export function BottomNav() {
       addNotif({
         id: `circle-live-${p.session_id}`,
         type: "circle_went_live",
-        title: `🔴 ${p.circle_name} is live`,
+        title: `🔴 Spiral live in ${p.circle_name}`,
         body: `"${p.title}" — hosted by ${p.host_name}${p.video_enabled ? " 🎥" : ""}`,
         time: new Date(),
         actionUrl: SPIRALS_PATHS.room(p.session_id),

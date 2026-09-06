@@ -7,7 +7,7 @@
  *   3. Fails closed when INTERNAL_SECRET is not configured
  *   4. Worker lifecycle registers and shuts down cleanly
  */
-import { describe, it, expect, jest, _beforeEach, afterEach } from "@jest/globals";
+import { describe, it, expect, jest, afterEach } from "@jest/globals";
 
 // Mock pg pool
 jest.mock("pg", () => {
@@ -36,8 +36,6 @@ describe("Nia Service Boundary: Internal Secret", () => {
     delete process.env.INTERNAL_SECRET;
     // Re-import to get fresh module state
     jest.resetModules();
-    const { default: _app } = await import("express");
-    const _supertest = (await import("supertest")).default;
 
     // We can't easily import the full app without DB, so test the logic directly
     const configuredSecret = process.env.INTERNAL_SECRET ?? "";

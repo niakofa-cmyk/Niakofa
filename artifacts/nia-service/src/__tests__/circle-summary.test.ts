@@ -2,7 +2,11 @@ import { beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals
 import express, { type Express } from "express";
 import request from "supertest";
 
-const create = jest.fn();
+type ProviderResponse = {
+  content: Array<{ type: string; text: string }>;
+};
+
+const create = jest.fn<(params: Record<string, unknown>) => Promise<ProviderResponse>>();
 const isNiaEnabled = jest.fn<() => Promise<boolean>>();
 
 jest.unstable_mockModule("../lib/db.js", () => ({ isNiaEnabled }));

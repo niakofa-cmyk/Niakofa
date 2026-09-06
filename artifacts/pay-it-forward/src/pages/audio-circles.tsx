@@ -357,7 +357,7 @@ export default function AudioCirclesScreen() {
   const search = useSearch();
   const { currentUser } = useAppContext();
 
-  // Pull ?neighborhood= from URL so Community → Circles tab card navigates here correctly
+  // Pull ?neighborhood= from URL so Community → Spirals tab card navigates here correctly
   const neighborhoodParam = new URLSearchParams(search).get("neighborhood");
 
   const [city, setCity] = useState(() => {

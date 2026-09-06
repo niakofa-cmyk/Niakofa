@@ -66,7 +66,7 @@ export type WsEventType =
   | "admin_summary_update"
   // Fired when an admin approves/denies a pending account
   | "account_approval_decided"
-  // Niakofa Audio Circles
+  // Niakofa Spirals (Circle-era event names remain wire-compatible)
   | "family_memory_created"
   | "family_interview_status_changed"
   | "family_story_created"

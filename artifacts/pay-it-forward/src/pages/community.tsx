@@ -375,7 +375,7 @@ interface NeighborhoodLiveStatus {
   video_enabled: boolean;
 }
 
-function NeighborhoodCirclesTab() {
+function NeighborhoodSpiralsTab() {
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -389,7 +389,7 @@ function NeighborhoodCirclesTab() {
 
   // Fetch real neighborhoods for the user's city (auto-provisioned by the
   // backend for any city — not just Fort Worth). Falls back gracefully on
-  // error so the city-wide Circle card below still works.
+  // error so the city-wide Spiral card below still works.
   useEffect(() => {
     let cancelled = false;
     setHoodLoading(true);
@@ -405,7 +405,7 @@ function NeighborhoodCirclesTab() {
     return () => { cancelled = true; };
   }, [base, city]);
 
-  // Fetch live circle data so cards show real-time status
+  // Fetch live Spiral data so cards show real-time status
   const [liveByHood, setLiveByHood] = useState<Map<string, NeighborhoodLiveStatus>>(new Map());
   const [fetchedCity, setFetchedCity] = useState<string | null>(null);
 
@@ -2192,7 +2192,7 @@ export default function CommunityScreen() {
           </div>
         )}
 
-        {tab === "circles" && <NeighborhoodCirclesTab />}
+        {tab === "circles" && <NeighborhoodSpiralsTab />}
         {tab === "skills" && <SkillsMarketplaceTab />}
       </div>
     </div>

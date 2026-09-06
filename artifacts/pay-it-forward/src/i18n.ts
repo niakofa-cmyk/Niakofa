@@ -140,7 +140,7 @@ const es: typeof en = {
     community: "Comunidad",
     wallet: "Cartera",
     profile: "Perfil",
-    circles: "Círculos",
+    circles: "Spirals",
     earnings: "Ganancias",
     nearby: "Cercanas",
     active_job: "Trabajo Activo",

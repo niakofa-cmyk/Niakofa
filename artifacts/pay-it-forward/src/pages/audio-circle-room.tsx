@@ -1347,7 +1347,7 @@ export default function AudioCircleRoomScreen() {
   useEffect(() => {
     const manager = sessionManagerRef.current;
     if (!manager) return;
-    // Open Circles allow listeners to intentionally publish video. They do
+    // Open Spirals allow listeners to intentionally publish video. They do
     // not auto-publish a microphone, and their camera must not be torn down.
     if (!canSpeak && !canPublishMedia) {
       manager.stopLocalMedia();

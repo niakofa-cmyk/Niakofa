@@ -275,7 +275,7 @@ export default function CivicNeedsPage() {
       // Only replace the list on a genuine success — a transient network
       // blip used to wipe whatever was previously loaded (same
       // "setXxx([]) on any failure" anti-pattern already fixed for the
-      // Audio Circles list and admin civic-requests loader). Leaving the
+      // Spirals list and admin civic-requests loader). Leaving the
       // prior list in place on failure means a flaky retry doesn't look
       // like the invoices vanished.
       if (res.ok) setInvoices(await res.json());

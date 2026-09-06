@@ -7,7 +7,7 @@
  * The map, requests, and civic-needs screens already get "never show empty
  * on navigate/refresh" for free from the global QueryClient defaults in
  * App.tsx (staleTime, gcTime: 10min, placeholderData: keepPreviousData).
- * Audio Circles does NOT go through React Query — it's a local useState +
+ * Spirals does NOT go through React Query — it's a local useState +
  * useEffect + fetch, so every remount (leave the page, come back; or a hard
  * refresh) starts from `circles = null` and shows "Loading circles…" before
  * repainting the list a moment later. The DB rows themselves are never lost
@@ -36,7 +36,7 @@
  *     pollMs: 15000,
  *   });
  *
- * Generic — works for any list-shaped screen (Circles today; drop-in for any
+ * Generic — works for any list-shaped screen (Spirals today; drop-in for any
  * future raw-fetch screen that shouldn't flash empty on remount).
  */
 import { useCallback, useEffect, useRef, useState } from "react";

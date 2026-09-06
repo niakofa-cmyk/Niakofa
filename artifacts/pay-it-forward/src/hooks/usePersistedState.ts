@@ -5,7 +5,7 @@
  * WHY THIS EXISTS
  * ----------------
  * This closes the same "data disappeared" class of bug that useCachedList
- * already fixed for Audio Circles (see hooks/useCachedList.ts), but for
+ * already fixed for Spirals (see hooks/useCachedList.ts), but for
  * screens that fetch multiple independent lists inside one component and
  * update them from several different call sites (civic-needs.tsx's
  * openNeeds/claimedNeeds/myPosted, civic-portal.tsx's requests, etc.).
