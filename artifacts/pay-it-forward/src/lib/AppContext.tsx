@@ -17,6 +17,8 @@ interface Location {
   heading?: number | null;
   speed?: number | null;
   accuracy?: number | null;
+  capturedAt?: number;
+  source?: "gps" | "ip";
 }
 
 interface UserPlace {
@@ -326,7 +328,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (locationRef.current) return; // GPS already gave us a fix — skip
       getIpLocation().then(loc => {
         if (!loc || locationRef.current) return; // double-check after async
-        const ipLoc: Location = { lat: loc.lat, lng: loc.lng };
+        const ipLoc: Location = { lat: loc.lat, lng: loc.lng, source: "ip" };
         locationRef.current = ipLoc;
         setMyLocation(ipLoc);
       });
@@ -373,6 +375,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         heading,
         speed: raw.speed,
         accuracy: raw.accuracy,
+        capturedAt: pos.timestamp || Date.now(),
+        source: "gps",
       };
 
       prevLocationRef.current = raw;

@@ -4,12 +4,98 @@ import { requireAuth, requireApproved } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import {
   CircleStartLocationBody,
+  accuracyBucket,
   displayCityName,
+  normalizeCityKey,
+  reverseGeocodeCircleStart,
+  validateFreshAccurateLocation,
   verifyCircleStartLocation,
 } from "../lib/circleLocationPolicy";
 import { db, audioCirclesTable, cityNeighborhoodsTable } from "@workspace/db";
+import { pickLocalSpiral } from "../lib/circleLocationContext";
 
 const router = Router();
+
+/**
+ * Resolve the shared map GPS signal to the user's local Spiral without
+ * granting eligibility in the browser. This is intentionally separate from
+ * the per-Spiral check because the list needs one authoritative local match
+ * before it can promote a neighborhood.
+ */
+router.post(
+  "/audio-circles/location-context",
+  requireAuth,
+  generalApiLimiter,
+  async (req, res) => {
+    const parsed = CircleStartLocationBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        ok: false,
+        status: "blocked",
+        code: "GPS_BODY_INVALID",
+        error: "A fresh GPS fix is required (latitude, longitude, accuracy_meters, captured_at).",
+      });
+    }
+
+    const freshness = validateFreshAccurateLocation(parsed.data);
+    if (!freshness.ok) {
+      return res.status(422).json({
+        ok: false,
+        status: "blocked",
+        code: freshness.code,
+        error: freshness.reason,
+        host_signal: { status: "blocked", message: freshness.reason },
+      });
+    }
+
+    let resolved;
+    try {
+      resolved = await reverseGeocodeCircleStart(parsed.data);
+    } catch {
+      return res.status(503).json({
+        ok: false,
+        status: "blocked",
+        code: "GPS_REVERSE_GEOCODE_FAILED",
+        error: "Your GPS signal is available, but the neighborhood could not be verified yet.",
+        host_signal: { status: "blocked", message: "Location verification is temporarily unavailable. Retrying automatically." },
+      });
+    }
+
+    const circles = await db
+      .select({
+        id: audioCirclesTable.id,
+        neighborhood_id: audioCirclesTable.neighborhood_id,
+        name: audioCirclesTable.name,
+        neighborhood_name: cityNeighborhoodsTable.name,
+        neighborhood_emoji: cityNeighborhoodsTable.emoji,
+      })
+      .from(audioCirclesTable)
+      .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
+      .where(eq(audioCirclesTable.city_key, normalizeCityKey(resolved.cityKey)));
+
+    const localCircle = pickLocalSpiral(circles, resolved.neighborhoodHint);
+
+    return res.json({
+      ok: true,
+      status: localCircle ? "ready" : "location_ready",
+      city_key: resolved.cityKey,
+      city_display: resolved.cityDisplay,
+      county_display: resolved.countyDisplay,
+      state_code: resolved.stateCode,
+      accuracy_bucket: accuracyBucket(parsed.data.accuracy_meters),
+      neighborhood_hint: resolved.neighborhoodHint,
+      circle_id: localCircle?.id ?? null,
+      neighborhood_name: localCircle?.neighborhood_name ?? null,
+      neighborhood_emoji: localCircle?.neighborhood_emoji ?? null,
+      host_signal: {
+        status: localCircle ? "ready" : "location_ready",
+        message: localCircle
+          ? `Verified local Spiral: ${localCircle.neighborhood_name ?? `${resolved.cityDisplay} city-wide`}`
+          : `GPS verified in ${resolved.cityDisplay}; local Spirals are still loading.`,
+      },
+    });
+  },
+);
 
 router.post(
   "/audio-circles/:id/location-check",

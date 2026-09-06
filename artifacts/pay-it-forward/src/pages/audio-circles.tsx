@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Radio, Users, Mic, Video, ArrowLeft, Search, WifiOff, Crown, X, Share2, Bell, BellOff } from "lucide-react";
@@ -9,7 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { useCachedList } from "@/hooks/useCachedList";
 import { acquireCircleDevice } from "@/lib/circleMediaReadiness";
 import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";
-import { SPIRALS_PATHS } from "@/lib/spirals";
+import { promoteLocalSpiral, SPIRALS_PATHS } from "@/lib/spirals";
 import { SpiralMark } from "@/components/SpiralMark";
 import { SpiralHostSignal, type HostSignalPayload } from "@/components/SpiralHostSignal";
 
@@ -37,6 +37,18 @@ interface CircleSummary {
   neighborhood_emoji: string | null;
   live_session: LiveSessionSummary | null;
   is_following: boolean;
+}
+
+interface LocationContext {
+  ok?: boolean;
+  status: "ready" | "location_ready" | "blocked";
+  city_key: string;
+  city_display: string;
+  neighborhood_hint: string | null;
+  circle_id: number | null;
+  neighborhood_name: string | null;
+  neighborhood_emoji: string | null;
+  host_signal?: { status?: string; message?: string };
 }
 
 interface Recording {
@@ -138,6 +150,11 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
   const [camReady, setCamReady] = useState<boolean | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
   const [camError, setCamError] = useState<string | null>(null);
+  const [hostReady, setHostReady] = useState(
+    hostSignal?.can_host === true ||
+      hostSignal?.allowed === true ||
+      hostSignal?.host_signal?.status === "ready",
+  );
   const checkedRef = useRef(false);
 
   useEffect(() => {
@@ -175,7 +192,7 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
 
   const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`;
 
-  const canStart = title.trim().length > 0 && micReady === true && (format !== "video" ? true : camReady === true) && maxSpeakers > 0;
+  const canStart = hostReady && title.trim().length > 0 && micReady === true && (format !== "video" ? true : camReady === true) && maxSpeakers > 0;
 
   return (
     <motion.div
@@ -290,6 +307,13 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
           spiralCityDisplay={circle.city_display}
           spiralNeighborhood={circle.neighborhood_name}
           externalSignal={hostSignal}
+          onSignalChange={(next) =>
+            setHostReady(
+              next.can_host === true ||
+                next.allowed === true ||
+                next.host_signal?.status === "ready",
+            )
+          }
         />
 
         {/* Device checks */}
@@ -325,7 +349,7 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
 
         {/* Start button */}
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground">
-          Hosting requires a fresh, accurate GPS check for this Spiral’s city. Joining never requires your location.
+          Host eligibility is checked automatically from your shared Map GPS signal. Joining never requires your location.
         </div>
         <label className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5 cursor-pointer">
           <input
@@ -355,7 +379,7 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
 export default function AudioCirclesScreen() {
   const [, setLocation] = useLocation();
   const search = useSearch();
-  const { currentUser } = useAppContext();
+  const { currentUser, myLocation } = useAppContext();
 
   // Pull ?neighborhood= from URL so Community → Spirals tab card navigates here correctly
   const neighborhoodParam = new URLSearchParams(search).get("neighborhood");
@@ -383,6 +407,9 @@ export default function AudioCirclesScreen() {
   const [_discoveryLoading, _setDiscoveryLoading] = useState(false);
   const [communityStats, _setCommunityStats] = useState<CommunityStats | null>(null);
   const [_showStatsModal, setShowStatsModal] = useState(false);
+  const [locationContext, setLocationContext] = useState<LocationContext | null>(null);
+  const locationRef = useRef(myLocation);
+  const manualCitySelectionRef = useRef(false);
 
   // Ref for the highlighted neighborhood card (from Community tab navigation)
   const highlightRef = useRef<HTMLDivElement | null>(null);
@@ -390,8 +417,62 @@ export default function AudioCirclesScreen() {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
   useEffect(() => {
+    locationRef.current = myLocation;
+  }, [myLocation]);
+
+  useEffect(() => {
     try { sessionStorage.setItem(SESSION_KEY, city); } catch { /* storage blocked */ }
   }, [city]);
+
+  // Resolve the same shared GPS stream used by the map, helpers, and
+  // requesters. The server decides the city/neighborhood match; the browser
+  // only uses that result to choose the visual order.
+  useEffect(() => {
+    let cancelled = false;
+    const refreshLocationContext = async () => {
+      try {
+        const shared = locationRef.current;
+        const usable =
+          shared?.source === "gps" &&
+          typeof shared.capturedAt === "number" &&
+          Date.now() - shared.capturedAt <= 120_000 &&
+          typeof shared.accuracy === "number" &&
+          shared.accuracy <= 150;
+        const location = usable
+          ? {
+              latitude: shared.lat,
+              longitude: shared.lng,
+              accuracy_meters: shared.accuracy!,
+              captured_at: new Date(shared.capturedAt!).toISOString(),
+            }
+          : await getFreshCircleStartLocation();
+        const response = await fetch(`${base}/api/audio-circles/location-context`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify(location),
+        });
+        const data = await response.json().catch(() => ({})) as LocationContext;
+        if (!cancelled && response.ok && data.ok !== false) {
+          setLocationContext(data);
+          if (!manualCitySelectionRef.current && data.city_display && data.city_display !== city) {
+            setCity(data.city_display);
+            setCityInput(data.city_display);
+          }
+        } else if (!cancelled) {
+          setLocationContext(null);
+        }
+      } catch {
+        if (!cancelled) setLocationContext(null);
+      }
+    };
+
+    void refreshLocationContext();
+    const interval = window.setInterval(() => void refreshLocationContext(), 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [base, city, currentUser?.id]);
 
   const fetcher = useCallback(async () => {
     const res = await fetch(
@@ -415,6 +496,10 @@ export default function AudioCirclesScreen() {
     pollMs: 15000,
     enabled: !!city.trim(),
   });
+
+  const orderedCircles = useMemo(() => {
+    return promoteLocalSpiral(circles ?? undefined, locationContext?.circle_id);
+  }, [circles, locationContext?.circle_id]);
 
   // Track which circles the user follows
   useEffect(() => {
@@ -729,7 +814,11 @@ export default function AudioCirclesScreen() {
               {nearby.slice(0, 6).map(n => (
                 <button
                   key={n.id}
-                  onClick={() => { setCity(n.city_display); setCityInput(n.city_display); }}
+                  onClick={() => {
+                    manualCitySelectionRef.current = true;
+                    setCity(n.city_display);
+                    setCityInput(n.city_display);
+                  }}
                   className="bg-card border border-border rounded-2xl p-3 flex flex-col gap-1 min-w-[180px] shrink-0 hover:border-primary/40 transition-colors text-left"
                 >
                   <div className="flex items-center gap-2">
@@ -797,7 +886,11 @@ export default function AudioCirclesScreen() {
         <>
         <form
           className="flex gap-2"
-          onSubmit={(e) => { e.preventDefault(); setCity(cityInput); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            manualCitySelectionRef.current = true;
+            setCity(cityInput);
+          }}
         >
           <input
             value={cityInput}
@@ -809,17 +902,16 @@ export default function AudioCirclesScreen() {
           <Button type="submit" size="icon" variant="outline"><Search className="w-4 h-4" /></Button>
         </form>
 
-        {circles && circles.length > 0 && (
+        {orderedCircles && orderedCircles.length > 0 && (
           <div className="space-y-1.5">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Hosting in {circles[0].city_display}
+              Hosting in {orderedCircles[0].city_display}
             </p>
-            <SpiralHostSignal
-              circleId={circles[0].id}
-              base={base}
-              spiralCityDisplay={circles[0].city_display}
-              externalSignal={hostSignals[circles[0].id]}
-            />
+            {locationContext?.circle_id && (
+              <p className="text-[10px] text-emerald-400/80">
+                GPS connected · your verified neighborhood is first
+              </p>
+            )}
           </div>
         )}
 
@@ -849,9 +941,10 @@ export default function AudioCirclesScreen() {
         )}
 
         <div className="space-y-3">
-          {circles?.map((circle, i) => {
+          {orderedCircles?.map((circle, i) => {
             const live = circle.live_session;
             const isFollowing = followingSet.has(circle.id);
+            const isVerifiedLocal = locationContext?.status === "ready" && locationContext.circle_id === circle.id;
             const isHighlighted = neighborhoodParam
               ? circle.neighborhood_name?.toLowerCase() === neighborhoodParam.toLowerCase()
               : false;
@@ -907,9 +1000,22 @@ export default function AudioCirclesScreen() {
                         <div className="text-xs text-muted-foreground mt-0.5">No live session right now</div>
                       )}
                     </div>
+                    {isVerifiedLocal && (
+                      <div className="flex shrink-0 flex-col items-center gap-0.5 text-emerald-400">
+                        <SpiralHostSignal
+                          circleId={circle.id}
+                          base={base}
+                          spiralCityDisplay={circle.city_display}
+                          spiralNeighborhood={circle.neighborhood_name}
+                          externalSignal={hostSignals[circle.id]}
+                          compact
+                        />
+                        <span className="text-[8px] font-black uppercase tracking-wider">Your GPS</span>
+                      </div>
+                    )}
                   </div>
 
-                            {/* Topic tag */}
+                  {/* Topic tag */}
                   {live?.topic && (
                     <div className="mt-2">
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">

@@ -7,6 +7,18 @@ export const SPIRALS_PATHS = {
   room: (sessionId: string | number) => `/audio-spiral/${sessionId}`,
 } as const;
 
+/** Keep the server-verified local Spiral first without changing other order. */
+export function promoteLocalSpiral<T extends { id: number }>(
+  circles: T[] | undefined,
+  localCircleId: number | null | undefined,
+): T[] | undefined {
+  if (!circles || localCircleId == null) return circles;
+  const index = circles.findIndex((circle) => circle.id === localCircleId);
+  if (index <= 0) return circles;
+  const local = circles[index];
+  return [local, ...circles.slice(0, index), ...circles.slice(index + 1)];
+}
+
 export const CIRCLE_ROUTE_ALIASES = {
   discovery: "/audio-circles",
   room: "/audio-circle/:id",
