@@ -15,6 +15,15 @@ const DEFAULT_MAX_ACCURACY_METERS = 150;
 const DEFAULT_MAX_AGE_MS = 120_000;
 const CLOCK_SKEW_MS = 30_000;
 
+/**
+ * Reverse geocoding can name a Fort Worth enclave as its own municipality.
+ * Keep this table deliberately small: it handles known administrative
+ * enclaves without turning county-wide geography into a hosting boundary.
+ */
+const CITY_ALIASES: Record<string, readonly string[]> = {
+  fort_worth: ["fort_worth", "ft_worth", "ftworth", "westworth_village", "river_oaks", "westover_hills"],
+};
+
 export const CircleStartLocationBody = z.object({
   latitude: z.number().finite().gte(-90).lte(90),
   longitude: z.number().finite().gte(-180).lte(180),
@@ -29,6 +38,7 @@ export interface ReverseGeocodedLocation {
   cityDisplay: string;
   countyDisplay: string | null;
   stateCode: string | null;
+  neighborhoodHint: string | null;
 }
 
 export function normalizeCityKey(city: string): string {
@@ -37,6 +47,18 @@ export function normalizeCityKey(city: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+export function displayCityName(cityKeyOrName: string): string {
+  const raw = cityKeyOrName.replace(/_/g, " ").trim();
+  return raw.replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+export function citiesMatchForHost(spiralCityKey: string, resolvedCityKey: string): boolean {
+  const expected = normalizeCityKey(spiralCityKey);
+  const got = normalizeCityKey(resolvedCityKey);
+  if (expected === got) return true;
+  return CITY_ALIASES[expected]?.includes(got) ?? false;
 }
 
 function maxAccuracyMeters(): number {
@@ -92,9 +114,7 @@ export function validateFreshAccurateLocation(
  *
  * Do not send v5-style `limit=5` with multiple reverse `types`: v6 requires a
  * single type when limit is present. We intentionally omit both so Mapbox can
- * return the full administrative hierarchy and we select place/locality from
- * the response. This removes the 422 failure that previously collapsed into
- * the generic "could not verify your current location" UI error.
+ * return the full administrative hierarchy.
  */
 export async function reverseGeocodeCircleStart(
   location: CircleStartLocation,
@@ -107,8 +127,7 @@ export async function reverseGeocodeCircleStart(
     latitude: String(location.latitude),
     access_token: token,
   });
-  const url = `https://api.mapbox.com/search/geocode/v6/reverse?${params.toString()}`;
-  const response = await fetch(url, {
+  const response = await fetch(`https://api.mapbox.com/search/geocode/v6/reverse?${params.toString()}`, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(4_000),
   });
@@ -119,8 +138,7 @@ export async function reverseGeocodeCircleStart(
       const body = (await response.json()) as { message?: string };
       if (body.message) detail += `: ${body.message}`;
     } catch {
-      // Preserve the stable fail-closed error contract if Mapbox returns a
-      // non-JSON response.
+      // Preserve the stable fail-closed error contract if Mapbox returns non-JSON.
     }
     throw new Error(`Reverse geocoding failed (${detail})`);
   }
@@ -130,14 +148,15 @@ export async function reverseGeocodeCircleStart(
       text?: string;
       place_type?: string[];
       feature_type?: string;
-      properties?: { name?: string; short_code?: string };
+      properties?: { name?: string };
       context?:
         | Array<{ id?: string; text?: string; short_code?: string }>
         | {
-            place?: { name?: string; id?: string };
-            locality?: { name?: string; id?: string };
-            district?: { name?: string; id?: string };
-            region?: { name?: string; id?: string; short_code?: string };
+            place?: { name?: string };
+            locality?: { name?: string };
+            neighborhood?: { name?: string };
+            district?: { name?: string };
+            region?: { name?: string; short_code?: string };
           };
     }>;
   };
@@ -145,32 +164,45 @@ export async function reverseGeocodeCircleStart(
   const features = data.features ?? [];
   if (!features.length) throw new Error("GPS coordinate could not be mapped to a city");
 
-  const feature =
+  const cityFeature =
     features.find((item) => item.feature_type === "place" || item.place_type?.includes("place")) ??
     features.find((item) => item.feature_type === "locality" || item.place_type?.includes("locality")) ??
     features[0];
 
-  const context = feature.context;
   let city: string | undefined;
   let countyDisplay: string | null = null;
   let stateCode: string | null = null;
+  let neighborhoodHint: string | null = null;
 
+  const context = cityFeature.context;
   if (Array.isArray(context)) {
-    city =
-      feature.text?.trim() ??
-      context.find((item) => item.id?.startsWith("place."))?.text?.trim() ??
-      context.find((item) => item.id?.startsWith("locality."))?.text?.trim();
+    const placeContext = context.find((item) => item.id?.startsWith("place."))?.text?.trim();
+    const localityContext = context.find((item) => item.id?.startsWith("locality."))?.text?.trim();
+    const isCityFeature = cityFeature.feature_type === "place" || cityFeature.place_type?.includes("place");
+    city = (isCityFeature ? cityFeature.text?.trim() : undefined) ?? placeContext ?? localityContext;
     countyDisplay = context.find((item) => item.id?.startsWith("district."))?.text?.trim() ?? null;
     const region = context.find((item) => item.id?.startsWith("region."));
     const shortCode = region?.short_code?.toUpperCase();
     stateCode = shortCode ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode : null;
+    neighborhoodHint = context.find((item) => item.id?.startsWith("neighborhood."))?.text?.trim() ?? null;
   } else if (context) {
-    city = context.place?.name?.trim() ?? context.locality?.name?.trim() ?? feature.text?.trim();
+    city = context.place?.name?.trim() ?? context.locality?.name?.trim();
     countyDisplay = context.district?.name?.trim() ?? null;
     const shortCode = context.region?.short_code?.toUpperCase();
     stateCode = shortCode ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode : null;
-  } else {
-    city = feature.text?.trim() ?? feature.properties?.name?.trim();
+    neighborhoodHint = context.neighborhood?.name?.trim() ?? null;
+  }
+
+  if (!city && (cityFeature.feature_type === "place" || cityFeature.feature_type === "locality")) {
+    city = cityFeature.text?.trim();
+  }
+  if (!city) city = cityFeature.properties?.name?.trim();
+
+  if (!neighborhoodHint) {
+    const neighborhoodFeature = features.find(
+      (item) => item.feature_type === "neighborhood" || item.place_type?.includes("neighborhood"),
+    );
+    neighborhoodHint = neighborhoodFeature?.text?.trim() ?? neighborhoodFeature?.properties?.name?.trim() ?? null;
   }
 
   if (!city) throw new Error("GPS coordinate has no resolvable city");
@@ -180,6 +212,7 @@ export async function reverseGeocodeCircleStart(
     cityDisplay: city,
     countyDisplay,
     stateCode,
+    neighborhoodHint,
   };
 }
 
@@ -190,36 +223,60 @@ export type CircleStartLocationResult =
       cityDisplay: string;
       countyDisplay: string | null;
       stateCode: string | null;
+      neighborhoodHint: string | null;
       accuracyBucket: string;
+      canHost: true;
     }
-  | { ok: false; reason: string; code: string };
+  | {
+      ok: false;
+      reason: string;
+      code: string;
+      spiralCityKey: string;
+      spiralCityDisplay: string;
+      resolvedCityKey?: string;
+      resolvedCityDisplay?: string;
+      neighborhoodHint?: string | null;
+      canHost: false;
+    };
 
 export async function verifyCircleStartLocation(
   circleCityKey: string,
   location: CircleStartLocation,
   opts?: { nowMs?: number; userId?: number; circleId?: number },
 ): Promise<CircleStartLocationResult> {
+  const expectedKey = normalizeCityKey(circleCityKey);
+  const expectedDisplay = displayCityName(circleCityKey);
   const freshness = validateFreshAccurateLocation(location, opts?.nowMs);
   if (!freshness.ok) {
     logLocationDecision({
       decision: "denied",
       code: freshness.code,
-      circleCityKey,
+      circleCityKey: expectedKey,
       userId: opts?.userId,
       circleId: opts?.circleId,
       accuracyBucket: accuracyBucket(location.accuracy_meters),
     });
-    return freshness;
+    return {
+      ...freshness,
+      spiralCityKey: expectedKey,
+      spiralCityDisplay: expectedDisplay,
+      canHost: false,
+    };
   }
 
-  const expectedKey = normalizeCityKey(circleCityKey);
   try {
     const resolved = await reverseGeocodeCircleStart(location);
-    if (resolved.cityKey !== expectedKey) {
+    if (!citiesMatchForHost(expectedKey, resolved.cityKey)) {
       const result = {
         ok: false as const,
         code: "CIRCLE_START_WRONG_CITY",
-        reason: `You can only start this Spiral from inside ${circleCityKey.replace(/_/g, " ")}. You may still join Spirals from other locations.`,
+        reason: `You can only start this Spiral from inside ${expectedDisplay}. Your GPS currently places you in ${resolved.cityDisplay}. You may still join Spirals from other locations.`,
+        spiralCityKey: expectedKey,
+        spiralCityDisplay: expectedDisplay,
+        resolvedCityKey: resolved.cityKey,
+        resolvedCityDisplay: resolved.cityDisplay,
+        neighborhoodHint: resolved.neighborhoodHint,
+        canHost: false as const,
       };
       logLocationDecision({
         decision: "denied",
@@ -248,7 +305,9 @@ export async function verifyCircleStartLocation(
       cityDisplay: resolved.cityDisplay,
       countyDisplay: resolved.countyDisplay,
       stateCode: resolved.stateCode,
+      neighborhoodHint: resolved.neighborhoodHint,
       accuracyBucket: accuracyBucket(location.accuracy_meters),
+      canHost: true,
     };
   } catch (err) {
     logger.warn({ err, circleCityKey: expectedKey }, "spirals: reverse geocode failed — fail closed");
@@ -256,6 +315,9 @@ export async function verifyCircleStartLocation(
       ok: false as const,
       code: "CIRCLE_START_LOCATION_UNVERIFIED",
       reason: "Niakofa could not verify your current location. Refresh GPS and try again.",
+      spiralCityKey: expectedKey,
+      spiralCityDisplay: expectedDisplay,
+      canHost: false as const,
     };
     logLocationDecision({
       decision: "denied",

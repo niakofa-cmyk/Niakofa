@@ -11,6 +11,7 @@ import { acquireCircleDevice } from "@/lib/circleMediaReadiness";
 import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";
 import { SPIRALS_PATHS } from "@/lib/spirals";
 import { SpiralMark } from "@/components/SpiralMark";
+import { SpiralHostSignal, type HostSignalPayload } from "@/components/SpiralHostSignal";
 
 interface LiveSessionSummary {
   id: number;
@@ -113,16 +114,18 @@ interface CommunityStats {
 const SESSION_KEY = "niakofa_circles_city";
 
 // ── Pre-join host modal ──────────────────────────────────────────────────────
-const SPEAKER_LIMIT_OPTIONS = [4, 8, 12, 18, 24] as const;
+const SPEAKER_LIMIT_OPTIONS = [4, 8, 12, 13, 18, 24] as const;
 
 interface HostModalProps {
   circle: CircleSummary;
   onClose: () => void;
   onStart: (circle: CircleSummary, videoEnabled: boolean, title: string, description: string, topic: string, maxSpeakers: number, recordingAllowed: boolean) => void;
   starting: boolean;
+  base: string;
+  hostSignal?: HostSignalPayload;
 }
 
-function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps) {
+function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal }: HostModalProps) {
   const [format, setFormat] = useState<"audio" | "video">("audio");
   const [title, setTitle] = useState(() =>
     circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`
@@ -281,6 +284,14 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
           </div>
         </div>
 
+        <SpiralHostSignal
+          circleId={circle.id}
+          base={base}
+          spiralCityDisplay={circle.city_display}
+          spiralNeighborhood={circle.neighborhood_name}
+          externalSignal={hostSignal}
+        />
+
         {/* Device checks */}
         <div className="space-y-2">
           <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Device Check</div>
@@ -359,6 +370,7 @@ export default function AudioCirclesScreen() {
   const [cityInput, setCityInput] = useState(city);
   const [startingId, setStartingId] = useState<number | null>(null);
   const [hostModal, setHostModal] = useState<CircleSummary | null>(null);
+  const [hostSignals, setHostSignals] = useState<Record<number, HostSignalPayload>>({});
   const [recordingsByCircle, setRecordingsByCircle] = useState<Map<number, Recording[]>>(new Map());
   const [recordingsOpen, setRecordingsOpen] = useState<Set<number>>(new Set());
   const [followingSet, setFollowingSet] = useState<Set<number>>(new Set());
@@ -432,7 +444,6 @@ export default function AudioCirclesScreen() {
 
   const startRoom = async (circle: CircleSummary, video_enabled = false, title: string, description: string, topic: string, maxSpeakers = 12, recordingAllowed = false) => {
     setStartingId(circle.id);
-    setHostModal(null);
     try {
       const location = await getFreshCircleStartLocation();
       const res = await fetch(`${base}/api/audio-circles/${circle.id}/start`, {
@@ -442,13 +453,18 @@ export default function AudioCirclesScreen() {
       });
       const data = await res.json();
       if (res.status === 409 && data.session_id) {
+        setHostModal(null);
         setLocation(SPIRALS_PATHS.room(data.session_id));
         return;
       }
       if (!res.ok) {
+        if (data.host_signal || data.resolved_city_display || data.code === "CIRCLE_START_WRONG_CITY") {
+          setHostSignals(prev => ({ ...prev, [circle.id]: data as HostSignalPayload }));
+        }
         toast({ title: "Couldn't start the Spiral", description: data.error ?? "Try again in a moment.", variant: "destructive" });
         return;
       }
+      setHostModal(null);
       await refresh();
       setLocation(SPIRALS_PATHS.room(data.session.id));
     } catch (error) {
@@ -793,6 +809,20 @@ export default function AudioCirclesScreen() {
           <Button type="submit" size="icon" variant="outline"><Search className="w-4 h-4" /></Button>
         </form>
 
+        {circles && circles.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Hosting in {circles[0].city_display}
+            </p>
+            <SpiralHostSignal
+              circleId={circles[0].id}
+              base={base}
+              spiralCityDisplay={circles[0].city_display}
+              externalSignal={hostSignals[circles[0].id]}
+            />
+          </div>
+        )}
+
         {loading && (
           <div className="text-center text-sm text-muted-foreground py-8">Loading Spirals…</div>
         )}
@@ -989,6 +1019,8 @@ export default function AudioCirclesScreen() {
             onClose={() => setHostModal(null)}
             onStart={startRoom}
             starting={startingId === hostModal.id}
+            base={base}
+            hostSignal={hostSignals[hostModal.id]}
           />
         )}
       </AnimatePresence>

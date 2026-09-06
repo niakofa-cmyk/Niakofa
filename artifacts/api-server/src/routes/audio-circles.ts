@@ -515,7 +515,23 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
     circleId,
   });
   if (!locationCheck.ok) {
-    return res.status(403).json({ error: locationCheck.reason, code: locationCheck.code });
+    return res.status(403).json({
+      error: locationCheck.reason,
+      code: locationCheck.code,
+      can_host: false,
+      spiral_city_key: locationCheck.spiralCityKey,
+      spiral_city_display: locationCheck.spiralCityDisplay,
+      resolved_city_key: locationCheck.resolvedCityKey ?? null,
+      resolved_city_display: locationCheck.resolvedCityDisplay ?? null,
+      resolved_neighborhood_hint: locationCheck.neighborhoodHint ?? null,
+      host_signal: {
+        status: "blocked",
+        message:
+          locationCheck.code === "CIRCLE_START_WRONG_CITY"
+            ? `Hosting unlocked in ${locationCheck.spiralCityDisplay} only. GPS shows ${locationCheck.resolvedCityDisplay ?? "another city"}. You can still join.`
+            : locationCheck.reason,
+      },
+    });
   }
 
   const existingLive = await getLiveSession(circleId);
