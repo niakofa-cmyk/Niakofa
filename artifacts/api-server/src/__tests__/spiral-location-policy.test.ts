@@ -61,6 +61,67 @@ describe("Spiral start location verification", () => {
     expect(requestUrl).not.toContain("types=place%2Clocality");
   });
 
+  it("uses the place context when an address is ranked first", async () => {
+    jest.spyOn(global, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          features: [
+            {
+              feature_type: "address",
+              text: "170 East 3rd Street",
+              context: {
+                place: { name: "Fort Worth" },
+                region: { short_code: "US-TX" },
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    await expect(reverseGeocodeCircleStart(location)).resolves.toMatchObject({
+      cityKey: "fort_worth",
+      cityDisplay: "Fort Worth",
+    });
+  });
+
+  it("never treats a bare address feature as a city", async () => {
+    jest.spyOn(global, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          features: [{ feature_type: "address", text: "16100 Round Tripper Drive" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    await expect(reverseGeocodeCircleStart(location)).rejects.toThrow(/no resolvable city/i);
+  });
+
+  it("supports Mapbox v6 place metadata nested under properties", async () => {
+    jest.spyOn(global, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          features: [
+            {
+              properties: { feature_type: "place", name: "Dallas" },
+              context: {
+                region: { short_code: "US-TX" },
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    await expect(reverseGeocodeCircleStart(location)).resolves.toMatchObject({
+      cityKey: "dallas",
+      cityDisplay: "Dallas",
+    });
+  });
+
   it("allows a Spiral when the fresh GPS fix resolves to the Spiral city", async () => {
     jest.spyOn(global, "fetch").mockResolvedValue(
       new Response(

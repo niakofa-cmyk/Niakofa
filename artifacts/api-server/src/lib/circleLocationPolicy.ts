@@ -116,6 +116,104 @@ export function validateFreshAccurateLocation(
  * single type when limit is present. We intentionally omit both so Mapbox can
  * return the full administrative hierarchy.
  */
+
+type ContextItem = {
+  id?: string;
+  text?: string;
+  name?: string;
+  short_code?: string;
+};
+
+type ReverseGeocodeFeature = {
+  text?: string;
+  place_type?: string[];
+  feature_type?: string;
+  properties?: { name?: string; feature_type?: string };
+  context?:
+    | ContextItem[]
+    | {
+        place?: { name?: string };
+        locality?: { name?: string };
+        neighborhood?: { name?: string };
+        district?: { name?: string };
+        region?: { name?: string; short_code?: string };
+      };
+};
+
+/** A string that looks like a street address / house-numbered label, never a city. */
+function looksLikeAddressString(text: string): boolean {
+  const candidate = text.trim();
+  if (!candidate) return true;
+  if (/^\d+[\s,]/.test(candidate)) return true;
+  return /\b(street|st\.?|avenue|ave\.?|drive|dr\.?|road|rd\.?|lane|ln\.?|boulevard|blvd\.?|way|court|ct\.?|circle|cir\.?)\b$/i.test(
+    candidate,
+  );
+}
+
+function featureTypes(feature: ReverseGeocodeFeature): string[] {
+  return [
+    feature.feature_type,
+    feature.properties?.feature_type,
+    ...(feature.place_type ?? []),
+  ].filter((value): value is string => Boolean(value));
+}
+
+function isAddressLikeFeature(feature: ReverseGeocodeFeature): boolean {
+  const types = featureTypes(feature);
+  return (
+    types.some((type) => type === "address" || type === "street" || type === "secondary_address") ||
+    looksLikeAddressString(feature.text ?? feature.properties?.name ?? "")
+  );
+}
+
+function isCityFeature(feature: ReverseGeocodeFeature): boolean {
+  const types = featureTypes(feature);
+  return types.includes("place") || types.includes("locality");
+}
+
+type ReverseGeocodeAccumulator = {
+  city?: string;
+  countyDisplay: string | null;
+  stateCode: string | null;
+  neighborhoodHint: string | null;
+};
+
+function applyContext(context: ReverseGeocodeFeature["context"], acc: ReverseGeocodeAccumulator): void {
+  if (!context) return;
+
+  if (Array.isArray(context)) {
+    if (!acc.city) {
+      const place = context.find((item) => item.id?.startsWith("place."));
+      const locality = context.find((item) => item.id?.startsWith("locality."));
+      const candidate = place?.text?.trim() ?? place?.name?.trim() ?? locality?.text?.trim() ?? locality?.name?.trim();
+      if (candidate && !looksLikeAddressString(candidate)) acc.city = candidate;
+    }
+
+    const district = context.find((item) => item.id?.startsWith("district."));
+    acc.countyDisplay = acc.countyDisplay ?? district?.text?.trim() ?? district?.name?.trim() ?? null;
+
+    const region = context.find((item) => item.id?.startsWith("region."));
+    const shortCode = region?.short_code?.toUpperCase();
+    acc.stateCode =
+      acc.stateCode ?? (shortCode ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode : null);
+
+    const neighborhood = context.find((item) => item.id?.startsWith("neighborhood."));
+    acc.neighborhoodHint =
+      acc.neighborhoodHint ?? neighborhood?.text?.trim() ?? neighborhood?.name?.trim() ?? null;
+    return;
+  }
+
+  if (!acc.city) {
+    const candidate = context.place?.name?.trim() ?? context.locality?.name?.trim();
+    if (candidate && !looksLikeAddressString(candidate)) acc.city = candidate;
+  }
+  acc.countyDisplay = acc.countyDisplay ?? context.district?.name?.trim() ?? null;
+  const shortCode = context.region?.short_code?.toUpperCase();
+  acc.stateCode =
+    acc.stateCode ?? (shortCode ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode : null);
+  acc.neighborhoodHint = acc.neighborhoodHint ?? context.neighborhood?.name?.trim() ?? null;
+}
+
 export async function reverseGeocodeCircleStart(
   location: CircleStartLocation,
 ): Promise<ReverseGeocodedLocation> {
@@ -143,76 +241,55 @@ export async function reverseGeocodeCircleStart(
     throw new Error(`Reverse geocoding failed (${detail})`);
   }
 
-  const data = (await response.json()) as {
-    features?: Array<{
-      text?: string;
-      place_type?: string[];
-      feature_type?: string;
-      properties?: { name?: string };
-      context?:
-        | Array<{ id?: string; text?: string; short_code?: string }>
-        | {
-            place?: { name?: string };
-            locality?: { name?: string };
-            neighborhood?: { name?: string };
-            district?: { name?: string };
-            region?: { name?: string; short_code?: string };
-          };
-    }>;
-  };
+  const data = (await response.json()) as { features?: ReverseGeocodeFeature[] };
 
   const features = data.features ?? [];
   if (!features.length) throw new Error("GPS coordinate could not be mapped to a city");
 
-  const cityFeature =
-    features.find((item) => item.feature_type === "place" || item.place_type?.includes("place")) ??
-    features.find((item) => item.feature_type === "locality" || item.place_type?.includes("locality")) ??
-    features[0];
+  const acc: ReverseGeocodeAccumulator = {
+    countyDisplay: null,
+    stateCode: null,
+    neighborhoodHint: null,
+  };
 
-  let city: string | undefined;
-  let countyDisplay: string | null = null;
-  let stateCode: string | null = null;
-  let neighborhoodHint: string | null = null;
-
-  const context = cityFeature.context;
-  if (Array.isArray(context)) {
-    const placeContext = context.find((item) => item.id?.startsWith("place."))?.text?.trim();
-    const localityContext = context.find((item) => item.id?.startsWith("locality."))?.text?.trim();
-    const isCityFeature = cityFeature.feature_type === "place" || cityFeature.place_type?.includes("place");
-    city = (isCityFeature ? cityFeature.text?.trim() : undefined) ?? placeContext ?? localityContext;
-    countyDisplay = context.find((item) => item.id?.startsWith("district."))?.text?.trim() ?? null;
-    const region = context.find((item) => item.id?.startsWith("region."));
-    const shortCode = region?.short_code?.toUpperCase();
-    stateCode = shortCode ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode : null;
-    neighborhoodHint = context.find((item) => item.id?.startsWith("neighborhood."))?.text?.trim() ?? null;
-  } else if (context) {
-    city = context.place?.name?.trim() ?? context.locality?.name?.trim();
-    countyDisplay = context.district?.name?.trim() ?? null;
-    const shortCode = context.region?.short_code?.toUpperCase();
-    stateCode = shortCode ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode : null;
-    neighborhoodHint = context.neighborhood?.name?.trim() ?? null;
+  // Prefer a real place/locality feature. Never use features[0] as a fallback:
+  // Mapbox can rank a rooftop address before the administrative hierarchy.
+  const cityFeature = features.find((feature) => isCityFeature(feature) && !isAddressLikeFeature(feature));
+  if (cityFeature) {
+    const direct = cityFeature.text?.trim() ?? cityFeature.properties?.name?.trim();
+    if (direct && !looksLikeAddressString(direct)) acc.city = direct;
+    applyContext(cityFeature.context, acc);
   }
 
-  if (!city && (cityFeature.feature_type === "place" || cityFeature.feature_type === "locality")) {
-    city = cityFeature.text?.trim();
+  // Address and neighborhood features still carry useful administrative
+  // context when Mapbox does not return a separate place/locality feature.
+  if (!acc.city) {
+    for (const feature of features) {
+      applyContext(feature.context, acc);
+      if (acc.city) break;
+    }
   }
-  if (!city) city = cityFeature.properties?.name?.trim();
 
-  if (!neighborhoodHint) {
+  if (!acc.neighborhoodHint) {
     const neighborhoodFeature = features.find(
       (item) => item.feature_type === "neighborhood" || item.place_type?.includes("neighborhood"),
     );
-    neighborhoodHint = neighborhoodFeature?.text?.trim() ?? neighborhoodFeature?.properties?.name?.trim() ?? null;
+    acc.neighborhoodHint =
+      neighborhoodFeature?.text?.trim() ?? neighborhoodFeature?.properties?.name?.trim() ?? null;
   }
 
-  if (!city) throw new Error("GPS coordinate has no resolvable city");
+  if (!acc.city) {
+    // Fail closed with a distinguishable error rather than ever exposing an
+    // address as a city or silently widening the host boundary.
+    throw new Error("GPS coordinate has no resolvable city (place/locality)");
+  }
 
   return {
-    cityKey: normalizeCityKey(city),
-    cityDisplay: city,
-    countyDisplay,
-    stateCode,
-    neighborhoodHint,
+    cityKey: normalizeCityKey(acc.city),
+    cityDisplay: acc.city,
+    countyDisplay: acc.countyDisplay,
+    stateCode: acc.stateCode,
+    neighborhoodHint: acc.neighborhoodHint,
   };
 }
 
