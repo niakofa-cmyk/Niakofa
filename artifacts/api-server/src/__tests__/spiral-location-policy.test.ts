@@ -10,9 +10,16 @@ describe("Spiral start location verification", () => {
     accuracy_meters: 25,
     captured_at: "2026-09-05T20:00:00.000Z",
   };
+  const originalMapboxToken = process.env.MAPBOX_TOKEN;
+
+  beforeEach(() => {
+    process.env.MAPBOX_TOKEN = "test-mapbox-token";
+  });
 
   afterEach(() => {
     jest.restoreAllMocks();
+    if (originalMapboxToken === undefined) delete process.env.MAPBOX_TOKEN;
+    else process.env.MAPBOX_TOKEN = originalMapboxToken;
   });
 
   it("uses Mapbox Geocoding v6 reverse without the invalid multi-type limit combination", async () => {
