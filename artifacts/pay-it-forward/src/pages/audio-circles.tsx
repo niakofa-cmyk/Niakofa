@@ -193,6 +193,13 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
   const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`;
 
   const canStart = hostReady && title.trim().length > 0 && micReady === true && (format !== "video" ? true : camReady === true) && maxSpeakers > 0;
+  const handleSignalChange = useCallback((next: HostSignalPayload) => {
+    setHostReady(
+      next.can_host === true ||
+        next.allowed === true ||
+        next.host_signal?.status === "ready",
+    );
+  }, []);
 
   return (
     <motion.div
@@ -307,13 +314,7 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
           spiralCityDisplay={circle.city_display}
           spiralNeighborhood={circle.neighborhood_name}
           externalSignal={hostSignal}
-          onSignalChange={(next) =>
-            setHostReady(
-              next.can_host === true ||
-                next.allowed === true ||
-                next.host_signal?.status === "ready",
-            )
-          }
+          onSignalChange={handleSignalChange}
         />
 
         {/* Device checks */}
