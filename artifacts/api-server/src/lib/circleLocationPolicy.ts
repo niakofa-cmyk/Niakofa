@@ -225,6 +225,7 @@ export type CircleStartLocationResult =
       stateCode: string | null;
       neighborhoodHint: string | null;
       accuracyBucket: string;
+       spiralCityDisplay: string;
       canHost: true;
     }
   | {
@@ -307,6 +308,7 @@ export async function verifyCircleStartLocation(
       stateCode: resolved.stateCode,
       neighborhoodHint: resolved.neighborhoodHint,
       accuracyBucket: accuracyBucket(location.accuracy_meters),
+       spiralCityDisplay: expectedDisplay,
       canHost: true,
     };
   } catch (err) {
