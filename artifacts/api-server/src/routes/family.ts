@@ -61,7 +61,6 @@ import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { requestNia } from "../lib/nia-client";
 import { stripTags } from "../lib/sanitize";
-import { logWorldEvolution } from "../lib/legacy-world-evolution";
 
 const router = Router();
 
@@ -474,7 +473,6 @@ router.post("/family/:id/members", generalApiLimiter, requireAuth, async (req, r
     .returning();
 
   logger.info({ familyId, memberId: member.id, invitedBy: userId }, "family_member_invited");
-  logWorldEvolution(familyId, "member_added", `${display_name} was added to the family`).catch(() => {});
   return res.status(201).json({ member });
 });
 
@@ -724,7 +722,6 @@ router.post("/family/:id/memories", generalApiLimiter, requireAuth, async (req, 
   broadcast({ type: "family_memory_created", payload: { family_id: familyId, memory_id: memory.id, author_id: userId } });
 
   logger.info({ familyId, memoryId: memory.id, userId }, "family_memory_created");
-  logWorldEvolution(familyId, "memory_added", memory.title ?? undefined).catch(() => {});
   return res.status(201).json({ memory });
 });
 
@@ -935,8 +932,6 @@ router.post(
       .values({ memory_id: memoryId, ...parsed.data })
       .returning();
 
-    logWorldEvolution(familyId, "memory_added", `A ${parsed.data.asset_type} was added to a family memory`).catch(() => {});
-
     return res.status(201).json({ asset });
   },
 );
@@ -998,7 +993,6 @@ router.post(
       { familyId, memoryId, assetId: asset.id, assetType, backend: getStorageBackend() },
       "family_asset_uploaded_direct",
     );
-    logWorldEvolution(familyId, "memory_added", `A ${assetType} was uploaded to the Family Vault`).catch(() => {});
     return res.status(201).json({ asset });
   },
 );
@@ -1187,8 +1181,6 @@ router.post("/family/:id/interviews", generalApiLimiter, requireAuth, async (req
     .returning();
 
   broadcast({ type: "family_interview_status_changed", payload: { family_id: familyId, interview_id: interview.id, status: interview.status } });
-  logWorldEvolution(familyId, "interview_added", "A new oral history interview was started").catch(() => {});
-
   return res.status(201).json({ interview });
 });
 
@@ -1288,9 +1280,6 @@ router.post("/family/:id/members/import-gedcom", generalApiLimiter, requireAuth,
   }
 
   logger.info({ familyId, userId, imported: created.length, total: individuals.length }, "gedcom_import");
-  if (created.length > 0) {
-    logWorldEvolution(familyId, "member_added", `${created.length} ancestors imported from a GEDCOM file`, created.length).catch(() => {});
-  }
   return res.json({ imported: created.length, total: individuals.length, members: created });
 });
 
@@ -1331,17 +1320,6 @@ router.patch("/family/:id/interviews/:interviewId", generalApiLimiter, requireAu
   if (!interview) return res.status(404).json({ error: "Interview not found" });
 
   broadcast({ type: "family_interview_status_changed", payload: { family_id: familyId, interview_id: interview.id, status: interview.status } });
-  if (
-    parsed.data.status === "published"
-    || parsed.data.resulting_memory_id !== undefined
-  ) {
-    logWorldEvolution(
-      familyId,
-      "interview_added",
-      `Interview updated: ${interview.title ?? `Interview ${interview.id}`}`,
-    ).catch(() => {});
-  }
-
   return res.json({ interview });
 });
 
@@ -1389,7 +1367,6 @@ router.post("/family/:id/stories", generalApiLimiter, requireAuth, async (req, r
   broadcast({ type: "family_story_created", payload: { family_id: familyId, story_id: story.id, author_id: userId } });
 
   logger.info({ familyId, storyId: story.id, userId }, "family_story_created");
-  logWorldEvolution(familyId, "story_added", story.title ?? undefined).catch(() => {});
   return res.status(201).json({ story });
 });
 

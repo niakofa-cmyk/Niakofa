@@ -1,10 +1,9 @@
 /**
- * Family Legacy Timeline
+ * Family history timeline
  * Route: /diaspora/timeline
  *
- * Platform-owned timeline view for dated Family Vault memories. The RPG may
- * consume this family context through its bridge, but the Vault remains the
- * source of truth for these events.
+ * Platform-owned timeline view for dated Family Vault memories. The Vault
+ * remains the source of truth for these events.
  */
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -234,8 +233,8 @@ export default function LegacyTimelinePage() {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-amber-500 font-semibold uppercase tracking-wider">Diaspora · Legacy</p>
-            <h1 className="text-xl font-bold text-foreground">Legacy Timeline</h1>
+            <p className="text-xs text-amber-500 font-semibold uppercase tracking-wider">Diaspora · Family history</p>
+            <h1 className="text-xl font-bold text-foreground">Family Timeline</h1>
           </div>
           {selectedFamilyId && (
             <button

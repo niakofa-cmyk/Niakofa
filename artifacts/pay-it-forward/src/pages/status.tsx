@@ -61,9 +61,6 @@ function ServiceRow({ check }: { check: Check }) {
         {meta.description && (
           <p className="text-xs text-muted-foreground mt-0.5">{meta.description}</p>
         )}
-        {isDisabled && check.name === "nia_ai" && (
-          <p className="text-xs text-amber-400/70 mt-0.5">Available in Legacy game mode</p>
-        )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {check.ok

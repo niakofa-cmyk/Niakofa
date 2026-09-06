@@ -1900,73 +1900,6 @@ function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
   );
 }
 
-// ── Legacy Nia Toggle — sub-component used inside NiaTab ─────────────────────
-// Controls the independent `legacy_nia_enabled` setting that gates Nia AI
-// inside the Legacy RPG game mode. This is separate from the global Nia toggle:
-// Legacy game AI defaults to ENABLED; the global chat toggle does not affect it.
-function LegacyNiaToggle({ hdrs }: { hdrs: () => Record<string, string> }) {
-  const [enabled,   setEnabled]   = useState<boolean | null>(null);
-  const [saving,    setSaving]    = useState(false);
-  const BASE = "";
-
-  useEffect(() => {
-    fetch(`${BASE}/api/admin/legacy-nia-status`, { headers: hdrs() })
-      .then(r => r.json())
-      .then((d: { legacy_nia_enabled?: boolean }) => setEnabled(d.legacy_nia_enabled ?? true))
-      .catch(() => setEnabled(true)); // default enabled if fetch fails
-  }, [hdrs]);
-
-  const toggle = async () => {
-    if (enabled === null) return;
-    setSaving(true);
-    try {
-      const r = await fetch(`${BASE}/api/admin/legacy-nia-toggle`, {
-        method:  "PATCH",
-        headers: { "Content-Type": "application/json", ...hdrs() },
-        body:    JSON.stringify({ enabled: !enabled }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const d = await r.json() as { legacy_nia_enabled?: boolean };
-      setEnabled(d.legacy_nia_enabled ?? !enabled);
-      toast({ title: d.legacy_nia_enabled ? "✅ Legacy Nia enabled" : "🔴 Legacy Nia disabled" });
-    } catch (err) {
-      toast({ title: (err as Error).message ?? "Toggle failed", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <Sparkles className="w-4 h-4 text-amber-500" />
-        <span className="font-black text-sm">Legacy RPG — Nia AI</span>
-        <span className="ml-auto text-[11px] text-muted-foreground">Independent of global toggle</span>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Nia AI powers narrative generation, quest hints, dialogue, and world regeneration inside
-        Legacy game mode. This toggle is independent of the global Nia chat toggle above — Legacy
-        game AI defaults to <strong>enabled</strong>.
-      </p>
-      <div className="flex items-center justify-between">
-        <span className={`text-xs font-bold ${enabled ? "text-green-500" : "text-muted-foreground"}`}>
-          {enabled === null ? "Loading…" : enabled ? "Legacy Nia: Active" : "Legacy Nia: Disabled"}
-        </span>
-        <button
-          role="switch"
-          aria-checked={enabled ?? false}
-          disabled={enabled === null || saving}
-          onClick={toggle}
-          style={{ touchAction: "manipulation" }}
-          className={`relative w-14 h-7 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 ${enabled ? "bg-amber-500" : "bg-muted"}`}
-        >
-          <span className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-7" : "translate-x-0"}`} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ── Nia Tab ───────────────────────────────────────────────────────────────────
 function NiaTab() {
   const [niaEnabled, setNiaEnabled] = useState<boolean | null>(null);
@@ -2512,9 +2445,6 @@ function NiaTab() {
           </>
         )}
       </AnimatePresence>
-
-      {/* Legacy Nia AI — independent toggle for Legacy RPG game mode */}
-      <LegacyNiaToggle hdrs={hdrs} />
 
       {/* Kill-switch audit history — legal/compliance paper trail */}
       <div className="bg-card border border-border rounded-2xl p-4">

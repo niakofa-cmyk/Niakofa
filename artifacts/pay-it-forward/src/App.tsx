@@ -45,7 +45,6 @@ const AudioCircleRoomScreen = lazy(() => import("@/pages/audio-circle-room"));
 const CountyImpactPage     = lazy(() => import("@/pages/county-impact"));
 const GlobePage            = lazy(() => import("@/pages/globe"));
 const HubLeaderDashboard   = lazy(() => import("@/pages/hub-leader"));
-const BirdTestPage         = lazy(() => import("@/pages/bird-test"));
 const CivicTaskNavPage     = lazy(() => import("@/pages/civic-task-nav"));
 const FamilySpacesPage     = lazy(() => import("@/pages/family-spaces"));
 const FamilyVaultPage      = lazy(() => import("@/pages/family-vault"));
@@ -227,7 +226,6 @@ function AppShell() {
             <Route path="/profile" component={ProfileScreen} />
             <Route path="/settings" component={SettingsPage} />
             <Route path="/admin" component={AdminScreen} />
-            <Route path="/bird-test" component={BirdTestPage} />
             <Route path="/helper-dashboard" component={HelperDashboardScreen} />
             <Route path="/helper-onboarding" component={HelperOnboardingScreen} />
             <Route path="/pending-approval" component={PendingApprovalScreen} />
@@ -327,16 +325,6 @@ function AppContent() {
       </Suspense>
     );
   }
-  if (pathname === "/bird-test") {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <BirdTestPage />
-      </Suspense>
-    );
-  }
-  // Public demo — no auth required
-  // Public playable world — no account or chapter session is required.
-  // Public character sheet — no auth required
   return (
     <>
       <FocusRefresh />
