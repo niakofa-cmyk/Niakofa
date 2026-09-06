@@ -4,10 +4,8 @@ import {
 import { familiesTable, familyMembersTable } from "./families";
 
 // ─── Family Vault: Consent ────────────────────────────────────────────────────
-// Per-member consent flags controlling how their data is used in Legacy Mode.
-// A member must have consent_storytelling = true before the AI can use their
-// stories/memories in generated chapters. consent_reconnection gates the
-// "reconnect with a relative" achievement action.
+// Per-member consent flags controlling how their data is used in family
+// storytelling and reconnection features.
 
 export const familyConsentScopeEnum = pgEnum("family_consent_scope", [
   "storytelling",   // allow AI to use this member's stories in generated content

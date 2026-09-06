@@ -179,13 +179,6 @@ app.use(
   express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }),
 );
 
-// Legacy interview media is uploaded as raw audio/video bytes. Mount this
-// before express.json() so the recording is never coerced into a JSON body.
-app.use(
-  "/api/legacy/interview-quests/:questId/media",
-  express.raw({ type: ["audio/*", "video/*", "application/octet-stream"], limit: "20mb" }),
-);
-
 // DNA exports are parsed in memory by the authenticated route. The raw bytes
 // must reach that route before express.json() and are never passed to storage.
 app.use(

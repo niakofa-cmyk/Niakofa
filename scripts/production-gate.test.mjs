@@ -9,7 +9,6 @@ const baseEnv = {
   ...process.env,
   BASE_URL: "https://example.com",
   NIAKOFA_API_ORIGIN: "https://example.com",
-  LEGACY_RPG_ORIGIN: "https://example.org",
 };
 
 function run(overrides = {}) {
@@ -20,7 +19,7 @@ function run(overrides = {}) {
 }
 
 test("missing origins fail closed", () => {
-  const r = run({ BASE_URL: undefined, NIAKOFA_API_ORIGIN: undefined, LEGACY_RPG_ORIGIN: undefined });
+  const r = run({ BASE_URL: undefined, NIAKOFA_API_ORIGIN: undefined });
   assert.equal(r.status, 2);
   assert.match(r.stderr, /Missing required environment variable/);
 });
@@ -66,19 +65,11 @@ test("valid timeout boundaries are accepted by configuration validation", () => 
     GATE_TIMEOUT_MS: "1000",
     BASE_URL: "http://192.0.2.1",
     NIAKOFA_API_ORIGIN: "http://192.0.2.1",
-    LEGACY_RPG_ORIGIN: "http://192.0.2.2",
   });
   assert.notEqual(r.status, 2);
 });
 
-test("production CORS preflight requires strict response-header validation", () => {
-  // The live network gate performs the authoritative header assertion. This
-  // regression test ensures the assertion remains present in future edits.
+test("production gate no longer depends on a separately deployed RPG", () => {
   const source = readFileSync(script, "utf8");
-  assert.match(source, /access-control-allow-origin/);
-  assert.match(source, /access-control-allow-credentials/);
-  assert.match(source, /access-control-allow-methods/);
-  assert.match(source, /access-control-allow-headers/);
-  assert.match(source, /vary/);
-  assert.match(source, /rpgOrigin\.origin/);
+  assert.doesNotMatch(source, /LEGACY_RPG_ORIGIN|rpgOrigin|launch-context/);
 });

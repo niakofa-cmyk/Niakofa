@@ -44,7 +44,6 @@ import {
 import { eq, and, desc, sql, inArray, or, like, lt } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../lib/logger";
-import { logWorldEvolution } from "../lib/legacy-world-evolution";
 import {
   DNA_PROVIDERS,
   DNA_RETENTION_DAYS,
@@ -729,12 +728,8 @@ router.get("/family/:id/tree", requireAuth, generalApiLimiter, async (req, res) 
       relation: m.relation_note,
       is_linked_user: !!m.user_id,
       status: m.status,
-      // These three were previously missing from this endpoint's SELECT
-      // entirely — the frontend TreeNode type has referenced birth_year
-      // for sorting/living-status display since this route existed, but
-      // it was always undefined at runtime because the query never
-      // fetched it. Fixed alongside adding death_year/gender (the latter
-      // added in migration 0106 for Legacy Mode character appearance).
+      // Include optional family-history metadata used for sorting and
+      // living-status display in the tree.
       birth_year: m.birth_year !== null ? String(m.birth_year) : null,
       death_year: m.death_year !== null ? String(m.death_year) : null,
       gender: m.gender,
@@ -831,7 +826,6 @@ router.post("/family/:id/tree/relations", requireAuth, generalApiLimiter, async 
     }).returning();
 
     logger.info({ familyId, relationId: relation.id, userId }, "family_tree_relation_created");
-    logWorldEvolution(familyId, "relation_added", `A new ${relation_type} relationship was added to the family tree`).catch(() => {});
     return res.status(201).json({ relation });
   } catch (err) {
     // Handle unique constraint violation (duplicate edge)
@@ -997,8 +991,6 @@ router.post("/family/:id/timeline", requireAuth, generalApiLimiter, async (req, 
         tag:       `event_type:${event_type}`,
       });
     }
-
-    logWorldEvolution(familyId, "event_added", memory.title ?? undefined).catch(() => {});
 
     return res.status(201).json({
       event: {

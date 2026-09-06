@@ -2,7 +2,7 @@
  * Niakofa — Family Vault: Storytelling Consent API
  *
  * Manages per-member consent flags that control how a member's data is used in
- * Legacy Mode (AI-generated chapters, ancestor selection, quest generation).
+ * family storytelling and reconnection features.
  *
  * Consent rules:
  *   - Living member WITH a linked user_id: only that user can grant/revoke

@@ -59,21 +59,16 @@ export const familyMembersTable = pgTable("family_members", {
   // from deceased ancestors (eligible by default unless a curator declines).
   // Default true is privacy-safe: existing rows require an explicit grant.
   is_living:     boolean("is_living").notNull().default(true),
-  // Birth/death years for timeline and character profile (added in migration 0105)
+  // Birth/death years for family-history timelines
   birth_year:    integer("birth_year"),
   death_year:    integer("death_year"),
-  // Explicit, optional, never-inferred gender for character appearance
-  // resolution (added in migration 0106). NULL by default — a member's
-  // Legacy Mode walking-character appearance stays a neutral "pending"
-  // placeholder until someone explicitly sets this, exactly like
-  // birth_year/death_year are opt-in rather than guessed. Constrained at
-  // the DB level to the same set legacy-character-asset-engine.ts's
-  // GeneratedCharacterGender currently supports.
+  // Explicit, optional, never-inferred family-history metadata.
+  // NULL by default rather than guessed.
   gender:        text("gender", { enum: ["male", "female"] }),
   created_at:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   // Added in migration 0095. Bumped explicitly by application code (no DB
   // trigger, matching this codebase's convention elsewhere) whenever a
-  // member is edited, so the Legacy Mode fingerprint can detect the change.
+  // member is edited, so family-history views can detect the change.
   updated_at:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   // A registered user can only have one membership row per family. Invited

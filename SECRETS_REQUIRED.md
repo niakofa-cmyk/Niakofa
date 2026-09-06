@@ -38,15 +38,11 @@ not create or update Railway variables automatically.
 | Variable | Purpose |
 |---|---|
 | `NIAKOFA_API_ORIGIN` | HTTPS origin of the deployed Niakofa API used by the gate |
-| `LEGACY_RPG_ORIGIN` | HTTPS origin of the separately deployed Legacy RPG used for CORS preflight validation |
-| `VITE_NIAKOFA_API_ORIGIN` | Build-time API origin for a separately hosted Legacy RPG; omit when Legacy is served same-origin |
 
 Run the gate only after setting all required values:
 
 ```bash
-NIAKOFA_API_ORIGIN=https://<niakofa-api-origin> \
-LEGACY_RPG_ORIGIN=https://<legacy-rpg-origin> \
-pnpm run production-gate
+NIAKOFA_API_ORIGIN=https://<niakofa-api-origin> pnpm run production-gate
 ```
 
 Do not paste tokens or passwords into shell history or chat. Use the deployment

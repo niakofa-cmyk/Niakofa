@@ -5,8 +5,7 @@ import { familiesTable } from "./families";
 
 // ─── Family Vault: Places ─────────────────────────────────────────────────────
 // Geographic locations tied to a family's history — ancestral villages, homes,
-// schools, churches, businesses, cemeteries, migration waypoints. These power
-// the Family World Map and stage generation for Legacy Mode.
+// schools, churches, businesses, cemeteries, and migration waypoints.
 
 export const familyPlacesTable = pgTable("family_places", {
   id:            serial("id").primaryKey(),

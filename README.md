@@ -104,7 +104,6 @@ artifacts/
   pay-it-forward/src/lib/           ← Auth helpers, hooks, context
 
 supabase/
-  functions/legacy-engine/          ← Supabase edge function for Family Vault RPG
   migrations/                        ← Supabase-specific migrations (mirrored from lib/db)
 ```
 
@@ -146,7 +145,7 @@ pnpm --filter @workspace/api-server run test
 | `/wallet` | Benevolence wallet, scheduled payments, pay-it-forward pledges |
 | `/profile` | User profile, helper mode toggle, trust score |
 | `/family-vault` | Family Vault — preserve family memories, photos, stories |
-| `/legacy-home` | Family legacy — preserved stories and family-history experiences |
+| `/diaspora/timeline` | Family legacy timeline — preserved stories and family-history events |
 | `/admin` | Token-gated trust & safety report review queue |
 
 ---
@@ -160,7 +159,7 @@ pnpm --filter @workspace/api-server run test
 - **Civic resources:** Seeded in the DB — 19 Tarrant County organizations across 8 categories.
 - **WebSocket hub** (`/ws`): Broadcasts live events — new requests, helper location updates, new reports, report reviews.
 - **BullMQ workers:** Handle payouts, pledges, and notification delivery. Production refuses to start without `REDIS_URL`; development retains the explicit interval fallback.
-- **Legacy account passwords:** Users with `password_hash = null` get `password_reset_required: true` on login. The frontend shows an inline "Set Password" prompt that calls `PATCH /api/users/:id` with `new_password`.
+- **Account migration passwords:** Users with `password_hash = null` get `password_reset_required: true` on login. The frontend shows an inline "Set Password" prompt that calls `PATCH /api/users/:id` with `new_password`.
 
 ---
 

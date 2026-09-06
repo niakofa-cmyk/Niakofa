@@ -1,3 +1,4 @@
+- [Workspace package-manager bootstrap](pnpm-bootstrap.md) — disable self-bootstrap when the declared pnpm version is unavailable; restore dependencies from the frozen lockfile.
 - [LiveKit media boundary](livekit-media-boundary.md) — production Circles/Spirals use LiveKit only; legacy TURN/ICE remains compatibility infrastructure.
 - [API preview database gate](api-preview-database-gate.md) — migration-first API previews must fail closed when the development database is unreachable.
 - [Pool History accounting](pool-history-accounting.md) — Pool History is a linked projection: show gross, retain settlement details, and update corrections in place.

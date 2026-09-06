@@ -922,8 +922,6 @@ importers:
         specifier: 'catalog:'
         version: 4.22.4
 
-  services/world-engine: {}
-
 packages:
 
   '@anthropic-ai/sdk@0.24.3':

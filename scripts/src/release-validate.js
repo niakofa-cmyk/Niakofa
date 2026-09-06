@@ -96,17 +96,8 @@ for (const dir of sourceDirs) {
 if (anyCount === 0) pass("no explicit `any` types in source");
 else fail(`${anyCount} explicit any type(s) found`);
 
-// 3. Legacy asset provenance boundary
-console.log("3. Legacy asset provenance boundary...");
-try {
-  execSync("node scripts/src/audit-legacy-assets.mjs", { cwd: ROOT, stdio: "pipe" });
-  pass("Legacy asset provenance boundary passes");
-} catch {
-  fail("Legacy asset provenance boundary failed");
-}
-
-// 4. App/AI boundary check
-console.log("4. App/AI boundary check...");
+// 3. App/AI boundary check
+console.log("3. App/AI boundary check...");
 try {
   execSync("node scripts/src/check-app-ai-boundary.js", { cwd: ROOT, stdio: "pipe" });
   pass("App/AI boundary check passes");

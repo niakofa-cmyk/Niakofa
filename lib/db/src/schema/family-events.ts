@@ -6,8 +6,7 @@ import { familyPlacesTable } from "./family-places";
 
 // ─── Family Vault: Events ─────────────────────────────────────────────────────
 // Dated events in family history — births, deaths, migrations, marriages,
-// graduations, relocations. These feed the Timeline engine and life-chapter
-// segmentation for Legacy Mode.
+// graduations, and relocations. These feed the family-history timeline.
 
 export const familyEventCategoryEnum = text("family_event_category"); // birth|death|migration|marriage|education|work|religious|migration|other
 

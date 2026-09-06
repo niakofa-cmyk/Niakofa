@@ -1318,7 +1318,8 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
         body: JSON.stringify({ status: "published", resulting_memory_id: memory.id }),
       });
 
-      // legacy game reservoir invalidate removed with RPG extraction
+      // No separate game cache is invalidated; Family Vault writes are
+      // persisted directly through the platform API.
 
       setDoneCount(prev => prev + 1);
       setPhase("done");
