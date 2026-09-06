@@ -13,5 +13,8 @@ from reaching its port.
 
 **How to apply:** install dependencies once before starting workflows. Use the
 package-local Vite binary for the web preview and build/launch the API directly
-from its artifact. Keep Railway's `scripts/start.sh` as the production entry
-point because it owns migrations and service supervision.
+from its artifact. For one-off workspace checks, invoke the exact pinned pnpm
+version through an isolated runner rather than the system pnpm; otherwise the
+package-manager handoff can rebuild `node_modules` while a preview is serving.
+Keep Railway's `scripts/start.sh` as the production entry point because it owns
+migrations and service supervision.

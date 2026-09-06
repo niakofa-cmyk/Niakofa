@@ -2902,6 +2902,22 @@ export default function AudioCircleRoomScreen() {
       setPreJoinStatus("ready");
       return;
     }
+    // Establish the LiveKit room before asking the browser for a local device.
+    // Otherwise the permission prompt can succeed while token minting or
+    // room.connect is still failing, producing the misleading "microphone
+    // opened, but the live connection failed" state.
+    const manager = sessionManagerRef.current;
+    if (!manager) {
+      setPreJoinStatus("blocked");
+      setMediaError("Spiral media is still starting. Try checking again in a moment.");
+      return;
+    }
+    try {
+      await manager.start();
+    } catch {
+      setPreJoinStatus("blocked");
+      return;
+    }
     let blocked = false;
     // Listeners can join and enable their camera without granting microphone
     // access. A speaker's microphone remains the only required device.
@@ -3266,7 +3282,7 @@ export default function AudioCircleRoomScreen() {
                   {preJoinStatus === "checking"
                     ? "Checking media…"
                     : preJoinStatus === "blocked"
-                      ? "Media permission needed"
+                      ? "Media setup needed"
                       : "Media status"}
                 </div>
                 {preJoinStatus !== "ready" && canPublishMedia && (

@@ -100,6 +100,30 @@ test("camera failure preserves microphone and reports a camera error", async () 
   manager.destroy();
 });
 
+test("microphone acquisition starts the LiveKit session before publishing", async () => {
+  const transport = new FakeTransport();
+  let tokenRequests = 0;
+  const manager = new CircleRealtimeSessionManager({
+    baseUrl: "",
+    sessionId: "mic-click-race",
+    selfUserId: "user-mic-click-race",
+    authHeaders: () => ({}),
+    videoEnabled: false,
+    createTransport: () => transport,
+    fetchImpl: async () => {
+      tokenRequests += 1;
+      return tokenResponse();
+    },
+  });
+
+  await manager.ensureMicrophone();
+
+  assert.equal(tokenRequests, 1);
+  assert.equal(transport.micPublished, true);
+  assert.equal(manager.isMicrophoneLive(), true);
+  manager.destroy();
+});
+
 test("setVideoEnabled returns a typed camera failure to its caller", async () => {
   const transport = new FakeTransport();
   const manager = new CircleRealtimeSessionManager({

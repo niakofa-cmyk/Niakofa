@@ -217,6 +217,9 @@ export class CircleRealtimeSessionManager {
    * separate operation so a denied/busy camera never rejects microphone state.
    */
   async ensureMicrophone(): Promise<MediaStream> {
+    if (!this.transport) {
+      await this.start();
+    }
     const transport = this.transport;
     if (!transport) throw new Error("Spiral media is not connected");
     this.micRequested = true;
