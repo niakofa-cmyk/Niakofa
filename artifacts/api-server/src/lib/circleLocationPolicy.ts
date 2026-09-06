@@ -1,9 +1,12 @@
 /**
- * Server-authoritative location policy for hosting a Circle.
+ * Server-authoritative location policy for hosting a Spiral.
  *
  * Hosting requires a fresh, accurate GPS fix whose reverse-geocoded city
- * matches the Circle. Joining is deliberately location-independent.
+ * matches the Spiral. Joining is deliberately location-independent.
  * Raw coordinates are never persisted or written to the audit log.
+ *
+ * The public product is now Spirals, but the Circle-era module name is kept
+ * internally for backward-compatible lifecycle handlers and existing sessions.
  */
 import { z } from "zod";
 import { logger } from "./logger";
@@ -84,52 +87,98 @@ export function validateFreshAccurateLocation(
   return { ok: true };
 }
 
+/**
+ * Mapbox Geocoding v6 reverse endpoint.
+ *
+ * Do not send v5-style `limit=5` with multiple reverse `types`: v6 requires a
+ * single type when limit is present. We intentionally omit both so Mapbox can
+ * return the full administrative hierarchy and we select place/locality from
+ * the response. This removes the 422 failure that previously collapsed into
+ * the generic "could not verify your current location" UI error.
+ */
 export async function reverseGeocodeCircleStart(
   location: CircleStartLocation,
 ): Promise<ReverseGeocodedLocation> {
   const token = process.env["MAPBOX_TOKEN"];
-  if (!token) throw new Error("MAPBOX_TOKEN is required for Circle start verification");
+  if (!token) throw new Error("MAPBOX_TOKEN is required for Spiral start verification");
 
-  const url =
-    `https://api.mapbox.com/geocoding/v5/mapbox.places/` +
-    `${encodeURIComponent(`${location.longitude},${location.latitude}`)}.json` +
-    `?types=place,locality&limit=5&access_token=${encodeURIComponent(token)}`;
+  const params = new URLSearchParams({
+    longitude: String(location.longitude),
+    latitude: String(location.latitude),
+    access_token: token,
+  });
+  const url = `https://api.mapbox.com/search/geocode/v6/reverse?${params.toString()}`;
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(4_000),
   });
-  if (!response.ok) throw new Error(`Reverse geocoding failed with HTTP ${response.status}`);
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const body = (await response.json()) as { message?: string };
+      if (body.message) detail += `: ${body.message}`;
+    } catch {
+      // Preserve the stable fail-closed error contract if Mapbox returns a
+      // non-JSON response.
+    }
+    throw new Error(`Reverse geocoding failed (${detail})`);
+  }
 
   const data = (await response.json()) as {
     features?: Array<{
       text?: string;
       place_type?: string[];
-      context?: Array<{ id?: string; text?: string; short_code?: string }>;
+      feature_type?: string;
+      properties?: { name?: string; short_code?: string };
+      context?:
+        | Array<{ id?: string; text?: string; short_code?: string }>
+        | {
+            place?: { name?: string; id?: string };
+            locality?: { name?: string; id?: string };
+            district?: { name?: string; id?: string };
+            region?: { name?: string; id?: string; short_code?: string };
+          };
     }>;
   };
+
   const features = data.features ?? [];
   if (!features.length) throw new Error("GPS coordinate could not be mapped to a city");
 
   const feature =
-    features.find((item) => item.place_type?.includes("place")) ??
-    features.find((item) => item.place_type?.includes("locality")) ??
+    features.find((item) => item.feature_type === "place" || item.place_type?.includes("place")) ??
+    features.find((item) => item.feature_type === "locality" || item.place_type?.includes("locality")) ??
     features[0];
-  const city =
-    feature.text?.trim() ??
-    feature.context?.find((item) => item.id?.startsWith("place."))?.text?.trim() ??
-    feature.context?.find((item) => item.id?.startsWith("locality."))?.text?.trim();
-  if (!city) throw new Error("GPS coordinate has no resolvable city");
 
-  const region = feature.context?.find((item) => item.id?.startsWith("region."));
-  const shortCode = region?.short_code?.toUpperCase();
-  const stateCode = shortCode
-    ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode
-    : null;
+  const context = feature.context;
+  let city: string | undefined;
+  let countyDisplay: string | null = null;
+  let stateCode: string | null = null;
+
+  if (Array.isArray(context)) {
+    city =
+      feature.text?.trim() ??
+      context.find((item) => item.id?.startsWith("place."))?.text?.trim() ??
+      context.find((item) => item.id?.startsWith("locality."))?.text?.trim();
+    countyDisplay = context.find((item) => item.id?.startsWith("district."))?.text?.trim() ?? null;
+    const region = context.find((item) => item.id?.startsWith("region."));
+    const shortCode = region?.short_code?.toUpperCase();
+    stateCode = shortCode ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode : null;
+  } else if (context) {
+    city = context.place?.name?.trim() ?? context.locality?.name?.trim() ?? feature.text?.trim();
+    countyDisplay = context.district?.name?.trim() ?? null;
+    const shortCode = context.region?.short_code?.toUpperCase();
+    stateCode = shortCode ? shortCode.match(/^US-([A-Z]{2})$/)?.[1] ?? shortCode : null;
+  } else {
+    city = feature.text?.trim() ?? feature.properties?.name?.trim();
+  }
+
+  if (!city) throw new Error("GPS coordinate has no resolvable city");
 
   return {
     cityKey: normalizeCityKey(city),
     cityDisplay: city,
-    countyDisplay: feature.context?.find((item) => item.id?.startsWith("district."))?.text?.trim() ?? null,
+    countyDisplay,
     stateCode,
   };
 }
@@ -170,7 +219,7 @@ export async function verifyCircleStartLocation(
       const result = {
         ok: false as const,
         code: "CIRCLE_START_WRONG_CITY",
-        reason: `You can only start this Circle from inside ${circleCityKey.replace(/_/g, " ")}. You may still join Circles from other locations.`,
+        reason: `You can only start this Spiral from inside ${circleCityKey.replace(/_/g, " ")}. You may still join Spirals from other locations.`,
       };
       logLocationDecision({
         decision: "denied",
@@ -202,7 +251,7 @@ export async function verifyCircleStartLocation(
       accuracyBucket: accuracyBucket(location.accuracy_meters),
     };
   } catch (err) {
-    logger.warn({ err, circleCityKey: expectedKey }, "circles: reverse geocode failed — fail closed");
+    logger.warn({ err, circleCityKey: expectedKey }, "spirals: reverse geocode failed — fail closed");
     const result = {
       ok: false as const,
       code: "CIRCLE_START_LOCATION_UNVERIFIED",
@@ -231,6 +280,6 @@ function logLocationDecision(payload: {
 }) {
   logger.info(
     { event: "circle_start_location_check", ...payload, verified_at: new Date().toISOString() },
-    `circles: start location ${payload.decision} (${payload.code})`,
+    `spirals: start location ${payload.decision} (${payload.code})`,
   );
 }
