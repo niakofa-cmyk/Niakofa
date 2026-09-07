@@ -5,12 +5,14 @@ import { generalApiLimiter } from "../middlewares/rate-limit";
 import {
   CircleStartLocationBody,
   accuracyBucket,
+  buildHostSignal,
   displayCityName,
   normalizeCityKey,
   reverseGeocodeCircleStart,
   validateFreshAccurateLocation,
   verifyCircleStartLocation,
 } from "../lib/circleLocationPolicy";
+import { evaluateNeighborhoodGeofence } from "../lib/neighborhoodGeofence";
 import { db, audioCirclesTable, cityNeighborhoodsTable } from "@workspace/db";
 import { pickLocalSpiral } from "../lib/circleLocationContext";
 
@@ -57,7 +59,10 @@ router.post(
         status: "blocked",
         code: "GPS_REVERSE_GEOCODE_FAILED",
         error: "Your GPS signal is available, but the neighborhood could not be verified yet.",
-        host_signal: { status: "blocked", message: "Location verification is temporarily unavailable. Retrying automatically." },
+        host_signal: {
+          status: "blocked",
+          message: "Location verification is temporarily unavailable. Retrying automatically.",
+        },
       });
     }
 
@@ -144,13 +149,15 @@ router.post(
     }
 
     let neighborhoodName: string | null = null;
+    let neighborhoodRow: typeof cityNeighborhoodsTable.$inferSelect | null = null;
     if (circle.neighborhood_id != null) {
       const [neighborhood] = await db
-        .select({ name: cityNeighborhoodsTable.name })
+        .select()
         .from(cityNeighborhoodsTable)
         .where(eq(cityNeighborhoodsTable.id, circle.neighborhood_id))
         .limit(1);
       neighborhoodName = neighborhood?.name ?? null;
+      neighborhoodRow = neighborhood ?? null;
     }
 
     const result = await verifyCircleStartLocation(circle.city_key, parsed.data, {
@@ -158,10 +165,6 @@ router.post(
       circleId,
     });
 
-    // Keep the route response anchored to the persisted Spiral metadata. The
-    // verifier's successful union branch intentionally does not need to carry
-    // a second copy of this display value, which also keeps the result type
-    // narrow and prevents a frontend-facing type leak from breaking CI.
     const spiralCityDisplay = circle.city_display ?? displayCityName(circle.city_key);
     if (!result.ok) {
       return res.status(403).json({
@@ -176,14 +179,73 @@ router.post(
         resolved_city_key: result.resolvedCityKey ?? null,
         resolved_city_display: result.resolvedCityDisplay ?? null,
         resolved_neighborhood_hint: result.neighborhoodHint ?? null,
-        host_signal: {
-          status: "blocked",
-          message:
-            result.code === "CIRCLE_START_WRONG_CITY"
-              ? `Hosting unlocked in ${spiralCityDisplay} only. GPS shows ${result.resolvedCityDisplay ?? "another city"}. You can still join.`
-              : result.reason,
-        },
+        host_signal: buildHostSignal({
+          canHost: false,
+          spiralCityDisplay,
+          spiralNeighborhood: neighborhoodName,
+          resolvedCityDisplay: result.resolvedCityDisplay,
+          neighborhoodHint: result.neighborhoodHint,
+          code: result.code,
+          reason: result.reason,
+        }),
       });
+    }
+
+    // Optional neighborhood geofence: only when verified geometry exists.
+    // City-wide Spirals (neighborhood_id null) skip this gate.
+    let neighborhoodGeofenceStatus: "inside" | "outside" | "no_geometry" | "invalid_geometry" =
+      "no_geometry";
+    if (neighborhoodRow) {
+      const geo = evaluateNeighborhoodGeofence(
+        parsed.data.latitude,
+        parsed.data.longitude,
+        neighborhoodRow,
+      );
+      if (geo.status === "outside") {
+        const reason = `You are in ${spiralCityDisplay}, but outside the verified boundary for the ${neighborhoodName ?? "this neighborhood"} Spiral. Move closer or host a different neighborhood Spiral.`;
+        return res.status(403).json({
+          allowed: false,
+          can_host: false,
+          error: reason,
+          code: "CIRCLE_START_OUTSIDE_NEIGHBORHOOD",
+          spiral_city_key: circle.city_key,
+          spiral_city_display: spiralCityDisplay,
+          spiral_neighborhood: neighborhoodName,
+          spiral_name: circle.name,
+          resolved_city_key: result.cityKey,
+          resolved_city_display: result.cityDisplay,
+          resolved_neighborhood_hint: result.neighborhoodHint,
+          neighborhood_geofence: geo,
+          host_signal: buildHostSignal({
+            canHost: false,
+            spiralCityDisplay,
+            spiralNeighborhood: neighborhoodName,
+            neighborhoodHint: result.neighborhoodHint,
+            neighborhoodGeofenceStatus: "outside",
+            code: "CIRCLE_START_OUTSIDE_NEIGHBORHOOD",
+            reason,
+          }),
+        });
+      }
+      if (geo.status === "invalid_geometry") {
+        // Fail closed on broken verified rows rather than inventing a boundary.
+        const reason =
+          "Neighborhood boundary data is incomplete. Hosting is temporarily unavailable for this Spiral.";
+        return res.status(503).json({
+          allowed: false,
+          can_host: false,
+          error: reason,
+          code: "CIRCLE_START_NEIGHBORHOOD_GEOMETRY_INVALID",
+          host_signal: buildHostSignal({
+            canHost: false,
+            spiralCityDisplay,
+            spiralNeighborhood: neighborhoodName,
+            neighborhoodGeofenceStatus: "invalid_geometry",
+            reason,
+          }),
+        });
+      }
+      neighborhoodGeofenceStatus = geo.status === "inside" ? "inside" : "no_geometry";
     }
 
     return res.json({
@@ -201,12 +263,14 @@ router.post(
       resolved_city_key: result.cityKey,
       resolved_city_display: result.cityDisplay,
       resolved_neighborhood_hint: result.neighborhoodHint,
-      host_signal: {
-        status: "ready",
-        message: neighborhoodName
-          ? `Verified: you can host the ${neighborhoodName} Spiral`
-          : `Verified: you can host Spirals in ${result.cityDisplay}`,
-      },
+      neighborhood_geofence_status: neighborhoodGeofenceStatus,
+      host_signal: buildHostSignal({
+        canHost: true,
+        spiralCityDisplay,
+        spiralNeighborhood: neighborhoodName,
+        neighborhoodHint: result.neighborhoodHint,
+        neighborhoodGeofenceStatus,
+      }),
     });
   },
 );

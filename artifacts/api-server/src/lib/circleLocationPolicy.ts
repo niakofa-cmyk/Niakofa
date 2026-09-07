@@ -301,8 +301,8 @@ export type CircleStartLocationResult =
       countyDisplay: string | null;
       stateCode: string | null;
       neighborhoodHint: string | null;
-       accuracyBucket: string;
-       spiralCityDisplay: string;
+      accuracyBucket: string;
+      spiralCityDisplay: string;
       canHost: true;
     }
   | {
@@ -316,6 +316,67 @@ export type CircleStartLocationResult =
       neighborhoodHint?: string | null;
       canHost: false;
     };
+
+/** Build a consistent host_signal payload for the UI. */
+export function buildHostSignal(opts: {
+  canHost: boolean;
+  spiralCityDisplay: string;
+  spiralNeighborhood?: string | null;
+  resolvedCityDisplay?: string | null;
+  neighborhoodHint?: string | null;
+  neighborhoodGeofenceStatus?: "inside" | "outside" | "no_geometry" | "invalid_geometry" | null;
+  code?: string;
+  reason?: string;
+}): {
+  status: "ready" | "blocked";
+  message: string;
+  verifiedNeighborhoodHint?: string | null;
+  neighborhoodGeofenceStatus?: string | null;
+} {
+  if (opts.canHost) {
+    const neighborhoodPart = opts.spiralNeighborhood
+      ? ` the ${opts.spiralNeighborhood} Spiral`
+      : ` Spirals in ${opts.spiralCityDisplay}`;
+    const hintPart = opts.neighborhoodHint ? ` (GPS near ${opts.neighborhoodHint})` : "";
+    const geoPart =
+      opts.neighborhoodGeofenceStatus === "inside"
+        ? " — neighborhood boundary verified"
+        : "";
+    return {
+      status: "ready",
+      message: `Verified: you can host${neighborhoodPart}${hintPart}${geoPart}`,
+      verifiedNeighborhoodHint: opts.neighborhoodHint ?? null,
+      neighborhoodGeofenceStatus: opts.neighborhoodGeofenceStatus ?? null,
+    };
+  }
+
+  if (opts.code === "CIRCLE_START_WRONG_CITY") {
+    return {
+      status: "blocked",
+      message: `You can only start this Spiral from inside ${opts.spiralCityDisplay}. GPS currently places you in ${opts.resolvedCityDisplay ?? "another city"}. You may still join Spirals from other locations.`,
+      verifiedNeighborhoodHint: opts.neighborhoodHint ?? null,
+      neighborhoodGeofenceStatus: opts.neighborhoodGeofenceStatus ?? null,
+    };
+  }
+
+  if (opts.code === "CIRCLE_START_OUTSIDE_NEIGHBORHOOD") {
+    return {
+      status: "blocked",
+      message:
+        opts.reason ??
+        `You are in ${opts.spiralCityDisplay}, but outside the verified boundary for ${opts.spiralNeighborhood ?? "this neighborhood"} Spiral. Move closer or host a different neighborhood Spiral.`,
+      verifiedNeighborhoodHint: opts.neighborhoodHint ?? null,
+      neighborhoodGeofenceStatus: opts.neighborhoodGeofenceStatus ?? "outside",
+    };
+  }
+
+  return {
+    status: "blocked",
+    message: opts.reason ?? "Niakofa could not verify your current location. Refresh GPS and try again.",
+    verifiedNeighborhoodHint: opts.neighborhoodHint ?? null,
+    neighborhoodGeofenceStatus: opts.neighborhoodGeofenceStatus ?? null,
+  };
+}
 
 export async function verifyCircleStartLocation(
   circleCityKey: string,
@@ -384,8 +445,8 @@ export async function verifyCircleStartLocation(
       countyDisplay: resolved.countyDisplay,
       stateCode: resolved.stateCode,
       neighborhoodHint: resolved.neighborhoodHint,
-       accuracyBucket: accuracyBucket(location.accuracy_meters),
-       spiralCityDisplay: expectedDisplay,
+      accuracyBucket: accuracyBucket(location.accuracy_meters),
+      spiralCityDisplay: expectedDisplay,
       canHost: true,
     };
   } catch (err) {
