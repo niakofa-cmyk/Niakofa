@@ -87,7 +87,7 @@ export function GlobalVillagePulse({ navigate }: PulseProps) {
   const locationFresh = presence?.current_user?.location_fresh === true;
 
   return (
-    <section aria-label="Global Village pulse" className={`${diasporaTheme.radiusHero} border border-teal-300/15 bg-white/[0.025] p-4 sm:p-5`}>
+    <section data-testid="global-village-pulse" aria-label="Global Village pulse" aria-live="polite" className={`${diasporaTheme.radiusHero} border border-teal-300/15 bg-white/[0.025] p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-teal-300/75">The Global Village</p>
@@ -98,7 +98,7 @@ export function GlobalVillagePulse({ navigate }: PulseProps) {
       </div>
 
       {currentNeighborhood && locationFresh && (
-        <button type="button" onClick={() => navigate?.(`/audio-spirals?neighborhood=${encodeURIComponent(currentNeighborhood.neighborhood_id)}`)} className="mt-4 flex w-full items-center justify-between gap-3 rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2.5 text-left transition hover:bg-emerald-300/[0.1]">
+        <button data-testid="global-village-current-neighborhood" type="button" onClick={() => navigate?.(`/audio-spirals?neighborhood=${encodeURIComponent(currentNeighborhood.neighborhood_id)}`)} className="mt-4 flex w-full items-center justify-between gap-3 rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2.5 text-left transition hover:bg-emerald-300/[0.1]">
           <span className="min-w-0">
             <span className="flex items-center gap-2 text-xs font-bold text-emerald-200"><MapPin className="h-3.5 w-3.5" />You are in {currentNeighborhood.name}</span>
             <span className="mt-0.5 block text-[10px] text-white/40">GPS-verified neighborhood · {currentNeighborhood.live_user_count.toLocaleString()} live here</span>
@@ -107,7 +107,7 @@ export function GlobalVillagePulse({ navigate }: PulseProps) {
         </button>
       )}
 
-      <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <div data-testid="global-village-spirals-metrics" className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {ITEMS.map((item, index) => {
           const Icon = item.icon;
           const value = item.key === "members" ? metrics.members : item.key === "live" ? metrics.live : item.key === "neighborhood" ? metrics.neighborhoods : item.key === "helping" ? metrics.activeHelpers : item.key === "stories" ? metrics.stories : null;

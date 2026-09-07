@@ -7,31 +7,46 @@ export const SPIRALS_PATHS = {
   room: (sessionId: string | number) => `/audio-spiral/${sessionId}`,
 } as const;
 
+type SpiralWithNeighborhood = { id: number; neighborhood_id?: number | null };
+
 /**
- * Keep the server-verified local Spiral first and city-wide Spirals last.
- * Objects without neighborhood_id keep their prior ordering, preserving
- * compatibility with older callers/tests that only provide ids.
+ * Order Spirals using only server-verified location context:
+ * 1. the verified current-neighborhood Spiral, when one is known;
+ * 2. other neighborhood Spirals in their existing order;
+ * 3. city-wide Spirals (null neighborhood_id) last.
+ *
+ * JavaScript's stable Array#sort is relied on so unrelated Spirals retain their
+ * API order. No client GPS or heuristic neighborhood matching is performed here.
  */
-export function promoteLocalSpiral<T extends { id: number; neighborhood_id?: number | null }>(
-  circles: T[] | undefined,
-  localCircleId: number | null | undefined,
+export function orderSpiralsForLocation<T extends SpiralWithNeighborhood>(
+  spirals: T[],
+  localSpiralId: number | null | undefined,
+): T[] {
+  return spirals
+    .map((spiral, index) => ({ spiral, index }))
+    .sort((a, b) => {
+      const aLocal = localSpiralId != null && a.spiral.id === localSpiralId;
+      const bLocal = localSpiralId != null && b.spiral.id === localSpiralId;
+      if (aLocal !== bLocal) return aLocal ? -1 : 1;
+
+      const aCitywide = a.spiral.neighborhood_id == null;
+      const bCitywide = b.spiral.neighborhood_id == null;
+      if (aCitywide !== bCitywide) return aCitywide ? 1 : -1;
+
+      return a.index - b.index;
+    })
+    .map(({ spiral }) => spiral);
+}
+
+/**
+ * Backwards-compatible helper retained for existing callers.
+ */
+export function promoteLocalSpiral<T extends SpiralWithNeighborhood>(
+  spirals: T[] | undefined,
+  localSpiralId: number | null | undefined,
 ): T[] | undefined {
-  if (!circles) return circles;
-
-  const ordered = [...circles].sort((a, b) => {
-    const aLocal = localCircleId != null && a.id === localCircleId;
-    const bLocal = localCircleId != null && b.id === localCircleId;
-    if (aLocal !== bLocal) return aLocal ? -1 : 1;
-
-    const aCitywide = a.neighborhood_id != null ? false : undefined;
-    const bCitywide = b.neighborhood_id != null ? false : undefined;
-    if (aCitywide !== undefined && bCitywide !== undefined && aCitywide !== bCitywide) {
-      return aCitywide ? 1 : -1;
-    }
-    return 0;
-  });
-
-  return ordered;
+  if (!spirals) return spirals;
+  return orderSpiralsForLocation(spirals, localSpiralId);
 }
 
 export const CIRCLE_ROUTE_ALIASES = {
