@@ -58,6 +58,8 @@ test.describe("Diaspora live presence production acceptance", () => {
     const pulseResponse = await pulseResponsePromise;
     expect(pulseResponse.ok()).toBeTruthy();
     expect(pulseResponse.headers()["content-type"]).toContain("application/json");
+    expect(pulseResponse.headers()["x-niakofa-village-pulse"]).toBe("verified");
+    expect(pulseResponse.headers()["cache-control"]).toContain("no-store");
 
     const pulseBody = await pulseResponse.json();
     expect(pulseBody).toEqual(expect.objectContaining({
@@ -75,19 +77,16 @@ test.describe("Diaspora live presence production acceptance", () => {
     expect(pulseBody).not.toHaveProperty("users");
     expect(pulseBody).not.toHaveProperty("coordinates");
 
-    await expect(page.getByText("The Global Village")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("global-village-pulse")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("Alive from member to Spiral.")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("Spirals", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("global-village-spirals-metrics")).toBeVisible({ timeout: 15_000 });
 
     const currentNeighborhood = pulseBody.current_user?.current_neighborhood;
     if (currentNeighborhood?.gps_verified === true) {
-      await expect(page.getByText(`You are in ${currentNeighborhood.name}`)).toBeVisible({ timeout: 15_000 });
-      const localSpiral = page.getByRole("button", { name: /Open local Spiral/ });
-      await expect(localSpiral).toBeVisible({ timeout: 15_000 });
-      await expect(localSpiral).toHaveAttribute(
-        "class",
-        /emerald/,
-      );
+      const localCard = page.getByTestId("global-village-current-neighborhood");
+      await expect(localCard).toBeVisible({ timeout: 15_000 });
+      await expect(localCard).toContainText(`You are in ${currentNeighborhood.name}`);
+      await expect(localCard).toContainText("GPS-verified neighborhood");
     }
 
     await expect(page.getByText("Live Diaspora Presence")).toBeVisible({ timeout: 15_000 });
