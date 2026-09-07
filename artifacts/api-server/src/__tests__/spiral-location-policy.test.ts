@@ -1,9 +1,46 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import {
+  buildHostSignal,
   citiesMatchForHost,
   reverseGeocodeCircleStart,
   verifyCircleStartLocation,
 } from "../lib/circleLocationPolicy";
+
+describe("Spiral host signals", () => {
+  it("distinguishes city verification from verified neighborhood geometry", () => {
+    expect(
+      buildHostSignal({
+        canHost: true,
+        spiralCityDisplay: "Fort Worth",
+        spiralNeighborhood: "Downtown",
+        neighborhoodHint: "Downtown",
+        neighborhoodGeofenceStatus: "no_geometry",
+      }),
+    ).toMatchObject({
+      status: "ready",
+      neighborhoodGeofenceStatus: "no_geometry",
+    });
+    expect(
+      buildHostSignal({
+        canHost: true,
+        spiralCityDisplay: "Fort Worth",
+        spiralNeighborhood: "Downtown",
+        neighborhoodGeofenceStatus: "inside",
+      }).message,
+    ).toContain("neighborhood boundary verified");
+  });
+
+  it("keeps the join affordance in wrong-city denial copy", () => {
+    expect(
+      buildHostSignal({
+        canHost: false,
+        spiralCityDisplay: "Fort Worth",
+        resolvedCityDisplay: "Dallas",
+        code: "CIRCLE_START_WRONG_CITY",
+      }).message,
+    ).toMatch(/Dallas.*still join/i);
+  });
+});
 
 describe("Spiral start location verification", () => {
   const location = {

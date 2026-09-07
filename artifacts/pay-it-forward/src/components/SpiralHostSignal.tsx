@@ -7,7 +7,12 @@ import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/cir
 export type HostSignalPayload = {
   can_host?: boolean;
   allowed?: boolean;
-  host_signal?: { status?: string; message?: string };
+  host_signal?: {
+    status?: string;
+    message?: string;
+    neighborhoodGeofenceStatus?: string | null;
+  };
+  neighborhood_geofence_status?: "inside" | "outside" | "no_geometry" | "invalid_geometry" | null;
   spiral_city_key?: string | null;
   spiral_city_display?: string | null;
   spiral_neighborhood?: string | null;
@@ -122,6 +127,9 @@ export function SpiralHostSignal({
     displayedSignal?.can_host === true ||
     displayedSignal?.allowed === true ||
     displayedSignal?.host_signal?.status === "ready";
+  const neighborhoodBoundaryVerified =
+    displayedSignal?.neighborhood_geofence_status === "inside" ||
+    displayedSignal?.host_signal?.neighborhoodGeofenceStatus === "inside";
   const message =
     displayedSignal?.host_signal?.message ||
     displayedSignal?.error ||
@@ -134,7 +142,13 @@ export function SpiralHostSignal({
           ready ? "text-emerald-400" : "text-amber-300"
         }`}
         role="status"
-        aria-label={ready ? "Verified local GPS neighborhood" : "Checking local GPS neighborhood"}
+        aria-label={
+          ready
+            ? neighborhoodBoundaryVerified
+              ? "Verified neighborhood host"
+              : "Verified city host"
+            : "Checking GPS host eligibility"
+        }
         title={checking ? "Checking your GPS signal…" : message ?? "Checking your GPS signal…"}
       >
         {checking ? (
@@ -163,7 +177,13 @@ export function SpiralHostSignal({
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-black uppercase tracking-wider opacity-80">
-            {ready ? "Host signal · verified" : displayedSignal ? "Host signal · blocked" : "Host eligibility"}
+            {ready
+              ? neighborhoodBoundaryVerified
+                ? "Host signal · neighborhood verified"
+                : "Host signal · city verified"
+              : displayedSignal
+                ? "Host signal · blocked"
+                : "Host eligibility"}
           </p>
           <p className="mt-1 text-xs leading-relaxed">
             {checking
@@ -190,7 +210,9 @@ export function SpiralHostSignal({
         </button>
       </div>
       <p className="mt-2 text-[10px] opacity-60">
-        Joining never requires GPS. Only starting a Spiral does.
+        {neighborhoodBoundaryVerified
+          ? "Your current GPS is inside the reviewed neighborhood boundary. Joining never requires GPS."
+          : "Your city is verified for hosting. A neighborhood hint is informational until reviewed boundaries are loaded. Joining never requires GPS."}
       </p>
     </div>
   );

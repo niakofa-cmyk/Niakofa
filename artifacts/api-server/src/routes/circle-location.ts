@@ -59,10 +59,7 @@ router.post(
         status: "blocked",
         code: "GPS_REVERSE_GEOCODE_FAILED",
         error: "Your GPS signal is available, but the neighborhood could not be verified yet.",
-        host_signal: {
-          status: "blocked",
-          message: "Location verification is temporarily unavailable. Retrying automatically.",
-        },
+        host_signal: { status: "blocked", message: "Location verification is temporarily unavailable. Retrying automatically." },
       });
     }
 
@@ -165,6 +162,10 @@ router.post(
       circleId,
     });
 
+    // Keep the route response anchored to the persisted Spiral metadata. The
+    // verifier's successful union branch intentionally does not need to carry
+    // a second copy of this display value, which also keeps the result type
+    // narrow and prevents a frontend-facing type leak from breaking CI.
     const spiralCityDisplay = circle.city_display ?? displayCityName(circle.city_key);
     if (!result.ok) {
       return res.status(403).json({
@@ -191,17 +192,18 @@ router.post(
       });
     }
 
-    // Optional neighborhood geofence: only when verified geometry exists.
-    // City-wide Spirals (neighborhood_id null) skip this gate.
+    // Neighborhood geometry is optional until reviewed data is loaded. Missing
+    // or unverified geometry must not invent a boundary or block city hosting.
     let neighborhoodGeofenceStatus: "inside" | "outside" | "no_geometry" | "invalid_geometry" =
       "no_geometry";
     if (neighborhoodRow) {
-      const geo = evaluateNeighborhoodGeofence(
+      const geofence = evaluateNeighborhoodGeofence(
         parsed.data.latitude,
         parsed.data.longitude,
         neighborhoodRow,
       );
-      if (geo.status === "outside") {
+
+      if (geofence.status === "outside") {
         const reason = `You are in ${spiralCityDisplay}, but outside the verified boundary for the ${neighborhoodName ?? "this neighborhood"} Spiral. Move closer or host a different neighborhood Spiral.`;
         return res.status(403).json({
           allowed: false,
@@ -215,7 +217,7 @@ router.post(
           resolved_city_key: result.cityKey,
           resolved_city_display: result.cityDisplay,
           resolved_neighborhood_hint: result.neighborhoodHint,
-          neighborhood_geofence: geo,
+          neighborhood_geofence: geofence,
           host_signal: buildHostSignal({
             canHost: false,
             spiralCityDisplay,
@@ -227,8 +229,8 @@ router.post(
           }),
         });
       }
-      if (geo.status === "invalid_geometry") {
-        // Fail closed on broken verified rows rather than inventing a boundary.
+
+      if (geofence.status === "invalid_geometry") {
         const reason =
           "Neighborhood boundary data is incomplete. Hosting is temporarily unavailable for this Spiral.";
         return res.status(503).json({
@@ -236,6 +238,11 @@ router.post(
           can_host: false,
           error: reason,
           code: "CIRCLE_START_NEIGHBORHOOD_GEOMETRY_INVALID",
+          spiral_city_key: circle.city_key,
+          spiral_city_display: spiralCityDisplay,
+          spiral_neighborhood: neighborhoodName,
+          spiral_name: circle.name,
+          neighborhood_geofence: geofence,
           host_signal: buildHostSignal({
             canHost: false,
             spiralCityDisplay,
@@ -245,7 +252,8 @@ router.post(
           }),
         });
       }
-      neighborhoodGeofenceStatus = geo.status === "inside" ? "inside" : "no_geometry";
+
+      neighborhoodGeofenceStatus = geofence.status === "inside" ? "inside" : "no_geometry";
     }
 
     return res.json({

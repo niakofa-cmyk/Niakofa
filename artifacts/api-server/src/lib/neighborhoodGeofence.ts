@@ -1,9 +1,8 @@
 /**
  * Neighborhood geofencing for Spiral host eligibility.
  *
- * Pure JS evaluation so tests and non-PostGIS environments work.
- * Prefer polygon when present; otherwise center + radius.
- * Unverified or missing geometry → no neighborhood gate (city gate still applies).
+ * Geometry is optional until it is reviewed and marked effective. The city
+ * host fence remains authoritative when geometry is absent or unverified.
  */
 import { distanceMeters } from "./geo";
 
@@ -23,84 +22,92 @@ export type GeofenceResult =
   | { status: "invalid_geometry"; reason: string };
 
 type LngLat = [number, number];
+type PolygonRings = LngLat[][];
 
-function isFiniteNumber(n: unknown): n is number {
-  return typeof n === "number" && Number.isFinite(n);
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
-/** Ray-casting point-in-polygon. Ring is [lng, lat][]. */
+/** Ray-casting point-in-ring. Ring coordinates are [longitude, latitude]. */
 export function pointInRing(lng: number, lat: number, ring: LngLat[]): boolean {
   if (ring.length < 3) return false;
+
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i]!;
     const [xj, yj] = ring[j]!;
     const intersects =
-      yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi + Number.EPSILON) + xi;
+      yi > lat !== yj > lat &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi + Number.EPSILON) + xi;
     if (intersects) inside = !inside;
   }
   return inside;
 }
 
-function extractRings(geojson: unknown): LngLat[][] {
-  if (!geojson || typeof geojson !== "object") return [];
-  const g = geojson as { type?: string; coordinates?: unknown };
-  if (g.type === "Polygon" && Array.isArray(g.coordinates)) {
-    return (g.coordinates as unknown[])
-      .filter((ring): ring is LngLat[] => Array.isArray(ring))
-      .map((ring) =>
-        ring.filter(
-          (pt): pt is LngLat =>
-            Array.isArray(pt) && isFiniteNumber(pt[0]) && isFiniteNumber(pt[1]),
-        ),
-      );
+function parseRing(value: unknown): LngLat[] | null {
+  if (!Array.isArray(value)) return null;
+  const points = value.filter(
+    (point): point is LngLat =>
+      Array.isArray(point) &&
+      point.length >= 2 &&
+      isFiniteNumber(point[0]) &&
+      isFiniteNumber(point[1]),
+  );
+  return points.length >= 3 ? points : null;
+}
+
+function extractPolygons(geojson: unknown): PolygonRings[] | null {
+  if (!geojson || typeof geojson !== "object") return null;
+  const value = geojson as { type?: unknown; coordinates?: unknown };
+
+  if (value.type === "Polygon" && Array.isArray(value.coordinates)) {
+    const rings = value.coordinates.map(parseRing);
+    return rings.length > 0 && rings.every((ring): ring is LngLat[] => ring !== null) ? [rings] : null;
   }
-  if (g.type === "MultiPolygon" && Array.isArray(g.coordinates)) {
-    const rings: LngLat[][] = [];
-    for (const poly of g.coordinates as unknown[]) {
-      if (!Array.isArray(poly)) continue;
-      for (const ring of poly) {
-        if (!Array.isArray(ring)) continue;
-        rings.push(
-          ring.filter(
-            (pt): pt is LngLat =>
-              Array.isArray(pt) && isFiniteNumber(pt[0]) && isFiniteNumber(pt[1]),
-          ),
-        );
-      }
+
+  if (value.type === "MultiPolygon" && Array.isArray(value.coordinates)) {
+    const polygons: PolygonRings[] = [];
+    for (const polygon of value.coordinates) {
+      if (!Array.isArray(polygon)) return null;
+      const rings = polygon.map(parseRing);
+      if (!rings.every((ring): ring is LngLat[] => ring !== null)) return null;
+      polygons.push(rings);
     }
-    return rings;
+    return polygons.length > 0 && polygons.every((rings) => rings.length > 0) ? polygons : null;
   }
-  return [];
+
+  return null;
 }
 
-export function pointInPolygon(lng: number, lat: number, geojson: unknown): boolean | null {
-  const rings = extractRings(geojson);
-  if (!rings.length) return null;
-  // Exterior rings only for simple containment (first ring of each polygon).
-  // Holes are ignored for v1 host gating (fail closed on exterior only).
-  let anyExterior = false;
-  for (const ring of rings) {
-    if (ring.length < 3) continue;
-    anyExterior = true;
-    if (pointInRing(lng, lat, ring)) return true;
-  }
-  return anyExterior ? false : null;
-}
-
-function geometryIsEffective(row: NeighborhoodGeometry, now = new Date()): boolean {
-  if (!row.geometry_verified) return false;
-  if (row.geometry_effective_at) {
-    const at = new Date(row.geometry_effective_at);
-    if (Number.isFinite(at.getTime()) && at.getTime() > now.getTime()) return false;
-  }
-  return true;
+function pointInPolygonRings(lng: number, lat: number, rings: PolygonRings): boolean {
+  const [outer, ...holes] = rings;
+  if (!outer || !pointInRing(lng, lat, outer)) return false;
+  return !holes.some((hole) => pointInRing(lng, lat, hole));
 }
 
 /**
- * Evaluate whether (lat, lng) is inside the neighborhood's verified geometry.
- * Returns no_geometry when data is missing or not yet verified — callers must
- * NOT treat that as a hard deny for hosting (city gate still applies).
+ * Returns null for absent or malformed geometry. A malformed verified row is
+ * handled as invalid by evaluateNeighborhoodGeofence rather than guessed.
+ */
+export function pointInPolygon(lng: number, lat: number, geojson: unknown): boolean | null {
+  const polygons = extractPolygons(geojson);
+  if (!polygons) return null;
+  return polygons.some((rings) => pointInPolygonRings(lng, lat, rings));
+}
+
+function geometryIsEffective(row: NeighborhoodGeometry, now: Date): "active" | "inactive" | "invalid" {
+  if (!row.geometry_verified) return "inactive";
+  if (!row.geometry_effective_at) return "active";
+
+  const effectiveAt = new Date(row.geometry_effective_at);
+  if (!Number.isFinite(effectiveAt.getTime())) return "invalid";
+  return effectiveAt.getTime() <= now.getTime() ? "active" : "inactive";
+}
+
+/**
+ * Evaluate whether (lat, lng) is inside reviewed neighborhood geometry.
+ * Missing/unverified/future geometry returns no_geometry so city-only hosting
+ * remains available. Verified but malformed geometry fails closed.
  */
 export function evaluateNeighborhoodGeofence(
   lat: number,
@@ -108,13 +115,27 @@ export function evaluateNeighborhoodGeofence(
   row: NeighborhoodGeometry | null | undefined,
   now = new Date(),
 ): GeofenceResult {
-  if (!row || !geometryIsEffective(row, now)) {
-    return { status: "no_geometry" };
+  if (!row) return { status: "no_geometry" };
+
+  const effective = geometryIsEffective(row, now);
+  if (effective === "inactive") return { status: "no_geometry" };
+  if (effective === "invalid") {
+    return { status: "invalid_geometry", reason: "geometry_effective_at is invalid" };
   }
 
-  const poly = pointInPolygon(lng, lat, row.polygon_geojson);
-  if (poly === true) return { status: "inside", method: "polygon" };
-  if (poly === false) return { status: "outside", method: "polygon" };
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { status: "invalid_geometry", reason: "GPS coordinates are not finite" };
+  }
+
+  if (row.polygon_geojson != null) {
+    const polygonResult = pointInPolygon(lng, lat, row.polygon_geojson);
+    if (polygonResult === true) return { status: "inside", method: "polygon" };
+    if (polygonResult === false) return { status: "outside", method: "polygon" };
+    return {
+      status: "invalid_geometry",
+      reason: "polygon_geojson is not a valid Polygon or MultiPolygon",
+    };
+  }
 
   if (
     isFiniteNumber(row.center_lat) &&
@@ -122,9 +143,10 @@ export function evaluateNeighborhoodGeofence(
     isFiniteNumber(row.radius_meters) &&
     row.radius_meters > 0
   ) {
-    const d = distanceMeters(lat, lng, row.center_lat, row.center_lng);
-    if (d <= row.radius_meters) return { status: "inside", method: "radius" };
-    return { status: "outside", method: "radius" };
+    const distance = distanceMeters(lat, lng, row.center_lat, row.center_lng);
+    return distance <= row.radius_meters
+      ? { status: "inside", method: "radius" }
+      : { status: "outside", method: "radius" };
   }
 
   return {

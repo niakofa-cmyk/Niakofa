@@ -27,6 +27,28 @@ describe("neighborhood geofence", () => {
     expect(pointInPolygon(-97.40, 32.75, geojson)).toBe(false);
   });
 
+  it("respects polygon holes and supports MultiPolygon", () => {
+    const hole: [number, number][] = [
+      [-97.335, 32.745],
+      [-97.325, 32.745],
+      [-97.325, 32.755],
+      [-97.335, 32.755],
+      [-97.335, 32.745],
+    ];
+    expect(pointInPolygon(-97.33, 32.75, { type: "Polygon", coordinates: [square, hole] })).toBe(
+      false,
+    );
+    expect(
+      pointInPolygon(-97.33, 32.75, {
+        type: "MultiPolygon",
+        coordinates: [
+          [square],
+          [[[-97.5, 32.7], [-97.49, 32.7], [-97.49, 32.71]]],
+        ],
+      }),
+    ).toBe(true);
+  });
+
   it("returns no_geometry when unverified", () => {
     const result = evaluateNeighborhoodGeofence(32.75, -97.33, {
       center_lat: 32.75,
@@ -73,6 +95,28 @@ describe("neighborhood geofence", () => {
       geometry_verified: true,
     });
     expect(result.status).toBe("invalid_geometry");
+  });
+
+  it("fails closed for malformed or not-yet-effective verified geometry", () => {
+    expect(
+      evaluateNeighborhoodGeofence(32.75, -97.33, {
+        geometry_verified: true,
+        geometry_effective_at: "not-a-date",
+      }),
+    ).toMatchObject({ status: "invalid_geometry" });
+    expect(
+      evaluateNeighborhoodGeofence(32.75, -97.33, {
+        geometry_verified: true,
+        geometry_effective_at: "2099-01-01T00:00:00.000Z",
+        polygon_geojson: { type: "Polygon", coordinates: [] },
+      }),
+    ).toMatchObject({ status: "no_geometry" });
+    expect(
+      evaluateNeighborhoodGeofence(32.75, -97.33, {
+        geometry_verified: true,
+        polygon_geojson: { type: "Polygon", coordinates: [] },
+      }),
+    ).toMatchObject({ status: "invalid_geometry" });
   });
 });
 
