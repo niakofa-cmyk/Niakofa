@@ -13,6 +13,8 @@ export const usersTable = pgTable("users", {
   lng: real("lng"),
   heading: real("heading"),
   speed: real("speed"),
+  // Dedicated GPS freshness; do not use updated_at because profile edits also change it.
+  location_updated_at: timestamp("location_updated_at", { withTimezone: true }),
   trust_score: real("trust_score").default(5.0),
   help_count: integer("help_count").notNull().default(0),
   neighborhood: text("neighborhood"),
@@ -58,7 +60,6 @@ export const usersTable = pgTable("users", {
   password_reset_code: text("password_reset_code"),
   password_reset_expires_at: timestamp("password_reset_expires_at", { withTimezone: true }),
   // Background check provider ID (migration 0033)
-  // Stores the Checkr candidate ID so webhook events can be matched back to this user row.
   background_check_id: text("background_check_id"),
   // Liability / ToS waiver (migration 0033)
   // When non-null the user has accepted the community agreement for high-risk task categories.
@@ -76,18 +77,15 @@ export const usersTable = pgTable("users", {
   // NULL = not yet assigned; falls back to global pool for legacy rows.
   community_id: integer("community_id"),
   // Tier stickiness (migration 0047)
-  // Effective tier = max(getTrustTier(…), highest_tier_reached).
-  // Can only advance (never reassessed downward). Removed only on account deletion.
   highest_tier_reached: text("highest_tier_reached").notNull().default("member"),
   // No-show counter (migration 0059)
-  // Incremented each time a helper releases/abandons a claimed request without completing it.
-  // Exposed on the public profile so requesters can factor reliability into their choice.
   no_show_count: integer("no_show_count").notNull().default(0),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("users_is_helper_idx").on(t.is_helper),
   index("users_helper_mode_active_idx").on(t.helper_mode_active),
+  index("users_location_updated_at_idx").on(t.location_updated_at),
 ]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, created_at: true, updated_at: true });

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, gte, isNotNull, eq } from "drizzle-orm";
+import { and, gte, isNotNull } from "drizzle-orm";
 import { db, usersTable, diasporaHubsTable, cityNeighborhoodsTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
