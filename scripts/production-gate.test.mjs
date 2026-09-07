@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { resolve } from "node:path";
 
 const script = resolve("scripts/production-gate.mjs");
@@ -15,6 +16,21 @@ function run(overrides = {}) {
   return spawnSync(process.execPath, [script], {
     encoding: "utf8",
     env: { ...baseEnv, ...overrides },
+  });
+}
+
+function runAsync(overrides = {}) {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn(process.execPath, [script], {
+      env: { ...baseEnv, ...overrides },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", rejectRun);
+    child.once("close", (status) => resolveRun({ status, stdout, stderr }));
   });
 }
 
@@ -67,6 +83,29 @@ test("valid timeout boundaries are accepted by configuration validation", () => 
     NIAKOFA_API_ORIGIN: "http://192.0.2.1",
   });
   assert.notEqual(r.status, 2);
+});
+
+test("a healthy API response passes the network gate", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ status: "ok" }));
+  });
+
+  await new Promise((resolveServer) => server.listen(0, "127.0.0.1", resolveServer));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const origin = `http://127.0.0.1:${address.port}`;
+    const r = await runAsync({
+      BASE_URL: origin,
+      NIAKOFA_API_ORIGIN: origin,
+      GATE_TIMEOUT_MS: "1000",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Production gate network check passed/);
+  } finally {
+    await new Promise((resolveServer, rejectServer) => server.close((error) => error ? rejectServer(error) : resolveServer()));
+  }
 });
 
 test("production gate no longer depends on a separately deployed RPG", () => {

@@ -41,7 +41,7 @@ if (baseUrl.origin !== apiOrigin.origin) {
 
 const checks = [];
 
-async function check(name, url, options = {}, validate = () => true) {
+async function check(name, url, options = {}, validate = () => ({ ok: true })) {
   const started = Date.now();
 
   try {
