@@ -2,19 +2,42 @@ import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { RequestHandler } from "express";
 
-/** Records the server receipt time of a successful GPS fix. */
+/**
+ * Stamps the server receipt time of a successful GPS write before the response
+ * is sent. This keeps Diaspora freshness authoritative and prevents a slow
+ * asynchronous post-response write from racing the next presence read.
+ */
 export const stampLocationUpdatedAt: RequestHandler = (req, res, next) => {
-  if (req.method !== "PATCH" || !/^\/users\/\d+\/location(?:\?|$)/.test(req.url)) return next();
+  if (req.method !== "PATCH" || !/^\/users\/\d+\/location(?:\?|$)/.test(req.url)) {
+    return next();
+  }
 
-  res.on("finish", () => {
-    if (res.statusCode < 200 || res.statusCode >= 300) return;
-    const userId = Number(req.url.match(/^\/users\/(\d+)\/location(?:\?|$)/)?.[1]);
-    if (!Number.isInteger(userId) || userId <= 0) return;
+  const match = req.url.match(/^\/users\/(\d+)\/location(?:\?|$)/);
+  const userId = Number(match?.[1]);
+  if (!Number.isInteger(userId) || userId <= 0) return next();
+
+  const sendJson = res.json.bind(res);
+  res.json = ((body: unknown) => {
+    if (res.statusCode < 200 || res.statusCode >= 300) return sendJson(body);
+
+    const locationUpdatedAt = new Date();
     void db.update(usersTable)
-      .set({ location_updated_at: new Date() })
+      .set({ location_updated_at: locationUpdatedAt })
       .where(eq(usersTable.id, userId))
-      .catch((error) => console.warn("location_updated_at stamp failed", { userId, error }));
-  });
+      .then(() => {
+        if (body && typeof body === "object" && !Array.isArray(body)) {
+          sendJson({ ...(body as Record<string, unknown>), location_updated_at: locationUpdatedAt.toISOString() });
+        } else {
+          sendJson(body);
+        }
+      })
+      .catch((error) => {
+        console.warn("location_updated_at stamp failed", { userId, error });
+        sendJson(body);
+      });
+
+    return res;
+  }) as typeof res.json;
 
   next();
 };
