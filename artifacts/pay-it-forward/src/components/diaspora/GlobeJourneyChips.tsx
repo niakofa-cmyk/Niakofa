@@ -1,5 +1,6 @@
 import { BookOpen, Dna, FileSearch, Mic, TreePine, Users } from "lucide-react";
 import { DiasporaLivePresence } from "@/components/diaspora/DiasporaLivePresence";
+import { GlobalVillagePulse } from "@/components/diaspora/GlobalVillagePulse";
 
 const CHIPS = [
   { label: "Family", href: "/diaspora/family", icon: Users, tone: "border-emerald-300/20 bg-emerald-300/10 text-emerald-200" },
@@ -13,6 +14,7 @@ const CHIPS = [
 export function GlobeJourneyChips({ navigate }: { navigate: (href: string) => void }) {
   return (
     <div className="space-y-3">
+      <GlobalVillagePulse navigate={navigate} />
       <DiasporaLivePresence compact />
       <nav aria-label="Diaspora journey" className="flex flex-wrap gap-2">
         {CHIPS.map((chip) => {
