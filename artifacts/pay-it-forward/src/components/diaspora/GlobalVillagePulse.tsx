@@ -17,10 +17,10 @@ type Presence = {
     location_updated_at?: string | null;
     location_age_seconds?: number | null;
     current_hub?: { hub_id: number; hub_name: string; distance_km: number } | null;
-    current_neighborhood?: { neighborhood_id: string; name: string; live_user_count: number; gps_verified: boolean } | null;
+    current_neighborhood?: { neighborhood_id: string; name: string; circle_id?: number | null; live_user_count: number; gps_verified: boolean } | null;
       location_verification?: "gps_verified_neighborhood" | "gps_verified_hub" | "gps_fresh_no_reviewed_neighborhood" | "stale_or_missing_gps";
   };
-  hubs?: Array<{ hub_id: number; live_user_count?: number }>;
+  hubs?: Array<{ hub_id?: number; id?: number; live_user_count?: number }>;
   neighborhoods?: Array<{ neighborhood_id: string; name: string; live_user_count?: number; gps_verified?: boolean }>;
   totals?: { members?: number; live?: number; stories?: number; active_helpers?: number; open_requests?: number; requests_fulfilled?: number; pool_balance?: number; active_neighborhoods?: number };
 };
@@ -100,7 +100,7 @@ export function GlobalVillagePulse({ navigate }: PulseProps) {
       </div>
 
       {currentNeighborhood && locationFresh && (
-        <button data-testid="global-village-current-neighborhood" type="button" onClick={() => navigate?.(`/audio-spirals?neighborhood=${encodeURIComponent(currentNeighborhood.neighborhood_id)}`)} className="mt-4 flex w-full items-center justify-between gap-3 rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2.5 text-left transition hover:bg-emerald-300/[0.1]">
+        <button data-testid="global-village-current-neighborhood" type="button" onClick={() => navigate?.(`/audio-spirals?neighborhood=${encodeURIComponent(currentNeighborhood.neighborhood_id)}${currentNeighborhood.circle_id != null ? `&circle_id=${currentNeighborhood.circle_id}` : ""}`)} className="mt-4 flex w-full items-center justify-between gap-3 rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2.5 text-left transition hover:bg-emerald-300/[0.1]">
           <span className="min-w-0">
             <span className="flex items-center gap-2 text-xs font-bold text-emerald-200"><MapPin className="h-3.5 w-3.5" />You are in {currentNeighborhood.name}</span>
             <span className="mt-0.5 block text-[10px] text-white/40">GPS-verified neighborhood · {currentNeighborhood.live_user_count.toLocaleString()} live here</span>

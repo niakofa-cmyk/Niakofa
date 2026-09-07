@@ -387,6 +387,7 @@ export default function AudioCirclesScreen() {
 
   // Pull ?neighborhood= from URL so Community → Spirals tab card navigates here correctly
   const neighborhoodParam = new URLSearchParams(search).get("neighborhood");
+  const circleParam = new URLSearchParams(search).get("circle_id");
 
   const [city, setCity] = useState(() => {
     try {
@@ -954,9 +955,8 @@ export default function AudioCirclesScreen() {
             const live = circle.live_session;
             const isFollowing = followingSet.has(circle.id);
             const isVerifiedLocal = locationContext?.status === "ready" && locationContext.circle_id === circle.id;
-            const isHighlighted = neighborhoodParam
-              ? circle.neighborhood_name?.toLowerCase() === neighborhoodParam.toLowerCase()
-              : false;
+            const isHighlighted = (circleParam != null && String(circle.id) === circleParam)
+              || (neighborhoodParam != null && circle.neighborhood_name?.toLowerCase() === neighborhoodParam.toLowerCase());
             return (
               <motion.div
                 key={circle.id}

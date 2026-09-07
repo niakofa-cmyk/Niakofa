@@ -498,12 +498,12 @@ const ReviewHubSchema = z.object({
   decision: z.enum(["approved", "rejected"]),
 });
 
-// GET /griot/hubs — public. Every approved hub, enriched with a published
+// GET /griot/hubs — authenticated. Every approved hub, enriched with a published
 // story count and, for hubs a community has claimed, the same live activity
 // numbers /impact/:county shows (active helpers, requests fulfilled, pool
 // balance) — this is what turns the globe from "10 static pins with lore"
 // into a map of where the actual help network is active.
-router.get("/griot/hubs", generalApiLimiter, async (_req, res) => {
+router.get("/griot/hubs", requireAuth, generalApiLimiter, async (_req, res) => {
   const [hubs, recentUsers] = await Promise.all([
     db
       .select()
@@ -546,10 +546,19 @@ router.get("/griot/hubs", generalApiLimiter, async (_req, res) => {
       //  - if the hub is claimed by a real Niakofa community, every user
       //    in that community counts too (they're already "members" via
       //    the community they belong to).
-      const [leaderMemberRow] = await db
-        .select({ count: sql<number>`COUNT(DISTINCT ${hubCommunityLeadersTable.user_id})::int` })
-        .from(hubCommunityLeadersTable)
-        .where(eq(hubCommunityLeadersTable.hub_id, hub.id));
+      const memberResult = await db.execute<{ count: number }>(sql`
+        SELECT COUNT(DISTINCT u.id)::int AS count
+        FROM users u
+        WHERE ${hub.community_id != null
+          ? sql`u.community_id = ${hub.community_id} OR `
+          : sql``}
+          EXISTS (
+            SELECT 1
+            FROM hub_community_leaders hcl
+            WHERE hcl.hub_id = ${hub.id}
+              AND hcl.user_id = u.id
+          )
+      `);
 
       // Live mutual-aid engine link: open requests directly tagged to this hub
       // (help_requests.hub_id) — independent of whether a community has
@@ -566,44 +575,53 @@ router.get("/griot/hubs", generalApiLimiter, async (_req, res) => {
         ));
       const open_requests = openHubRequestsRow?.count ?? 0;
 
-      let communityMemberCount = 0;
       let activity: { active_helpers: number; requests_fulfilled: number; pool_balance: number } | null = null;
 
       if (hub.community_id) {
-        const [helperRow, requestRow, poolRow, memberRow] = await Promise.all([
-          db
-            .select({ count: sql<number>`COUNT(*)::int` })
-            .from(usersTable)
-            .where(and(eq(usersTable.community_id, hub.community_id), eq(usersTable.helper_mode_active, true))),
+        const [helperRows, requestRow, poolRow] = await Promise.all([
+          db.execute<{ user_id: number }>(sql`
+            SELECT DISTINCT u.id AS user_id
+            FROM users u
+            WHERE u.helper_mode_active = TRUE
+              AND (
+                u.community_id = ${hub.community_id}
+                OR EXISTS (
+                  SELECT 1
+                  FROM hub_community_leaders hcl
+                  WHERE hcl.hub_id = ${hub.id}
+                    AND hcl.user_id = u.id
+                )
+              )
+          `),
           db
             .select({ count: sql<number>`COUNT(*)::int` })
             .from(requestsTable)
-            .where(sql`${requestsTable.status} = 'completed'
-              AND ${requestsTable.requester_id} IN (SELECT id FROM users WHERE community_id = ${hub.community_id})`),
+            .where(and(
+              eq(requestsTable.status, "completed"),
+              or(
+                eq(requestsTable.hub_id, hub.id),
+                sql`${requestsTable.requester_id} IN (SELECT id FROM users WHERE community_id = ${hub.community_id})`,
+              ),
+            )),
           db
             .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
             .from(communityPoolLedgerTable)
             .where(eq(communityPoolLedgerTable.community_id, hub.community_id)),
-          db
-            .select({ count: sql<number>`COUNT(*)::int` })
-            .from(usersTable)
-            .where(eq(usersTable.community_id, hub.community_id)),
         ]);
 
         activity = {
-          active_helpers: helperRow[0]?.count ?? 0,
+          active_helpers: helperRows.rows.length,
           requests_fulfilled: requestRow[0]?.count ?? 0,
           pool_balance: poolRow[0]?.balance ?? 0,
         };
-        communityMemberCount = memberRow[0]?.count ?? 0;
       }
 
-      const leaderMemberCount = leaderMemberRow?.count ?? 0;
+      const memberCount = Number(memberResult.rows[0]?.count ?? 0);
 
       return {
         ...hub,
         story_count: storyCountRow?.count ?? 0,
-        member_count: communityMemberCount + leaderMemberCount,
+        member_count: memberCount,
         live_user_count: liveByHub.get(hub.id) ?? 0,
         open_requests,
         activity,

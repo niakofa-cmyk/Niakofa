@@ -66,9 +66,23 @@ export function DiasporaLivePresence({ hubId, compact = false }: { hubId?: numbe
     if (!currentUser) return;
     setLoading(true);
     try {
-      const response = await fetch("/api/griot/live-presence", { headers: authHeaders() });
+      // Global Village is the canonical aggregate read path. Keeping this
+      // surface on the same snapshot prevents Globe cards and village totals
+      // from disagreeing during a GPS refresh.
+      const response = await fetch("/api/griot/village-pulse", { headers: authHeaders() });
       if (!response.ok) throw new Error("presence");
-      setData((await response.json()) as PresenceResponse);
+      const pulse = await response.json() as Omit<PresenceResponse, "hubs"> & {
+        hubs?: Array<{ id?: number; hub_id?: number; name?: string; hub_name?: string; live_user_count?: number; last_location_at?: string | null }>;
+      };
+      setData({
+        ...pulse,
+        hubs: (pulse.hubs ?? []).map((hub) => ({
+          hub_id: hub.hub_id ?? hub.id ?? 0,
+          hub_name: hub.hub_name ?? hub.name ?? "Diaspora Hub",
+          live_user_count: Number(hub.live_user_count ?? 0),
+          last_location_at: hub.last_location_at ?? null,
+        })),
+      });
     } catch {
       // Presence is additive; an outage must not break Diaspora browsing.
     } finally {
