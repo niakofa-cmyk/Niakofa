@@ -19,6 +19,35 @@ export function promoteLocalSpiral<T extends { id: number }>(
   return [local, ...circles.slice(0, index), ...circles.slice(index + 1)];
 }
 
+/**
+ * Order the discovery list around the user's verified GPS neighborhood.
+ *
+ * Priority is deliberately explicit:
+ *   1. server-verified local neighborhood Spiral
+ *   2. every other neighborhood/city Spiral in the API's normal order
+ *   3. city-wide Spiral(s) last
+ *
+ * A missing local match never invents one. A city-wide Spiral is identified
+ * by a null neighborhood_id, matching the persisted Spiral schema.
+ */
+export function orderSpiralsForLocation<T extends { id: number; neighborhood_id?: number | null }>(
+  spirals: T[] | undefined,
+  localSpiralId: number | null | undefined,
+): T[] | undefined {
+  if (!spirals) return spirals;
+
+  return [...spirals].sort((a, b) => {
+    const aLocal = localSpiralId != null && a.id === localSpiralId;
+    const bLocal = localSpiralId != null && b.id === localSpiralId;
+    if (aLocal !== bLocal) return aLocal ? -1 : 1;
+
+    const aCitywide = a.neighborhood_id == null;
+    const bCitywide = b.neighborhood_id == null;
+    if (aCitywide !== bCitywide) return aCitywide ? 1 : -1;
+    return 0;
+  });
+}
+
 export const CIRCLE_ROUTE_ALIASES = {
   discovery: "/audio-circles",
   room: "/audio-circle/:id",
