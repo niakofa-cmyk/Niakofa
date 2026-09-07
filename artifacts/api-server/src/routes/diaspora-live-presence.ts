@@ -9,6 +9,7 @@ import { evaluateNeighborhoodGeofence } from "../lib/neighborhoodGeofence";
 
 const router = Router();
 
+// Presence is derived server-side; no raw coordinates are included in responses.
 function cityKeyFromHubName(name: string): string {
   return name.split(",")[0]!.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
