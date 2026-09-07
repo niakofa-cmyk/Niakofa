@@ -98,6 +98,19 @@ router.post("/checkin", verifyInternalSecret, async (req: Request, res: Response
   }
 
   try {
+    // Check the user before spending provider time. The API worker normally
+    // supplies a live user, but delayed/replayed jobs can outlive a deleted
+    // account. Returning a stable 404 keeps that case from becoming a noisy
+    // foreign-key 500 after an unnecessary Anthropic call.
+    const userResult = await pool.query(
+      "SELECT 1 FROM users WHERE id = $1 LIMIT 1",
+      [userId],
+    );
+    if (!userResult.rowCount) {
+      logger.warn({ userId, requestId, sessionId }, "checkin: user no longer exists");
+      return res.status(404).json({ error: "User not found" });
+    }
+
     // 1. Generate Nia's warm check-in message using Claude
     const helperContext = helperName 
       ? `A helper named ${helperName} helped them complete this.` 
@@ -128,11 +141,18 @@ No markdown, no emoji, just human warmth.`;
     // Plain INSERT — nia_conversations has no unique constraint on (user_id, session_id)
     // and no updated_at column; the sessionId is generated fresh per check-in call
     // by api-server's checkin worker so collisions are not expected.
-    await pool.query(
+    const savedConversation = await pool.query(
       `INSERT INTO nia_conversations (user_id, session_id, user_message, nia_response, is_crisis, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
+       SELECT $1, $2, $3, $4, $5, NOW()
+       FROM users
+       WHERE id = $1
+       RETURNING id`,
       [userId, sessionId, requestTitle, niaResponse, Boolean(hubInCrisis)]
     );
+    if (!savedConversation.rowCount) {
+      logger.warn({ userId, requestId, sessionId }, "checkin: user disappeared before save");
+      return res.status(404).json({ error: "User not found" });
+    }
 
     logger.info(
       { userId, requestId, sessionId, category },

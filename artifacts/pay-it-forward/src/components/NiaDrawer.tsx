@@ -780,14 +780,16 @@ export function NiaDrawer({
   // Voice wake-word indicator inside the open drawer — NiaFab shows the same
   // indicator on the collapsed orb; keep listening while the drawer is open
   // so a hands-free follow-up ("Hey Nia, ...") still works.
+  const handleWakeWordDetected = useCallback((_lang: CulturalLanguage, transcript: string) => {
+    if (transcript && transcript.trim()) {
+      setInput(transcript.trim());
+      inputRef.current?.focus();
+    }
+  }, []);
+
   const { listeningState: drawerListeningState, isSupported: voiceSupported } = useVoiceWakeWord({
     enabled: open,
-    onWakeWordDetected: (_lang, transcript) => {
-      if (transcript && transcript.trim()) {
-        setInput(transcript.trim());
-        inputRef.current?.focus();
-      }
-    },
+    onWakeWordDetected: handleWakeWordDetected,
   });
 
   // GPS is managed by AppContext watchPosition — this is kept as a no-op for any remaining call-sites
