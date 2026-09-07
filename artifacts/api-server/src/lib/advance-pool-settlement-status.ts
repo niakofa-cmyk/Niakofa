@@ -58,14 +58,16 @@ export async function advancePendingPoolSettlements(
           );
 
         if (row.userId != null && row.ledgerId != null) {
+          const availableOn = balanceTransaction.available_on
+            ? new Date(balanceTransaction.available_on * 1000).toISOString()
+            : null;
+
           await tx.execute(sql`
             UPDATE transactions
             SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
               'stripe_verification_status', 'verified',
               'settlement_status', 'available',
-              'available_on', ${balanceTransaction.available_on
-                ? new Date(balanceTransaction.available_on * 1000).toISOString()
-                : null}
+              'available_on', ${availableOn}::text
             )
             WHERE user_id = ${row.userId}
               AND type = 'pool_contribution'
