@@ -1,8 +1,17 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 const baseUrl = process.env.BASE_URL || process.env.PLAYWRIGHT_BASE_URL;
 const statePath = process.env.USER_A_STATE;
 const enabled = process.env.ALLOW_MUTATING_E2E === "1" && process.env.CONFIRM_DISPOSABLE_ACCOUNT === "1";
+
+async function authHeaders(page: Page): Promise<Record<string, string>> {
+  const storageState = await page.context().storageState();
+  const token = storageState.origins
+    .flatMap((origin) => origin.localStorage)
+    .find((entry) => entry.name === "niakofa_token")?.value;
+  expect(token).toBeTruthy();
+  return { Authorization: `Bearer ${token}` };
+}
 
 test.describe("Diaspora live presence production acceptance", () => {
   test.skip(!baseUrl || !statePath || !enabled, "Requires BASE_URL, USER_A_STATE and explicit disposable-account E2E approval");
@@ -12,7 +21,7 @@ test.describe("Diaspora live presence production acceptance", () => {
     const page = await context.newPage();
 
     const response = await page.request.get(new URL("/api/griot/live-presence", baseUrl).toString(), {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(await authHeaders(page)) },
     });
     expect(response.ok()).toBeTruthy();
 
@@ -37,9 +46,9 @@ test.describe("Diaspora live presence production acceptance", () => {
     }
 
     await page.goto(new URL("/diaspora", baseUrl).toString(), { waitUntil: "domcontentloaded" });
-    await expect(page.getByText("Live Diaspora Presence")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Diaspora Globe")).toBeVisible({ timeout: 15_000 });
 
-    await page.goto(new URL("/globe", baseUrl).toString(), { waitUntil: "domcontentloaded" });
+    await page.goto(new URL("/diaspora/heritage/globe", baseUrl).toString(), { waitUntil: "domcontentloaded" });
     await expect(page.getByText("Live Diaspora Presence")).toBeVisible({ timeout: 15_000 });
 
     await context.close();

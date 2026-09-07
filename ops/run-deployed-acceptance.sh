@@ -27,7 +27,9 @@ fi
 
 runtime_dir=""
 cleanup() {
-  [[ -n "$runtime_dir" ]] && rm -rf -- "$runtime_dir"
+  if [[ -n "$runtime_dir" ]]; then
+    rm -rf -- "$runtime_dir"
+  fi
 }
 trap cleanup EXIT
 
