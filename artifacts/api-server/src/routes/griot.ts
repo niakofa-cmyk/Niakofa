@@ -20,13 +20,14 @@ import { db, griotStoriesTable, storyTranslationsTable, griotTranscriptionJobsTa
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { generalApiLimiter, paymentLimiter } from "../middlewares/rate-limit";
-import { eq, and, desc, sql, gte } from "drizzle-orm";
+import { eq, and, desc, sql, gte, isNotNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { moderatePostText } from "../lib/post-moderation";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { getStripeSecretKey } from "../lib/stripe-config";
 import { recordPoolContribution, processPendingMinimums, getHubReservedBalance } from "../lib/community-pool";
+import { buildPresenceSnapshot, LIVE_PRESENCE_WINDOW_MS } from "../lib/diasporaPresence";
 
 // Same graceful-degradation pattern as pool.ts / wallet.ts / stripe.ts —
 // pledges work in dev mode without a Stripe key, but real charges require it.
@@ -503,11 +504,33 @@ const ReviewHubSchema = z.object({
 // balance) — this is what turns the globe from "10 static pins with lore"
 // into a map of where the actual help network is active.
 router.get("/griot/hubs", generalApiLimiter, async (_req, res) => {
-  const hubs = await db
-    .select()
-    .from(diasporaHubsTable)
-    .where(eq(diasporaHubsTable.status, "approved"))
-    .orderBy(desc(diasporaHubsTable.is_seed));
+  const [hubs, recentUsers] = await Promise.all([
+    db
+      .select()
+      .from(diasporaHubsTable)
+      .where(eq(diasporaHubsTable.status, "approved"))
+      .orderBy(desc(diasporaHubsTable.is_seed)),
+    db
+      .select({
+        id: usersTable.id,
+        lat: usersTable.lat,
+        lng: usersTable.lng,
+        location_updated_at: usersTable.location_updated_at,
+      })
+      .from(usersTable)
+      .where(and(
+        isNotNull(usersTable.location_updated_at),
+        gte(usersTable.location_updated_at, new Date(Date.now() - LIVE_PRESENCE_WINDOW_MS)),
+        lte(usersTable.location_updated_at, new Date()),
+      )),
+  ]);
+  const presence = buildPresenceSnapshot({
+    now: new Date(),
+    hubs,
+    users: recentUsers,
+    currentUserId: -1,
+  });
+  const liveByHub = new Map(presence.hubs.map((hub) => [hub.hub_id, hub.live_user_count]));
 
   const enriched = await Promise.all(
     hubs.map(async (hub) => {
@@ -535,7 +558,12 @@ router.get("/griot/hubs", generalApiLimiter, async (_req, res) => {
       const [openHubRequestsRow] = await db
         .select({ count: sql<number>`COUNT(*)::int` })
         .from(requestsTable)
-        .where(and(eq(requestsTable.hub_id, hub.id), eq(requestsTable.status, "open")));
+        .where(and(
+          eq(requestsTable.status, "open"),
+          hub.community_id != null
+            ? or(eq(requestsTable.hub_id, hub.id), sql`${requestsTable.requester_id} IN (SELECT id FROM users WHERE community_id = ${hub.community_id})`)
+            : eq(requestsTable.hub_id, hub.id),
+        ));
       const open_requests = openHubRequestsRow?.count ?? 0;
 
       let communityMemberCount = 0;
@@ -576,6 +604,7 @@ router.get("/griot/hubs", generalApiLimiter, async (_req, res) => {
         ...hub,
         story_count: storyCountRow?.count ?? 0,
         member_count: communityMemberCount + leaderMemberCount,
+        live_user_count: liveByHub.get(hub.id) ?? 0,
         open_requests,
         activity,
       };

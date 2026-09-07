@@ -18,6 +18,7 @@ type Presence = {
     location_age_seconds?: number | null;
     current_hub?: { hub_id: number; hub_name: string; distance_km: number } | null;
     current_neighborhood?: { neighborhood_id: string; name: string; live_user_count: number; gps_verified: boolean } | null;
+      location_verification?: "gps_verified_neighborhood" | "gps_verified_hub" | "gps_fresh_no_reviewed_neighborhood" | "stale_or_missing_gps";
   };
   hubs?: Array<{ hub_id: number; live_user_count?: number }>;
   neighborhoods?: Array<{ neighborhood_id: string; name: string; live_user_count?: number; gps_verified?: boolean }>;
@@ -85,6 +86,7 @@ export function GlobalVillagePulse({ navigate }: PulseProps) {
   const helpingDetail = `${metrics.openRequests.toLocaleString()} open · ${metrics.fulfilled.toLocaleString()} fulfilled · $${metrics.poolBalance.toFixed(2)} pool`;
   const currentNeighborhood = presence?.current_user?.current_neighborhood;
   const locationFresh = presence?.current_user?.location_fresh === true;
+  const locationVerification = presence?.current_user?.location_verification;
 
   return (
     <section data-testid="global-village-pulse" aria-label="Global Village pulse" aria-live="polite" className={`${diasporaTheme.radiusHero} border border-teal-300/15 bg-white/[0.025] p-4 sm:p-5`}>
@@ -105,6 +107,21 @@ export function GlobalVillagePulse({ navigate }: PulseProps) {
           </span>
           <span className="shrink-0 text-[10px] font-bold text-emerald-200">Open local Spiral →</span>
         </button>
+      )}
+      {!currentNeighborhood && locationVerification === "gps_fresh_no_reviewed_neighborhood" && (
+        <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] px-3 py-2.5 text-[11px] leading-relaxed text-amber-100/70">
+          GPS is fresh, but this city does not have a reviewed neighborhood boundary for your exact point yet. The village will not guess your neighborhood.
+        </div>
+      )}
+      {!currentNeighborhood && locationVerification === "gps_verified_hub" && (
+        <div className="mt-4 rounded-2xl border border-teal-300/20 bg-teal-300/[0.06] px-3 py-2.5 text-[11px] leading-relaxed text-teal-100/70">
+          You are near a verified Hub. Hub proximity is live presence, not automatic Hub membership; neighborhood precision still requires reviewed geometry.
+        </div>
+      )}
+      {locationVerification === "stale_or_missing_gps" && (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[11px] leading-relaxed text-white/45">
+          Refresh GPS to verify your present neighborhood. Stale coordinates never contribute to live counts.
+        </div>
       )}
 
       <div data-testid="global-village-spirals-metrics" className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">

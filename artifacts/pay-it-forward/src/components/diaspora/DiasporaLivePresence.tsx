@@ -14,6 +14,8 @@ type PresenceResponse = {
     location_updated_at: string | null;
     location_age_seconds: number | null;
     current_hub: { hub_id: number; hub_name: string; distance_km: number } | null;
+      current_neighborhood?: { neighborhood_id: string; name: string; live_user_count: number; gps_verified: boolean } | null;
+      location_verification?: "gps_verified_neighborhood" | "gps_verified_hub" | "gps_fresh_no_reviewed_neighborhood" | "stale_or_missing_gps";
   };
   hubs: HubPresence[];
   neighborhoods?: NeighborhoodPresence[];
@@ -98,7 +100,9 @@ export function DiasporaLivePresence({ hubId, compact = false }: { hubId?: numbe
   );
   const current = data?.current_user;
   const count = selected?.live_user_count ?? (hubId == null ? data?.hubs.find((h) => h.hub_id === current?.current_hub?.hub_id)?.live_user_count ?? null : null);
-  const label = current?.current_hub?.hub_name ?? "No verified hub yet";
+  const label = current?.current_neighborhood?.name
+    ?? current?.current_hub?.hub_name
+    ?? "No verified neighborhood or Hub yet";
   const visibleNeighborhoods = (data?.neighborhoods ?? []).filter((n) => n.live_user_count > 0).slice(0, 6);
 
   async function refreshGps() {
@@ -121,7 +125,11 @@ export function DiasporaLivePresence({ hubId, compact = false }: { hubId?: numbe
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-teal-300/70">Live Diaspora Presence</p>
           <p className="mt-1 text-sm font-bold text-white">{current?.location_fresh ? label : "Location needs a fresh GPS sync"}</p>
           <p className="mt-1 text-[11px] leading-relaxed text-white/45">
-            {current?.location_fresh ? `Server-synced ${relative(current.location_updated_at)}. Live counts use your latest GPS; raw coordinates are never displayed.` : "Only recently server-synced GPS contributes to live counts."}
+            {current?.location_fresh
+              ? current.current_neighborhood
+                ? `GPS-verified neighborhood. Server-synced ${relative(current.location_updated_at)}; raw coordinates are never displayed.`
+                : `Server-synced ${relative(current.location_updated_at)}. Hub proximity is not membership, and no reviewed neighborhood boundary matched this fix.`
+              : "Only recently server-synced GPS contributes to live counts."}
           </p>
         </div>
         <button onClick={() => void refreshGps()} disabled={refreshingLocation} className="shrink-0 rounded-xl border border-white/10 bg-white/5 p-2 text-white/60 hover:bg-white/10" title="Refresh GPS">
@@ -130,7 +138,7 @@ export function DiasporaLivePresence({ hubId, compact = false }: { hubId?: numbe
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <div className="rounded-xl bg-white/5 px-3 py-2"><Users className="mr-1 inline h-3.5 w-3.5 text-teal-300" /><b className="text-white">{loading ? "…" : count ?? 0}</b><span className="ml-1 text-[11px] text-white/40">live users</span></div>
-        {current?.current_hub && <div className="rounded-xl bg-white/5 px-3 py-2 text-[11px] text-white/50">~{current.current_hub.distance_km} km from hub center</div>}
+        {current?.current_hub && <div className="rounded-xl bg-white/5 px-3 py-2 text-[11px] text-white/50">Nearby Hub · ~{current.current_hub.distance_km} km</div>}
         {selected && <div className="rounded-xl bg-white/5 px-3 py-2 text-[11px] text-white/50">Latest hub GPS: {relative(selected.last_location_at)}</div>}
       </div>
       {visibleNeighborhoods.length > 0 && (

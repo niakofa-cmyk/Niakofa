@@ -85,8 +85,44 @@ router.get("/griot/live-presence", requireAuth, generalApiLimiter, async (req, r
       }
     }
 
+    const currentUser = users.find((user) => user.id === currentUserId);
+    let currentNeighborhood: {
+      neighborhood_id: string;
+      name: string;
+      emoji: string | null;
+      live_user_count: number;
+      gps_verified: true;
+    } | null = null;
+    if (snapshot.current_user.location_fresh && currentUser?.lat != null && currentUser.lng != null) {
+      for (const neighborhood of neighborhoods) {
+        if (!neighborhood.geometry_verified) continue;
+        if (evaluateNeighborhoodGeofence(currentUser.lat, currentUser.lng, neighborhood, now).status === "inside") {
+          currentNeighborhood = {
+            neighborhood_id: neighborhood.neighborhood_id,
+            name: neighborhood.name,
+            emoji: neighborhood.emoji,
+            live_user_count: neighborhoodCounts.get(neighborhood.id) ?? 0,
+            gps_verified: true,
+          };
+          break;
+        }
+      }
+    }
+    const locationVerification = currentNeighborhood
+      ? "gps_verified_neighborhood"
+      : snapshot.current_user.location_fresh
+        ? snapshot.current_user.current_hub
+          ? "gps_verified_hub"
+          : "gps_fresh_no_reviewed_neighborhood"
+        : "stale_or_missing_gps";
+
     res.json({
       ...snapshot,
+      current_user: {
+        ...snapshot.current_user,
+        current_neighborhood: currentNeighborhood,
+        location_verification: locationVerification,
+      },
       neighborhoods: neighborhoods
         .filter((n) => n.geometry_verified)
         .map((n) => ({

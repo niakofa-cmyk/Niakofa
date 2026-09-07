@@ -30,6 +30,21 @@ missing review metadata, and attempts to verify incomplete geometry.
 - A verified point outside the boundary returns a server-side outside status.
 - Joining remains location-independent.
 
+## Global Village and Hub semantics
+
+- A Hub is a governed cultural/community membership surface. A nearby GPS
+  signal produces **live proximity**, not automatic membership or enrollment.
+- County/community assignment can move with a fresh GPS fix for county-scoped
+  Pool and civic routing. Hub membership remains explicit through community
+  membership or a Hub membership/leader record.
+- `live_user_count` is a recent server-synced GPS presence metric. It is not
+  the same as `member_count`, and raw coordinates never leave the API.
+- Global member/helper/request/Pool totals deduplicate people and shared county
+  scopes across Hubs. The Places in the story list shows the per-Hub story,
+  member, live, helper, request, fulfilled, and Pool metrics.
+- `active_neighborhoods` counts only reviewed neighborhoods with at least one
+  recent GPS-verified user. Unreviewed geometry is deliberately excluded.
+
 ## Acceptance checks
 
 1. Admin GET/PATCH exposes source, version, effective date, verification status,
