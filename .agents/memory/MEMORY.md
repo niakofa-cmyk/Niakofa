@@ -35,6 +35,7 @@
 - [Circles media state](niakofa-circles-lifecycle.md) — media-connected status must come from the WebRTC session, with bounded ICE recovery, not REST presence alone.
 - [Spirals compatibility boundary](niakofa-spirals-compatibility.md) — Spirals is canonical in product UX while Circle-era storage, APIs, events, and links remain compatible.
 - [Civic jurisdiction matching](civic-jurisdiction-matching.md) — normalize external geocoder metadata before matching canonical civic coverage, and version caches when matching changes.
+- [Neighborhood geometry validation](neighborhood-geometry-validation.md) — reviewed geofences must reject malformed vertices instead of silently filtering them.
 - [Payout operation boundary](payout-operation-boundary.md) — helper payouts use a separate durable operation ledger and one shared Stripe reconciliation protocol.
 - [App-to-Nia HTTP boundary](niakofa-app-nia-http-boundary.md) — provider access and feature-service calls stay behind the authenticated Nia client.
 - [Stripe Accounts v2 recipient capability](stripe-v2-recipient-capability.md) — V1 transfers-active is insufficient; treat missing v2 recipient transfer capability as definitive.
