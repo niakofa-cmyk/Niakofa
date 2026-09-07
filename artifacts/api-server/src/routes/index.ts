@@ -1,4 +1,6 @@
 import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import { db, usersTable } from "@workspace/db";
 import healthRouter from "./health";
 import verificationRouter from "./verification";
 import usersRouter from "./users";
@@ -49,6 +51,8 @@ import diasporaResearchRouter from "./diaspora-research";
 import diasporaConnectionsRouter from "./diaspora-connections";
 import diasporaCompletionRouter from "./diaspora-completion";
 import diasporaRouter from "./diaspora";
+import { requireAuth } from "../middlewares/auth";
+import { requireOwnership, resolveMeParam } from "../middlewares/authz";
 
 const router: IRouter = Router();
 
@@ -60,6 +64,21 @@ router.use((req, _res, next) => {
     .replace(/^\/audio-spiral-sessions(?=\/|$)/, "/audio-circle-sessions")
     .replace(/^\/audio-spirals(?=\/|$)/, "/audio-circles");
   next();
+});
+
+// Accepted GPS updates advance a dedicated presence clock. This is intentionally
+// separate from users.updated_at, which also changes for profile edits. The
+// existing usersRouter remains the authoritative location writer and performs
+// its normal validation/ownership checks immediately after this timestamp hook.
+router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnership(), async (req, _res, next) => {
+  try {
+    await db.update(usersTable)
+      .set({ location_updated_at: new Date() })
+      .where(eq(usersTable.id, Number(req.params.id)));
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.use(healthRouter);
@@ -110,8 +129,6 @@ router.use(familyConsentRouter);
 router.use(dnaMatchingRouter);
 router.use(diasporaResearchRouter);
 router.use(diasporaConnectionsRouter);
-
-// Must precede diasporaRouter so the corrected aggregate dashboard and durable Preserve endpoints win over older bounded implementations.
 router.use(diasporaCompletionRouter);
 router.use(diasporaRouter);
 
