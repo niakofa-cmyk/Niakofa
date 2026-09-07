@@ -46,3 +46,17 @@ enough.
 **How to apply:** Read the authenticated remote ref after synchronization and
 compare it to local `HEAD`; never infer a successful push from a local branch
 state alone.
+
+Binary Git Data API uploads must be verified by decoding the exact base64 payload
+and comparing byte length before advancing the ref. For exact commit parity,
+GitHub's API-normalized UTC dates may correspond to a raw commit timezone offset;
+reconstruct the parent and child objects from the raw epoch/offset metadata, not
+the displayed ISO timezone alone.
+
+**Why:** A truncated binary blob changed the remote tree even though the text
+blobs matched, and a local commit with the same visible metadata still differed
+until its raw timezone offset was preserved.
+
+**How to apply:** Compare every changed blob SHA and tree SHA first. If a shell
+fetch cannot authenticate, use the connection-backed commit metadata and only
+move local refs after the independently computed commit SHA matches GitHub.
