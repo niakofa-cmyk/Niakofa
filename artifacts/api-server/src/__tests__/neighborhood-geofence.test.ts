@@ -27,6 +27,29 @@ describe("neighborhood geofence", () => {
     expect(pointInPolygon(-97.40, 32.75, geojson)).toBe(false);
   });
 
+  it("rejects a polygon with malformed or out-of-range vertices instead of filtering them", () => {
+    expect(
+      pointInPolygon(-97.33, 32.75, {
+        type: "Polygon",
+        coordinates: [[
+          [-97.34, 32.74],
+          ["bad", 32.75],
+          [-97.32, 32.76],
+        ]],
+      }),
+    ).toBeNull();
+    expect(
+      pointInPolygon(-97.33, 32.75, {
+        type: "Polygon",
+        coordinates: [[
+          [-97.34, 32.74],
+          [181, 32.75],
+          [-97.32, 32.76],
+        ]],
+      }),
+    ).toBeNull();
+  });
+
   it("respects polygon holes and supports MultiPolygon", () => {
     const hole: [number, number][] = [
       [-97.335, 32.745],

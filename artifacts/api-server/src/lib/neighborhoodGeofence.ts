@@ -46,14 +46,30 @@ export function pointInRing(lng: number, lat: number, ring: LngLat[]): boolean {
 
 function parseRing(value: unknown): LngLat[] | null {
   if (!Array.isArray(value)) return null;
-  const points = value.filter(
-    (point): point is LngLat =>
-      Array.isArray(point) &&
-      point.length >= 2 &&
-      isFiniteNumber(point[0]) &&
-      isFiniteNumber(point[1]),
-  );
-  return points.length >= 3 ? points : null;
+  if (value.length < 3) return null;
+
+  // Do not filter malformed vertices out of a reviewed boundary. Doing so
+  // changes the geometry while still presenting it as verified, which can
+  // incorrectly grant or deny host eligibility. A verified ring must be
+  // wholly valid or fail closed.
+  const points: LngLat[] = [];
+  for (const point of value) {
+    if (
+      !Array.isArray(point) ||
+      point.length < 2 ||
+      !isFiniteNumber(point[0]) ||
+      !isFiniteNumber(point[1]) ||
+      point[0] < -180 ||
+      point[0] > 180 ||
+      point[1] < -90 ||
+      point[1] > 90
+    ) {
+      return null;
+    }
+    points.push([point[0], point[1]]);
+  }
+
+  return points;
 }
 
 function extractPolygons(geojson: unknown): PolygonRings[] | null {
