@@ -93,6 +93,13 @@ function parseDate(value: Date | string | null): Date | null {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
+export function isLivePresenceTimestamp(value: Date | string | null, now: Date): boolean {
+  const updated = parseDate(value);
+  if (!updated) return false;
+  const ageMs = now.getTime() - updated.getTime();
+  return ageMs >= 0 && ageMs <= LIVE_PRESENCE_WINDOW_MS;
+}
+
 export function buildPresenceSnapshot(args: {
   now: Date;
   hubs: PresenceHub[];
@@ -108,7 +115,7 @@ export function buildPresenceSnapshot(args: {
     if (user.id === currentUserId) currentUser = user;
 
     const updated = parseDate(user.location_updated_at);
-    if (!updated || now.getTime() - updated.getTime() > LIVE_PRESENCE_WINDOW_MS) continue;
+    if (!updated || !isLivePresenceTimestamp(updated, now)) continue;
 
     const resolved = finite(user.lat) && finite(user.lng)
       ? resolveNearestHub(user.lat, user.lng, hubs)

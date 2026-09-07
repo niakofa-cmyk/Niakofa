@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, gte, isNotNull } from "drizzle-orm";
+import { and, gte, isNotNull, lte } from "drizzle-orm";
 import { db, usersTable, diasporaHubsTable, cityNeighborhoodsTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
@@ -49,6 +49,7 @@ router.get("/griot/live-presence", requireAuth, generalApiLimiter, async (req, r
         .where(and(
           isNotNull(usersTable.location_updated_at),
           gte(usersTable.location_updated_at, new Date(now.getTime() - LIVE_PRESENCE_WINDOW_MS)),
+          lte(usersTable.location_updated_at, now),
         )),
       db.select({
         id: cityNeighborhoodsTable.id,
