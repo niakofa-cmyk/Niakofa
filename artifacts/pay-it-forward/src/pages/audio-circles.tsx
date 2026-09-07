@@ -35,6 +35,7 @@ interface CircleSummary {
   name: string;
   neighborhood_name: string | null;
   neighborhood_emoji: string | null;
+  neighborhood_geometry_status?: "unconfigured" | "pending_review" | "scheduled" | "verified" | "invalid";
   live_session: LiveSessionSummary | null;
   is_following: boolean;
 }
@@ -48,6 +49,8 @@ interface LocationContext {
   circle_id: number | null;
   neighborhood_name: string | null;
   neighborhood_emoji: string | null;
+  neighborhood_geofence_status?: "inside" | "outside" | "no_geometry" | "invalid_geometry";
+  neighborhood_geometry_status?: "unconfigured" | "pending_review" | "scheduled" | "verified" | "invalid";
   host_signal?: { status?: string; message?: string };
 }
 
@@ -910,7 +913,12 @@ export default function AudioCirclesScreen() {
             </p>
             {locationContext?.circle_id && (
               <p className="text-[10px] text-emerald-400/80">
-                GPS connected · your verified neighborhood is first
+                GPS connected · your verified neighborhood Spiral is first
+              </p>
+            )}
+            {!locationContext?.circle_id && locationContext?.neighborhood_geometry_status === "pending_review" && (
+              <p className="text-[10px] text-amber-300/80">
+                GPS connected · this neighborhood is awaiting boundary review
               </p>
             )}
           </div>
@@ -964,7 +972,7 @@ export default function AudioCirclesScreen() {
                       : "border-border"
                 }`}
               >
-                {/* Circle header */}
+                {/* Spiral header */}
                 <div className="p-4">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
@@ -976,6 +984,11 @@ export default function AudioCirclesScreen() {
                         {live && (
                           <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center gap-1">
                             <Radio className="w-2.5 h-2.5" /> Live
+                          </span>
+                        )}
+                        {circle.neighborhood_id != null && circle.neighborhood_geometry_status === "verified" && (
+                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                            Place-rooted
                           </span>
                         )}
                         {isFollowing && (

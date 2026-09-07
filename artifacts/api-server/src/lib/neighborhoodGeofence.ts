@@ -11,9 +11,18 @@ export type NeighborhoodGeometry = {
   center_lng?: number | null;
   radius_meters?: number | null;
   polygon_geojson?: unknown;
+  geometry_source?: string | null;
+  geometry_version?: string | null;
   geometry_verified?: boolean | null;
   geometry_effective_at?: Date | string | null;
 };
+
+export type NeighborhoodGeometryStatus =
+  | "unconfigured"
+  | "pending_review"
+  | "scheduled"
+  | "verified"
+  | "invalid";
 
 export type GeofenceResult =
   | { status: "inside"; method: "polygon" | "radius" }
@@ -93,6 +102,70 @@ function extractPolygons(geojson: unknown): PolygonRings[] | null {
   }
 
   return null;
+}
+
+/**
+ * Validate geometry before it is persisted as an admin-reviewed boundary.
+ * The evaluator intentionally remains tolerant of unverified drafts, but a
+ * reviewed row must never contain a malformed polygon or partial radius.
+ */
+export function validateNeighborhoodGeometry(
+  row: Pick<NeighborhoodGeometry, "center_lat" | "center_lng" | "radius_meters" | "polygon_geojson">,
+): string | null {
+  const hasPolygon = row.polygon_geojson != null;
+  const hasAnyRadiusField =
+    row.center_lat != null || row.center_lng != null || row.radius_meters != null;
+
+  if (hasPolygon && pointInPolygon(0, 0, row.polygon_geojson) === null) {
+    return "polygon_geojson must be a valid Polygon or MultiPolygon with numeric coordinates";
+  }
+
+  if (hasAnyRadiusField) {
+    if (
+      !isFiniteNumber(row.center_lat) ||
+      !isFiniteNumber(row.center_lng) ||
+      row.center_lat < -90 ||
+      row.center_lat > 90 ||
+      row.center_lng < -180 ||
+      row.center_lng > 180
+    ) {
+      return "center_lat and center_lng must be valid latitude/longitude coordinates";
+    }
+    if (!isFiniteNumber(row.radius_meters) || row.radius_meters <= 0) {
+      return "radius_meters must be greater than zero";
+    }
+  }
+
+  if (!hasPolygon && !hasAnyRadiusField) {
+    return "provide polygon_geojson or a complete center/radius geometry";
+  }
+
+  return null;
+}
+
+export function getNeighborhoodGeometryStatus(
+  row: NeighborhoodGeometry,
+  now = new Date(),
+): NeighborhoodGeometryStatus {
+  const hasGeometry =
+    row.polygon_geojson != null ||
+    row.center_lat != null ||
+    row.center_lng != null ||
+    row.radius_meters != null;
+
+  if (!hasGeometry) return "unconfigured";
+  if (!row.geometry_verified) return "pending_review";
+
+  const geometryError = validateNeighborhoodGeometry(row);
+  if (geometryError) return "invalid";
+
+  if (row.geometry_effective_at) {
+    const effectiveAt = new Date(row.geometry_effective_at);
+    if (!Number.isFinite(effectiveAt.getTime())) return "invalid";
+    if (effectiveAt.getTime() > now.getTime()) return "scheduled";
+  }
+
+  return "verified";
 }
 
 function pointInPolygonRings(lng: number, lat: number, rings: PolygonRings): boolean {

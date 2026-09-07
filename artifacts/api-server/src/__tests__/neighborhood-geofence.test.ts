@@ -1,8 +1,10 @@
 import { describe, expect, it } from "@jest/globals";
 import {
   evaluateNeighborhoodGeofence,
+  getNeighborhoodGeometryStatus,
   pointInRing,
   pointInPolygon,
+  validateNeighborhoodGeometry,
 } from "../lib/neighborhoodGeofence";
 import { buildHostSignal } from "../lib/circleLocationPolicy";
 
@@ -140,6 +142,32 @@ describe("neighborhood geofence", () => {
         polygon_geojson: { type: "Polygon", coordinates: [] },
       }),
     ).toMatchObject({ status: "invalid_geometry" });
+  });
+
+  it("requires complete reviewed metadata and exposes a deterministic status", () => {
+    expect(validateNeighborhoodGeometry({
+      center_lat: 32.75,
+      center_lng: -97.33,
+      radius_meters: 500,
+    })).toBeNull();
+    expect(validateNeighborhoodGeometry({
+      center_lat: 32.75,
+      center_lng: null,
+      radius_meters: 500,
+    })).toMatch(/valid latitude\/longitude/);
+    expect(getNeighborhoodGeometryStatus({
+      center_lat: 32.75,
+      center_lng: -97.33,
+      radius_meters: 500,
+      geometry_verified: false,
+    })).toBe("pending_review");
+    expect(getNeighborhoodGeometryStatus({
+      center_lat: 32.75,
+      center_lng: -97.33,
+      radius_meters: 500,
+      geometry_verified: true,
+      geometry_effective_at: "2099-01-01T00:00:00.000Z",
+    }, new Date("2026-09-07T00:00:00.000Z"))).toBe("scheduled");
   });
 });
 

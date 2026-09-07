@@ -1,3 +1,5 @@
+import { evaluateNeighborhoodGeofence } from "./neighborhoodGeofence";
+
 export type LocalSpiralCandidate = {
   id: number;
   neighborhood_id: number | null;
@@ -25,4 +27,45 @@ export function pickLocalSpiral<T extends LocalSpiralCandidate>(
       })
     : undefined;
   return matchedNeighborhood ?? circles.find((circle) => circle.neighborhood_id == null) ?? null;
+}
+
+type GeometryAwareSpiralCandidate = LocalSpiralCandidate & {
+  center_lat?: number | null;
+  center_lng?: number | null;
+  radius_meters?: number | null;
+  polygon_geojson?: unknown;
+  geometry_verified?: boolean | null;
+  geometry_effective_at?: Date | string | null;
+};
+
+export function pickVerifiedLocalSpiral<T extends GeometryAwareSpiralCandidate>(
+  circles: T[],
+  latitude: number,
+  longitude: number,
+  neighborhoodHint: string | null | undefined,
+  now = new Date(),
+): {
+  circle: T | null;
+  neighborhoodGeofenceStatus: "inside" | "outside" | "no_geometry" | "invalid_geometry";
+} {
+  const neighborhoodCircles = circles.filter((circle) => circle.neighborhood_id != null);
+  const hintedCircle = pickLocalSpiral(neighborhoodCircles, neighborhoodHint);
+  const evaluated = neighborhoodCircles.map((circle) => ({
+    circle,
+    result: evaluateNeighborhoodGeofence(latitude, longitude, circle, now),
+  }));
+  const inside = evaluated.filter(({ result }) => result.status === "inside").map(({ circle }) => circle);
+  const circle = pickLocalSpiral(inside, neighborhoodHint);
+  const hintedResult = hintedCircle
+    ? evaluated.find(({ circle: candidate }) => candidate.id === hintedCircle.id)?.result
+    : undefined;
+
+  return {
+    circle,
+    neighborhoodGeofenceStatus: circle
+      ? "inside"
+      : hintedResult?.status === "outside" || hintedResult?.status === "invalid_geometry"
+        ? hintedResult.status
+        : "no_geometry",
+  };
 }

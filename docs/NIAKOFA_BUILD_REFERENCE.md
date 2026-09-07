@@ -1,7 +1,7 @@
 # Niakofa build reference
 
 This file is the working index for the Niakofa production-readiness work
-reviewed on 2026-09-05. The canonical application source is the root
+reviewed on 2026-09-07. The canonical application source is the root
 `artifacts/` monorepo and the canonical product surface is **Niakofa
 Spirals**.
 
@@ -17,6 +17,9 @@ Spirals**.
 - The live media production path is **LiveKit**. Legacy mesh code is
   compatibility infrastructure only and must not be selected as the production
   transport.
+- Neighborhood Spirals are place-rooted only by a server-reviewed effective
+  polygon or radius geometry. Missing or unverified geometry must not be
+  inferred from a reverse-geocoder neighborhood hint.
 
 ## Safety and data-scope contracts
 
@@ -66,6 +69,9 @@ authenticated Chromium, county travel proving two distinct communities, and a
 real Stripe test webhook walkthrough. A local preview with no production
 credentials cannot certify those external gates.
 
+The current location-geometry acceptance contract is documented in
+[`docs/reference/niakofa-spirals-location-geometry-2026-09-07.md`](reference/niakofa-spirals-location-geometry-2026-09-07.md).
+
 ## Reviewed source materials
 
 The following uploaded materials remain available in the workspace under
@@ -73,6 +79,9 @@ The following uploaded materials remain available in the workspace under
 
 - `Pasted-Replacing-Niakofa-Circles-Wth-Niakofa-Spirals-In-Africa_1788632810210.txt`
 - `Pasted--GitHub-Verify-with-the-updated-repo-Change-and-Replace_1788632910172.txt`
+- `Pasted-Review-your-work-and-Verify-That-you-Finish-and-checkpo_1788811122910.txt`
+- `Pasted-Bottom-line-Yes-this-is-substantially-closer-to-what-we_1788812070902.txt`
+- `Pasted-What-I-would-prioritize-now-1-Real-world-LiveKit-valida_1788812136235.txt`
 - `Niakofa-Spirals-Migration-2026-09-05_1788632954683.zip`
 - `niakofa-production-hardening-and-spirals-bundle_1788632954683.zip`
 - `niakofa-cleanup-and-county-fix_1788632954683.zip`

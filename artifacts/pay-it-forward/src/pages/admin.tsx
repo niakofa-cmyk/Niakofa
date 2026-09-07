@@ -136,6 +136,15 @@ interface Neighborhood {
   emoji: string | null;
   description: string | null;
   verified: boolean;
+  center_lat: number | null;
+  center_lng: number | null;
+  radius_meters: number | null;
+  polygon_geojson: unknown;
+  geometry_source: string | null;
+  geometry_version: string | null;
+  geometry_effective_at: string | null;
+  geometry_verified: boolean;
+  geometry_status: "unconfigured" | "pending_review" | "scheduled" | "verified" | "invalid";
   created_at: string;
 }
 
@@ -5184,6 +5193,16 @@ function NeighborhoodsSection() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [processing, setProcessing] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [geometryDraft, setGeometryDraft] = useState({
+    source: "",
+    version: "",
+    effectiveAt: "",
+    centerLat: "",
+    centerLng: "",
+    radiusMeters: "",
+    polygon: "",
+  });
 
   const hasLoadedRef = useRef(false);
   const load = useCallback(async () => {
@@ -5197,6 +5216,87 @@ function NeighborhoodsSection() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const beginGeometryEdit = (item: Neighborhood) => {
+    setEditingId(item.id);
+    setGeometryDraft({
+      source: item.geometry_source ?? "",
+      version: item.geometry_version ?? "",
+      effectiveAt: item.geometry_effective_at
+        ? new Date(item.geometry_effective_at).toISOString().slice(0, 16)
+        : "",
+      centerLat: item.center_lat?.toString() ?? "",
+      centerLng: item.center_lng?.toString() ?? "",
+      radiusMeters: item.radius_meters?.toString() ?? "",
+      polygon: item.polygon_geojson ? JSON.stringify(item.polygon_geojson, null, 2) : "",
+    });
+  };
+
+  const saveGeometry = async (item: Neighborhood) => {
+    setProcessing(item.id);
+    try {
+      let polygon_geojson: unknown = null;
+      if (geometryDraft.polygon.trim()) {
+        try {
+          polygon_geojson = JSON.parse(geometryDraft.polygon);
+        } catch {
+          toast({ title: "Invalid GeoJSON", description: "Check the polygon JSON before saving.", variant: "destructive" });
+          return;
+        }
+      }
+      const numberOrNull = (value: string) => value.trim() ? Number(value) : null;
+      const body = {
+        geometry_source: geometryDraft.source.trim() || null,
+        geometry_version: geometryDraft.version.trim() || null,
+        geometry_effective_at: geometryDraft.effectiveAt
+          ? new Date(geometryDraft.effectiveAt).toISOString()
+          : null,
+        center_lat: numberOrNull(geometryDraft.centerLat),
+        center_lng: numberOrNull(geometryDraft.centerLng),
+        radius_meters: numberOrNull(geometryDraft.radiusMeters),
+        polygon_geojson,
+      };
+      const res = await fetch(`${BASE}/api/admin/city-neighborhoods/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({})) as Neighborhood & { error?: string };
+      if (!res.ok) {
+        toast({ title: "Geometry not saved", description: data.error ?? "Check the boundary fields.", variant: "destructive" });
+        return;
+      }
+      setItems(prev => prev.map(n => n.id === item.id ? data : n));
+      setEditingId(null);
+      toast({ title: "Geometry saved", description: "Review the metadata before marking the boundary verified." });
+    } catch {
+      toast({ title: "Network error", description: "Could not save neighborhood geometry.", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const toggleGeometryVerified = async (item: Neighborhood) => {
+    setProcessing(item.id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/city-neighborhoods/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ geometry_verified: !item.geometry_verified }),
+      });
+      const data = await res.json().catch(() => ({})) as Neighborhood & { error?: string };
+      if (!res.ok) {
+        toast({ title: "Boundary not verified", description: data.error ?? "Add valid geometry metadata first.", variant: "destructive" });
+        return;
+      }
+      setItems(prev => prev.map(n => n.id === item.id ? data : n));
+      toast({ title: item.geometry_verified ? "Boundary review paused" : "Boundary verified ✓" });
+    } catch {
+      toast({ title: "Network error", description: "Could not update geometry status.", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+    }
+  };
 
   const toggleVerify = async (item: Neighborhood) => {
     setProcessing(item.id);
@@ -5242,7 +5342,7 @@ function NeighborhoodsSection() {
         </div>
         <button onClick={load} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><RefreshCw className="w-3.5 h-3.5" /></button>
       </div>
-      <p className="text-xs text-muted-foreground">Geo-fenced neighborhood zones that appear in request matching and community feeds. Verify to make them available to users.</p>
+      <p className="text-xs text-muted-foreground">Review the source, version, effective date, and polygon/radius used to root a Spiral in a real neighborhood. Geometry only affects host eligibility after server-side verification.</p>
       {loading ? (
         <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : loadError ? (
@@ -5252,11 +5352,12 @@ function NeighborhoodsSection() {
       ) : (
         <div className="space-y-2">
           {[...unverified, ...verified].map(n => (
-            <div key={n.id} className={`flex items-center gap-3 py-2.5 px-3 rounded-xl border ${n.verified ? "border-green-500/20 bg-green-500/5" : "border-yellow-500/20 bg-yellow-500/5"}`}>
+            <div key={n.id} className={`rounded-xl border p-3 space-y-3 ${n.geometry_verified ? "border-green-500/20 bg-green-500/5" : "border-yellow-500/20 bg-yellow-500/5"}`}>
+              <div className="flex items-center gap-3">
               <span className="text-lg shrink-0">{n.emoji ?? "📍"}</span>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm truncate">{n.name}</div>
-                <div className="text-[10px] text-muted-foreground">{n.city_key}</div>
+                <div className="text-[10px] text-muted-foreground">{n.city_key} · content {n.verified ? "verified" : "pending"}</div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <button onClick={() => toggleVerify(n)} disabled={processing === n.id}
@@ -5268,6 +5369,57 @@ function NeighborhoodsSection() {
                   <X className="w-3 h-3" />
                 </button>
               </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                <span className={`rounded-full border px-2 py-0.5 font-black uppercase tracking-wide ${
+                  n.geometry_status === "verified"
+                    ? "border-green-500/30 text-green-400"
+                    : n.geometry_status === "invalid"
+                      ? "border-destructive/30 text-destructive"
+                      : "border-border text-muted-foreground"
+                }`}>
+                  Boundary: {n.geometry_status.replace("_", " ")}
+                </span>
+                {n.geometry_source && <span className="text-muted-foreground">Source: {n.geometry_source}</span>}
+                {n.geometry_version && <span className="text-muted-foreground">v{n.geometry_version}</span>}
+                {n.geometry_effective_at && <span className="text-muted-foreground">Effective {new Date(n.geometry_effective_at).toLocaleDateString()}</span>}
+                <button
+                  onClick={() => toggleGeometryVerified(n)}
+                  disabled={processing === n.id}
+                  className={`ml-auto text-[10px] font-black px-2.5 py-1 rounded-lg border transition-all disabled:opacity-50 ${
+                    n.geometry_verified
+                      ? "border-green-500/30 text-green-400 bg-green-500/10"
+                      : "border-border text-muted-foreground hover:border-green-500/30 hover:text-green-400"
+                  }`}
+                >
+                  {processing === n.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : n.geometry_verified ? "✓ Geometry verified" : "Verify boundary"}
+                </button>
+                <button
+                  onClick={() => editingId === n.id ? setEditingId(null) : beginGeometryEdit(n)}
+                  className="text-[10px] font-black px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground"
+                >
+                  {editingId === n.id ? "Close editor" : "Edit geometry"}
+                </button>
+              </div>
+              {editingId === n.id && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border-t border-border/60 pt-3">
+                  <input value={geometryDraft.source} onChange={e => setGeometryDraft(d => ({ ...d, source: e.target.value }))} placeholder="Source (e.g. city GIS)" className="px-3 py-2 rounded-lg border border-border bg-background text-xs" />
+                  <input value={geometryDraft.version} onChange={e => setGeometryDraft(d => ({ ...d, version: e.target.value }))} placeholder="Version (e.g. 2026-09)" className="px-3 py-2 rounded-lg border border-border bg-background text-xs" />
+                  <label className="text-[10px] text-muted-foreground">Effective date<input type="datetime-local" value={geometryDraft.effectiveAt} onChange={e => setGeometryDraft(d => ({ ...d, effectiveAt: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-background text-xs text-foreground" /></label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input value={geometryDraft.centerLat} onChange={e => setGeometryDraft(d => ({ ...d, centerLat: e.target.value }))} placeholder="Center lat" inputMode="decimal" className="px-2 py-2 rounded-lg border border-border bg-background text-xs" />
+                    <input value={geometryDraft.centerLng} onChange={e => setGeometryDraft(d => ({ ...d, centerLng: e.target.value }))} placeholder="Center lng" inputMode="decimal" className="px-2 py-2 rounded-lg border border-border bg-background text-xs" />
+                    <input value={geometryDraft.radiusMeters} onChange={e => setGeometryDraft(d => ({ ...d, radiusMeters: e.target.value }))} placeholder="Radius m" inputMode="decimal" className="px-2 py-2 rounded-lg border border-border bg-background text-xs" />
+                  </div>
+                  <label className="sm:col-span-2 text-[10px] text-muted-foreground">GeoJSON Polygon or MultiPolygon (use this instead of center/radius when available)
+                    <textarea value={geometryDraft.polygon} onChange={e => setGeometryDraft(d => ({ ...d, polygon: e.target.value }))} rows={4} placeholder='{"type":"Polygon","coordinates":[...]}' className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-background text-xs font-mono" />
+                  </label>
+                  <div className="sm:col-span-2 flex justify-end gap-2">
+                    <button onClick={() => setEditingId(null)} className="px-3 py-2 rounded-lg border border-border text-xs font-bold">Cancel</button>
+                    <button onClick={() => saveGeometry(n)} disabled={processing === n.id} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-black disabled:opacity-50">Save geometry</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

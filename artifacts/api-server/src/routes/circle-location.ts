@@ -12,9 +12,12 @@ import {
   validateFreshAccurateLocation,
   verifyCircleStartLocation,
 } from "../lib/circleLocationPolicy";
-import { evaluateNeighborhoodGeofence } from "../lib/neighborhoodGeofence";
+import {
+  evaluateNeighborhoodGeofence,
+  getNeighborhoodGeometryStatus,
+} from "../lib/neighborhoodGeofence";
 import { db, audioCirclesTable, cityNeighborhoodsTable } from "@workspace/db";
-import { pickLocalSpiral } from "../lib/circleLocationContext";
+import { pickVerifiedLocalSpiral } from "../lib/circleLocationContext";
 
 const router = Router();
 
@@ -70,12 +73,36 @@ router.post(
         name: audioCirclesTable.name,
         neighborhood_name: cityNeighborhoodsTable.name,
         neighborhood_emoji: cityNeighborhoodsTable.emoji,
+        center_lat: cityNeighborhoodsTable.center_lat,
+        center_lng: cityNeighborhoodsTable.center_lng,
+        radius_meters: cityNeighborhoodsTable.radius_meters,
+        polygon_geojson: cityNeighborhoodsTable.polygon_geojson,
+        geometry_source: cityNeighborhoodsTable.geometry_source,
+        geometry_version: cityNeighborhoodsTable.geometry_version,
+        geometry_verified: cityNeighborhoodsTable.geometry_verified,
+        geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at,
       })
       .from(audioCirclesTable)
       .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
       .where(eq(audioCirclesTable.city_key, normalizeCityKey(resolved.cityKey)));
 
-    const localCircle = pickLocalSpiral(circles, resolved.neighborhoodHint);
+    const localResult = pickVerifiedLocalSpiral(
+      circles,
+      parsed.data.latitude,
+      parsed.data.longitude,
+      resolved.neighborhoodHint,
+    );
+    const localCircle = localResult.circle;
+    const hintedCircle = circles.find(
+      (circle) =>
+        circle.neighborhood_id != null &&
+        circle.neighborhood_name != null &&
+        resolved.neighborhoodHint != null &&
+        circle.neighborhood_name.toLowerCase().includes(resolved.neighborhoodHint.toLowerCase()),
+    );
+    const hintedGeometryStatus = hintedCircle
+      ? getNeighborhoodGeometryStatus(hintedCircle)
+      : "unconfigured";
 
     return res.json({
       ok: true,
@@ -89,11 +116,17 @@ router.post(
       circle_id: localCircle?.id ?? null,
       neighborhood_name: localCircle?.neighborhood_name ?? null,
       neighborhood_emoji: localCircle?.neighborhood_emoji ?? null,
+      neighborhood_geofence_status: localResult.neighborhoodGeofenceStatus,
+      neighborhood_geometry_status: localCircle
+        ? getNeighborhoodGeometryStatus(localCircle)
+        : hintedGeometryStatus,
       host_signal: {
         status: localCircle ? "ready" : "location_ready",
         message: localCircle
-          ? `Verified local Spiral: ${localCircle.neighborhood_name ?? `${resolved.cityDisplay} city-wide`}`
-          : `GPS verified in ${resolved.cityDisplay}; local Spirals are still loading.`,
+          ? `Verified local Spiral: ${localCircle.neighborhood_name}`
+          : localResult.neighborhoodGeofenceStatus === "outside"
+            ? `GPS is in ${resolved.cityDisplay}, but outside the reviewed boundary for ${resolved.neighborhoodHint ?? "this neighborhood"}.`
+            : `GPS verified in ${resolved.cityDisplay}; a reviewed neighborhood boundary has not matched this fix yet.`,
       },
     });
   },

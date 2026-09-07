@@ -44,6 +44,7 @@ import {
 import { logger } from "../lib/logger";
 import { CircleStartLocationBody, verifyCircleStartLocation } from "../lib/circleLocationPolicy";
 import { requestCircleSummary } from "./nia-proxy";
+import { getNeighborhoodGeometryStatus } from "../lib/neighborhoodGeofence";
 
 const router = Router();
 
@@ -320,7 +321,7 @@ async function ensureCirclesForCity(cityRaw: string, cityKey: string) {
 
   await db.execute(sql`
     INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
-    SELECT cn.city_key, cn.city_display, cn.id, cn.name || ' Circle'
+    SELECT cn.city_key, cn.city_display, cn.id, cn.name || ' Spiral'
     FROM city_neighborhoods cn
     WHERE cn.city_key = ${cityKey}
     ON CONFLICT (neighborhood_id) WHERE neighborhood_id IS NOT NULL DO NOTHING
@@ -328,7 +329,7 @@ async function ensureCirclesForCity(cityRaw: string, cityKey: string) {
 
   await db.execute(sql`
     INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
-    VALUES (${cityKey}, ${cityRaw}, NULL, ${cityRaw + " Circle"})
+    VALUES (${cityKey}, ${cityRaw}, NULL, ${cityRaw + " Spiral"})
     ON CONFLICT (city_key) WHERE neighborhood_id IS NULL DO NOTHING
   `);
 }
@@ -366,6 +367,10 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
       name: audioCirclesTable.name,
       neighborhood_name: cityNeighborhoodsTable.name,
       neighborhood_emoji: cityNeighborhoodsTable.emoji,
+      geometry_source: cityNeighborhoodsTable.geometry_source,
+      geometry_version: cityNeighborhoodsTable.geometry_version,
+      geometry_verified: cityNeighborhoodsTable.geometry_verified,
+      geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at,
     })
     .from(audioCirclesTable)
     .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
@@ -396,11 +401,20 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
     : [];
   const hostNames = new Map(hosts.map((host) => [host.id, host.name]));
   const withLiveInfo = circles.map((circle) => {
+    const neighborhood_geometry_status = circle.neighborhood_id == null
+      ? "unconfigured" as const
+      : getNeighborhoodGeometryStatus(circle);
     const live = liveByCircle.get(circle.id);
-    if (!live) return { ...circle, live_session: null, is_following: followedCircleIds.has(circle.id) };
+    if (!live) return {
+      ...circle,
+      neighborhood_geometry_status,
+      live_session: null,
+      is_following: followedCircleIds.has(circle.id),
+    };
     const counts = countsBySession.get(live.id) ?? { speaker_count: 0, listener_count: 0 };
     return {
       ...circle,
+      neighborhood_geometry_status,
       live_session: {
         id: live.id, title: live.title, host_id: live.host_id,
         host_name: (live.host_id == null ? undefined : hostNames.get(live.host_id)) ?? "Someone",
