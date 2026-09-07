@@ -16,7 +16,12 @@ test.describe("Diaspora live presence production acceptance", () => {
     expect(body).toHaveProperty("generated_at");
     expect(body).toHaveProperty("freshness_window_seconds", 600);
     expect(body).toHaveProperty("current_user");
+    expect(body.current_user).toEqual(expect.objectContaining({
+      location_fresh: expect.any(Boolean),
+      location_updated_at: expect.anything(),
+    }));
     expect(Array.isArray(body.hubs)).toBeTruthy();
+    expect(body.hubs.every((hub: { live_user_count: unknown }) => typeof hub.live_user_count === "number")).toBeTruthy();
     expect(body).not.toHaveProperty("users");
     expect(body).not.toHaveProperty("coordinates");
     if (Array.isArray(body.neighborhoods)) {
