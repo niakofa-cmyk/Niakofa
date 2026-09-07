@@ -7,45 +7,31 @@ export const SPIRALS_PATHS = {
   room: (sessionId: string | number) => `/audio-spiral/${sessionId}`,
 } as const;
 
-/** Keep the server-verified local Spiral first without changing other order. */
-export function promoteLocalSpiral<T extends { id: number }>(
+/**
+ * Keep the server-verified local Spiral first and city-wide Spirals last.
+ * Objects without neighborhood_id keep their prior ordering, preserving
+ * compatibility with older callers/tests that only provide ids.
+ */
+export function promoteLocalSpiral<T extends { id: number; neighborhood_id?: number | null }>(
   circles: T[] | undefined,
   localCircleId: number | null | undefined,
 ): T[] | undefined {
-  if (!circles || localCircleId == null) return circles;
-  const index = circles.findIndex((circle) => circle.id === localCircleId);
-  if (index <= 0) return circles;
-  const local = circles[index];
-  return [local, ...circles.slice(0, index), ...circles.slice(index + 1)];
-}
+  if (!circles) return circles;
 
-/**
- * Order the discovery list around the user's verified GPS neighborhood.
- *
- * Priority is deliberately explicit:
- *   1. server-verified local neighborhood Spiral
- *   2. every other neighborhood/city Spiral in the API's normal order
- *   3. city-wide Spiral(s) last
- *
- * A missing local match never invents one. A city-wide Spiral is identified
- * by a null neighborhood_id, matching the persisted Spiral schema.
- */
-export function orderSpiralsForLocation<T extends { id: number; neighborhood_id?: number | null }>(
-  spirals: T[] | undefined,
-  localSpiralId: number | null | undefined,
-): T[] | undefined {
-  if (!spirals) return spirals;
-
-  return [...spirals].sort((a, b) => {
-    const aLocal = localSpiralId != null && a.id === localSpiralId;
-    const bLocal = localSpiralId != null && b.id === localSpiralId;
+  const ordered = [...circles].sort((a, b) => {
+    const aLocal = localCircleId != null && a.id === localCircleId;
+    const bLocal = localCircleId != null && b.id === localCircleId;
     if (aLocal !== bLocal) return aLocal ? -1 : 1;
 
-    const aCitywide = a.neighborhood_id == null;
-    const bCitywide = b.neighborhood_id == null;
-    if (aCitywide !== bCitywide) return aCitywide ? 1 : -1;
+    const aCitywide = a.neighborhood_id != null ? false : undefined;
+    const bCitywide = b.neighborhood_id != null ? false : undefined;
+    if (aCitywide !== undefined && bCitywide !== undefined && aCitywide !== bCitywide) {
+      return aCitywide ? 1 : -1;
+    }
     return 0;
   });
+
+  return ordered;
 }
 
 export const CIRCLE_ROUTE_ALIASES = {
