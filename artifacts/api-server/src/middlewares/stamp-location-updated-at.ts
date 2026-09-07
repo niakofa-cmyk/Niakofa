@@ -3,9 +3,17 @@ import { eq } from "drizzle-orm";
 import type { RequestHandler } from "express";
 
 /**
- * Stamps the server receipt time of a successful GPS write before the response
- * is sent. This keeps Diaspora freshness authoritative and prevents a slow
- * asynchronous post-response write from racing the next presence read.
+ * Safety-net stamp for the server receipt time of a GPS write.
+ *
+ * The canonical `/users/:id/location` handler now sets location_updated_at
+ * in the same statement as lat/lng, so freshness and position always land
+ * atomically and this middleware has nothing to do on the happy path. It
+ * stays in place only to backfill the column for any older/alternate
+ * location-writing route that responds without having stamped it itself —
+ * detected by the field being absent from the outgoing JSON body — rather
+ * than unconditionally re-writing it after every request, which used to
+ * cost a second round trip and a brief window where a presence read could
+ * see a fresh position next to a stale location_updated_at.
  */
 export const stampLocationUpdatedAt: RequestHandler = (req, res, next) => {
   if (req.method !== "PATCH" || !/^\/users\/\d+\/location(?:\?|$)/.test(req.url)) {
@@ -18,7 +26,11 @@ export const stampLocationUpdatedAt: RequestHandler = (req, res, next) => {
 
   const sendJson = res.json.bind(res);
   res.json = ((body: unknown) => {
-    if (res.statusCode < 200 || res.statusCode >= 300) return sendJson(body);
+    const alreadyStamped =
+      res.statusCode < 200 ||
+      res.statusCode >= 300 ||
+      (body && typeof body === "object" && !Array.isArray(body) && "location_updated_at" in body);
+    if (alreadyStamped) return sendJson(body);
 
     const locationUpdatedAt = new Date();
     void db.update(usersTable)

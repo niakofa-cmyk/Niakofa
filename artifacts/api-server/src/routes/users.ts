@@ -641,8 +641,13 @@ router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnershi
   const bParsed = UpdateUserLocationBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { lat, lng, heading, speed } = bParsed.data;
+  // location_updated_at is stamped in this same write as lat/lng so freshness
+  // can never be read between the position landing and its timestamp landing.
+  // (Previously a separate post-response middleware wrote this column, which
+  // meant a second round trip and a window where a presence read could see a
+  // fresh position with a stale/missing location_updated_at.)
   let [user] = await db.update(usersTable)
-    .set({ lat, lng, heading: heading ?? null, speed: speed ?? null })
+    .set({ lat, lng, heading: heading ?? null, speed: speed ?? null, location_updated_at: new Date() })
     .where(eq(usersTable.id, pParsed.data.id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
