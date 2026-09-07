@@ -866,3 +866,27 @@ deployment evidence. A production endpoint can remain healthy while serving
 an older revision, so release certification must compare the served commit to
 the pushed commit and verify the public deployment separately from the local
 preview.
+
+---
+
+### Session: September 7, 2026 — Authenticated Diaspora live-presence acceptance
+
+The Diaspora live-presence production acceptance was verified with an approved
+disposable account against the exact served revision:
+
+- The authenticated API assertion now derives the Niakofa token from the
+  Playwright storage state and sends it as an explicit Bearer header. Browser
+  storage restoration alone does not authenticate `page.request` calls.
+- The acceptance route checks the Diaspora dashboard entry point and the
+  canonical Globe journey where the live-presence card is rendered.
+- The deployed acceptance wrapper now cleans up an optional private runtime
+  directory without converting a successful run into exit code 1 when an
+  externally supplied state file is used.
+- The run verified the live-presence response, GPS freshness contract,
+  neighborhood aggregates, dashboard navigation, and Globe UI rendering.
+  Temporary authenticated state was kept outside the repository with
+  restrictive permissions and removed after the run.
+
+**Acceptance lesson:** approved identity, explicit API authentication,
+served-commit parity, and user-visible route evidence are all required before
+calling production live presence verified.
