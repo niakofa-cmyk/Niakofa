@@ -1,6 +1,16 @@
 import { logger } from "./logger";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+export const DEFAULT_NIA_SERVICE_URL = "http://localhost:3001";
+
+function isUsableNiaServiceUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 export class NiaServiceError extends Error {
   constructor(
@@ -13,7 +23,16 @@ export class NiaServiceError extends Error {
 }
 
 export function getNiaServiceUrl(): string {
-  return (process.env["NIA_SERVICE_URL"] ?? "http://localhost:3001").replace(/\/$/, "");
+  const configured = process.env["NIA_SERVICE_URL"]?.trim();
+
+  // Railway/Replit environment templates sometimes leave the variable name
+  // itself in place. Treat that sentinel as unset so the co-located service
+  // remains reachable on the documented localhost boundary.
+  if (!configured || configured === "NIA_SERVICE_URL" || !isUsableNiaServiceUrl(configured)) {
+    return DEFAULT_NIA_SERVICE_URL;
+  }
+
+  return configured.replace(/\/$/, "");
 }
 
 /**

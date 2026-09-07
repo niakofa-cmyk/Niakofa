@@ -11,6 +11,7 @@ import { apiTrafficLimiter } from "./middlewares/rate-limit.hardened";
 import { parseAuth } from "./middlewares/auth";
 import { requestTimeout } from "./middlewares/timeout";
 import helmet from "helmet";
+import { getNiaServiceUrl } from "./lib/nia-client";
 
 const app: Express = express();
 
@@ -67,7 +68,7 @@ app.use(
           "https://oauth2.googleapis.com",
           "https://accounts.google.com",
           "https://ipapi.co",
-          process.env.NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app",
+          new URL(getNiaServiceUrl()).origin,
         ].filter(Boolean),
         frameSrc: [
           "'self'",

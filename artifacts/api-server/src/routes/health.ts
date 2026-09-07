@@ -13,6 +13,7 @@ import { getSystemSetting } from "../lib/db-helpers";
 import { getNavigationCircuitBreakerStatus } from "./navigation";
 import { getStorageDescription } from "../lib/storage";
 import { isValidLiveKitUrl } from "../lib/circleMediaConfig";
+import { getNiaServiceUrl } from "../lib/nia-client";
 
 // ── Region bucketing ──────────────────────────────────────────────────────────
 // Maps a lat/lng point to one of the platform's target regions.
@@ -70,7 +71,6 @@ function bucketRegion(lat: number, lng: number): string {
 const PROCESS_STARTED_AT = new Date().toISOString();
 const GIT_COMMIT = process.env["GIT_COMMIT"] ?? "unknown";
 const NIA_HEALTH_TIMEOUT_MS = 2_000;
-const DEFAULT_NIA_SERVICE_URL = "http://localhost:3001";
 
 const router: IRouter = Router();
 
@@ -100,19 +100,7 @@ async function checkNiaService(): Promise<{ status: "ok" | "unavailable"; httpSt
   const timeout = setTimeout(() => controller.abort(), NIA_HEALTH_TIMEOUT_MS);
 
   try {
-    const configuredNiaUrl = process.env["NIA_SERVICE_URL"]?.trim();
-    let niaUrl = DEFAULT_NIA_SERVICE_URL;
-    if (configuredNiaUrl) {
-      try {
-        const parsed = new URL(configuredNiaUrl);
-        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-          niaUrl = configuredNiaUrl.replace(/\/$/, "");
-        }
-      } catch {
-        // Ignore malformed environment values and keep the local compatibility default.
-      }
-    }
-    const response = await fetch(`${niaUrl}/health`, {
+    const response = await fetch(`${getNiaServiceUrl()}/health`, {
       signal: controller.signal,
       headers: { Accept: "application/json" },
     });

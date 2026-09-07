@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
-import { NiaServiceError, requestNia } from "../lib/nia-client";
+import { getNiaServiceUrl, NiaServiceError, requestNia } from "../lib/nia-client";
 
 const originalSecret = process.env["INTERNAL_SECRET"];
 const originalUrl = process.env["NIA_SERVICE_URL"];
@@ -20,6 +20,12 @@ afterEach(() => {
 });
 
 describe("requestNia", () => {
+  it("uses the co-located service when the environment contains the template sentinel", () => {
+    process.env["NIA_SERVICE_URL"] = "NIA_SERVICE_URL";
+
+    expect(getNiaServiceUrl()).toBe("http://localhost:3001");
+  });
+
   it("adds the internal secret and JSON content type without changing the path", async () => {
     const response = new Response(JSON.stringify({ ok: true }), { status: 200 });
     mockFetch.mockResolvedValueOnce(response);
