@@ -49,6 +49,7 @@ import diasporaResearchRouter from "./diaspora-research";
 import diasporaConnectionsRouter from "./diaspora-connections";
 import diasporaCompletionRouter from "./diaspora-completion";
 import diasporaRouter from "./diaspora";
+import { stampLocationUpdatedAt } from "../middlewares/stamp-location-updated-at";
 
 const router: IRouter = Router();
 
@@ -64,6 +65,7 @@ router.use((req, _res, next) => {
 
 router.use(healthRouter);
 router.use(verificationRouter);
+router.use(stampLocationUpdatedAt);
 router.use(usersRouter);
 router.use(requestsRouter);
 router.use(helpersRouter);
