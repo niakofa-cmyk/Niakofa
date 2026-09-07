@@ -50,7 +50,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
       `),
       db.execute<{ id: number }>(sql`
         SELECT DISTINCT r.id
-        FROM requests r
+        FROM help_requests r
         LEFT JOIN diaspora_hubs direct_hub
           ON direct_hub.id = r.hub_id AND direct_hub.status = 'approved'
         LEFT JOIN users requester ON requester.id = r.requester_id
@@ -61,7 +61,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
       `),
       db.execute<{ id: number }>(sql`
         SELECT DISTINCT r.id
-        FROM requests r
+        FROM help_requests r
         LEFT JOIN diaspora_hubs direct_hub
           ON direct_hub.id = r.hub_id AND direct_hub.status = 'approved'
         LEFT JOIN users requester ON requester.id = r.requester_id
