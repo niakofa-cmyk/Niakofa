@@ -34,6 +34,7 @@ import disputesRouter from "./disputes";
 import impactRouter from "./impact";
 import griotRouter from "./griot";
 import diasporaLivePresenceRouter from "./diaspora-live-presence";
+import globalVillagePulseRouter from "./global-village-pulse";
 import audioCirclesRouter from "./audio-circles";
 import circleLocationRouter from "./circle-location";
 import circleRecordingsRouter from "./circle-recordings";
@@ -98,6 +99,10 @@ router.use("/checkin", checkinRouter);
 router.use(disputesRouter);
 router.use(impactRouter);
 router.use(griotRouter);
+// The village pulse is a distinct aggregate contract so the legacy live-presence
+// endpoint can remain backward compatible while the new dashboard gets precise
+// current-neighborhood and activity totals.
+router.use(globalVillagePulseRouter);
 router.use(diasporaLivePresenceRouter);
 router.use(audioCirclesRouter);
 router.use(circleLocationRouter);
