@@ -438,16 +438,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const interval = activeRequestId ? 2000 : helperModeActive ? 15000 : 30000;
     const MOVEMENT_THRESHOLD_M = activeRequestId ? 2 : helperModeActive ? 3 : 10;
+    const HEARTBEAT_MS = 60_000;
+    let lastBroadcastAt = 0;
 
-    const id = setInterval(() => {
-      const loc = locationRef.current;
-      if (!loc) return;
-
+    const broadcast = (loc: Location) => {
+      if (loc.source !== "gps") return;
+      const now = Date.now();
       const prev = prevBroadcastRef.current;
       const movedEnough = !prev || distanceMeters(prev, loc) >= MOVEMENT_THRESHOLD_M;
-      if (!movedEnough) return;
+      const heartbeatDue = now - lastBroadcastAt >= HEARTBEAT_MS;
+      if (!movedEnough && !heartbeatDue) return;
 
       prevBroadcastRef.current = loc;
+      lastBroadcastAt = now;
       updateLocation.mutate({
         id: currentUser.id,
         data: {
@@ -470,6 +473,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         },
       });
+    };
+
+    const id = setInterval(() => {
+      const loc = locationRef.current;
+      if (!loc || loc.source !== "gps") return;
+
+      // watchPosition may not emit a new sample while a device is stationary.
+      // Take a fresh foreground fix for the ten-minute server presence window
+      // instead of re-stamping an old coordinate as live.
+      const heartbeatDue = Date.now() - lastBroadcastAt >= HEARTBEAT_MS;
+      if (heartbeatDue && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => broadcast({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            heading: position.coords.heading,
+            speed: position.coords.speed,
+            accuracy: position.coords.accuracy,
+            capturedAt: position.timestamp || Date.now(),
+            source: "gps",
+          }),
+          () => undefined,
+          { enableHighAccuracy: activeRequestId != null || helperModeActive, maximumAge: 5_000, timeout: 10_000 },
+        );
+        return;
+      }
+
+      broadcast(loc);
     }, interval);
 
     return () => clearInterval(id);

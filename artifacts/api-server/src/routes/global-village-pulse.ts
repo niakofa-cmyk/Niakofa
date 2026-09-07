@@ -3,7 +3,7 @@ import { and, eq, gte, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db, usersTable, diasporaHubsTable, cityNeighborhoodsTable, audioCirclesTable, griotStoriesTable, requestsTable, communityPoolLedgerTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { buildPresenceSnapshot, LIVE_PRESENCE_WINDOW_MS } from "../lib/diasporaPresence";
+import { buildPresenceSnapshot, LIVE_PRESENCE_WINDOW_MS, resolveNearestHub } from "../lib/diasporaPresence";
 import { evaluateNeighborhoodGeofence } from "../lib/neighborhoodGeofence";
 
 const router = Router();
@@ -13,13 +13,19 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
   const now = new Date();
   const currentUserId = req.authenticatedUserId!;
   try {
-    const [hubs, users, neighborhoods, currentRows, circles, uniqueMembers, uniqueHelpers, uniqueOpenRequests, uniqueFulfilledRequests, uniquePool] = await Promise.all([
+    const [hubs, users, neighborhoods, currentRows, circles, leaderRows, uniqueMembers, uniqueOpenRequests, uniqueFulfilledRequests, uniquePool] = await Promise.all([
       db.select().from(diasporaHubsTable),
-      db.select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, location_updated_at: usersTable.location_updated_at })
+      db.select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, location_updated_at: usersTable.location_updated_at, helper_mode_active: usersTable.helper_mode_active, community_id: usersTable.community_id })
         .from(usersTable).where(and(isNotNull(usersTable.location_updated_at), gte(usersTable.location_updated_at, new Date(now.getTime() - LIVE_PRESENCE_WINDOW_MS)), lte(usersTable.location_updated_at, now))),
       db.select({ id: cityNeighborhoodsTable.id, city_key: cityNeighborhoodsTable.city_key, neighborhood_id: cityNeighborhoodsTable.neighborhood_id, name: cityNeighborhoodsTable.name, emoji: cityNeighborhoodsTable.emoji, center_lat: cityNeighborhoodsTable.center_lat, center_lng: cityNeighborhoodsTable.center_lng, radius_meters: cityNeighborhoodsTable.radius_meters, polygon_geojson: cityNeighborhoodsTable.polygon_geojson, geometry_verified: cityNeighborhoodsTable.geometry_verified, geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at }).from(cityNeighborhoodsTable),
       db.select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, location_updated_at: usersTable.location_updated_at }).from(usersTable).where(eq(usersTable.id, currentUserId)).limit(1),
       db.select({ id: audioCirclesTable.id, neighborhood_id: audioCirclesTable.neighborhood_id }).from(audioCirclesTable),
+      db.execute<{ hub_id: number; user_id: number }>(sql`
+        SELECT hcl.hub_id, hcl.user_id
+        FROM hub_community_leaders hcl
+        JOIN diaspora_hubs h ON h.id = hcl.hub_id
+        WHERE h.status = 'approved'
+      `),
       db.execute<{ user_id: number }>(sql`
         SELECT DISTINCT member.user_id
         FROM (
@@ -33,21 +39,6 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
           JOIN diaspora_hubs h ON h.id = hcl.hub_id
           WHERE h.status = 'approved'
         ) member
-      `),
-      db.execute<{ user_id: number }>(sql`
-        SELECT DISTINCT active.user_id
-        FROM (
-          SELECT u.id AS user_id
-          FROM users u
-          JOIN diaspora_hubs h ON h.community_id = u.community_id
-          WHERE h.status = 'approved' AND h.community_id IS NOT NULL AND u.helper_mode_active = TRUE
-          UNION
-          SELECT hcl.user_id
-          FROM hub_community_leaders hcl
-          JOIN diaspora_hubs h ON h.id = hcl.hub_id
-          JOIN users u ON u.id = hcl.user_id
-          WHERE h.status = 'approved' AND u.helper_mode_active = TRUE
-        ) active
       `),
       db.execute<{ id: number }>(sql`
         SELECT DISTINCT r.id
@@ -83,6 +74,27 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
     ]);
 
     const presence = buildPresenceSnapshot({ now, hubs, users, currentUserId });
+    const approvedHubs = hubs.filter((hub) => hub.status === "approved");
+    const leadersByHub = new Map<number, Set<number>>();
+    for (const row of leaderRows.rows) {
+      const leaders = leadersByHub.get(row.hub_id) ?? new Set<number>();
+      leaders.add(row.user_id);
+      leadersByHub.set(row.hub_id, leaders);
+    }
+    const liveHelpersByHub = new Map<number, Set<number>>();
+    for (const user of users) {
+      if (user.helper_mode_active !== true || user.lat == null || user.lng == null) continue;
+      const resolvedHub = resolveNearestHub(user.lat, user.lng, approvedHubs);
+      if (!resolvedHub) continue;
+      const hub = approvedHubs.find((candidate) => candidate.id === resolvedHub.hub_id);
+      if (!hub) continue;
+      const isCommunityMember = hub.community_id != null && user.community_id === hub.community_id;
+      const isHubLeader = leadersByHub.get(hub.id)?.has(user.id) ?? false;
+      if (!isCommunityMember && !isHubLeader) continue;
+      const helpers = liveHelpersByHub.get(hub.id) ?? new Set<number>();
+      helpers.add(user.id);
+      liveHelpersByHub.set(hub.id, helpers);
+    }
     const liveUsersByNeighborhood = new Map<number, number>();
     const spiralIdByNeighborhoodId = new Map(circles
       .filter((circle): circle is { id: number; neighborhood_id: number } => circle.neighborhood_id != null)
@@ -122,7 +134,6 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
             : "gps_fresh_no_reviewed_neighborhood"
           : "stale_or_missing_gps";
 
-    const approvedHubs = hubs.filter((hub) => hub.status === "approved");
     const enriched = await Promise.all(approvedHubs.map(async (hub) => {
       const [memberRow, storyRow, openRequestRow, fulfilledRow, poolRow] = await Promise.all([
         db.execute<{ count: number }>(sql`SELECT COUNT(DISTINCT u.id)::int AS count FROM users u WHERE ${hub.community_id != null ? sql`u.community_id = ${hub.community_id} OR EXISTS (SELECT 1 FROM hub_community_leaders hcl WHERE hcl.hub_id = ${hub.id} AND hcl.user_id = u.id)` : sql`EXISTS (SELECT 1 FROM hub_community_leaders hcl WHERE hcl.hub_id = ${hub.id} AND hcl.user_id = u.id)`}`),
@@ -140,22 +151,11 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
             : eq(requestsTable.hub_id, hub.id),
         )),
         hub.community_id != null ? db.select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` }).from(communityPoolLedgerTable).where(eq(communityPoolLedgerTable.community_id, hub.community_id)) : Promise.resolve([{ balance: 0 }]),
-      ]);
-       const helperRows = await db.execute<{ user_id: number }>(sql`
-         SELECT DISTINCT u.id AS user_id
-         FROM users u
-         WHERE u.helper_mode_active = TRUE
-           AND (
-             ${hub.community_id != null ? sql`u.community_id = ${hub.community_id} OR ` : sql``}
-             EXISTS (
-               SELECT 1
-               FROM hub_community_leaders hcl
-               WHERE hcl.hub_id = ${hub.id}
-                 AND hcl.user_id = u.id
-             )
-           )
-       `);
-       const activeHelpers = helperRows.rows.length;
+       ]);
+        // "Active helpers" is a live, GPS-verified metric. Membership and
+        // helper mode alone are not enough to claim someone is currently at
+        // this Hub; stale helper locations must not inflate the pulse.
+        const activeHelpers = liveHelpersByHub.get(hub.id)?.size ?? 0;
       const live = presence.hubs.find((item) => item.hub_id === hub.id);
        return { ...hub, id: hub.id, name: hub.name, hub_id: hub.id, hub_name: hub.name, region: hub.region_label, member_count: Number(memberRow.rows[0]?.count ?? 0), live_user_count: live?.live_user_count ?? 0, story_count: storyRow[0]?.count ?? 0, open_requests: openRequestRow[0]?.count ?? 0, activity: { active_helpers: activeHelpers, requests_fulfilled: fulfilledRow[0]?.count ?? 0, pool_balance: Number(poolRow[0]?.balance ?? 0) } };
     }));
@@ -171,7 +171,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
       pool_balance: acc.pool_balance + hub.activity.pool_balance,
     }), { members: 0, live: 0, stories: 0, active_helpers: 0, open_requests: 0, requests_fulfilled: 0, pool_balance: 0 });
     totals.members = uniqueMembers.rows.length;
-    totals.active_helpers = uniqueHelpers.rows.length;
+    totals.active_helpers = [...liveHelpersByHub.values()].reduce((total, helpers) => total + helpers.size, 0);
     totals.open_requests = uniqueOpenRequests.rows.length;
     totals.requests_fulfilled = uniqueFulfilledRequests.rows.length;
     totals.pool_balance = Number(uniquePool.rows[0]?.balance ?? 0);

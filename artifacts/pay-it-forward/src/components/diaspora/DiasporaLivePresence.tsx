@@ -93,11 +93,11 @@ export function DiasporaLivePresence({ hubId, compact = false }: { hubId?: numbe
   useEffect(() => {
     if (!currentUser) return;
     void load();
-    // A stationary device still needs to touch the GPS PATCH path so the
-    // dedicated location_updated_at freshness clock does not age out at 10m.
+    // AppContext owns the shared GPS heartbeat for every authenticated
+    // surface. This component only refreshes the canonical aggregate read,
+    // avoiding duplicate location writes when the panel is mounted.
     const heartbeat = window.setInterval(async () => {
       if (document.hidden) return;
-      await syncGps();
       await load();
     }, 60_000);
     const onFocus = () => void load();

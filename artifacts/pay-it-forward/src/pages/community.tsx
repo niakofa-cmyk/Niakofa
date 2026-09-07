@@ -375,17 +375,37 @@ interface NeighborhoodLiveStatus {
   video_enabled: boolean;
 }
 
+interface VillagePulseNeighborhood {
+  neighborhood_id: string;
+  name: string;
+  emoji: string | null;
+  live_user_count: number;
+  gps_verified: boolean;
+}
+
+interface VillagePulse {
+  current_user?: {
+    current_neighborhood?: {
+      neighborhood_id: string;
+      name: string;
+      live_user_count: number;
+      gps_verified: boolean;
+    } | null;
+    location_verification?: string;
+  };
+  neighborhoods?: VillagePulseNeighborhood[];
+}
+
 function NeighborhoodSpiralsTab() {
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
   const city = currentUser?.city?.trim() || "Fort Worth";
-  const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
-
   const [neighborhoods, setNeighborhoods] = useState<NeighborhoodInfo[]>([]);
   const [hoodLoading, setHoodLoading] = useState(true);
   const [hoodError, setHoodError] = useState(false);
+  const [villagePulse, setVillagePulse] = useState<VillagePulse | null>(null);
 
   // Fetch real neighborhoods for the user's city (auto-provisioned by the
   // backend for any city — not just Fort Worth). Falls back gracefully on
@@ -404,6 +424,22 @@ function NeighborhoodSpiralsTab() {
       .catch(() => { if (!cancelled) { setHoodError(true); setHoodLoading(false); } });
     return () => { cancelled = true; };
   }, [base, city]);
+
+  // The profile neighborhood is descriptive only. Use the same
+  // GPS/geometry-verified signal as the Globe and Spiral discovery pages for
+  // local highlighting and live nearby counts.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/griot/village-pulse", { headers: authHeaders() })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: VillagePulse | null) => {
+        if (!cancelled) setVillagePulse(data);
+      })
+      .catch(() => {
+        if (!cancelled) setVillagePulse(null);
+      });
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
 
   // Fetch live Spiral data so cards show real-time status
   const [liveByHood, setLiveByHood] = useState<Map<string, NeighborhoodLiveStatus>>(new Map());
@@ -437,6 +473,19 @@ function NeighborhoodSpiralsTab() {
   }, [base, city, fetchedCity]);
 
   const hoodKey = (n: NeighborhoodInfo) => (n.neighborhood_id || n.name).toLowerCase().replace(/\s+/g, "_");
+  const currentNeighborhoodId = villagePulse?.current_user?.current_neighborhood?.neighborhood_id ?? null;
+  const liveByNeighborhood = new Map(
+    (villagePulse?.neighborhoods ?? []).map((neighborhood) => [
+      neighborhood.neighborhood_id.toLowerCase(),
+      neighborhood,
+    ]),
+  );
+  const orderedNeighborhoods = [...neighborhoods].sort((a, b) => {
+    if (currentNeighborhoodId == null) return 0;
+    const aIsCurrent = a.neighborhood_id.toLowerCase() === currentNeighborhoodId.toLowerCase();
+    const bIsCurrent = b.neighborhood_id.toLowerCase() === currentNeighborhoodId.toLowerCase();
+    return Number(bIsCurrent) - Number(aIsCurrent);
+  });
 
   const openCircle = (hood: NeighborhoodInfo) => {
     const key = hoodKey(hood);
@@ -459,6 +508,24 @@ function NeighborhoodSpiralsTab() {
         </p>
       </div>
 
+      {villagePulse?.current_user?.current_neighborhood && (
+        <div className="rounded-2xl border border-teal-300/20 bg-teal-300/[0.06] px-4 py-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-teal-200">
+            <Radio className="h-3.5 w-3.5" />
+            GPS-verified current neighborhood: {villagePulse.current_user.current_neighborhood.name}
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            This Spiral is promoted because your recent GPS fix is inside its reviewed boundary. Nearby Hub presence does not automatically create Hub membership.
+          </p>
+        </div>
+      )}
+
+      {!villagePulse?.current_user?.current_neighborhood && villagePulse?.current_user?.location_verification === "stale_or_missing_gps" && (
+        <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-[11px] leading-relaxed text-amber-100/80">
+          Allow a fresh GPS fix to identify your current neighborhood. Your profile neighborhood is not used as a substitute for verified location.
+        </div>
+      )}
+
       {hoodLoading && (
         <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
           <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -474,11 +541,12 @@ function NeighborhoodSpiralsTab() {
         </div>
       )}
 
-      {neighborhoods.map((hood, i) => {
+      {orderedNeighborhoods.map((hood, i) => {
         const key = hoodKey(hood);
-        const isYours = userHood === key || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
+        const isYours = currentNeighborhoodId != null && hood.neighborhood_id.toLowerCase() === currentNeighborhoodId.toLowerCase();
         const live = liveByHood.get(key);
         const isLive = !!live?.session_id;
+        const livePresence = liveByNeighborhood.get(hood.neighborhood_id.toLowerCase());
         return (
           <motion.div
             key={hood.id}
@@ -503,7 +571,12 @@ function NeighborhoodSpiralsTab() {
                   <div className="font-black text-sm">{hood.name}</div>
                   {isYours && !isLive && (
                     <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
-                      Your Spiral
+                      GPS verified here
+                    </span>
+                  )}
+                  {livePresence && livePresence.live_user_count > 0 && (
+                    <span className="text-[10px] font-bold text-teal-300/80 bg-teal-300/10 px-2 py-0.5 rounded-lg">
+                      {livePresence.live_user_count} live nearby
                     </span>
                   )}
                   {isLive && (
