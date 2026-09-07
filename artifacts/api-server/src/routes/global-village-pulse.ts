@@ -75,6 +75,11 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
       requests_fulfilled: acc.requests_fulfilled + hub.activity.requests_fulfilled, pool_balance: acc.pool_balance + hub.activity.pool_balance,
     }), { members: 0, live: 0, stories: 0, active_helpers: 0, open_requests: 0, requests_fulfilled: 0, pool_balance: 0 });
 
+    // This endpoint is user-specific aggregate state, so never allow an
+    // intermediary/browser cache to replay one member's village snapshot to another.
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Authorization, Cookie");
+    res.setHeader("X-Niakofa-Village-Pulse", "verified");
     res.json({
       generated_at: presence.generated_at,
       freshness_window_seconds: presence.freshness_window_seconds,
