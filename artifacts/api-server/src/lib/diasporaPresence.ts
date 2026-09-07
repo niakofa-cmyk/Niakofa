@@ -123,14 +123,17 @@ export function buildPresenceSnapshot(args: {
   }
 
   const currentUpdated = parseDate(currentUser?.location_updated_at ?? null);
-  const currentAge = currentUpdated
-    ? Math.max(0, Math.floor((now.getTime() - currentUpdated.getTime()) / 1000))
+  const currentAgeMs = currentUpdated ? now.getTime() - currentUpdated.getTime() : null;
+  const currentAge = currentAgeMs != null
+    ? Math.max(0, Math.floor(currentAgeMs / 1000))
     : null;
+  const currentLocationFresh =
+    currentAgeMs != null &&
+    currentAgeMs >= 0 &&
+    currentAgeMs <= LIVE_PRESENCE_WINDOW_MS;
 
   const currentHub =
-    currentUpdated &&
-    currentAge != null &&
-    currentAge <= LIVE_PRESENCE_WINDOW_MS / 1000 &&
+    currentLocationFresh &&
     finite(currentUser?.lat) &&
     finite(currentUser?.lng)
       ? resolveNearestHub(currentUser!.lat!, currentUser!.lng!, hubs)
@@ -140,7 +143,7 @@ export function buildPresenceSnapshot(args: {
     generated_at: now.toISOString(),
     freshness_window_seconds: LIVE_PRESENCE_WINDOW_MS / 1000,
     current_user: {
-      location_fresh: currentAge != null && currentAge <= LIVE_PRESENCE_WINDOW_MS / 1000,
+      location_fresh: currentLocationFresh,
       location_updated_at: currentUpdated?.toISOString() ?? null,
       location_age_seconds: currentAge,
       current_hub: currentHub,
