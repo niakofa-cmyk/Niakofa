@@ -33,6 +33,33 @@ export function DiasporaLivePresence({ hubId, compact = false }: { hubId?: numbe
   const [loading, setLoading] = useState(false);
   const [refreshingLocation, setRefreshingLocation] = useState(false);
 
+  const syncGps = useCallback(async () => {
+    if (!currentUser || !navigator.geolocation) return false;
+    return new Promise<boolean>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const response = await fetch(`/api/users/${currentUser.id}/location`, {
+              method: "PATCH",
+              headers: { ...authHeaders(), "Content-Type": "application/json" },
+              body: JSON.stringify({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                heading: position.coords.heading,
+                speed: position.coords.speed,
+              }),
+            });
+            resolve(response.ok);
+          } catch {
+            resolve(false);
+          }
+        },
+        () => resolve(false),
+        { enableHighAccuracy: false, maximumAge: 30_000, timeout: 10_000 },
+      );
+    });
+  }, [currentUser]);
+
   const load = useCallback(async () => {
     if (!currentUser) return;
     setLoading(true);
@@ -48,15 +75,22 @@ export function DiasporaLivePresence({ hubId, compact = false }: { hubId?: numbe
   }, [currentUser]);
 
   useEffect(() => {
+    if (!currentUser) return;
     void load();
-    const timer = window.setInterval(() => void load(), 30_000);
+    // A stationary device still needs to touch the GPS PATCH path so the
+    // dedicated location_updated_at freshness clock does not age out at 10m.
+    const heartbeat = window.setInterval(async () => {
+      if (document.hidden) return;
+      await syncGps();
+      await load();
+    }, 60_000);
     const onFocus = () => void load();
     window.addEventListener("focus", onFocus);
     return () => {
-      window.clearInterval(timer);
+      window.clearInterval(heartbeat);
       window.removeEventListener("focus", onFocus);
     };
-  }, [load]);
+  }, [currentUser, load, syncGps]);
 
   const selected = useMemo(
     () => (hubId == null ? null : data?.hubs.find((hub) => hub.hub_id === hubId) ?? null),
@@ -73,28 +107,10 @@ export function DiasporaLivePresence({ hubId, compact = false }: { hubId?: numbe
       return;
     }
     setRefreshingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const response = await fetch(`/api/users/${currentUser.id}/location`, {
-            method: "PATCH",
-            headers: { ...authHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify({ lat: position.coords.latitude, lng: position.coords.longitude, heading: position.coords.heading, speed: position.coords.speed }),
-          });
-          if (!response.ok) throw new Error("location");
-          await load();
-        } catch {
-          toast({ title: "Couldn't sync your GPS location", variant: "destructive" });
-        } finally {
-          setRefreshingLocation(false);
-        }
-      },
-      () => {
-        setRefreshingLocation(false);
-        toast({ title: "Location permission is required", description: "You can still browse Diaspora experiences without sharing GPS.", variant: "destructive" });
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10_000 },
-    );
+    const ok = await syncGps();
+    if (!ok) toast({ title: "Couldn't sync your GPS location", variant: "destructive" });
+    else await load();
+    setRefreshingLocation(false);
   }
 
   return (

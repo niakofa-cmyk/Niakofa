@@ -1,4 +1,5 @@
 import { BookOpen, Dna, FileSearch, Mic, TreePine, Users } from "lucide-react";
+import { DiasporaLivePresence } from "@/components/diaspora/DiasporaLivePresence";
 
 const CHIPS = [
   { label: "Family", href: "/diaspora/family", icon: Users, tone: "border-emerald-300/20 bg-emerald-300/10 text-emerald-200" },
@@ -11,21 +12,24 @@ const CHIPS = [
 
 export function GlobeJourneyChips({ navigate }: { navigate: (href: string) => void }) {
   return (
-    <nav aria-label="Diaspora journey" className="flex flex-wrap gap-2">
-      {CHIPS.map((chip) => {
-        const Icon = chip.icon;
-        return (
-          <button
-            key={chip.href}
-            type="button"
-            onClick={() => navigate(chip.href)}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors hover:brightness-110 ${chip.tone}`}
-          >
-            <Icon className="h-3 w-3" />
-            {chip.label}
-          </button>
-        );
-      })}
-    </nav>
+    <div className="space-y-3">
+      <DiasporaLivePresence compact />
+      <nav aria-label="Diaspora journey" className="flex flex-wrap gap-2">
+        {CHIPS.map((chip) => {
+          const Icon = chip.icon;
+          return (
+            <button
+              key={chip.href}
+              type="button"
+              onClick={() => navigate(chip.href)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors hover:brightness-110 ${chip.tone}`}
+            >
+              <Icon className="h-3 w-3" />
+              {chip.label}
+            </button>
+          );
+        })}
+      </nav>
+    </div>
   );
 }

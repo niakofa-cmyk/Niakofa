@@ -1,0 +1,21 @@
+--- a/artifacts/api-server/src/routes/users.ts
++++ b/artifacts/api-server/src/routes/users.ts
+@@ -641,8 +641,17 @@
+   const bParsed = UpdateUserLocationBody.safeParse(req.body);
+   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
+   const { lat, lng, heading, speed } = bParsed.data;
++  // Dedicated GPS freshness clock for Diaspora live presence.
++  // Do not reuse updated_at — profile edits must not make a stale fix look live.
++  const locationUpdatedAt = new Date();
+   let [user] = await db.update(usersTable)
+-    .set({ lat, lng, heading: heading ?? null, speed: speed ?? null })
++    .set({
++      lat,
++      lng,
++      heading: heading ?? null,
++      speed: speed ?? null,
++      location_updated_at: locationUpdatedAt,
++    })
+     .where(eq(usersTable.id, pParsed.data.id))
+     .returning();
+   if (!user) return res.status(404).json({ error: "User not found" });

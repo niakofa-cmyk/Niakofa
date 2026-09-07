@@ -33,6 +33,7 @@ import checkinRouter from "./checkin";
 import disputesRouter from "./disputes";
 import impactRouter from "./impact";
 import griotRouter from "./griot";
+import diasporaLivePresenceRouter from "./diaspora-live-presence";
 import audioCirclesRouter from "./audio-circles";
 import circleLocationRouter from "./circle-location";
 import circleRecordingsRouter from "./circle-recordings";
@@ -48,6 +49,7 @@ import diasporaResearchRouter from "./diaspora-research";
 import diasporaConnectionsRouter from "./diaspora-connections";
 import diasporaCompletionRouter from "./diaspora-completion";
 import diasporaRouter from "./diaspora";
+import { stampLocationUpdatedAt } from "../middlewares/stamp-location-updated-at";
 
 const router: IRouter = Router();
 
@@ -63,6 +65,7 @@ router.use((req, _res, next) => {
 
 router.use(healthRouter);
 router.use(verificationRouter);
+router.use(stampLocationUpdatedAt);
 router.use(usersRouter);
 router.use(requestsRouter);
 router.use(helpersRouter);
@@ -95,6 +98,7 @@ router.use("/checkin", checkinRouter);
 router.use(disputesRouter);
 router.use(impactRouter);
 router.use(griotRouter);
+router.use(diasporaLivePresenceRouter);
 router.use(audioCirclesRouter);
 router.use(circleLocationRouter);
 router.use(circleRecordingsRouter);
