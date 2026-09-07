@@ -26,6 +26,10 @@ args = "artifacts/pay-it-forward: web"
 task = "workflow.run"
 args = "artifacts/api-server: API Server"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "artifacts/nia-service: Nia"
+
 
 [[workflows.workflow]]
 name = "artifacts/pay-it-forward: web"
@@ -50,6 +54,17 @@ outputType = "console"
 task = "shell.exec"
 args = "cd artifacts/api-server && NODE_ENV=development PORT=8080 node build.mjs && NODE_ENV=development PORT=8080 node --enable-source-maps dist/index.mjs"
 waitForPort = 8080
+
+[[workflows.workflow]]
+name = "artifacts/nia-service: Nia"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/nia-service && NODE_ENV=development PORT=3001 ./node_modules/.bin/tsx src/index.ts"
 
 
 [agent]
