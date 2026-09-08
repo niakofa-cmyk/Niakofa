@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Map, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { AlertTriangle, ArrowLeft, BookOpen, Check, Flag, Globe2, Languages, MapPin, Mic, Pause, Play, RefreshCw, Send, Users, Volume2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BookOpen, Check, Flag, Globe2, Languages, MapPin, Mic, Pause, Play, RefreshCw, Users, Volume2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";

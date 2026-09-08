@@ -46,6 +46,9 @@ export function promoteLocalSpiral<T extends SpiralWithNeighborhood>(
   localSpiralId: number | null | undefined,
 ): T[] | undefined {
   if (!spirals) return spirals;
+  if (localSpiralId == null || !spirals.some((spiral) => spiral.id === localSpiralId)) {
+    return spirals;
+  }
   return orderSpiralsForLocation(spirals, localSpiralId);
 }
 
