@@ -10,7 +10,7 @@ import {
 test("rejects open polygon rings and out-of-range coordinates", () => {
   assert.equal(validateGeometry({
     type: "Polygon",
-    coordinates: [[[-97, 32], [-97, 33], [-96, 33], [-96, 32]]],
+    coordinates: [[[[-97, 32], [-97, 33], [-96, 33], [-96, 32]]]],
   }), false);
   assert.equal(validateGeometry({
     type: "Polygon",
