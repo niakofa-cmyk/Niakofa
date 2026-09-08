@@ -15,7 +15,9 @@
     "seed-crisis": "tsx ./src/seed-regional-crisis.ts",
     "seed-businesses": "tsx ./src/seed-businesses.ts",
     "seed-test-accounts": "tsx ./src/seed-test-accounts.ts",
-    "test:seed-guard": "node --test ./src/seed-test-accounts.test.mjs"
+    "test:seed-guard": "node --test ./src/seed-test-accounts.test.mjs",
+    "ingest:neighborhood-boundaries": "tsx ./src/ingest-neighborhood-boundaries.ts",
+    "test:neighborhood-ingestion": "node --import tsx --test ./src/neighborhood-ingestion.test.ts"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
