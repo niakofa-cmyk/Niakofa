@@ -75,13 +75,16 @@ function NiaGlobal() {
   const { currentUser, myLocation, helperModeActive, activeRequestId, userPlace, niaEnabled } = useAppContext();
   const [niaOpen, setNiaOpen] = useState(false);
   const [niaInitialMessage, setNiaInitialMessage] = useState<string | undefined>(undefined);
-  const [isAdmin] = useRoute("/admin");
+  const [isAdminExact] = useRoute("/admin");
+  const [isAdminOps] = useRoute("/admin/operations");
+  const [isAdminAnalytics] = useRoute("/admin/analytics");
+  const isAdminSurface = isAdminExact || isAdminOps || isAdminAnalytics;
   const [isOnboarding] = useRoute("/onboarding");
   const [isMap] = useRoute("/");
   const [isStripeConnected] = useRoute("/wallet/connected");
   useEffect(() => { window.openNia = (seedQuestion?: string) => { if (niaEnabled !== true) return; if (seedQuestion) setNiaInitialMessage(seedQuestion); setNiaOpen(true); }; return () => { delete window.openNia; }; }, [niaEnabled]);
   useEffect(() => { if (!niaEnabled && niaOpen) setNiaOpen(false); }, [niaEnabled, niaOpen]);
-  if (isAdmin || isOnboarding || isStripeConnected) return null;
+  if (isAdminSurface || isOnboarding || isStripeConnected) return null;
   const showFloatingFab = !isMap;
   if (niaEnabled === null) return null;
   return <>{showFloatingFab && niaEnabled === true && <NiaFab onClick={() => setNiaOpen(true)} enabled={true} />}<NiaDrawer open={niaEnabled === true && niaOpen} onClose={() => { setNiaOpen(false); setNiaInitialMessage(undefined); }} initialMessage={niaInitialMessage} userId={currentUser?.id ?? null} userName={currentUser?.name ?? null} userLocation={myLocation ? { lat: myLocation.lat, lon: myLocation.lng } : null} userCity={userPlace?.city ?? null} userCounty={userPlace?.county ?? null} userState={userPlace?.state ?? null} helperModeActive={helperModeActive} activeRequestId={activeRequestId} accountType={currentUser?.account_type ?? null} /></>;
@@ -92,7 +95,10 @@ function AppShell() {
   useAnimationPreference();
   const [isActiveRequest] = useRoute("/request/:id");
   const [isTrackingRequest] = useRoute("/request/:id/track");
-  const [isAdmin] = useRoute("/admin");
+  const [isAdminExact] = useRoute("/admin");
+  const [isAdminOps] = useRoute("/admin/operations");
+  const [isAdminAnalytics] = useRoute("/admin/analytics");
+  const isAdminSurface = isAdminExact || isAdminOps || isAdminAnalytics;
   const [isLogin] = useRoute("/login");
   const [isOnboarding] = useRoute("/onboarding");
   const [isStripeConnected] = useRoute("/wallet/connected");
@@ -100,11 +106,12 @@ function AppShell() {
   const [isAudioCirclesAlias] = useRoute(CIRCLE_ROUTE_ALIASES.discovery);
   const [isAudioSpiralRoom] = useRoute(SPIRAL_ROUTE_ALIASES.room[0]);
   const [isAudioCircleRoomAlias] = useRoute(CIRCLE_ROUTE_ALIASES.room);
-  if (isAdmin) return <Suspense fallback={<PageFallback />}><AdminScreen /></Suspense>;
+  // Exact /admin keeps the legacy multi-tab console; ops/analytics use Switch routes below.
+  if (isAdminExact) return <Suspense fallback={<PageFallback />}><AdminScreen /></Suspense>;
   if (!currentUser) return <Suspense fallback={<PageFallback />}><LoginScreen /></Suspense>;
   const extUser = currentUser as (typeof currentUser & { approval_status?: string }) | null;
   if (extUser?.approval_status === 'pending' || extUser?.approval_status === 'denied') return <Suspense fallback={<PageFallback />}><PendingApprovalScreen /></Suspense>;
-  const showShell = !isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && !isAudioSpirals && !isAudioCirclesAlias && !isAudioSpiralRoom && !isAudioCircleRoomAlias;
+  const showShell = !isActiveRequest && !isTrackingRequest && !isAdminSurface && !isLogin && !isOnboarding && !isStripeConnected && !isAudioSpirals && !isAudioCirclesAlias && !isAudioSpiralRoom && !isAudioCircleRoomAlias;
   return <><ErrorBoundary fallback={<div className="min-h-[60dvh] flex flex-col items-center justify-center px-6 py-12 text-center"><div className="w-14 h-14 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center mb-4"><span className="text-2xl">⚠️</span></div><h2 className="text-lg font-black mb-2">Page crashed</h2><p className="text-sm text-muted-foreground max-w-xs mb-6 leading-relaxed">This page hit an unexpected error. Use the navigation below to go somewhere else, or reload the app.</p><button onClick={() => window.location.reload()} className="bg-primary text-primary-foreground font-black rounded-xl px-6 py-2.5 text-sm">Reload</button></div>}><div className={showShell ? "lg:pl-60" : undefined}><Suspense fallback={<PageFallback />}><Switch>
     <Route path="/login" component={LoginScreen} /><Route path="/onboarding" component={OnboardingScreen} /><Route path="/helper/:id" component={HelperProfileScreen} /><Route path="/request/:id/view" component={RequestDetailScreen} /><Route path="/wallet/connected" component={StripeConnectedScreen} /><Route path="/" component={MapScreen} /><Route path="/dashboard" component={DashboardPage} /><Route path="/community" component={CommunityScreen} /><Route path="/request/new" component={NewRequestScreen} /><Route path="/request/:id/track" component={RequesterTrackingScreen} /><Route path="/request/:id" component={ActiveRequestScreen} /><Route path="/wallet" component={WalletScreen} /><Route path="/profile" component={ProfileScreen} /><Route path="/settings" component={SettingsPage} /><Route path="/admin" component={AdminScreen} /><Route path="/admin/operations" component={AdminOperationsDashboard} /><Route path="/helper-dashboard" component={HelperDashboardScreen} /><Route path="/helper-onboarding" component={HelperOnboardingScreen} /><Route path="/pending-approval" component={PendingApprovalScreen} /><Route path="/recurring" component={RecurringScreen} /><Route path="/admin/analytics" component={AdminAnalyticsDashboard} /><Route path="/business/apply" component={BusinessApplyScreen} /><Route path="/gov-sponsor/apply" component={GovSponsorApplyScreen} /><Route path="/civic-portal" component={CivicPortalPage} /><Route path={SPIRAL_ROUTE_ALIASES.discovery[0]} component={AudioCirclesScreen} /><Route path={CIRCLE_ROUTE_ALIASES.discovery} component={AudioCirclesScreen} /><Route path={SPIRAL_ROUTE_ALIASES.room[0]} component={AudioCircleRoomScreen} /><Route path={CIRCLE_ROUTE_ALIASES.room} component={AudioCircleRoomScreen} /><Route path="/civic-task-nav/:needId" component={CivicTaskNavPage} /><Route path="/civic-needs" component={CivicNeedsPage} /><Route path="/requests" component={RequestsBrowsePage} /><Route path="/hub-leader/:id" component={HubLeaderDashboard} /><Route path="/family/:id/memory/:memoryId" component={FamilyMemoryPage} /><Route path="/family/:id" component={FamilyVaultPage} /><Route path="/globe" component={GlobePage} /><Route path="/diaspora/family" component={FamilySpacesPage} /><Route path="/diaspora/vault/:familyId" component={FamilyVaultPage} /><Route path="/diaspora/tree" component={FamilyTreePage} /><Route path="/diaspora/tree/:familyId" component={FamilyTreePage} /><Route path="/diaspora/dna" component={DnaConnectionsPage} /><Route path="/diaspora/heritage" component={HeritageCollectionsPage} /><Route path="/diaspora/heritage/globe" component={GlobePage} /><Route path="/diaspora/research" component={ResearchCenterPage} /><Route path="/diaspora/preserve" component={PreserveCulturePage} /><Route path="/diaspora/timeline" component={LegacyTimelinePage} /><Route path="/diaspora" component={DiasporaDashboardPage} /><Route component={NotFound} />
   </Switch></Suspense></div></ErrorBoundary>{showShell && <BottomNav />}{showShell && <DesktopSidebar />}</>;
