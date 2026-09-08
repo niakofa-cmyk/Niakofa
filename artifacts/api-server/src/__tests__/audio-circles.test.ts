@@ -117,6 +117,7 @@ let signTokenById: (id: number) => string;
 
 beforeAll(async () => {
   ({ db } = await import("@workspace/db"));
+  console.error("audio-circles test db.select", typeof (db as { select?: unknown }).select, (db as { select?: { mockReset?: unknown } }).select);
   ({ signTokenById } = await import("../middlewares/auth.js"));
   const { parseAuth } = await import("../middlewares/auth.js");
   const { default: audioCirclesRouter } = await import("../routes/audio-circles.js");
@@ -271,6 +272,40 @@ describe("Audio Circles — auth gates", () => {
       .send({ title: "Neighborhood check-in", location: validStartLocation() });
     expect(res.status).toBe(409);
     expect(res.body.session_id).toBe(77);
+  });
+
+  it("does not block a neighborhood Spiral while its boundary is unreviewed", async () => {
+    mockApprovedUser();
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{
+        id: 1,
+        city_key: "test_city",
+        city_display: "Test City",
+        neighborhood_id: 9,
+        name: "Downtown Spiral",
+      }])) // circle lookup
+      .mockImplementationOnce(() => Promise.resolve([{
+        id: 9,
+        name: "Downtown",
+        geometry_verified: false,
+      }])) // neighborhood lookup
+      .mockImplementationOnce(() => Promise.resolve([])) // getLiveSession
+      .mockImplementationOnce(() => Promise.resolve([])); // host lookup
+    (db.returning as jest.Mock).mockImplementationOnce(() => Promise.resolve([{
+      id: 88,
+      circle_id: 1,
+      host_id: 42,
+      title: "Neighborhood check-in",
+      status: "live",
+    }]));
+
+    const res = await request(app)
+      .post("/api/audio-circles/1/start")
+      .set("Authorization", bearerToken(42))
+      .send({ title: "Neighborhood check-in", location: validStartLocation() });
+
+    expect(res.status).toBe(201);
+    expect(res.body.session.id).toBe(88);
   });
 
   it("rejects starting a session with an empty title", async () => {

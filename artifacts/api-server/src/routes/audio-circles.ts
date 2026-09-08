@@ -563,7 +563,10 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
   if (neighborhoodRow) {
     const geofence = evaluateNeighborhoodGeofence(parsed.data.location.latitude, parsed.data.location.longitude, neighborhoodRow);
     const spiralCityDisplay = circle.city_display ?? circle.city_key;
-    if (geofence.status !== "inside") {
+    // Missing, unreviewed, or future geometry is intentionally non-blocking:
+    // city verification remains authoritative until an admin-reviewed boundary
+    // is active. Only an active reviewed boundary can deny this start.
+    if (geofence.status === "outside" || geofence.status === "invalid_geometry") {
       const outsideBoundary = geofence.status === "outside";
       const reason = outsideBoundary
         ? `You are in ${spiralCityDisplay}, but outside the verified boundary for the ${neighborhoodRow.name} Spiral. Move closer or host a different neighborhood Spiral.`

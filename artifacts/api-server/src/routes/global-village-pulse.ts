@@ -4,9 +4,20 @@ import { db, usersTable, diasporaHubsTable, cityNeighborhoodsTable, audioCircles
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { buildPresenceSnapshot, LIVE_PRESENCE_WINDOW_MS, resolveNearestHub } from "../lib/diasporaPresence";
-import { evaluateNeighborhoodGeofence } from "../lib/neighborhoodGeofence";
+import { evaluateNeighborhoodGeofence, getNeighborhoodGeometryStatus } from "../lib/neighborhoodGeofence";
 
 const router = Router();
+
+function normalizedCityKey(value: string): string {
+  return value
+    .split(",")[0]!
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
 
 /** Authenticated aggregate pulse. Raw GPS coordinates never leave the server. */
 router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, res) => {
@@ -19,7 +30,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
         .from(usersTable).where(and(isNotNull(usersTable.location_updated_at), gte(usersTable.location_updated_at, new Date(now.getTime() - LIVE_PRESENCE_WINDOW_MS)), lte(usersTable.location_updated_at, now))),
       db.select({ id: cityNeighborhoodsTable.id, city_key: cityNeighborhoodsTable.city_key, neighborhood_id: cityNeighborhoodsTable.neighborhood_id, name: cityNeighborhoodsTable.name, emoji: cityNeighborhoodsTable.emoji, center_lat: cityNeighborhoodsTable.center_lat, center_lng: cityNeighborhoodsTable.center_lng, radius_meters: cityNeighborhoodsTable.radius_meters, polygon_geojson: cityNeighborhoodsTable.polygon_geojson, geometry_verified: cityNeighborhoodsTable.geometry_verified, geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at }).from(cityNeighborhoodsTable),
       db.select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, location_updated_at: usersTable.location_updated_at }).from(usersTable).where(eq(usersTable.id, currentUserId)).limit(1),
-      db.select({ id: audioCirclesTable.id, neighborhood_id: audioCirclesTable.neighborhood_id }).from(audioCirclesTable),
+      db.select({ id: audioCirclesTable.id, city_key: audioCirclesTable.city_key, neighborhood_id: audioCirclesTable.neighborhood_id }).from(audioCirclesTable),
       db.execute<{ hub_id: number; user_id: number }>(sql`
         SELECT hcl.hub_id, hcl.user_id
         FROM hub_community_leaders hcl
@@ -97,7 +108,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
     }
     const liveUsersByNeighborhood = new Map<number, number>();
     const spiralIdByNeighborhoodId = new Map(circles
-      .filter((circle): circle is { id: number; neighborhood_id: number } => circle.neighborhood_id != null)
+      .filter((circle): circle is { id: number; city_key: string; neighborhood_id: number } => circle.neighborhood_id != null)
       .map((circle) => [circle.neighborhood_id, circle.id]));
 
     // Reviewed neighborhood geometry is authoritative for neighborhood tallies;
@@ -135,6 +146,18 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
           : "stale_or_missing_gps";
 
     const enriched = await Promise.all(approvedHubs.map(async (hub) => {
+      const hubCityKey = normalizedCityKey(hub.name);
+      // These are structural place metrics, not GPS presence metrics:
+      // neighborhoods count only active, reviewed geometry; Spirals count the
+      // city's permanent channels. The two layers intentionally stay distinct
+      // from the Hub's broad operational presence radius.
+      const neighborhood_count = neighborhoods.filter((neighborhood) =>
+        normalizedCityKey(neighborhood.city_key) === hubCityKey &&
+        getNeighborhoodGeometryStatus(neighborhood, now) === "verified"
+      ).length;
+      const spiral_count = circles.filter((circle) =>
+        normalizedCityKey(circle.city_key) === hubCityKey
+      ).length;
       const [memberRow, storyRow, openRequestRow, fulfilledRow, poolRow] = await Promise.all([
         db.execute<{ count: number }>(sql`SELECT COUNT(DISTINCT u.id)::int AS count FROM users u WHERE ${hub.community_id != null ? sql`u.community_id = ${hub.community_id} OR EXISTS (SELECT 1 FROM hub_community_leaders hcl WHERE hcl.hub_id = ${hub.id} AND hcl.user_id = u.id)` : sql`EXISTS (SELECT 1 FROM hub_community_leaders hcl WHERE hcl.hub_id = ${hub.id} AND hcl.user_id = u.id)`}`),
         db.select({ count: sql<number>`COUNT(*)::int` }).from(griotStoriesTable).where(and(eq(griotStoriesTable.hub_id, hub.id), eq(griotStoriesTable.status, "published"), eq(griotStoriesTable.visibility, "public"))),
@@ -157,7 +180,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
         // this Hub; stale helper locations must not inflate the pulse.
         const activeHelpers = liveHelpersByHub.get(hub.id)?.size ?? 0;
       const live = presence.hubs.find((item) => item.hub_id === hub.id);
-       return { ...hub, id: hub.id, name: hub.name, hub_id: hub.id, hub_name: hub.name, region: hub.region_label, member_count: Number(memberRow.rows[0]?.count ?? 0), live_user_count: live?.live_user_count ?? 0, story_count: storyRow[0]?.count ?? 0, open_requests: openRequestRow[0]?.count ?? 0, activity: { active_helpers: activeHelpers, requests_fulfilled: fulfilledRow[0]?.count ?? 0, pool_balance: Number(poolRow[0]?.balance ?? 0) } };
+        return { ...hub, id: hub.id, name: hub.name, hub_id: hub.id, hub_name: hub.name, region: hub.region_label, member_count: Number(memberRow.rows[0]?.count ?? 0), live_user_count: live?.live_user_count ?? 0, story_count: storyRow[0]?.count ?? 0, neighborhood_count, spiral_count, open_requests: openRequestRow[0]?.count ?? 0, activity: { active_helpers: activeHelpers, requests_fulfilled: fulfilledRow[0]?.count ?? 0, pool_balance: Number(poolRow[0]?.balance ?? 0) } };
     }));
 
     const activeNeighborhoods = [...liveUsersByNeighborhood.values()].filter((count) => count > 0).length;

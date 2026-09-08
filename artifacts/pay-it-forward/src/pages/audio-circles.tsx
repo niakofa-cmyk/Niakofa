@@ -407,6 +407,7 @@ export default function AudioCirclesScreen() {
 
   // Ref for the highlighted neighborhood card (from Community tab navigation)
   const highlightRef = useRef<HTMLDivElement | null>(null);
+  const localSpiralRef = useRef<HTMLDivElement | null>(null);
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -662,7 +663,7 @@ export default function AudioCirclesScreen() {
            context={locationContext}
            checking={locationChecking}
            onRefresh={() => setLocationRefreshNonce((value) => value + 1)}
-           onOpenLocalSpiral={() => highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
+            onOpenLocalSpiral={() => (localSpiralRef.current ?? highlightRef.current)?.scrollIntoView({ behavior: "smooth", block: "center" })}
          />
 
         {/* Community Stats — reputation, trust score, achievements */}
@@ -959,7 +960,10 @@ export default function AudioCirclesScreen() {
             return (
               <motion.div
                 key={circle.id}
-                ref={isHighlighted ? highlightRef : null}
+                ref={(node) => {
+                  if (isHighlighted) highlightRef.current = node;
+                  if (isVerifiedLocal) localSpiralRef.current = node;
+                }}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
