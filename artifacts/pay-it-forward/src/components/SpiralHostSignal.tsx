@@ -40,6 +40,10 @@ const LOCATION_MAX_ACCURACY_METERS = 150;
  * Shared automatic host signal. It consumes the same GPS fix that powers the
  * map/helper/requester experience, only asks for a fresh one when that stream
  * is unavailable or invalid, and always sends the result to the server.
+ *
+ * A green neighborhood state is shown only when the server has matched the
+ * pinpoint GPS fix to reviewed neighborhood geometry. City verification alone
+ * never masquerades as a neighborhood checkpoint.
  */
 export function SpiralHostSignal({
   circleId,
@@ -133,7 +137,11 @@ export function SpiralHostSignal({
   const message =
     displayedSignal?.host_signal?.message ||
     displayedSignal?.error ||
-    (ready ? "GPS verified for hosting." : null);
+    (ready
+      ? neighborhoodBoundaryVerified
+        ? `GPS verified inside the ${spiralNeighborhood ?? "local"} neighborhood boundary.`
+        : "GPS verified for city hosting."
+      : null);
 
   if (compact) {
     return (
@@ -145,8 +153,8 @@ export function SpiralHostSignal({
         aria-label={
           ready
             ? neighborhoodBoundaryVerified
-              ? "Verified neighborhood host"
-              : "Verified city host"
+              ? "Green GPS verified neighborhood host signal"
+              : "Verified city host signal"
             : "Checking GPS host eligibility"
         }
         title={checking ? "Checking your GPS signal…" : message ?? "Checking your GPS signal…"}
@@ -179,7 +187,7 @@ export function SpiralHostSignal({
           <p className="text-[10px] font-black uppercase tracking-wider opacity-80">
             {ready
               ? neighborhoodBoundaryVerified
-                ? "Host signal · neighborhood verified"
+                ? "Host signal · green GPS neighborhood checkpoint"
                 : "Host signal · city verified"
               : displayedSignal
                 ? "Host signal · blocked"
@@ -211,7 +219,7 @@ export function SpiralHostSignal({
       </div>
       <p className="mt-2 text-[10px] opacity-60">
         {neighborhoodBoundaryVerified
-          ? "Your current GPS is inside the reviewed neighborhood boundary. Joining never requires GPS."
+          ? "Your current GPS is inside the reviewed neighborhood boundary. The matching neighborhood Spiral is promoted first. Joining never requires GPS."
           : "Your city is verified for hosting. A neighborhood hint is informational until reviewed boundaries are loaded. Joining never requires GPS."}
       </p>
     </div>

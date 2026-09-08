@@ -59,19 +59,28 @@ export function isHostVerificationEligible(
 }
 
 /**
- * Official source starting points for the first two launch cities.
- * City-specific layer URLs should be recorded in city_neighborhoods once the
- * exact public GIS layer has been selected and reviewed by Niakofa admins.
+ * Canonical source registry for launch-city geography.
+ *
+ * `discoveryUrl` is the human-facing catalog/source page. `datasetUrl` is the
+ * machine-ingest endpoint actually used by Niakofa. Keeping both prevents a
+ * future implementation from accidentally scraping a geocoder or a marketing
+ * page when a first-party GIS/Open Data feed is available.
  */
 export const NEIGHBORHOOD_SOURCE_DIRECTORY = {
   fort_worth: {
     publisher: "City of Fort Worth GIS",
     discoveryUrl: "https://www.fortworthtexas.gov/departments/it-solutions/gis",
+    datasetUrl: "https://mapit.fortworthtexas.gov/ags/rest/services/Planning_Development/Zoning/MapServer/37/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson",
+    dataset: "Planning_Development/Zoning/MapServer/37: Neighborhood Alliances",
+    boundaryType: "Neighborhood Alliances",
     kind: "municipal_gis" as const,
   },
   kansas_city_missouri: {
     publisher: "Kansas City, Missouri Open Data",
     discoveryUrl: "https://data.kcmo.org/Neighborhoods/Kansas-City-Neighborhood-Boundaries/q45j-ejyk",
+    datasetUrl: "https://data.kcmo.org/resource/q45j-ejyk.json?$limit=50000",
+    dataset: "q45j-ejyk: Kansas City Neighborhood Boundaries",
+    boundaryType: "Neighborhood Boundaries",
     kind: "municipal_gis" as const,
   },
 } as const;
