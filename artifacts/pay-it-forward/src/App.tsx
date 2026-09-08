@@ -22,6 +22,7 @@ const SettingsPage         = lazy(() => import("@/pages/settings"));
 const WalletScreen         = lazy(() => import("@/pages/wallet"));
 const CommunityScreen      = lazy(() => import("@/pages/community"));
 const AdminScreen          = lazy(() => import("@/pages/admin"));
+const AdminOperationsDashboard = lazy(() => import("@/pages/admin-operations"));
 const AdminAnalyticsDashboard = lazy(() => import("@/pages/admin-analytics"));
 const NotFound             = lazy(() => import("@/pages/not-found"));
 const RequesterTrackingScreen = lazy(() => import("@/pages/request-track"));
@@ -60,38 +61,14 @@ const LegacyTimelinePage    = lazy(() => import("@/pages/legacy-timeline"));
 
 function PageFallback() {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--color-background-primary, #0e1111)",
-      }}
-    >
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: "50%",
-          background: "var(--color-text-tertiary, #444)",
-          animation: "pulse 1.2s ease-in-out infinite",
-        }}
-      />
+    <div style={{ position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-background-primary, #0e1111)" }}>
+      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-text-tertiary, #444)", animation: "pulse 1.2s ease-in-out infinite" }} />
     </div>
   );
 }
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30000,
-      gcTime: 10 * 60 * 1000,
-      retry: 1,
-      placeholderData: keepPreviousData,
-    },
-  },
+  defaultOptions: { queries: { staleTime: 30000, gcTime: 10 * 60 * 1000, retry: 1, placeholderData: keepPreviousData } },
 });
 
 function NiaGlobal() {
@@ -102,48 +79,12 @@ function NiaGlobal() {
   const [isOnboarding] = useRoute("/onboarding");
   const [isMap] = useRoute("/");
   const [isStripeConnected] = useRoute("/wallet/connected");
-
-  useEffect(() => {
-    window.openNia = (seedQuestion?: string) => {
-      if (niaEnabled !== true) return;
-      if (seedQuestion) setNiaInitialMessage(seedQuestion);
-      setNiaOpen(true);
-    };
-    return () => { delete window.openNia; };
-  }, [niaEnabled]);
-
-  useEffect(() => {
-    if (!niaEnabled && niaOpen) setNiaOpen(false);
-  }, [niaEnabled, niaOpen]);
-
+  useEffect(() => { window.openNia = (seedQuestion?: string) => { if (niaEnabled !== true) return; if (seedQuestion) setNiaInitialMessage(seedQuestion); setNiaOpen(true); }; return () => { delete window.openNia; }; }, [niaEnabled]);
+  useEffect(() => { if (!niaEnabled && niaOpen) setNiaOpen(false); }, [niaEnabled, niaOpen]);
   if (isAdmin || isOnboarding || isStripeConnected) return null;
-
   const showFloatingFab = !isMap;
-
   if (niaEnabled === null) return null;
-
-  return (
-    <>
-      {showFloatingFab && niaEnabled === true && (
-        <NiaFab onClick={() => setNiaOpen(true)} enabled={true} />
-      )}
-
-      <NiaDrawer
-        open={niaEnabled === true && niaOpen}
-        onClose={() => { setNiaOpen(false); setNiaInitialMessage(undefined); }}
-        initialMessage={niaInitialMessage}
-        userId={currentUser?.id ?? null}
-        userName={currentUser?.name ?? null}
-        userLocation={myLocation ? { lat: myLocation.lat, lon: myLocation.lng } : null}
-        userCity={userPlace?.city ?? null}
-        userCounty={userPlace?.county ?? null}
-        userState={userPlace?.state ?? null}
-        helperModeActive={helperModeActive}
-        activeRequestId={activeRequestId}
-        accountType={currentUser?.account_type ?? null}
-      />
-    </>
-  );
+  return <>{showFloatingFab && niaEnabled === true && <NiaFab onClick={() => setNiaOpen(true)} enabled={true} />}<NiaDrawer open={niaEnabled === true && niaOpen} onClose={() => { setNiaOpen(false); setNiaInitialMessage(undefined); }} initialMessage={niaInitialMessage} userId={currentUser?.id ?? null} userName={currentUser?.name ?? null} userLocation={myLocation ? { lat: myLocation.lat, lon: myLocation.lng } : null} userCity={userPlace?.city ?? null} userCounty={userPlace?.county ?? null} userState={userPlace?.state ?? null} helperModeActive={helperModeActive} activeRequestId={activeRequestId} accountType={currentUser?.account_type ?? null} /></>;
 }
 
 function AppShell() {
@@ -159,198 +100,28 @@ function AppShell() {
   const [isAudioCirclesAlias] = useRoute(CIRCLE_ROUTE_ALIASES.discovery);
   const [isAudioSpiralRoom] = useRoute(SPIRAL_ROUTE_ALIASES.room[0]);
   const [isAudioCircleRoomAlias] = useRoute(CIRCLE_ROUTE_ALIASES.room);
-
-  if (isAdmin) return (
-    <Suspense fallback={<PageFallback />}>
-      <AdminScreen />
-    </Suspense>
-  );
-
-  if (!currentUser) {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <LoginScreen />
-      </Suspense>
-    );
-  }
-
+  if (isAdmin) return <Suspense fallback={<PageFallback />}><AdminScreen /></Suspense>;
+  if (!currentUser) return <Suspense fallback={<PageFallback />}><LoginScreen /></Suspense>;
   const extUser = currentUser as (typeof currentUser & { approval_status?: string }) | null;
-  if (extUser?.approval_status === 'pending' || extUser?.approval_status === 'denied') {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <PendingApprovalScreen />
-      </Suspense>
-    );
-  }
-
-  const showShell = !isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin &&
-    !isOnboarding && !isStripeConnected && !isAudioSpirals && !isAudioCirclesAlias &&
-    !isAudioSpiralRoom && !isAudioCircleRoomAlias;
-
-  return (
-    <>
-      <ErrorBoundary
-        fallback={
-          <div className="min-h-[60dvh] flex flex-col items-center justify-center px-6 py-12 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center mb-4">
-              <span className="text-2xl">⚠️</span>
-            </div>
-            <h2 className="text-lg font-black mb-2">Page crashed</h2>
-            <p className="text-sm text-muted-foreground max-w-xs mb-6 leading-relaxed">
-              This page hit an unexpected error. Use the navigation below to go somewhere else, or reload the app.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-primary text-primary-foreground font-black rounded-xl px-6 py-2.5 text-sm"
-            >
-              Reload
-            </button>
-          </div>
-        }
-      >
-        <div className={showShell ? "lg:pl-60" : undefined}>
-        <Suspense fallback={<PageFallback />}>
-          <Switch>
-            <Route path="/login" component={LoginScreen} />
-            <Route path="/onboarding" component={OnboardingScreen} />
-            <Route path="/helper/:id" component={HelperProfileScreen} />
-            <Route path="/request/:id/view" component={RequestDetailScreen} />
-            <Route path="/wallet/connected" component={StripeConnectedScreen} />
-            <Route path="/" component={MapScreen} />
-            <Route path="/dashboard" component={DashboardPage} />
-            <Route path="/community" component={CommunityScreen} />
-            <Route path="/request/new" component={NewRequestScreen} />
-            <Route path="/request/:id/track" component={RequesterTrackingScreen} />
-            <Route path="/request/:id" component={ActiveRequestScreen} />
-            <Route path="/wallet" component={WalletScreen} />
-            <Route path="/profile" component={ProfileScreen} />
-            <Route path="/settings" component={SettingsPage} />
-            <Route path="/admin" component={AdminScreen} />
-            <Route path="/helper-dashboard" component={HelperDashboardScreen} />
-            <Route path="/helper-onboarding" component={HelperOnboardingScreen} />
-            <Route path="/pending-approval" component={PendingApprovalScreen} />
-            <Route path="/recurring" component={RecurringScreen} />
-            <Route path="/admin/analytics" component={AdminAnalyticsDashboard} />
-            <Route path="/business/apply" component={BusinessApplyScreen} />
-            <Route path="/gov-sponsor/apply" component={GovSponsorApplyScreen} />
-            <Route path="/civic-portal" component={CivicPortalPage} />
-            <Route path={SPIRAL_ROUTE_ALIASES.discovery[0]} component={AudioCirclesScreen} />
-            <Route path={CIRCLE_ROUTE_ALIASES.discovery} component={AudioCirclesScreen} />
-            <Route path={SPIRAL_ROUTE_ALIASES.room[0]} component={AudioCircleRoomScreen} />
-            <Route path={CIRCLE_ROUTE_ALIASES.room} component={AudioCircleRoomScreen} />
-            <Route path="/civic-task-nav/:needId" component={CivicTaskNavPage} />
-            <Route path="/civic-needs" component={CivicNeedsPage} />
-            <Route path="/requests" component={RequestsBrowsePage} />
-            <Route path="/hub-leader/:id" component={HubLeaderDashboard} />
-            <Route path="/family/:id/memory/:memoryId" component={FamilyMemoryPage} />
-            <Route path="/family/:id" component={FamilyVaultPage} />
-            <Route path="/globe" component={GlobePage} />
-            <Route path="/diaspora/family" component={FamilySpacesPage} />
-            <Route path="/diaspora/vault/:familyId" component={FamilyVaultPage} />
-            <Route path="/diaspora/tree" component={FamilyTreePage} />
-            <Route path="/diaspora/tree/:familyId" component={FamilyTreePage} />
-            <Route path="/diaspora/dna" component={DnaConnectionsPage} />
-            <Route path="/diaspora/heritage" component={HeritageCollectionsPage} />
-            <Route path="/diaspora/heritage/globe" component={GlobePage} />
-            <Route path="/diaspora/research" component={ResearchCenterPage} />
-            <Route path="/diaspora/preserve" component={PreserveCulturePage} />
-            <Route path="/diaspora/timeline" component={LegacyTimelinePage} />
-            <Route path="/diaspora" component={DiasporaDashboardPage} />
-            <Route component={NotFound} />
-          </Switch>
-        </Suspense>
-        </div>
-      </ErrorBoundary>
-      {showShell && <BottomNav />}
-      {showShell && <DesktopSidebar />}
-    </>
-  );
+  if (extUser?.approval_status === 'pending' || extUser?.approval_status === 'denied') return <Suspense fallback={<PageFallback />}><PendingApprovalScreen /></Suspense>;
+  const showShell = !isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && !isAudioSpirals && !isAudioCirclesAlias && !isAudioSpiralRoom && !isAudioCircleRoomAlias;
+  return <><ErrorBoundary fallback={<div className="min-h-[60dvh] flex flex-col items-center justify-center px-6 py-12 text-center"><div className="w-14 h-14 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center mb-4"><span className="text-2xl">⚠️</span></div><h2 className="text-lg font-black mb-2">Page crashed</h2><p className="text-sm text-muted-foreground max-w-xs mb-6 leading-relaxed">This page hit an unexpected error. Use the navigation below to go somewhere else, or reload the app.</p><button onClick={() => window.location.reload()} className="bg-primary text-primary-foreground font-black rounded-xl px-6 py-2.5 text-sm">Reload</button></div>}><div className={showShell ? "lg:pl-60" : undefined}><Suspense fallback={<PageFallback />}><Switch>
+    <Route path="/login" component={LoginScreen} /><Route path="/onboarding" component={OnboardingScreen} /><Route path="/helper/:id" component={HelperProfileScreen} /><Route path="/request/:id/view" component={RequestDetailScreen} /><Route path="/wallet/connected" component={StripeConnectedScreen} /><Route path="/" component={MapScreen} /><Route path="/dashboard" component={DashboardPage} /><Route path="/community" component={CommunityScreen} /><Route path="/request/new" component={NewRequestScreen} /><Route path="/request/:id/track" component={RequesterTrackingScreen} /><Route path="/request/:id" component={ActiveRequestScreen} /><Route path="/wallet" component={WalletScreen} /><Route path="/profile" component={ProfileScreen} /><Route path="/settings" component={SettingsPage} /><Route path="/admin" component={AdminScreen} /><Route path="/admin/operations" component={AdminOperationsDashboard} /><Route path="/helper-dashboard" component={HelperDashboardScreen} /><Route path="/helper-onboarding" component={HelperOnboardingScreen} /><Route path="/pending-approval" component={PendingApprovalScreen} /><Route path="/recurring" component={RecurringScreen} /><Route path="/admin/analytics" component={AdminAnalyticsDashboard} /><Route path="/business/apply" component={BusinessApplyScreen} /><Route path="/gov-sponsor/apply" component={GovSponsorApplyScreen} /><Route path="/civic-portal" component={CivicPortalPage} /><Route path={SPIRAL_ROUTE_ALIASES.discovery[0]} component={AudioCirclesScreen} /><Route path={CIRCLE_ROUTE_ALIASES.discovery} component={AudioCirclesScreen} /><Route path={SPIRAL_ROUTE_ALIASES.room[0]} component={AudioCircleRoomScreen} /><Route path={CIRCLE_ROUTE_ALIASES.room} component={AudioCircleRoomScreen} /><Route path="/civic-task-nav/:needId" component={CivicTaskNavPage} /><Route path="/civic-needs" component={CivicNeedsPage} /><Route path="/requests" component={RequestsBrowsePage} /><Route path="/hub-leader/:id" component={HubLeaderDashboard} /><Route path="/family/:id/memory/:memoryId" component={FamilyMemoryPage} /><Route path="/family/:id" component={FamilyVaultPage} /><Route path="/globe" component={GlobePage} /><Route path="/diaspora/family" component={FamilySpacesPage} /><Route path="/diaspora/vault/:familyId" component={FamilyVaultPage} /><Route path="/diaspora/tree" component={FamilyTreePage} /><Route path="/diaspora/tree/:familyId" component={FamilyTreePage} /><Route path="/diaspora/dna" component={DnaConnectionsPage} /><Route path="/diaspora/heritage" component={HeritageCollectionsPage} /><Route path="/diaspora/heritage/globe" component={GlobePage} /><Route path="/diaspora/research" component={ResearchCenterPage} /><Route path="/diaspora/preserve" component={PreserveCulturePage} /><Route path="/diaspora/timeline" component={LegacyTimelinePage} /><Route path="/diaspora" component={DiasporaDashboardPage} /><Route component={NotFound} />
+  </Switch></Suspense></div></ErrorBoundary>{showShell && <BottomNav />}{showShell && <DesktopSidebar />}</>;
 }
 
-function FocusRefresh() {
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    const refresh = () => {
-      if (!document.hidden) {
-        void queryClient.invalidateQueries();
-      }
-    };
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [queryClient]);
-  return null;
-}
+function FocusRefresh() { const queryClient = useQueryClient(); useEffect(() => { const refresh = () => { if (!document.hidden) void queryClient.invalidateQueries(); }; window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", refresh); return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); }; }, [queryClient]); return null; }
 
 function AppContent() {
   useServiceWorkerUpdate();
-
-  const pathname =
-    typeof window !== "undefined" ? window.location.pathname : "";
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
   const normalizedPathname = pathname;
-
-  useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      true ||
-      normalizedPathname === pathname
-    ) {
-      return;
-    }
-
-    const nextUrl = `${normalizedPathname}${window.location.search}${
-      window.location.hash
-    }`;
-    window.history.replaceState(window.history.state, "", nextUrl);
-
-    // Wouter listens for popstate. replaceState does not emit one, so notify
-    // Normalize nested routes before resolving the page.
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  }, [normalizedPathname, pathname]);
-
-  if (normalizedPathname === "/status" || normalizedPathname.endsWith("/status")) {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <StatusPage />
-      </Suspense>
-    );
-  }
-  if (normalizedPathname === "/impact" || normalizedPathname.startsWith("/impact/")) {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <CountyImpactPage />
-      </Suspense>
-    );
-  }
-  return (
-    <>
-      <FocusRefresh />
-      <AppShell />
-      <NiaGlobal />
-    </>
-  );
+  useEffect(() => { if (typeof window === "undefined" || true || normalizedPathname === pathname) return; const nextUrl = `${normalizedPathname}${window.location.search}${window.location.hash}`; window.history.replaceState(window.history.state, "", nextUrl); window.dispatchEvent(new PopStateEvent("popstate")); }, [normalizedPathname, pathname]);
+  if (normalizedPathname === "/status" || normalizedPathname.endsWith("/status")) return <Suspense fallback={<PageFallback />}><StatusPage /></Suspense>;
+  if (normalizedPathname === "/impact" || normalizedPathname.startsWith("/impact/")) return <Suspense fallback={<PageFallback />}><CountyImpactPage /></Suspense>;
+  return <><FocusRefresh /><AppShell /><NiaGlobal /></>;
 }
 
-function App() {
-  return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <AppProvider>
-            <SpiritEnvironmentProvider>
-              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                <AppContent />
-              </WouterRouter>
-            </SpiritEnvironmentProvider>
-            <Toaster />
-          </AppProvider>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
-  );
-}
+function App() { return <ErrorBoundary><QueryClientProvider client={queryClient}><TooltipProvider><AppProvider><SpiritEnvironmentProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><AppContent /></WouterRouter></SpiritEnvironmentProvider><Toaster /></AppProvider></TooltipProvider></QueryClientProvider></ErrorBoundary>; }
 
 export default App;
