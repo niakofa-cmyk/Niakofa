@@ -15,3 +15,5 @@ and a valid tree/parent is not sufficient if commit-object bytes differ.
 **How to apply:** create blobs and the tree, create the commit without moving
 the ref, fetch the created commit object for byte comparison, reconstruct the
 local commit if necessary, and only then patch `refs/heads/main`.
+
+Normalize CRLF path separators before creating Git Data API tree entries; otherwise a valid tree can publish a filename ending in `\r` while leaving the intended file unchanged.
