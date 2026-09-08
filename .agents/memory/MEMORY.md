@@ -42,3 +42,4 @@
 - [Release evidence commit boundary](release-evidence-commit-boundary.md) — keep deployed app SHAs separate from later documentation-only GitHub commits; avoid circular self-hashes.
 - [Deployed acceptance boundary](deployed-acceptance-boundary.md) — authenticated production E2E needs an approved disposable state, explicit API Bearer headers, and private temporary-file cleanup.
 - [GitHub exact-commit sync](github-exact-commit-sync.md) — Git Data API commit creation adds a terminal newline; match its raw commit bytes before advancing the branch ref.
+- [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
