@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { db, cityNeighborhoodsTable, neighborhoodBoundaryImportsTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
@@ -132,12 +132,8 @@ router.patch("/admin/neighborhood-boundary-imports/:id/review", requireAuth, req
 
   const [current] = await db.select().from(neighborhoodBoundaryImportsTable).where(eq(neighborhoodBoundaryImportsTable.id, id)).limit(1);
   if (!current) return res.status(404).json({ error: "Boundary import not found" });
-  if (parsed.data.geometry_verified && (!parsed.data.reviewed || !current.geometry_valid)) {
-    return res.status(400).json({ error: "A boundary must be geometry-valid and reviewed before verification." });
-  }
-  if (parsed.data.geometry_verified && (current.source_kind === "generated_hint" || current.authority_level === "generated")) {
-    return res.status(400).json({ error: "Generated neighborhood hints cannot become GPS-verified boundaries." });
-  }
+  if (parsed.data.geometry_verified && (!parsed.data.reviewed || !current.geometry_valid)) return res.status(400).json({ error: "A boundary must be geometry-valid and reviewed before verification." });
+  if (parsed.data.geometry_verified && (current.source_kind === "generated_hint" || current.authority_level === "generated")) return res.status(400).json({ error: "Generated neighborhood hints cannot become GPS-verified boundaries." });
 
   const [updated] = await db.update(neighborhoodBoundaryImportsTable).set({
     reviewed: parsed.data.reviewed,
@@ -154,12 +150,8 @@ router.post("/admin/neighborhood-boundary-imports/:id/promote", requireAuth, req
   if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid id" });
   const [candidate] = await db.select().from(neighborhoodBoundaryImportsTable).where(eq(neighborhoodBoundaryImportsTable.id, id)).limit(1);
   if (!candidate) return res.status(404).json({ error: "Boundary import not found" });
-  if (!candidate.reviewed || !candidate.geometry_valid || !candidate.geometry_verified) {
-    return res.status(409).json({ error: "Boundary must be reviewed, geometry-valid, and explicitly verified before promotion." });
-  }
-  if (candidate.source_kind === "generated_hint" || candidate.authority_level === "generated") {
-    return res.status(400).json({ error: "Generated neighborhood hints cannot be promoted to GPS-verified boundaries." });
-  }
+  if (!candidate.reviewed || !candidate.geometry_valid || !candidate.geometry_verified) return res.status(409).json({ error: "Boundary must be reviewed, geometry-valid, and explicitly verified before promotion." });
+  if (candidate.source_kind === "generated_hint" || candidate.authority_level === "generated") return res.status(400).json({ error: "Generated neighborhood hints cannot be promoted to GPS-verified boundaries." });
 
   const [promoted] = await db.insert(cityNeighborhoodsTable).values({
     city_key: candidate.city_key,
