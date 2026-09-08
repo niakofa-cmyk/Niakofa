@@ -36,7 +36,9 @@ test("DNA Connections remains consent-first and non-biometric", () => {
 
 test("Globe uses live hub/story APIs and real audio playback", () => {
   const globe = read("artifacts/pay-it-forward/src/pages/globe.tsx");
-  assert.match(globe, /\/api\/griot\/hubs/);
+  // The Globe consumes the canonical aggregate snapshot so Hub counts,
+  // verified live presence, and activity metrics come from one response.
+  assert.match(globe, /\/api\/griot\/village-pulse/);
   assert.match(globe, /\/api\/griot\/stories/);
   assert.match(globe, /new Audio\(story\.audio_url\)/);
   assert.match(globe, /projection=\"globe\"/);
