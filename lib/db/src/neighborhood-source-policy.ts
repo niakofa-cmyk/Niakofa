@@ -78,7 +78,7 @@ export const NEIGHBORHOOD_SOURCE_DIRECTORY = {
   kansas_city_missouri: {
     publisher: "Kansas City, Missouri Open Data",
     discoveryUrl: "https://data.kcmo.org/Neighborhoods/Kansas-City-Neighborhood-Boundaries/q45j-ejyk",
-    datasetUrl: "https://data.kcmo.org/resource/q45j-ejyk.json?$limit=50000",
+    datasetUrl: "https://data.kcmo.org/resource/q45j-ejyk.geojson?$limit=50000",
     dataset: "q45j-ejyk: Kansas City Neighborhood Boundaries",
     boundaryType: "Neighborhood Boundaries",
     kind: "municipal_gis" as const,

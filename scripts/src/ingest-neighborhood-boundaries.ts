@@ -55,7 +55,7 @@ export const NEIGHBORHOOD_IMPORT_SOURCES: Record<string, SourceConfig> = {
     kind: "municipal_gis",
     publisher: "Kansas City, Missouri Open Data",
     dataset: "q45j-ejyk: Kansas City Neighborhood Boundaries",
-    url: "https://data.kcmo.org/resource/q45j-ejyk.json?$limit=50000",
+    url: "https://data.kcmo.org/resource/q45j-ejyk.geojson?$limit=50000",
     nameFields: ["name", "neighborhood", "neighborhood_name", "hood", "name_1"],
     idFields: ["objectid", "id", "cartodb_id", "the_geom"],
     adapter: "socrata",
@@ -152,6 +152,15 @@ function featureCollectionFromSocrata(rows: unknown[]): FeatureCollection {
   };
 }
 
+function isFeatureCollection(payload: unknown): payload is FeatureCollection {
+  return Boolean(
+    payload
+      && typeof payload === "object"
+      && (payload as { type?: unknown }).type === "FeatureCollection"
+      && Array.isArray((payload as { features?: unknown }).features),
+  );
+}
+
 async function fetchSource(source: SourceConfig): Promise<{ collection: FeatureCollection; version: string; retrievedAt: Date }> {
   const retrievedAt = new Date();
   const response = await fetch(source.url, { headers: { Accept: "application/geo+json, application/json" } });
@@ -162,12 +171,16 @@ async function fetchSource(source: SourceConfig): Promise<{ collection: FeatureC
     ?? `sha256:${createHash("sha256").update(body).digest("hex")}`;
   const payload = JSON.parse(body) as unknown;
   if (source.adapter === "arcgis") {
-    const collection = payload as FeatureCollection;
-    if (collection.type !== "FeatureCollection" || !Array.isArray(collection.features)) throw new Error(`${source.key}: expected GeoJSON FeatureCollection`);
-    return { collection, version, retrievedAt };
+    if (!isFeatureCollection(payload)) throw new Error(`${source.key}: expected GeoJSON FeatureCollection`);
+    return { collection: payload, version, retrievedAt };
   }
-  if (!Array.isArray(payload)) throw new Error(`${source.key}: expected Socrata JSON array`);
-  return { collection: featureCollectionFromSocrata(payload), version, retrievedAt };
+  if (isFeatureCollection(payload)) {
+    return { collection: payload, version, retrievedAt };
+  }
+  if (Array.isArray(payload)) {
+    return { collection: featureCollectionFromSocrata(payload), version, retrievedAt };
+  }
+  throw new Error(`${source.key}: expected Socrata JSON array or GeoJSON FeatureCollection`);
 }
 
 function pickProperty(properties: Record<string, unknown> | null | undefined, fields: string[]): unknown {
@@ -224,7 +237,13 @@ async function main() {
   if (!databaseUrl) throw new Error("DATABASE_URL environment variable is required");
 
   const { collection, version, retrievedAt } = await fetchSource(source);
+  if (collection.features.length === 0) {
+    throw new Error(`${source.key}: source returned zero GeoJSON features; refusing to record an empty authoritative import`);
+  }
   const rows = await buildImportRows(source, collection, version, retrievedAt);
+  if (rows.length === 0) {
+    throw new Error(`${source.key}: source returned ${collection.features.length} features but zero valid named polygon features; refusing to record an empty authoritative import`);
+  }
   const pool = new Pool({ connectionString: databaseUrl, max: 4 });
   const db = drizzle(pool);
   try {

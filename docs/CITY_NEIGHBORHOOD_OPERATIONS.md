@@ -46,7 +46,9 @@ These names should remain product-level labels until each one has an explicitly 
 
 ### Kansas City, Missouri
 
-Kansas City, Missouri publishes a first-party **Kansas City Neighborhood Boundaries** open-data dataset. Niakofa should ingest the source rows and let the reviewed dataset determine the available neighborhood names instead of hard-coding a fixed count.
+Kansas City, Missouri publishes a first-party **Kansas City Neighborhood Boundaries** open-data dataset. Niakofa uses its Socrata GeoJSON representation for machine ingestion so polygon/multipolygon geometry arrives as a standard GeoJSON FeatureCollection rather than relying on a row format that can omit or serialize geometry inconsistently.
+
+The ingestion adapter remains backward-compatible with Socrata JSON arrays, but the canonical KCMO registry endpoint is the GeoJSON representation. The importer fails closed if the authoritative response contains zero features or produces zero valid named polygon features; it must never turn an empty successful HTTP response into an apparently successful geography import.
 
 ## Recommended canonical data flow
 
