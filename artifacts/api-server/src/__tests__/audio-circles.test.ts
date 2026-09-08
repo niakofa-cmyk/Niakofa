@@ -72,6 +72,7 @@ jest.unstable_mockModule("@workspace/db", () => {
       hand_raised: "hand_raised", muted: "muted", left_at: "left_at",
     },
     cityNeighborhoodsTable: { id: "id", name: "name", emoji: "emoji" },
+    neighborhoodBoundaryImportsTable: { id: "id", city_key: "city_key", neighborhood_id: "neighborhood_id" },
     usersTable: { id: "id", name: "name", avatar_url: "avatar_url", is_admin: "is_admin", approval_status: "approval_status" },
     audioCircleFollowsTable: { id: "id", user_id: "user_id", circle_id: "circle_id" },
     audioCircleMessagesTable: {
