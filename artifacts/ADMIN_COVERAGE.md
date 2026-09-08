@@ -38,6 +38,9 @@
 | `/admin/city-neighborhoods` | GET | SystemTab → NeighborhoodsSection | ✅ |
 | `/admin/city-neighborhoods/:id` | PATCH | SystemTab → NeighborhoodsSection (verify) | ✅ |
 | `/admin/city-neighborhoods/:id` | DELETE | SystemTab → NeighborhoodsSection (delete) | ✅ |
+| `/admin/neighborhood-boundary-imports` | GET | SystemTab → BoundaryImportsReviewSection | ✅ |
+| `/admin/neighborhood-boundary-imports/:id/review` | PATCH | SystemTab → BoundaryImportsReviewSection (review / verify) | ✅ |
+| `/admin/neighborhood-boundary-imports/:id/promote` | POST | SystemTab → BoundaryImportsReviewSection (promote → GPS Host Signal) | ✅ |
 | `/crisis/status` | GET | SettingsTab → CrisisModeSection | ✅ |
 | `/crisis/activate` | POST | SettingsTab → CrisisModeSection | ✅ |
 | `/crisis/deactivate` | POST | SettingsTab → CrisisModeSection | ✅ |
