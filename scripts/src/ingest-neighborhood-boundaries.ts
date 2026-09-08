@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { neighborhoodBoundaryImportsTable } from "@workspace/db";
@@ -63,8 +64,8 @@ export const NEIGHBORHOOD_IMPORT_SOURCES: Record<string, SourceConfig> = {
 
 function normalizeName(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const valueTrimmed = value.replace(/<[^>]*>/g, "").trim().replace(/\s+/g, " ");
-  return valueTrimmed ? valueTrimmed.slice(0, 120) : null;
+  const cleaned = value.replace(/<[^>]*>/g, "").trim().replace(/\s+/g, " ");
+  return cleaned ? cleaned.slice(0, 120) : null;
 }
 
 function asFiniteNumber(value: unknown): value is number {
@@ -132,7 +133,12 @@ function featureCollectionFromSocrata(rows: unknown[]): FeatureCollection {
       const record = row as Record<string, unknown>;
       const geometry = geometryFromSocrata(record.the_geom ?? record.geometry ?? record.geom);
       if (!geometry) return [];
-      return [{ type: "Feature", id: String(record.objectid ?? record.id ?? record.cartodb_id ?? index), properties: record, geometry }];
+      return [{
+        type: "Feature",
+        id: String(record.objectid ?? record.id ?? record.cartodb_id ?? index),
+        properties: record,
+        geometry,
+      }];
     }),
   };
 }
@@ -141,8 +147,11 @@ async function fetchSource(source: SourceConfig): Promise<{ collection: FeatureC
   const retrievedAt = new Date();
   const response = await fetch(source.url, { headers: { Accept: "application/geo+json, application/json" } });
   if (!response.ok) throw new Error(`${source.key}: source returned HTTP ${response.status}`);
-  const version = response.headers.get("etag") ?? response.headers.get("last-modified") ?? retrievedAt.toISOString();
-  const payload = await response.json() as unknown;
+  const body = await response.text();
+  const version = response.headers.get("etag")
+    ?? response.headers.get("last-modified")
+    ?? `sha256:${createHash("sha256").update(body).digest("hex")}`;
+  const payload = JSON.parse(body) as unknown;
   if (source.adapter === "arcgis") {
     const collection = payload as FeatureCollection;
     if (collection.type !== "FeatureCollection" || !Array.isArray(collection.features)) throw new Error(`${source.key}: expected GeoJSON FeatureCollection`);
@@ -214,26 +223,18 @@ async function main() {
       if (batch.length === 0) continue;
       await db.insert(neighborhoodBoundaryImportsTable)
         .values(batch)
-        .onConflictDoUpdate({
-          target: [
-            neighborhoodBoundaryImportsTable.city_key,
-            neighborhoodBoundaryImportsTable.source_dataset,
-            neighborhoodBoundaryImportsTable.source_feature_id,
-            neighborhoodBoundaryImportsTable.source_version,
-          ],
-          set: {
-            name: batch[0]?.name,
-            polygon_geojson: batch[0]?.polygon_geojson,
-            center_lat: batch[0]?.center_lat,
-            center_lng: batch[0]?.center_lng,
-            source_retrieved_at: batch[0]?.source_retrieved_at,
-            geometry_valid: true,
-            updated_at: new Date(),
-          },
-        });
+        .onConflictDoNothing();
       imported += batch.length;
     }
-    console.log(JSON.stringify({ source: source.key, source_version: version, retrieved_at: retrievedAt.toISOString(), source_features: collection.features.length, valid_features: rows.length, imported }, null, 2));
+    console.log(JSON.stringify({
+      source: source.key,
+      source_version: version,
+      retrieved_at: retrievedAt.toISOString(),
+      source_features: collection.features.length,
+      valid_features: rows.length,
+      imported,
+      note: "Imported boundaries remain unreviewed and GPS-ineligible until explicitly verified.",
+    }, null, 2));
   } finally {
     await pool.end();
   }
