@@ -134,6 +134,7 @@ export function SpiralHostSignal({
   const neighborhoodBoundaryVerified =
     displayedSignal?.neighborhood_geofence_status === "inside" ||
     displayedSignal?.host_signal?.neighborhoodGeofenceStatus === "inside";
+  const greenNeighborhoodCheckpoint = ready && neighborhoodBoundaryVerified;
   const message =
     displayedSignal?.host_signal?.message ||
     displayedSignal?.error ||
@@ -147,22 +148,30 @@ export function SpiralHostSignal({
     return (
       <span
         className={`inline-flex items-center justify-center rounded-full ${
-          ready ? "text-emerald-400" : "text-amber-300"
+          greenNeighborhoodCheckpoint
+            ? "text-emerald-400"
+            : ready
+              ? "text-amber-300"
+              : "text-muted-foreground"
         }`}
         role="status"
         aria-label={
-          ready
-            ? neighborhoodBoundaryVerified
+          checking
+            ? "Checking GPS host eligibility"
+            : greenNeighborhoodCheckpoint
               ? "Green GPS verified neighborhood host signal"
-              : "Verified city host signal"
-            : "Checking GPS host eligibility"
+              : ready
+                ? "Verified city host signal"
+                : "GPS host signal not verified"
         }
         title={checking ? "Checking your GPS signal…" : message ?? "Checking your GPS signal…"}
       >
         {checking ? (
           <RefreshCw className="h-4 w-4 animate-spin" />
-        ) : ready ? (
+        ) : greenNeighborhoodCheckpoint ? (
           <CheckCircle2 className="h-5 w-5" />
+        ) : ready ? (
+          <MapPin className="h-4 w-4" />
         ) : (
           <MapPin className="h-4 w-4" />
         )}
@@ -173,11 +182,13 @@ export function SpiralHostSignal({
   return (
     <div
       className={`rounded-xl border px-3 py-3 ${
-        ready
+        greenNeighborhoodCheckpoint
           ? "border-teal-300/30 bg-teal-300/10 text-teal-100"
-          : displayedSignal
+          : ready
             ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
-            : "border-border bg-background/60 text-muted-foreground"
+            : displayedSignal
+              ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
+              : "border-border bg-background/60 text-muted-foreground"
       }`}
       role="status"
       aria-live="polite"
@@ -185,13 +196,15 @@ export function SpiralHostSignal({
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-black uppercase tracking-wider opacity-80">
-            {ready
-              ? neighborhoodBoundaryVerified
+            {checking
+              ? "Host signal · checking GPS"
+              : greenNeighborhoodCheckpoint
                 ? "Host signal · green GPS neighborhood checkpoint"
-                : "Host signal · city verified"
-              : displayedSignal
-                ? "Host signal · blocked"
-                : "Host eligibility"}
+                : ready
+                  ? "Host signal · city verified"
+                  : displayedSignal
+                    ? "Host signal · blocked"
+                    : "Host eligibility"}
           </p>
           <p className="mt-1 text-xs leading-relaxed">
             {checking
@@ -218,9 +231,11 @@ export function SpiralHostSignal({
         </button>
       </div>
       <p className="mt-2 text-[10px] opacity-60">
-        {neighborhoodBoundaryVerified
-          ? "Your current GPS is inside the reviewed neighborhood boundary. The matching neighborhood Spiral is promoted first. Joining never requires GPS."
-          : "Your city is verified for hosting. A neighborhood hint is informational until reviewed boundaries are loaded. Joining never requires GPS."}
+        {greenNeighborhoodCheckpoint
+          ? `Your current pinpoint GPS is inside the reviewed ${spiralNeighborhood ?? "neighborhood"} boundary. That neighborhood Spiral is promoted first. Joining never requires GPS.`
+          : ready
+            ? "Your city is verified for hosting. The green neighborhood checkpoint appears only after reviewed boundary geometry matches your fresh pinpoint GPS. Joining never requires GPS."
+            : "A green neighborhood checkpoint requires fresh pinpoint GPS inside reviewed neighborhood geometry. Joining never requires GPS."}
       </p>
     </div>
   );
