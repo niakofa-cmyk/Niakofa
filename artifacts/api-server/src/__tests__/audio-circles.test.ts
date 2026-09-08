@@ -22,6 +22,7 @@ jest.unstable_mockModule("../lib/circleLocationPolicy.js", () => ({
     accuracy_meters: z.number(),
     captured_at: z.string(),
   }),
+  buildHostSignal: jest.fn().mockReturnValue({ status: "ready", message: "Host signal verified." }),
   verifyCircleStartLocation: jest.fn().mockResolvedValue({
     ok: true,
     cityKey: "test_city",
