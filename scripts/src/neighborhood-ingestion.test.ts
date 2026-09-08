@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildImportRows, NEIGHBORHOOD_IMPORT_SOURCES, validateGeometry } from "./ingest-neighborhood-boundaries.ts";
+import { buildImportRows, NEIGHBORHOOD_IMPORT_SOURCES, validateGeometry } from "./ingest-neighborhood-boundaries";
 
 test("rejects open polygon rings and out-of-range coordinates", () => {
   assert.equal(validateGeometry({
