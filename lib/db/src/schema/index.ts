@@ -9,6 +9,7 @@ export * from "./communities";
 export * from "./community-pool";
 export * from "./helper-availability";
 export * from "./city-neighborhoods";
+export * from "./neighborhood-boundary-imports";
 export * from "./civic-resources";
 export * from "./civic-needs";
 export * from "./civic-invoices";
