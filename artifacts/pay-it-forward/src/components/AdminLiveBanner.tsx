@@ -1,26 +1,18 @@
 /**
  * AdminLiveBanner — persistent real-time status bar for admins.
- *
- * Shows pending-review counts (accounts, helper apps, hardships) that
- * need admin attention. Polls /api/admin/pending-summary every 30 seconds
- * and also updates immediately when the WS pushes a new_account_pending or
- * new_helper_application event. Only rendered when currentUser.is_admin=true.
+ * Polls pending-summary + pool/stats; WS for SOS and new applications.
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, Users, UserCheck, LifeBuoy, RefreshCw, ChevronRight,
-  CheckCircle2, AlertTriangle, Wifi, WifiOff, Activity, Siren, X,
+  CheckCircle2, AlertTriangle, Wifi, WifiOff, Activity, Siren, X, Wallet,
 } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { wsSubscribe, wsIsConnected } from "@/lib/wsClient";
 
-// A live SOS trigger during an in-person help session. Rendered as its own
-// unmissable, sticky alert row above the normal pending-review banner —
-// this is the one thing on the admin dashboard that must be actioned within
-// seconds, not the next time someone glances at a badge count.
 interface SosAlert {
   request_id: number;
   request_title?: string;
@@ -38,17 +30,25 @@ interface PendingSummary {
   refreshed_at: string;
 }
 
-const POLL_INTERVAL_MS = 30_000; // 30 seconds
+interface PoolAlert {
+  balance: number;
+  pool_status: "healthy" | "low" | "critical";
+  pool_health_pct: number;
+  required_reserve: number;
+}
+
+const POLL_INTERVAL_MS = 30_000;
 
 export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const { currentUser } = useAppContext();
   const suppressed = useIsAnimationSuppressed();
   const [summary, setSummary] = useState<PendingSummary | null>(null);
+  const [pool, setPool] = useState<PoolAlert | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-  const [flash, setFlash] = useState<string | null>(null); // new-event label
+  const [flash, setFlash] = useState<string | null>(null);
   const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -61,13 +61,32 @@ export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => 
     setError(false);
     try {
       const token = getToken();
-      const res = await fetch("/api/admin/pending-summary", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        signal: AbortSignal.timeout ? AbortSignal.timeout(8_000) : undefined,
-      });
-      if (!res.ok) throw new Error("fetch failed");
-      const data: PendingSummary = await res.json();
+      const [pendingRes, poolRes] = await Promise.all([
+        fetch("/api/admin/pending-summary", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: AbortSignal.timeout ? AbortSignal.timeout(8_000) : undefined,
+        }),
+        fetch("/api/pool/stats", {
+          signal: AbortSignal.timeout ? AbortSignal.timeout(8_000) : undefined,
+        }),
+      ]);
+      if (!pendingRes.ok) throw new Error("fetch failed");
+      const data: PendingSummary = await pendingRes.json();
       setSummary(data);
+      if (poolRes.ok) {
+        const p = await poolRes.json() as {
+          balance?: number;
+          pool_status?: "healthy" | "low" | "critical";
+          pool_health_pct?: number;
+          required_reserve?: number;
+        };
+        setPool({
+          balance: Number(p.balance ?? 0),
+          pool_status: p.pool_status ?? "healthy",
+          pool_health_pct: Number(p.pool_health_pct ?? 100),
+          required_reserve: Number(p.required_reserve ?? 0),
+        });
+      }
       setLastRefreshed(new Date());
     } catch {
       setError(true);
@@ -76,7 +95,6 @@ export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => 
     }
   }, []);
 
-  // Initial fetch + 30-second polling
   useEffect(() => {
     if (!currentUser?.is_admin) return;
     fetchSummary();
@@ -86,10 +104,8 @@ export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => 
     };
   }, [currentUser?.is_admin, fetchSummary]);
 
-  // WS: update badge and flash when a new application arrives in real time
   useEffect(() => {
     if (!currentUser?.is_admin) return;
-
     const handleWs = (event: { type: string; payload: unknown }) => {
       if (event.type === "connected" || event.type === "pong") {
         setWsConnected(true);
@@ -107,32 +123,28 @@ export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => 
         setTimeout(() => setFlash(null), 6000);
         fetchSummary(true);
       }
-      if (event.type === "admin_summary_update") {
-        fetchSummary(true);
-      }
+      if (event.type === "admin_summary_update") fetchSummary(true);
       if (event.type === "safety_sos") {
         const p = event.payload as {
           request_id?: number; request_title?: string;
           triggered_by_name?: string; role?: string; triggered_at?: string;
-          message?: string;
         };
-        // The admin broadcast carries request_title/triggered_by_name; the
-        // participant-facing copy of this event only carries `message` —
-        // ignore that shape here so we don't render a malformed alert card.
         if (typeof p.request_id === "number") {
           setSosAlerts(prev => [
-            { request_id: p.request_id!, request_title: p.request_title, triggered_by_name: p.triggered_by_name, role: p.role, triggered_at: p.triggered_at ?? new Date().toISOString() },
+            {
+              request_id: p.request_id!,
+              request_title: p.request_title,
+              triggered_by_name: p.triggered_by_name,
+              role: p.role,
+              triggered_at: p.triggered_at ?? new Date().toISOString(),
+            },
             ...prev.filter(a => a.request_id !== p.request_id),
           ]);
         }
       }
     };
-
     const unsub = wsSubscribe(handleWs as Parameters<typeof wsSubscribe>[0]);
-    // Reflect initial WS state
     setWsConnected(wsIsConnected());
-    // Poll connectivity every 5s — wsClient has no disconnect event we can
-    // subscribe to, so we check readyState on a short interval.
     const connPoll = setInterval(() => setWsConnected(wsIsConnected()), 5_000);
     return () => { unsub(); clearInterval(connPoll); };
   }, [currentUser?.is_admin, fetchSummary]);
@@ -140,35 +152,15 @@ export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => 
   if (!currentUser?.is_admin) return null;
 
   const hasItems = (summary?.total_action_items ?? 0) > 0;
-  const items: { label: string; count: number; tab: string; icon: typeof Users; color: string }[] = [
-    {
-      label: "Account Reviews",
-      count: summary?.pending_accounts ?? 0,
-      tab: "orgs",
-      icon: Users,
-      color: "text-yellow-400",
-    },
-    {
-      label: "Helper Apps",
-      count: summary?.pending_helper_apps ?? 0,
-      tab: "helpers",
-      icon: UserCheck,
-      color: "text-cyan-400",
-    },
-    {
-      label: "Hardships",
-      count: summary?.pending_hardships ?? 0,
-      tab: "system",
-      icon: LifeBuoy,
-      color: "text-orange-400",
-    },
+  const poolAtRisk = pool != null && pool.pool_status !== "healthy";
+  const items = [
+    { label: "Account Reviews", count: summary?.pending_accounts ?? 0, tab: "orgs", icon: Users, color: "text-yellow-400" },
+    { label: "Helper Apps", count: summary?.pending_helper_apps ?? 0, tab: "helpers", icon: UserCheck, color: "text-cyan-400" },
+    { label: "Hardships", count: summary?.pending_hardships ?? 0, tab: "system", icon: LifeBuoy, color: "text-orange-400" },
   ].filter(i => i.count > 0);
 
   return (
     <div>
-      {/* Live SOS alerts — sticky, unmissable, above everything else. An SOS
-          during an in-person help session must be actioned within seconds,
-          not discovered the next time an admin happens to look at a tab. */}
       <AnimatePresence>
         {sosAlerts.map(alert => (
           <motion.div
@@ -190,115 +182,68 @@ export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => 
                   Triggered {new Date(alert.triggered_at).toLocaleTimeString()} — contact the participant or emergency services now.
                 </div>
               </div>
-              <button
-                onClick={() => onNavigate?.("reports")}
-                className="shrink-0 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors text-xs font-bold"
-              >
-                View
-              </button>
-              <button
-                onClick={() => dismissSos(alert.request_id)}
-                className="shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-white/15 transition-colors"
-                title="Dismiss"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <button onClick={() => onNavigate?.("reports")} className="shrink-0 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold">View</button>
+              <button onClick={() => dismissSos(alert.request_id)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-white/15" title="Dismiss"><X className="w-4 h-4" /></button>
             </div>
           </motion.div>
         ))}
       </AnimatePresence>
 
-      <div className={`w-full border-b transition-colors duration-500 ${
-        hasItems
-          ? "border-yellow-500/30 bg-yellow-500/5"
-          : "border-border bg-card/50"
-      }`}>
-      <div className="px-4 py-2 flex items-center gap-3 flex-wrap">
-        {/* Status dot */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div className={`w-2 h-2 rounded-full ${
-            error ? "bg-red-500" :
-            wsConnected ? (hasItems ? `bg-yellow-400${suppressed ? "" : " animate-pulse"}` : "bg-green-500") :
-            "bg-muted-foreground"
-          }`} />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {error ? "Offline" : wsConnected ? "Live" : "Connecting"}
-          </span>
-        </div>
-
-        {/* Action items */}
-        {items.length > 0 ? (
-          <div className="flex items-center gap-2 flex-wrap flex-1">
-            {items.map(item => (
-              <button
-                key={item.tab}
-                onClick={() => onNavigate?.(item.tab)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border hover:border-primary/50 active:bg-muted transition-all text-xs font-bold"
-              >
-                <item.icon className={`w-3.5 h-3.5 ${item.color}`} />
-                <span className={`tabular-nums ${item.color}`}>{item.count}</span>
-                <span className="text-muted-foreground">{item.label}</span>
-                <ChevronRight className="w-3 h-3 text-muted-foreground" />
-              </button>
-            ))}
+      {poolAtRisk && pool && (
+        <div className={`w-full border-b ${pool.pool_status === "critical" ? "bg-red-600/15 border-red-500/40 text-red-200" : "bg-orange-500/10 border-orange-500/30 text-orange-200"}`}>
+          <div className="px-4 py-2 flex items-center gap-3 flex-wrap">
+            <Wallet className="w-4 h-4 shrink-0" />
+            <div className="flex-1 min-w-0 text-xs font-bold">
+              Community Pool {pool.pool_status === "critical" ? "critical" : "low"} — ${pool.balance.toFixed(2)} available
+              {pool.required_reserve > 0 ? ` (reserve target ~$${pool.required_reserve.toFixed(0)})` : ""}
+            </div>
+            <button type="button" onClick={() => onNavigate?.("operations")} className="shrink-0 px-2.5 py-1 rounded-lg bg-card/40 border border-border text-[11px] font-bold hover:bg-card/70">Open Operations</button>
           </div>
-        ) : (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-1">
-            <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
-            <span>No pending reviews</span>
-          </div>
-        )}
-
-        {/* Flash notification (new application via WS) */}
-        <AnimatePresence>
-          {flash && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/30 text-xs font-bold text-primary"
-            >
-              <Bell className={`w-3.5 h-3.5${suppressed ? "" : " animate-bounce"}`} />
-              {flash}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Manual refresh + timestamp */}
-        <div className="flex items-center gap-2 shrink-0 ml-auto">
-          {lastRefreshed && (
-            <span className="text-[10px] text-muted-foreground hidden sm:block">
-              Updated {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
-          <button
-            onClick={() => fetchSummary()}
-            disabled={loading}
-            className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground active:text-foreground transition-colors"
-            title="Refresh now"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-          </button>
         </div>
-      </div>
+      )}
 
-      {/* System connectivity row */}
-      <div className="px-4 pb-2 flex items-center gap-4 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1">
-          {wsConnected ? <Wifi className="w-3 h-3 text-green-500" /> : <WifiOff className="w-3 h-3 text-red-400" />}
-          WS {wsConnected ? "connected" : "offline"}
-        </span>
-        <span className="flex items-center gap-1">
-          <Activity className="w-3 h-3" />
-          Poll every 30s
-        </span>
-        {summary && (
-          <span className="flex items-center gap-1">
-            <AlertTriangle className={`w-3 h-3 ${hasItems ? "text-yellow-400" : "text-muted-foreground"}`} />
-            {summary.total_action_items} action{summary.total_action_items !== 1 ? "s" : ""} pending
-          </span>
-        )}
-      </div>
+      <div className={`w-full border-b transition-colors duration-500 ${hasItems ? "border-yellow-500/30 bg-yellow-500/5" : "border-border bg-card/50"}`}>
+        <div className="px-4 py-2 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className={`w-2 h-2 rounded-full ${error ? "bg-red-500" : wsConnected ? (hasItems ? `bg-yellow-400${suppressed ? "" : " animate-pulse"}` : "bg-green-500") : "bg-muted-foreground"}`} />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{error ? "Offline" : wsConnected ? "Live" : "Connecting"}</span>
+          </div>
+          {items.length > 0 ? (
+            <div className="flex items-center gap-2 flex-wrap flex-1">
+              {items.map(item => (
+                <button key={item.tab} onClick={() => onNavigate?.(item.tab)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border hover:border-primary/50 text-xs font-bold">
+                  <item.icon className={`w-3.5 h-3.5 ${item.color}`} />
+                  <span className={`tabular-nums ${item.color}`}>{item.count}</span>
+                  <span className="text-muted-foreground">{item.label}</span>
+                  <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-1">
+              <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /><span>No pending reviews</span>
+            </div>
+          )}
+          <AnimatePresence>
+            {flash && (
+              <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/30 text-xs font-bold text-primary">
+                <Bell className={`w-3.5 h-3.5${suppressed ? "" : " animate-bounce"}`} />{flash}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            {lastRefreshed && <span className="text-[10px] text-muted-foreground hidden sm:block">Updated {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
+            <button onClick={() => fetchSummary()} disabled={loading} className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground" title="Refresh now">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+        </div>
+        <div className="px-4 pb-2 flex items-center gap-4 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1">{wsConnected ? <Wifi className="w-3 h-3 text-green-500" /> : <WifiOff className="w-3 h-3 text-red-400" />} WS {wsConnected ? "connected" : "offline"}</span>
+          <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Poll every 30s</span>
+          {summary && <span className="flex items-center gap-1"><AlertTriangle className={`w-3 h-3 ${hasItems ? "text-yellow-400" : "text-muted-foreground"}`} />{summary.total_action_items} action{summary.total_action_items !== 1 ? "s" : ""} pending</span>}
+          {pool && <span className={`flex items-center gap-1 ${poolAtRisk ? "text-orange-400 font-bold" : ""}`}><Wallet className="w-3 h-3" /> Pool ${pool.balance.toFixed(2)} · {pool.pool_status}</span>}
+        </div>
       </div>
     </div>
   );
