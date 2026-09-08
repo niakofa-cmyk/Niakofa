@@ -1,12 +1,9 @@
 /**
- * Global "Neighborhood Circles" content, per city.
+ * Global neighborhood content, per city.
  *
- * Fort Worth's content is hand-written and seeded into city_neighborhoods
- * with source="curated" — never overwritten by this route. Every other
- * city is generated on first request via nia-service's Claude-backed
- * /generate-neighborhoods endpoint and cached here as source="generated",
- * verified=false until an admin reviews/corrects it through the
- * /admin/city-neighborhoods endpoints below.
+ * Neighborhood names can be discovered/generated, but GPS host verification
+ * requires reviewed geometry plus source provenance. A generated LLM list is
+ * never treated as a geographic boundary.
  */
 import { Router } from "express";
 import { z } from "zod";
@@ -21,8 +18,20 @@ import {
   getNeighborhoodGeometryStatus,
   validateNeighborhoodGeometry,
 } from "../lib/neighborhoodGeofence";
+import type { NeighborhoodSourceKind, NeighborhoodAuthority } from "@workspace/db/neighborhood-source-policy";
 
 const router = Router();
+
+const sourceKinds = [
+  "municipal_gis",
+  "county_gis",
+  "state_gis",
+  "regional_gis",
+  "osm_reviewed",
+  "niakofa_curated",
+  "generated_hint",
+] as const;
+const authorityLevels = ["authoritative", "curated", "generated"] as const;
 
 const NeighborhoodAdminPatchBody = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -37,36 +46,26 @@ const NeighborhoodAdminPatchBody = z.object({
   geometry_version: z.string().trim().min(1).max(100).nullable().optional(),
   geometry_verified: z.boolean().optional(),
   geometry_effective_at: z.string().datetime({ offset: true }).nullable().optional(),
+  source_publisher: z.string().trim().min(1).max(200).nullable().optional(),
+  source_url: z.string().url().max(1000).nullable().optional(),
+  source_license: z.string().trim().min(1).max(200).nullable().optional(),
+  source_retrieved_at: z.string().datetime({ offset: true }).nullable().optional(),
+  source_version: z.string().trim().min(1).max(100).nullable().optional(),
+  source_kind: z.enum(sourceKinds).optional(),
+  authority_level: z.enum(authorityLevels).optional(),
 }).strict();
 
 export function normalizeCityKey(city: string): string {
   return city.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
-// BUG-4-H01: Hard cap on city string length — oversized payloads forwarded to
-// nia-service's /generate-neighborhoods could cause OOM/DoS and excessive
-// Claude token usage. 100 chars is more than enough for any real city name.
 const MAX_CITY_LEN = 100;
 
-// BUG-4-M03: Strip any HTML/script tags from LLM-generated neighborhood
-// names/descriptions before storing. If admin views are rendered raw, a
-// malicious or hallucinated name like "<script>..." would be a stored XSS vector.
 function stripTags(s: string): string {
   return s.replace(/<[^>]*>/g, "").trim();
 }
 
-/**
- * Cache-or-generate a city's neighborhoods, exactly what
- * GET /community/neighborhoods below does — pulled out so other features
- * (Audio Circles) can guarantee a city's neighborhoods exist before they
- * build on top of them, instead of silently rendering empty because
- * nothing ever populated city_neighborhoods for that city yet.
- *
- * Always returns whatever rows now exist for cityKey (possibly []). Never
- * throws — a generation failure just means "no neighborhoods yet", the
- * same as before this function existed; callers should treat [] as
- * "try again later", not as confirmation the city has none.
- */
+/** Cache-or-generate a city's discovery list. Generated rows remain unverified. */
 export async function ensureNeighborhoodsForCity(cityRaw: string, cityKey: string) {
   const existing = await db
     .select()
@@ -75,7 +74,6 @@ export async function ensureNeighborhoodsForCity(cityRaw: string, cityKey: strin
 
   if (existing.length > 0) return existing;
 
-  // Cache miss — generate via nia-service, store as unverified, return.
   try {
     const genRes = await requestNia("/generate-neighborhoods", {
       method: "POST",
@@ -102,11 +100,13 @@ export async function ensureNeighborhoodsForCity(cityRaw: string, cityKey: strin
         description: stripTags(n.description).slice(0, 500),
         source: "generated" as const,
         verified: false,
+        source_kind: "generated_hint" as NeighborhoodSourceKind,
+        authority_level: "generated" as NeighborhoodAuthority,
       })))
       .onConflictDoNothing()
       .returning();
 
-    logger.info({ city: cityRaw, count: inserted.length }, "community/neighborhoods: generated and cached");
+    logger.info({ city: cityRaw, count: inserted.length }, "community/neighborhoods: generated discovery list and cached");
     return inserted;
   } catch (err) {
     logger.error({ err, city: cityRaw }, "community/neighborhoods: generation failed");
@@ -116,16 +116,10 @@ export async function ensureNeighborhoodsForCity(cityRaw: string, cityKey: strin
 
 router.get("/community/neighborhoods", requireAuth, async (req, res) => {
   const cityRaw = (req.query.city as string | undefined)?.trim();
-  if (!cityRaw) {
-    return res.json({ neighborhoods: [], city: null });
-  }
-  if (cityRaw.length > MAX_CITY_LEN) {
-    return res.status(400).json({ error: "city name too long" });
-  }
+  if (!cityRaw) return res.json({ neighborhoods: [], city: null });
+  if (cityRaw.length > MAX_CITY_LEN) return res.status(400).json({ error: "city name too long" });
   const cityKey = normalizeCityKey(cityRaw);
-  if (!cityKey) {
-    return res.json({ neighborhoods: [], city: null });
-  }
+  if (!cityKey) return res.json({ neighborhoods: [], city: null });
 
   const neighborhoods = await ensureNeighborhoodsForCity(cityRaw, cityKey);
   return res.json({
@@ -137,17 +131,12 @@ router.get("/community/neighborhoods", requireAuth, async (req, res) => {
   });
 });
 
-// ── Admin review ────────────────────────────────────────────────────────────
-
 router.get("/admin/city-neighborhoods", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const verifiedParam = req.query.verified as string | undefined;
   const rows = verifiedParam !== undefined
     ? await db.select().from(cityNeighborhoodsTable).where(eq(cityNeighborhoodsTable.verified, verifiedParam === "true"))
     : await db.select().from(cityNeighborhoodsTable);
-  return res.json(rows.map((row) => ({
-    ...row,
-    geometry_status: getNeighborhoodGeometryStatus(row),
-  })));
+  return res.json(rows.map((row) => ({ ...row, geometry_status: getNeighborhoodGeometryStatus(row) })));
 });
 
 router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
@@ -162,11 +151,7 @@ router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), admin
     });
   }
 
-  const [current] = await db
-    .select()
-    .from(cityNeighborhoodsTable)
-    .where(eq(cityNeighborhoodsTable.id, id))
-    .limit(1);
+  const [current] = await db.select().from(cityNeighborhoodsTable).where(eq(cityNeighborhoodsTable.id, id)).limit(1);
   if (!current) return res.status(404).json({ error: "Not found" });
 
   const patch = parsed.data;
@@ -176,32 +161,29 @@ router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), admin
     geometry_effective_at:
       patch.geometry_effective_at === undefined
         ? current.geometry_effective_at
-        : patch.geometry_effective_at
-          ? new Date(patch.geometry_effective_at)
-          : null,
+        : patch.geometry_effective_at ? new Date(patch.geometry_effective_at) : null,
+    source_retrieved_at:
+      patch.source_retrieved_at === undefined
+        ? current.source_retrieved_at
+        : patch.source_retrieved_at ? new Date(patch.source_retrieved_at) : null,
   };
+
   const hasGeometryPatch =
-    patch.center_lat !== undefined ||
-    patch.center_lng !== undefined ||
-    patch.radius_meters !== undefined ||
-    patch.polygon_geojson !== undefined;
+    patch.center_lat !== undefined || patch.center_lng !== undefined ||
+    patch.radius_meters !== undefined || patch.polygon_geojson !== undefined;
   const geometryError = validateNeighborhoodGeometry(candidate);
-  if (hasGeometryPatch && geometryError && candidate.geometry_verified) {
-    return res.status(400).json({ error: geometryError });
-  }
-  if (hasGeometryPatch && geometryError && (
-    candidate.polygon_geojson != null ||
-    candidate.center_lat != null ||
-    candidate.center_lng != null ||
-    candidate.radius_meters != null
-  )) {
-    return res.status(400).json({ error: geometryError });
-  }
+
+  if (hasGeometryPatch && geometryError) return res.status(400).json({ error: geometryError });
+
   if (candidate.geometry_verified) {
     if (!candidate.geometry_source || !candidate.geometry_version || !candidate.geometry_effective_at) {
-      return res.status(400).json({
-        error: "Verified geometry requires source, version, and effective date.",
-      });
+      return res.status(400).json({ error: "Verified geometry requires source, version, and effective date." });
+    }
+    if (!candidate.source_publisher || !candidate.source_url || !candidate.source_retrieved_at) {
+      return res.status(400).json({ error: "Verified geometry requires source publisher, URL, and retrieval timestamp." });
+    }
+    if (candidate.source_kind === "generated_hint" || candidate.authority_level === "generated") {
+      return res.status(400).json({ error: "Generated neighborhood hints cannot become GPS-verified host boundaries." });
     }
     if (geometryError) return res.status(400).json({ error: geometryError });
   }
@@ -219,19 +201,21 @@ router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), admin
       ...(patch.geometry_source !== undefined ? { geometry_source: patch.geometry_source } : {}),
       ...(patch.geometry_version !== undefined ? { geometry_version: patch.geometry_version } : {}),
       ...(patch.geometry_verified !== undefined ? { geometry_verified: patch.geometry_verified } : {}),
-      ...(patch.geometry_effective_at !== undefined
-        ? { geometry_effective_at: candidate.geometry_effective_at }
-        : {}),
+      ...(patch.geometry_effective_at !== undefined ? { geometry_effective_at: candidate.geometry_effective_at } : {}),
+      ...(patch.source_publisher !== undefined ? { source_publisher: patch.source_publisher } : {}),
+      ...(patch.source_url !== undefined ? { source_url: patch.source_url } : {}),
+      ...(patch.source_license !== undefined ? { source_license: patch.source_license } : {}),
+      ...(patch.source_retrieved_at !== undefined ? { source_retrieved_at: candidate.source_retrieved_at } : {}),
+      ...(patch.source_version !== undefined ? { source_version: patch.source_version } : {}),
+      ...(patch.source_kind !== undefined ? { source_kind: patch.source_kind } : {}),
+      ...(patch.authority_level !== undefined ? { authority_level: patch.authority_level } : {}),
       updated_at: new Date(),
     })
     .where(eq(cityNeighborhoodsTable.id, id))
     .returning();
 
   if (!updated) return res.status(404).json({ error: "Not found" });
-  return res.json({
-    ...updated,
-    geometry_status: getNeighborhoodGeometryStatus(updated),
-  });
+  return res.json({ ...updated, geometry_status: getNeighborhoodGeometryStatus(updated) });
 });
 
 router.delete("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
