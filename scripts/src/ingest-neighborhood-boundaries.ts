@@ -62,6 +62,15 @@ export const NEIGHBORHOOD_IMPORT_SOURCES: Record<string, SourceConfig> = {
   },
 };
 
+/**
+ * pnpm `run script -- fort_worth` places a literal `--` before the city key.
+ * Accept either `tsx file.ts fort_worth` or `tsx file.ts -- fort_worth`.
+ */
+export function resolveSourceKey(argv: string[]): string | undefined {
+  const args = argv.slice(2).filter((arg) => arg !== "--" && !arg.startsWith("-"));
+  return args[0];
+}
+
 function normalizeName(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const cleaned = value.replace(/<[^>]*>/g, "").trim().replace(/\s+/g, " ");
@@ -203,10 +212,12 @@ export async function buildImportRows(source: SourceConfig, collection: FeatureC
 }
 
 async function main() {
-  const sourceKey = process.argv[2];
+  const sourceKey = resolveSourceKey(process.argv);
   const source = sourceKey ? NEIGHBORHOOD_IMPORT_SOURCES[sourceKey] : undefined;
   if (!source) {
-    console.error(`Usage: pnpm --filter @workspace/scripts run ingest-neighborhood-boundaries -- <${Object.keys(NEIGHBORHOOD_IMPORT_SOURCES).join("|")}>`);
+    console.error(
+      `Usage: pnpm --filter @workspace/scripts run ingest:neighborhood-boundaries -- <${Object.keys(NEIGHBORHOOD_IMPORT_SOURCES).join("|")}>`,
+    );
     process.exit(1);
   }
   const databaseUrl = process.env.DATABASE_URL;
@@ -240,7 +251,10 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isDirectRun = process.argv[1] != null
+  && (import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/")));
+
+if (isDirectRun) {
   main().catch((error) => {
     console.error(error);
     process.exit(1);

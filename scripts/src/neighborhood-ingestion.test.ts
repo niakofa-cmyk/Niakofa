@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildImportRows, NEIGHBORHOOD_IMPORT_SOURCES, validateGeometry } from "./ingest-neighborhood-boundaries";
+import {
+  buildImportRows,
+  NEIGHBORHOOD_IMPORT_SOURCES,
+  resolveSourceKey,
+  validateGeometry,
+} from "./ingest-neighborhood-boundaries";
 
 test("rejects open polygon rings and out-of-range coordinates", () => {
   assert.equal(validateGeometry({
@@ -22,6 +27,21 @@ test("accepts closed WGS84 polygons and multipolygons", () => {
     type: "MultiPolygon",
     coordinates: [[[[ -97, 32], [-97, 33], [-96, 33], [-97, 32]]]],
   }), true);
+});
+
+test("resolveSourceKey ignores pnpm -- separator", () => {
+  assert.equal(
+    resolveSourceKey(["node", "ingest-neighborhood-boundaries.ts", "--", "fort_worth"]),
+    "fort_worth",
+  );
+  assert.equal(
+    resolveSourceKey(["node", "ingest-neighborhood-boundaries.ts", "kansas_city_missouri"]),
+    "kansas_city_missouri",
+  );
+  assert.equal(
+    resolveSourceKey(["node", "ingest-neighborhood-boundaries.ts", "--"]),
+    undefined,
+  );
 });
 
 test("ingestion keeps authoritative source metadata but never verifies geometry", async () => {
