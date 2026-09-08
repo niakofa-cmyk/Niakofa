@@ -42,9 +42,9 @@ import {
   clearCircleSession,
 } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
-import { CircleStartLocationBody, verifyCircleStartLocation } from "../lib/circleLocationPolicy";
+import { CircleStartLocationBody, buildHostSignal, verifyCircleStartLocation } from "../lib/circleLocationPolicy";
 import { requestCircleSummary } from "./nia-proxy";
-import { getNeighborhoodGeometryStatus } from "../lib/neighborhoodGeofence";
+import { evaluateNeighborhoodGeofence, getNeighborhoodGeometryStatus } from "../lib/neighborhoodGeofence";
 
 const router = Router();
 
@@ -546,6 +546,50 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
             : locationCheck.reason,
       },
     });
+  }
+
+  // The direct start path must enforce the same reviewed neighborhood boundary
+  // as the location-check path. Otherwise a caller could bypass the green GPS
+  // checkpoint by POSTing directly to /start after only passing city matching.
+  let neighborhoodRow: typeof cityNeighborhoodsTable.$inferSelect | null = null;
+  if (circle.neighborhood_id != null) {
+    const [row] = await db
+      .select()
+      .from(cityNeighborhoodsTable)
+      .where(eq(cityNeighborhoodsTable.id, circle.neighborhood_id))
+      .limit(1);
+    neighborhoodRow = row ?? null;
+  }
+  if (neighborhoodRow) {
+    const geofence = evaluateNeighborhoodGeofence(parsed.data.location.latitude, parsed.data.location.longitude, neighborhoodRow);
+    const spiralCityDisplay = circle.city_display ?? circle.city_key;
+    if (geofence.status !== "inside") {
+      const outsideBoundary = geofence.status === "outside";
+      const reason = outsideBoundary
+        ? `You are in ${spiralCityDisplay}, but outside the verified boundary for the ${neighborhoodRow.name} Spiral. Move closer or host a different neighborhood Spiral.`
+        : "Neighborhood boundary data is incomplete. Hosting is temporarily unavailable for this Spiral.";
+      return res.status(outsideBoundary ? 403 : 503).json({
+        error: reason,
+        code: outsideBoundary
+          ? "CIRCLE_START_OUTSIDE_NEIGHBORHOOD"
+          : "CIRCLE_START_NEIGHBORHOOD_GEOMETRY_INVALID",
+        can_host: false,
+        spiral_city_key: circle.city_key,
+        spiral_city_display: spiralCityDisplay,
+        spiral_neighborhood: neighborhoodRow.name,
+        neighborhood_geofence: geofence,
+        host_signal: buildHostSignal({
+          canHost: false,
+          spiralCityDisplay,
+          spiralNeighborhood: neighborhoodRow.name,
+          neighborhoodGeofenceStatus: outsideBoundary ? "outside" : "invalid_geometry",
+          code: outsideBoundary
+            ? "CIRCLE_START_OUTSIDE_NEIGHBORHOOD"
+            : "CIRCLE_START_NEIGHBORHOOD_GEOMETRY_INVALID",
+          reason,
+        }),
+      });
+    }
   }
 
   const existingLive = await getLiveSession(circleId);

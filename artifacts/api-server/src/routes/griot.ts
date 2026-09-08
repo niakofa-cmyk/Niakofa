@@ -48,6 +48,7 @@ const CreateStorySchema = z.object({
   original_language: z.string().max(10).default("en"),
   diaspora_tag:      z.string().max(100).optional(),
   hub_location:      z.string().max(200).optional(),
+  hub_id:            z.number().int().positive().optional(),
   lat:               z.number().min(-90).max(90).optional(),
   lng:               z.number().min(-180).max(180).optional(),
   visibility:        z.enum(["public", "diaspora_tag", "private"]).default("public"),
@@ -60,6 +61,7 @@ const UpdateStorySchema = z.object({
   visibility:  z.enum(["public", "diaspora_tag", "private"]).optional(),
   release_at:  z.string().datetime().nullable().optional(),
   hub_location: z.string().max(200).optional(),
+  hub_id:       z.number().int().positive().nullable().optional(),
   diaspora_tag: z.string().max(100).optional(),
 });
 
@@ -95,6 +97,7 @@ router.get("/griot/stories", generalApiLimiter, async (req, res) => {
       original_language: griotStoriesTable.original_language,
       diaspora_tag:      griotStoriesTable.diaspora_tag,
       hub_location:      griotStoriesTable.hub_location,
+      hub_id:            griotStoriesTable.hub_id,
       lat:               griotStoriesTable.lat,
       lng:               griotStoriesTable.lng,
       visibility:        griotStoriesTable.visibility,
@@ -133,6 +136,20 @@ router.post("/griot/stories", requireAuth, generalApiLimiter, async (req, res) =
   }
   const data = parsed.data;
 
+  let storyHubLocation = data.hub_location;
+  if (data.hub_id != null) {
+    const [hub] = await db
+      .select({ id: diasporaHubsTable.id, name: diasporaHubsTable.name })
+      .from(diasporaHubsTable)
+      .where(and(eq(diasporaHubsTable.id, data.hub_id), eq(diasporaHubsTable.status, "approved")))
+      .limit(1);
+    if (!hub) {
+      res.status(400).json({ error: "Story Hub not found or not approved" });
+      return;
+    }
+    storyHubLocation ??= hub.name;
+  }
+
   if (data.text_content) {
     const moderation = moderatePostText(data.text_content);
     if (moderation.status === "pending") {
@@ -153,7 +170,8 @@ router.post("/griot/stories", requireAuth, generalApiLimiter, async (req, res) =
       audio_url:         data.audio_url,
       original_language: data.original_language,
       diaspora_tag:      data.diaspora_tag,
-      hub_location:      data.hub_location,
+      hub_location:      storyHubLocation,
+      hub_id:            data.hub_id,
       lat:               data.lat,
       lng:               data.lng,
       visibility:        data.visibility,
@@ -253,6 +271,23 @@ router.patch("/griot/stories/:id", requireAuth, generalApiLimiter, async (req, r
   if (parsed.data.visibility !== undefined)  updates.visibility  = parsed.data.visibility;
   if (parsed.data.hub_location !== undefined) updates.hub_location = parsed.data.hub_location;
   if (parsed.data.diaspora_tag !== undefined) updates.diaspora_tag = parsed.data.diaspora_tag;
+  if (parsed.data.hub_id !== undefined) {
+    if (parsed.data.hub_id == null) {
+      updates.hub_id = null;
+    } else {
+      const [hub] = await db
+        .select({ id: diasporaHubsTable.id, name: diasporaHubsTable.name })
+        .from(diasporaHubsTable)
+        .where(and(eq(diasporaHubsTable.id, parsed.data.hub_id), eq(diasporaHubsTable.status, "approved")))
+        .limit(1);
+      if (!hub) {
+        res.status(400).json({ error: "Story Hub not found or not approved" });
+        return;
+      }
+      updates.hub_id = hub.id;
+      if (parsed.data.hub_location === undefined) updates.hub_location = hub.name;
+    }
+  }
   if ("release_at" in parsed.data) {
     updates.release_at = parsed.data.release_at ? new Date(parsed.data.release_at!) : null;
   }

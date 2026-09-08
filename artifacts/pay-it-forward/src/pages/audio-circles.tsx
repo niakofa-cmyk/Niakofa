@@ -12,6 +12,7 @@ import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/cir
 import { promoteLocalSpiral, SPIRALS_PATHS } from "@/lib/spirals";
 import { SpiralMark } from "@/components/SpiralMark";
 import { SpiralHostSignal, type HostSignalPayload } from "@/components/SpiralHostSignal";
+import { SpiralNeighborhoodCheckpoint, type SpiralLocationContext } from "@/components/SpiralNeighborhoodCheckpoint";
 
 interface LiveSessionSummary {
   id: number;
@@ -38,20 +39,6 @@ interface CircleSummary {
   neighborhood_geometry_status?: "unconfigured" | "pending_review" | "scheduled" | "verified" | "invalid";
   live_session: LiveSessionSummary | null;
   is_following: boolean;
-}
-
-interface LocationContext {
-  ok?: boolean;
-  status: "ready" | "location_ready" | "blocked";
-  city_key: string;
-  city_display: string;
-  neighborhood_hint: string | null;
-  circle_id: number | null;
-  neighborhood_name: string | null;
-  neighborhood_emoji: string | null;
-  neighborhood_geofence_status?: "inside" | "outside" | "no_geometry" | "invalid_geometry";
-  neighborhood_geometry_status?: "unconfigured" | "pending_review" | "scheduled" | "verified" | "invalid";
-  host_signal?: { status?: string; message?: string };
 }
 
 interface Recording {
@@ -412,7 +399,9 @@ export default function AudioCirclesScreen() {
   const [_discoveryLoading, _setDiscoveryLoading] = useState(false);
   const [communityStats, _setCommunityStats] = useState<CommunityStats | null>(null);
   const [_showStatsModal, setShowStatsModal] = useState(false);
-  const [locationContext, setLocationContext] = useState<LocationContext | null>(null);
+  const [locationContext, setLocationContext] = useState<SpiralLocationContext | null>(null);
+  const [locationChecking, setLocationChecking] = useState(false);
+  const [locationRefreshNonce, setLocationRefreshNonce] = useState(0);
   const locationRef = useRef(myLocation);
   const manualCitySelectionRef = useRef(false);
 
@@ -435,6 +424,7 @@ export default function AudioCirclesScreen() {
   useEffect(() => {
     let cancelled = false;
     const refreshLocationContext = async () => {
+      if (!cancelled) setLocationChecking(true);
       try {
         const shared = locationRef.current;
         const usable =
@@ -456,7 +446,7 @@ export default function AudioCirclesScreen() {
           headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify(location),
         });
-        const data = await response.json().catch(() => ({})) as LocationContext;
+        const data = await response.json().catch(() => ({})) as SpiralLocationContext;
         if (!cancelled && response.ok && data.ok !== false) {
           setLocationContext(data);
           if (!manualCitySelectionRef.current && data.city_display && data.city_display !== city) {
@@ -468,6 +458,8 @@ export default function AudioCirclesScreen() {
         }
       } catch {
         if (!cancelled) setLocationContext(null);
+      } finally {
+        if (!cancelled) setLocationChecking(false);
       }
     };
 
@@ -477,7 +469,7 @@ export default function AudioCirclesScreen() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [base, city, currentUser?.id]);
+  }, [base, city, currentUser?.id, locationRefreshNonce]);
 
   const fetcher = useCallback(async () => {
     const res = await fetch(
@@ -665,6 +657,13 @@ export default function AudioCirclesScreen() {
             notified when it goes live.
           </p>
         </div>
+
+         <SpiralNeighborhoodCheckpoint
+           context={locationContext}
+           checking={locationChecking}
+           onRefresh={() => setLocationRefreshNonce((value) => value + 1)}
+           onOpenLocalSpiral={() => highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
+         />
 
         {/* Community Stats — reputation, trust score, achievements */}
         {communityStats && (

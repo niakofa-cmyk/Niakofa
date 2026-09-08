@@ -67,11 +67,11 @@ export async function advancePendingPoolSettlements(
             SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
               'stripe_verification_status', 'verified',
               'settlement_status', 'available',
-              'available_on', ${availableOn}::text
+              'available_on', CAST(${availableOn} AS text)
             )
-            WHERE user_id = ${row.userId}
+            WHERE user_id = CAST(${row.userId} AS integer)
               AND type = 'pool_contribution'
-              AND related_pool_ledger_id = ${row.ledgerId}
+              AND related_pool_ledger_id = CAST(${row.ledgerId} AS integer)
               AND COALESCE(metadata->>'kind', '') <> 'pool_contribution_refund'
           `);
         }
