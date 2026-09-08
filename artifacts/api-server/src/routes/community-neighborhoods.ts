@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, cityNeighborhoodsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, cityNeighborhoodsTable, neighborhoodBoundaryImportsTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
@@ -39,6 +39,12 @@ const NeighborhoodAdminPatchBody = z.object({
   source_version: z.string().trim().min(1).max(100).nullable().optional(),
   source_kind: z.enum(sourceKinds).optional(),
   authority_level: z.enum(authorityLevels).optional(),
+}).strict();
+
+const BoundaryReviewBody = z.object({
+  reviewed: z.boolean(),
+  review_note: z.string().trim().max(1000).nullable().optional(),
+  geometry_verified: z.boolean().default(false),
 }).strict();
 
 export function normalizeCityKey(city: string): string {
@@ -98,7 +104,6 @@ router.get("/community/neighborhoods", requireAuth, async (req, res) => {
   if (cityRaw.length > MAX_CITY_LEN) return res.status(400).json({ error: "city name too long" });
   const cityKey = normalizeCityKey(cityRaw);
   if (!cityKey) return res.json({ neighborhoods: [], city: null });
-
   const neighborhoods = await ensureNeighborhoodsForCity(cityRaw, cityKey);
   return res.json({ neighborhoods: neighborhoods.map((n) => ({ ...n, geometry_status: getNeighborhoodGeometryStatus(n) })), city: cityRaw });
 });
@@ -111,13 +116,107 @@ router.get("/admin/city-neighborhoods", requireAuth, requireAdmin(), adminLimite
   return res.json(rows.map((row) => ({ ...row, geometry_status: getNeighborhoodGeometryStatus(row) })));
 });
 
+router.get("/admin/neighborhood-boundary-imports", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const cityKey = typeof req.query.city_key === "string" ? req.query.city_key : undefined;
+  const rows = cityKey
+    ? await db.select().from(neighborhoodBoundaryImportsTable).where(eq(neighborhoodBoundaryImportsTable.city_key, cityKey))
+    : await db.select().from(neighborhoodBoundaryImportsTable);
+  return res.json(rows);
+});
+
+router.patch("/admin/neighborhood-boundary-imports/:id/review", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const id = Number.parseInt(req.params.id as string, 10);
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid id" });
+  const parsed = BoundaryReviewBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid boundary review", details: parsed.error.issues });
+
+  const [current] = await db.select().from(neighborhoodBoundaryImportsTable).where(eq(neighborhoodBoundaryImportsTable.id, id)).limit(1);
+  if (!current) return res.status(404).json({ error: "Boundary import not found" });
+  if (parsed.data.geometry_verified && (!parsed.data.reviewed || !current.geometry_valid)) {
+    return res.status(400).json({ error: "A boundary must be geometry-valid and reviewed before verification." });
+  }
+  if (parsed.data.geometry_verified && (current.source_kind === "generated_hint" || current.authority_level === "generated")) {
+    return res.status(400).json({ error: "Generated neighborhood hints cannot become GPS-verified boundaries." });
+  }
+
+  const [updated] = await db.update(neighborhoodBoundaryImportsTable).set({
+    reviewed: parsed.data.reviewed,
+    review_note: parsed.data.review_note ?? current.review_note,
+    geometry_verified: parsed.data.geometry_verified,
+    rejection_reason: parsed.data.reviewed ? null : current.rejection_reason,
+    updated_at: new Date(),
+  }).where(eq(neighborhoodBoundaryImportsTable.id, id)).returning();
+  return res.json(updated);
+});
+
+router.post("/admin/neighborhood-boundary-imports/:id/promote", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const id = Number.parseInt(req.params.id as string, 10);
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid id" });
+  const [candidate] = await db.select().from(neighborhoodBoundaryImportsTable).where(eq(neighborhoodBoundaryImportsTable.id, id)).limit(1);
+  if (!candidate) return res.status(404).json({ error: "Boundary import not found" });
+  if (!candidate.reviewed || !candidate.geometry_valid || !candidate.geometry_verified) {
+    return res.status(409).json({ error: "Boundary must be reviewed, geometry-valid, and explicitly verified before promotion." });
+  }
+  if (candidate.source_kind === "generated_hint" || candidate.authority_level === "generated") {
+    return res.status(400).json({ error: "Generated neighborhood hints cannot be promoted to GPS-verified boundaries." });
+  }
+
+  const [promoted] = await db.insert(cityNeighborhoodsTable).values({
+    city_key: candidate.city_key,
+    city_display: candidate.city_display,
+    neighborhood_id: candidate.neighborhood_id,
+    name: candidate.name,
+    emoji: "📍",
+    description: `${candidate.name} — verified from ${candidate.source_publisher}.`,
+    source: "authoritative_import",
+    verified: true,
+    center_lat: candidate.center_lat,
+    center_lng: candidate.center_lng,
+    radius_meters: candidate.radius_meters,
+    polygon_geojson: candidate.polygon_geojson,
+    geometry_source: candidate.source_dataset,
+    geometry_version: candidate.source_version,
+    geometry_verified: true,
+    geometry_effective_at: candidate.source_retrieved_at,
+    source_publisher: candidate.source_publisher,
+    source_url: candidate.source_url,
+    source_license: candidate.source_license,
+    source_retrieved_at: candidate.source_retrieved_at,
+    source_version: candidate.source_version,
+    source_kind: candidate.source_kind,
+    authority_level: candidate.authority_level,
+    updated_at: new Date(),
+  }).onConflictDoUpdate({
+    target: [cityNeighborhoodsTable.city_key, cityNeighborhoodsTable.neighborhood_id],
+    set: {
+      name: candidate.name,
+      polygon_geojson: candidate.polygon_geojson,
+      center_lat: candidate.center_lat,
+      center_lng: candidate.center_lng,
+      geometry_source: candidate.source_dataset,
+      geometry_version: candidate.source_version,
+      geometry_verified: true,
+      geometry_effective_at: candidate.source_retrieved_at,
+      source_publisher: candidate.source_publisher,
+      source_url: candidate.source_url,
+      source_license: candidate.source_license,
+      source_retrieved_at: candidate.source_retrieved_at,
+      source_version: candidate.source_version,
+      source_kind: candidate.source_kind,
+      authority_level: candidate.authority_level,
+      verified: true,
+      updated_at: new Date(),
+    },
+  }).returning();
+
+  return res.json({ promoted: true, neighborhood: promoted });
+});
+
 router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const parsed = NeighborhoodAdminPatchBody.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid neighborhood update", details: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`) });
-  }
+  if (!parsed.success) return res.status(400).json({ error: "Invalid neighborhood update", details: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`) });
 
   const [current] = await db.select().from(cityNeighborhoodsTable).where(eq(cityNeighborhoodsTable.id, id)).limit(1);
   if (!current) return res.status(404).json({ error: "Not found" });
@@ -128,21 +227,13 @@ router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), admin
     geometry_effective_at: patch.geometry_effective_at === undefined ? current.geometry_effective_at : patch.geometry_effective_at ? new Date(patch.geometry_effective_at) : null,
     source_retrieved_at: patch.source_retrieved_at === undefined ? current.source_retrieved_at : patch.source_retrieved_at ? new Date(patch.source_retrieved_at) : null,
   };
-
   const hasGeometryPatch = patch.center_lat !== undefined || patch.center_lng !== undefined || patch.radius_meters !== undefined || patch.polygon_geojson !== undefined;
   const geometryError = validateNeighborhoodGeometry(candidate);
   if (hasGeometryPatch && geometryError) return res.status(400).json({ error: geometryError });
-
   if (candidate.geometry_verified) {
-    if (!candidate.geometry_source || !candidate.geometry_version || !candidate.geometry_effective_at) {
-      return res.status(400).json({ error: "Verified geometry requires source, version, and effective date." });
-    }
-    if (!candidate.source_publisher || !candidate.source_url || !candidate.source_retrieved_at) {
-      return res.status(400).json({ error: "Verified geometry requires source publisher, URL, and retrieval timestamp." });
-    }
-    if (candidate.source_kind === "generated_hint" || candidate.authority_level === "generated") {
-      return res.status(400).json({ error: "Generated neighborhood hints cannot become GPS-verified host boundaries." });
-    }
+    if (!candidate.geometry_source || !candidate.geometry_version || !candidate.geometry_effective_at) return res.status(400).json({ error: "Verified geometry requires source, version, and effective date." });
+    if (!candidate.source_publisher || !candidate.source_url || !candidate.source_retrieved_at) return res.status(400).json({ error: "Verified geometry requires source publisher, URL, and retrieval timestamp." });
+    if (candidate.source_kind === "generated_hint" || candidate.authority_level === "generated") return res.status(400).json({ error: "Generated neighborhood hints cannot become GPS-verified host boundaries." });
     if (geometryError) return res.status(400).json({ error: geometryError });
   }
 
@@ -168,7 +259,6 @@ router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), admin
     ...(patch.authority_level !== undefined ? { authority_level: patch.authority_level } : {}),
     updated_at: new Date(),
   }).where(eq(cityNeighborhoodsTable.id, id)).returning();
-
   if (!updated) return res.status(404).json({ error: "Not found" });
   return res.json({ ...updated, geometry_status: getNeighborhoodGeometryStatus(updated) });
 });
