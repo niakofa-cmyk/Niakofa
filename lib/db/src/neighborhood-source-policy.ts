@@ -65,22 +65,28 @@ export function isHostVerificationEligible(
  * machine-ingest endpoint actually used by Niakofa. Keeping both prevents a
  * future implementation from accidentally scraping a geocoder or a marketing
  * page when a first-party GIS/Open Data feed is available.
+ *
+ * Kansas City note: q45j-ejyk is a map view that currently returns null geometry
+ * on every feature. The machine-ingestable Neighborhood Borders dataset is
+ * vq6h-tqrf (MultiPolygon + nbhname). Discovery still links the public Borders
+ * catalog page.
  */
 export const NEIGHBORHOOD_SOURCE_DIRECTORY = {
   fort_worth: {
     publisher: "City of Fort Worth GIS",
     discoveryUrl: "https://www.fortworthtexas.gov/departments/it-solutions/gis",
-    datasetUrl: "https://mapit.fortworthtexas.gov/ags/rest/services/Planning_Development/Zoning/MapServer/37/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson",
+    datasetUrl:
+      "https://mapit.fortworthtexas.gov/ags/rest/services/Planning_Development/Zoning/MapServer/37/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson",
     dataset: "Planning_Development/Zoning/MapServer/37: Neighborhood Alliances",
     boundaryType: "Neighborhood Alliances",
     kind: "municipal_gis" as const,
   },
   kansas_city_missouri: {
     publisher: "Kansas City, Missouri Open Data",
-    discoveryUrl: "https://data.kcmo.org/Neighborhoods/Kansas-City-Neighborhood-Boundaries/q45j-ejyk",
-    datasetUrl: "https://data.kcmo.org/resource/q45j-ejyk.geojson?$limit=50000",
-    dataset: "q45j-ejyk: Kansas City Neighborhood Boundaries",
-    boundaryType: "Neighborhood Boundaries",
+    discoveryUrl: "https://data.kcmo.org/Neighborhoods/Kansas-City-Neighborhood-Borders/vq6h-tqrf",
+    datasetUrl: "https://data.kcmo.org/resource/vq6h-tqrf.geojson?$limit=50000",
+    dataset: "vq6h-tqrf: Kansas City Neighborhood Borders",
+    boundaryType: "Neighborhood Borders",
     kind: "municipal_gis" as const,
   },
 } as const;
