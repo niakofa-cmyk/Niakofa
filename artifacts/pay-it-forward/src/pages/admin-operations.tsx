@@ -2,6 +2,7 @@
  * Admin 2.0 Operations — attention-first live console.
  * Review → Geometry Verify → Explicit Promote (server-enforced).
  * Generated hints remain GPS-ineligible.
+ * After Promote → Host Signal, rows move to Verified Host (GPS-active).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ElementType, ReactNode } from "react";
@@ -43,12 +44,24 @@ type Boundary = {
   rejection_reason: string | null;
 };
 
+type ProductionNeighborhood = {
+  id: number;
+  city_key: string;
+  neighborhood_id: string;
+  name: string;
+  verified: boolean;
+  geometry_verified: boolean;
+  source_kind?: string;
+  authority_level?: string;
+};
+
 type Snapshot = {
   stats: JsonRecord | null;
   pool: JsonRecord | null;
   workers: JsonRecord | null;
   globalOps: JsonRecord | null;
   boundaries: Boundary[];
+  productionNeighborhoods: ProductionNeighborhood[];
   nia: JsonRecord | null;
   pending: JsonRecord | null;
 };
@@ -86,6 +99,36 @@ function arrayValue(value: unknown): unknown[] {
 
 function isGeneratedHint(boundary: Boundary): boolean {
   return boundary.source_kind === "generated_hint" || boundary.authority_level === "generated";
+}
+
+function parseProductionNeighborhood(item: unknown): ProductionNeighborhood | null {
+  const value = record(item);
+  if (typeof value.id !== "number" || typeof value.city_key !== "string") return null;
+  const neighborhood_id = stringValue(value.neighborhood_id, "");
+  if (!neighborhood_id) return null;
+  return {
+    id: value.id,
+    city_key: value.city_key,
+    neighborhood_id,
+    name: stringValue(value.name, ""),
+    verified: booleanValue(value.verified),
+    geometry_verified: booleanValue(value.geometry_verified),
+    source_kind: typeof value.source_kind === "string" ? value.source_kind : undefined,
+    authority_level: typeof value.authority_level === "string" ? value.authority_level : undefined,
+  };
+}
+
+function isGpsHostActive(boundary: Boundary, production: ProductionNeighborhood[]): boolean {
+  if (isGeneratedHint(boundary)) return false;
+  return production.some(
+    (n) =>
+      n.city_key === boundary.city_key &&
+      n.neighborhood_id === boundary.neighborhood_id &&
+      n.verified === true &&
+      n.geometry_verified === true &&
+      n.source_kind !== "generated_hint" &&
+      n.authority_level !== "generated",
+  );
 }
 
 function apiHeaders(): HeadersInit {
@@ -129,7 +172,6 @@ function Card({
         : tone === "success"
           ? "border-green-500/20 bg-green-500/5"
           : "border-border bg-card";
-
   return (
     <section className={`space-y-3 rounded-2xl border p-4 ${toneClass}`}>
       <div className="flex items-center gap-2">
@@ -201,12 +243,13 @@ export default function AdminOperationsDashboard() {
     else setLoading(true);
 
     try {
-      const [statsR, poolR, workersR, globalOpsR, boundaryR, niaR, pendingR] = await Promise.all([
+      const [statsR, poolR, workersR, globalOpsR, boundaryR, productionR, niaR, pendingR] = await Promise.all([
         getJsonResult(`${BASE}/api/admin/stats`),
         getJsonResult(`${BASE}/api/pool/stats`),
         getJsonResult(`${BASE}/api/admin/worker-health`),
         getJsonResult(`${BASE}/api/admin/global-ops`),
         getJsonResult(`${BASE}/api/admin/neighborhood-boundary-imports`),
+        getJsonResult(`${BASE}/api/admin/city-neighborhoods`),
         getJsonResult(`${BASE}/api/admin/nia-status`),
         getJsonResult(`${BASE}/api/admin/pending-summary`),
       ]);
@@ -216,6 +259,11 @@ export default function AdminOperationsDashboard() {
         ? arrayValue(boundaryR.data)
             .map(parseBoundary)
             .filter((item): item is Boundary => item !== null)
+        : null;
+      const productionNeighborhoods = productionR.ok
+        ? arrayValue(productionR.data)
+            .map(parseProductionNeighborhood)
+            .filter((item): item is ProductionNeighborhood => item !== null)
         : null;
 
       if (boundaryFailed) {
@@ -242,6 +290,10 @@ export default function AdminOperationsDashboard() {
         workers: workersR.ok && workersR.data ? record(workersR.data) : prev?.workers ?? null,
         globalOps: globalOpsR.ok && globalOpsR.data ? record(globalOpsR.data) : prev?.globalOps ?? null,
         boundaries: boundaries !== null ? boundaries : prev?.boundaries ?? [],
+        productionNeighborhoods:
+          productionNeighborhoods !== null
+            ? productionNeighborhoods
+            : prev?.productionNeighborhoods ?? [],
         nia: niaR.ok && niaR.data ? record(niaR.data) : prev?.nia ?? null,
         pending: pendingR.ok && pendingR.data ? record(pendingR.data) : prev?.pending ?? null,
       }));
@@ -265,9 +317,15 @@ export default function AdminOperationsDashboard() {
     return ["all", ...Array.from(new Set(values)).sort()];
   }, [snapshot?.boundaries]);
 
+  const productionNeighborhoods = useMemo(
+    () => snapshot?.productionNeighborhoods ?? [],
+    [snapshot?.productionNeighborhoods],
+  );
+
   const rows = useMemo(() => {
     return (snapshot?.boundaries ?? []).filter((boundary) => {
       if (city !== "all" && boundary.city_key !== city) return false;
+      const hostActive = isGpsHostActive(boundary, productionNeighborhoods);
       if (filter === "pending") return !boundary.reviewed && boundary.geometry_valid && !isGeneratedHint(boundary);
       if (filter === "reviewed") {
         return (
@@ -278,13 +336,19 @@ export default function AdminOperationsDashboard() {
         );
       }
       if (filter === "ready") {
-        return boundary.reviewed && boundary.geometry_verified && boundary.geometry_valid && !isGeneratedHint(boundary);
+        return (
+          boundary.reviewed &&
+          boundary.geometry_verified &&
+          boundary.geometry_valid &&
+          !isGeneratedHint(boundary) &&
+          !hostActive
+        );
       }
-      if (filter === "verified") return boundary.reviewed && boundary.geometry_verified && boundary.geometry_valid;
+      if (filter === "verified") return hostActive;
       if (filter === "invalid") return !boundary.geometry_valid;
       return true;
     });
-  }, [city, filter, snapshot?.boundaries]);
+  }, [city, filter, snapshot?.boundaries, productionNeighborhoods]);
 
   const mutateBoundary = async (
     id: number,
@@ -373,9 +437,10 @@ export default function AdminOperationsDashboard() {
       const payload = record(await response.json().catch(() => null));
       if (!response.ok) throw new Error(stringValue(payload.error, `Promotion failed (${response.status})`));
       toast({
-        title: "Boundary promoted",
-        description: "GPS Host Signal eligibility can now use the promoted geometry.",
+        title: "Host Signal verified",
+        description: "Boundary is GPS-active. Open Verified Host to confirm.",
       });
+      setFilter("verified");
       await load(true);
     } catch (error) {
       toast({
@@ -432,11 +497,19 @@ export default function AdminOperationsDashboard() {
   const gpsTotal = numberValue(gpsHealth.total_online_helpers);
   const gpsWithCoverage = numberValue(gpsHealth.helpers_online_with_gps);
   const gpsPct = gpsTotal > 0 ? Math.round((gpsWithCoverage / gpsTotal) * 100) : 0;
-  const readyCount = (snapshot?.boundaries ?? []).filter(
-    (b) => b.reviewed && b.geometry_verified && b.geometry_valid && !isGeneratedHint(b),
-  ).length;
   const reviewedAwaitingCount = (snapshot?.boundaries ?? []).filter(
     (b) => b.reviewed && !b.geometry_verified && b.geometry_valid && !isGeneratedHint(b),
+  ).length;
+  const readyCount = (snapshot?.boundaries ?? []).filter(
+    (b) =>
+      b.reviewed &&
+      b.geometry_verified &&
+      b.geometry_valid &&
+      !isGeneratedHint(b) &&
+      !isGpsHostActive(b, productionNeighborhoods),
+  ).length;
+  const hostVerifiedCount = (snapshot?.boundaries ?? []).filter((b) =>
+    isGpsHostActive(b, productionNeighborhoods),
   ).length;
   const pendingReports = numberValue(stats.pending_reports, numberValue(pending.pending_reports));
   const pendingAccounts = numberValue(pending.pending_accounts);
@@ -457,7 +530,7 @@ export default function AdminOperationsDashboard() {
               <h1 className="text-xl font-black">Admin 2.0 Operations</h1>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Attention-first · live production API · review → verify → promote
+              Attention-first · live production API · review → verify → promote → verified host
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -504,8 +577,8 @@ export default function AdminOperationsDashboard() {
 
         <Card title="Authoritative neighborhood boundary review" icon={Map}>
           <p className="text-[10px] text-muted-foreground leading-relaxed">
-            Staged GIS remains separate from GPS-active production data. The console enforces review → geometry
-            verification → promotion. Generated hints remain ineligible for Host Signal.
+            Staged GIS remains separate from GPS-active production data. After Promote → Host Signal, the row moves to{" "}
+            <span className="font-semibold text-foreground">Verified Host</span> (not Promote).
           </p>
 
           <div className="flex flex-wrap gap-2">
@@ -544,7 +617,7 @@ export default function AdminOperationsDashboard() {
                     : value === "pending"
                       ? "Pending"
                       : value === "verified"
-                        ? "Verified"
+                        ? "Verified Host"
                         : value === "invalid"
                           ? "Invalid"
                           : "All"}
@@ -562,10 +635,9 @@ export default function AdminOperationsDashboard() {
                 sub={`${(snapshot?.boundaries ?? []).filter((b) => b.reviewed).length} total reviewed`}
               />
             </button>
-            <Metric
-              label="GPS verified"
-              value={(snapshot?.boundaries ?? []).filter((b) => b.geometry_verified).length}
-            />
+            <button type="button" onClick={() => setFilter("verified")} className="text-left w-full">
+              <Metric label="Verified Host" value={hostVerifiedCount} sub="Host Signal GPS-active" />
+            </button>
             <button type="button" onClick={() => setFilter("ready")} className="text-left w-full">
               <Metric label="Ready" value={readyCount} sub="promote next" />
             </button>
@@ -579,8 +651,7 @@ export default function AdminOperationsDashboard() {
                   <>
                     <p>
                       {reviewedAwaitingCount} reviewed boundar{reviewedAwaitingCount === 1 ? "y is" : "ies are"} waiting
-                      for <span className="font-semibold text-foreground">Verify Geometry</span>. They left Pending by
-                      design.
+                      for <span className="font-semibold text-foreground">Verify Geometry</span>.
                     </p>
                     <button
                       type="button"
@@ -598,6 +669,14 @@ export default function AdminOperationsDashboard() {
                   >
                     Show Ready to promote ({readyCount})
                   </button>
+                ) : filter === "ready" && hostVerifiedCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilter("verified")}
+                    className="h-9 rounded-xl border border-green-500/40 bg-green-500/10 px-3 text-xs font-black text-green-500"
+                  >
+                    Show Verified Host ({hostVerifiedCount})
+                  </button>
                 ) : (
                   <p>Try All or another status tab. Filters hide rows; they do not delete staged GIS.</p>
                 )}
@@ -605,6 +684,7 @@ export default function AdminOperationsDashboard() {
             ) : (
               rows.map((boundary) => {
                 const generated = isGeneratedHint(boundary);
+                const hostActive = isGpsHostActive(boundary, productionNeighborhoods);
                 return (
                   <div key={boundary.id} className="space-y-2 rounded-xl border border-border bg-background p-3">
                     <div className="flex items-start justify-between gap-3">
@@ -634,6 +714,11 @@ export default function AdminOperationsDashboard() {
                         {boundary.geometry_verified ? (
                           <span className="rounded-full border border-green-500/20 px-2 py-0.5 text-[9px] text-green-400">
                             Geometry verified
+                          </span>
+                        ) : null}
+                        {hostActive ? (
+                          <span className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[9px] font-black text-emerald-300">
+                            Host Signal verified
                           </span>
                         ) : null}
                         {generated ? (
@@ -679,7 +764,11 @@ export default function AdminOperationsDashboard() {
                           Verify geometry
                         </button>
                       ) : null}
-                      {boundary.reviewed && boundary.geometry_verified && boundary.geometry_valid && !generated ? (
+                      {hostActive ? (
+                        <div className="flex h-9 flex-1 items-center justify-center rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 text-xs font-black text-emerald-300">
+                          ✓ Verified Host · GPS-active
+                        </div>
+                      ) : boundary.reviewed && boundary.geometry_verified && boundary.geometry_valid && !generated ? (
                         <button
                           type="button"
                           onClick={() => void promote(boundary.id)}
