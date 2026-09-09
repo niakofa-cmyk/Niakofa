@@ -13,11 +13,15 @@ CREATE OR REPLACE FUNCTION sync_audio_spiral_visibility()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  active_city_key text;
 BEGIN
   -- Discovery is neighborhood-only. City-wide circles remain addressable by
   -- id for backwards compatibility but are never part of the Spiral list.
   IF NEW.neighborhood_id IS NULL THEN
-    NEW.city_key := '__inactive_neighborhood__:' || NEW.city_key;
+    IF NEW.city_key NOT LIKE '__inactive_neighborhood__:%' THEN
+      NEW.city_key := '__inactive_neighborhood__:' || NEW.city_key;
+    END IF;
     RETURN NEW;
   END IF;
 
@@ -27,7 +31,24 @@ BEGIN
     WHERE cn.id = NEW.neighborhood_id
       AND cn.geometry_verified IS TRUE
   ) THEN
-    NEW.city_key := '__inactive_neighborhood__:' || NEW.city_key;
+    IF NEW.city_key NOT LIKE '__inactive_neighborhood__:%' THEN
+      NEW.city_key := '__inactive_neighborhood__:' || NEW.city_key;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  -- An already-hidden row is allowed to return to discovery when its
+  -- neighborhood is verified. Strip exactly one visibility prefix so repeated
+  -- updates remain idempotent and never create nested sentinel values.
+  IF NEW.city_key LIKE '__inactive_neighborhood__:%' THEN
+    active_city_key := substring(NEW.city_key from length('__inactive_neighborhood__:') + 1);
+    IF active_city_key <> '' THEN
+      SELECT cn.city_key
+        INTO active_city_key
+        FROM city_neighborhoods cn
+       WHERE cn.id = NEW.neighborhood_id;
+      NEW.city_key := active_city_key;
+    END IF;
   END IF;
 
   RETURN NEW;
