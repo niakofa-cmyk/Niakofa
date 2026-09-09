@@ -56,7 +56,7 @@ export function SpiralNeighborhoodCheckpoint({
         ? `GPS verified in ${context?.city_display ?? "your city"}`
         : context
           ? `GPS verified in ${context.city_display}`
-          : "Allow GPS to find your local Spiral";
+          : "GPS isn't connected yet";
 
   const description = checking
     ? "Checking your fresh GPS fix against reviewed neighborhood geometry."
@@ -68,7 +68,7 @@ export function SpiralNeighborhoodCheckpoint({
           ? "The available neighborhood geometry cannot be used for GPS verification right now. Niakofa will not guess your neighborhood."
           : awaitingReview
             ? "Your city is known, but Niakofa will not guess a neighborhood until reviewed boundary data matches your pinpoint."
-            : "A fresh, accurate GPS fix lets Niakofa verify your neighborhood without exposing your coordinates.";
+            : "Allow location access, then refresh GPS. Niakofa uses a fresh, accurate fix to verify your local Spiral without exposing your coordinates.";
 
   return (
     <section
