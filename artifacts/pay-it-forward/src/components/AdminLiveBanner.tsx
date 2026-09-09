@@ -123,16 +123,14 @@ export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => 
         };
         const requestId = p.request_id;
         if (typeof requestId !== "number") return;
-        setSosAlerts(prev => [
-          {
-            request_id: requestId,
-            request_title: p.request_title,
-            triggered_by_name: p.triggered_by_name,
-            role: p.role,
-            triggered_at: p.triggered_at ?? new Date().toISOString(),
-          },
-          ...prev.filter(a => a.request_id !== requestId),
-        ]);
+        const alert: SosAlert = {
+          request_id: requestId,
+          request_title: p.request_title,
+          triggered_by_name: p.triggered_by_name,
+          role: p.role,
+          triggered_at: p.triggered_at ?? new Date().toISOString(),
+        };
+        setSosAlerts(prev => [alert, ...prev.filter(a => a.request_id !== requestId)]);
       }
     };
     const unsub = wsSubscribe(handleWs);
