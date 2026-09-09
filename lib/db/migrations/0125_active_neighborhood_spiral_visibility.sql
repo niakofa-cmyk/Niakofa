@@ -2,6 +2,12 @@
 -- A neighborhood becomes discoverable when its reviewed geometry is verified.
 -- Keep inactive rows intact for referential history; hide them from the
 -- discovery city_key instead of deleting circles, sessions, or follows.
+--
+-- This migration intentionally owns the visibility prerequisite because it
+-- runs before later GIS migrations in a fresh database. Migration 0131 keeps
+-- the same column with IF NOT EXISTS and adds the remaining geometry fields.
+ALTER TABLE city_neighborhoods
+  ADD COLUMN IF NOT EXISTS geometry_verified boolean NOT NULL DEFAULT false;
 
 CREATE OR REPLACE FUNCTION sync_audio_spiral_visibility()
 RETURNS trigger
