@@ -53,13 +53,15 @@ type Snapshot = {
   pending: JsonRecord | null;
 };
 
-type Filter = "all" | "pending" | "ready" | "verified" | "invalid";
+type Filter = "all" | "pending" | "reviewed" | "ready" | "verified" | "invalid";
 
 type Worker = {
   name: string;
   label: string;
   status: string;
 };
+
+type FetchResult = { ok: true; data: unknown } | { ok: false; status: number; error: string };
 
 function record(value: unknown): JsonRecord {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
@@ -91,10 +93,21 @@ function apiHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function getJson(url: string): Promise<unknown> {
-  const response = await fetch(url, { headers: apiHeaders() });
-  if (!response.ok) return null;
-  return response.json().catch(() => null);
+async function getJsonResult(url: string): Promise<FetchResult> {
+  try {
+    const response = await fetch(url, { headers: apiHeaders() });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      const err =
+        body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `HTTP ${response.status}`;
+      return { ok: false, status: response.status, error: err };
+    }
+    return { ok: true, data: await response.json().catch(() => null) };
+  } catch {
+    return { ok: false, status: 0, error: "Network error" };
+  }
 }
 
 function Card({
@@ -188,35 +201,53 @@ export default function AdminOperationsDashboard() {
     else setLoading(true);
 
     try {
-      const [stats, pool, workers, globalOps, boundaryPayload, nia, pending] = await Promise.all([
-        getJson(`${BASE}/api/admin/stats`),
-        getJson(`${BASE}/api/pool/stats`),
-        getJson(`${BASE}/api/admin/worker-health`),
-        getJson(`${BASE}/api/admin/global-ops`),
-        getJson(`${BASE}/api/admin/neighborhood-boundary-imports`),
-        getJson(`${BASE}/api/admin/nia-status`),
-        getJson(`${BASE}/api/admin/pending-summary`),
+      const [statsR, poolR, workersR, globalOpsR, boundaryR, niaR, pendingR] = await Promise.all([
+        getJsonResult(`${BASE}/api/admin/stats`),
+        getJsonResult(`${BASE}/api/pool/stats`),
+        getJsonResult(`${BASE}/api/admin/worker-health`),
+        getJsonResult(`${BASE}/api/admin/global-ops`),
+        getJsonResult(`${BASE}/api/admin/neighborhood-boundary-imports`),
+        getJsonResult(`${BASE}/api/admin/nia-status`),
+        getJsonResult(`${BASE}/api/admin/pending-summary`),
       ]);
 
-      const boundaries = arrayValue(boundaryPayload)
-        .map(parseBoundary)
-        .filter((item): item is Boundary => item !== null);
+      const boundaryFailed = !boundaryR.ok;
+      const boundaries = boundaryR.ok
+        ? arrayValue(boundaryR.data)
+            .map(parseBoundary)
+            .filter((item): item is Boundary => item !== null)
+        : null;
 
-      const anyCore = stats !== null || pool !== null || workers !== null || boundaryPayload !== null;
-      setLoadError(anyCore ? null : "Could not load operations data. Check admin session and API health.");
+      if (boundaryFailed) {
+        const status = boundaryR.status;
+        const msg =
+          status === 429
+            ? "Admin rate limit (429) while loading GIS. Existing staged rows are kept — wait and Refresh."
+            : status === 401 || status === 403
+              ? "Admin session cannot load boundary imports. Re-login if needed. Existing rows are kept."
+              : `Could not load boundary imports (${boundaryR.error}). Existing rows are kept.`;
+        setLoadError(msg);
+        toast({
+          title: status === 429 ? "Admin rate limit" : "GIS refresh failed",
+          description: msg,
+          variant: "destructive",
+        });
+      } else {
+        setLoadError(null);
+      }
 
-      setSnapshot({
-        stats: stats ? record(stats) : null,
-        pool: pool ? record(pool) : null,
-        workers: workers ? record(workers) : null,
-        globalOps: globalOps ? record(globalOps) : null,
-        boundaries,
-        nia: nia ? record(nia) : null,
-        pending: pending ? record(pending) : null,
-      });
-      setUpdatedAt(new Date());
+      setSnapshot((prev) => ({
+        stats: statsR.ok && statsR.data ? record(statsR.data) : prev?.stats ?? null,
+        pool: poolR.ok && poolR.data ? record(poolR.data) : prev?.pool ?? null,
+        workers: workersR.ok && workersR.data ? record(workersR.data) : prev?.workers ?? null,
+        globalOps: globalOpsR.ok && globalOpsR.data ? record(globalOpsR.data) : prev?.globalOps ?? null,
+        boundaries: boundaries !== null ? boundaries : prev?.boundaries ?? [],
+        nia: niaR.ok && niaR.data ? record(niaR.data) : prev?.nia ?? null,
+        pending: pendingR.ok && pendingR.data ? record(pendingR.data) : prev?.pending ?? null,
+      }));
+      if (!boundaryFailed) setUpdatedAt(new Date());
     } catch {
-      setLoadError("Network error while loading operations.");
+      setLoadError("Network error while loading operations. Existing rows are kept.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -238,6 +269,14 @@ export default function AdminOperationsDashboard() {
     return (snapshot?.boundaries ?? []).filter((boundary) => {
       if (city !== "all" && boundary.city_key !== city) return false;
       if (filter === "pending") return !boundary.reviewed && boundary.geometry_valid && !isGeneratedHint(boundary);
+      if (filter === "reviewed") {
+        return (
+          boundary.reviewed &&
+          !boundary.geometry_verified &&
+          boundary.geometry_valid &&
+          !isGeneratedHint(boundary)
+        );
+      }
       if (filter === "ready") {
         return boundary.reviewed && boundary.geometry_verified && boundary.geometry_valid && !isGeneratedHint(boundary);
       }
@@ -276,22 +315,33 @@ export default function AdminOperationsDashboard() {
     }
   };
 
-  const review = (id: number, approved: boolean) =>
-    mutateBoundary(
+  const review = async (id: number, approved: boolean) => {
+    const body: JsonRecord = {
+      reviewed: approved,
+      review_note: approved
+        ? "Reviewed in Admin 2.0 operations console."
+        : "Rejected in Admin 2.0 operations console.",
+    };
+    if (!approved) body.geometry_verified = false;
+    await mutateBoundary(
       id,
-      {
-        reviewed: approved,
-        geometry_verified: false,
-        review_note: approved
-          ? "Reviewed in Admin 2.0 operations console."
-          : "Rejected in Admin 2.0 operations console.",
-      },
+      body,
       approved ? "Boundary reviewed" : "Boundary rejected",
       "Boundary review failed",
+      approved ? "Open Reviewed to Verify Geometry." : undefined,
     );
+    if (approved) setFilter("reviewed");
+  };
 
-  const verify = (id: number) =>
-    mutateBoundary(
+  const verify = async (id: number) => {
+    if (
+      !window.confirm(
+        "Verify geometry for this boundary?\n\nConfirms the imported polygon only — does not change or regenerate the shape.",
+      )
+    ) {
+      return;
+    }
+    await mutateBoundary(
       id,
       {
         reviewed: true,
@@ -300,8 +350,10 @@ export default function AdminOperationsDashboard() {
       },
       "Geometry verified",
       "Geometry verification failed",
-      "Promotion remains a separate explicit step.",
+      "Open Ready to promote for the explicit Promote step.",
     );
+    setFilter("ready");
+  };
 
   const promote = async (id: number) => {
     if (
@@ -376,14 +428,15 @@ export default function AdminOperationsDashboard() {
     snapshot?.pool !== null &&
     snapshot?.pool !== undefined &&
     (poolStatus === "low" || poolStatus === "critical" || (guaranteedMinimum > 0 && poolBalance < guaranteedMinimum));
-  const failedWorkers = workerRows.filter((worker) => worker.status === "error").length;
   const gpsHealth = record(globalOps.gps_health);
   const gpsTotal = numberValue(gpsHealth.total_online_helpers);
   const gpsWithCoverage = numberValue(gpsHealth.helpers_online_with_gps);
   const gpsPct = gpsTotal > 0 ? Math.round((gpsWithCoverage / gpsTotal) * 100) : 0;
-  const invalidCount = (snapshot?.boundaries ?? []).filter((boundary) => !boundary.geometry_valid).length;
   const readyCount = (snapshot?.boundaries ?? []).filter(
     (b) => b.reviewed && b.geometry_verified && b.geometry_valid && !isGeneratedHint(b),
+  ).length;
+  const reviewedAwaitingCount = (snapshot?.boundaries ?? []).filter(
+    (b) => b.reviewed && !b.geometry_verified && b.geometry_valid && !isGeneratedHint(b),
   ).length;
   const pendingReports = numberValue(stats.pending_reports, numberValue(pending.pending_reports));
   const pendingAccounts = numberValue(pending.pending_accounts);
@@ -449,152 +502,105 @@ export default function AdminOperationsDashboard() {
           <Metric label="Action items" value={totalPendingActions} danger={totalPendingActions > 0} sub="accounts · helpers · reports" />
         </div>
 
-        {(poolLow || failedWorkers > 0 || invalidCount > 0 || readyCount > 0 || totalPendingActions > 0) ? (
-          <Card title="Attention required" icon={AlertCircle} tone="danger">
-            <div className="grid gap-2 md:grid-cols-3">
-              {poolLow ? (
-                <div className="rounded-xl border border-destructive/20 bg-background p-3 text-xs">
-                  <b>Community Pool</b>
-                  <div className="mt-1 font-black text-destructive">
-                    ${poolBalance.toFixed(2)} · status {poolStatus}
-                    {guaranteedMinimum > 0 ? ` (floor $${guaranteedMinimum.toFixed(2)})` : ""}
-                  </div>
-                </div>
-              ) : null}
-              {failedWorkers > 0 ? (
-                <div className="rounded-xl border border-destructive/20 bg-background p-3 text-xs">
-                  <b>Workers</b>
-                  <div className="mt-1 font-black text-destructive">
-                    {failedWorkers} worker failure{failedWorkers === 1 ? "" : "s"}
-                  </div>
-                </div>
-              ) : null}
-              {invalidCount > 0 ? (
-                <div className="rounded-xl border border-destructive/20 bg-background p-3 text-xs">
-                  <b>Geography</b>
-                  <div className="mt-1 font-black text-destructive">
-                    {invalidCount} invalid staged boundary{invalidCount === 1 ? "" : "ies"}
-                  </div>
-                </div>
-              ) : null}
-              {readyCount > 0 ? (
-                <div className="rounded-xl border border-primary/20 bg-background p-3 text-xs">
-                  <b>Ready to promote</b>
-                  <div className="mt-1 font-black text-primary">
-                    {readyCount} boundary{readyCount === 1 ? "" : "ies"} reviewed + verified
-                  </div>
-                </div>
-              ) : null}
-              {pendingAccounts > 0 || pendingHelpers > 0 || pendingHardships > 0 || pendingReports > 0 ? (
-                <div className="rounded-xl border border-yellow-500/20 bg-background p-3 text-xs">
-                  <b>Queues</b>
-                  <div className="mt-1 font-black text-yellow-500">
-                    {pendingAccounts} accounts · {pendingHelpers} helpers · {pendingHardships} hardships · {pendingReports} reports
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </Card>
-        ) : null}
+        <Card title="Authoritative neighborhood boundary review" icon={Map}>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            Staged GIS remains separate from GPS-active production data. The console enforces review → geometry
+            verification → promotion. Generated hints remain ineligible for Host Signal.
+          </p>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card title="Community Pool" icon={Wallet} tone={poolLow ? "warning" : "success"}>
-            <div className="grid grid-cols-2 gap-2">
-              <Metric label="Balance" value={`$${poolBalance.toFixed(2)}`} danger={poolLow} />
-              <Metric label="Runway" value={pool.runway_days == null ? "∞" : `${stringValue(pool.runway_days)}d`} />
-              <Metric label="Queued minimums" value={stringValue(pool.pending_minimums_count)} />
-              <Metric label="Status" value={booleanValue(pool.enabled) ? poolStatus.toUpperCase() : "PAUSED"} />
-            </div>
-          </Card>
-
-          <Card title="System & Workers" icon={Cpu} tone={failedWorkers > 0 ? "danger" : "success"}>
-            <div className="flex items-center justify-between text-xs">
-              <span>Redis</span>
-              <b>{booleanValue(workers.redis_configured) ? "Connected" : "Unavailable"}</b>
-            </div>
-            <div className="max-h-44 space-y-1 overflow-auto">
-              {workerRows.map((worker) => (
-                <div key={worker.name} className="flex items-center gap-2 border-b border-border/60 py-1.5 text-[10px]">
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      worker.status === "running"
-                        ? "bg-green-500"
-                        : worker.status === "error"
-                          ? "bg-destructive"
-                          : "bg-yellow-500"
-                    }`}
-                  />
-                  <span className="flex-1">{worker.label}</span>
-                  <span className="font-bold capitalize">{worker.status}</span>
-                </div>
-              ))}
-              {workerRows.length === 0 ? (
-                <div className="py-3 text-[10px] text-muted-foreground">No worker telemetry returned.</div>
-              ) : null}
-            </div>
-          </Card>
-
-          <Card title="Nia & Connectivity" icon={Sparkles} tone={booleanValue(nia.enabled) ? "success" : "default"}>
-            <div className="grid grid-cols-2 gap-2">
-              <Metric label="Nia" value={booleanValue(nia.enabled) ? "ON" : "OFF"} />
-              <Metric label="GPS coverage" value={`${gpsPct}%`} />
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              Values are read from protected production API endpoints already used by the application.
-            </div>
-          </Card>
-        </div>
-
-        <Card title="Authoritative Neighborhood Boundary Review" icon={Map}>
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-            Staged GIS remains separate from GPS-active production data. The console enforces{" "}
-            <b>review → geometry verification → promotion</b>. Generated hints remain ineligible for Host Signal.
-          </div>
           <div className="flex flex-wrap gap-2">
-            <select
-              aria-label="Filter by city"
-              value={city}
-              onChange={(event) => setCity(event.target.value)}
-              className="h-9 rounded-xl border border-border bg-background px-3 text-xs"
-            >
-              <option value="all">All cities</option>
-              {cities
-                .filter((value) => value !== "all")
-                .map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-            </select>
-            {(["all", "pending", "ready", "verified", "invalid"] as Filter[]).map((value) => (
+            {cities.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setCity(value)}
+                className={`h-9 rounded-xl border px-3 text-xs font-black capitalize ${
+                  city === value
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-background text-muted-foreground"
+                }`}
+              >
+                {value === "all" ? "All cities" : value.replace(/_/g, " ")}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {(["all", "pending", "reviewed", "ready", "verified", "invalid"] as Filter[]).map((value) => (
               <button
                 type="button"
                 key={value}
                 onClick={() => setFilter(value)}
-                className={`h-9 rounded-xl border px-3 text-xs font-black capitalize ${
+                className={`h-9 rounded-xl border px-3 text-xs font-black ${
                   filter === value
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-background text-muted-foreground"
                 }`}
               >
-                {value === "ready" ? "ready to promote" : value}
+                {value === "ready"
+                  ? "Ready to promote"
+                  : value === "reviewed"
+                    ? "Reviewed"
+                    : value === "pending"
+                      ? "Pending"
+                      : value === "verified"
+                        ? "Verified"
+                        : value === "invalid"
+                          ? "Invalid"
+                          : "All"}
               </button>
             ))}
           </div>
+
           <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
             <Metric label="Staged" value={snapshot?.boundaries.length ?? 0} />
             <Metric label="Valid" value={(snapshot?.boundaries ?? []).filter((b) => b.geometry_valid).length} />
-            <Metric label="Reviewed" value={(snapshot?.boundaries ?? []).filter((b) => b.reviewed).length} />
+            <button type="button" onClick={() => setFilter("reviewed")} className="text-left w-full">
+              <Metric
+                label="Reviewed (verify next)"
+                value={reviewedAwaitingCount}
+                sub={`${(snapshot?.boundaries ?? []).filter((b) => b.reviewed).length} total reviewed`}
+              />
+            </button>
             <Metric
               label="GPS verified"
               value={(snapshot?.boundaries ?? []).filter((b) => b.geometry_verified).length}
             />
-            <Metric label="Ready" value={readyCount} />
+            <button type="button" onClick={() => setFilter("ready")} className="text-left w-full">
+              <Metric label="Ready" value={readyCount} sub="promote next" />
+            </button>
           </div>
+
           <div className="space-y-2">
             {rows.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                No boundaries in this queue.
+              <div className="space-y-3 rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+                <div>No boundaries in this queue.</div>
+                {filter === "pending" && reviewedAwaitingCount > 0 ? (
+                  <>
+                    <p>
+                      {reviewedAwaitingCount} reviewed boundar{reviewedAwaitingCount === 1 ? "y is" : "ies are"} waiting
+                      for <span className="font-semibold text-foreground">Verify Geometry</span>. They left Pending by
+                      design.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setFilter("reviewed")}
+                      className="h-9 rounded-xl border border-primary/40 bg-primary/10 px-3 text-xs font-black text-primary"
+                    >
+                      Show Reviewed ({reviewedAwaitingCount}) — Verify Geometry
+                    </button>
+                  </>
+                ) : filter === "reviewed" && readyCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilter("ready")}
+                    className="h-9 rounded-xl border border-primary/40 bg-primary/10 px-3 text-xs font-black text-primary"
+                  >
+                    Show Ready to promote ({readyCount})
+                  </button>
+                ) : (
+                  <p>Try All or another status tab. Filters hide rows; they do not delete staged GIS.</p>
+                )}
               </div>
             ) : (
               rows.map((boundary) => {
@@ -680,14 +686,41 @@ export default function AdminOperationsDashboard() {
                           disabled={busy === boundary.id}
                           className="h-9 flex-1 rounded-xl bg-green-600 px-3 text-xs font-black text-white disabled:opacity-60"
                         >
-                          Promote to GPS-active
+                          Promote → Host Signal
                         </button>
                       ) : null}
-                      {busy === boundary.id ? <Loader2 className="h-5 w-5 animate-spin self-center" /> : null}
                     </div>
                   </div>
                 );
               })
+            )}
+          </div>
+        </Card>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <Card title="Community Pool" icon={Wallet} tone={poolLow ? "danger" : "default"}>
+            <div className="text-2xl font-black tabular-nums">${poolBalance.toFixed(2)}</div>
+            <div className="text-xs text-muted-foreground">Status {poolStatus}</div>
+          </Card>
+          <Card title="Nia" icon={Sparkles}>
+            <div className="text-sm font-bold">{stringValue(nia.status, stringValue(nia.enabled, "—"))}</div>
+            <div className="text-xs text-muted-foreground">Service status</div>
+          </Card>
+        </div>
+
+        <Card title="Workers" icon={Cpu}>
+          <div className="space-y-2">
+            {workerRows.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No worker health payload.</div>
+            ) : (
+              workerRows.map((worker) => (
+                <div key={worker.name} className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-xs">
+                  <span className="font-bold">{worker.label}</span>
+                  <span className={worker.status === "error" ? "text-destructive font-black" : "text-muted-foreground"}>
+                    {worker.status}
+                  </span>
+                </div>
+              ))
             )}
           </div>
         </Card>
