@@ -317,7 +317,10 @@ export default function AdminOperationsDashboard() {
     return ["all", ...Array.from(new Set(values)).sort()];
   }, [snapshot?.boundaries]);
 
-  const productionNeighborhoods = snapshot?.productionNeighborhoods ?? [];
+  const productionNeighborhoods = useMemo(
+    () => snapshot?.productionNeighborhoods ?? [],
+    [snapshot?.productionNeighborhoods],
+  );
 
   const rows = useMemo(() => {
     return (snapshot?.boundaries ?? []).filter((boundary) => {
