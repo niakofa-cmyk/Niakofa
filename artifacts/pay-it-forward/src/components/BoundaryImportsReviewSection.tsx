@@ -84,6 +84,12 @@ function isGenerated(row: { source_kind: string; authority_level: string }): boo
   return row.source_kind === "generated_hint" || row.authority_level === "generated";
 }
 
+function isGpsActive(row: CityNeighborhoodRow): boolean {
+  // Host Signal requires both authority verification flags. Geometry alone
+  // must never make a production neighborhood GPS-active.
+  return !isGenerated(row) && row.verified && row.geometry_verified;
+}
+
 export function BoundaryImportsReviewSection() {
   const [rows, setRows] = useState<BoundaryImportRow[]>([]);
   const [productionNeighborhoods, setProductionNeighborhoods] = useState<CityNeighborhoodRow[]>([]);
@@ -145,9 +151,10 @@ export function BoundaryImportsReviewSection() {
   }, [rows]);
 
   /**
-   * Per-city authority aggregate. GPS Active comes from production
-   * city_neighborhoods that are geometry_verified and not generated.
-   * Cities remain containers — this summary never activates GPS.
+   * Per-city authority aggregate. GPS Active mirrors the server-side
+   * Host Signal eligibility contract: verified + geometry_verified,
+   * with generated sources excluded. Cities remain containers — this
+   * summary never activates GPS.
    */
   const cityAuthoritySummary = useMemo((): CityAuthoritySummary[] => {
     const byKey: Record<string, CityStats> = {};
@@ -170,8 +177,7 @@ export function BoundaryImportsReviewSection() {
 
     const gpsByCity: Record<string, number> = {};
     for (const n of productionNeighborhoods) {
-      if (isGenerated(n)) continue;
-      if (!n.geometry_verified) continue;
+      if (!isGpsActive(n)) continue;
       gpsByCity[n.city_key] = (gpsByCity[n.city_key] ?? 0) + 1;
     }
 
@@ -340,8 +346,9 @@ export function BoundaryImportsReviewSection() {
             </table>
           </div>
           <p className="text-[10px] text-muted-foreground leading-relaxed">
-            GPS Active counts production neighborhoods that are geometry-verified and authoritative.
-            Only <span className="font-semibold text-foreground">Promote → Host Signal</span> activates a neighborhood.
+            GPS Active requires both <span className="font-semibold text-foreground">verified</span> and{" "}
+            <span className="font-semibold text-foreground">geometry_verified</span> on an authoritative production
+            neighborhood. Only <span className="font-semibold text-foreground">Promote → Host Signal</span> activates a neighborhood.
           </p>
         </div>
       )}
