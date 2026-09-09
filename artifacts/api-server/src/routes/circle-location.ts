@@ -26,6 +26,10 @@ const router = Router();
  * granting eligibility in the browser. This is intentionally separate from
  * the per-Spiral check because the list needs one authoritative local match
  * before it can promote a neighborhood.
+ *
+ * Host Signal Green requires:
+ *   fresh pinpoint GPS → inside promoted city_neighborhoods geometry
+ *   → matching neighborhood Spiral ordered #1 in discovery.
  */
 router.post(
   "/audio-circles/location-context",
@@ -62,7 +66,10 @@ router.post(
         status: "blocked",
         code: "GPS_REVERSE_GEOCODE_FAILED",
         error: "Your GPS signal is available, but the neighborhood could not be verified yet.",
-        host_signal: { status: "blocked", message: "Location verification is temporarily unavailable. Retrying automatically." },
+        host_signal: {
+          status: "blocked",
+          message: "Location verification is temporarily unavailable. Retrying automatically.",
+        },
       });
     }
 
@@ -81,6 +88,9 @@ router.post(
         geometry_version: cityNeighborhoodsTable.geometry_version,
         geometry_verified: cityNeighborhoodsTable.geometry_verified,
         geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at,
+        verified: cityNeighborhoodsTable.verified,
+        source_kind: cityNeighborhoodsTable.source_kind,
+        authority_level: cityNeighborhoodsTable.authority_level,
       })
       .from(audioCirclesTable)
       .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
@@ -93,6 +103,14 @@ router.post(
       resolved.neighborhoodHint,
     );
     const localCircle = localResult.circle;
+    const geometryStatus = localCircle
+      ? getNeighborhoodGeometryStatus(localCircle)
+      : "unconfigured";
+    const hostGreen =
+      localCircle != null &&
+      localResult.neighborhoodGeofenceStatus === "inside" &&
+      geometryStatus === "verified";
+
     const hintedCircle = circles.find(
       (circle) =>
         circle.neighborhood_id != null &&
@@ -106,27 +124,26 @@ router.post(
 
     return res.json({
       ok: true,
-      status: localCircle ? "ready" : "location_ready",
+      status: hostGreen ? "ready" : "location_ready",
       city_key: resolved.cityKey,
       city_display: resolved.cityDisplay,
       county_display: resolved.countyDisplay,
       state_code: resolved.stateCode,
       accuracy_bucket: accuracyBucket(parsed.data.accuracy_meters),
       neighborhood_hint: resolved.neighborhoodHint,
-      circle_id: localCircle?.id ?? null,
-      neighborhood_name: localCircle?.neighborhood_name ?? null,
-      neighborhood_emoji: localCircle?.neighborhood_emoji ?? null,
+      // Only promote a Spiral to #1 when Host Signal Green is true.
+      circle_id: hostGreen ? localCircle?.id ?? null : null,
+      neighborhood_name: hostGreen ? localCircle?.neighborhood_name ?? null : null,
+      neighborhood_emoji: hostGreen ? localCircle?.neighborhood_emoji ?? null : null,
       neighborhood_geofence_status: localResult.neighborhoodGeofenceStatus,
-      neighborhood_geometry_status: localCircle
-        ? getNeighborhoodGeometryStatus(localCircle)
-        : hintedGeometryStatus,
+      neighborhood_geometry_status: localCircle ? geometryStatus : hintedGeometryStatus,
       host_signal: {
-        status: localCircle ? "ready" : "location_ready",
-        message: localCircle
-          ? `Verified local Spiral: ${localCircle.neighborhood_name}`
+        status: hostGreen ? "green" : "location_ready",
+        message: hostGreen
+          ? `Host Signal Green · ${localCircle?.neighborhood_name} Spiral is first in your list.`
           : localResult.neighborhoodGeofenceStatus === "outside"
             ? `GPS is in ${resolved.cityDisplay}, but outside the reviewed boundary for ${resolved.neighborhoodHint ?? "this neighborhood"}.`
-            : `GPS verified in ${resolved.cityDisplay}; a reviewed neighborhood boundary has not matched this fix yet.`,
+            : `GPS verified in ${resolved.cityDisplay}; promote a reviewed neighborhood boundary to enable Host Signal Green.`,
       },
     });
   },
@@ -195,10 +212,6 @@ router.post(
       circleId,
     });
 
-    // Keep the route response anchored to the persisted Spiral metadata. The
-    // verifier's successful union branch intentionally does not need to carry
-    // a second copy of this display value, which also keeps the result type
-    // narrow and prevents a frontend-facing type leak from breaking CI.
     const spiralCityDisplay = circle.city_display ?? displayCityName(circle.city_key);
     if (!result.ok) {
       return res.status(403).json({
@@ -225,8 +238,6 @@ router.post(
       });
     }
 
-    // Neighborhood geometry is optional until reviewed data is loaded. Missing
-    // or unverified geometry must not invent a boundary or block city hosting.
     let neighborhoodGeofenceStatus: "inside" | "outside" | "no_geometry" | "invalid_geometry" =
       "no_geometry";
     if (neighborhoodRow) {
