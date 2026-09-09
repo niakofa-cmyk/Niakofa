@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, ChevronRight, Map as MapIcon, RefreshCw, ShieldCheck, Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
+import { BoundaryGeometryVerificationPanel } from "./BoundaryGeometryVerificationPanel";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -16,11 +17,14 @@ export interface BoundaryImportRow {
   source_dataset: string;
   source_feature_id: string;
   source_version: string | null;
+  source_license?: string | null;
   source_retrieved_at: string;
   name: string;
   neighborhood_id: string;
+  polygon_geojson: Record<string, unknown> | null;
   center_lat: number | null;
   center_lng: number | null;
+  radius_meters?: number | null;
   geometry_valid: boolean;
   geometry_verified: boolean;
   reviewed: boolean;
@@ -84,6 +88,7 @@ export function BoundaryImportsReviewWorkflow() {
   const [cityFilter, setCityFilter] = useState<CityFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("needs_review");
   const [processingId, setProcessingId] = useState<number | null>(null);
+  const [verificationRow, setVerificationRow] = useState<BoundaryImportRow | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -164,6 +169,7 @@ export function BoundaryImportsReviewWorkflow() {
       const data = (await res.json().catch(() => ({}))) as BoundaryImportRow & { error?: string };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, ...data } : r));
+      setVerificationRow(null);
       if (opts.geometry_verified) {
         setStatusFilter("ready_to_promote");
         setLastAction(`${row.name} is verified and now appears in Ready to promote.`);
@@ -210,13 +216,13 @@ export function BoundaryImportsReviewWorkflow() {
       </div>
 
       <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
-        <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Reviewer workflow</div>
+        <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Authoritative boundary workflow</div>
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
-          {["Needs review", "Reviewed", "Geometry verified", "Ready to promote", "GPS Active"].map((label, index, list) => (
+          {["Needs review", "Reviewed", "Verify geometry", "Ready to promote", "GPS Active"].map((label, index, list) => (
             <div key={label} className="flex items-center gap-1.5"><span className="rounded-lg border border-border bg-card px-2 py-1">{label}</span>{index < list.length - 1 && <ChevronRight className="w-3 h-3 text-muted-foreground" />}</div>
           ))}
         </div>
-        <p className="text-[10px] text-muted-foreground leading-relaxed">After Mark Reviewed, open the Reviewed tab for Verify Geometry. Filters hide rows; they do not delete staged GIS. Rate-limit 429s keep existing rows on screen.</p>
+        <p className="text-[10px] text-muted-foreground leading-relaxed">Reviewed rows now open a visual boundary preview before verification. The original imported geometry is shown; verification never regenerates or edits the polygon. Filters hide rows; they do not delete staged GIS.</p>
       </div>
 
       {loadError && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" />{loadError}</div>}
@@ -237,12 +243,7 @@ export function BoundaryImportsReviewWorkflow() {
       </div>
 
       <div className="flex flex-wrap gap-2">{(["all", "fort_worth", "kansas_city_missouri"] as CityFilter[]).map((c) => (
-        <button
-          key={c}
-          type="button"
-          onClick={() => setCityFilter(c)}
-          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${cityFilter === c ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"}`}
-        >
+        <button key={c} type="button" onClick={() => setCityFilter(c)} className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${cityFilter === c ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"}`}>
           {c === "all" ? "All cities" : c === "fort_worth" ? "Fort Worth" : "Kansas City, MO"}
         </button>
       ))}</div>
@@ -279,60 +280,49 @@ export function BoundaryImportsReviewWorkflow() {
               <div key={row.id} className="rounded-xl border border-border bg-background/50 p-3 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="font-bold text-sm truncate flex items-center gap-1.5">
-                      <MapIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      {row.name}
-                    </div>
+                    <div className="font-bold text-sm truncate flex items-center gap-1.5"><MapIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />{row.name}</div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">{row.city_display} · {row.source_publisher}</div>
                   </div>
                   <span className={`text-[10px] font-black px-1.5 py-0.5 rounded border shrink-0 ${stage === "invalid" ? "bg-destructive/10 text-destructive border-destructive/30" : stage === "reviewed" ? "bg-yellow-400/10 text-yellow-500 border-yellow-400/30" : "bg-green-500/10 text-green-500 border-green-500/30"}`}>
                     {stage === "needs_review" ? "NEEDS REVIEW" : stage === "reviewed" ? "REVIEWED — VERIFY GEOMETRY" : stage === "ready_to_promote" ? "READY TO PROMOTE" : "INVALID"}
                   </span>
                 </div>
+                <div className="text-[10px] text-muted-foreground grid sm:grid-cols-3 gap-1">
+                  <span>Source: <b className="text-foreground">{row.source_dataset}</b></span>
+                  <span>Feature: <b className="text-foreground">{row.source_feature_id}</b></span>
+                  <span>Geometry: <b className="text-foreground">{row.polygon_geojson ? String((row.polygon_geojson as { type?: unknown }).type ?? "present") : "missing"}</b></span>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {!row.reviewed && row.geometry_valid && !isGenerated(row) && (
-                    <button type="button" disabled={busy} onClick={() => void review(row, { reviewed: true })} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border hover:bg-muted disabled:opacity-50">
-                      Mark reviewed
-                    </button>
+                    <button type="button" disabled={busy} onClick={() => void review(row, { reviewed: true })} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border hover:bg-muted disabled:opacity-50">Mark reviewed</button>
                   )}
                   {canVerify && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        if (!window.confirm(`Verify geometry for "${row.name}"?\n\nConfirms the imported polygon only — does not change or regenerate the boundary.`)) return;
-                        void review(row, { reviewed: true, geometry_verified: true });
-                      }}
-                      className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
-                    >
-                      Verify Geometry
+                    <button type="button" disabled={busy} onClick={() => setVerificationRow(row)} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 flex items-center gap-1.5">
+                      <MapIcon className="w-3.5 h-3.5" />Verify Geometry
                     </button>
                   )}
                   {canPromote && !active && (
-                    <button type="button" disabled={busy} onClick={() => void promote(row)} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-green-500/40 bg-green-500/10 text-green-500 hover:bg-green-500/20 disabled:opacity-50 flex items-center gap-1">
-                      <Upload className="w-3 h-3" />Promote → Host Signal
-                    </button>
+                    <button type="button" disabled={busy} onClick={() => void promote(row)} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-green-500/40 bg-green-500/10 text-green-500 hover:bg-green-500/20 disabled:opacity-50 flex items-center gap-1"><Upload className="w-3 h-3" />Promote → Host Signal</button>
                   )}
                   {row.reviewed && !active && (
-                    <button type="button" disabled={busy} onClick={() => void review(row, { reviewed: false, geometry_verified: false })} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50">
-                      Unreview
-                    </button>
+                    <button type="button" disabled={busy} onClick={() => void review(row, { reviewed: false, geometry_verified: false })} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50">Unreview</button>
                   )}
                 </div>
-                {stage === "reviewed" && (
-                  <div className="text-[10px] text-yellow-500 flex items-center gap-1">
-                    <ChevronRight className="w-3 h-3" />Next: Verify Geometry (metadata only).
-                  </div>
-                )}
-                {canPromote && !active && (
-                  <div className="text-[10px] text-green-500 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />Ready for explicit Promote → Host Signal.
-                  </div>
-                )}
+                {stage === "reviewed" && <div className="text-[10px] text-yellow-500 flex items-center gap-1"><ChevronRight className="w-3 h-3" />Next: open Verify Geometry to inspect the imported boundary.</div>}
+                {canPromote && !active && <div className="text-[10px] text-green-500 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />Ready for explicit Promote → Host Signal.</div>}
               </div>
             );
           })}
         </div>
+      )}
+
+      {verificationRow && (
+        <BoundaryGeometryVerificationPanel
+          row={verificationRow}
+          busy={processingId === verificationRow.id}
+          onClose={() => setVerificationRow(null)}
+          onVerify={() => void review(verificationRow, { reviewed: true, geometry_verified: true })}
+        />
       )}
     </div>
   );
