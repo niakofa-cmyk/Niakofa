@@ -121,18 +121,18 @@ export function AdminLiveBanner({ onNavigate }: { onNavigate?: (tab: string) => 
           request_id?: number; request_title?: string;
           triggered_by_name?: string; role?: string; triggered_at?: string;
         };
-        if (typeof p.request_id === "number") {
-          setSosAlerts(prev => [
-            {
-              request_id: p.request_id,
-              request_title: p.request_title,
-              triggered_by_name: p.triggered_by_name,
-              role: p.role,
-              triggered_at: p.triggered_at ?? new Date().toISOString(),
-            },
-            ...prev.filter(a => a.request_id !== p.request_id),
-          ]);
-        }
+        const requestId = p.request_id;
+        if (typeof requestId !== "number") return;
+        setSosAlerts(prev => [
+          {
+            request_id: requestId,
+            request_title: p.request_title,
+            triggered_by_name: p.triggered_by_name,
+            role: p.role,
+            triggered_at: p.triggered_at ?? new Date().toISOString(),
+          },
+          ...prev.filter(a => a.request_id !== requestId),
+        ]);
       }
     };
     const unsub = wsSubscribe(handleWs);
