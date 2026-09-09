@@ -205,14 +205,15 @@ export const niaChatHistoryLimiter = makeLimiter({
   message: { error: "Too many history requests. Please wait a moment." },
 });
 
-// ── 9. Admin Endpoints (30 / 15 min) ─────────────────────────────────────────
-// Admin routes are low-volume by design; this mainly protects against
-// automated scripts hammering the analytics endpoints.
+// ── 9. Admin Endpoints (300 / 15 min) ────────────────────────────────────────
+// Admin 2.0 polls multiple endpoints (boundary imports, neighborhoods, stats,
+// pending-summary, pool, Nia status). A 30/15m cap causes 429s that empty the
+// GIS UI and hide Verify Geometry. Keep abuse protection, allow normal ops.
 // Keyed by userId when authenticated — two admins on the same office network
 // should not share a rate-limit bucket.
 export const adminLimiter = makeLimiter({
   windowMs: 15 * 60 * 1000,
-  limit: 30,
+  limit: 300,
   prefix: "admin",
   standardHeaders: "draft-7",
   legacyHeaders: false,
