@@ -11,7 +11,7 @@
  * bypasses the per-neighborhood Promote → Host Signal gate.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Map, RefreshCw, ShieldCheck, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, Map as MapIcon, RefreshCw, ShieldCheck, Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 
@@ -67,6 +67,14 @@ interface CityAuthoritySummary {
   gpsActive: number;
   awaitingReview: number;
 }
+
+type CityStats = {
+  city_display: string;
+  total: number;
+  reviewed: number;
+  geometryVerified: number;
+  awaitingReview: number;
+};
 
 function authHeaders(): HeadersInit {
   return { Authorization: `Bearer ${getToken() ?? ""}`, "Content-Type": "application/json" };
@@ -142,20 +150,11 @@ export function BoundaryImportsReviewSection() {
    * Cities remain containers — this summary never activates GPS.
    */
   const cityAuthoritySummary = useMemo((): CityAuthoritySummary[] => {
-    const byKey = new Map<
-      string,
-      {
-        city_display: string;
-        total: number;
-        reviewed: number;
-        geometryVerified: number;
-        awaitingReview: number;
-      }
-    >();
+    const byKey: Record<string, CityStats> = {};
 
     for (const r of rows) {
       if (isGenerated(r)) continue; // exclude pure generated hints from authority summary
-      const cur = byKey.get(r.city_key) ?? {
+      const cur = byKey[r.city_key] ?? {
         city_display: r.city_display,
         total: 0,
         reviewed: 0,
@@ -166,38 +165,38 @@ export function BoundaryImportsReviewSection() {
       if (r.reviewed) cur.reviewed += 1;
       if (r.geometry_verified) cur.geometryVerified += 1;
       if (r.geometry_valid && !r.reviewed) cur.awaitingReview += 1;
-      byKey.set(r.city_key, cur);
+      byKey[r.city_key] = cur;
     }
 
-    const gpsByCity = new Map<string, number>();
+    const gpsByCity: Record<string, number> = {};
     for (const n of productionNeighborhoods) {
       if (isGenerated(n)) continue;
       if (!n.geometry_verified) continue;
-      gpsByCity.set(n.city_key, (gpsByCity.get(n.city_key) ?? 0) + 1);
+      gpsByCity[n.city_key] = (gpsByCity[n.city_key] ?? 0) + 1;
     }
 
     // Ensure known operational cities appear even with zero staged rows
     const preferredOrder = ["fort_worth", "kansas_city_missouri"];
     for (const key of preferredOrder) {
-      if (!byKey.has(key) && gpsByCity.has(key)) {
+      if (!byKey[key] && gpsByCity[key] !== undefined) {
         const sample = productionNeighborhoods.find((n) => n.city_key === key);
-        byKey.set(key, {
+        byKey[key] = {
           city_display: sample?.city_display ?? key,
           total: 0,
           reviewed: 0,
           geometryVerified: 0,
           awaitingReview: 0,
-        });
+        };
       }
     }
 
-    const list: CityAuthoritySummary[] = [...byKey.entries()].map(([city_key, stats]) => ({
+    const list: CityAuthoritySummary[] = Object.entries(byKey).map(([city_key, stats]) => ({
       city_key,
       city_display: stats.city_display,
       total: stats.total,
       reviewed: stats.reviewed,
       geometryVerified: stats.geometryVerified,
-      gpsActive: gpsByCity.get(city_key) ?? 0,
+      gpsActive: gpsByCity[city_key] ?? 0,
       awaitingReview: stats.awaitingReview,
     }));
 
@@ -429,7 +428,7 @@ export function BoundaryImportsReviewSection() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-bold text-sm truncate flex items-center gap-1.5">
-                      <Map className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <MapIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       {row.name}
                     </div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">
