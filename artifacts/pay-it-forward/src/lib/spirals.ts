@@ -7,7 +7,25 @@ export const SPIRALS_PATHS = {
   room: (sessionId: string | number) => `/audio-spiral/${sessionId}`,
 } as const;
 
-type SpiralWithNeighborhood = { id: number; neighborhood_id?: number | null };
+type SpiralWithNeighborhood = {
+  id: number;
+  neighborhood_id?: number | null;
+  neighborhood_geometry_status?: "unconfigured" | "pending_review" | "scheduled" | "verified" | "invalid";
+};
+
+/**
+ * Discovery is intentionally narrower than the compatibility Circle store:
+ * only neighborhood-backed rows with verified production geometry are public.
+ * The API is authoritative; this client-side guard prevents stale/corrupt
+ * cached payloads from briefly rendering inactive rows.
+ */
+export function filterActiveNeighborhoodSpirals<T extends SpiralWithNeighborhood>(spirals: T[]): T[] {
+  return spirals.filter(
+    (spiral) =>
+      spiral.neighborhood_id != null &&
+      spiral.neighborhood_geometry_status === "verified",
+  );
+}
 
 /**
  * Order Spirals using only server-verified location context:

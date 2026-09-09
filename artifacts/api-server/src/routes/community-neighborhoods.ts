@@ -7,7 +7,11 @@ import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { requestNia } from "../lib/nia-client";
-import { getNeighborhoodGeometryStatus, validateNeighborhoodGeometry } from "../lib/neighborhoodGeofence";
+import {
+  getNeighborhoodGeometryStatus,
+  isActiveNeighborhood,
+  validateNeighborhoodGeometry,
+} from "../lib/neighborhoodGeofence";
 
 const router = Router();
 
@@ -106,7 +110,14 @@ router.get("/community/neighborhoods", requireAuth, async (req, res) => {
   const cityKey = normalizeCityKey(cityRaw);
   if (!cityKey) return res.json({ neighborhoods: [], city: null });
   const neighborhoods = await ensureNeighborhoodsForCity(cityRaw, cityKey);
-  return res.json({ neighborhoods: neighborhoods.map((n) => ({ ...n, geometry_status: getNeighborhoodGeometryStatus(n) })), city: cityRaw });
+  // Community discovery is a Spiral surface, not a generated neighborhood
+  // directory. Keep generated/pending rows in admin and return only rows that
+  // can actually participate in the GPS Host Signal contract.
+  const activeNeighborhoods = neighborhoods.filter((neighborhood) => isActiveNeighborhood(neighborhood));
+  return res.json({
+    neighborhoods: activeNeighborhoods.map((n) => ({ ...n, geometry_status: getNeighborhoodGeometryStatus(n) })),
+    city: cityRaw,
+  });
 });
 
 router.get("/admin/city-neighborhoods", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {

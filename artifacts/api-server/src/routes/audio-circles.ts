@@ -44,7 +44,11 @@ import {
 import { logger } from "../lib/logger";
 import { CircleStartLocationBody, buildHostSignal, verifyCircleStartLocation } from "../lib/circleLocationPolicy";
 import { requestCircleSummary } from "./nia-proxy";
-import { evaluateNeighborhoodGeofence, getNeighborhoodGeometryStatus } from "../lib/neighborhoodGeofence";
+import {
+  evaluateNeighborhoodGeofence,
+  getNeighborhoodGeometryStatus,
+  isActiveNeighborhood,
+} from "../lib/neighborhoodGeofence";
 
 const router = Router();
 
@@ -347,9 +351,10 @@ function scheduleCityProvisioning(cityRaw: string, cityKey: string): void {
   });
 }
 
-// GET /audio-circles?city=Fort+Worth — every circle for this city (each
-// neighborhood's circle, plus the city-wide one), with live-session summary.
-// Circles with live sessions are sorted first ("Live Now" prioritization).
+// GET /audio-circles?city=Fort+Worth — active, authoritative neighborhood
+// Spirals for this city, with live-session summary. City-wide and pending/
+// generated neighborhoods remain addressable for compatibility but never enter
+// discovery. Circles with live sessions are sorted first.
 router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) => {
   const cityRaw = (req.query.city as string | undefined)?.trim();
   if (!cityRaw) return res.status(400).json({ error: "city query param is required" });
@@ -358,7 +363,7 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
 
   scheduleCityProvisioning(cityRaw, cityKey);
 
-  const circles = await db
+  const allCircles = await db
     .select({
       id: audioCirclesTable.id,
       city_key: audioCirclesTable.city_key,
@@ -371,10 +376,18 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
       geometry_version: cityNeighborhoodsTable.geometry_version,
       geometry_verified: cityNeighborhoodsTable.geometry_verified,
       geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at,
+      verified: cityNeighborhoodsTable.verified,
+      source_kind: cityNeighborhoodsTable.source_kind,
+      authority_level: cityNeighborhoodsTable.authority_level,
+      center_lat: cityNeighborhoodsTable.center_lat,
+      center_lng: cityNeighborhoodsTable.center_lng,
+      radius_meters: cityNeighborhoodsTable.radius_meters,
+      polygon_geojson: cityNeighborhoodsTable.polygon_geojson,
     })
     .from(audioCirclesTable)
     .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
     .where(eq(audioCirclesTable.city_key, cityKey));
+  const circles = allCircles.filter((circle) => circle.neighborhood_id != null && isActiveNeighborhood(circle));
 
   const userId = req.authenticatedUserId!;
   const circleIds = circles.map((circle) => circle.id);
@@ -441,7 +454,12 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
     return a.name.localeCompare(b.name);
   });
 
-  return res.json({ circles: withLiveInfo, city_key: cityKey, city_display: cityRaw });
+  return res.json({
+    circles: withLiveInfo,
+    city_key: cityKey,
+    city_display: cityRaw,
+    discovery_scope: "active_neighborhood_spirals",
+  });
 });
 
 // GET /audio-circles/followed — list all circles the current user follows.
@@ -456,12 +474,21 @@ router.get("/audio-circles/followed", requireAuth, generalApiLimiter, async (req
       name: audioCirclesTable.name,
       neighborhood_name: cityNeighborhoodsTable.name,
       neighborhood_emoji: cityNeighborhoodsTable.emoji,
+      geometry_verified: cityNeighborhoodsTable.geometry_verified,
+      geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at,
+      polygon_geojson: cityNeighborhoodsTable.polygon_geojson,
+      center_lat: cityNeighborhoodsTable.center_lat,
+      center_lng: cityNeighborhoodsTable.center_lng,
+      radius_meters: cityNeighborhoodsTable.radius_meters,
+      verified: cityNeighborhoodsTable.verified,
+      source_kind: cityNeighborhoodsTable.source_kind,
+      authority_level: cityNeighborhoodsTable.authority_level,
     })
     .from(audioCircleFollowsTable)
     .innerJoin(audioCirclesTable, eq(audioCirclesTable.id, audioCircleFollowsTable.circle_id))
     .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
     .where(eq(audioCircleFollowsTable.user_id, userId));
-  return res.json({ followed });
+  return res.json({ followed: followed.filter((circle) => circle.neighborhood_id != null && isActiveNeighborhood(circle)) });
 });
 
 // GET /audio-circles/:id — one circle + its live session + full participant list.

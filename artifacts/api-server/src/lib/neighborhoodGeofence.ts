@@ -187,6 +187,19 @@ export function getNeighborhoodGeometryStatus(
   return "verified";
 }
 
+/**
+ * A neighborhood Spiral is visible in discovery only when the production
+ * authority contract is complete. This is intentionally stricter than merely
+ * having a polygon: generated hints, unverified authority rows, malformed
+ * geometry, and future-effective geometry must stay out of the public list.
+ */
+export function isActiveNeighborhood(
+  row: NeighborhoodGeometry,
+  now = new Date(),
+): boolean {
+  return isHostSignalEligibleNeighborhood(row) && getNeighborhoodGeometryStatus(row, now) === "verified";
+}
+
 function pointInPolygonRings(lng: number, lat: number, rings: PolygonRings): boolean {
   const [outer, ...holes] = rings;
   if (!outer || !pointInRing(lng, lat, outer)) return false;

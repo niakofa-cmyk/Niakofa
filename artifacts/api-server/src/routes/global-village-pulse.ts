@@ -4,7 +4,11 @@ import { db, usersTable, diasporaHubsTable, cityNeighborhoodsTable, audioCircles
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { buildPresenceSnapshot, LIVE_PRESENCE_WINDOW_MS, resolveNearestHub } from "../lib/diasporaPresence";
-import { evaluateNeighborhoodGeofence, getNeighborhoodGeometryStatus } from "../lib/neighborhoodGeofence";
+import {
+  evaluateNeighborhoodGeofence,
+  getNeighborhoodGeometryStatus,
+  isActiveNeighborhood,
+} from "../lib/neighborhoodGeofence";
 
 const router = Router();
 
@@ -24,11 +28,11 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
   const now = new Date();
   const currentUserId = req.authenticatedUserId!;
   try {
-    const [hubs, users, neighborhoods, currentRows, circles, leaderRows, uniqueMembers, uniqueOpenRequests, uniqueFulfilledRequests, uniquePool] = await Promise.all([
+    const [hubs, users, neighborhoodRows, currentRows, circles, leaderRows, uniqueMembers, uniqueOpenRequests, uniqueFulfilledRequests, uniquePool] = await Promise.all([
       db.select().from(diasporaHubsTable),
       db.select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, location_updated_at: usersTable.location_updated_at, helper_mode_active: usersTable.helper_mode_active, community_id: usersTable.community_id })
         .from(usersTable).where(and(isNotNull(usersTable.location_updated_at), gte(usersTable.location_updated_at, new Date(now.getTime() - LIVE_PRESENCE_WINDOW_MS)), lte(usersTable.location_updated_at, now))),
-      db.select({ id: cityNeighborhoodsTable.id, city_key: cityNeighborhoodsTable.city_key, neighborhood_id: cityNeighborhoodsTable.neighborhood_id, name: cityNeighborhoodsTable.name, emoji: cityNeighborhoodsTable.emoji, center_lat: cityNeighborhoodsTable.center_lat, center_lng: cityNeighborhoodsTable.center_lng, radius_meters: cityNeighborhoodsTable.radius_meters, polygon_geojson: cityNeighborhoodsTable.polygon_geojson, geometry_verified: cityNeighborhoodsTable.geometry_verified, geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at }).from(cityNeighborhoodsTable),
+      db.select({ id: cityNeighborhoodsTable.id, city_key: cityNeighborhoodsTable.city_key, neighborhood_id: cityNeighborhoodsTable.neighborhood_id, name: cityNeighborhoodsTable.name, emoji: cityNeighborhoodsTable.emoji, center_lat: cityNeighborhoodsTable.center_lat, center_lng: cityNeighborhoodsTable.center_lng, radius_meters: cityNeighborhoodsTable.radius_meters, polygon_geojson: cityNeighborhoodsTable.polygon_geojson, geometry_verified: cityNeighborhoodsTable.geometry_verified, geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at, verified: cityNeighborhoodsTable.verified, source_kind: cityNeighborhoodsTable.source_kind, authority_level: cityNeighborhoodsTable.authority_level }).from(cityNeighborhoodsTable),
       db.select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, location_updated_at: usersTable.location_updated_at }).from(usersTable).where(eq(usersTable.id, currentUserId)).limit(1),
       db.select({ id: audioCirclesTable.id, city_key: audioCirclesTable.city_key, neighborhood_id: audioCirclesTable.neighborhood_id }).from(audioCirclesTable),
       db.execute<{ hub_id: number; user_id: number }>(sql`
@@ -83,6 +87,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
         )
       `),
     ]);
+    const neighborhoods = neighborhoodRows.filter((neighborhood) => isActiveNeighborhood(neighborhood, now));
 
     const presence = buildPresenceSnapshot({ now, hubs, users, currentUserId });
     const approvedHubs = hubs.filter((hub) => hub.status === "approved");
@@ -107,8 +112,10 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
       liveHelpersByHub.set(hub.id, helpers);
     }
     const liveUsersByNeighborhood = new Map<number, number>();
+    const activeNeighborhoodIds = new Set(neighborhoods.map((neighborhood) => neighborhood.id));
     const spiralIdByNeighborhoodId = new Map(circles
-      .filter((circle): circle is { id: number; city_key: string; neighborhood_id: number } => circle.neighborhood_id != null)
+      .filter((circle): circle is { id: number; city_key: string; neighborhood_id: number } =>
+        circle.neighborhood_id != null && activeNeighborhoodIds.has(circle.neighborhood_id))
       .map((circle) => [circle.neighborhood_id, circle.id]));
 
     // Reviewed neighborhood geometry is authoritative for neighborhood tallies;

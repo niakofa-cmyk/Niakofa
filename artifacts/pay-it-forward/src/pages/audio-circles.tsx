@@ -9,7 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { useCachedList } from "@/hooks/useCachedList";
 import { acquireCircleDevice } from "@/lib/circleMediaReadiness";
 import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";
-import { promoteLocalSpiral, SPIRALS_PATHS } from "@/lib/spirals";
+import { filterActiveNeighborhoodSpirals, promoteLocalSpiral, SPIRALS_PATHS } from "@/lib/spirals";
 import { SpiralMark } from "@/components/SpiralMark";
 import { SpiralHostSignal, type HostSignalPayload } from "@/components/SpiralHostSignal";
 import { SpiralNeighborhoodCheckpoint, type SpiralLocationContext } from "@/components/SpiralNeighborhoodCheckpoint";
@@ -496,7 +496,8 @@ export default function AudioCirclesScreen() {
   });
 
   const orderedCircles = useMemo(() => {
-    return promoteLocalSpiral(circles ?? undefined, locationContext?.circle_id);
+    const activeCircles = circles ? filterActiveNeighborhoodSpirals(circles) : undefined;
+    return promoteLocalSpiral(activeCircles, locationContext?.circle_id);
   }, [circles, locationContext?.circle_id]);
 
   // Track which circles the user follows
@@ -654,8 +655,9 @@ export default function AudioCirclesScreen() {
         <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
           <p className="text-xs text-muted-foreground leading-relaxed">
             Think call-in radio, live. Host a room, raise your hand to speak, or just listen in —
-            every neighborhood (and your whole city) has its own Spiral. Follow a Spiral to get
-            notified when it goes live.
+             active, reviewed neighborhoods have their own Spiral. Your current GPS neighborhood
+             is promoted first when Host Signal Green is available. Follow a Spiral to get notified
+             when it goes live.
           </p>
         </div>
 

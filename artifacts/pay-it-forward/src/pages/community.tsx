@@ -407,9 +407,8 @@ function NeighborhoodSpiralsTab() {
   const [hoodError, setHoodError] = useState(false);
   const [villagePulse, setVillagePulse] = useState<VillagePulse | null>(null);
 
-  // Fetch real neighborhoods for the user's city (auto-provisioned by the
-  // backend for any city — not just Fort Worth). Falls back gracefully on
-  // error so the city-wide Spiral card below still works.
+  // Fetch only active, authoritative neighborhood Spirals. The backend keeps
+  // generated and pending GIS rows out of this product surface.
   useEffect(() => {
     let cancelled = false;
     setHoodLoading(true);
@@ -501,7 +500,7 @@ function NeighborhoodSpiralsTab() {
     <div className="space-y-4">
       <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
         <h3 className="font-black text-sm flex items-center gap-2 mb-1">
-          <SpiralMark className="w-4 h-4 text-primary" /> Neighborhood Spirals
+          <SpiralMark className="w-4 h-4 text-primary" /> Active Neighborhood Spirals
         </h3>
         <p className="text-xs text-muted-foreground leading-relaxed">
           Tap your neighborhood to join or host a live Spiral — voice and video rooms where neighbors talk in real time.
@@ -537,7 +536,7 @@ function NeighborhoodSpiralsTab() {
         <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-2">
           <AlertTriangle className="w-8 h-8 text-muted-foreground/40 mx-auto" />
           <div className="text-sm font-bold text-muted-foreground">Couldn't load neighborhoods</div>
-          <div className="text-xs text-muted-foreground/60">We had trouble reaching the server. You can still browse all Spirals below.</div>
+          <div className="text-xs text-muted-foreground/60">We had trouble reaching the server. Try again to load active neighborhood Spirals.</div>
         </div>
       )}
 
@@ -614,18 +613,19 @@ function NeighborhoodSpiralsTab() {
         );
       })}
 
-      <div
+      <button
+        type="button"
         onClick={() => setLocation(SPIRALS_PATHS.discovery)}
-        className="bg-gradient-to-br from-primary/15 via-card to-card border border-primary/30 rounded-2xl p-4 flex items-center gap-3 cursor-pointer hover:border-primary/50 transition-colors"
+        className="w-full bg-gradient-to-br from-primary/15 via-card to-card border border-primary/30 rounded-2xl p-4 flex items-center gap-3 text-left cursor-pointer hover:border-primary/50 transition-colors"
       >
         <div className="w-11 h-11 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
           <SpiralMark className="w-5 h-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-black">Browse all Spirals</div>
-          <div className="text-xs text-muted-foreground mt-0.5">See all neighborhoods + a city-wide Spiral for all of {currentUser?.city?.trim() || "your city"}.</div>
+          <div className="text-sm font-black">Open active neighborhood Spirals</div>
+          <div className="text-xs text-muted-foreground mt-0.5">Your GPS-matched neighborhood appears first when it is verified.</div>
         </div>
-      </div>
+      </button>
     </div>
   );
 }

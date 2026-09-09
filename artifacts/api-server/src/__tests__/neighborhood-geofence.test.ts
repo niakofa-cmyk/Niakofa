@@ -2,6 +2,7 @@ import { describe, expect, it } from "@jest/globals";
 import {
   evaluateNeighborhoodGeofence,
   getNeighborhoodGeometryStatus,
+  isActiveNeighborhood,
   isHostSignalEligibleNeighborhood,
   pointInRing,
   pointInPolygon,
@@ -170,6 +171,25 @@ describe("neighborhood geofence", () => {
 });
 
 describe("isHostSignalEligibleNeighborhood", () => {
+  it("marks only reviewed, effective authoritative geometry as active discovery", () => {
+    const base = {
+      center_lat: 32.75,
+      center_lng: -97.33,
+      radius_meters: 500,
+      geometry_verified: true,
+      verified: true,
+      source_kind: "municipal_gis",
+      authority_level: "authoritative",
+    };
+    expect(isActiveNeighborhood(base, new Date("2026-09-07T00:00:00.000Z"))).toBe(true);
+    expect(isActiveNeighborhood({ ...base, verified: false }, new Date("2026-09-07T00:00:00.000Z"))).toBe(false);
+    expect(isActiveNeighborhood({ ...base, source_kind: "generated_hint", authority_level: "generated" }, new Date("2026-09-07T00:00:00.000Z"))).toBe(false);
+    expect(isActiveNeighborhood({
+      ...base,
+      geometry_effective_at: "2099-01-01T00:00:00.000Z",
+    }, new Date("2026-09-07T00:00:00.000Z"))).toBe(false);
+  });
+
   it("requires verified + geometry_verified and rejects generated sources", () => {
     expect(
       isHostSignalEligibleNeighborhood({

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { orderSpiralsForLocation, promoteLocalSpiral } from "../spirals";
+import { filterActiveNeighborhoodSpirals, orderSpiralsForLocation, promoteLocalSpiral } from "../spirals";
 
 test("server-verified local Spiral is promoted without reordering the rest", () => {
   const circles = [{ id: 1 }, { id: 2 }, { id: 3 }];
@@ -39,4 +39,13 @@ test("city-wide Spiral moves last even when no local neighborhood is verified", 
     { id: 3, neighborhood_id: 5 },
     { id: 1, neighborhood_id: null },
   ]);
+});
+
+test("discovery excludes city-wide and inactive neighborhood Spirals", () => {
+  const spirals = [
+    { id: 1, neighborhood_id: null, neighborhood_geometry_status: "unconfigured" as const },
+    { id: 2, neighborhood_id: 4, neighborhood_geometry_status: "pending_review" as const },
+    { id: 3, neighborhood_id: 5, neighborhood_geometry_status: "verified" as const },
+  ];
+  assert.deepEqual(filterActiveNeighborhoodSpirals(spirals), [spirals[2]]);
 });
