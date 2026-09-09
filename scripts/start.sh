@@ -3,25 +3,18 @@ set -euo pipefail
 
 # ── Niakofa Railway Start Script ──────────────────────────────────────────────
 # 1. Runs database migrations (blocks deploy on failure).
-# 2. Starts nia-service on port 3001 with a bounded restart supervisor.
-#    The supervisor IS the process that spawns nia-service so that `wait`
-#    operates on a direct child — avoids the bash cross-subshell wait bug
-#    where wait on a non-child PID returns 127 immediately, causing the
-#    supervisor to mis-classify every startup as a crash and spin-restart.
+# 2. Starts nia-service on port 3001 with a bounded-backoff restart supervisor.
 # 3. Starts api-server in the foreground (primary process).
 # 4. SIGTERM/SIGINT cleanly kills both child processes.
 #
-# PID sharing: nia-service PID is written to a temp file on every (re)start
-# so the SIGTERM trap always kills the CURRENT process, not a stale one.
+# Nia is an optional dependency of the public API. A transient Nia crash must
+# not take down api-server, but the supervisor must keep trying so /health can
+# recover without requiring a full Railway redeploy.
 
 NIA_PID_FILE="$(mktemp /tmp/nia-service-pid.XXXXXX)"
 trap 'rm -f "$NIA_PID_FILE"' EXIT
 
 # ── Migrations ────────────────────────────────────────────────────────────────
-# Migrations run before the server starts. If they fail, we retry up to 2
-# times (Railway PG connections can be transiently dropped during deploys).
-# If all retries fail, exit non-zero: never start services against an unknown
-# schema. Railway will keep the previous healthy version serving traffic.
 MIGRATE_MAX_RETRIES=3
 MIGRATE_ATTEMPT=0
 MIGRATE_OK=false
@@ -56,48 +49,40 @@ cleanup() {
 trap cleanup TERM INT
 
 # ── Supervisor loop (background subshell) ─────────────────────────────────────
-# IMPORTANT: nia-service is spawned INSIDE this subshell so that `wait` on
-# its PID is valid (bash wait only works reliably on direct children).
-# The prior design spawned nia-service in the parent and tried to wait in
-# the subshell — bash returned 127 immediately, triggering constant false
-# crash-restart loops under Railway.
-#
-# EXIT CODE CAPTURE: `wait $PID; EXIT_CODE=$?` is used instead of
-# `wait $PID || true` because the latter always yields 0, masking crashes
-# as clean exits and preventing the supervisor from ever restarting.
-NIA_RESTART_MAX=5
-
+# Nia must stay recoverable for the lifetime of the api-server process. The
+# previous supervisor stopped after five crashes, permanently turning Nia into
+# a 503 until the whole Railway container was redeployed. We instead use capped
+# exponential backoff and continue supervising indefinitely.
 (
   NIA_RESTART_COUNT=0
+  NIA_BACKOFF_SECONDS=2
 
   while true; do
-    # Spawn nia-service as a child of THIS subshell
+    # Spawn nia-service as a direct child of THIS subshell so wait() captures
+    # the real exit status and restart decisions are reliable.
     PORT=3001 node --enable-source-maps artifacts/nia-service/dist/index.js &
     NIA_PID=$!
     echo "$NIA_PID" > "$NIA_PID_FILE"
     echo "[supervisor] nia-service started (pid $NIA_PID)"
 
-    # Capture the actual exit code — do NOT use `|| true` which masks it as 0.
-    # `set +e` around wait so the subshell doesn't exit on non-zero child status.
     set +e
     wait "$NIA_PID" 2>/dev/null
     EXIT_CODE=$?
     set -e
 
-    # 0 = clean exit, 143 = SIGTERM — don't restart
+    # 0 = clean exit, 143 = SIGTERM — don't restart during shutdown.
     if [ "$EXIT_CODE" -eq 0 ] || [ "$EXIT_CODE" -eq 143 ]; then
       echo "[supervisor] nia-service exited cleanly (rc=$EXIT_CODE)"
       break
     fi
 
     NIA_RESTART_COUNT=$((NIA_RESTART_COUNT + 1))
-    if [ "$NIA_RESTART_COUNT" -ge "$NIA_RESTART_MAX" ]; then
-      echo "[supervisor] nia-service crashed $NIA_RESTART_MAX times — giving up (rc=$EXIT_CODE)"
-      break
+    echo "[supervisor] nia-service crashed (rc=$EXIT_CODE) — restart #$NIA_RESTART_COUNT in ${NIA_BACKOFF_SECONDS}s"
+    sleep "$NIA_BACKOFF_SECONDS"
+    NIA_BACKOFF_SECONDS=$((NIA_BACKOFF_SECONDS * 2))
+    if [ "$NIA_BACKOFF_SECONDS" -gt 60 ]; then
+      NIA_BACKOFF_SECONDS=60
     fi
-
-    echo "[supervisor] nia-service crashed (rc=$EXIT_CODE) — restart $NIA_RESTART_COUNT/$NIA_RESTART_MAX in 5s"
-    sleep 5
   done
 ) &
 SUPERVISOR_PID=$!

@@ -9,9 +9,6 @@ import { getToken } from "./auth";
  */
 
 export type WsEventType =
-  // Synthetic client-side event — emitted by wsClient itself (not the server)
-  // when a dropped connection is successfully re-established. Components that
-  // cache server-pushed data should listen for this and invalidate / re-fetch.
   | "ws_reconnected"
   | "REQUEST_CREATED"
   | "REQUEST_ACCEPTED"
@@ -46,10 +43,8 @@ export type WsEventType =
   | "crisis_update"
   | "help_chain_joined"
   | "help_chain_left"
-  // Live safety alerts during an in-person help session
   | "safety_ping"
   | "safety_sos"
-  // Nia AI events
   | "nia_message"
   | "nia_checkin"
   | "nia_crisis_alert"
@@ -57,16 +52,12 @@ export type WsEventType =
   | "nia_typing"
   | "nia_status"
   | "nia_cost_alert"
-  // Wallet cashout events
   | "wallet_cashout"
   | "wallet_cashout_reversed"
-  // Admin real-time notifications
   | "new_account_pending"
   | "new_helper_application"
   | "admin_summary_update"
-  // Fired when an admin approves/denies a pending account
   | "account_approval_decided"
-  // Niakofa Spirals (Circle-era event names remain wire-compatible)
   | "family_memory_created"
   | "family_interview_status_changed"
   | "family_story_created"
@@ -105,9 +96,18 @@ export interface WsEvent {
   payload: unknown;
 }
 
-type Handler = (event: WsEvent) => void;
+export type WsConnectionState = "idle" | "connecting" | "connected" | "reconnecting" | "disconnected";
+export interface WsConnectionSnapshot {
+  state: WsConnectionState;
+  reconnect_attempt: number;
+  changed_at: number;
+  last_connected_at: number | null;
+  last_disconnected_at: number | null;
+}
 
-// ── Reconnection config ───────────────────────────────────────────────────────
+type Handler = (event: WsEvent) => void;
+type ConnectionHandler = (snapshot: WsConnectionSnapshot) => void;
+
 const MIN_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 30_000;
 const PING_INTERVAL_MS = 25_000;
@@ -117,7 +117,6 @@ function backoff(attempt: number): number {
   return exp + Math.random() * 500;
 }
 
-// ── Singleton state ───────────────────────────────────────────────────────────
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -126,25 +125,56 @@ let registeredUserId: number | null = null;
 let registeredToken: string | null = null;
 let started = false;
 
+let connectionSnapshot: WsConnectionSnapshot = {
+  state: "idle",
+  reconnect_attempt: 0,
+  changed_at: Date.now(),
+  last_connected_at: null,
+  last_disconnected_at: null,
+};
+
 const handlers = new Set<Handler>();
+const connectionHandlers = new Set<ConnectionHandler>();
+
+function setConnectionState(state: WsConnectionState, reconnectAttempt = attempt): void {
+  const now = Date.now();
+  connectionSnapshot = {
+    state,
+    reconnect_attempt: reconnectAttempt,
+    changed_at: now,
+    last_connected_at: state === "connected" ? now : connectionSnapshot.last_connected_at,
+    last_disconnected_at:
+      state === "disconnected" || state === "reconnecting" ? now : connectionSnapshot.last_disconnected_at,
+  };
+  connectionHandlers.forEach((handler) => handler(connectionSnapshot));
+}
 
 function send(data: object): void {
-  if (socket?.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(data));
-  }
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data));
+}
+
+function scheduleReconnect(): void {
+  if (reconnectTimer) return;
+  const reconnectAttempt = attempt;
+  const delay = backoff(reconnectAttempt);
+  attempt = Math.min(attempt + 1, 10);
+  setConnectionState("reconnecting", reconnectAttempt + 1);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delay);
 }
 
 function connect(): void {
   if (typeof window === "undefined") return;
+  if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
 
+  setConnectionState(attempt > 0 ? "reconnecting" : "connecting", attempt);
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${protocol}//${window.location.host}/ws`;
   socket = new WebSocket(url);
 
   socket.onopen = () => {
-    // Capture BEFORE resetting — attempt > 0 means this is a recovery, not
-    // the first connection. Components subscribed via wsSubscribe can listen
-    // for "ws_reconnected" to invalidate caches / re-fetch stale server data.
     const wasReconnect = attempt > 0;
     attempt = 0;
     if (reconnectTimer) {
@@ -152,31 +182,27 @@ function connect(): void {
       reconnectTimer = null;
     }
 
-    // Re-register after reconnect — include Bearer token so the server
-    // can verify identity before routing targeted push events to this socket.
     if (registeredUserId !== null) {
       const tok = registeredToken ?? getToken();
       send({ type: "register", payload: { userId: registeredUserId, token: tok } });
     }
 
-    // Keepalive ping every 25s
     if (pingTimer) clearInterval(pingTimer);
     pingTimer = setInterval(() => send({ type: "ping" }), PING_INTERVAL_MS);
+    setConnectionState("connected", 0);
 
-    // Notify all subscribers that the connection is back so they can re-fetch
-    // any data that might have changed while we were offline.
     if (wasReconnect) {
       const reconnectedEvent: WsEvent = { type: "ws_reconnected", payload: {} };
-      handlers.forEach((h) => h(reconnectedEvent));
+      handlers.forEach((handler) => handler(reconnectedEvent));
     }
   };
 
   socket.onmessage = (msg) => {
     try {
       const event = JSON.parse(msg.data as string) as WsEvent;
-      handlers.forEach((h) => h(event));
+      handlers.forEach((handler) => handler(event));
     } catch {
-      // ignore malformed
+      // Ignore malformed server frames.
     }
   };
 
@@ -185,63 +211,49 @@ function connect(): void {
       clearInterval(pingTimer);
       pingTimer = null;
     }
-    const delay = backoff(attempt);
-    attempt = Math.min(attempt + 1, 10);
-    reconnectTimer = setTimeout(connect, delay);
+    setConnectionState("disconnected", attempt);
+    scheduleReconnect();
   };
 
   socket.onerror = () => socket?.close();
 }
 
-/**
- * Start the shared WebSocket connection.
- * Safe to call multiple times — only connects once.
- */
 export function wsStart(): void {
   if (started) return;
   started = true;
   connect();
 }
 
-/**
- * Register the current user with the WS hub so the server can use sendToUser.
- * Must be called after wsStart(), re-called whenever the logged-in user changes.
- */
 export function wsRegister(userId: number): void {
   registeredUserId = userId;
   registeredToken = getToken();
   send({ type: "register", payload: { userId, token: registeredToken } });
 }
 
-/** Clear registration (e.g. on logout). */
 export function wsUnregister(): void {
   registeredUserId = null;
   registeredToken = null;
 }
 
-/**
- * Subscribe to all incoming WS events.
- * Returns an unsubscribe function — call it in your cleanup.
- */
 export function wsSubscribe(handler: Handler): () => void {
   handlers.add(handler);
   return () => handlers.delete(handler);
 }
 
-/**
- * Returns true if the shared socket is currently open.
- * Use this to initialise UI state — e.g. useState(() => wsIsConnected()).
- */
+export function wsSubscribeConnection(handler: ConnectionHandler): () => void {
+  connectionHandlers.add(handler);
+  handler(connectionSnapshot);
+  return () => connectionHandlers.delete(handler);
+}
+
+export function wsGetConnectionSnapshot(): WsConnectionSnapshot {
+  return { ...connectionSnapshot };
+}
+
 export function wsIsConnected(): boolean {
   return socket?.readyState === WebSocket.OPEN;
 }
 
-/**
- * Send a raw message through the shared WebSocket.
- * Returns true if the message was sent, false if the socket was not open.
- * Use this in components that want to send events (e.g. chat_message, typing)
- * without creating a second parallel WebSocket connection.
- */
 export function wsSend(data: object): boolean {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(data));
@@ -250,7 +262,6 @@ export function wsSend(data: object): boolean {
   return false;
 }
 
-// ── Page-visibility reconnect — resume immediately when tab regains focus ──────
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && started) {
