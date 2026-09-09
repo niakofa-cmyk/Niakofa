@@ -42,6 +42,7 @@ node_modules
 /playwright-report/
 /playwright/.auth/
 /.auth/
+/e2e/.auth/
 /.acceptance-state-*/
 /test-results/
 /libpeerconnection.log
