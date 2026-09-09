@@ -6,6 +6,9 @@
  *   → admin review → geometry_verified → promote → city_neighborhoods → Host Signal
  *
  * Generated hints remain ineligible for geometry_verified / promote.
+ *
+ * City Authority Summary (above the table) is an aggregate only — it never
+ * bypasses the per-neighborhood Promote → Host Signal gate.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Map, RefreshCw, ShieldCheck, Upload } from "lucide-react";
@@ -39,15 +42,43 @@ export interface BoundaryImportRow {
   updated_at: string;
 }
 
+/** Minimal shape from GET /admin/city-neighborhoods for GPS-active counts. */
+interface CityNeighborhoodRow {
+  id: number;
+  city_key: string;
+  city_display: string;
+  neighborhood_id: string;
+  name: string;
+  geometry_verified: boolean;
+  source_kind: string;
+  authority_level: string;
+  verified: boolean;
+}
+
 type CityFilter = "all" | "fort_worth" | "kansas_city_missouri";
 type StatusFilter = "all" | "needs_review" | "ready_to_promote" | "verified" | "invalid";
+
+interface CityAuthoritySummary {
+  city_key: string;
+  city_display: string;
+  total: number;
+  reviewed: number;
+  geometryVerified: number;
+  gpsActive: number;
+  awaitingReview: number;
+}
 
 function authHeaders(): HeadersInit {
   return { Authorization: `Bearer ${getToken() ?? ""}`, "Content-Type": "application/json" };
 }
 
+function isGenerated(row: { source_kind: string; authority_level: string }): boolean {
+  return row.source_kind === "generated_hint" || row.authority_level === "generated";
+}
+
 export function BoundaryImportsReviewSection() {
   const [rows, setRows] = useState<BoundaryImportRow[]>([]);
+  const [productionNeighborhoods, setProductionNeighborhoods] = useState<CityNeighborhoodRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cityFilter, setCityFilter] = useState<CityFilter>("all");
@@ -60,16 +91,29 @@ export function BoundaryImportsReviewSection() {
     setLoadError(null);
     try {
       const qs = cityFilter === "all" ? "" : `?city_key=${encodeURIComponent(cityFilter)}`;
-      const res = await fetch(`${BASE}/api/admin/neighborhood-boundary-imports${qs}`, {
-        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setLoadError(body.error ?? `Error ${res.status}`);
+      const headers = { Authorization: `Bearer ${getToken() ?? ""}` };
+
+      const [importsRes, neighborhoodsRes] = await Promise.all([
+        fetch(`${BASE}/api/admin/neighborhood-boundary-imports${qs}`, { headers }),
+        fetch(`${BASE}/api/admin/city-neighborhoods`, { headers }),
+      ]);
+
+      if (!importsRes.ok) {
+        const body = (await importsRes.json().catch(() => ({}))) as { error?: string };
+        setLoadError(body.error ?? `Error ${importsRes.status}`);
         return;
       }
-      const data = (await res.json()) as BoundaryImportRow[];
+
+      const data = (await importsRes.json()) as BoundaryImportRow[];
       setRows(Array.isArray(data) ? data : []);
+
+      if (neighborhoodsRes.ok) {
+        const nData = (await neighborhoodsRes.json()) as CityNeighborhoodRow[];
+        setProductionNeighborhoods(Array.isArray(nData) ? nData : []);
+      } else {
+        // Non-fatal: summary GPS Active column will show 0 if this fails
+        setProductionNeighborhoods([]);
+      }
     } catch {
       setLoadError("Could not reach server");
     } finally {
@@ -91,6 +135,81 @@ export function BoundaryImportsReviewSection() {
     const needsReview = rows.filter((r) => r.geometry_valid && !r.reviewed).length;
     return { total, valid, invalid, reviewed, verified, ready, needsReview };
   }, [rows]);
+
+  /**
+   * Per-city authority aggregate. GPS Active comes from production
+   * city_neighborhoods that are geometry_verified and not generated.
+   * Cities remain containers — this summary never activates GPS.
+   */
+  const cityAuthoritySummary = useMemo((): CityAuthoritySummary[] => {
+    const byKey = new Map<
+      string,
+      {
+        city_display: string;
+        total: number;
+        reviewed: number;
+        geometryVerified: number;
+        awaitingReview: number;
+      }
+    >();
+
+    for (const r of rows) {
+      if (isGenerated(r)) continue; // exclude pure generated hints from authority summary
+      const cur = byKey.get(r.city_key) ?? {
+        city_display: r.city_display,
+        total: 0,
+        reviewed: 0,
+        geometryVerified: 0,
+        awaitingReview: 0,
+      };
+      cur.total += 1;
+      if (r.reviewed) cur.reviewed += 1;
+      if (r.geometry_verified) cur.geometryVerified += 1;
+      if (r.geometry_valid && !r.reviewed) cur.awaitingReview += 1;
+      byKey.set(r.city_key, cur);
+    }
+
+    const gpsByCity = new Map<string, number>();
+    for (const n of productionNeighborhoods) {
+      if (isGenerated(n)) continue;
+      if (!n.geometry_verified) continue;
+      gpsByCity.set(n.city_key, (gpsByCity.get(n.city_key) ?? 0) + 1);
+    }
+
+    // Ensure known operational cities appear even with zero staged rows
+    const preferredOrder = ["fort_worth", "kansas_city_missouri"];
+    for (const key of preferredOrder) {
+      if (!byKey.has(key) && gpsByCity.has(key)) {
+        const sample = productionNeighborhoods.find((n) => n.city_key === key);
+        byKey.set(key, {
+          city_display: sample?.city_display ?? key,
+          total: 0,
+          reviewed: 0,
+          geometryVerified: 0,
+          awaitingReview: 0,
+        });
+      }
+    }
+
+    const list: CityAuthoritySummary[] = [...byKey.entries()].map(([city_key, stats]) => ({
+      city_key,
+      city_display: stats.city_display,
+      total: stats.total,
+      reviewed: stats.reviewed,
+      geometryVerified: stats.geometryVerified,
+      gpsActive: gpsByCity.get(city_key) ?? 0,
+      awaitingReview: stats.awaitingReview,
+    }));
+
+    list.sort((a, b) => {
+      const ai = preferredOrder.indexOf(a.city_key);
+      const bi = preferredOrder.indexOf(b.city_key);
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      return a.city_display.localeCompare(b.city_display);
+    });
+
+    return list;
+  }, [rows, productionNeighborhoods]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -135,7 +254,11 @@ export function BoundaryImportsReviewSection() {
   };
 
   const promote = async (row: BoundaryImportRow) => {
-    if (!window.confirm(`Promote “${row.name}” to GPS-eligible city_neighborhoods?\n\nThis enables Host Signal green checkpoint for this boundary.`)) {
+    if (
+      !window.confirm(
+        `Promote “${row.name}” to GPS-eligible city_neighborhoods?\n\nThis enables Host Signal green checkpoint for this boundary.`,
+      )
+    ) {
       return;
     }
     setProcessingId(row.id);
@@ -182,8 +305,47 @@ export function BoundaryImportsReviewSection() {
 
       <p className="text-xs text-muted-foreground leading-relaxed">
         Staged municipal GIS polygons stay GPS-ineligible until you review, verify geometry, and explicitly promote.
-        Generated name hints cannot become Host Signal boundaries.
+        Generated name hints cannot become Host Signal boundaries. Cities are containers only — never a blanket GPS switch.
       </p>
+
+      {/* City Authority Summary — aggregate status only; Promote remains the sole activation control */}
+      {cityAuthoritySummary.length > 0 && (
+        <div className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-2">
+          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+            City Authority Summary
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] min-w-[32rem]">
+              <thead>
+                <tr className="text-muted-foreground text-left border-b border-border/60">
+                  <th className="py-1.5 pr-3 font-bold">City</th>
+                  <th className="py-1.5 px-2 font-bold text-right tabular-nums">Total</th>
+                  <th className="py-1.5 px-2 font-bold text-right tabular-nums">Reviewed</th>
+                  <th className="py-1.5 px-2 font-bold text-right tabular-nums">Geometry Verified</th>
+                  <th className="py-1.5 px-2 font-bold text-right tabular-nums text-green-500">GPS Active</th>
+                  <th className="py-1.5 pl-2 font-bold text-right tabular-nums">Awaiting Review</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cityAuthoritySummary.map((c) => (
+                  <tr key={c.city_key} className="border-b border-border/40 last:border-0">
+                    <td className="py-1.5 pr-3 font-semibold">{c.city_display}</td>
+                    <td className="py-1.5 px-2 text-right tabular-nums">{c.total}</td>
+                    <td className="py-1.5 px-2 text-right tabular-nums">{c.reviewed}</td>
+                    <td className="py-1.5 px-2 text-right tabular-nums">{c.geometryVerified}</td>
+                    <td className="py-1.5 px-2 text-right tabular-nums font-black text-green-500">{c.gpsActive}</td>
+                    <td className="py-1.5 pl-2 text-right tabular-nums text-yellow-500">{c.awaitingReview}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            GPS Active counts production neighborhoods that are geometry-verified and authoritative.
+            Only <span className="font-semibold text-foreground">Promote → Host Signal</span> activates a neighborhood.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
         <div className="rounded-lg border border-border bg-muted/30 px-2.5 py-2">
@@ -211,7 +373,9 @@ export function BoundaryImportsReviewSection() {
             type="button"
             onClick={() => setCityFilter(c)}
             className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${
-              cityFilter === c ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"
+              cityFilter === c
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:bg-muted"
             }`}
           >
             {c === "all" ? "All cities" : c === "fort_worth" ? "Fort Worth" : "Kansas City, MO"}
@@ -233,7 +397,9 @@ export function BoundaryImportsReviewSection() {
             type="button"
             onClick={() => setStatusFilter(key)}
             className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${
-              statusFilter === key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"
+              statusFilter === key
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:bg-muted"
             }`}
           >
             {label}
