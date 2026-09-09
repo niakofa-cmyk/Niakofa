@@ -316,7 +316,7 @@ router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), admin
 router.delete("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-  await db.delete(cityNeighborhoodsTable.where(eq(cityNeighborhoodsTable.id, id)));
+  await db.delete(cityNeighborhoodsTable).where(eq(cityNeighborhoodsTable.id, id));
   return res.json({ ok: true });
 });
 
