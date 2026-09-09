@@ -428,12 +428,10 @@ export default function AdminOperationsDashboard() {
     snapshot?.pool !== null &&
     snapshot?.pool !== undefined &&
     (poolStatus === "low" || poolStatus === "critical" || (guaranteedMinimum > 0 && poolBalance < guaranteedMinimum));
-  const failedWorkers = workerRows.filter((worker) => worker.status === "error").length;
   const gpsHealth = record(globalOps.gps_health);
   const gpsTotal = numberValue(gpsHealth.total_online_helpers);
   const gpsWithCoverage = numberValue(gpsHealth.helpers_online_with_gps);
   const gpsPct = gpsTotal > 0 ? Math.round((gpsWithCoverage / gpsTotal) * 100) : 0;
-  const invalidCount = (snapshot?.boundaries ?? []).filter((boundary) => !boundary.geometry_valid).length;
   const readyCount = (snapshot?.boundaries ?? []).filter(
     (b) => b.reviewed && b.geometry_verified && b.geometry_valid && !isGeneratedHint(b),
   ).length;
@@ -522,7 +520,7 @@ export default function AdminOperationsDashboard() {
                     : "border-border bg-background text-muted-foreground"
                 }`}
               >
-                {value === "all" ? "All cities" : value.replaceAll("_", " ")}
+                {value === "all" ? "All cities" : value.replace(/_/g, " ")}
               </button>
             ))}
           </div>
