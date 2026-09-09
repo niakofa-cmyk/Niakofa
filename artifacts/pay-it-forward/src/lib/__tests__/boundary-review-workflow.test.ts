@@ -59,3 +59,11 @@ test("active state requires the promoted production identity and current effecti
   assert.equal(isBoundaryActive(base, [{ ...production, neighborhood_id: "other" }]), false);
   assert.equal(isBoundaryActive(base, [{ ...production, geometry_effective_at: "2999-01-01T00:00:00Z" }]), false);
 });
+
+test("marking reviewed without explicit geometry_verified still leaves the row in Reviewed stage", () => {
+  // Client must not force geometry_verified=false on Mark reviewed; server preserves prior value.
+  // A freshly reviewed row with geometry_verified false is stage "reviewed", not vanished.
+  const reviewedOnly = { ...base, reviewed: true, geometry_verified: false };
+  assert.equal(getBoundaryStage(reviewedOnly), "reviewed");
+  assert.equal(isBoundaryReadyToPromote(reviewedOnly), false);
+});

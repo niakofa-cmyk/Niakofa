@@ -44,7 +44,8 @@ const NeighborhoodAdminPatchBody = z.object({
 const BoundaryReviewBody = z.object({
   reviewed: z.boolean(),
   review_note: z.string().trim().max(1000).nullable().optional(),
-  geometry_verified: z.boolean().default(false),
+  // Optional: omit to preserve existing geometry_verified (except unreview clears it).
+  geometry_verified: z.boolean().optional(),
 }).strict();
 
 export function normalizeCityKey(city: string): string {
@@ -132,13 +133,26 @@ router.patch("/admin/neighborhood-boundary-imports/:id/review", requireAuth, req
 
   const [current] = await db.select().from(neighborhoodBoundaryImportsTable).where(eq(neighborhoodBoundaryImportsTable.id, id)).limit(1);
   if (!current) return res.status(404).json({ error: "Boundary import not found" });
-  if (parsed.data.geometry_verified && (!parsed.data.reviewed || !current.geometry_valid)) return res.status(400).json({ error: "A boundary must be geometry-valid and reviewed before verification." });
-  if (parsed.data.geometry_verified && (current.source_kind === "generated_hint" || current.authority_level === "generated")) return res.status(400).json({ error: "Generated neighborhood hints cannot become GPS-verified boundaries." });
+
+  // Unreview always clears geometry verification. Explicit true/false updates it.
+  // Omitting geometry_verified preserves the current value (Mark Reviewed must not wipe Verify Geometry).
+  const nextGeometryVerified = !parsed.data.reviewed
+    ? false
+    : parsed.data.geometry_verified !== undefined
+      ? parsed.data.geometry_verified
+      : current.geometry_verified;
+
+  if (nextGeometryVerified && (!parsed.data.reviewed || !current.geometry_valid)) {
+    return res.status(400).json({ error: "A boundary must be geometry-valid and reviewed before verification." });
+  }
+  if (nextGeometryVerified && (current.source_kind === "generated_hint" || current.authority_level === "generated")) {
+    return res.status(400).json({ error: "Generated neighborhood hints cannot become GPS-verified boundaries." });
+  }
 
   const [updated] = await db.update(neighborhoodBoundaryImportsTable).set({
     reviewed: parsed.data.reviewed,
     review_note: parsed.data.review_note ?? current.review_note,
-    geometry_verified: parsed.data.geometry_verified,
+    geometry_verified: nextGeometryVerified,
     rejection_reason: parsed.data.reviewed ? null : current.rejection_reason,
     updated_at: new Date(),
   }).where(eq(neighborhoodBoundaryImportsTable.id, id)).returning();
