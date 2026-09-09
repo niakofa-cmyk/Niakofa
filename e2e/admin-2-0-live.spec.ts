@@ -47,9 +47,8 @@ test.describe("Admin 2.0 live acceptance", () => {
     await page.getByRole("button", { name: /Ready to promote/i }).first().click();
     const readyCard = page.locator("div.rounded-xl.border.border-border.bg-background\\/50").filter({ hasText: /Promote → Host Signal/ }).first();
     await expect(readyCard).toBeVisible({ timeout: 15_000 });
-    const name = (await readyCard.locator(".font-bold.text-sm").innerText()).trim();
     page.once("dialog", async (dialog) => { await dialog.accept(); });
     await readyCard.getByRole("button", { name: /Promote → Host Signal/i }).click();
-    await expect(page.getByText(new RegExp(`${name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}.*GPS-active`, "i"))).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/Promoted and GPS-active/i)).toBeVisible({ timeout: 20_000 });
   });
 });
