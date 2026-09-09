@@ -31,7 +31,6 @@ node_modules
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
-!.vscode/launch.json
 !.vscode/extensions.json
 
 # misc
@@ -42,6 +41,7 @@ node_modules
 /playwright-report/
 /playwright/.auth/
 /.auth/
+/e2e/.auth/
 /.acceptance-state-*/
 /test-results/
 /libpeerconnection.log
