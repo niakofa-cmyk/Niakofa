@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 
 const baseURL = process.env.ADMIN_E2E_BASE_URL;
 const storageState = process.env.ADMIN_E2E_STORAGE_STATE;
+const mutationEnabled = process.env.ADMIN_E2E_MUTATION === "true";
 
 test.describe("Admin 2.0 live acceptance", () => {
   test.skip(
@@ -38,5 +39,17 @@ test.describe("Admin 2.0 live acceptance", () => {
     await page.goto("/admin/operations", { waitUntil: "domcontentloaded" });
     await page.getByRole("link", { name: /Full Admin/i }).click();
     await expect(page).toHaveURL(/\/admin$/);
+  });
+
+  test("opt-in live path can promote a ready authoritative boundary", async ({ page }) => {
+    test.skip(!mutationEnabled, "Set ADMIN_E2E_MUTATION=true only for an intentional authenticated live promotion test.");
+    await page.goto("/admin/operations", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: /Ready to promote/i }).first().click();
+    const readyCard = page.locator("div.rounded-xl.border.border-border.bg-background\\/50").filter({ hasText: /Promote → Host Signal/ }).first();
+    await expect(readyCard).toBeVisible({ timeout: 15_000 });
+    const name = (await readyCard.locator(".font-bold.text-sm").innerText()).trim();
+    page.once("dialog", async (dialog) => { await dialog.accept(); });
+    await readyCard.getByRole("button", { name: /Promote → Host Signal/i }).click();
+    await expect(page.getByText(new RegExp(`${name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}.*GPS-active`, "i"))).toBeVisible({ timeout: 20_000 });
   });
 });
