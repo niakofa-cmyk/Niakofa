@@ -8,7 +8,10 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  -- Discovery is neighborhood-only. City-wide circles remain addressable by
+  -- id for backwards compatibility but are never part of the Spiral list.
   IF NEW.neighborhood_id IS NULL THEN
+    NEW.city_key := '__inactive_neighborhood__:' || NEW.city_key;
     RETURN NEW;
   END IF;
 
@@ -69,6 +72,12 @@ FROM city_neighborhoods cn
 WHERE ac.neighborhood_id = cn.id
   AND cn.geometry_verified IS NOT TRUE
   AND ac.city_key NOT LIKE '__inactive_neighborhood__:%';
+
+-- Hide existing city-wide circles from discovery while retaining their rows.
+UPDATE audio_circles
+SET city_key = '__inactive_neighborhood__:' || city_key
+WHERE neighborhood_id IS NULL
+  AND city_key NOT LIKE '__inactive_neighborhood__:%';
 
 -- Restore any already-verified neighborhood circles that were previously hidden.
 UPDATE audio_circles ac
