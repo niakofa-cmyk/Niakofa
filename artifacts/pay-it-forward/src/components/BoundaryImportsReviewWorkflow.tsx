@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, ChevronRight, Map as MapIcon, RefreshCw, ShieldCheck, ShieldOff, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronRight, Map as MapIcon, RefreshCw, ShieldCheck, Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 
@@ -46,19 +46,6 @@ interface CityNeighborhoodRow {
 type CityFilter = "all" | "fort_worth" | "kansas_city_missouri";
 type StatusFilter = "needs_review" | "reviewed" | "ready_to_promote" | "active" | "invalid" | "all";
 
-type CityAuthoritySummary = {
-  city_key: string;
-  city_display: string;
-  total: number;
-  reviewed: number;
-  geometryVerified: number;
-  gpsActive: number;
-  awaitingReview: number;
-  readyToPromote: number;
-};
-
-type CityStats = Omit<CityAuthoritySummary, "city_key" | "city_display" | "gpsActive">;
-
 function authHeaders(): HeadersInit {
   return { Authorization: `Bearer ${getToken() ?? ""}`, "Content-Type": "application/json" };
 }
@@ -97,7 +84,6 @@ export function BoundaryImportsReviewWorkflow() {
   const [cityFilter, setCityFilter] = useState<CityFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("needs_review");
   const [processingId, setProcessingId] = useState<number | null>(null);
-  const [noteDraft, setNoteDraft] = useState<Record<number, string>>({});
   const [lastAction, setLastAction] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -155,45 +141,6 @@ export function BoundaryImportsReviewWorkflow() {
     return counts;
   }, [rows, productionNeighborhoods]);
 
-  const cityAuthoritySummary = useMemo((): CityAuthoritySummary[] => {
-    const byKey: Record<string, CityStats & { city_display: string }> = {};
-    for (const r of rows) {
-      if (isGenerated(r)) continue;
-      const cur = byKey[r.city_key] ?? { city_display: r.city_display, total: 0, reviewed: 0, geometryVerified: 0, awaitingReview: 0, readyToPromote: 0 };
-      cur.total += 1;
-      if (r.reviewed) cur.reviewed += 1;
-      if (r.geometry_verified) cur.geometryVerified += 1;
-      if (r.geometry_valid && !r.reviewed) cur.awaitingReview += 1;
-      if (isBoundaryReadyToPromote(r)) cur.readyToPromote += 1;
-      byKey[r.city_key] = cur;
-    }
-    const gpsByCity: Record<string, number> = {};
-    for (const n of productionNeighborhoods) {
-      if (isGpsActive(n)) gpsByCity[n.city_key] = (gpsByCity[n.city_key] ?? 0) + 1;
-    }
-    const preferredOrder = ["fort_worth", "kansas_city_missouri"];
-    for (const key of preferredOrder) {
-      if (!byKey[key] && gpsByCity[key] !== undefined) {
-        const sample = productionNeighborhoods.find((n) => n.city_key === key);
-        byKey[key] = { city_display: sample?.city_display ?? key, total: 0, reviewed: 0, geometryVerified: 0, awaitingReview: 0, readyToPromote: 0 };
-      }
-    }
-    return Object.entries(byKey).map(([city_key, stats]) => ({
-      city_key,
-      city_display: stats.city_display,
-      total: stats.total,
-      reviewed: stats.reviewed,
-      geometryVerified: stats.geometryVerified,
-      gpsActive: gpsByCity[city_key] ?? 0,
-      awaitingReview: stats.awaitingReview,
-      readyToPromote: stats.readyToPromote,
-    })).sort((a, b) => {
-      const ai = preferredOrder.indexOf(a.city_key); const bi = preferredOrder.indexOf(b.city_key);
-      if (ai !== -1 || bi !== -1) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      return a.city_display.localeCompare(b.city_display);
-    });
-  }, [rows, productionNeighborhoods]);
-
   const filtered = useMemo(() => rows.filter((row) => {
     if (statusFilter === "needs_review") return getBoundaryStage(row) === "needs_review";
     if (statusFilter === "reviewed") return getBoundaryStage(row) === "reviewed";
@@ -208,7 +155,7 @@ export function BoundaryImportsReviewWorkflow() {
     try {
       const payload: { reviewed: boolean; review_note: string | null; geometry_verified?: boolean } = {
         reviewed: opts.reviewed,
-        review_note: noteDraft[row.id]?.trim() || row.review_note || null,
+        review_note: row.review_note || null,
       };
       if (opts.geometry_verified !== undefined) payload.geometry_verified = opts.geometry_verified;
       const res = await fetch(`${BASE}/api/admin/neighborhood-boundary-imports/${row.id}/review`, {
@@ -251,21 +198,6 @@ export function BoundaryImportsReviewWorkflow() {
     } finally { setProcessingId(null); }
   };
 
-  const demote = async (n: CityNeighborhoodRow) => {
-    if (!window.confirm(`Revoke Host Signal for “${n.name}”?\n\nThis clears verified + geometry_verified so the boundary is no longer GPS-active. Staged GIS imports are unchanged.`)) return;
-    setProcessingId(n.id);
-    try {
-      const res = await fetch(`${BASE}/api/admin/city-neighborhoods/${n.id}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ verified: false, geometry_verified: false }) });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      toast({ title: "Host Signal revoked", description: `${n.name} is no longer GPS-active.` });
-      setStatusFilter("active");
-      await load();
-    } catch (error) {
-      toast({ title: "Revoke blocked", description: error instanceof Error ? error.message : "Network error", variant: "destructive" });
-    } finally { setProcessingId(null); }
-  };
-
   return (
     <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -291,29 +223,117 @@ export function BoundaryImportsReviewWorkflow() {
       {lastAction && <div className="rounded-lg border border-green-500/20 bg-green-500/5 px-3 py-2 text-xs text-green-500 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 shrink-0" />{lastAction}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-[11px]">
-        {[['Staged', rows.length], ['Needs review', counts.needs_review], ['Reviewed', counts.reviewed], ['Ready', counts.ready_to_promote], ['GPS Active', counts.active], ['Invalid', counts.invalid]].map(([label, value]) => <button key={String(label)} type="button" onClick={() => setStatusFilter(label === 'Staged' ? 'all' : label === 'Needs review' ? 'needs_review' : label === 'Reviewed' ? 'reviewed' : label === 'Ready' ? 'ready_to_promote' : label === 'GPS Active' ? 'active' : 'invalid')} className={`rounded-lg border px-2.5 py-2 text-left ${statusFilter === (label === 'Staged' ? 'all' : label === 'Needs review' ? 'needs_review' : label === 'Reviewed' ? 'reviewed' : label === 'Ready' ? 'ready_to_promote' : label === 'GPS Active' ? 'active' : 'invalid') ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted'}`}><div className="text-muted-foreground">{label}</div><div className="font-black tabular-nums text-base">{value}</div></button>)}
+        {([['Staged', rows.length], ['Needs review', counts.needs_review], ['Reviewed', counts.reviewed], ['Ready', counts.ready_to_promote], ['GPS Active', counts.active], ['Invalid', counts.invalid]] as const).map(([label, value]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => setStatusFilter(label === 'Staged' ? 'all' : label === 'Needs review' ? 'needs_review' : label === 'Reviewed' ? 'reviewed' : label === 'Ready' ? 'ready_to_promote' : label === 'GPS Active' ? 'active' : 'invalid')}
+            className={`rounded-lg border px-2.5 py-2 text-left ${statusFilter === (label === 'Staged' ? 'all' : label === 'Needs review' ? 'needs_review' : label === 'Reviewed' ? 'reviewed' : label === 'Ready' ? 'ready_to_promote' : label === 'GPS Active' ? 'active' : 'invalid') ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted'}`}
+          >
+            <div className="text-muted-foreground">{label}</div>
+            <div className="font-black tabular-nums text-base">{value}</div>
+          </button>
+        ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">{(["all", "fort_worth", "kansas_city_missouri"] as CityFilter[]).map((c) => <button key={c} type="button" onClick={() => setCityFilter(c)} className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${cityFilter === c ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"}`}>{c === "all" ? "All cities" : c === "fort_worth" ? "Fort Worth" : "Kansas City, MO"}</button>)}</div>
+      <div className="flex flex-wrap gap-2">{(["all", "fort_worth", "kansas_city_missouri"] as CityFilter[]).map((c) => (
+        <button
+          key={c}
+          type="button"
+          onClick={() => setCityFilter(c)}
+          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${cityFilter === c ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"}`}
+        >
+          {c === "all" ? "All cities" : c === "fort_worth" ? "Fort Worth" : "Kansas City, MO"}
+        </button>
+      ))}</div>
 
-      {loading && rows.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">Loading staged GIS…</div> : filtered.length === 0 ? <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center space-y-3"><div className="text-sm font-bold">{rows.length === 0 ? "No staged GIS imports" : "No boundaries in this queue"}</div><p className="text-xs text-muted-foreground leading-relaxed">{rows.length === 0 ? <>If you just saw HTTP 429, wait and click Refresh — staged GIS is not deleted.</> : statusFilter === "needs_review" && counts.reviewed > 0 ? <>{counts.reviewed} reviewed boundar{counts.reviewed === 1 ? "y is" : "ies are"} waiting for <span className="font-semibold text-foreground">Verify Geometry</span>. Open Reviewed.</> : <>Filters hide rows; they do not delete them. Try Reviewed, Ready, or Staged.</>}</p>{counts.reviewed > 0 && statusFilter !== "reviewed" && <button type="button" onClick={() => setStatusFilter("reviewed")} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary">Show Reviewed ({counts.reviewed}) — Verify Geometry</button>}</div> : <div className="space-y-3 max-h-[32rem] overflow-y-auto pr-1">{filtered.map((row) => {
-        const busy = processingId === row.id;
-        const stage = getBoundaryStage(row);
-        const canVerify = row.geometry_valid && row.reviewed && !row.geometry_verified && !isGenerated(row);
-        const canPromote = isBoundaryReadyToPromote(row);
-        const active = isBoundaryActive(row, productionNeighborhoods);
-        return <div key={row.id} className="rounded-xl border border-border bg-background/50 p-3 space-y-2">
-          <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="font-bold text-sm truncate flex items-center gap-1.5"><MapIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />{row.name}</div><div className="text-[11px] text-muted-foreground mt-0.5">{row.city_display} · {row.source_publisher}</div></div><span className={`text-[10px] font-black px-1.5 py-0.5 rounded border shrink-0 ${stage === 'invalid' ? 'bg-destructive/10 text-destructive border-destructive/30' : stage === 'reviewed' ? 'bg-yellow-400/10 text-yellow-500 border-yellow-400/30' : 'bg-green-500/10 text-green-500 border-green-500/30'}`}>{stage === 'needs_review' ? 'NEEDS REVIEW' : stage === 'reviewed' ? 'REVIEWED — VERIFY GEOMETRY' : stage === 'ready_to_promote' ? 'READY TO PROMOTE' : 'INVALID'}</span></div>
-          <div className="flex flex-wrap gap-1.5">
-            {!row.reviewed && row.geometry_valid && !isGenerated(row) && <button type="button" disabled={busy} onClick={() => void review(row, { reviewed: true })} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border hover:bg-muted disabled:opacity-50">Mark reviewed</button>}
-            {canVerify && <button type="button" disabled={busy} onClick={() => { if (!window.confirm(`Verify geometry for "${row.name}"?\n\nConfirms the imported polygon only — does not change or regenerate the boundary.`)) return; void review(row, { reviewed: true, geometry_verified: true }); }} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50">Verify Geometry</button>}
-            {canPromote && !active && <button type="button" disabled={busy} onClick={() => void promote(row)} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-green-500/40 bg-green-500/10 text-green-500 hover:bg-green-500/20 disabled:opacity-50 flex items-center gap-1"><Upload className="w-3 h-3" />Promote → Host Signal</button>}
-            {row.reviewed && !active && <button type="button" disabled={busy} onClick={() => void review(row, { reviewed: false, geometry_verified: false })} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50">Unreview</button>}
-          </div>
-          {stage === 'reviewed' && <div className="text-[10px] text-yellow-500 flex items-center gap-1"><ChevronRight className="w-3 h-3" />Next: Verify Geometry (metadata only).</div>}
-          {canPromote && !active && <div className="text-[10px] text-green-500 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />Ready for explicit Promote → Host Signal.</div>}
-        </div>;
-      })}</div>}
+      {loading && rows.length === 0 ? (
+        <div className="text-sm text-muted-foreground py-6 text-center">Loading staged GIS…</div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center space-y-3">
+          <div className="text-sm font-bold">{rows.length === 0 ? "No staged GIS imports" : "No boundaries in this queue"}</div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {rows.length === 0 ? (
+              <>If you just saw HTTP 429, wait and click Refresh — staged GIS is not deleted.</>
+            ) : statusFilter === "needs_review" && counts.reviewed > 0 ? (
+              <>{counts.reviewed} reviewed boundar{counts.reviewed === 1 ? "y is" : "ies are"} waiting for <span className="font-semibold text-foreground">Verify Geometry</span>. Open Reviewed.</>
+            ) : (
+              <>Filters hide rows; they do not delete them. Try Reviewed, Ready, or Staged.</>
+            )}
+          </p>
+          {counts.reviewed > 0 && statusFilter !== "reviewed" && (
+            <button type="button" onClick={() => setStatusFilter("reviewed")} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary">
+              Show Reviewed ({counts.reviewed}) — Verify Geometry
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3 max-h-[32rem] overflow-y-auto pr-1">
+          {filtered.map((row) => {
+            const busy = processingId === row.id;
+            const stage = getBoundaryStage(row);
+            const canVerify = row.geometry_valid && row.reviewed && !row.geometry_verified && !isGenerated(row);
+            const canPromote = isBoundaryReadyToPromote(row);
+            const active = isBoundaryActive(row, productionNeighborhoods);
+            return (
+              <div key={row.id} className="rounded-xl border border-border bg-background/50 p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm truncate flex items-center gap-1.5">
+                      <MapIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      {row.name}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{row.city_display} · {row.source_publisher}</div>
+                  </div>
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded border shrink-0 ${stage === "invalid" ? "bg-destructive/10 text-destructive border-destructive/30" : stage === "reviewed" ? "bg-yellow-400/10 text-yellow-500 border-yellow-400/30" : "bg-green-500/10 text-green-500 border-green-500/30"}`}>
+                    {stage === "needs_review" ? "NEEDS REVIEW" : stage === "reviewed" ? "REVIEWED — VERIFY GEOMETRY" : stage === "ready_to_promote" ? "READY TO PROMOTE" : "INVALID"}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {!row.reviewed && row.geometry_valid && !isGenerated(row) && (
+                    <button type="button" disabled={busy} onClick={() => void review(row, { reviewed: true })} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border hover:bg-muted disabled:opacity-50">
+                      Mark reviewed
+                    </button>
+                  )}
+                  {canVerify && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        if (!window.confirm(`Verify geometry for "${row.name}"?\n\nConfirms the imported polygon only — does not change or regenerate the boundary.`)) return;
+                        void review(row, { reviewed: true, geometry_verified: true });
+                      }}
+                      className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+                    >
+                      Verify Geometry
+                    </button>
+                  )}
+                  {canPromote && !active && (
+                    <button type="button" disabled={busy} onClick={() => void promote(row)} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-green-500/40 bg-green-500/10 text-green-500 hover:bg-green-500/20 disabled:opacity-50 flex items-center gap-1">
+                      <Upload className="w-3 h-3" />Promote → Host Signal
+                    </button>
+                  )}
+                  {row.reviewed && !active && (
+                    <button type="button" disabled={busy} onClick={() => void review(row, { reviewed: false, geometry_verified: false })} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50">
+                      Unreview
+                    </button>
+                  )}
+                </div>
+                {stage === "reviewed" && (
+                  <div className="text-[10px] text-yellow-500 flex items-center gap-1">
+                    <ChevronRight className="w-3 h-3" />Next: Verify Geometry (metadata only).
+                  </div>
+                )}
+                {canPromote && !active && (
+                  <div className="text-[10px] text-green-500 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />Ready for explicit Promote → Host Signal.
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
