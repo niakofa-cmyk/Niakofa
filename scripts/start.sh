@@ -56,10 +56,12 @@ trap cleanup TERM INT
 (
   NIA_RESTART_COUNT=0
   NIA_BACKOFF_SECONDS=2
+  NIA_BACKOFF_RESET_AFTER_SECONDS=300
 
   while true; do
     # Spawn nia-service as a direct child of THIS subshell so wait() captures
     # the real exit status and restart decisions are reliable.
+    NIA_STARTED_AT="$(date +%s)"
     PORT=3001 node --enable-source-maps artifacts/nia-service/dist/index.js &
     NIA_PID=$!
     echo "$NIA_PID" > "$NIA_PID_FILE"
@@ -77,6 +79,16 @@ trap cleanup TERM INT
     fi
 
     NIA_RESTART_COUNT=$((NIA_RESTART_COUNT + 1))
+    NIA_RUNTIME_SECONDS=$(( $(date +%s) - NIA_STARTED_AT ))
+
+    # A sustained run means the earlier crash storm has recovered. Reset both
+    # the retry counter and backoff so a later isolated crash recovers quickly.
+    if [ "$NIA_RUNTIME_SECONDS" -ge "$NIA_BACKOFF_RESET_AFTER_SECONDS" ]; then
+      NIA_RESTART_COUNT=1
+      NIA_BACKOFF_SECONDS=2
+      echo "[supervisor] nia-service recovered for ${NIA_RUNTIME_SECONDS}s — resetting restart backoff"
+    fi
+
     echo "[supervisor] nia-service crashed (rc=$EXIT_CODE) — restart #$NIA_RESTART_COUNT in ${NIA_BACKOFF_SECONDS}s"
     sleep "$NIA_BACKOFF_SECONDS"
     NIA_BACKOFF_SECONDS=$((NIA_BACKOFF_SECONDS * 2))
