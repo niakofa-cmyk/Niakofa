@@ -4,7 +4,7 @@ import { toast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { BoundaryGeometryVerificationPanel } from "./BoundaryGeometryVerificationPanel";
 
-const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+const BASE = (import.meta.env?.BASE_URL ?? "/").replace(/\/$/, "");
 
 export interface BoundaryImportRow {
   id: number;

@@ -3,6 +3,7 @@ import { CheckCircle2, MapPin, RefreshCw } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { getUsableMapLocation, mapLocationUnavailableMessage } from "@/lib/spiralMapLocation";
+import { publishMapLocation } from "@/lib/spiralLocationStore";
 
 export type HostSignalPayload = {
   can_host?: boolean;
@@ -56,6 +57,7 @@ export function SpiralHostSignal({
 
   useEffect(() => {
     locationRef.current = myLocation;
+    publishMapLocation(myLocation);
   }, [myLocation]);
 
   const publishSignal = useCallback((next: HostSignalPayload) => {

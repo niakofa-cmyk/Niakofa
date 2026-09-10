@@ -23,7 +23,7 @@ test("fresh Map Locator GPS fix is usable for Spiral discovery", () => {
 
 test("stale Map Locator fix is rejected instead of invoking a second GPS source", () => {
   assert.equal(
-    getUsableMapLocation({ ...valid, capturedAt: now - 6 * 60_000 }, now, "discovery"),
+    getUsableMapLocation({ ...valid, capturedAt: now - 16 * 60_000 }, now, "discovery"),
     null,
   );
 });
@@ -44,9 +44,15 @@ test("host mode applies the stricter two-minute freshness window", () => {
   assert.ok(getUsableMapLocation({ ...valid, capturedAt: now - 119_000 }, now, "host"));
 });
 
+test("discovery accepts a usable fix that is too old or imprecise for hosting", () => {
+  const relaxed = { ...valid, capturedAt: now - 10 * 60_000, accuracy: 220 };
+  assert.ok(getUsableMapLocation(relaxed, now, "discovery"));
+  assert.equal(getUsableMapLocation(relaxed, now, "host"), null);
+});
+
 test("invalid coordinates and accuracy fail closed", () => {
   assert.equal(getUsableMapLocation({ ...valid, lat: 91 }, now), null);
-  assert.equal(getUsableMapLocation({ ...valid, accuracy: 151 }, now), null);
+  assert.equal(getUsableMapLocation({ ...valid, accuracy: 251 }, now), null);
   assert.equal(getUsableMapLocation({ ...valid, accuracy: null }, now), null);
 });
 

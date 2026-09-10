@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { useCachedList } from "@/hooks/useCachedList";
 import { acquireCircleDevice } from "@/lib/circleMediaReadiness";
-import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";
+import { getPublishedMapLocation } from "@/lib/spiralLocationStore";
+import { getUsableMapLocation, mapLocationUnavailableMessage } from "@/lib/spiralMapLocation";
 import { filterActiveNeighborhoodSpirals, promoteLocalSpiral, SPIRALS_PATHS } from "@/lib/spirals";
 import { SpiralMark } from "@/components/SpiralMark";
 import { SpiralHostSignal, type HostSignalPayload } from "@/components/SpiralHostSignal";
@@ -427,21 +428,15 @@ export default function AudioCirclesScreen() {
     const refreshLocationContext = async () => {
       if (!cancelled) setLocationChecking(true);
       try {
-        const shared = locationRef.current;
-        const usable =
-          shared?.source === "gps" &&
-          typeof shared.capturedAt === "number" &&
-          Date.now() - shared.capturedAt <= 120_000 &&
-          typeof shared.accuracy === "number" &&
-          shared.accuracy <= 150;
-        const location = usable
-          ? {
-              latitude: shared.lat,
-              longitude: shared.lng,
-              accuracy_meters: shared.accuracy!,
-              captured_at: new Date(shared.capturedAt!).toISOString(),
-            }
-          : await getFreshCircleStartLocation();
+        const location = getUsableMapLocation(
+          getPublishedMapLocation() ?? locationRef.current,
+          Date.now(),
+          "discovery",
+        );
+        if (!location) {
+          if (!cancelled) setLocationContext(null);
+          return;
+        }
         const response = await fetch(`${base}/api/audio-circles/location-context`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -470,7 +465,7 @@ export default function AudioCirclesScreen() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [base, city, currentUser?.id, locationRefreshNonce]);
+  }, [base, city, currentUser?.id, locationRefreshNonce, myLocation?.capturedAt]);
 
   const fetcher = useCallback(async () => {
     const res = await fetch(
@@ -529,7 +524,19 @@ export default function AudioCirclesScreen() {
   const startRoom = async (circle: CircleSummary, video_enabled = false, title: string, description: string, topic: string, maxSpeakers = 12, recordingAllowed = false) => {
     setStartingId(circle.id);
     try {
-      const location = await getFreshCircleStartLocation();
+      const location = getUsableMapLocation(
+        getPublishedMapLocation() ?? locationRef.current,
+        Date.now(),
+        "host",
+      );
+      if (!location) {
+        toast({
+          title: "Map Location needed to host",
+          description: mapLocationUnavailableMessage(),
+          variant: "destructive",
+        });
+        return;
+      }
       const res = await fetch(`${base}/api/audio-circles/${circle.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -551,12 +558,8 @@ export default function AudioCirclesScreen() {
       setHostModal(null);
       await refresh();
       setLocation(SPIRALS_PATHS.room(data.session.id));
-    } catch (error) {
-      if (error instanceof CircleStartLocationError) {
-        toast({ title: "Location needed to host", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Couldn't start the Spiral", description: "Check your connection and try again.", variant: "destructive" });
-      }
+    } catch {
+      toast({ title: "Couldn't start the Spiral", description: "Check your connection and try again.", variant: "destructive" });
     } finally {
       setStartingId(null);
     }
@@ -665,6 +668,7 @@ export default function AudioCirclesScreen() {
            context={locationContext}
            checking={locationChecking}
            onRefresh={() => setLocationRefreshNonce((value) => value + 1)}
+           onOpenMap={() => setLocation("/")}
             onOpenLocalSpiral={() => (localSpiralRef.current ?? highlightRef.current)?.scrollIntoView({ behavior: "smooth", block: "center" })}
          />
 

@@ -10,6 +10,7 @@ import { GratitudeModal } from "../components/GratitudeModal";
 import { clearToken, getToken } from "./auth";
 import { getIpLocation } from "./locale-utils";
 import { toast } from "../hooks/use-toast";
+import { publishMapLocation } from "./spiralLocationStore";
 
 interface Location {
   lat: number;
@@ -323,6 +324,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const isTrackingNeeded = helperModeActive || !!activeRequestId;
 
   useEffect(() => {
+    // Spirals consume this same Map Locator stream. Clear the mirror when the
+    // watcher is recreated so a stale fix cannot masquerade as a new session.
+    publishMapLocation(null);
+
     // Shared IP fallback — called on any path that lacks a GPS fix
     const tryIpFallback = () => {
       if (locationRef.current) return; // GPS already gave us a fix — skip
@@ -330,6 +335,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!loc || locationRef.current) return; // double-check after async
         const ipLoc: Location = { lat: loc.lat, lng: loc.lng, source: "ip" };
         locationRef.current = ipLoc;
+        publishMapLocation(ipLoc);
         setMyLocation(ipLoc);
       });
     };
@@ -381,6 +387,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       prevLocationRef.current = raw;
       locationRef.current = newLoc;
+      publishMapLocation(newLoc);
       setMyLocation(newLoc);
     };
 
