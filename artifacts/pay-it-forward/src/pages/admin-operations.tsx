@@ -572,7 +572,7 @@ export default function AdminOperationsDashboard() {
             value={stringValue(record(globalOps.summary).total_online_helpers, stringValue(stats.active_helpers))}
             sub="live admin stats"
           />
-          <Metric label="Open requests" value={stringValue(record(globalOps.summary).total_open_requests)} sub="live coverage" />
+          <Metric label="Total requests" value={stringValue(stats.total_requests)} sub="live coverage" />
           <Metric label="Action items" value={totalPendingActions} danger={totalPendingActions > 0} sub="accounts · helpers · reports" />
         </div>
 
