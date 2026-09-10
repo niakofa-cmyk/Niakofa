@@ -5692,7 +5692,10 @@ function GlobalOpsSection() {
 
   const hasLoadedRef = useRef(false);
   const load = useCallback(async () => {
-    if (!hasLoadedRef.current) setLoading(true); setError(null);
+    if (!hasLoadedRef.current) {
+      setLoading(true);
+    }
+    setError(null);
     try {
       const res = await fetch(`${BASE}/api/admin/global-ops`, {
         headers: { Authorization: `Bearer ${getToken() ?? ""}` },
@@ -5715,14 +5718,22 @@ function GlobalOpsSection() {
   }, [load]);
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-5 space-y-5">
+    <div
+      data-testid="admin-global-ops"
+      className="bg-card border border-border rounded-2xl p-5 space-y-5"
+    >
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Globe className="w-4 h-4 text-primary" />
           <span className="text-sm font-black uppercase tracking-wider">Global Ops</span>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">Live · 60s refresh</span>
+          <span
+            data-testid="admin-global-ops-live"
+            className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20"
+          >
+            Live · 60s refresh
+          </span>
         </div>
         <div className="flex items-center gap-2">
           {lastRefresh && (
@@ -6232,7 +6243,7 @@ function SystemTab() {
         )}
       </div>
 
-      {/* ── Global Ops (coverage, GPS, languages, feature checks) ──── */}
+      {/* ── Global Ops (workers, connectivity, presence, process) ───── */}
       <GlobalOpsSection />
 
       {/* ── Smart Dispatch Suggest ───────────────────────────────────── */}

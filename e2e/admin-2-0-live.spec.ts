@@ -41,6 +41,39 @@ test.describe("Admin 2.0 live acceptance", () => {
     await expect(page).toHaveURL(/\/admin$/);
   });
 
+  test("regular Admin renders the live Global Ops contract", async ({ page }) => {
+    await page.goto("/admin", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible();
+
+    await page.getByRole("tab", { name: "Configure", exact: true }).click();
+    const globalOpsResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === "GET" &&
+      /\/api\/admin\/global-ops(?:\?|$)/.test(response.url()),
+    );
+    await page.getByRole("tab", { name: "System", exact: true }).click();
+
+    const globalOpsResponse = await globalOpsResponsePromise;
+    expect(globalOpsResponse.ok()).toBeTruthy();
+    const globalOps = await globalOpsResponse.json();
+    expect(globalOps).toMatchObject({
+      workers: { all_critical_ok: expect.any(Boolean), list: expect.any(Array) },
+      websocket_hub: expect.any(Object),
+      redis: expect.any(Object),
+      navigation_circuit_breaker: expect.any(Object),
+      process: expect.objectContaining({ commit: expect.any(String) }),
+    });
+    for (const legacyField of ["summary", "gps_health", "regions", "feature_checks"]) {
+      expect(globalOps).not.toHaveProperty(legacyField);
+    }
+
+    await expect(page.getByTestId("admin-global-ops")).toBeVisible();
+    await expect(page.getByTestId("admin-global-ops-live")).toHaveText("Live · 60s refresh");
+    await expect(page.getByText("Worker Registry")).toBeVisible();
+    await expect(page.getByText("Connectivity & Process")).toBeVisible();
+    await expect(page.getByText("Coverage by Region")).toHaveCount(0);
+    await expect(page.getByText("Languages in Use (7 days)")).toHaveCount(0);
+  });
+
   test("reports production GIS stage counts", async ({ page }) => {
     await page.goto("/admin/operations", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: /Authoritative Neighborhood Boundary Review/i })).toBeVisible({ timeout: 20_000 });

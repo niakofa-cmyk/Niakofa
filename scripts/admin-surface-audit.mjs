@@ -76,7 +76,7 @@ if (!operations.includes("generated_hint") && !operations.includes("authority_le
 
 console.log(`Admin route files scanned: ${routeFiles.length}`);
 console.log(`Protected requireAdmin() occurrences: ${protectedRoutes.length}`);
-console.log(`Coverage rows: ${(coverage.match(/^\| \/.*\|/gm) ?? []).length}`);
+console.log(`Coverage rows: ${(coverage.match(/^\|\s+`\/[^`]+`\s+\|/gm) ?? []).length}`);
 console.log("Admin inventory contract: PASS");
 
 if (failures.length) {

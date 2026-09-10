@@ -57,7 +57,8 @@
 | `/admin/region-crisis-resources/:id/suggest` | POST | N/A (internal — seeded by AI dispatch, not human UI) | ⚪ |
 | `/admin/cashouts` | GET | SystemTab → CashoutSection | ✅ |
 | `/admin/worker-health` | GET | SystemTab → Worker Health | ✅ |
-| `/admin/global-ops` | GET | Admin 2.0 Operations → System & Workers / Nia & Connectivity | ✅ |
+| `/admin/global-ops` | GET | Admin 2.0 Operations + regular Admin → System → Global Ops | ✅ |
+| `/admin/operations` | GET | Admin 2.0 Operations landing page | ✅ |
 | `/admin/region-map` | GET | N/A (internal — admin region-bucketing debug) | ⚪ |
 | `/reports` | GET | ReportsTab → UserReportsSection | ✅ |
 | `/reports/:id` | GET | ReportsTab → ReportDetailSheet | ✅ |
