@@ -5645,71 +5645,44 @@ interface HardshipRequest {
 // ── Global Ops ───────────────────────────────────────────────────────────────
 
 interface GlobalOpsData {
-  gps_health: {
-    helpers_online_with_gps: number;
-    helpers_online_no_gps: number;
-    total_online_helpers: number;
+  workers: {
+    all_critical_ok: boolean;
+    list: WorkerEntry[];
   };
-  regions: Array<{
-    region: string;
-    helpers_online: number;
-    open_requests: number;
-    recent_completions: number;
-  }>;
-  language_distribution: Array<{ lang: string; count: number }>;
-  feature_checks: {
-    database: "ok" | "error";
-    mapbox_token: boolean;
-    nia_ai: boolean;
-    nia_api_key?: boolean;         // legacy alias
-    internal_secret: boolean;
-    redis: boolean;
-    push_vapid: boolean;
-    stripe: boolean;
-    background_checks: boolean;
-    workers_ok: boolean;
+  websocket_hub: {
+    total_connections: number;
+    registered_users: number;
+    presence_tracked: number;
+    presence_counts: Record<string, number>;
+    online_user_ids: number[];
   };
-  // Actionable config status — which secrets are missing
-  config_status?: {
-    critical_missing: string[];
-    optional_missing: string[];
-    fully_configured: boolean;
-    nia_service_url: string;
-    notes: string;
+  redis: {
+    configured: boolean;
+    required: boolean;
+    ready: boolean;
+    status: string;
   };
-  summary: {
-    total_open_requests: number;
-    total_online_helpers: number;
-    regions_active: number;
-    last_updated: string;
+  navigation_circuit_breaker: {
+    state?: string;
+    [key: string]: unknown;
+  };
+  storage: string;
+  system_settings: Record<string, string | null>;
+  process: {
+    commit: string;
+    started_at: string;
+    node: string;
+    uptime_seconds: number;
+    memory_mb: number;
   };
 }
 
-const REGION_ICONS: Record<string, string> = {
-  "Africa": "🌍",
-  "North America": "🌎",
-  "Europe": "🏛️",
-  "Caribbean": "🌴",
-  "South America": "🌎",
-  "Middle East": "🕌",
-  "Asia": "🌏",
-  "Oceania": "🏝️",
-  "Other": "🌐",
-};
-
-const LANG_NAMES: Record<string, string> = {
-  en: "English", es: "Spanish", fr: "French", pt: "Portuguese",
-  sw: "Swahili", so: "Somali",  am: "Amharic", yo: "Yoruba",
-  ha: "Hausa",   ig: "Igbo",    tw: "Twi",     wo: "Wolof",
-  ht: "Haitian Creole", ar: "Arabic", zu: "Zulu",
-};
-
 /**
- * GlobalOpsSection — Real-time global coverage snapshot for the admin.
+ * GlobalOpsSection — Real-time platform operations snapshot for the admin.
  *
- * Shows GPS signal health, region-by-region helper / request counts, top
- * languages in use, and automated feature-flag checks. Auto-refreshes every
- * 60 seconds so the admin always has a current picture without a manual poll.
+ * The API intentionally exposes operational health only: worker state, Redis,
+ * WebSocket presence, navigation circuit state, storage, allowlisted settings,
+ * and process metadata. Auto-refreshes every 60 seconds.
  */
 function GlobalOpsSection() {
   const [data, setData] = useState<GlobalOpsData | null>(null);
@@ -5740,8 +5713,6 @@ function GlobalOpsSection() {
     const id = setInterval(load, 60_000); // auto-refresh every 60 s
     return () => clearInterval(id);
   }, [load]);
-
-  const checks = data?.feature_checks;
 
   return (
     <div className="bg-card border border-border rounded-2xl p-5 space-y-5">
@@ -5782,165 +5753,161 @@ function GlobalOpsSection() {
         </div>
       )}
 
-      {data && (
-        <>
-          {/* ── Summary numbers ─────────────────────────────────────── */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-muted/40 rounded-xl p-3 text-center">
-              <div className="text-xl font-black text-primary">{data.summary.total_online_helpers}</div>
-              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Online<br/>Helpers</div>
-            </div>
-            <div className="bg-muted/40 rounded-xl p-3 text-center">
-              <div className="text-xl font-black text-yellow-400">{data.summary.total_open_requests}</div>
-              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Open<br/>Requests</div>
-            </div>
-            <div className="bg-muted/40 rounded-xl p-3 text-center">
-              <div className="text-xl font-black text-green-400">{data.summary.regions_active}</div>
-              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Regions<br/>Active</div>
-            </div>
-          </div>
+      {data && (() => {
+        const onlineUsers = data.websocket_hub.registered_users;
+        const redisHealthy = !data.redis.required || data.redis.ready;
+        const navState = data.navigation_circuit_breaker.state ?? "unknown";
+        const presenceEntries = Object.entries(data.websocket_hub.presence_counts ?? {})
+          .sort(([, a], [, b]) => b - a);
+        const settingEntries = Object.entries(data.system_settings ?? {});
+        const formatSetting = (value: string | null) => {
+          if (value == null || value === "") return "not set";
+          if (value === "true") return "enabled";
+          if (value === "false") return "disabled";
+          return value;
+        };
+        const formatUptime = (seconds: number) => {
+          if (!Number.isFinite(seconds) || seconds < 0) return "unknown";
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+        };
 
-          {/* ── GPS Signal Health ────────────────────────────────────── */}
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">GPS Signal Health</div>
-            <div className="flex items-center gap-3">
-              {/* Visual bar */}
-              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                {data.gps_health.total_online_helpers > 0 ? (
-                  <div
-                    className="h-full bg-green-400 rounded-full transition-all"
-                    style={{
-                      width: `${Math.round((data.gps_health.helpers_online_with_gps / data.gps_health.total_online_helpers) * 100)}%`,
-                    }}
-                  />
-                ) : (
-                  <div className="h-full bg-muted-foreground/20 rounded-full w-full" />
-                )}
+        return (
+          <>
+            {/* ── Live operations summary ─────────────────────────────── */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className={`rounded-xl p-3 text-center border ${
+                data.workers.all_critical_ok
+                  ? "bg-green-400/10 border-green-400/20"
+                  : "bg-destructive/10 border-destructive/20"
+              }`}>
+                <div className={`text-xl font-black ${data.workers.all_critical_ok ? "text-green-400" : "text-destructive"}`}>
+                  {data.workers.list.filter(worker => worker.status === "running").length}/{data.workers.list.length}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Critical<br />Workers</div>
               </div>
-              <div className="text-xs font-black shrink-0">
-                {data.gps_health.total_online_helpers > 0
-                  ? `${Math.round((data.gps_health.helpers_online_with_gps / data.gps_health.total_online_helpers) * 100)}%`
-                  : "—"}
+              <div className="bg-muted/40 rounded-xl p-3 text-center">
+                <div className="text-xl font-black text-primary">{onlineUsers}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Connected<br />Users</div>
+              </div>
+              <div className={`rounded-xl p-3 text-center border ${
+                redisHealthy
+                  ? "bg-green-400/10 border-green-400/20"
+                  : "bg-yellow-400/10 border-yellow-400/20"
+              }`}>
+                <div className={`text-xl font-black ${redisHealthy ? "text-green-400" : "text-yellow-400"}`}>
+                  {data.redis.ready ? "Ready" : data.redis.required ? "Down" : "Optional"}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Redis<br />Queue</div>
+              </div>
+              <div className="bg-muted/40 rounded-xl p-3 text-center">
+                <div className="text-xl font-black text-foreground">{formatUptime(data.process.uptime_seconds)}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Process<br />Uptime</div>
               </div>
             </div>
-            <div className="flex gap-4 mt-1.5 text-[10px] text-muted-foreground">
-              <span><span className="text-green-400 font-bold">{data.gps_health.helpers_online_with_gps}</span> with GPS</span>
-              <span><span className="text-yellow-400 font-bold">{data.gps_health.helpers_online_no_gps}</span> IP-only</span>
-            </div>
-          </div>
 
-          {/* ── Regional Coverage ────────────────────────────────────── */}
-          {data.regions.length > 0 ? (
+            {/* ── Worker registry ──────────────────────────────────────── */}
             <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Coverage by Region</div>
-              <div className="divide-y divide-border">
-                {data.regions.map(r => (
-                  <div key={r.region} className="flex items-center gap-3 py-2">
-                    <span className="text-base w-6 text-center shrink-0">{REGION_ICONS[r.region] ?? "🌐"}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold">{r.region}</div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Worker Registry</div>
+              {data.workers.list.length > 0 ? (
+                <div className="divide-y divide-border">
+                  {data.workers.list.map(worker => (
+                    <div key={worker.name} className="flex items-center gap-3 py-2">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${
+                        worker.status === "running" ? "bg-green-400" :
+                        worker.status === "no_redis" ? "bg-yellow-400" : "bg-destructive"
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold truncate">{worker.label}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {worker.status.replace(/_/g, " ")}
+                          {worker.redisRequired ? " · Redis required" : ""}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 text-[10px] text-muted-foreground">
+                        <div className="text-foreground font-bold">{worker.successCount} ok</div>
+                        <div>{worker.failureCount} failed</div>
+                      </div>
                     </div>
-                    <div className="flex gap-3 text-[11px] shrink-0">
-                      <span className="text-primary font-bold" title="Online helpers">{r.helpers_online} 🧑</span>
-                      <span className="text-yellow-400 font-bold" title="Open requests">{r.open_requests} 📋</span>
-                      <span className="text-green-400 font-bold" title="Completed last 7 days">{r.recent_completions} ✓</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-4 mt-1.5 text-[9px] text-muted-foreground">
-                <span>🧑 helpers online</span>
-                <span>📋 open requests</span>
-                <span>✓ completed 7d</span>
-              </div>
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground text-center py-3 border border-dashed border-border rounded-xl">
-              No active regions — no helpers online or open requests at the moment.
-            </div>
-          )}
-
-          {/* ── Language Distribution ────────────────────────────────── */}
-          {data.language_distribution.length > 0 && (
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Languages in Use (7 days)</div>
-              <div className="flex flex-wrap gap-1.5">
-                {data.language_distribution.map(({ lang, count }) => (
-                  <span
-                    key={lang}
-                    className="text-[10px] font-semibold px-2 py-1 rounded-full bg-primary/10 text-primary border border-primary/20"
-                  >
-                    {LANG_NAMES[lang] ?? lang} · {count}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Feature Verification ─────────────────────────────────── */}
-          {checks && (
-            <div className="space-y-3">
-              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Feature Verification</div>
-
-              {/* Config health banner — shown when critical secrets are missing */}
-              {data.config_status && (
-                <div className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border text-xs ${
-                  data.config_status.fully_configured
-                    ? "bg-green-400/10 border-green-400/20 text-green-400"
-                    : data.config_status.critical_missing.length > 0
-                    ? "bg-destructive/10 border-destructive/20 text-destructive"
-                    : "bg-yellow-400/10 border-yellow-400/20 text-yellow-400"
-                }`}>
-                  {data.config_status.fully_configured
-                    ? <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                    : <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
-                  <div>
-                    <p className="font-semibold leading-snug">{data.config_status.notes}</p>
-                    {data.config_status.critical_missing.length > 0 && (
-                      <p className="text-[10px] mt-1 opacity-80">
-                        Missing: {data.config_status.critical_missing.join(" · ")}
-                      </p>
-                    )}
-                    {!data.config_status.fully_configured && (
-                      <p className="text-[10px] mt-1 opacity-70">
-                        Add secrets in Replit → Secrets tab, then restart the API Server workflow.
-                      </p>
-                    )}
-                  </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground text-center py-3 border border-dashed border-border rounded-xl">
+                  No workers registered.
                 </div>
               )}
+            </div>
 
+            {/* ── Connectivity and process details ────────────────────── */}
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Connectivity & Process</div>
               <div className="grid grid-cols-2 gap-1.5">
-                {([
-                  ["Database",          checks.database === "ok"],
-                  ["Map / Navigation",  checks.mapbox_token],
-                  ["Nia AI (Anthropic)", checks.nia_ai ?? checks.nia_api_key ?? false],
-                  ["Internal Secret",   checks.internal_secret],
-                  ["Redis / BullMQ",    checks.redis],
-                  ["Push / VAPID",      checks.push_vapid],
-                  ["Stripe Payments",   checks.stripe],
-                  ["Background Checks", checks.background_checks],
-                  ["Workers OK",        checks.workers_ok],
-                ] as [string, boolean][]).map(([label, ok]) => (
+                {[
+                  ["Redis", redisHealthy, data.redis.status],
+                  ["Navigation", navState === "closed", navState],
+                  ["WebSocket", true, `${data.websocket_hub.total_connections} connections`],
+                  ["Storage", true, data.storage],
+                ].map(([label, ok, value]) => (
                   <div
-                    key={label}
+                    key={label as string}
                     className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-[11px] font-semibold ${
                       ok
                         ? "text-green-400 bg-green-400/10 border-green-400/20"
-                        : "text-destructive bg-destructive/10 border-destructive/20"
+                        : "text-yellow-400 bg-yellow-400/10 border-yellow-400/20"
                     }`}
                   >
                     {ok
                       ? <CheckCircle className="w-3.5 h-3.5 shrink-0" />
                       : <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
-                    {label}
+                    <span className="min-w-0">
+                      <span className="block">{label as string}</span>
+                      <span className="block text-[9px] font-normal opacity-80 truncate">{value as string}</span>
+                    </span>
                   </div>
                 ))}
               </div>
+              <div className="mt-2 text-[10px] text-muted-foreground">
+                Commit <span className="font-mono text-foreground">{data.process.commit}</span>
+                {" · "}Node {data.process.node}
+                {" · "}RSS {data.process.memory_mb} MB
+              </div>
             </div>
-          )}
-        </>
-      )}
+
+            {/* ── WebSocket presence ──────────────────────────────────── */}
+            {presenceEntries.length > 0 && (
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">WebSocket Presence</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {presenceEntries.map(([status, count]) => (
+                    <span key={status} className="text-[10px] font-semibold px-2 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+                      {status.replace(/_/g, " ")} · {count}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-1.5 text-[10px] text-muted-foreground">
+                  {data.websocket_hub.presence_tracked} users tracked in presence.
+                </div>
+              </div>
+            )}
+
+            {/* ── Allowlisted system settings ─────────────────────────── */}
+            {settingEntries.length > 0 && (
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">System Settings</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {settingEntries.map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-muted/40 text-[10px]">
+                      <span className="text-muted-foreground truncate">{key.replace(/_/g, " ")}</span>
+                      <span className="font-semibold text-foreground truncate">{formatSetting(value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
