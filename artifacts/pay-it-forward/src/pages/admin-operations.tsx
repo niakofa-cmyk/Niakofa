@@ -569,7 +569,7 @@ export default function AdminOperationsDashboard() {
           <Metric label="Users" value={stringValue(stats.total_users)} sub="live admin stats" />
           <Metric
             label="Helpers online"
-            value={stringValue(record(globalOps.summary).total_online_helpers, stringValue(stats.active_helpers))}
+            value={stringValue(stats.active_helpers)}
             sub="live admin stats"
           />
           <Metric label="Total requests" value={stringValue(stats.total_requests)} sub="live coverage" />
