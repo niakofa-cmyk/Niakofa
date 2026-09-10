@@ -568,7 +568,7 @@ export default function AdminOperationsDashboard() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Metric label="Users" value={stringValue(stats.total_users)} sub="live admin stats" />
           <Metric
-            label="Helpers online"
+            label="Active helpers"
             value={stringValue(stats.active_helpers)}
             sub="live admin stats"
           />
