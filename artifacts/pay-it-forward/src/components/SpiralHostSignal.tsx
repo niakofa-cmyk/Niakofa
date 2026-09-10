@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, MapPin, RefreshCw } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
-import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";
+import { getUsableMapLocation, mapLocationUnavailableMessage } from "@/lib/spiralMapLocation";
 
 export type HostSignalPayload = {
   can_host?: boolean;
@@ -33,17 +33,11 @@ interface SpiralHostSignalProps {
   onSignalChange?: (signal: HostSignalPayload) => void;
 }
 
-const LOCATION_MAX_AGE_MS = 120_000;
-const LOCATION_MAX_ACCURACY_METERS = 150;
-
 /**
- * Shared automatic host signal. It consumes the same GPS fix that powers the
- * map/helper/requester experience, only asks for a fresh one when that stream
- * is unavailable or invalid, and always sends the result to the server.
- *
- * A green neighborhood state is shown only when the server has matched the
- * pinpoint GPS fix to reviewed neighborhood geometry. City verification alone
- * never masquerades as a neighborhood checkpoint.
+ * Shared automatic Host Signal. Spirals consume the same Map Locator fix used
+ * by the rest of the app. There is deliberately no second browser GPS source
+ * here: discovery/hosting must remain consistent with the working Map stream.
+ * The server remains authoritative for city and reviewed neighborhood geometry.
  */
 export function SpiralHostSignal({
   circleId,
@@ -74,21 +68,18 @@ export function SpiralHostSignal({
     checkingRef.current = true;
     setChecking(true);
     try {
-      const shared = locationRef.current;
-      const sharedIsUsable =
-        shared?.source === "gps" &&
-        typeof shared.capturedAt === "number" &&
-        Date.now() - shared.capturedAt <= LOCATION_MAX_AGE_MS &&
-        typeof shared.accuracy === "number" &&
-        shared.accuracy <= LOCATION_MAX_ACCURACY_METERS;
-      const location = sharedIsUsable
-        ? {
-            latitude: shared.lat,
-            longitude: shared.lng,
-            accuracy_meters: shared.accuracy!,
-            captured_at: new Date(shared.capturedAt!).toISOString(),
-          }
-        : await getFreshCircleStartLocation();
+      const location = getUsableMapLocation(locationRef.current, Date.now(), "host");
+      if (!location) {
+        const message = mapLocationUnavailableMessage();
+        publishSignal({
+          can_host: false,
+          allowed: false,
+          code: "MAP_LOCATION_UNAVAILABLE",
+          error: message,
+          host_signal: { status: "blocked", message },
+        });
+        return;
+      }
 
       const response = await fetch(`${base}/api/audio-circles/${circleId}/location-check`, {
         method: "POST",
@@ -101,15 +92,12 @@ export function SpiralHostSignal({
         can_host: response.ok && (data.can_host ?? data.allowed ?? false),
         allowed: response.ok && (data.allowed ?? data.can_host ?? false),
       });
-    } catch (error) {
-      const message =
-        error instanceof CircleStartLocationError
-          ? error.message
-          : "We couldn't verify your location. Retrying automatically.";
+    } catch {
+      const message = "The shared Map Locator signal could not be checked. Open the Map and refresh Location.";
       publishSignal({
         can_host: false,
         allowed: false,
-        code: error instanceof CircleStartLocationError ? error.code : "GPS_CHECK_FAILED",
+        code: "MAP_LOCATION_CHECK_FAILED",
         error: message,
         host_signal: { status: "blocked", message },
       });
@@ -164,14 +152,12 @@ export function SpiralHostSignal({
                 ? "Verified city host signal"
                 : "GPS host signal not verified"
         }
-        title={checking ? "Checking your GPS signal…" : message ?? "Checking your GPS signal…"}
+        title={checking ? "Checking your Map Locator signal…" : message ?? "Checking your Map Locator signal…"}
       >
         {checking ? (
           <RefreshCw className="h-4 w-4 animate-spin" />
         ) : greenNeighborhoodCheckpoint ? (
           <CheckCircle2 className="h-5 w-5" />
-        ) : ready ? (
-          <MapPin className="h-4 w-4" />
         ) : (
           <MapPin className="h-4 w-4" />
         )}
@@ -197,7 +183,7 @@ export function SpiralHostSignal({
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-black uppercase tracking-wider opacity-80">
             {checking
-              ? "Host signal · checking GPS"
+              ? "Host signal · checking Map Locator"
               : greenNeighborhoodCheckpoint
                 ? "Host signal · green GPS neighborhood checkpoint"
                 : ready
@@ -208,7 +194,7 @@ export function SpiralHostSignal({
           </p>
           <p className="mt-1 text-xs leading-relaxed">
             {checking
-              ? "Checking your shared GPS signal…"
+              ? "Checking your shared Map Locator signal…"
               : message ??
                 `Checking whether you can host the ${spiralNeighborhood ? `${spiralNeighborhood} ` : ""}Spiral in ${spiralCityDisplay}.`}
           </p>
@@ -227,15 +213,15 @@ export function SpiralHostSignal({
           disabled={checking}
           className="shrink-0 rounded-lg border border-current/30 px-2.5 py-1.5 text-[10px] font-black transition-colors hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
         >
-          {checking ? "Checking…" : "Refresh GPS"}
+          {checking ? "Checking…" : "Refresh Map Location"}
         </button>
       </div>
       <p className="mt-2 text-[10px] opacity-60">
         {greenNeighborhoodCheckpoint
-          ? `Your current pinpoint GPS is inside the reviewed ${spiralNeighborhood ?? "neighborhood"} boundary. That neighborhood Spiral is promoted first. Joining never requires GPS.`
+          ? `Your Map Locator GPS is inside the reviewed ${spiralNeighborhood ?? "neighborhood"} boundary. That neighborhood Spiral is promoted first. Joining never requires GPS.`
           : ready
-            ? "Your city is verified for hosting. The green neighborhood checkpoint appears only after reviewed boundary geometry matches your fresh pinpoint GPS. Joining never requires GPS."
-            : "A green neighborhood checkpoint requires fresh pinpoint GPS inside reviewed neighborhood geometry. Joining never requires GPS."}
+            ? "Your city is verified for hosting. The green neighborhood checkpoint appears only after reviewed boundary geometry matches your shared Map Locator fix. Joining never requires GPS."
+            : "A green neighborhood checkpoint requires the working Map Locator to provide a fresh GPS fix inside reviewed neighborhood geometry. Joining never requires GPS."}
       </p>
     </div>
   );
