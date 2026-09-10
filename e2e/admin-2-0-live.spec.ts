@@ -127,7 +127,7 @@ test.describe("Admin 2.0 live acceptance", () => {
     // Review → Verify → Promote lifecycle. This test must only run against a
     // disposable authenticated environment because promotion changes production
     // neighborhood data.
-    await page.getByRole("button", { name: "Fort Worth", exact: true }).click();
+    await page.getByRole("button", { name: /^Fort Worth$/i }).click();
 
     const cardSelector = "div.rounded-xl.border.border-border.bg-background";
     let targetCard = page.locator(cardSelector).filter({ hasText: "Fort Worth" }).first();
