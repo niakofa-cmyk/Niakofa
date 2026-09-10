@@ -17,29 +17,22 @@ type SpiralWithNeighborhood = {
   source_kind?: string | null;
 };
 
-/**
- * Public catalog rows are curated rows plus the city-wide Spiral.
- * Geometry/GPS state is deliberately ignored.
- */
 export function filterActiveNeighborhoodSpirals<T extends SpiralWithNeighborhood>(spirals: T[]): T[] {
   const curated = spirals.filter((spiral) =>
     spiral.neighborhood_id == null ||
     spiral.source_kind === "niakofa_curated" ||
     spiral.source_kind === "curated"
   );
-
-  // A configured city exposes one city-wide Spiral and at most nine curated
-  // neighborhood suggestions. Preserve the server's stable catalog order.
   const citywide = curated.filter((spiral) => spiral.neighborhood_id == null).slice(0, 1);
   const neighborhoods = curated.filter((spiral) => spiral.neighborhood_id != null).slice(0, 9);
   return [...citywide, ...neighborhoods];
 }
 
-/**
- * GPS is not part of Spiral discovery. Keep this compatibility helper as a
- * stable identity operation for callers that still pass an old local id.
- */
-export function orderSpiralsForLocation<T extends SpiralWithNeighborhood>(spirals: T[]): T[] {
+/** Compatibility helper; the local GPS-derived id is intentionally ignored. */
+export function orderSpiralsForLocation<T extends SpiralWithNeighborhood>(
+  spirals: T[],
+  _localSpiralId?: number | null,
+): T[] {
   return [...spirals];
 }
 
