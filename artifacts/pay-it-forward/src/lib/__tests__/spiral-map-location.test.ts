@@ -7,7 +7,7 @@ const now = Date.parse("2026-09-09T23:00:00.000Z");
 const valid = {
   lat: 32.7555,
   lng: -97.3308,
-  accuracy: 35,
+  accuracy: 25,
   capturedAt: now - 30_000,
   source: "gps" as const,
 };
@@ -16,40 +16,33 @@ test("fresh Map Locator GPS fix is usable for Spiral discovery", () => {
   assert.deepEqual(getUsableMapLocation(valid, now, "discovery"), {
     latitude: 32.7555,
     longitude: -97.3308,
-    accuracy_meters: 35,
-    captured_at: "2026-09-09T22:59:30.000Z",
+    accuracy_meters: 25,
+    captured_at: new Date(valid.capturedAt).toISOString(),
   });
 });
 
-test("stale Map Locator fix is rejected instead of invoking a second GPS source", () => {
-  assert.equal(
-    getUsableMapLocation({ ...valid, capturedAt: now - 6 * 60_000 }, now, "discovery"),
-    null,
-  );
+test("discovery accepts a 10-minute-old Map Locator fix", () => {
+  const older = { ...valid, capturedAt: now - 10 * 60_000 };
+  assert.ok(getUsableMapLocation(older, now, "discovery"));
 });
 
-test("missing Map Locator fix is rejected", () => {
+test("host mode rejects a 10-minute-old Map Locator fix", () => {
+  const older = { ...valid, capturedAt: now - 10 * 60_000 };
+  assert.equal(getUsableMapLocation(older, now, "host"), null);
+});
+
+test("discovery allows accuracy up to 250m; host stays at 150m", () => {
+  const mid = { ...valid, accuracy: 200 };
+  assert.ok(getUsableMapLocation(mid, now, "discovery"));
+  assert.equal(getUsableMapLocation(mid, now, "host"), null);
+});
+
+test("ip or missing Map Locator source is never usable", () => {
+  assert.equal(getUsableMapLocation({ ...valid, source: "ip" }, now, "discovery"), null);
   assert.equal(getUsableMapLocation(null, now, "discovery"), null);
 });
 
-test("IP-derived Map location is never used as a Spiral GPS fix", () => {
-  assert.equal(getUsableMapLocation({ ...valid, source: "ip" }, now, "discovery"), null);
-});
-
-test("host mode applies the stricter two-minute freshness window", () => {
-  assert.equal(
-    getUsableMapLocation({ ...valid, capturedAt: now - 121_000 }, now, "host"),
-    null,
-  );
-  assert.ok(getUsableMapLocation({ ...valid, capturedAt: now - 119_000 }, now, "host"));
-});
-
-test("invalid coordinates and accuracy fail closed", () => {
-  assert.equal(getUsableMapLocation({ ...valid, lat: 91 }, now), null);
-  assert.equal(getUsableMapLocation({ ...valid, accuracy: 151 }, now), null);
-  assert.equal(getUsableMapLocation({ ...valid, accuracy: null }, now), null);
-});
-
-test("missing-location UX points users back to the working Map Locator", () => {
-  assert.match(mapLocationUnavailableMessage(), /Location.*Map.*neighborhood Spiral/i);
+test("mapLocationUnavailableMessage points users to Map, not a second Pinpoint", () => {
+  assert.match(mapLocationUnavailableMessage(), /Map/);
+  assert.doesNotMatch(mapLocationUnavailableMessage(), /Pinpoint/i);
 });

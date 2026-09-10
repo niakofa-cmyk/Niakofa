@@ -13,14 +13,22 @@ export type SpiralMapLocation = {
   captured_at: string;
 };
 
-const DISCOVERY_MAX_AGE_MS = 5 * 60_000;
+/** Discovery only needs a recent Map fix to order the list. */
+const DISCOVERY_MAX_AGE_MS = 15 * 60_000;
+/** Hosting requires a fresher fix for geofence authorization. */
 const HOST_MAX_AGE_MS = 120_000;
-const MAX_ACCURACY_METERS = 150;
+const DISCOVERY_MAX_ACCURACY_METERS = 250;
+const HOST_MAX_ACCURACY_METERS = 150;
 
 function isFiniteCoordinate(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/**
+ * Canonical Map Locator → Spirals location adapter.
+ * There is no independent Spiral GPS/Pinpoint path. Discovery is tolerant;
+ * hosting stays strict. The server remains authoritative for neighborhood match.
+ */
 export function getUsableMapLocation(
   location: SharedMapLocation | null | undefined,
   nowMs = Date.now(),
@@ -29,7 +37,10 @@ export function getUsableMapLocation(
   if (!location || location.source !== "gps") return null;
   if (!isFiniteCoordinate(location.lat) || !isFiniteCoordinate(location.lng)) return null;
   if (location.lat < -90 || location.lat > 90 || location.lng < -180 || location.lng > 180) return null;
-  if (!isFiniteCoordinate(location.accuracy) || location.accuracy <= 0 || location.accuracy > MAX_ACCURACY_METERS) return null;
+  if (!isFiniteCoordinate(location.accuracy) || location.accuracy <= 0) return null;
+
+  const maxAccuracy = mode === "host" ? HOST_MAX_ACCURACY_METERS : DISCOVERY_MAX_ACCURACY_METERS;
+  if (location.accuracy > maxAccuracy) return null;
   if (!isFiniteCoordinate(location.capturedAt)) return null;
 
   const maxAge = mode === "host" ? HOST_MAX_AGE_MS : DISCOVERY_MAX_AGE_MS;
