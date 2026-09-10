@@ -2,52 +2,56 @@
 
 Date: 2026-09-10
 
-## Verified repository state
+## Current architecture
 
-- `main` after this checkpoint: `a11c2a3a5e4b805bd85bce659344e5258412f472`
-- Canonical user-facing feature: **Niakofa Spirals**
-- Canonical public paths: `/audio-spirals`, `/audio-spiral/:id`
+- Canonical user-facing feature: **Niakofa Spirals**.
+- Canonical public paths: `/audio-spirals`, `/audio-spiral/:id`.
 - Circle-era API/storage identifiers remain compatibility internals.
-- Spirals discovery and Host Signal use the shared Map Locator location contract; the Spiral page does not use the legacy `getFreshCircleStartLocation()` browser-GPS path.
-- Active discovery remains restricted to authoritative, geometry-verified neighborhood Spirals.
+- Spiral discovery is curated and manually selectable.
+- A configured city exposes one city-wide Spiral and up to nine curated neighborhood suggestions.
+- GPS, Map Locator, reverse geocoding, and neighborhood geometry are not Spiral discovery or hosting dependencies.
+- Joining remains location-independent.
+- Host Signal is a non-location product-state indicator; media readiness is separate.
 - Nia remains a separate service boundary and must not block core Spiral availability.
+- Historical GIS tables/migrations remain available for compatibility and reference; they no longer gate core Spiral availability.
 
-## Root cause / risk confirmed
+## Fort Worth launch catalog
 
-The current production visibility contract intentionally hides neighborhood Spirals until the corresponding `city_neighborhoods` row is both `verified` and `geometry_verified`, non-generated, and currently effective. Therefore an environment with no promoted Fort Worth boundary can correctly return no discoverable Spirals even when Spiral compatibility rows exist.
+The original nine Niakofa product neighborhoods are preserved:
 
-The first-request provisioning race is mitigated by migration `0133_neighborhood_spiral_provisioning.sql`, which backfills Spiral rows and creates a trigger for newly inserted neighborhoods. The normal GET path remains non-blocking and schedules provisioning with cooldown/error logging.
+1. Southside
+2. Near Southside
+3. Polytechnic
+4. Riverside
+5. Downtown
+6. East Fort Worth
+7. North Fort Worth
+8. Stop Six
+9. Wedgwood
 
-## Admin lifecycle correction
+## Implemented in this checkpoint
 
-`e2e/admin-2-0-live.spec.ts` was corrected so the gated lifecycle:
+- `artifacts/pay-it-forward/src/lib/spirals.ts` now includes city-wide rows and curated neighborhood rows, ignores geometry verification for discovery, and preserves stable server order instead of GPS promotion.
+- `artifacts/pay-it-forward/src/components/SpiralHostSignal.tsx` no longer reads browser location, Map Locator state, or calls the location-check endpoint.
+- `artifacts/api-server/src/lib/circleLocationPolicy.ts` no longer makes GPS/reverse-geocode verification a Spiral hosting requirement; the legacy entry point remains compatible while accepting an optional legacy location payload.
+- Spiral location-policy tests were replaced with location-independent acceptance tests.
+- Curated Spiral architecture is documented in `docs/reference/niakofa-spirals-curated-location-independent-architecture.md`.
 
-1. selects an actual Fort Worth pending row before capturing its name;
-2. accepts the browser confirmation for Verify Geometry;
-3. accepts the browser confirmation for Promote → Host Signal;
-4. verifies the promoted row in GPS Active;
-5. revokes the disposable production row through the documented `PATCH /api/admin/city-neighborhoods/:id` contract and asserts `verified=false` and `geometry_verified=false`.
+## Verification status
 
-This closes the test regression that previously stopped at Verify Geometry and could also select an already-partially-transitioned row.
+GitHub `main` contains the implementation commits for this checkpoint. The latest checked commit before this documentation update was `4194104a43294fdd60f4dc6cf4223445927a4eca`.
 
-## Reference material
+GitHub currently reports a pending Railway status for the latest commit. This session did not independently execute the Railway deployment or production smoke tests, so production health is **not claimed green**.
 
-The 2026-09-05/09-10 Spirals reference documents already stored under `docs/reference/uploads/` remain the source of truth for product language, Map Locator architecture, geometry lifecycle, and acceptance requirements. The historical `Niakofa-main (64).zip` was inspected as an older repository/reference snapshot; it predates the current coherent Spirals implementation and therefore is treated as historical evidence, not as a source to overwrite current main.
+## Remaining acceptance gate
 
-## Deployment verification status
-
-GitHub `main` now points to the checkpoint commit above. GitHub currently reports no workflow runs/statuses attached to that commit, so CI is **not claimed green** from this checkpoint alone.
-
-Railway production status could not be independently queried in this session because the Railway connector was unavailable. No Railway production mutation or deployment is claimed from this checkpoint.
-
-## Next acceptance gate
-
-Before declaring Spirals production-certified, run the authenticated deployed acceptance against the actual Railway origin:
+Run the deployed acceptance against the actual Railway origin before production certification:
 
 - `/api/readiness` ready;
-- fresh Fort Worth Map Locator fix resolves to the correct city/neighborhood;
-- `/api/audio-spirals` returns the active verified local Spiral first;
-- Host Signal location-check returns green for the correct Fort Worth boundary;
-- outside-city host is blocked while joining remains allowed;
-- two clients connect through LiveKit and exchange microphone audio;
-- admin Review → Verify → Promote → GPS Active → Revoke lifecycle passes with disposable state cleanup.
+- `/api/audio-spirals` returns city-wide plus the curated neighborhood catalog without location permission;
+- neighborhood selection opens the correct Spiral;
+- host can start without GPS/Map Locator;
+- join works without GPS/Map Locator;
+- no Spiral discovery/start request depends on geometry verification;
+- LiveKit room lifecycle remains healthy;
+- Nia remains nonblocking for core Spiral discovery and joining.
