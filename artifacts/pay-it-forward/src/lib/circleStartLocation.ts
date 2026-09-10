@@ -1,4 +1,4 @@
-import { getPublishedMapLocation } from "./spiralLocationStore";
+import { getPublishedMapLocation, publishMapLocation } from "./spiralLocationStore";
 import { getUsableMapLocation, mapLocationUnavailableMessage } from "./spiralMapLocation";
 
 export interface CircleStartLocation {
@@ -19,13 +19,16 @@ export class CircleStartLocationError extends Error {
 }
 
 /**
- * Spirals location for host start / legacy callers.
+ * Spirals location for host start / discovery fallback.
  * Prefer the shared Map Locator fix. Only fall back to browser geolocation when
  * the Map has never produced a usable GPS fix.
  * Product surface: Niakofa Spirals (Circle naming kept for API compatibility).
  */
 export function getFreshCircleStartLocation(): Promise<CircleStartLocation> {
-  const fromMap = getUsableMapLocation(getPublishedMapLocation(), Date.now(), "host");
+  const published = getPublishedMapLocation();
+  const fromMap =
+    getUsableMapLocation(published, Date.now(), "host") ??
+    getUsableMapLocation(published, Date.now(), "discovery");
   if (fromMap) {
     return Promise.resolve(fromMap);
   }
@@ -41,13 +44,23 @@ export function getFreshCircleStartLocation(): Promise<CircleStartLocation> {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (position) =>
-        resolve({
+      (position) => {
+        const next = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy_meters: position.coords.accuracy,
           captured_at: new Date(position.timestamp || Date.now()).toISOString(),
-        }),
+        };
+        // Keep the store warm so later Host Signal / start calls reuse Map pool.
+        publishMapLocation({
+          lat: next.latitude,
+          lng: next.longitude,
+          accuracy: next.accuracy_meters,
+          capturedAt: position.timestamp || Date.now(),
+          source: "gps",
+        });
+        resolve(next);
+      },
       (error) => {
         const code =
           error.code === error.PERMISSION_DENIED
