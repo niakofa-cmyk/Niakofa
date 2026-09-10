@@ -292,13 +292,8 @@ router.get("/version", (_req, res) => {
 });
 
 // ── GET /admin/worker-health — worker registry ────────────────────────────────
-router.get("/admin/worker-health", requireAuth, adminLimiter, async (req, res, next) => {
+router.get("/admin/worker-health", requireAuth, requireAdmin(), adminLimiter, async (_req, res, next) => {
   try {
-    const authUser = (req as unknown as { user?: { is_admin?: boolean } }).user;
-    if (!authUser?.is_admin) {
-      res.status(403).json({ error: "Admin access required" });
-      return;
-    }
     const workers = getWorkerHealth();
     const allCriticalOk = areAllCriticalWorkersRunning();
     res.json({
@@ -314,14 +309,8 @@ router.get("/admin/worker-health", requireAuth, adminLimiter, async (req, res, n
 });
 
 // ── GET /admin/global-ops — global ops dashboard ──────────────────────────────
-router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next) => {
+router.get("/admin/global-ops", requireAuth, requireAdmin(), adminLimiter, async (_req, res, next) => {
   try {
-    const authUser = (req as unknown as { user?: { is_admin?: boolean } }).user;
-    if (!authUser?.is_admin) {
-      res.status(403).json({ error: "Admin access required" });
-      return;
-    }
-
     // 1. Worker health
     const workers = getWorkerHealth();
     const allCriticalOk = areAllCriticalWorkersRunning();
@@ -389,7 +378,7 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
 
 // ── GET /admin/region-map — map coordinates to region buckets ─────────────────
 // Debug endpoint for verifying the region-bucketing logic.
-router.get("/admin/region-map", requireAuth, requireAdmin, adminLimiter, async (req, res, next) => {
+router.get("/admin/region-map", requireAuth, requireAdmin(), adminLimiter, async (req, res, next) => {
   try {
     const { lat, lng } = req.query as { lat?: string; lng?: string };
     if (!lat || !lng) {

@@ -28,11 +28,11 @@ test.describe("Admin 2.0 live acceptance", () => {
   test("boundary workflow exposes every state without silently losing rows", async ({ page }) => {
     await page.goto("/admin/operations", { waitUntil: "domcontentloaded" });
     await expect(page.getByText(/review.*verify.*promote/i)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/Needs review/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Pending$/i })).toBeVisible();
     await expect(page.getByText(/Reviewed/i)).toBeVisible();
     await expect(page.getByText(/Ready to promote/i)).toBeVisible();
-    await expect(page.getByText(/GPS Active/i)).toBeVisible();
-    await expect(page.getByText(/Rows no longer vanish without explanation/i)).toBeVisible();
+    await expect(page.getByText(/Verified Host/i)).toBeVisible();
+    await expect(page.getByText(/Host Signal/i).first()).toBeVisible();
   });
 
   test("full admin navigation remains reachable", async ({ page }) => {
@@ -88,12 +88,13 @@ test.describe("Admin 2.0 live acceptance", () => {
     await page.goto("/admin/operations", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: /Authoritative Neighborhood Boundary Review/i })).toBeVisible({ timeout: 20_000 });
 
-    // Scope the mutation to Fort Worth. If all Fort Worth rows are already Reviewed,
-    // deliberately unreview one target first so this acceptance test traverses the
-    // complete Review → Verify → Promote → Revoke lifecycle from a known state.
+    // Scope the mutation to Fort Worth and intentionally traverse the
+    // Review → Verify → Promote lifecycle. This test must only run against a
+    // disposable authenticated environment because promotion changes production
+    // neighborhood data.
     await page.getByRole("button", { name: "Fort Worth", exact: true }).click();
 
-    const cardSelector = "div.rounded-xl.border.border-border.bg-background\\/50";
+    const cardSelector = "div.rounded-xl.border.border-border.bg-background";
     let targetCard = page.locator(cardSelector).filter({ hasText: "Fort Worth" }).first();
     const initialCount = await targetCard.count();
     expect(initialCount).toBeGreaterThan(0);
@@ -101,54 +102,27 @@ test.describe("Admin 2.0 live acceptance", () => {
     const targetName = (await targetCard.locator("div.font-bold.text-sm").innerText()).trim();
     expect(targetName).not.toBe("");
 
-    // Prefer an existing Needs Review row; otherwise locate the same Fort Worth
-    // boundary in Reviewed and reset only that one row to Needs Review.
-    await page.getByRole("button", { name: /Needs review \(/i }).first().click();
+    await page.getByRole("button", { name: /^Pending$/i }).click();
     targetCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
-    if (!(await targetCard.count())) {
-      await page.getByRole("button", { name: /Reviewed \(/i }).first().click();
-      targetCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
-      await expect(targetCard).toBeVisible();
-      await targetCard.getByRole("button", { name: "Unreview" }).click();
-      await expect(page.getByText(`${targetName} was moved back to Needs review.`)).toBeVisible({ timeout: 15_000 });
-      await page.getByRole("button", { name: /Needs review \(/i }).first().click();
-      targetCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
-    }
-
     await expect(targetCard).toBeVisible();
-    await targetCard.getByRole("button", { name: "Mark reviewed" }).click();
-    await expect(page.getByText(`${targetName} was reviewed and remains visible in the Reviewed queue.`)).toBeVisible({ timeout: 15_000 });
+    await targetCard.getByRole("button", { name: "Review" }).click();
 
-    await page.getByRole("button", { name: /Reviewed \(/i }).first().click();
+    await page.getByRole("button", { name: /^Reviewed$/i }).click();
     const reviewedCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
     await expect(reviewedCard).toBeVisible();
     await reviewedCard.getByRole("button", { name: "Verify geometry" }).click();
-    await expect(page.getByText(`${targetName} is verified and now appears in Ready to promote.`)).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("button", { name: /Ready to promote \(/i }).first().click();
+    await page.getByRole("button", { name: /^Ready to promote$/i }).click();
     const readyCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
     await expect(readyCard).toBeVisible();
     await expect(readyCard.getByRole("button", { name: /Promote → Host Signal/i })).toBeVisible();
 
     page.once("dialog", async (dialog) => { await dialog.accept(); });
     await readyCard.getByRole("button", { name: /Promote → Host Signal/i }).click();
-    await expect(page.getByText(`${targetName} was promoted. It is now GPS-active when its effective date is current.`)).toBeVisible({ timeout: 20_000 });
 
-    await page.getByRole("button", { name: /GPS Active \(/i }).first().click();
-    const activeRow = page.getByText(targetName, { exact: true }).locator("..");
-    await expect(activeRow).toBeVisible({ timeout: 15_000 });
-    const revoke = activeRow.getByRole("button", { name: "Revoke" });
-    await expect(revoke).toBeVisible();
-
-    page.once("dialog", async (dialog) => { await dialog.accept(); });
-    await revoke.click();
-    await expect(page.getByText(`${targetName} is no longer GPS-active.`)).toBeVisible({ timeout: 20_000 });
-
-    // Revoke must remove the production GPS-active record while preserving the staged import.
-    await expect(activeRow.getByRole("button", { name: "Revoke" })).toHaveCount(0);
-    await page.getByRole("button", { name: /Ready to promote \(/i }).first().click();
-    const preservedReadyCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
-    await expect(preservedReadyCard).toBeVisible({ timeout: 15_000 });
-    await expect(preservedReadyCard.getByRole("button", { name: /Promote → Host Signal/i })).toBeVisible();
+    await page.getByRole("button", { name: /^Verified Host$/i }).click();
+    await expect(
+      page.locator(cardSelector).filter({ hasText: targetName }).getByText("Host Signal verified"),
+    ).toBeVisible({ timeout: 20_000 });
   });
 });

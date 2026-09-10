@@ -486,6 +486,11 @@ export default function AdminOperationsDashboard() {
     if (typeof value.name !== "string") return [];
     return [{ name: value.name, label: stringValue(value.label, value.name), status: stringValue(value.status, "unknown") }];
   });
+  const globalWorkers = record(globalOps.workers);
+  const redis = record(globalOps.redis);
+  const websocket = record(globalOps.websocket_hub);
+  const navigationCircuit = record(globalOps.navigation_circuit_breaker);
+  const processInfo = record(globalOps.process);
   const poolBalance = numberValue(pool.balance);
   const guaranteedMinimum = numberValue(pool.guaranteed_minimum);
   const poolStatus = stringValue(pool.pool_status, "unknown");
@@ -493,10 +498,6 @@ export default function AdminOperationsDashboard() {
     snapshot?.pool !== null &&
     snapshot?.pool !== undefined &&
     (poolStatus === "low" || poolStatus === "critical" || (guaranteedMinimum > 0 && poolBalance < guaranteedMinimum));
-  const gpsHealth = record(globalOps.gps_health);
-  const gpsTotal = numberValue(gpsHealth.total_online_helpers);
-  const gpsWithCoverage = numberValue(gpsHealth.helpers_online_with_gps);
-  const gpsPct = gpsTotal > 0 ? Math.round((gpsWithCoverage / gpsTotal) * 100) : 0;
   const reviewedAwaitingCount = (snapshot?.boundaries ?? []).filter(
     (b) => b.reviewed && !b.geometry_verified && b.geometry_valid && !isGeneratedHint(b),
   ).length;
@@ -569,7 +570,7 @@ export default function AdminOperationsDashboard() {
           <Metric
             label="Helpers online"
             value={stringValue(record(globalOps.summary).total_online_helpers, stringValue(stats.active_helpers))}
-            sub={`${gpsPct}% with fresh GPS`}
+            sub="live admin stats"
           />
           <Metric label="Open requests" value={stringValue(record(globalOps.summary).total_open_requests)} sub="live coverage" />
           <Metric label="Action items" value={totalPendingActions} danger={totalPendingActions > 0} sub="accounts · helpers · reports" />
@@ -791,13 +792,39 @@ export default function AdminOperationsDashboard() {
             <div className="text-2xl font-black tabular-nums">${poolBalance.toFixed(2)}</div>
             <div className="text-xs text-muted-foreground">Status {poolStatus}</div>
           </Card>
-          <Card title="Nia" icon={Sparkles}>
-            <div className="text-sm font-bold">{stringValue(nia.status, stringValue(nia.enabled, "—"))}</div>
-            <div className="text-xs text-muted-foreground">Service status</div>
+          <Card title="Nia & Connectivity" icon={Sparkles}>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <div className="font-bold">{booleanValue(nia.enabled) ? "Enabled" : "Disabled"}</div>
+                <div className="text-[10px] text-muted-foreground">Nia kill switch</div>
+              </div>
+              <div>
+                <div className={`font-bold ${redis.ready === true ? "text-green-400" : "text-yellow-400"}`}>
+                  {stringValue(redis.status, "unknown")}
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  Redis {redis.required === true ? "required" : "optional"}
+                </div>
+              </div>
+              <div>
+                <div className="font-bold">{stringValue(navigationCircuit.state, "unknown")}</div>
+                <div className="text-[10px] text-muted-foreground">Navigation circuit</div>
+              </div>
+              <div>
+                <div className="font-bold">{stringValue(websocket.connected_clients, "0")}</div>
+                <div className="text-[10px] text-muted-foreground">WebSocket clients</div>
+              </div>
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              Storage: {stringValue(globalOps.storage)} · API {stringValue(processInfo.commit)}
+            </div>
           </Card>
         </div>
 
-        <Card title="Workers" icon={Cpu}>
+        <Card title="System & Workers" icon={Cpu}>
+          <div className={`text-xs font-bold ${globalWorkers.all_critical_ok === true ? "text-green-400" : "text-destructive"}`}>
+            {globalWorkers.all_critical_ok === true ? "All critical workers healthy" : "Critical worker attention required"}
+          </div>
           <div className="space-y-2">
             {workerRows.length === 0 ? (
               <div className="text-xs text-muted-foreground">No worker health payload.</div>
