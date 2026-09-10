@@ -124,28 +124,26 @@ test.describe("Admin 2.0 live acceptance", () => {
     await expect(page.getByRole("heading", { name: /Authoritative Neighborhood Boundary Review/i })).toBeVisible({ timeout: 20_000 });
 
     // Scope the mutation to Fort Worth and intentionally traverse the
-    // Review → Verify → Promote lifecycle. This test must only run against a
-    // disposable authenticated environment because promotion changes production
-    // neighborhood data.
+    // Review → Verify → Promote → Revoke lifecycle. This test must only run
+    // against a disposable authenticated environment because promotion changes
+    // production neighborhood data.
     await page.getByRole("button", { name: /^Fort Worth$/i }).click();
+    await page.getByRole("button", { name: /^Pending$/i }).click();
 
     const cardSelector = "div.rounded-xl.border.border-border.bg-background";
-    let targetCard = page.locator(cardSelector).filter({ hasText: "Fort Worth" }).first();
-    const initialCount = await targetCard.count();
-    expect(initialCount).toBeGreaterThan(0);
-
+    const targetCard = page.locator(cardSelector).filter({ hasText: "Fort Worth" }).first();
+    await expect(targetCard).toBeVisible();
     const targetName = (await targetCard.locator("div.font-bold.text-sm").innerText()).trim();
     expect(targetName).not.toBe("");
 
-    await page.getByRole("button", { name: /^Pending$/i }).click();
-    targetCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
-    await expect(targetCard).toBeVisible();
-    await targetCard.getByRole("button", { name: "Review" }).click();
+    await targetCard.getByRole("button", { name: "Mark reviewed" }).click();
 
     await page.getByRole("button", { name: /^Reviewed$/i }).click();
     const reviewedCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
     await expect(reviewedCard).toBeVisible();
-    await reviewedCard.getByRole("button", { name: "Verify geometry" }).click();
+
+    page.once("dialog", async (dialog) => { await dialog.accept(); });
+    await reviewedCard.getByRole("button", { name: "Verify Geometry" }).click();
 
     await page.getByRole("button", { name: /^Ready to promote$/i }).click();
     const readyCard = page.locator(cardSelector).filter({ hasText: targetName }).filter({ hasText: "Fort Worth" }).first();
@@ -155,9 +153,31 @@ test.describe("Admin 2.0 live acceptance", () => {
     page.once("dialog", async (dialog) => { await dialog.accept(); });
     await readyCard.getByRole("button", { name: /Promote → Host Signal/i }).click();
 
-    await page.getByRole("button", { name: /^Verified Host$/i }).click();
-    await expect(
-      page.locator(cardSelector).filter({ hasText: targetName }).getByText("Host Signal verified"),
-    ).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /^GPS Active$/i }).click();
+    await expect(page.getByText(new RegExp(targetName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).first()).toBeVisible({ timeout: 20_000 });
+
+    // Revoke through the documented admin API contract, then verify the
+    // production row is no longer GPS-active. This restores the disposable
+    // environment without relying on an absent UI-only revoke control.
+    const revokeResult = await page.evaluate(async (name) => {
+      const token = window.localStorage.getItem("niakofa_token");
+      const headers = { Authorization: `Bearer ${token ?? ""}` };
+      const response = await fetch("/api/admin/city-neighborhoods", { headers });
+      if (!response.ok) throw new Error(`Could not read production neighborhoods: ${response.status}`);
+      const data = await response.json();
+      const rows = Array.isArray(data) ? data : (Array.isArray(data.rows) ? data.rows : []);
+      const target = rows.find((row) => row.city_key === "fort_worth" && row.name === name);
+      if (!target) throw new Error(`Promoted neighborhood not found for revoke: ${name}`);
+      const revokeResponse = await fetch(`/api/admin/city-neighborhoods/${target.id}`, {
+        method: "PATCH",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ verified: false, geometry_verified: false }),
+      });
+      const body = await revokeResponse.json().catch(() => ({}));
+      if (!revokeResponse.ok) throw new Error(body.error ?? `Revoke failed: ${revokeResponse.status}`);
+      return body;
+    }, targetName);
+    expect(revokeResult.verified).toBe(false);
+    expect(revokeResult.geometry_verified).toBe(false);
   });
 });
