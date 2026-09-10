@@ -28,17 +28,15 @@ interface SpiralHostSignalProps {
 
 /**
  * Host Signal is now a simple product-state indicator.
- *
  * GPS, Map Locator, reverse geocoding, and neighborhood geofencing are not
- * dependencies of Spiral hosting. The selected Spiral itself is the host
- * destination; media readiness is checked by the host modal separately.
+ * dependencies of Spiral hosting. The selected Spiral is the host destination;
+ * microphone/camera readiness is checked by the host modal separately.
  */
 export function SpiralHostSignal({
   spiralCityDisplay,
   spiralNeighborhood,
   externalSignal,
   compact = false,
-  onSignalChange,
 }: SpiralHostSignalProps) {
   const signal: HostSignalPayload = externalSignal ?? {
     can_host: true,
@@ -49,10 +47,6 @@ export function SpiralHostSignal({
       message: `You can host the ${spiralNeighborhood ? `${spiralNeighborhood} ` : ""}Spiral in ${spiralCityDisplay}.`,
     },
   };
-
-  // Keep existing callback contracts alive for callers while never initiating
-  // a location lookup or publishing a location signal.
-  if (externalSignal) onSignalChange?.(signal);
 
   const ready = signal.can_host === true || signal.allowed === true || signal.host_signal?.status === "ready";
   const message = signal.host_signal?.message ?? signal.error ?? `Ready to host in ${spiralCityDisplay}.`;
