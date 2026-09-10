@@ -3,6 +3,7 @@ import { CheckCircle2, MapPin, RefreshCw } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { getUsableMapLocation, mapLocationUnavailableMessage } from "@/lib/spiralMapLocation";
+import { publishMapLocation } from "@/lib/spiralLocationStore";
 
 export type HostSignalPayload = {
   can_host?: boolean;
@@ -34,10 +35,9 @@ interface SpiralHostSignalProps {
 }
 
 /**
- * Shared automatic Host Signal. Spirals consume the same Map Locator fix used
- * by the rest of the app. There is deliberately no second browser GPS source
- * here: discovery/hosting must remain consistent with the working Map stream.
- * The server remains authoritative for city and reviewed neighborhood geometry.
+ * Shared automatic Host Signal for Niakofa Spirals.
+ * Consumes the same Map Locator fix used by the rest of the app.
+ * Publishes that fix so host start can reuse it without a second Pinpoint path.
  */
 export function SpiralHostSignal({
   circleId,
@@ -56,6 +56,7 @@ export function SpiralHostSignal({
 
   useEffect(() => {
     locationRef.current = myLocation;
+    publishMapLocation(myLocation);
   }, [myLocation]);
 
   const publishSignal = useCallback((next: HostSignalPayload) => {
@@ -152,7 +153,7 @@ export function SpiralHostSignal({
                 ? "Verified city host signal"
                 : "GPS host signal not verified"
         }
-        title={checking ? "Checking your Map Locator signal…" : message ?? "Checking your Map Locator signal…"}
+        title={checking ? "Checking your Map Locator signal\u2026" : message ?? "Checking your Map Locator signal\u2026"}
       >
         {checking ? (
           <RefreshCw className="h-4 w-4 animate-spin" />
@@ -183,18 +184,18 @@ export function SpiralHostSignal({
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-black uppercase tracking-wider opacity-80">
             {checking
-              ? "Host signal · checking Map Locator"
+              ? "Host signal \u00b7 checking Map Locator"
               : greenNeighborhoodCheckpoint
-                ? "Host signal · green GPS neighborhood checkpoint"
+                ? "Host signal \u00b7 green GPS neighborhood checkpoint"
                 : ready
-                  ? "Host signal · city verified"
+                  ? "Host signal \u00b7 city verified"
                   : displayedSignal
-                    ? "Host signal · blocked"
+                    ? "Host signal \u00b7 blocked"
                     : "Host eligibility"}
           </p>
           <p className="mt-1 text-xs leading-relaxed">
             {checking
-              ? "Checking your shared Map Locator signal…"
+              ? "Checking your shared Map Locator signal\u2026"
               : message ??
                 `Checking whether you can host the ${spiralNeighborhood ? `${spiralNeighborhood} ` : ""}Spiral in ${spiralCityDisplay}.`}
           </p>
@@ -202,7 +203,7 @@ export function SpiralHostSignal({
             <p className="mt-1 text-[11px] opacity-75">
               GPS city: {displayedSignal.resolved_city_display}
               {displayedSignal.resolved_neighborhood_hint
-                ? ` · near ${displayedSignal.resolved_neighborhood_hint}`
+                ? ` \u00b7 near ${displayedSignal.resolved_neighborhood_hint}`
                 : ""}
             </p>
           )}
@@ -213,7 +214,7 @@ export function SpiralHostSignal({
           disabled={checking}
           className="shrink-0 rounded-lg border border-current/30 px-2.5 py-1.5 text-[10px] font-black transition-colors hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
         >
-          {checking ? "Checking…" : "Refresh Map Location"}
+          {checking ? "Checking\u2026" : "Refresh Map Location"}
         </button>
       </div>
       <p className="mt-2 text-[10px] opacity-60">
