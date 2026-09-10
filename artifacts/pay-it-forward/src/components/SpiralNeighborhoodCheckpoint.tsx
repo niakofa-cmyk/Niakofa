@@ -18,6 +18,7 @@ type SpiralNeighborhoodCheckpointProps = {
   checking: boolean;
   onRefresh: () => void;
   onOpenLocalSpiral: () => void;
+  onOpenMap?: () => void;
 };
 
 export function SpiralNeighborhoodCheckpoint({
@@ -25,6 +26,7 @@ export function SpiralNeighborhoodCheckpoint({
   checking,
   onRefresh,
   onOpenLocalSpiral,
+  onOpenMap,
 }: SpiralNeighborhoodCheckpointProps) {
   const geometryVerified = context?.neighborhood_geometry_status === "verified";
   const insideReviewedBoundary = context?.neighborhood_geofence_status === "inside" && geometryVerified;
@@ -38,37 +40,46 @@ export function SpiralNeighborhoodCheckpoint({
     context?.neighborhood_geometry_status === "pending_review" ||
     context?.neighborhood_geofence_status === "no_geometry";
   const outsideNeighborhood = context?.neighborhood_geofence_status === "outside";
-  const invalidGeometry = context?.neighborhood_geofence_status === "invalid_geometry" || context?.neighborhood_geometry_status === "invalid";
+  const invalidGeometry =
+    context?.neighborhood_geofence_status === "invalid_geometry" ||
+    context?.neighborhood_geometry_status === "invalid";
+  const missingMapLocation = !checking && context == null;
 
   const tone = verified
     ? "verified"
-    : awaitingReview
-      ? "pending"
-      : outsideNeighborhood || invalidGeometry
-        ? "attention"
-        : "neutral";
+    : missingMapLocation
+      ? "neutral"
+      : awaitingReview
+        ? "pending"
+        : outsideNeighborhood || invalidGeometry
+          ? "attention"
+          : "neutral";
 
   const heading = checking
-    ? "Verifying your pinpoint area…"
+    ? "Checking Map Locator…"
     : verified
-      ? `${context.neighborhood_emoji ?? "📍"} You are in ${context.neighborhood_name}`
-      : outsideNeighborhood
-        ? `GPS verified in ${context?.city_display ?? "your city"}`
-        : context
-          ? `GPS verified in ${context.city_display}`
-          : "GPS isn't connected yet";
+      ? `${context.neighborhood_emoji ?? "\ud83d\udccd"} Your Neighborhood \u00b7 ${context.neighborhood_name}`
+      : missingMapLocation
+        ? "Location needed"
+        : outsideNeighborhood
+          ? `Map GPS verified in ${context?.city_display ?? "your city"}`
+          : context
+            ? `Map GPS verified in ${context.city_display}`
+            : "Location needed";
 
   const description = checking
-    ? "Checking your fresh GPS fix against reviewed neighborhood geometry."
+    ? "Matching your shared Map Locator fix against reviewed neighborhood geometry."
     : verified
-      ? "Your neighborhood Spiral is first in the list. GPS is used for local ordering and hosting eligibility; your coordinates are not exposed."
-      : outsideNeighborhood
-        ? "You are in the verified city, but your current pinpoint is outside the matched neighborhood boundary. The neighborhood hint remains informational."
-        : invalidGeometry
-          ? "The available neighborhood geometry cannot be used for GPS verification right now. Niakofa will not guess your neighborhood."
-          : awaitingReview
-            ? "Your city is known, but Niakofa will not guess a neighborhood until reviewed boundary data matches your pinpoint."
-            : "Allow location access, then refresh GPS. Niakofa uses a fresh, accurate fix to verify your local Spiral without exposing your coordinates.";
+      ? "Your Neighborhood Spiral is first in the list. Host Signal Green is active for this boundary. Joining never requires location."
+      : missingMapLocation
+        ? "Turn on Location in the Map so Niakofa can identify your neighborhood Spiral. Spirals use the same Map Locator the rest of the app already uses."
+        : outsideNeighborhood
+          ? "You are in the verified city, but outside the matched neighborhood boundary. The neighborhood hint remains informational."
+          : invalidGeometry
+            ? "The available neighborhood geometry cannot be used for GPS verification right now. Niakofa will not guess your neighborhood."
+            : awaitingReview
+              ? "Your city is known from Map Locator, but Host Signal Green needs a promoted, geometry-verified neighborhood boundary."
+              : "Open the Map and enable Location. Spirals reuse that fix for neighborhood ordering and hosting eligibility.";
 
   return (
     <section
@@ -119,16 +130,18 @@ export function SpiralNeighborhoodCheckpoint({
             }`}
           >
             {checking
-              ? "Host signal · checking GPS"
+              ? "Host signal \u00b7 checking Map Locator"
               : verified
-                ? "Host signal · green GPS neighborhood checkpoint"
-                : awaitingReview
-                  ? "GPS signal · neighborhood checkpoint pending"
-                  : outsideNeighborhood
-                    ? "GPS signal · outside this neighborhood"
-                    : invalidGeometry
-                      ? "GPS signal · neighborhood verification unavailable"
-                      : "GPS neighborhood checkpoint"}
+                ? "Host signal \u00b7 green GPS neighborhood checkpoint"
+                : missingMapLocation
+                  ? "Map Locator \u00b7 location needed"
+                  : awaitingReview
+                    ? "Map Locator \u00b7 neighborhood checkpoint pending"
+                    : outsideNeighborhood
+                      ? "Map Locator \u00b7 outside this neighborhood"
+                      : invalidGeometry
+                        ? "Map Locator \u00b7 neighborhood verification unavailable"
+                        : "Map Locator neighborhood checkpoint"}
           </p>
           <h2 className="mt-1 text-sm font-black">{heading}</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
@@ -137,10 +150,10 @@ export function SpiralNeighborhoodCheckpoint({
           type="button"
           onClick={onRefresh}
           disabled={checking}
-          aria-label={checking ? "Checking your GPS" : "Refresh GPS neighborhood verification"}
+          aria-label={checking ? "Checking Map Locator" : "Refresh Map Locator neighborhood verification"}
           className="shrink-0 rounded-lg border border-current/25 px-2.5 py-1.5 text-[10px] font-black transition-colors hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
         >
-          {checking ? "Checking…" : "Refresh GPS"}
+          {checking ? "Checking\u2026" : "Refresh"}
         </button>
       </div>
       {verified && (
@@ -151,6 +164,16 @@ export function SpiralNeighborhoodCheckpoint({
         >
           <MapPin className="h-3 w-3" aria-hidden="true" />
           Open {context.neighborhood_name} Spiral
+        </button>
+      )}
+      {missingMapLocation && onOpenMap && (
+        <button
+          type="button"
+          onClick={onOpenMap}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-[10px] font-black text-foreground transition-colors hover:bg-muted"
+        >
+          <MapPin className="h-3 w-3" aria-hidden="true" />
+          Go to Map
         </button>
       )}
     </section>
