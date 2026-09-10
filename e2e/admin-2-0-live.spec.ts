@@ -27,11 +27,11 @@ test.describe("Admin 2.0 live acceptance", () => {
 
   test("boundary workflow exposes every state without silently losing rows", async ({ page }) => {
     await page.goto("/admin/operations", { waitUntil: "domcontentloaded" });
-    await expect(page.getByText(/review.*verify.*promote/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/review\s*→\s*verify\s*→\s*promote/i)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /^Pending$/i })).toBeVisible();
-    await expect(page.getByText(/Reviewed/i)).toBeVisible();
-    await expect(page.getByText(/Ready to promote/i)).toBeVisible();
-    await expect(page.getByText(/Verified Host/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reviewed", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ready to promote", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Verified Host", exact: true })).toBeVisible();
     await expect(page.getByText(/Host Signal/i).first()).toBeVisible();
   });
 
@@ -79,9 +79,11 @@ test.describe("Admin 2.0 live acceptance", () => {
     await expect(page.getByRole("heading", { name: /Authoritative Neighborhood Boundary Review/i })).toBeVisible({ timeout: 20_000 });
 
     const report = await page.evaluate(async () => {
+      const token = window.localStorage.getItem("niakofa_token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const [importsResponse, neighborhoodsResponse] = await Promise.all([
-        fetch("/api/admin/neighborhood-boundary-imports"),
-        fetch("/api/admin/city-neighborhoods"),
+        fetch("/api/admin/neighborhood-boundary-imports", { headers }),
+        fetch("/api/admin/city-neighborhoods", { headers }),
       ]);
       if (!importsResponse.ok || !neighborhoodsResponse.ok) {
         throw new Error(`GIS admin APIs failed: imports=${importsResponse.status}, neighborhoods=${neighborhoodsResponse.status}`);
