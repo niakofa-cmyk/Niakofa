@@ -1,6 +1,9 @@
 /**
- * Public Spirals routes. The legacy Circle routes remain supported for existing
- * links, while all newly created links use these canonical paths.
+ * Canonical public Spiral routes and client-side discovery policy.
+ *
+ * Spirals are curated community spaces. Discovery, joining, and hosting do not
+ * require GPS, Map Locator, reverse geocoding, or neighborhood geometry.
+ * Legacy Circle aliases remain supported for existing links.
  */
 export const SPIRALS_PATHS = {
   discovery: "/audio-spirals",
@@ -10,64 +13,42 @@ export const SPIRALS_PATHS = {
 type SpiralWithNeighborhood = {
   id: number;
   neighborhood_id?: number | null;
-  neighborhood_geometry_status?: "unconfigured" | "pending_review" | "scheduled" | "verified" | "invalid";
+  neighborhood_geometry_status?: string;
+  source_kind?: string | null;
 };
 
 /**
- * Discovery is intentionally narrower than the compatibility Circle store:
- * only neighborhood-backed rows with verified production geometry are public.
- * The API is authoritative; this client-side guard prevents stale/corrupt
- * cached payloads from briefly rendering inactive rows.
+ * Public catalog rows are curated rows plus the city-wide Spiral.
+ * Geometry/GPS state is deliberately ignored.
  */
 export function filterActiveNeighborhoodSpirals<T extends SpiralWithNeighborhood>(spirals: T[]): T[] {
-  return spirals.filter(
-    (spiral) =>
-      spiral.neighborhood_id != null &&
-      spiral.neighborhood_geometry_status === "verified",
+  const curated = spirals.filter((spiral) =>
+    spiral.neighborhood_id == null ||
+    spiral.source_kind === "niakofa_curated" ||
+    spiral.source_kind === "curated"
   );
+
+  // A configured city exposes one city-wide Spiral and at most nine curated
+  // neighborhood suggestions. Preserve the server's stable catalog order.
+  const citywide = curated.filter((spiral) => spiral.neighborhood_id == null).slice(0, 1);
+  const neighborhoods = curated.filter((spiral) => spiral.neighborhood_id != null).slice(0, 9);
+  return [...citywide, ...neighborhoods];
 }
 
 /**
- * Order Spirals using only server-verified location context:
- * 1. the verified current-neighborhood Spiral, when one is known;
- * 2. other neighborhood Spirals in their existing order;
- * 3. city-wide Spirals (null neighborhood_id) last.
- *
- * JavaScript's stable Array#sort is relied on so unrelated Spirals retain their
- * API order. No client GPS or heuristic neighborhood matching is performed here.
+ * GPS is not part of Spiral discovery. Keep this compatibility helper as a
+ * stable identity operation for callers that still pass an old local id.
  */
-export function orderSpiralsForLocation<T extends SpiralWithNeighborhood>(
-  spirals: T[],
-  localSpiralId: number | null | undefined,
-): T[] {
-  return spirals
-    .map((spiral, index) => ({ spiral, index }))
-    .sort((a, b) => {
-      const aLocal = localSpiralId != null && a.spiral.id === localSpiralId;
-      const bLocal = localSpiralId != null && b.spiral.id === localSpiralId;
-      if (aLocal !== bLocal) return aLocal ? -1 : 1;
-
-      const aCitywide = a.spiral.neighborhood_id == null;
-      const bCitywide = b.spiral.neighborhood_id == null;
-      if (aCitywide !== bCitywide) return aCitywide ? 1 : -1;
-
-      return a.index - b.index;
-    })
-    .map(({ spiral }) => spiral);
+export function orderSpiralsForLocation<T extends SpiralWithNeighborhood>(spirals: T[]): T[] {
+  return [...spirals];
 }
 
-/**
- * Backwards-compatible helper retained for existing callers.
- */
+/** Backwards-compatible helper retained for existing callers. */
 export function promoteLocalSpiral<T extends SpiralWithNeighborhood>(
   spirals: T[] | undefined,
-  localSpiralId: number | null | undefined,
+  _localSpiralId?: number | null,
 ): T[] | undefined {
-  if (!spirals) return spirals;
-  if (localSpiralId == null || !spirals.some((spiral) => spiral.id === localSpiralId)) {
-    return spirals;
-  }
-  return orderSpiralsForLocation(spirals, localSpiralId);
+  return spirals ? [...spirals] : spirals;
 }
 
 export const CIRCLE_ROUTE_ALIASES = {
