@@ -52,34 +52,34 @@ export function SpiralNeighborhoodCheckpoint({
         : "neutral";
 
   const heading = checking
-    ? "Verifying your pinpoint area…"
+    ? "Verifying your Map Locator area…"
     : verified
       ? `${context.neighborhood_emoji ?? "📍"} You are in ${context.neighborhood_name}`
         : mapLocationUnavailable
           ? "Map Locator isn't connected yet"
       : outsideNeighborhood
-        ? `GPS verified in ${context?.city_display ?? "your city"}`
+        ? `Map Locator matched ${context?.city_display ?? "your city"}`
         : context
-          ? `GPS verified in ${context.city_display}`
-          : "GPS isn't connected yet";
+          ? `Map Locator matched ${context.city_display}`
+          : "Map Locator isn't connected yet";
 
   const description = checking
-    ? "Checking your fresh GPS fix against reviewed neighborhood geometry."
+    ? "Checking your fresh Map Locator fix against reviewed neighborhood geometry."
     : verified
-      ? "Your neighborhood Spiral is first in the list. GPS is used for local ordering and hosting eligibility; your coordinates are not exposed."
+      ? "Your neighborhood Spiral is first in the list. Map Locator is used for local ordering and hosting eligibility; your coordinates are not exposed."
         : mapLocationUnavailable
           ? "Turn on Location in the Map so we can match your neighborhood. Joining Spirals never requires location."
       : outsideNeighborhood
-        ? "You are in the verified city, but your current pinpoint is outside the matched neighborhood boundary. The neighborhood hint remains informational."
+        ? "You are in the verified city, but your Map Locator position is outside the matched neighborhood boundary. The neighborhood hint remains informational."
         : invalidGeometry
-          ? "The available neighborhood geometry cannot be used for GPS verification right now. Niakofa will not guess your neighborhood."
+          ? "The available neighborhood geometry cannot be used for Map Locator verification right now. Niakofa will not guess your neighborhood."
           : awaitingReview
             ? "No active Spiral for this location yet. An admin must Promote → Host Signal for this neighborhood."
-            : "Allow location access, then refresh GPS. Niakofa uses a fresh, accurate fix to verify your local Spiral without exposing your coordinates.";
+            : "Allow location access, then refresh Map Locator. Niakofa uses a fresh, accurate fix to verify your local Spiral without exposing your coordinates.";
 
   return (
     <section
-      data-testid="spiral-gps-neighborhood-checkpoint"
+      data-testid="spiral-map-neighborhood-checkpoint"
       data-checkpoint-state={tone}
       aria-live="polite"
       className={`rounded-2xl border p-4 ${
@@ -126,18 +126,18 @@ export function SpiralNeighborhoodCheckpoint({
             }`}
           >
             {checking
-              ? "Host signal · checking GPS"
+              ? "Host signal · checking Map Locator"
               : verified
-                ? "Host signal · green GPS neighborhood checkpoint"
+                ? "Host signal · green Map Locator neighborhood checkpoint"
                 : awaitingReview
-                  ? "GPS signal · neighborhood checkpoint pending"
+                  ? "Map Locator · neighborhood checkpoint pending"
                   : outsideNeighborhood
-                    ? "GPS signal · outside this neighborhood"
+                    ? "Map Locator · outside this neighborhood"
                     : invalidGeometry
-                      ? "GPS signal · neighborhood verification unavailable"
+                      ? "Map Locator · neighborhood verification unavailable"
                 : mapLocationUnavailable
                   ? "Map Locator · neighborhood matching paused"
-                  : "GPS neighborhood checkpoint"}
+                  : "Map Locator neighborhood checkpoint"}
           </p>
           <h2 className="mt-1 text-sm font-black">{heading}</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
@@ -146,10 +146,10 @@ export function SpiralNeighborhoodCheckpoint({
           type="button"
           onClick={onRefresh}
           disabled={checking}
-          aria-label={checking ? "Checking your GPS" : "Refresh GPS neighborhood verification"}
+          aria-label={checking ? "Checking your Map Locator" : "Refresh Map Locator neighborhood verification"}
           className="shrink-0 rounded-lg border border-current/25 px-2.5 py-1.5 text-[10px] font-black transition-colors hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
         >
-          {checking ? "Checking…" : "Refresh GPS"}
+          {checking ? "Checking…" : "Refresh Map Locator"}
         </button>
       </div>
       {mapLocationUnavailable && onOpenMap && (

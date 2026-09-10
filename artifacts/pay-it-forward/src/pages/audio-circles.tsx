@@ -341,7 +341,7 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
 
         {/* Start button */}
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground">
-          Host eligibility is checked automatically from your shared Map GPS signal. Joining never requires your location.
+          Host eligibility is checked automatically from your shared Map Locator signal. Joining never requires your location.
         </div>
         <label className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5 cursor-pointer">
           <input
@@ -1033,7 +1033,7 @@ export default function AudioCirclesScreen() {
                           externalSignal={hostSignals[circle.id]}
                           compact
                         />
-                        <span className="text-[8px] font-black uppercase tracking-wider">Your GPS</span>
+                        <span className="text-[8px] font-black uppercase tracking-wider">Your Map Locator</span>
                       </div>
                     )}
                   </div>

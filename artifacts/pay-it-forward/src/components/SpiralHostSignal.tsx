@@ -130,8 +130,8 @@ export function SpiralHostSignal({
     displayedSignal?.error ||
     (ready
       ? neighborhoodBoundaryVerified
-        ? `GPS verified inside the ${spiralNeighborhood ?? "local"} neighborhood boundary.`
-        : "GPS verified for city hosting."
+        ? `Map Locator verified inside the ${spiralNeighborhood ?? "local"} neighborhood boundary.`
+        : "Map Locator verified for city hosting."
       : null);
 
   if (compact) {
@@ -147,12 +147,12 @@ export function SpiralHostSignal({
         role="status"
         aria-label={
           checking
-            ? "Checking GPS host eligibility"
+            ? "Checking Map Locator host eligibility"
             : greenNeighborhoodCheckpoint
-              ? "Green GPS verified neighborhood host signal"
+              ? "Green Map Locator verified neighborhood host signal"
               : ready
                 ? "Verified city host signal"
-                : "GPS host signal not verified"
+                : "Map Locator host signal not verified"
         }
         title={checking ? "Checking your Map Locator signal…" : message ?? "Checking your Map Locator signal…"}
       >
@@ -187,7 +187,7 @@ export function SpiralHostSignal({
             {checking
               ? "Host signal · checking Map Locator"
               : greenNeighborhoodCheckpoint
-                ? "Host signal · green GPS neighborhood checkpoint"
+                ? "Host signal · green Map Locator neighborhood checkpoint"
                 : ready
                   ? "Host signal · city verified"
                   : displayedSignal
