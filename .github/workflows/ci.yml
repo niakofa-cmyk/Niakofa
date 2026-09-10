@@ -60,6 +60,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Typecheck (all packages)
         run: pnpm run typecheck
+      - name: Run frontend tests
+        run: pnpm --filter @workspace/pay-it-forward run test
       - name: Run backend tests
         run: pnpm --filter @workspace/api-server run test
         env:
