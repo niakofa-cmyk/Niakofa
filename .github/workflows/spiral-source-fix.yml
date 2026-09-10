@@ -1,17 +1,20 @@
 name: Spiral Source Fix
 
 on:
-  push:
-    branches: [fix/spirals-map-locator-canonical]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
       - name: Replace legacy location calls in Spiral page
         shell: python
         run: |
@@ -63,4 +66,4 @@ jobs:
           git add artifacts/pay-it-forward/src/pages/audio-circles.tsx
           git diff --cached --quiet && exit 0
           git commit -m "fix(spirals): use Map Locator for discovery and host start"
-          git push origin HEAD:fix/spirals-map-locator-canonical
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
