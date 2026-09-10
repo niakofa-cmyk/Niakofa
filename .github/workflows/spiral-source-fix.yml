@@ -19,11 +19,7 @@ jobs:
           import re
           p = Path("artifacts/pay-it-forward/src/pages/audio-circles.tsx")
           s = p.read_text()
-          s2 = s.replace(
-              'import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";',
-              'import { CircleStartLocationError } from "@/lib/circleStartLocation";\nimport { getUsableMapLocation, mapLocationUnavailableMessage } from "@/lib/spiralMapLocation";',
-              1,
-          )
+          s2 = s.replace('import { CircleStartLocationError, getFreshCircleStartLocation } from "@/lib/circleStartLocation";', 'import { CircleStartLocationError } from "@/lib/circleStartLocation";\nimport { getUsableMapLocation, mapLocationUnavailableMessage } from "@/lib/spiralMapLocation";', 1)
           if s2 == s:
               raise SystemExit("legacy import not found")
           pattern = re.compile(r'''        const shared = locationRef\.current;\n        const usable =\n          shared\?\.source === "gps" &&\n          typeof shared\.capturedAt === "number" &&\n          Date\.now\(\) - shared\.capturedAt <= 120_000 &&\n          typeof shared\.accuracy === "number" &&\n          shared\.accuracy <= 150;\n        const location = usable\n          \? \{\n              latitude: shared\.lat,\n              longitude: shared\.lng,\n              accuracy_meters: shared\.accuracy!,\n              captured_at: new Date\(shared\.capturedAt!\)\.toISOString\(\),\n            \}\n          : await getFreshCircleStartLocation\(\);''')
@@ -40,9 +36,7 @@ jobs:
           s2, n = pattern.subn(replacement, s2, count=1)
           if n != 1:
               raise SystemExit("legacy discovery block not found")
-          s2, n = re.subn(
-              r'      const location = await getFreshCircleStartLocation\(\);',
-              '''      const shared = getUsableMapLocation(myLocation, Date.now(), "host");
+          s2, n = re.subn(r'      const location = await getFreshCircleStartLocation\(\);', '''      const shared = getUsableMapLocation(myLocation, Date.now(), "host");
       if (!shared) {
         throw new CircleStartLocationError("MAP_LOCATION_UNAVAILABLE", mapLocationUnavailableMessage());
       }
@@ -51,10 +45,7 @@ jobs:
         longitude: shared.longitude,
         accuracy_meters: shared.accuracy_meters,
         captured_at: shared.captured_at,
-      };''',
-              s2,
-              count=1,
-          )
+      };''', s2, count=1)
           if n != 1:
               raise SystemExit("legacy host call not found")
           if "getFreshCircleStartLocation" in s2:
