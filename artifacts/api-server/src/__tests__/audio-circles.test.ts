@@ -118,7 +118,6 @@ let signTokenById: (id: number) => string;
 
 beforeAll(async () => {
   ({ db } = await import("@workspace/db"));
-  console.error("audio-circles test db.select", typeof (db as { select?: unknown }).select, (db as { select?: { mockReset?: unknown } }).select);
   ({ signTokenById } = await import("../middlewares/auth.js"));
   const { parseAuth } = await import("../middlewares/auth.js");
   const { default: audioCirclesRouter } = await import("../routes/audio-circles.js");
@@ -159,6 +158,13 @@ beforeEach(() => {
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.execute as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  // `then` wasn't being reset here, so a queued mockImplementationOnce left
+  // over from a test that never reached an awaited select (e.g. an early
+  // 401/403/404 return) would silently leak into the next test's first
+  // `.then()` call. Reset it every test like the other query-chain mocks.
+  (db.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: unknown) =>
+    Promise.resolve([]).then(resolve, reject)
+  );
 });
 
 describe("Audio Circles — auth gates", () => {
@@ -978,5 +984,61 @@ describe("Audio Circles — room state resync (GET session)", () => {
       .get("/api/audio-circle-sessions/1")
       .set("Authorization", bearerToken(42));
     expect(res.status).toBe(404);
+  });
+
+  // Regression test: /followed must select neighborhood_slug so the curated
+  // discovery slug fallback can match. Without it, followed Fort Worth
+  // neighborhood Spirals whose source_kind isn't "curated"/"niakofa_curated"
+  // (e.g. rows imported by the GIS pipeline) were silently dropped.
+  it("keeps a followed curated Fort Worth neighborhood whose source_kind isn't tagged curated", async () => {
+    (db.then as jest.Mock).mockImplementationOnce((resolve: unknown, reject: unknown) =>
+      Promise.resolve([
+        {
+          id: 1,
+          city_key: "fort_worth",
+          city_display: "Fort Worth",
+          neighborhood_id: 10,
+          name: "Wedgwood Spiral",
+          neighborhood_name: "Wedgwood",
+          neighborhood_emoji: "🏘️",
+          neighborhood_slug: "wedgwood",
+          geometry_verified: null,
+          geometry_effective_at: null,
+          polygon_geojson: null,
+          center_lat: null,
+          center_lng: null,
+          radius_meters: null,
+          verified: null,
+          source_kind: "gis_import", // not "curated"/"niakofa_curated"
+          authority_level: null,
+        },
+        {
+          id: 2,
+          city_key: "fort_worth",
+          city_display: "Fort Worth",
+          neighborhood_id: 99,
+          name: "Some Other Spiral",
+          neighborhood_name: "Uncurated",
+          neighborhood_emoji: "❓",
+          neighborhood_slug: "not_in_catalog",
+          geometry_verified: null,
+          geometry_effective_at: null,
+          polygon_geojson: null,
+          center_lat: null,
+          center_lng: null,
+          radius_meters: null,
+          verified: null,
+          source_kind: "gis_import",
+          authority_level: null,
+        },
+      ]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .get("/api/audio-circles/followed")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(200);
+    const ids = (res.body.followed as Array<{ id: number }>).map((c) => c.id);
+    expect(ids).toContain(1); // wedgwood: known Fort Worth catalog slug — kept
+    expect(ids).not.toContain(2); // not in catalog and not tagged curated — dropped
   });
 });

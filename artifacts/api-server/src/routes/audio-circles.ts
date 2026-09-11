@@ -517,6 +517,10 @@ router.get("/audio-circles/followed", requireAuth, generalApiLimiter, async (req
       name: audioCirclesTable.name,
       neighborhood_name: cityNeighborhoodsTable.name,
       neighborhood_emoji: cityNeighborhoodsTable.emoji,
+      // Required so the curated-discovery slug fallback below can actually match
+      // (previously omitted here, which silently excluded legitimate Fort Worth
+      // neighborhoods lacking a recognized source_kind from the Followed list).
+      neighborhood_slug: cityNeighborhoodsTable.neighborhood_id,
       geometry_verified: cityNeighborhoodsTable.geometry_verified,
       geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at,
       polygon_geojson: cityNeighborhoodsTable.polygon_geojson,
@@ -536,7 +540,7 @@ router.get("/audio-circles/followed", requireAuth, generalApiLimiter, async (req
       circle.neighborhood_id == null || isCuratedDiscoveryNeighborhood({
         source_kind: circle.source_kind,
         authority_level: circle.authority_level,
-        neighborhood_slug: (circle as { neighborhood_slug?: string | null }).neighborhood_slug ?? null,
+        neighborhood_slug: circle.neighborhood_slug ?? null,
       })
     ),
   });
