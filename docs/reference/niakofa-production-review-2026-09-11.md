@@ -46,8 +46,10 @@ discovery, joining, or hosting. LiveKit remains the production media boundary.
   `1c822723abfede1fa03dfc7c4065cc66647f2931`, while GitHub `main` is
   `947151a118a4bda6d33f1fda366206466dfcee54`. This is a stale rollout, not an
   application health failure.
-- Deployment verification now targets `https://niakofa.com`, the confirmed
-  canonical product host, while retaining exact served-commit parity.
+- `https://niakofa.com` is the confirmed canonical product host and should be
+  the deployment-verification target. Updating `.github/workflows/deploy-verify.yml`
+  was not published because the connected GitHub token lacks workflow-path
+  write permission; the exact served-commit parity gate was not weakened.
 
 Production deployment certification remains a separate gate requiring the
 canonical host to converge to the current commit, authenticated Spiral
