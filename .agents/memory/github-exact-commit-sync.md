@@ -17,3 +17,14 @@ the ref, fetch the created commit object for byte comparison, reconstruct the
 local commit if necessary, and only then patch `refs/heads/main`.
 
 Normalize CRLF path separators before creating Git Data API tree entries; otherwise a valid tree can publish a filename ending in `\r` while leaving the intended file unchanged.
+
+The connection-backed GitHub API can truncate request bodies near the 100 KB
+boundary; a large text blob may be accepted with a different SHA even when
+smaller sibling blobs are exact.
+
+**Why:** The route source blob exceeded the connector's request-size boundary
+when base64-encoded, so GitHub created a valid but truncated orphan commit.
+
+**How to apply:** Compare each returned blob SHA before updating the ref. For
+large files, prefer the supported Git push path or another transport that
+preserves the full blob; never advance `main` after a partial upload.
