@@ -45,6 +45,7 @@ function isFiniteNumber(value: unknown): value is number {
  * Host Signal GPS-active contract for production city_neighborhoods rows.
  * Geometry verification alone is not enough; authority verified must also be true,
  * and generated hints are permanently excluded.
+ * Kept for Admin / GIS tooling; Spirals discovery no longer requires this.
  */
 export function isHostSignalEligibleNeighborhood(row: {
   verified?: boolean | null;
@@ -76,10 +77,6 @@ function parseRing(value: unknown): LngLat[] | null {
   if (!Array.isArray(value)) return null;
   if (value.length < 3) return null;
 
-  // Do not filter malformed vertices out of a reviewed boundary. Doing so
-  // changes the geometry while still presenting it as verified, which can
-  // incorrectly grant or deny host eligibility. A verified ring must be
-  // wholly valid or fail closed.
   const points: LngLat[] = [];
   for (const point of value) {
     if (
@@ -123,11 +120,6 @@ function extractPolygons(geojson: unknown): PolygonRings[] | null {
   return null;
 }
 
-/**
- * Validate geometry before it is persisted as an admin-reviewed boundary.
- * The evaluator intentionally remains tolerant of unverified drafts, but a
- * reviewed row must never contain a malformed polygon or partial radius.
- */
 export function validateNeighborhoodGeometry(
   row: Pick<NeighborhoodGeometry, "center_lat" | "center_lng" | "radius_meters" | "polygon_geojson">,
 ): string | null {
@@ -188,10 +180,8 @@ export function getNeighborhoodGeometryStatus(
 }
 
 /**
- * A neighborhood Spiral is visible in discovery only when the production
- * authority contract is complete. This is intentionally stricter than merely
- * having a polygon: generated hints, unverified authority rows, malformed
- * geometry, and future-effective geometry must stay out of the public list.
+ * Legacy Host Signal / GIS contract. Retained for Admin tooling.
+ * Spiral discovery uses isCuratedDiscoveryNeighborhood instead.
  */
 export function isActiveNeighborhood(
   row: NeighborhoodGeometry,
@@ -200,16 +190,29 @@ export function isActiveNeighborhood(
   return isHostSignalEligibleNeighborhood(row) && getNeighborhoodGeometryStatus(row, now) === "verified";
 }
 
+/**
+ * Curated Spiral discovery eligibility (location-independent).
+ * City-wide Spirals are handled by callers (neighborhood_id == null).
+ * Generated hints never appear. Curated product neighborhoods (and legacy
+ * rows with null source_kind) are eligible without GPS or geometry_verified.
+ */
+export function isCuratedDiscoveryNeighborhood(row: {
+  source_kind?: string | null;
+  authority_level?: string | null;
+}): boolean {
+  if (row.source_kind === "generated_hint" || row.authority_level === "generated") return false;
+  if (row.source_kind === "curated") return true;
+  // Legacy seed rows may omit source_kind; treat as curated catalog.
+  if (row.source_kind == null || row.source_kind === "") return true;
+  return false;
+}
+
 function pointInPolygonRings(lng: number, lat: number, rings: PolygonRings): boolean {
   const [outer, ...holes] = rings;
   if (!outer || !pointInRing(lng, lat, outer)) return false;
   return !holes.some((hole) => pointInRing(lng, lat, hole));
 }
 
-/**
- * Returns null for absent or malformed geometry. A malformed verified row is
- * handled as invalid by evaluateNeighborhoodGeofence rather than guessed.
- */
 export function pointInPolygon(lng: number, lat: number, geojson: unknown): boolean | null {
   const polygons = extractPolygons(geojson);
   if (!polygons) return null;
@@ -218,7 +221,6 @@ export function pointInPolygon(lng: number, lat: number, geojson: unknown): bool
 
 function geometryIsEffective(row: NeighborhoodGeometry, now: Date): "active" | "inactive" | "invalid" {
   if (!row.geometry_verified) return "inactive";
-  // When authority fields are present, Host Signal requires the full contract.
   if (row.verified === false) return "inactive";
   if (row.source_kind === "generated_hint" || row.authority_level === "generated") return "inactive";
   if (!row.geometry_effective_at) return "active";
@@ -228,11 +230,6 @@ function geometryIsEffective(row: NeighborhoodGeometry, now: Date): "active" | "
   return effectiveAt.getTime() <= now.getTime() ? "active" : "inactive";
 }
 
-/**
- * Evaluate whether (lat, lng) is inside reviewed neighborhood geometry.
- * Missing/unverified/future geometry returns no_geometry so city-only hosting
- * remains available. Verified but malformed geometry fails closed.
- */
 export function evaluateNeighborhoodGeofence(
   lat: number,
   lng: number,
