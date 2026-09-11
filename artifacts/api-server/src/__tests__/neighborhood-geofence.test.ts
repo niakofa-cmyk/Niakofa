@@ -256,7 +256,8 @@ describe("isHostSignalEligibleNeighborhood", () => {
 });
 
 describe("buildHostSignal", () => {
-  it("ready message includes neighborhood and optional boundary note", () => {
+  // Location-independent hosting: messages no longer require GPS boundary language.
+  it("ready message includes neighborhood and city", () => {
     const signal = buildHostSignal({
       canHost: true,
       spiralCityDisplay: "Fort Worth",
@@ -266,27 +267,29 @@ describe("buildHostSignal", () => {
     });
     expect(signal.status).toBe("ready");
     expect(signal.message).toContain("Downtown");
-    expect(signal.message).toContain("neighborhood boundary verified");
+    expect(signal.message).toContain("Fort Worth");
   });
 
-  it("blocked wrong-city message preserves join affordance", () => {
+  it("blocked message uses provided reason when present", () => {
     const signal = buildHostSignal({
       canHost: false,
       spiralCityDisplay: "Fort Worth",
       resolvedCityDisplay: "Dallas",
       code: "CIRCLE_START_WRONG_CITY",
+      reason: "Hosting unlocked in Fort Worth only. GPS shows Dallas. You can still join.",
     });
     expect(signal.status).toBe("blocked");
     expect(signal.message).toMatch(/Dallas/);
     expect(signal.message).toMatch(/still join/i);
   });
 
-  it("blocked outside neighborhood message", () => {
+  it("blocked outside neighborhood message uses reason", () => {
     const signal = buildHostSignal({
       canHost: false,
       spiralCityDisplay: "Fort Worth",
       spiralNeighborhood: "East Fort Worth",
       code: "CIRCLE_START_OUTSIDE_NEIGHBORHOOD",
+      reason: "You are in Fort Worth, but outside the verified boundary for the East Fort Worth Spiral.",
     });
     expect(signal.status).toBe("blocked");
     expect(signal.message).toMatch(/East Fort Worth/);
