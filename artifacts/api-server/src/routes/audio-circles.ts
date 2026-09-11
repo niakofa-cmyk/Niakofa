@@ -48,6 +48,7 @@ import {
   evaluateNeighborhoodGeofence,
   getNeighborhoodGeometryStatus,
   isActiveNeighborhood,
+  isCuratedDiscoveryNeighborhood,
 } from "../lib/neighborhoodGeofence";
 
 const router = Router();
@@ -351,10 +352,9 @@ function scheduleCityProvisioning(cityRaw: string, cityKey: string): void {
   });
 }
 
-// GET /audio-circles?city=Fort+Worth — active, authoritative neighborhood
-// Spirals for this city, with live-session summary. City-wide and pending/
-// generated neighborhoods remain addressable for compatibility but never enter
-// discovery. Circles with live sessions are sorted first.
+// GET /audio-circles?city=Fort+Worth — curated neighborhood Spirals (max 9)
+// plus the city-wide Spiral. GPS / geometry_verified are NOT required.
+// Generated hints never enter discovery. Live sessions sort first.
 router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) => {
   const cityRaw = (req.query.city as string | undefined)?.trim();
   if (!cityRaw) return res.status(400).json({ error: "city query param is required" });
@@ -387,7 +387,17 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
     .from(audioCirclesTable)
     .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
     .where(eq(audioCirclesTable.city_key, cityKey));
-  const circles = allCircles.filter((circle) => circle.neighborhood_id != null && isActiveNeighborhood(circle));
+  // Curated catalog: city-wide Spiral + up to 9 curated neighborhood Spirals.
+  // GPS / geometry_verified / Host Signal are NOT required for discovery.
+  const eligible = allCircles.filter((circle) => {
+    if (circle.neighborhood_id == null) return true; // city-wide
+    return isCuratedDiscoveryNeighborhood(circle);
+  });
+  const citywide = eligible.filter((c) => c.neighborhood_id == null);
+  const curatedNeighborhoods = eligible
+    .filter((c) => c.neighborhood_id != null)
+    .slice(0, 9);
+  const circles = [...curatedNeighborhoods, ...citywide];
 
   const userId = req.authenticatedUserId!;
   const circleIds = circles.map((circle) => circle.id);
@@ -488,7 +498,11 @@ router.get("/audio-circles/followed", requireAuth, generalApiLimiter, async (req
     .innerJoin(audioCirclesTable, eq(audioCirclesTable.id, audioCircleFollowsTable.circle_id))
     .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
     .where(eq(audioCircleFollowsTable.user_id, userId));
-  return res.json({ followed: followed.filter((circle) => circle.neighborhood_id != null && isActiveNeighborhood(circle)) });
+  return res.json({
+    followed: followed.filter((circle) =>
+      circle.neighborhood_id == null || isCuratedDiscoveryNeighborhood(circle)
+    ),
+  });
 });
 
 // GET /audio-circles/:id — one circle + its live session + full participant list.
@@ -538,7 +552,8 @@ const StartSessionBody = z.object({
   }).optional(),
   chat_enabled: z.boolean().optional(),
   recording_allowed: z.boolean().optional(),
-  location: CircleStartLocationBody,
+  // Location is optional — Spirals hosting is location-independent.
+  location: CircleStartLocationBody.optional(),
 });
 
 // POST /audio-circles/:id/start — any approved user can host.
@@ -551,75 +566,15 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
   const [circle] = await db.select().from(audioCirclesTable).where(eq(audioCirclesTable.id, circleId)).limit(1);
   if (!circle) return res.status(404).json({ error: "Circle not found" });
 
-  const locationCheck = await verifyCircleStartLocation(circle.city_key, parsed.data.location, {
-    userId: req.authenticatedUserId!,
-    circleId,
-  });
-  if (!locationCheck.ok) {
-    return res.status(403).json({
-      error: locationCheck.reason,
-      code: locationCheck.code,
-      can_host: false,
-      spiral_city_key: locationCheck.spiralCityKey,
-      spiral_city_display: locationCheck.spiralCityDisplay,
-      resolved_city_key: locationCheck.resolvedCityKey ?? null,
-      resolved_city_display: locationCheck.resolvedCityDisplay ?? null,
-      resolved_neighborhood_hint: locationCheck.neighborhoodHint ?? null,
-      host_signal: {
-        status: "blocked",
-        message:
-          locationCheck.code === "CIRCLE_START_WRONG_CITY"
-            ? `Hosting unlocked in ${locationCheck.spiralCityDisplay} only. GPS shows ${locationCheck.resolvedCityDisplay ?? "another city"}. You can still join.`
-            : locationCheck.reason,
-      },
-    });
-  }
-
-  // The direct start path must enforce the same reviewed neighborhood boundary
-  // as the location-check path. Otherwise a caller could bypass the green GPS
-  // checkpoint by POSTing directly to /start after only passing city matching.
-  let neighborhoodRow: typeof cityNeighborhoodsTable.$inferSelect | null = null;
-  if (circle.neighborhood_id != null) {
-    const [row] = await db
-      .select()
-      .from(cityNeighborhoodsTable)
-      .where(eq(cityNeighborhoodsTable.id, circle.neighborhood_id))
-      .limit(1);
-    neighborhoodRow = row ?? null;
-  }
-  if (neighborhoodRow) {
-    const geofence = evaluateNeighborhoodGeofence(parsed.data.location.latitude, parsed.data.location.longitude, neighborhoodRow);
-    const spiralCityDisplay = circle.city_display ?? circle.city_key;
-    // Missing, unreviewed, or future geometry is intentionally non-blocking:
-    // city verification remains authoritative until an admin-reviewed boundary
-    // is active. Only an active reviewed boundary can deny this start.
-    if (geofence.status === "outside" || geofence.status === "invalid_geometry") {
-      const outsideBoundary = geofence.status === "outside";
-      const reason = outsideBoundary
-        ? `You are in ${spiralCityDisplay}, but outside the verified boundary for the ${neighborhoodRow.name} Spiral. Move closer or host a different neighborhood Spiral.`
-        : "Neighborhood boundary data is incomplete. Hosting is temporarily unavailable for this Spiral.";
-      return res.status(outsideBoundary ? 403 : 503).json({
-        error: reason,
-        code: outsideBoundary
-          ? "CIRCLE_START_OUTSIDE_NEIGHBORHOOD"
-          : "CIRCLE_START_NEIGHBORHOOD_GEOMETRY_INVALID",
-        can_host: false,
-        spiral_city_key: circle.city_key,
-        spiral_city_display: spiralCityDisplay,
-        spiral_neighborhood: neighborhoodRow.name,
-        neighborhood_geofence: geofence,
-        host_signal: buildHostSignal({
-          canHost: false,
-          spiralCityDisplay,
-          spiralNeighborhood: neighborhoodRow.name,
-          neighborhoodGeofenceStatus: outsideBoundary ? "outside" : "invalid_geometry",
-          code: outsideBoundary
-            ? "CIRCLE_START_OUTSIDE_NEIGHBORHOOD"
-            : "CIRCLE_START_NEIGHBORHOOD_GEOMETRY_INVALID",
-          reason,
-        }),
-      });
-    }
+  // Location-independent hosting: any approved user may start a curated Spiral
+  // without GPS / Map Locator / Host Signal / neighborhood geofence checks.
+  // Optional location may still be accepted for analytics but never blocks start.
+  if (parsed.data.location) {
+    logger.info({
+      circle_id: circleId,
+      user_id: req.authenticatedUserId,
+      has_location: true,
+    }, "audio-circles: start with optional location (non-blocking)");
   }
 
   const existingLive = await getLiveSession(circleId);
