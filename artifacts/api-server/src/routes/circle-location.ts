@@ -57,18 +57,29 @@ router.post(
       });
     }
 
+    // Location-independent Spirals: reverse geocode is disabled.
+    // Return a non-blocking context so legacy clients do not hang on GPS.
     let resolved;
     try {
       resolved = await reverseGeocodeCircleStart(parsed.data);
     } catch {
-      return res.status(503).json({
-        ok: false,
-        status: "blocked",
-        code: "GPS_REVERSE_GEOCODE_FAILED",
-        error: "Your GPS signal is available, but the neighborhood could not be verified yet.",
+      return res.json({
+        ok: true,
+        status: "location_ready",
+        city_key: null,
+        city_display: null,
+        county_display: null,
+        state_code: null,
+        accuracy_bucket: "not_applicable",
+        neighborhood_hint: null,
+        circle_id: null,
+        neighborhood_name: null,
+        neighborhood_emoji: null,
+        neighborhood_geofence_status: "no_geometry",
+        neighborhood_geometry_status: "unconfigured",
         host_signal: {
-          status: "blocked",
-          message: "Location verification is temporarily unavailable. Retrying automatically.",
+          status: "ready",
+          message: "Hosting does not require GPS. Choose any curated Spiral to host.",
         },
       });
     }

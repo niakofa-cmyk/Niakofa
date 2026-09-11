@@ -12,7 +12,7 @@ export const CircleStartLocationBody = z.object({
   longitude: z.number().finite().gte(-180).lte(180),
   accuracy_meters: z.number().finite().positive().lte(10_000),
   captured_at: z.string().datetime({ offset: true }),
-}).optional();
+});
 
 export type CircleStartLocation = z.infer<typeof CircleStartLocationBody>;
 
@@ -49,7 +49,7 @@ export function accuracyBucket(meters: number): string {
 export function validateFreshAccurateLocation(
   _location: CircleStartLocation,
   _nowMs = Date.now(),
-): { ok: true } {
+): { ok: true } | { ok: false; code: string; reason: string } {
   // Legacy validation remains callable but is no longer part of Spiral
   // hosting. Do not make a GPS permission or freshness decision here.
   return { ok: true };
