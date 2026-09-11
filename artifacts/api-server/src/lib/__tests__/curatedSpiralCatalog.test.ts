@@ -27,9 +27,26 @@ describe("curated Spiral catalog", () => {
     }
   });
 
+  it("includes Kansas City with a product-owned nine", () => {
+    const kc = getCuratedSpiralCity("kansas_city_missouri");
+    expect(kc?.city_display).toBe("Kansas City");
+    expect(kc?.neighborhoods.map((n) => n.neighborhood_id)).toEqual([
+      "eighteenth_and_vine",
+      "downtown",
+      "midtown",
+      "westport",
+      "plaza",
+      "northeast",
+      "blue_hills",
+      "brookside",
+      "waldo",
+    ]);
+  });
+
   it("canonicalizes common city-with-state searches", () => {
     expect(canonicalizeCuratedCityKey("fort_worth_tx")).toBe("fort_worth");
     expect(getCuratedSpiralCity("dallas_tx")?.city_display).toBe("Dallas");
+    expect(canonicalizeCuratedCityKey("kansas_city_mo")).toBe("kansas_city");
     expect(getCuratedSpiralCity("unknown_city")).toBeNull();
   });
 });
