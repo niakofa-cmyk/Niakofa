@@ -882,11 +882,6 @@ export default function AudioCirclesScreen() {
                             <Radio className="w-2.5 h-2.5" /> Live
                           </span>
                         )}
-                        {circle.neighborhood_id != null && circle.neighborhood_geometry_status === "verified" && (
-                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
-                            Place-rooted
-                          </span>
-                        )}
                         {isFollowing && (
                           <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30 flex items-center gap-1">
                             <Bell className="w-2.5 h-2.5" /> Following

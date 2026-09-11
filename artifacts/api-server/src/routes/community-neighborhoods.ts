@@ -13,6 +13,10 @@ import {
   validateNeighborhoodGeometry,
 } from "../lib/neighborhoodGeofence";
 import { ensureSpiralForNeighborhood } from "../lib/ensureSpiralForNeighborhood";
+import {
+  canonicalizeCuratedCityKey,
+  getCuratedSpiralCity,
+} from "../lib/curatedSpiralCatalog";
 
 const router = Router();
 
@@ -53,7 +57,8 @@ const BoundaryReviewBody = z.object({
 }).strict();
 
 export function normalizeCityKey(city: string): string {
-  return city.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const normalized = city.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return canonicalizeCuratedCityKey(normalized);
 }
 
 const MAX_CITY_LEN = 100;
@@ -64,6 +69,39 @@ function stripTags(s: string): string {
 
 export async function ensureNeighborhoodsForCity(cityRaw: string, cityKey: string) {
   const existing = await db.select().from(cityNeighborhoodsTable).where(eq(cityNeighborhoodsTable.city_key, cityKey));
+  const curatedCity = getCuratedSpiralCity(cityKey);
+
+  // Product-owned cities always use the deterministic catalog. Upsert only
+  // catalog fields so any reviewed GIS geometry remains available to Admin
+  // without becoming authoritative for Spiral discovery.
+  if (curatedCity) {
+    await db.insert(cityNeighborhoodsTable)
+      .values(curatedCity.neighborhoods.map((neighborhood) => ({
+        city_key: cityKey,
+        city_display: curatedCity.city_display,
+        neighborhood_id: neighborhood.neighborhood_id,
+        name: neighborhood.name,
+        emoji: neighborhood.emoji,
+        description: neighborhood.description,
+        source: "curated",
+        verified: true,
+        source_kind: "niakofa_curated" as const,
+        authority_level: "curated" as const,
+      })))
+      .onConflictDoUpdate({
+        target: [cityNeighborhoodsTable.city_key, cityNeighborhoodsTable.neighborhood_id],
+        set: {
+          city_display: curatedCity.city_display,
+          source: "curated",
+          verified: true,
+          source_kind: "niakofa_curated",
+          authority_level: "curated",
+          updated_at: new Date(),
+        },
+      });
+    return db.select().from(cityNeighborhoodsTable).where(eq(cityNeighborhoodsTable.city_key, cityKey));
+  }
+
   if (existing.length > 0) return existing;
 
   try {

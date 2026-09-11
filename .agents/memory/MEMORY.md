@@ -44,3 +44,4 @@
 - [GitHub exact-commit sync](github-exact-commit-sync.md) — Git Data API commit creation adds a terminal newline; match its raw commit bytes before advancing the branch ref.
 - [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
 - [Authenticated Admin browser checks](admin-live-acceptance.md) — storage state authenticates navigation, but page.evaluate fetches still need explicit Bearer headers and exact role selectors.
+- [Spiral catalog location boundary](spiral-catalog-location-boundary.md) — curated discovery is independent from GIS verification and legacy inactive-city sentinels.

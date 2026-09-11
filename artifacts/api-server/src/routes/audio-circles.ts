@@ -34,6 +34,7 @@ import { eq, and, isNull, desc, asc, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { normalizeCityKey, ensureNeighborhoodsForCity } from "./community-neighborhoods";
+import { getCuratedSpiralCity } from "../lib/curatedSpiralCatalog";
 import {
   sendToUser,
   sendToCircleParticipants,
@@ -321,48 +322,24 @@ function logModerationAction(
  */
 async function ensureCirclesForCity(cityRaw: string, cityKey: string) {
   await ensureNeighborhoodsForCity(cityRaw, cityKey);
-
-  // Always re-assert Fort Worth product catalog (migration 0064) with source_kind.
-  // Production may already have GIS rows; ensureNeighborhoodsForCity returns early
-  // when any rows exist, so curated catalog must be upserted here.
-  if (cityKey === "fort_worth") {
-    await db.execute(sql`
-      INSERT INTO city_neighborhoods (
-        city_key, city_display, neighborhood_id, name, emoji, description,
-        source, verified, source_kind, authority_level
-      )
-      VALUES
-        ('fort_worth', 'Fort Worth', 'southside',        'Southside',        '🏘️', 'Historic community south of downtown',        'curated', TRUE, 'curated', 'curated'),
-        ('fort_worth', 'Fort Worth', 'near_southside',   'Near Southside',   '🌳', 'Creative district near Magnolia Ave',      'curated', TRUE, 'curated', 'curated'),
-        ('fort_worth', 'Fort Worth', 'polytechnic',      'Polytechnic',      '🎓', 'Home of Texas Wesleyan University',        'curated', TRUE, 'curated', 'curated'),
-        ('fort_worth', 'Fort Worth', 'riverside',        'Riverside',        '🌊', 'Diverse neighborhood along the Trinity River', 'curated', TRUE, 'curated', 'curated'),
-        ('fort_worth', 'Fort Worth', 'downtown',         'Downtown',         '🏙️', 'Urban core of Fort Worth',                 'curated', TRUE, 'curated', 'curated'),
-        ('fort_worth', 'Fort Worth', 'east_fort_worth',  'East Fort Worth',  '🌅', 'Working-class roots and tight-knit community', 'curated', TRUE, 'curated', 'curated'),
-        ('fort_worth', 'Fort Worth', 'north_fort_worth', 'North Fort Worth', '🤠', 'Stockyards district and growing suburbs',  'curated', TRUE, 'curated', 'curated'),
-        ('fort_worth', 'Fort Worth', 'stop_six',         'Stop Six',         '✊', 'Resilient community with deep history',    'curated', TRUE, 'curated', 'curated'),
-        ('fort_worth', 'Fort Worth', 'wedgwood',         'Wedgwood',         '🏡', 'Family-friendly neighborhood in southwest FW', 'curated', TRUE, 'curated', 'curated')
-      ON CONFLICT (city_key, neighborhood_id) DO UPDATE SET
-        source_kind = EXCLUDED.source_kind,
-        authority_level = EXCLUDED.authority_level,
-        verified = TRUE,
-        name = EXCLUDED.name,
-        emoji = EXCLUDED.emoji,
-        description = EXCLUDED.description,
-        updated_at = NOW()
-    `);
-  }
+  const cityDisplay = getCuratedSpiralCity(cityKey)?.city_display ?? cityRaw;
 
   await db.execute(sql`
     INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
     SELECT cn.city_key, cn.city_display, cn.id, cn.name || ' Spiral'
     FROM city_neighborhoods cn
     WHERE cn.city_key = ${cityKey}
+      AND (
+        cn.source_kind IN ('curated', 'niakofa_curated')
+        OR cn.authority_level = 'curated'
+        OR cn.source_kind IS NULL
+      )
     ON CONFLICT (neighborhood_id) WHERE neighborhood_id IS NOT NULL DO NOTHING
   `);
 
   await db.execute(sql`
     INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
-    VALUES (${cityKey}, ${cityRaw}, NULL, ${cityRaw + " Spiral"})
+    VALUES (${cityKey}, ${cityDisplay}, NULL, ${cityDisplay + " Spiral"})
     ON CONFLICT (city_key) WHERE neighborhood_id IS NULL DO NOTHING
   `);
 }
@@ -389,7 +366,19 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
   const cityKey = normalizeCityKey(cityRaw);
   if (!cityKey) return res.json({ circles: [] });
 
-  scheduleCityProvisioning(cityRaw, cityKey);
+  // Supported product cities are deterministic and cheap to provision. Wait
+  // for their first insert so the initial browse is useful instead of showing
+  // an empty state for one polling interval. Unknown cities retain the
+  // background path because they may call the optional Nia suggestion service.
+  if (getCuratedSpiralCity(cityKey)) {
+    try {
+      await ensureCirclesForCity(cityRaw, cityKey);
+    } catch (err) {
+      logger.error({ err, city: cityRaw }, "audio-circles: curated city provisioning failed");
+    }
+  } else {
+    scheduleCityProvisioning(cityRaw, cityKey);
+  }
 
   const allCircles = await db
     .select({
@@ -500,7 +489,7 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
   return res.json({
     circles: withLiveInfo,
     city_key: cityKey,
-    city_display: cityRaw,
+    city_display: getCuratedSpiralCity(cityKey)?.city_display ?? cityRaw,
     discovery_scope: "active_neighborhood_spirals",
   });
 });
