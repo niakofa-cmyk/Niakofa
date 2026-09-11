@@ -190,20 +190,44 @@ export function isActiveNeighborhood(
   return isHostSignalEligibleNeighborhood(row) && getNeighborhoodGeometryStatus(row, now) === "verified";
 }
 
+/** Product catalog neighborhood_ids for Fort Worth (migration 0064). */
+export const FORT_WORTH_CURATED_NEIGHBORHOOD_IDS = [
+  "southside",
+  "near_southside",
+  "polytechnic",
+  "riverside",
+  "downtown",
+  "east_fort_worth",
+  "north_fort_worth",
+  "stop_six",
+  "wedgwood",
+] as const;
+
 /**
  * Curated Spiral discovery eligibility (location-independent).
  * City-wide Spirals are handled by callers (neighborhood_id == null).
- * Generated hints never appear. Curated product neighborhoods (and legacy
- * rows with null source_kind) are eligible without GPS or geometry_verified.
+ * Generated hints never appear.
+ *
+ * Accepts:
+ * - source_kind curated | niakofa_curated
+ * - authority_level curated
+ * - null/empty source_kind (legacy seed rows from migration 0064 set `source` not source_kind)
+ * - known Fort Worth catalog neighborhood_id when provided on the row
  */
 export function isCuratedDiscoveryNeighborhood(row: {
   source_kind?: string | null;
   authority_level?: string | null;
+  neighborhood_id?: string | null;
+  /** string slug from city_neighborhoods.neighborhood_id column when joined */
+  neighborhood_slug?: string | null;
 }): boolean {
   if (row.source_kind === "generated_hint" || row.authority_level === "generated") return false;
-  if (row.source_kind === "curated") return true;
+  if (row.source_kind === "curated" || row.source_kind === "niakofa_curated") return true;
+  if (row.authority_level === "curated") return true;
   // Legacy seed rows may omit source_kind; treat as curated catalog.
   if (row.source_kind == null || row.source_kind === "") return true;
+  const slug = row.neighborhood_slug ?? (typeof row.neighborhood_id === "string" ? row.neighborhood_id : null);
+  if (slug && (FORT_WORTH_CURATED_NEIGHBORHOOD_IDS as readonly string[]).includes(slug)) return true;
   return false;
 }
 
