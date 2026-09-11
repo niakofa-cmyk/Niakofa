@@ -8,12 +8,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { useCachedList } from "@/hooks/useCachedList";
 import { acquireCircleDevice } from "@/lib/circleMediaReadiness";
-import { getPublishedMapLocation } from "@/lib/spiralLocationStore";
-import { getUsableMapLocation, mapLocationUnavailableMessage } from "@/lib/spiralMapLocation";
-import { filterActiveNeighborhoodSpirals, promoteLocalSpiral, SPIRALS_PATHS } from "@/lib/spirals";
+import { SPIRALS_PATHS } from "@/lib/spirals";
 import { SpiralMark } from "@/components/SpiralMark";
-import { SpiralHostSignal, type HostSignalPayload } from "@/components/SpiralHostSignal";
-import { SpiralNeighborhoodCheckpoint, type SpiralLocationContext } from "@/components/SpiralNeighborhoodCheckpoint";
 
 interface LiveSessionSummary {
   id: number;
@@ -125,10 +121,9 @@ interface HostModalProps {
   onStart: (circle: CircleSummary, videoEnabled: boolean, title: string, description: string, topic: string, maxSpeakers: number, recordingAllowed: boolean) => void;
   starting: boolean;
   base: string;
-  hostSignal?: HostSignalPayload;
 }
 
-function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal }: HostModalProps) {
+function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps) {
   const [format, setFormat] = useState<"audio" | "video">("audio");
   const [title, setTitle] = useState(() =>
     circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`
@@ -141,11 +136,8 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
   const [camReady, setCamReady] = useState<boolean | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
   const [camError, setCamError] = useState<string | null>(null);
-  const [hostReady, setHostReady] = useState(
-    hostSignal?.can_host === true ||
-      hostSignal?.allowed === true ||
-      hostSignal?.host_signal?.status === "ready",
-  );
+  // Location-independent: any approved user can host a curated Spiral.
+  const [hostReady] = useState(true);
   const checkedRef = useRef(false);
 
   useEffect(() => {
@@ -184,13 +176,6 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
   const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`;
 
   const canStart = hostReady && title.trim().length > 0 && micReady === true && (format !== "video" ? true : camReady === true) && maxSpeakers > 0;
-  const handleSignalChange = useCallback((next: HostSignalPayload) => {
-    setHostReady(
-      next.can_host === true ||
-        next.allowed === true ||
-        next.host_signal?.status === "ready",
-    );
-  }, []);
 
   return (
     <motion.div
@@ -299,15 +284,6 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
           </div>
         </div>
 
-        <SpiralHostSignal
-          circleId={circle.id}
-          base={base}
-          spiralCityDisplay={circle.city_display}
-          spiralNeighborhood={circle.neighborhood_name}
-          externalSignal={hostSignal}
-          onSignalChange={handleSignalChange}
-        />
-
         {/* Device checks */}
         <div className="space-y-2">
           <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Device Check</div>
@@ -341,7 +317,7 @@ function HostCircleModal({ circle, onClose, onStart, starting, base, hostSignal 
 
         {/* Start button */}
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground">
-          Host eligibility is checked automatically from your shared Map Locator signal. Joining never requires your location.
+          Choose a neighborhood or city-wide Spiral to host. No GPS or Map Locator check is required.
         </div>
         <label className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5 cursor-pointer">
           <input
@@ -387,7 +363,7 @@ export default function AudioCirclesScreen() {
   const [cityInput, setCityInput] = useState(city);
   const [startingId, setStartingId] = useState<number | null>(null);
   const [hostModal, setHostModal] = useState<CircleSummary | null>(null);
-  const [hostSignals, setHostSignals] = useState<Record<number, HostSignalPayload>>({});
+  const [hostSignals, setHostSignals] = useState<Record<number, Record<string, unknown>>>({});
   const [recordingsByCircle, setRecordingsByCircle] = useState<Map<number, Recording[]>>(new Map());
   const [recordingsOpen, setRecordingsOpen] = useState<Set<number>>(new Set());
   const [followingSet, setFollowingSet] = useState<Set<number>>(new Set());
@@ -400,7 +376,7 @@ export default function AudioCirclesScreen() {
   const [_discoveryLoading, _setDiscoveryLoading] = useState(false);
   const [communityStats, _setCommunityStats] = useState<CommunityStats | null>(null);
   const [_showStatsModal, setShowStatsModal] = useState(false);
-  const [locationContext, setLocationContext] = useState<SpiralLocationContext | null>(null);
+  const [locationContext, setLocationContext] = useState<{ circle_id?: number | null; status?: string; neighborhood_geometry_status?: string; city_display?: string } | null>(null);
   const [locationChecking, setLocationChecking] = useState(false);
   const [locationRefreshNonce, setLocationRefreshNonce] = useState(0);
   const locationRef = useRef(myLocation);
@@ -420,52 +396,11 @@ export default function AudioCirclesScreen() {
     try { sessionStorage.setItem(SESSION_KEY, city); } catch { /* storage blocked */ }
   }, [city]);
 
-  // Resolve the same shared GPS stream used by the map, helpers, and
-  // requesters. The server decides the city/neighborhood match; the browser
-  // only uses that result to choose the visual order.
+  // Location-independent Spirals: no Map Locator / GPS polling for discovery or host.
   useEffect(() => {
-    let cancelled = false;
-    const refreshLocationContext = async () => {
-      if (!cancelled) setLocationChecking(true);
-      try {
-        const location = getUsableMapLocation(
-          getPublishedMapLocation() ?? locationRef.current,
-          Date.now(),
-          "discovery",
-        );
-        if (!location) {
-          if (!cancelled) setLocationContext(null);
-          return;
-        }
-        const response = await fetch(`${base}/api/audio-circles/location-context`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify(location),
-        });
-        const data = await response.json().catch(() => ({})) as SpiralLocationContext;
-        if (!cancelled && response.ok && data.ok !== false) {
-          setLocationContext(data);
-          if (!manualCitySelectionRef.current && data.city_display && data.city_display !== city) {
-            setCity(data.city_display);
-            setCityInput(data.city_display);
-          }
-        } else if (!cancelled) {
-          setLocationContext(null);
-        }
-      } catch {
-        if (!cancelled) setLocationContext(null);
-      } finally {
-        if (!cancelled) setLocationChecking(false);
-      }
-    };
-
-    void refreshLocationContext();
-    const interval = window.setInterval(() => void refreshLocationContext(), 30_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [base, city, currentUser?.id, locationRefreshNonce, myLocation?.capturedAt]);
+    setLocationContext(null);
+    setLocationChecking(false);
+  }, [locationRefreshNonce]);
 
   const fetcher = useCallback(async () => {
     const res = await fetch(
@@ -491,9 +426,9 @@ export default function AudioCirclesScreen() {
   });
 
   const orderedCircles = useMemo(() => {
-    const activeCircles = circles ? filterActiveNeighborhoodSpirals(circles) : undefined;
-    return promoteLocalSpiral(activeCircles, locationContext?.circle_id);
-  }, [circles, locationContext?.circle_id]);
+    // Server returns curated neighborhoods (max 9) + city-wide Spiral.
+    return circles ?? undefined;
+  }, [circles]);
 
   // Track which circles the user follows
   useEffect(() => {
@@ -524,23 +459,10 @@ export default function AudioCirclesScreen() {
   const startRoom = async (circle: CircleSummary, video_enabled = false, title: string, description: string, topic: string, maxSpeakers = 12, recordingAllowed = false) => {
     setStartingId(circle.id);
     try {
-      const location = getUsableMapLocation(
-        getPublishedMapLocation() ?? locationRef.current,
-        Date.now(),
-        "host",
-      );
-      if (!location) {
-        toast({
-          title: "Map Location needed to host",
-          description: mapLocationUnavailableMessage(),
-          variant: "destructive",
-        });
-        return;
-      }
       const res = await fetch(`${base}/api/audio-circles/${circle.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ title, video_enabled, description: description || undefined, topic: topic || undefined, max_speakers: maxSpeakers, recording_allowed: recordingAllowed, location }),
+        body: JSON.stringify({ title, video_enabled, description: description || undefined, topic: topic || undefined, max_speakers: maxSpeakers, recording_allowed: recordingAllowed }),
       });
       const data = await res.json();
       if (res.status === 409 && data.session_id) {
@@ -664,9 +586,8 @@ export default function AudioCirclesScreen() {
           </p>
         </div>
 
-         <SpiralNeighborhoodCheckpoint
-           context={locationContext}
-           checking={locationChecking}
+         {/* SpiralNeighborhoodCheckpoint removed — location-independent Spirals */}
+         {false && locationChecking && (
            onRefresh={() => setLocationRefreshNonce((value) => value + 1)}
            onOpenMap={() => setLocation("/")}
             onOpenLocalSpiral={() => (localSpiralRef.current ?? highlightRef.current)?.scrollIntoView({ behavior: "smooth", block: "center" })}
@@ -960,7 +881,7 @@ export default function AudioCirclesScreen() {
           {orderedCircles?.map((circle, i) => {
             const live = circle.live_session;
             const isFollowing = followingSet.has(circle.id);
-            const isVerifiedLocal = locationContext?.status === "ready" && locationContext.circle_id === circle.id;
+            const isVerifiedLocal = false;
             const isHighlighted = (circleParam != null && String(circle.id) === circleParam)
               || (neighborhoodParam != null && circle.neighborhood_name?.toLowerCase() === neighborhoodParam.toLowerCase());
             return (
@@ -1023,19 +944,7 @@ export default function AudioCirclesScreen() {
                         <div className="text-xs text-muted-foreground mt-0.5">No live session right now</div>
                       )}
                     </div>
-                    {isVerifiedLocal && (
-                      <div className="flex shrink-0 flex-col items-center gap-0.5 text-emerald-400">
-                        <SpiralHostSignal
-                          circleId={circle.id}
-                          base={base}
-                          spiralCityDisplay={circle.city_display}
-                          spiralNeighborhood={circle.neighborhood_name}
-                          externalSignal={hostSignals[circle.id]}
-                          compact
-                        />
-                        <span className="text-[8px] font-black uppercase tracking-wider">Your Map Locator</span>
-                      </div>
-                    )}
+                    
                   </div>
 
                   {/* Topic tag */}
@@ -1149,7 +1058,6 @@ export default function AudioCirclesScreen() {
             onStart={startRoom}
             starting={startingId === hostModal.id}
             base={base}
-            hostSignal={hostSignals[hostModal.id]}
           />
         )}
       </AnimatePresence>
