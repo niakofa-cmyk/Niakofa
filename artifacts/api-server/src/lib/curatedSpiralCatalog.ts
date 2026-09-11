@@ -118,6 +118,20 @@ export const CURATED_SPIRAL_CATALOG: Readonly<Record<string, CuratedSpiralCity>>
       { neighborhood_id: "north_central", name: "North Central", emoji: "✨", description: "North Laredo homes, schools, and businesses" },
     ],
   },
+  kansas_city: {
+    city_display: "Kansas City",
+    neighborhoods: [
+      { neighborhood_id: "eighteenth_and_vine", name: "18th & Vine", emoji: "🎷", description: "Historic jazz district and Black cultural heart of Kansas City" },
+      { neighborhood_id: "downtown", name: "Downtown", emoji: "🏙️", description: "Kansas City's civic and business center" },
+      { neighborhood_id: "midtown", name: "Midtown", emoji: "🏘️", description: "Central neighborhoods linking downtown and the Plaza" },
+      { neighborhood_id: "westport", name: "Westport", emoji: "🍻", description: "Historic district with nightlife and local gathering places" },
+      { neighborhood_id: "plaza", name: "Plaza", emoji: "🌳", description: "Country Club Plaza and surrounding community life" },
+      { neighborhood_id: "northeast", name: "Northeast", emoji: "🤝", description: "Historic Northeast with deep neighborhood roots" },
+      { neighborhood_id: "blue_hills", name: "Blue Hills", emoji: "✊", description: "East-side community with strong cultural identity" },
+      { neighborhood_id: "brookside", name: "Brookside", emoji: "🏡", description: "Tree-lined south KC neighborhood and local businesses" },
+      { neighborhood_id: "waldo", name: "Waldo", emoji: "✨", description: "South Kansas City neighborhood with independent shops and cafes" },
+    ],
+  },
 };
 
 const CURATED_CITY_ALIASES: Readonly<Record<string, string>> = {
@@ -128,6 +142,9 @@ const CURATED_CITY_ALIASES: Readonly<Record<string, string>> = {
   austin_tx: "austin",
   el_paso_tx: "el_paso",
   laredo_tx: "laredo",
+  kansas_city_mo: "kansas_city",
+  kansas_city_missouri: "kansas_city",
+  kansas_city_missouri_mo: "kansas_city",
 };
 
 export function canonicalizeCuratedCityKey(cityKey: string): string {
