@@ -217,8 +217,7 @@ export const FORT_WORTH_CURATED_NEIGHBORHOOD_IDS = [
 export function isCuratedDiscoveryNeighborhood(row: {
   source_kind?: string | null;
   authority_level?: string | null;
-  neighborhood_id?: string | null;
-  /** string slug from city_neighborhoods.neighborhood_id column when joined */
+  /** city_neighborhoods.neighborhood_id string slug (NOT audio_circles.neighborhood_id FK) */
   neighborhood_slug?: string | null;
 }): boolean {
   if (row.source_kind === "generated_hint" || row.authority_level === "generated") return false;
@@ -226,7 +225,7 @@ export function isCuratedDiscoveryNeighborhood(row: {
   if (row.authority_level === "curated") return true;
   // Legacy seed rows may omit source_kind; treat as curated catalog.
   if (row.source_kind == null || row.source_kind === "") return true;
-  const slug = row.neighborhood_slug ?? (typeof row.neighborhood_id === "string" ? row.neighborhood_id : null);
+  const slug = row.neighborhood_slug ?? null;
   if (slug && (FORT_WORTH_CURATED_NEIGHBORHOOD_IDS as readonly string[]).includes(slug)) return true;
   return false;
 }

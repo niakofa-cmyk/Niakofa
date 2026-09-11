@@ -533,7 +533,11 @@ router.get("/audio-circles/followed", requireAuth, generalApiLimiter, async (req
     .where(eq(audioCircleFollowsTable.user_id, userId));
   return res.json({
     followed: followed.filter((circle) =>
-      circle.neighborhood_id == null || isCuratedDiscoveryNeighborhood(circle)
+      circle.neighborhood_id == null || isCuratedDiscoveryNeighborhood({
+        source_kind: circle.source_kind,
+        authority_level: circle.authority_level,
+        neighborhood_slug: (circle as { neighborhood_slug?: string | null }).neighborhood_slug ?? null,
+      })
     ),
   });
 });
