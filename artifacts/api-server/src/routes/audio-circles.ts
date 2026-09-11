@@ -322,6 +322,36 @@ function logModerationAction(
 async function ensureCirclesForCity(cityRaw: string, cityKey: string) {
   await ensureNeighborhoodsForCity(cityRaw, cityKey);
 
+  // Always re-assert Fort Worth product catalog (migration 0064) with source_kind.
+  // Production may already have GIS rows; ensureNeighborhoodsForCity returns early
+  // when any rows exist, so curated catalog must be upserted here.
+  if (cityKey === "fort_worth") {
+    await db.execute(sql`
+      INSERT INTO city_neighborhoods (
+        city_key, city_display, neighborhood_id, name, emoji, description,
+        source, verified, source_kind, authority_level
+      )
+      VALUES
+        ('fort_worth', 'Fort Worth', 'southside',        'Southside',        '🏘️', 'Historic community south of downtown',        'curated', TRUE, 'curated', 'curated'),
+        ('fort_worth', 'Fort Worth', 'near_southside',   'Near Southside',   '🌳', 'Creative district near Magnolia Ave',      'curated', TRUE, 'curated', 'curated'),
+        ('fort_worth', 'Fort Worth', 'polytechnic',      'Polytechnic',      '🎓', 'Home of Texas Wesleyan University',        'curated', TRUE, 'curated', 'curated'),
+        ('fort_worth', 'Fort Worth', 'riverside',        'Riverside',        '🌊', 'Diverse neighborhood along the Trinity River', 'curated', TRUE, 'curated', 'curated'),
+        ('fort_worth', 'Fort Worth', 'downtown',         'Downtown',         '🏙️', 'Urban core of Fort Worth',                 'curated', TRUE, 'curated', 'curated'),
+        ('fort_worth', 'Fort Worth', 'east_fort_worth',  'East Fort Worth',  '🌅', 'Working-class roots and tight-knit community', 'curated', TRUE, 'curated', 'curated'),
+        ('fort_worth', 'Fort Worth', 'north_fort_worth', 'North Fort Worth', '🤠', 'Stockyards district and growing suburbs',  'curated', TRUE, 'curated', 'curated'),
+        ('fort_worth', 'Fort Worth', 'stop_six',         'Stop Six',         '✊', 'Resilient community with deep history',    'curated', TRUE, 'curated', 'curated'),
+        ('fort_worth', 'Fort Worth', 'wedgwood',         'Wedgwood',         '🏡', 'Family-friendly neighborhood in southwest FW', 'curated', TRUE, 'curated', 'curated')
+      ON CONFLICT (city_key, neighborhood_id) DO UPDATE SET
+        source_kind = EXCLUDED.source_kind,
+        authority_level = EXCLUDED.authority_level,
+        verified = TRUE,
+        name = EXCLUDED.name,
+        emoji = EXCLUDED.emoji,
+        description = EXCLUDED.description,
+        updated_at = NOW()
+    `);
+  }
+
   await db.execute(sql`
     INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
     SELECT cn.city_key, cn.city_display, cn.id, cn.name || ' Spiral'
@@ -370,6 +400,7 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
       name: audioCirclesTable.name,
       neighborhood_name: cityNeighborhoodsTable.name,
       neighborhood_emoji: cityNeighborhoodsTable.emoji,
+      neighborhood_slug: cityNeighborhoodsTable.neighborhood_id,
       geometry_source: cityNeighborhoodsTable.geometry_source,
       geometry_version: cityNeighborhoodsTable.geometry_version,
       geometry_verified: cityNeighborhoodsTable.geometry_verified,
@@ -389,7 +420,11 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
   // GPS / geometry_verified / Host Signal are NOT required for discovery.
   const eligible = allCircles.filter((circle) => {
     if (circle.neighborhood_id == null) return true; // city-wide
-    return isCuratedDiscoveryNeighborhood(circle);
+    return isCuratedDiscoveryNeighborhood({
+      source_kind: circle.source_kind,
+      authority_level: circle.authority_level,
+      neighborhood_slug: circle.neighborhood_slug ?? null,
+    });
   });
   const citywide = eligible.filter((c) => c.neighborhood_id == null);
   const curatedNeighborhoods = eligible
