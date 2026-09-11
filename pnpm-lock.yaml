@@ -294,6 +294,9 @@ importers:
         specifier: 'catalog:'
         version: 3.25.76
     devDependencies:
+      '@jest/globals':
+        specifier: ^30.4.1
+        version: 30.4.1
       '@types/bcryptjs':
         specifier: ^3.0.0
         version: 3.0.0
