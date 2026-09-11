@@ -347,7 +347,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
 export default function AudioCirclesScreen() {
   const [, setLocation] = useLocation();
   const search = useSearch();
-  const { currentUser, myLocation } = useAppContext();
+  const { currentUser } = useAppContext();
 
   // Pull ?neighborhood= from URL so Community → Spirals tab card navigates here correctly
   const neighborhoodParam = new URLSearchParams(search).get("neighborhood");
@@ -363,7 +363,6 @@ export default function AudioCirclesScreen() {
   const [cityInput, setCityInput] = useState(city);
   const [startingId, setStartingId] = useState<number | null>(null);
   const [hostModal, setHostModal] = useState<CircleSummary | null>(null);
-  const [hostSignals, setHostSignals] = useState<Record<number, Record<string, unknown>>>({});
   const [recordingsByCircle, setRecordingsByCircle] = useState<Map<number, Recording[]>>(new Map());
   const [recordingsOpen, setRecordingsOpen] = useState<Set<number>>(new Set());
   const [followingSet, setFollowingSet] = useState<Set<number>>(new Set());
@@ -376,10 +375,6 @@ export default function AudioCirclesScreen() {
   const [_discoveryLoading, _setDiscoveryLoading] = useState(false);
   const [communityStats, _setCommunityStats] = useState<CommunityStats | null>(null);
   const [_showStatsModal, setShowStatsModal] = useState(false);
-  const [locationContext, setLocationContext] = useState<{ circle_id?: number | null; status?: string; neighborhood_geometry_status?: string; city_display?: string } | null>(null);
-  const [locationChecking, setLocationChecking] = useState(false);
-  const [locationRefreshNonce, setLocationRefreshNonce] = useState(0);
-  const locationRef = useRef(myLocation);
   const manualCitySelectionRef = useRef(false);
 
   // Ref for the highlighted neighborhood card (from Community tab navigation)
@@ -389,18 +384,8 @@ export default function AudioCirclesScreen() {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
   useEffect(() => {
-    locationRef.current = myLocation;
-  }, [myLocation]);
-
-  useEffect(() => {
     try { sessionStorage.setItem(SESSION_KEY, city); } catch { /* storage blocked */ }
   }, [city]);
-
-  // Location-independent Spirals: no Map Locator / GPS polling for discovery or host.
-  useEffect(() => {
-    setLocationContext(null);
-    setLocationChecking(false);
-  }, [locationRefreshNonce]);
 
   const fetcher = useCallback(async () => {
     const res = await fetch(
@@ -471,9 +456,6 @@ export default function AudioCirclesScreen() {
         return;
       }
       if (!res.ok) {
-        if (data.host_signal || data.resolved_city_display || data.code === "CIRCLE_START_WRONG_CITY") {
-          setHostSignals(prev => ({ ...prev, [circle.id]: data as HostSignalPayload }));
-        }
         toast({ title: "Couldn't start the Spiral", description: data.error ?? "Try again in a moment.", variant: "destructive" });
         return;
       }
@@ -833,16 +815,6 @@ export default function AudioCirclesScreen() {
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               Hosting in {orderedCircles[0].city_display}
             </p>
-            {locationContext?.circle_id && (
-              <p className="text-[10px] text-emerald-400/80">
-                GPS connected · your verified neighborhood Spiral is first
-              </p>
-            )}
-            {!locationContext?.circle_id && locationContext?.neighborhood_geometry_status === "pending_review" && (
-              <p className="text-[10px] text-amber-300/80">
-                GPS connected · this neighborhood is awaiting boundary review
-              </p>
-            )}
           </div>
         )}
 

@@ -42,12 +42,10 @@ import {
   clearCircleSession,
 } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
-import { CircleStartLocationBody, buildHostSignal, verifyCircleStartLocation } from "../lib/circleLocationPolicy";
+import { CircleStartLocationBody } from "../lib/circleLocationPolicy";
 import { requestCircleSummary } from "./nia-proxy";
 import {
-  evaluateNeighborhoodGeofence,
   getNeighborhoodGeometryStatus,
-  isActiveNeighborhood,
   isCuratedDiscoveryNeighborhood,
 } from "../lib/neighborhoodGeofence";
 
