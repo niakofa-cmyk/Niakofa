@@ -4,6 +4,9 @@
 -- city-wide Spiral behind an __inactive_neighborhood__: sentinel. GIS review
 -- remains available to Admin, but it must not decide whether a curated Spiral
 -- can be discovered or hosted.
+--
+-- Production already has active city-wide rows (audio_circles_citywide_uniq).
+-- Restoring sentinel keys onto those city keys must not create duplicates.
 
 CREATE OR REPLACE FUNCTION sync_audio_spiral_visibility()
 RETURNS trigger
@@ -53,10 +56,39 @@ UPDATE audio_circles ac
    SET city_key = cn.city_key,
        city_display = cn.city_display
   FROM city_neighborhoods cn
- WHERE ac.neighborhood_id = cn.id;
+ WHERE ac.neighborhood_id = cn.id
+   AND (
+     ac.city_key IS DISTINCT FROM cn.city_key
+     OR ac.city_display IS DISTINCT FROM cn.city_display
+   );
 
--- Restore city-wide Spirals to the city key stored in their own sentinel.
+-- City-wide: if a sentinel row would collide with an existing city-wide row
+-- for the same canonical city_key, drop the sentinel duplicate and keep the
+-- already-active city-wide Spiral.
+DELETE FROM audio_circles AS sentinel
+ WHERE sentinel.neighborhood_id IS NULL
+   AND sentinel.city_key LIKE '__inactive_neighborhood__:%'
+   AND EXISTS (
+     SELECT 1
+       FROM audio_circles AS active
+      WHERE active.neighborhood_id IS NULL
+        AND active.city_key = substring(
+              sentinel.city_key from length('__inactive_neighborhood__:') + 1
+            )
+        AND active.id IS DISTINCT FROM sentinel.id
+   );
+
+-- Restore remaining city-wide Spirals that only exist under the sentinel key.
 UPDATE audio_circles
    SET city_key = substring(city_key from length('__inactive_neighborhood__:') + 1)
  WHERE neighborhood_id IS NULL
-   AND city_key LIKE '__inactive_neighborhood__:%';
+   AND city_key LIKE '__inactive_neighborhood__:%'
+   AND NOT EXISTS (
+     SELECT 1
+       FROM audio_circles AS other
+      WHERE other.neighborhood_id IS NULL
+        AND other.city_key = substring(
+              audio_circles.city_key from length('__inactive_neighborhood__:') + 1
+            )
+        AND other.id IS DISTINCT FROM audio_circles.id
+   );
