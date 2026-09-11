@@ -579,19 +579,13 @@ export default function AudioCirclesScreen() {
       <div className="p-4 space-y-4">
         <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Think call-in radio, live. Host a room, raise your hand to speak, or just listen in —
-             active, reviewed neighborhoods have their own Spiral. Your current GPS neighborhood
-             is promoted first when Host Signal Green is available. Follow a Spiral to get notified
-             when it goes live.
+            Think call-in radio, live. Host a room, raise your hand to speak, or just listen in.
+            Each city has curated neighborhood Spirals plus a city-wide Spiral. Follow a Spiral
+            to get notified when it goes live — no GPS required.
           </p>
         </div>
 
-         {/* SpiralNeighborhoodCheckpoint removed — location-independent Spirals */}
-         {false && locationChecking && (
-           onRefresh={() => setLocationRefreshNonce((value) => value + 1)}
-           onOpenMap={() => setLocation("/")}
-            onOpenLocalSpiral={() => (localSpiralRef.current ?? highlightRef.current)?.scrollIntoView({ behavior: "smooth", block: "center" })}
-         />
+         {/* GPS / Map Locator checkpoint removed — curated location-independent Spirals */}
 
         {/* Community Stats — reputation, trust score, achievements */}
         {communityStats && (
