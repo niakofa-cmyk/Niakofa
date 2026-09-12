@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   audioCircleParticipantsTable,
@@ -69,25 +69,17 @@ router.post(
         identity: String(userId),
         ttl: TOKEN_TTL_SECONDS,
       });
-      // Build grant without `as const` so sources match LiveKit's mutable TrackSource[].
-      const grant: {
-        room: string;
-        roomJoin: boolean;
-        canPublish: boolean;
-        canPublishData: boolean;
-        canSubscribe: boolean;
-        canPublishSources?: Array<"camera" | "microphone" | "screen_share">;
-      } = {
+      accessToken.addGrant({
         room: roomNameForSession(sessionId),
         roomJoin: true,
         canPublish,
         canPublishData: true,
         canSubscribe: true,
-      };
-      if (canPublish) {
-        grant.canPublishSources = ["camera", "microphone", "screen_share"];
-      }
-      accessToken.addGrant(grant);
+        // Explicit sources when publishing — avoids unrestricted track grants.
+        canPublishSources: canPublish
+          ? [TrackSource.CAMERA, TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE]
+          : undefined,
+      });
       const token = await accessToken.toJwt();
       return res.json({
         media_url: livekitUrl,
