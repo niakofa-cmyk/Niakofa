@@ -10,11 +10,15 @@ import { requireApproved, requireAuth } from "../middlewares/auth";
 import { circleMediaTokenLimiter } from "../middlewares/rate-limit.hardened";
 import { canPublishCircleMedia } from "../lib/circleMediaPolicy";
 import { isValidLiveKitUrl, parsePositiveSafeInteger } from "../lib/circleMediaConfig";
+import {
+  MEDIA_TOKEN_REFRESH_BEFORE_SECONDS,
+  MEDIA_TOKEN_TTL_SECONDS,
+  MAX_SESSION_DURATION_MS,
+  isSessionPastMaxDuration,
+} from "../lib/circleSessionLifecycle";
 import { logger } from "../lib/logger";
 
 const router = Router();
-/** Short-lived media credentials; clients must reissue on expiry / role change. */
-const TOKEN_TTL_SECONDS = 60 * 20; // 20 minutes
 
 function roomNameForSession(sessionId: number): string {
   return `niakofa-circle-${sessionId}`;
@@ -49,6 +53,13 @@ router.post(
     if (!session || session.status !== "live") {
       return res.status(404).json({ error: "Session not live" });
     }
+    if (isSessionPastMaxDuration(session.started_at)) {
+      return res.status(410).json({
+        error: "This Spiral has reached its 4-hour maximum duration",
+        code: "SESSION_MAX_DURATION",
+      });
+    }
+
     const [participant] = await db.select({ role: audioCircleParticipantsTable.role })
       .from(audioCircleParticipantsTable)
       .where(and(
@@ -67,7 +78,7 @@ router.post(
     try {
       const accessToken = new AccessToken(apiKey, apiSecret, {
         identity: String(userId),
-        ttl: TOKEN_TTL_SECONDS,
+        ttl: MEDIA_TOKEN_TTL_SECONDS,
       });
       accessToken.addGrant({
         room: roomNameForSession(sessionId),
@@ -75,18 +86,21 @@ router.post(
         canPublish,
         canPublishData: true,
         canSubscribe: true,
-        // Explicit sources when publishing — avoids unrestricted track grants.
         canPublishSources: canPublish
           ? [TrackSource.CAMERA, TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE]
           : undefined,
       });
       const token = await accessToken.toJwt();
+      // Short-lived credentials; the live Spiral itself may continue up to 4 hours.
+      // Clients must re-call this endpoint before expires_in elapses.
       return res.json({
         media_url: livekitUrl,
         media_token: token,
         room_name: roomNameForSession(sessionId),
         can_publish: canPublish,
-        expires_in: TOKEN_TTL_SECONDS,
+        expires_in: MEDIA_TOKEN_TTL_SECONDS,
+        refresh_before_seconds: MEDIA_TOKEN_REFRESH_BEFORE_SECONDS,
+        session_max_seconds: Math.floor(MAX_SESSION_DURATION_MS / 1000),
       });
     } catch (error) {
       logger.error({ err: error, sessionId, userId }, "circle-media-token: failed to mint LiveKit token");
