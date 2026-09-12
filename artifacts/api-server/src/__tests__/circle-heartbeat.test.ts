@@ -10,18 +10,22 @@ import express from "express";
 import request from "supertest";
 
 const sendToCircleParticipants = jest.fn();
+const clearCircleSession = jest.fn();
 const updateReturning = jest.fn();
 const selectThen = jest.fn();
 
-const db: unknown = {
+const chain = {
   update: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   returning: updateReturning,
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
+  limit: jest.fn().mockReturnThis(),
   then: selectThen,
 };
+
+const db: unknown = chain;
 
 jest.unstable_mockModule("@workspace/db", () => ({
   db,
@@ -33,6 +37,14 @@ jest.unstable_mockModule("@workspace/db", () => ({
     last_seen_at: "last_seen_at",
     role: "role",
   },
+  // Required by lifecycle enforcement (4h max / host-grace) in circle-heartbeat.
+  audioCircleSessionsTable: {
+    id: "id",
+    status: "status",
+    started_at: "started_at",
+    ended_at: "ended_at",
+    host_disconnected_at: "host_disconnected_at",
+  },
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({
@@ -40,26 +52,33 @@ jest.unstable_mockModule("drizzle-orm", () => ({
   eq: jest.fn(),
   isNull: jest.fn(),
   lt: jest.fn(),
+  inArray: jest.fn(),
   sql: jest.fn(),
 }));
 
 jest.unstable_mockModule("../middlewares/auth", () => ({
   requireAuth: (req: unknown, _res: unknown, next: unknown) => {
-    req.authenticatedUserId = 42;
-    next();
+    (req as { authenticatedUserId: number }).authenticatedUserId = 42;
+    (next as () => void)();
   },
 }));
 
 jest.unstable_mockModule("../middlewares/rate-limit", () => ({
-  generalApiLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  generalApiLimiter: (_req: unknown, _res: unknown, next: unknown) => (next as () => void)(),
 }));
 
 jest.unstable_mockModule("../lib/ws-hub", () => ({
   sendToCircleParticipants,
+  clearCircleSession,
 }));
 
 jest.unstable_mockModule("../lib/logger", () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
+}));
+
+jest.unstable_mockModule("../lib/circleSessionLifecycle", () => ({
+  HOST_GRACE_PERIOD_MS: 90_000,
+  isSessionPastMaxDuration: () => false,
 }));
 
 let app: express.Express;
@@ -73,17 +92,29 @@ beforeAll(async () => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  db.update.mockReturnThis();
-  db.set.mockReturnThis();
-  db.where.mockReturnThis();
-  db.select.mockReturnThis();
-  db.from.mockReturnThis();
+  chain.update.mockReturnThis();
+  chain.set.mockReturnThis();
+  chain.where.mockReturnThis();
+  chain.select.mockReturnThis();
+  chain.from.mockReturnThis();
+  chain.limit.mockReturnThis();
   updateReturning
     .mockResolvedValueOnce([{ id: 1 }]) // heartbeat participant update
     .mockResolvedValueOnce([]); // ghost sweep
+  // Session lifecycle selects resolve to a live session with a present host.
   selectThen.mockImplementation((resolve: (value: unknown) => void) => {
     resolve([{ user_id: 42 }, { user_id: 7 }]);
   });
+  chain.limit.mockImplementation(() =>
+    Promise.resolve([
+      {
+        id: 9,
+        status: "live",
+        started_at: new Date(),
+        host_disconnected_at: null,
+      },
+    ]),
+  );
 });
 
 describe("POST /api/audio-circle-sessions/:id/heartbeat", () => {
