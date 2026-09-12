@@ -14,17 +14,16 @@ export const HOST_GRACE_PERIOD_MS = 90_000;
 /** Maximum wall-clock length of a single live Spiral/Circle session. */
 export const MAX_SESSION_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
 
-/**
- * Media token TTL matches session max so a normal Spiral never forces a
- * mid-session LiveKit reconnect. Remaining time is computed at mint time.
- */
+/** Maximum possible media-token lifetime; actual TTL is remaining session time. */
 export const MEDIA_TOKEN_TTL_SECONDS = Math.floor(MAX_SESSION_DURATION_MS / 1000); // 4 hours
 
 export function sessionAgeMs(startedAt: Date | string | null | undefined): number | null {
   if (!startedAt) return null;
   const t = startedAt instanceof Date ? startedAt.getTime() : new Date(startedAt).getTime();
   if (Number.isNaN(t)) return null;
-  return Date.now() - t;
+  // Protect the lifecycle from a clock-skewed/future timestamp producing a token
+  // that lives longer than the configured four-hour maximum.
+  return Math.max(0, Date.now() - t);
 }
 
 export function isSessionPastMaxDuration(startedAt: Date | string | null | undefined): boolean {
@@ -32,7 +31,7 @@ export function isSessionPastMaxDuration(startedAt: Date | string | null | undef
   return age != null && age >= MAX_SESSION_DURATION_MS;
 }
 
-/** Seconds remaining until the 4-hour session hard cap (min 60s when still live). */
+/** Seconds remaining until the 4-hour session hard cap. */
 export function remainingSessionTokenTtlSeconds(
   startedAt: Date | string | null | undefined,
 ): number {
@@ -40,6 +39,6 @@ export function remainingSessionTokenTtlSeconds(
   if (age == null) return MEDIA_TOKEN_TTL_SECONDS;
   const remainingMs = MAX_SESSION_DURATION_MS - age;
   if (remainingMs <= 0) return 0;
-  // Floor to whole seconds; never issue a sub-minute token for a still-live room.
-  return Math.max(60, Math.floor(remainingMs / 1000));
+  // Floor to whole seconds. Never extend a credential beyond the session cap.
+  return Math.floor(remainingMs / 1000);
 }
