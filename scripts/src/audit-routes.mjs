@@ -3,18 +3,20 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
 const appPath = resolve(root, "artifacts/pay-it-forward/src/App.tsx");
-const pagesRoot = resolve(root, "artifacts/pay-it-forward/src/pages");
 const source = readFileSync(appPath, "utf8");
 
-const importedPages = new Map();
+const importedModules = new Map();
 const importPatterns = [
-  /import\s+(\w+)\s+from\s+["']@\/pages\/([^"']+)["']/g,
-  /(?:const|let)\s+(\w+)\s*=\s*lazy\(\(\)\s*=>\s*import\(["']@\/pages\/([^"']+)["']\)/g,
+  /import\s+(\w+)\s+from\s+["']@\/(pages|components)\/([^"']+)["']/g,
+  /(?:const|let)\s+(\w+)\s*=\s*lazy\(\(\)\s*=>\s*import\(["']@\/(pages|components)\/([^"']+)["']\)/g,
 ];
 
 for (const pattern of importPatterns) {
   for (const match of source.matchAll(pattern)) {
-    importedPages.set(match[1], match[2]);
+    importedModules.set(match[1], {
+      root: match[2],
+      module: match[3],
+    });
   }
 }
 
@@ -29,7 +31,7 @@ for (const match of source.matchAll(routePattern)) {
     path,
     component,
     inline: component.startsWith("()"),
-    page: importedPages.get(component),
+    imported: importedModules.get(component),
   });
 }
 
@@ -39,7 +41,7 @@ if (fallbackRoute) {
     path: "<fallback>",
     component: fallbackRoute[1],
     inline: false,
-    page: importedPages.get(fallbackRoute[1]),
+    imported: importedModules.get(fallbackRoute[1]),
   });
 }
 
@@ -49,18 +51,23 @@ const duplicatePaths = routes
   .filter((path, index, paths) => paths.indexOf(path) !== index);
 
 const missingImports = routes.filter(
-  (route) => route.path !== "<fallback>" && !route.inline && !route.page,
+  (route) => route.path !== "<fallback>" && !route.inline && !route.imported,
 );
 
-const missingPages = routes.filter((route) => {
-  if (!route.page) return false;
+const missingModules = routes.filter((route) => {
+  if (!route.imported) return false;
+  const moduleRoot = resolve(
+    root,
+    "artifacts/pay-it-forward/src",
+    route.imported.root,
+  );
   return ![".ts", ".tsx"].some((extension) =>
-    existsSync(resolve(pagesRoot, `${route.page}${extension}`)),
+    existsSync(resolve(moduleRoot, `${route.imported.module}${extension}`)),
   );
 });
 
 console.log(`Route audit: ${routes.length - 1} declared routes + fallback`);
-console.log(`Page imports: ${importedPages.size}`);
+console.log(`Component/page imports: ${importedModules.size}`);
 console.log(`Inline routes: ${routes.filter((route) => route.inline).length}`);
 
 if (duplicatePaths.length > 0) {
@@ -70,19 +77,21 @@ if (duplicatePaths.length > 0) {
 if (missingImports.length > 0) {
   for (const route of missingImports) {
     console.error(
-      `Missing page import: ${route.path} -> ${route.component}`,
+      `Missing route component import: ${route.path} -> ${route.component}`,
     );
   }
 }
 
-if (missingPages.length > 0) {
-  for (const route of missingPages) {
-    console.error(`Missing page module: ${route.path} -> ${route.page}`);
+if (missingModules.length > 0) {
+  for (const route of missingModules) {
+    console.error(
+      `Missing route module: ${route.path} -> @/${route.imported.root}/${route.imported.module}`,
+    );
   }
 }
 
-if (duplicatePaths.length || missingImports.length || missingPages.length) {
+if (duplicatePaths.length || missingImports.length || missingModules.length) {
   process.exitCode = 1;
 } else {
-  console.log("✓ Every declared route resolves to an imported page or explicit inline component.");
+  console.log("✓ Every declared route resolves to an imported page/component or explicit inline component.");
 }
