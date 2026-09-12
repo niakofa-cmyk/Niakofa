@@ -13,7 +13,8 @@ import { isValidLiveKitUrl, parsePositiveSafeInteger } from "../lib/circleMediaC
 import { logger } from "../lib/logger";
 
 const router = Router();
-const TOKEN_TTL_SECONDS = 60 * 60 * 4;
+/** Short-lived media credentials; clients must reissue on expiry / role change. */
+const TOKEN_TTL_SECONDS = 60 * 20; // 20 minutes
 
 function roomNameForSession(sessionId: number): string {
   return `niakofa-circle-${sessionId}`;
@@ -74,6 +75,10 @@ router.post(
         canPublish,
         canPublishData: true,
         canSubscribe: true,
+        // Explicit sources when publishing — avoids unrestricted track grants.
+        ...(canPublish
+          ? { canPublishSources: ["camera", "microphone", "screen_share"] as const }
+          : {}),
       });
       const token = await accessToken.toJwt();
       return res.json({
