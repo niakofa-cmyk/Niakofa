@@ -11,10 +11,9 @@ import { circleMediaTokenLimiter } from "../middlewares/rate-limit.hardened";
 import { canPublishCircleMedia } from "../lib/circleMediaPolicy";
 import { isValidLiveKitUrl, parsePositiveSafeInteger } from "../lib/circleMediaConfig";
 import {
-  MEDIA_TOKEN_REFRESH_BEFORE_SECONDS,
-  MEDIA_TOKEN_TTL_SECONDS,
   MAX_SESSION_DURATION_MS,
   isSessionPastMaxDuration,
+  remainingSessionTokenTtlSeconds,
 } from "../lib/circleSessionLifecycle";
 import { logger } from "../lib/logger";
 
@@ -75,36 +74,42 @@ router.post(
       participant.role as "host" | "co_host" | "speaker" | "listener",
       (session.media_publish_policy as "open" | "moderated") ?? "open",
     );
+
+    // Token lasts for the rest of this Spiral (up to 4h). No mid-session
+    // refresh is required; Host and listeners stay on the same LiveKit room.
+    const tokenTtlSeconds = remainingSessionTokenTtlSeconds(session.started_at);
+    if (tokenTtlSeconds <= 0) {
+      return res.status(410).json({
+        error: "This Spiral has reached its 4-hour maximum duration",
+        code: "SESSION_MAX_DURATION",
+      });
+    }
+
     try {
       const accessToken = new AccessToken(apiKey, apiSecret, {
         identity: String(userId),
-        ttl: MEDIA_TOKEN_TTL_SECONDS,
+        ttl: tokenTtlSeconds,
       });
-      // Explicit publish sources when allowed. Use string sources (SDK-compatible)
-      // without importing TrackSource enum (not always re-exported by the package).
+      // Keep grant fields to the stable VideoGrant surface only (no experimental
+      // source enums) so typecheck stays green across livekit-server-sdk versions.
       accessToken.addGrant({
         room: roomNameForSession(sessionId),
         roomJoin: true,
         canPublish,
         canPublishData: true,
         canSubscribe: true,
-        ...(canPublish
-          ? {
-              canPublishSources: ["camera", "microphone", "screen_share"] as string[],
-            }
-          : {}),
-      } as Parameters<AccessToken["addGrant"]>[0]);
+      });
       const token = await accessToken.toJwt();
-      // Short-lived credentials; the live Spiral itself may continue up to 4 hours.
-      // Clients must re-call this endpoint before expires_in elapses.
       return res.json({
         media_url: livekitUrl,
         media_token: token,
         room_name: roomNameForSession(sessionId),
         can_publish: canPublish,
-        expires_in: MEDIA_TOKEN_TTL_SECONDS,
-        refresh_before_seconds: MEDIA_TOKEN_REFRESH_BEFORE_SECONDS,
+        expires_in: tokenTtlSeconds,
         session_max_seconds: Math.floor(MAX_SESSION_DURATION_MS / 1000),
+        // Explicit: clients should NOT disconnect/reconnect for token refresh
+        // during a normal Spiral; credentials cover the remaining session.
+        refresh_required: false,
       });
     } catch (error) {
       logger.error({ err: error, sessionId, userId }, "circle-media-token: failed to mint LiveKit token");
