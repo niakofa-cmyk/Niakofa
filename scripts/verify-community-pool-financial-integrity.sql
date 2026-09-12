@@ -12,7 +12,8 @@ WHERE filename IN (
   '0116_pool_contribution_user_history.sql',
   '0117_pool_settlement_verification_and_payout.sql',
   '0118_pool_pending_scope.sql',
-  '0118_community_pool_financial_integrity.sql'
+  '0118_community_pool_financial_integrity.sql',
+  '0136_pool_settlement_invariants.sql'
 )
 ORDER BY filename;
 
@@ -74,6 +75,23 @@ WHERE settlement_status IN ('available', 'paid_out')
   AND (
     stripe_verification_status <> 'verified'
     OR stripe_verified_at IS NULL
+  )
+ORDER BY id;
+
+SELECT 'verified_without_stripe_evidence' AS check_name, id,
+       stripe_verification_status, stripe_balance_transaction_id
+FROM community_pool_financial_events
+WHERE stripe_verification_status = 'verified'
+  AND NULLIF(btrim(stripe_balance_transaction_id), '') IS NULL
+ORDER BY id;
+
+SELECT 'available_without_settlement_evidence' AS check_name, id,
+       settlement_status, stripe_balance_transaction_id, available_on
+FROM community_pool_financial_events
+WHERE settlement_status IN ('available', 'paid_out')
+  AND (
+    NULLIF(btrim(stripe_balance_transaction_id), '') IS NULL
+    OR available_on IS NULL
   )
 ORDER BY id;
 
