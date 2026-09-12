@@ -3,7 +3,8 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { getStripeSecretKey, getStripeWebhookSecret } from "./lib/stripe-config";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startLedgerDriftMonitor, startNet30InvoiceReminderWorker } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startNet30InvoiceReminderWorker } from "./lib/scheduler";
+import { startLedgerDriftMonitor } from "./lib/ledger-stripe-drift";
 import {
   isRedisConfigured,
   assertProductionRedisReady,
@@ -194,7 +195,7 @@ server.listen(port, async () => {
   startPledgeDefaultWorker(); workerStarted("pledge-defaults", "Pledge Default Sweeper", false);
   // Cashout reconciliation — refunds stale pending/failed cashouts with no Stripe transfer
   startCashoutReconciliation(); workerStarted("cashout-recon", "Cashout Reconciliation", false);
-  // Ledger/Stripe drift monitor — runs daily, alerts on > $10 gap
+  // Ledger/Stripe drift — integer cents, 1-cent spendable tolerance (not $10)
   startLedgerDriftMonitor(); workerStarted("ledger-drift", "Ledger/Stripe Drift", false);
   // NET30 invoice reminders — notify gov sponsors 7 days before civic invoice due
   startNet30InvoiceReminderWorker(); workerStarted("net30-invoices", "NET30 Invoice Reminders", false);
