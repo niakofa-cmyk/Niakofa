@@ -77,10 +77,11 @@ export function CommunitySpiralsTab() {
         const curated = Array.isArray(neighborhoodData.neighborhoods) ? neighborhoodData.neighborhoods : [];
         const circles = Array.isArray(spiralData.circles) ? spiralData.circles : [];
         const live = new Map<string, LiveSession>();
+        let citywideCircle: SpiralSummary | null = null;
 
         for (const circle of circles) {
           if (!circle.neighborhood_name) {
-            if (circle.live_session) setCitywide(circle);
+            citywideCircle = circle;
             continue;
           }
           if (circle.live_session) live.set(keyFor(circle.neighborhood_name), circle.live_session);
@@ -88,6 +89,7 @@ export function CommunitySpiralsTab() {
 
         setNeighborhoods(curated.slice(0, 9));
         setLiveByNeighborhood(live);
+        setCitywide(citywideCircle);
         setLoading(false);
       })
       .catch(() => {
