@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { AccessToken, TrackSource } from "livekit-server-sdk";
+import { AccessToken } from "livekit-server-sdk";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   audioCircleParticipantsTable,
@@ -80,16 +80,20 @@ router.post(
         identity: String(userId),
         ttl: MEDIA_TOKEN_TTL_SECONDS,
       });
+      // Explicit publish sources when allowed. Use string sources (SDK-compatible)
+      // without importing TrackSource enum (not always re-exported by the package).
       accessToken.addGrant({
         room: roomNameForSession(sessionId),
         roomJoin: true,
         canPublish,
         canPublishData: true,
         canSubscribe: true,
-        canPublishSources: canPublish
-          ? [TrackSource.CAMERA, TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE]
-          : undefined,
-      });
+        ...(canPublish
+          ? {
+              canPublishSources: ["camera", "microphone", "screen_share"] as string[],
+            }
+          : {}),
+      } as Parameters<AccessToken["addGrant"]>[0]);
       const token = await accessToken.toJwt();
       // Short-lived credentials; the live Spiral itself may continue up to 4 hours.
       // Clients must re-call this endpoint before expires_in elapses.

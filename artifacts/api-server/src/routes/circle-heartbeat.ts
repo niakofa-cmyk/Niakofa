@@ -107,11 +107,10 @@ router.post("/audio-circle-sessions/:id/heartbeat", requireAuth, generalApiLimit
     }
   }
 
-  const GHOST_THRESHOLD_MS = HOST_GRACE_PERIOD_MS;
-  const cutoff = new Date(Date.now() - GHOST_THRESHOLD_MS);
+  const cutoff = new Date(Date.now() - HOST_GRACE_PERIOD_MS);
 
   try {
-    // Ghost sweep for non-hosts (co-hosts included — they are moderators only while present).
+    // Ghost sweep for non-hosts (co-hosts included — moderators only while present).
     const ghosts = await db
       .update(audioCircleParticipantsTable)
       .set({ left_at: new Date() })
@@ -136,7 +135,10 @@ router.post("/audio-circle-sessions/:id/heartbeat", requireAuth, generalApiLimit
           type: "circle_participant_left",
           payload: { session_id: sessionId, user_id: ghost.user_id },
         });
-        logger.info({ session_id: sessionId, user_id: ghost.user_id, role: ghost.role }, "circle: ghost participant swept");
+        logger.info(
+          { session_id: sessionId, user_id: ghost.user_id, role: ghost.role },
+          "circle: ghost participant swept",
+        );
       }
     }
 
@@ -156,7 +158,6 @@ router.post("/audio-circle-sessions/:id/heartbeat", requireAuth, generalApiLimit
       // Host ghost: start the same 90s grace used when host explicitly leaves.
       const [hostRow] = await db
         .select({
-          user_id: audioCircleParticipantsTable.user_id,
           last_seen_at: audioCircleParticipantsTable.last_seen_at,
         })
         .from(audioCircleParticipantsTable)
@@ -190,32 +191,19 @@ router.post("/audio-circle-sessions/:id/heartbeat", requireAuth, generalApiLimit
         logger.info({ session_id: sessionId }, "circle: host ghost — started 90s grace");
       }
 
-      // After grace: no present host and no present co-host → end.
-      // (Co-host promotion on explicit host leave remains in audio-circles expireIfHostGraceElapsed.)
-      const fresh = session.host_disconnected_at
-        ? session
-        : (await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1))[0];
+      // After grace: no live host/co-host (by last_seen) → end.
+      // Co-host promotion on explicit host leave remains in audio-circles.
+      const [fresh] = await db
+        .select()
+        .from(audioCircleSessionsTable)
+        .where(eq(audioCircleSessionsTable.id, sessionId))
+        .limit(1);
 
       if (fresh?.host_disconnected_at) {
         const elapsed = Date.now() - new Date(fresh.host_disconnected_at).getTime();
         if (elapsed >= HOST_GRACE_PERIOD_MS) {
-          const moderators = await db
-            .select({ user_id: audioCircleParticipantsTable.user_id, role: audioCircleParticipantsTable.role })
-            .from(audioCircleParticipantsTable)
-            .where(and(
-              eq(audioCircleParticipantsTable.session_id, sessionId),
-              isNull(audioCircleParticipantsTable.left_at),
-              inArray(audioCircleParticipantsTable.role, ["host", "co_host"]),
-            ));
-          const presentMods = moderators.filter((m) => {
-            // host may still have left_at null during grace; treat stale last_seen as absent
-            return true;
-          });
-          // Re-check last_seen for moderators
           const modRows = await db
             .select({
-              user_id: audioCircleParticipantsTable.user_id,
-              role: audioCircleParticipantsTable.role,
               last_seen_at: audioCircleParticipantsTable.last_seen_at,
             })
             .from(audioCircleParticipantsTable)
@@ -225,14 +213,12 @@ router.post("/audio-circle-sessions/:id/heartbeat", requireAuth, generalApiLimit
               inArray(audioCircleParticipantsTable.role, ["host", "co_host"]),
             ));
           const liveMods = modRows.filter(
-            (m) => m.last_seen_at && m.last_seen_at >= cutoff,
+            (m) => m.last_seen_at != null && m.last_seen_at >= cutoff,
           );
           if (liveMods.length === 0) {
             await endSessionFromHeartbeat(sessionId, "no_host_or_cohost_90s");
             return res.status(204).send();
           }
-          // If a co-host is still live, leave promotion to audio-circles expireIfHostGraceElapsed on next read.
-          void presentMods;
         }
       }
     }
