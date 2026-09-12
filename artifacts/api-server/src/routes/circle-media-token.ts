@@ -90,15 +90,21 @@ router.post(
         identity: String(userId),
         ttl: tokenTtlSeconds,
       });
-      // Keep grant fields to the stable VideoGrant surface only (no experimental
-      // source enums) so typecheck stays green across livekit-server-sdk versions.
+      // Explicitly constrain publishers to the media sources the product supports.
+      // This prevents a future client/SDK feature from silently granting additional
+      // publish capabilities while preserving the locked no-refresh session model.
       accessToken.addGrant({
         room: roomNameForSession(sessionId),
         roomJoin: true,
         canPublish,
         canPublishData: true,
         canSubscribe: true,
-      });
+        ...(canPublish
+          ? {
+              canPublishSources: ["camera", "microphone", "screen_share"] as string[],
+            }
+          : {}),
+      } as Parameters<AccessToken["addGrant"]>[0]);
       const token = await accessToken.toJwt();
       return res.json({
         media_url: livekitUrl,
