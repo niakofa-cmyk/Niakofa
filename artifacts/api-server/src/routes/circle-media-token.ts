@@ -69,17 +69,25 @@ router.post(
         identity: String(userId),
         ttl: TOKEN_TTL_SECONDS,
       });
-      accessToken.addGrant({
+      // Build grant without `as const` so sources match LiveKit's mutable TrackSource[].
+      const grant: {
+        room: string;
+        roomJoin: boolean;
+        canPublish: boolean;
+        canPublishData: boolean;
+        canSubscribe: boolean;
+        canPublishSources?: Array<"camera" | "microphone" | "screen_share">;
+      } = {
         room: roomNameForSession(sessionId),
         roomJoin: true,
         canPublish,
         canPublishData: true,
         canSubscribe: true,
-        // Explicit sources when publishing — avoids unrestricted track grants.
-        ...(canPublish
-          ? { canPublishSources: ["camera", "microphone", "screen_share"] as const }
-          : {}),
-      });
+      };
+      if (canPublish) {
+        grant.canPublishSources = ["camera", "microphone", "screen_share"];
+      }
+      accessToken.addGrant(grant);
       const token = await accessToken.toJwt();
       return res.json({
         media_url: livekitUrl,
