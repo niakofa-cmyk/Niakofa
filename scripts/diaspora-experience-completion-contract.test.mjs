@@ -4,26 +4,44 @@ import { readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("Diaspora dashboard exposes the complete canonical journey", () => {
+test("Diaspora landing is a Globe-first Hub doorway", () => {
   const source = read("artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx");
-  for (const label of ["Family", "Stories", "Tree", "Research", "Connections", "Heritage", "Legacy"]) {
-    assert.match(source, new RegExp(`label: \\\"${label}\\\"`));
+  const globe = read("artifacts/pay-it-forward/src/components/diaspora/DiasporaGlobeFirst.tsx");
+
+  // Product hierarchy: Diaspora → Globe → Hub → Action
+  assert.match(source, /DiasporaGlobeFirst/);
+  assert.match(source, /\/api\/griot\/village-pulse/);
+  assert.match(source, /Where is your community in the world\?/);
+  assert.match(source, /\/diaspora\/family/);
+  assert.match(source, /\/diaspora\/timeline/);
+
+  // Globe is the navigation system — Hubs, not individual members
+  assert.match(globe, /Find a country, state, or Diaspora Hub/);
+  assert.match(globe, /U\.S\. state hub/);
+  assert.match(globe, /Country hub/);
+  assert.match(globe, /hubId=/);
+  assert.match(globe, /\/diaspora\/heritage\/globe/);
+  assert.match(globe, /projection="globe"/);
+
+  // Hub actions stay one level deeper (not competing landing cards)
+  for (const label of ["Community", "Connect", "Spirals", "Stories", "Pool"]) {
+    assert.match(globe, new RegExp(`label=\"${label}\"`));
   }
-  assert.match(source, /\/diaspora\/heritage\/globe/);
-  assert.match(source, /\/diaspora\/dna/);
 });
 
-test("DNA copy stays provenance-safe", () => {
-  const source = read("artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx");
-  assert.match(source, /derived-sketch/);
-  assert.match(source, /shared-cM/);
-  assert.match(source, /IBD/);
+test("DNA copy stays provenance-safe on DNA surfaces", () => {
+  // DNA provenance belongs on DNA routes, not the Globe doorway.
+  const route = read("artifacts/api-server/src/routes/dna-matching.ts");
+  const engine = read("artifacts/api-server/src/lib/dna-matching-engine.ts");
+  assert.match(engine, /niakofa_derived_sketch_v1/);
+  assert.match(route, /shared_cm_est: null/);
+  assert.match(route, /MAX_MATCH_RESULTS = 50/);
 });
 
 test("Research evidence vocabulary contains all six supported semantics", () => {
   const source = read("artifacts/pay-it-forward/src/lib/diaspora/researchEvidence.ts");
   for (const kind of ["document", "shared_segment", "pedigree", "oral_history", "place_history", "dna_profile"]) {
-    assert.match(source, new RegExp(`\\\"${kind}\\\"`));
+    assert.match(source, new RegExp(`\"${kind}\"`));
   }
 });
 
