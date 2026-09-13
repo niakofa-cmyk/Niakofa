@@ -2,12 +2,10 @@
  * Diaspora — Globe-first doorway
  * Route: /diaspora
  *
- * Product hierarchy:
- *   Diaspora → Globe → Hub → Action
- *
- * The page intentionally avoids turning every downstream feature into a
- * dashboard card. Family, stories, research, Legacy, Spirals and Community
- * Pool remain available after a place is selected.
+ * Product hierarchy: Diaspora → Globe → Hub → Action.
+ * Downstream family, stories, research, Legacy, Spirals and Pool surfaces
+ * remain reachable after a Hub is selected instead of competing for attention
+ * on the landing page.
  */
 
 import { useEffect, useState } from "react";
@@ -45,7 +43,6 @@ export default function DiasporaDashboardPage() {
           fetch("/api/diaspora/dashboard", { headers: authHeaders() }),
           fetch("/api/griot/village-pulse", { headers: authHeaders() }),
         ]);
-
         if (!dashboardRes.ok) throw new Error("dashboard");
         const dashboard = await dashboardRes.json();
         if (cancelled) return;
@@ -54,19 +51,24 @@ export default function DiasporaDashboardPage() {
         if (pulseRes.ok) {
           const data = await pulseRes.json();
           const nextHubs = (Array.isArray(data.hubs) ? data.hubs : []).map((hub: Record<string, unknown>) => ({
+            ...hub,
             id: Number(hub.id ?? hub.hub_id),
             name: String(hub.name ?? hub.hub_name ?? "Diaspora Hub"),
+            display_name: typeof hub.display_name === "string" ? hub.display_name : null,
             region: String(hub.region ?? hub.region_label ?? ""),
             lat: Number(hub.lat ?? 0),
             lng: Number(hub.lng ?? 0),
             tag: String(hub.tag ?? "country"),
+            hub_scope: typeof hub.hub_scope === "string" ? hub.hub_scope : null,
+            country_code: typeof hub.country_code === "string" ? hub.country_code : null,
+            subdivision_code: typeof hub.subdivision_code === "string" ? hub.subdivision_code : null,
             story_count: Number(hub.story_count ?? 0),
             member_count: Number(hub.member_count ?? 0),
             live_user_count: Number(hub.live_user_count ?? 0),
             neighborhood_count: Number(hub.neighborhood_count ?? 0),
             spiral_count: Number(hub.spiral_count ?? 0),
             open_requests: Number(hub.open_requests ?? 0),
-            reserved_balance: hub.reserved_balance as string | number | null | undefined,
+            reserved_balance: (hub.reserved_balance as string | number | null | undefined) ?? null,
             is_crisis: hub.is_crisis === true,
             crisis_message: typeof hub.crisis_message === "string" ? hub.crisis_message : null,
           })) as DiasporaGlobeHub[];
@@ -83,9 +85,7 @@ export default function DiasporaDashboardPage() {
     return () => { cancelled = true; };
   }, [currentUser]);
 
-  if (!currentUser) {
-    return <div className="flex min-h-screen items-center justify-center bg-background px-6"><p className="text-sm text-muted-foreground">Sign in to enter the Diaspora Globe.</p></div>;
-  }
+  if (!currentUser) return <div className="flex min-h-screen items-center justify-center bg-background px-6"><p className="text-sm text-muted-foreground">Sign in to enter the Diaspora Globe.</p></div>;
 
   const familyLabel = stats ? `${stats.family_tree_people} people in your family tree` : "Your family network";
 
@@ -105,12 +105,7 @@ export default function DiasporaDashboardPage() {
         <section className={`${diasporaTheme.radius} border border-white/10 bg-white/[0.025] p-4 sm:p-5`}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <div className="flex min-w-0 flex-1 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300/10"><TreePine className="h-4 w-4 text-amber-300" /></span><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300/65">My Family</p><p className="truncate text-sm font-semibold text-white/80">{familyLabel}</p></div></div>
-            <div className="flex flex-wrap gap-2">
-              <SmallAction icon={Users} label="Family" onClick={() => navigate("/diaspora/family")} />
-              <SmallAction icon={Mic} label="Record" onClick={() => navigate("/diaspora/family?intent=oral-history")} />
-              <SmallAction icon={History} label="Legacy" onClick={() => navigate("/diaspora/timeline")} />
-              <SmallAction icon={ArrowRight} label="Open" onClick={() => navigate("/diaspora/family")} />
-            </div>
+            <div className="flex flex-wrap gap-2"><SmallAction icon={Users} label="Family" onClick={() => navigate("/diaspora/family")} /><SmallAction icon={Mic} label="Record" onClick={() => navigate("/diaspora/family?intent=oral-history")} /><SmallAction icon={History} label="Legacy" onClick={() => navigate("/diaspora/timeline")} /><SmallAction icon={ArrowRight} label="Open" onClick={() => navigate("/diaspora/family")} /></div>
           </div>
         </section>
 
