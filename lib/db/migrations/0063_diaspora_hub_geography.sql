@@ -1,58 +1,59 @@
 -- Migration 0063: canonical Diaspora Hub geography.
 -- Non-U.S. hubs are country-level; U.S. hubs are state-level.
--- Existing hub IDs are preserved so story/community references remain valid.
+-- Existing hub IDs and anchor names are preserved so story/community and
+-- neighborhood/Spiral references remain valid.
 
 ALTER TABLE diaspora_hubs
+  ADD COLUMN IF NOT EXISTS display_name TEXT,
   ADD COLUMN IF NOT EXISTS hub_scope TEXT NOT NULL DEFAULT 'country',
   ADD COLUMN IF NOT EXISTS country_code TEXT,
-  ADD COLUMN IF NOT EXISTS subdivision_code TEXT;
+  ADD COLUMN IF NOT EXISTS subdivision_code TEXT,
+  ADD COLUMN IF NOT EXISTS anchor_city TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_diaspora_hubs_scope ON diaspora_hubs(hub_scope);
 CREATE INDEX IF NOT EXISTS idx_diaspora_hubs_country ON diaspora_hubs(country_code);
 CREATE INDEX IF NOT EXISTS idx_diaspora_hubs_subdivision ON diaspora_hubs(subdivision_code);
 
--- Convert the original city seed rows into the canonical geography without
--- changing their primary keys. This preserves existing story/community links.
-UPDATE diaspora_hubs SET name = 'Texas', region_label = 'United States · Texas', tag = 'us-state', hub_scope = 'home', country_code = 'US', subdivision_code = 'TX'
+-- Public Hub labels are canonical country/state names; `name` remains the
+-- original anchor identity used by existing city/neighborhood aggregation.
+UPDATE diaspora_hubs SET display_name = 'Texas', region_label = 'United States · Texas', tag = 'us-state', hub_scope = 'home', country_code = 'US', subdivision_code = 'TX', anchor_city = 'Fort Worth'
 WHERE name = 'Fort Worth, TX';
 
-UPDATE diaspora_hubs SET name = 'Georgia', region_label = 'United States · Georgia', tag = 'us-state', hub_scope = 'us_state', country_code = 'US', subdivision_code = 'GA'
+UPDATE diaspora_hubs SET display_name = 'Georgia', region_label = 'United States · Georgia', tag = 'us-state', hub_scope = 'us_state', country_code = 'US', subdivision_code = 'GA', anchor_city = 'Atlanta'
 WHERE name = 'Atlanta, GA';
 
-UPDATE diaspora_hubs SET name = 'Jamaica', region_label = 'Caribbean · Jamaica', tag = 'country', hub_scope = 'country', country_code = 'JM', subdivision_code = NULL
+UPDATE diaspora_hubs SET display_name = 'Jamaica', region_label = 'Caribbean · Jamaica', tag = 'country', hub_scope = 'country', country_code = 'JM', subdivision_code = NULL, anchor_city = 'Kingston'
 WHERE name = 'Kingston, Jamaica';
 
-UPDATE diaspora_hubs SET name = 'Dominican Republic', region_label = 'Caribbean · Dominican Republic', tag = 'country', hub_scope = 'country', country_code = 'DO', subdivision_code = NULL
+UPDATE diaspora_hubs SET display_name = 'Dominican Republic', region_label = 'Caribbean · Dominican Republic', tag = 'country', hub_scope = 'country', country_code = 'DO', subdivision_code = NULL, anchor_city = 'Santo Domingo'
 WHERE name = 'Santo Domingo, DR';
 
-UPDATE diaspora_hubs SET name = 'Brazil', region_label = 'South America · Brazil', tag = 'country', hub_scope = 'country', country_code = 'BR', subdivision_code = NULL
+UPDATE diaspora_hubs SET display_name = 'Brazil', region_label = 'South America · Brazil', tag = 'country', hub_scope = 'country', country_code = 'BR', subdivision_code = NULL, anchor_city = 'Salvador'
 WHERE name = 'Salvador, Brazil';
 
-UPDATE diaspora_hubs SET name = 'Nigeria', region_label = 'West Africa · Nigeria', tag = 'country', hub_scope = 'country', country_code = 'NG', subdivision_code = NULL
+UPDATE diaspora_hubs SET display_name = 'Nigeria', region_label = 'West Africa · Nigeria', tag = 'country', hub_scope = 'country', country_code = 'NG', subdivision_code = NULL, anchor_city = 'Lagos'
 WHERE name = 'Lagos, Nigeria';
 
-UPDATE diaspora_hubs SET name = 'Ghana', region_label = 'West Africa · Ghana', tag = 'country', hub_scope = 'country', country_code = 'GH', subdivision_code = NULL
+UPDATE diaspora_hubs SET display_name = 'Ghana', region_label = 'West Africa · Ghana', tag = 'country', hub_scope = 'country', country_code = 'GH', subdivision_code = NULL, anchor_city = 'Accra'
 WHERE name = 'Accra, Ghana';
 
-UPDATE diaspora_hubs SET name = 'United Kingdom', region_label = 'Europe · United Kingdom', tag = 'country', hub_scope = 'country', country_code = 'GB', subdivision_code = NULL
+UPDATE diaspora_hubs SET display_name = 'United Kingdom', region_label = 'Europe · United Kingdom', tag = 'country', hub_scope = 'country', country_code = 'GB', subdivision_code = NULL, anchor_city = 'London'
 WHERE name = 'London, UK';
 
-UPDATE diaspora_hubs SET name = 'France', region_label = 'Europe · France', tag = 'country', hub_scope = 'country', country_code = 'FR', subdivision_code = NULL
+UPDATE diaspora_hubs SET display_name = 'France', region_label = 'Europe · France', tag = 'country', hub_scope = 'country', country_code = 'FR', subdivision_code = NULL, anchor_city = 'Paris'
 WHERE name = 'Paris, France';
 
-UPDATE diaspora_hubs SET name = 'Canada', region_label = 'North America · Canada', tag = 'country', hub_scope = 'country', country_code = 'CA', subdivision_code = NULL
+UPDATE diaspora_hubs SET display_name = 'Canada', region_label = 'North America · Canada', tag = 'country', hub_scope = 'country', country_code = 'CA', subdivision_code = NULL, anchor_city = 'Montréal'
 WHERE name = 'Montréal, Canada';
 
--- Seed additional U.S. state hubs so the model is immediately extensible.
--- These rows intentionally start unclaimed; they become active community
--- nodes when a community is associated through the existing claim workflow.
-INSERT INTO diaspora_hubs (name, region_label, lat, lng, tag, hub_scope, country_code, subdivision_code, note, is_seed, status)
+INSERT INTO diaspora_hubs (name, display_name, region_label, lat, lng, tag, hub_scope, country_code, subdivision_code, anchor_city, note, is_seed, status)
 VALUES
-  ('California', 'United States · California', 36.7783, -119.4179, 'us-state', 'us_state', 'US', 'CA', 'U.S. state-level Diaspora Hub.', TRUE, 'approved'),
-  ('New York', 'United States · New York', 42.9538, -75.5268, 'us-state', 'us_state', 'US', 'NY', 'U.S. state-level Diaspora Hub.', TRUE, 'approved')
+  ('Los Angeles, CA', 'California', 'United States · California', 34.0522, -118.2437, 'us-state', 'us_state', 'US', 'CA', 'Los Angeles', 'U.S. state-level Diaspora Hub.', TRUE, 'approved'),
+  ('New York City, NY', 'New York', 'United States · New York', 40.7128, -74.0060, 'us-state', 'us_state', 'US', 'New York City', 'U.S. state-level Diaspora Hub.', TRUE, 'approved')
 ON CONFLICT (name) DO NOTHING;
 
--- Backfill any non-U.S. or legacy rows not explicitly mapped above.
 UPDATE diaspora_hubs
-SET hub_scope = CASE WHEN country_code = 'US' THEN 'us_state' ELSE 'country' END
-WHERE hub_scope IS NULL OR hub_scope = '';
+SET display_name = COALESCE(display_name, name),
+    hub_scope = CASE WHEN country_code = 'US' THEN 'us_state' ELSE 'country' END,
+    anchor_city = COALESCE(anchor_city, split_part(name, ',', 1))
+WHERE display_name IS NULL OR hub_scope IS NULL OR hub_scope = '' OR anchor_city IS NULL;
