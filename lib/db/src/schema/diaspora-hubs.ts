@@ -3,8 +3,8 @@ import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
 
 // Durable geographic community nodes. Non-U.S. hubs are country-level;
-// U.S. hubs are state-level. A Hub can still use a representative lat/lng for
-// the Globe without exposing member GPS coordinates.
+// U.S. hubs are state-level. A representative anchor city preserves local
+// neighborhood/Spiral aggregation without changing the public Hub identity.
 export const diasporaHubsTable = pgTable("diaspora_hubs", {
   id:           serial("id").primaryKey(),
   name:         text("name").notNull(),
@@ -15,6 +15,7 @@ export const diasporaHubsTable = pgTable("diaspora_hubs", {
   hub_scope:    text("hub_scope").notNull().default("country"), // country | us_state | home
   country_code: text("country_code"),
   subdivision_code: text("subdivision_code"),
+  anchor_city:  text("anchor_city"),
   note:         text("note"),
   community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
   is_seed:      boolean("is_seed").notNull().default(false),
@@ -26,7 +27,7 @@ export const diasporaHubsTable = pgTable("diaspora_hubs", {
   crisis_declared_by: integer("crisis_declared_by").references(() => usersTable.id, { onDelete: "set null" }),
   crisis_resolved_note: text("crisis_resolved_note"),
   crisis_cleared_at:    timestamp("crisis_cleared_at", { withTimezone: true }),
-  crisis_cleared_by:    integer("crisis_cleared_by").references(() => usersTable.id, { onDelete: "set null" }),
+  crisis_cleared_by:    integer("crisis_cleared_by", { withTimezone: true }).references(() => usersTable.id, { onDelete: "set null" }),
   target_reserve_amount: numeric("target_reserve_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   reserved_balance:      numeric("reserved_balance", { precision: 12, scale: 2 }).notNull().default("0"),
   presence_radius_km: doublePrecision("presence_radius_km").notNull().default(35),
