@@ -16,7 +16,7 @@ CREATE INDEX IF NOT EXISTS idx_diaspora_hubs_subdivision ON diaspora_hubs(subdiv
 
 -- Public Hub labels are canonical country/state names; `name` remains the
 -- original anchor identity used by existing city/neighborhood aggregation.
-UPDATE diaspora_hubs SET display_name = 'Texas', region_label = 'United States · Texas', tag = 'us-state', hub_scope = 'home', country_code = 'US', subdivision_code = 'TX', anchor_city = 'Fort Worth'
+UPDATE diaspora_hubs SET display_name = 'Texas', region_label = 'United States · Texas', tag = 'us-state', hub_scope = 'us_state', country_code = 'US', subdivision_code = 'TX', anchor_city = 'Fort Worth'
 WHERE name = 'Fort Worth, TX';
 
 UPDATE diaspora_hubs SET display_name = 'Georgia', region_label = 'United States · Georgia', tag = 'us-state', hub_scope = 'us_state', country_code = 'US', subdivision_code = 'GA', anchor_city = 'Atlanta'
@@ -46,10 +46,14 @@ WHERE name = 'Paris, France';
 UPDATE diaspora_hubs SET display_name = 'Canada', region_label = 'North America · Canada', tag = 'country', hub_scope = 'country', country_code = 'CA', subdivision_code = NULL, anchor_city = 'Montréal'
 WHERE name = 'Montréal, Canada';
 
+-- One seed row per INSERT keeps each VALUES list independently valid and
+-- prevents a future row-arity edit from breaking the whole migration.
 INSERT INTO diaspora_hubs (name, display_name, region_label, lat, lng, tag, hub_scope, country_code, subdivision_code, anchor_city, note, is_seed, status)
-VALUES
-  ('Los Angeles, CA', 'California', 'United States · California', 34.0522, -118.2437, 'us-state', 'us_state', 'US', 'CA', 'Los Angeles', 'U.S. state-level Diaspora Hub.', TRUE, 'approved'),
-  ('New York City, NY', 'New York', 'United States · New York', 40.7128, -74.0060, 'us-state', 'us_state', 'US', 'New York City', 'U.S. state-level Diaspora Hub.', TRUE, 'approved')
+VALUES ('Los Angeles, CA', 'California', 'United States · California', 34.0522, -118.2437, 'us-state', 'us_state', 'US', 'CA', 'Los Angeles', 'U.S. state-level Diaspora Hub.', TRUE, 'approved')
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO diaspora_hubs (name, display_name, region_label, lat, lng, tag, hub_scope, country_code, subdivision_code, anchor_city, note, is_seed, status)
+VALUES ('New York City, NY', 'New York', 'United States · New York', 40.7128, -74.0060, 'us-state', 'us_state', 'US', 'NY', 'New York City', 'U.S. state-level Diaspora Hub.', TRUE, 'approved')
 ON CONFLICT (name) DO NOTHING;
 
 UPDATE diaspora_hubs
