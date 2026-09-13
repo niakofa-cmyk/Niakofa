@@ -2,18 +2,19 @@ import { pgTable, serial, integer, text, boolean, timestamp, doublePrecision, nu
 import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
 
-// Diaspora Globe hub cities. The original 10 curated cities ship as
-// `is_seed = true` rows (see migration 0053); anything added after that is
-// either an admin/community-proposed hub (status="pending_review" until
-// approved) or a community claiming one of the seed pins as their own via
-// `community_id`.
+// Durable geographic community nodes. Non-U.S. hubs are country-level;
+// U.S. hubs are state-level. A Hub can still use a representative lat/lng for
+// the Globe without exposing member GPS coordinates.
 export const diasporaHubsTable = pgTable("diaspora_hubs", {
   id:           serial("id").primaryKey(),
   name:         text("name").notNull(),
   region_label: text("region_label").notNull(),
   lat:          doublePrecision("lat").notNull(),
   lng:          doublePrecision("lng").notNull(),
-  tag:          text("tag").notNull().default("us"),
+  tag:          text("tag").notNull().default("country"),
+  hub_scope:    text("hub_scope").notNull().default("country"), // country | us_state | home
+  country_code: text("country_code"),
+  subdivision_code: text("subdivision_code"),
   note:         text("note"),
   community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
   is_seed:      boolean("is_seed").notNull().default(false),
