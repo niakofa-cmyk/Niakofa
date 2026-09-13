@@ -27,7 +27,7 @@ export const diasporaHubsTable = pgTable("diaspora_hubs", {
   crisis_declared_by: integer("crisis_declared_by").references(() => usersTable.id, { onDelete: "set null" }),
   crisis_resolved_note: text("crisis_resolved_note"),
   crisis_cleared_at:    timestamp("crisis_cleared_at", { withTimezone: true }),
-  crisis_cleared_by:    integer("crisis_cleared_by", { withTimezone: true }).references(() => usersTable.id, { onDelete: "set null" }),
+  crisis_cleared_by:    integer("crisis_cleared_by", { onDelete: "set null" }).references(() => usersTable.id),
   target_reserve_amount: numeric("target_reserve_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   reserved_balance:      numeric("reserved_balance", { precision: 12, scale: 2 }).notNull().default("0"),
   presence_radius_km: doublePrecision("presence_radius_km").notNull().default(35),
