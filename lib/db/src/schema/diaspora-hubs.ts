@@ -3,11 +3,13 @@ import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
 
 // Durable geographic community nodes. Non-U.S. hubs are country-level;
-// U.S. hubs are state-level. A representative anchor city preserves local
-// neighborhood/Spiral aggregation without changing the public Hub identity.
+// U.S. hubs are state-level. `name` remains the stable anchor identity used
+// by existing neighborhood/story aggregation; `display_name` is the public
+// Hub label shown by the Globe.
 export const diasporaHubsTable = pgTable("diaspora_hubs", {
   id:           serial("id").primaryKey(),
   name:         text("name").notNull(),
+  display_name: text("display_name"),
   region_label: text("region_label").notNull(),
   lat:          doublePrecision("lat").notNull(),
   lng:          doublePrecision("lng").notNull(),
