@@ -1,16 +1,17 @@
 /**
- * Globe *display* grouping only. A legacy local-city Diaspora Hub row
- * (primary_hub_id set) is folded into its country's canonical hub so the
- * Globe renders one marker per country instead of one per historical city
- * seed (see migration 0137_diaspora_hub_country_merge.sql for why this
- * exists — three pre-existing Brazil city hubs never got proper country
- * geography metadata and each rendered as a separate marker).
+ * Groups legacy/local Diaspora Hub rows for Globe presentation only.
  *
- * This never mutates or drops the underlying hub rows: community_id,
- * stories, pledges, hub_community_leaders, and every other relationship
- * stay tied to the original per-city hub id. Only the array returned for
- * Globe rendering merges numeric metrics onto the canonical row and lists
- * the folded-in cities under `local_hubs` for drill-down.
+ * Database identity is never changed here. Child Hub IDs continue to own
+ * their communities, stories, pledges, and other relationships. The Globe
+ * receives one marker for each canonical Hub and a `local_hubs` drill-down
+ * summary for any folded-in local Hubs.
+ *
+ * Safety invariants:
+ * - A child is hidden only when its declared primary Hub is present.
+ * - Dangling primary_hub_id values remain visible instead of disappearing.
+ * - Cycles cannot hide every Hub; only an actual parent present in the input
+ *   can suppress a child.
+ * - Metrics are aggregated exactly once per direct child.
  */
 
 export type MergeableHub = {
@@ -24,62 +25,76 @@ export type MergeableHub = {
   neighborhood_count: number;
   spiral_count: number;
   open_requests: number;
-  activity: { active_helpers: number; requests_fulfilled: number; pool_balance: number };
+  activity: {
+    active_helpers: number;
+    requests_fulfilled: number;
+    pool_balance: number;
+  };
 };
 
-export type LocalHubSummary = { hub_id: number; name: string; member_count: number; story_count: number };
+export type LocalHubSummary = {
+  hub_id: number;
+  name: string;
+  member_count: number;
+  story_count: number;
+};
 
-export function mergeHubsForGlobeDisplay<T extends MergeableHub>(
-  hubs: T[]
-): (T & { local_hubs?: LocalHubSummary[] })[] {
+type MergedHub<T extends MergeableHub> = T & { local_hubs?: LocalHubSummary[] };
+
+const addMetrics = (left: MergeableHub, right: MergeableHub) => ({
+  member_count: left.member_count + right.member_count,
+  live_user_count: left.live_user_count + right.live_user_count,
+  story_count: left.story_count + right.story_count,
+  neighborhood_count: left.neighborhood_count + right.neighborhood_count,
+  spiral_count: left.spiral_count + right.spiral_count,
+  open_requests: left.open_requests + right.open_requests,
+  activity: {
+    active_helpers: left.activity.active_helpers + right.activity.active_helpers,
+    requests_fulfilled: left.activity.requests_fulfilled + right.activity.requests_fulfilled,
+    pool_balance: left.activity.pool_balance + right.activity.pool_balance,
+  },
+});
+
+export function mergeHubsForGlobeDisplay<T extends MergeableHub>(hubs: T[]): MergedHub<T>[] {
+  if (hubs.length < 2) return hubs;
+
   const byId = new Map(hubs.map((hub) => [hub.id, hub]));
+  const childrenByPrimary = new Map<number, T[]>();
+
+  for (const hub of hubs) {
+    if (hub.primary_hub_id == null || !byId.has(hub.primary_hub_id)) continue;
+    const children = childrenByPrimary.get(hub.primary_hub_id) ?? [];
+    children.push(hub);
+    childrenByPrimary.set(hub.primary_hub_id, children);
+  }
+
   return hubs
-    // A child only disappears from the top-level Globe list if its declared
-    // primary actually exists in this result set; an orphaned/dangling
-    // primary_hub_id must never silently drop a hub from the map.
     .filter((hub) => hub.primary_hub_id == null || !byId.has(hub.primary_hub_id))
     .map((hub) => {
-      const children = hubs.filter((candidate) => candidate.primary_hub_id === hub.id);
-      if (children.length === 0) return hub;
-      const merged = children.reduce(
-        (acc, child) => ({
-          member_count: acc.member_count + child.member_count,
-          live_user_count: acc.live_user_count + child.live_user_count,
-          story_count: acc.story_count + child.story_count,
-          neighborhood_count: acc.neighborhood_count + child.neighborhood_count,
-          spiral_count: acc.spiral_count + child.spiral_count,
-          open_requests: acc.open_requests + child.open_requests,
-          active_helpers: acc.active_helpers + child.activity.active_helpers,
-          requests_fulfilled: acc.requests_fulfilled + child.activity.requests_fulfilled,
-          pool_balance: acc.pool_balance + child.activity.pool_balance,
-        }),
-        {
-          member_count: hub.member_count,
-          live_user_count: hub.live_user_count,
-          story_count: hub.story_count,
-          neighborhood_count: hub.neighborhood_count,
-          spiral_count: hub.spiral_count,
-          open_requests: hub.open_requests,
-          active_helpers: hub.activity.active_helpers,
-          requests_fulfilled: hub.activity.requests_fulfilled,
-          pool_balance: hub.activity.pool_balance,
-        }
+      const children = childrenByPrimary.get(hub.id);
+      if (!children?.length) return hub;
+
+      const mergedMetrics = children.reduce(
+        (acc, child) => addMetrics(acc, child),
+        hub,
       );
+
       return {
         ...hub,
-        member_count: merged.member_count,
-        live_user_count: merged.live_user_count,
-        story_count: merged.story_count,
-        neighborhood_count: merged.neighborhood_count,
-        spiral_count: merged.spiral_count,
-        open_requests: merged.open_requests,
-        activity: {
-          active_helpers: merged.active_helpers,
-          requests_fulfilled: merged.requests_fulfilled,
-          pool_balance: merged.pool_balance,
-        },
+        member_count: mergedMetrics.member_count,
+        live_user_count: mergedMetrics.live_user_count,
+        story_count: mergedMetrics.story_count,
+        neighborhood_count: mergedMetrics.neighborhood_count,
+        spiral_count: mergedMetrics.spiral_count,
+        open_requests: mergedMetrics.open_requests,
+        activity: mergedMetrics.activity,
         local_hubs: [
-          { hub_id: hub.id, name: hub.anchor_city ?? hub.name, member_count: hub.member_count, story_count: hub.story_count },
+          {
+            hub_id: hub.id,
+            name: hub.anchor_city ?? hub.name,
+            member_count: hub.member_count,
+            story_count: hub.story_count,
+          },
           ...children.map((child) => ({
             hub_id: child.id,
             name: child.anchor_city ?? child.name,
