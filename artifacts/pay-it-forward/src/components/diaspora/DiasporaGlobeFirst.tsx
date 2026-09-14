@@ -25,6 +25,10 @@ type Hub = {
   reserved_balance?: string | number | null;
   is_crisis: boolean;
   crisis_message: string | null;
+  // Present only when this marker merges legacy per-city hubs under one
+  // country-level Globe marker (see global-village-pulse.ts). Metrics above
+  // are already summed across these; this is drill-down detail only.
+  local_hubs?: { hub_id: number; name: string; member_count: number; story_count: number }[] | null;
 };
 
 interface Props { hubs: Hub[]; loading?: boolean; }
@@ -74,6 +78,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
       {selectedHub && <aside className="border-t border-white/10 bg-[#0a1918] p-5 sm:p-6" aria-label={`${hubLabel(selectedHub)} Hub details`}>
         <div className="flex items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-300"><CircleDot className="h-3 w-3" /> {hubKind(selectedHub)}</span>{selectedHub.is_crisis && <span className="rounded-full bg-rose-300/10 px-2 py-1 text-[10px] font-bold text-rose-200">Crisis</span>}</div><h3 className="mt-1 truncate text-xl font-black text-white">{hubLabel(selectedHub)}</h3><p className="mt-1 text-xs text-white/40">{selectedHub.region}</p></div><button onClick={() => setSelectedHub(null)} aria-label="Close Hub details" className={`rounded-xl p-2 text-white/40 hover:bg-white/5 hover:text-white ${diasporaTheme.focus}`}><X className="h-4 w-4" /></button></div>
         {selectedHub.crisis_message && <p className="mt-4 rounded-xl border border-rose-300/15 bg-rose-300/[0.05] p-3 text-xs leading-relaxed text-rose-100/70">{selectedHub.crisis_message}</p>}
+        {selectedHub.local_hubs && selectedHub.local_hubs.length > 1 && <p className="mt-3 truncate text-[11px] text-white/35">{selectedHub.local_hubs.length} local hubs · {selectedHub.local_hubs.map((local) => local.name).join(", ")}</p>}
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric icon={Users} label="Members" value={selectedHub.member_count} /><Metric icon={Mic} label="Stories" value={selectedHub.story_count} /><Metric icon={CircleDot} label="Spirals" value={selectedHub.spiral_count} /><Metric icon={WalletCards} label="Open needs" value={selectedHub.open_requests} /></div>
         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-5"><HubAction icon={Users} label="Community" onClick={() => navigate(`/community?hubId=${selectedHub.id}`)} /><HubAction icon={MessageCircle} label="Connect" onClick={() => navigate(`/community?hubId=${selectedHub.id}&intent=connect`)} /><HubAction icon={CircleDot} label="Spirals" onClick={() => navigate(`/audio-circles?hubId=${selectedHub.id}`)} /><HubAction icon={BookHeart} label="Stories" onClick={() => navigate(`/diaspora/heritage/globe?hubId=${selectedHub.id}`)} /><HubAction icon={WalletCards} label="Pool" onClick={() => navigate(`/community?hubId=${selectedHub.id}&tab=pool`)} /></div>
         <button onClick={() => navigate(`/diaspora/heritage/globe?hubId=${selectedHub.id}`)} className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-300 px-4 py-3 text-xs font-black text-[#06201d] ${diasporaTheme.focus}`}>Enter {hubLabel(selectedHub)} Hub <ArrowRight className="h-3.5 w-3.5" /></button>

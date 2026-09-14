@@ -9,6 +9,7 @@ import {
   getNeighborhoodGeometryStatus,
   isActiveNeighborhood,
 } from "../lib/neighborhoodGeofence";
+import { mergeHubsForGlobeDisplay } from "../lib/diasporaHubMerge";
 
 const router = Router();
 
@@ -118,8 +119,6 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
         circle.neighborhood_id != null && activeNeighborhoodIds.has(circle.neighborhood_id))
       .map((circle) => [circle.neighborhood_id, circle.id]));
 
-    // Reviewed neighborhood geometry is authoritative for neighborhood tallies;
-    // hub radius must not suppress a live neighborhood at its edge.
     for (const user of users) {
       if (user.lat == null || user.lng == null) continue;
       for (const neighborhood of neighborhoods) {
@@ -154,10 +153,6 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
 
     const enriched = await Promise.all(approvedHubs.map(async (hub) => {
       const hubCityKey = normalizedCityKey(hub.name);
-      // These are structural place metrics, not GPS presence metrics:
-      // neighborhoods count only active, reviewed geometry; Spirals count the
-      // city's permanent channels. The two layers intentionally stay distinct
-      // from the Hub's broad operational presence radius.
       const neighborhood_count = neighborhoods.filter((neighborhood) =>
         normalizedCityKey(neighborhood.city_key) === hubCityKey &&
         getNeighborhoodGeometryStatus(neighborhood, now) === "verified"
@@ -181,13 +176,26 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
             : eq(requestsTable.hub_id, hub.id),
         )),
         hub.community_id != null ? db.select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` }).from(communityPoolLedgerTable).where(eq(communityPoolLedgerTable.community_id, hub.community_id)) : Promise.resolve([{ balance: 0 }]),
-       ]);
-        // "Active helpers" is a live, GPS-verified metric. Membership and
-        // helper mode alone are not enough to claim someone is currently at
-        // this Hub; stale helper locations must not inflate the pulse.
-        const activeHelpers = liveHelpersByHub.get(hub.id)?.size ?? 0;
+      ]);
+      const activeHelpers = liveHelpersByHub.get(hub.id)?.size ?? 0;
       const live = presence.hubs.find((item) => item.hub_id === hub.id);
-        return { ...hub, id: hub.id, name: hub.name, hub_id: hub.id, hub_name: hub.name, region: hub.region_label, member_count: Number(memberRow.rows[0]?.count ?? 0), live_user_count: live?.live_user_count ?? 0, story_count: storyRow[0]?.count ?? 0, neighborhood_count, spiral_count, open_requests: openRequestRow[0]?.count ?? 0, activity: { active_helpers: activeHelpers, requests_fulfilled: fulfilledRow[0]?.count ?? 0, pool_balance: Number(poolRow[0]?.balance ?? 0) } };
+      return {
+        ...hub,
+        id: hub.id,
+        name: hub.name,
+        hub_id: hub.id,
+        hub_name: hub.name,
+        region: hub.region_label,
+        primary_hub_id: hub.primary_hub_id ?? null,
+        anchor_city: hub.anchor_city ?? null,
+        member_count: Number(memberRow.rows[0]?.count ?? 0),
+        live_user_count: live?.live_user_count ?? 0,
+        story_count: storyRow[0]?.count ?? 0,
+        neighborhood_count,
+        spiral_count,
+        open_requests: openRequestRow[0]?.count ?? 0,
+        activity: { active_helpers: activeHelpers, requests_fulfilled: fulfilledRow[0]?.count ?? 0, pool_balance: Number(poolRow[0]?.balance ?? 0) },
+      };
     }));
 
     const activeNeighborhoods = [...liveUsersByNeighborhood.values()].filter((count) => count > 0).length;
@@ -206,17 +214,24 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
     totals.requests_fulfilled = uniqueFulfilledRequests.rows.length;
     totals.pool_balance = Number(uniquePool.rows[0]?.balance ?? 0);
 
-    // This endpoint is user-specific aggregate state, so never allow an
-    // intermediary/browser cache to replay one member's village snapshot to another.
+    // Globe *display* grouping only: a legacy local-city hub with
+    // primary_hub_id set (e.g. a pre-existing Brazil city hub) is folded
+    // into its country's canonical marker so the Globe shows one dot per
+    // country instead of one per historical city seed. Nothing about the
+    // underlying hub rows changes — community_id, stories, pledges, and
+    // hub ids are untouched; the merged cities are still reachable via
+    // local_hubs for drill-down inside the country's Hub view.
+    const globeHubs = mergeHubsForGlobeDisplay(enriched);
+
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("Vary", "Authorization, Cookie");
     res.setHeader("X-Niakofa-Village-Pulse", "verified");
     res.json({
       generated_at: presence.generated_at,
       freshness_window_seconds: presence.freshness_window_seconds,
-       current_user: { ...presence.current_user, current_neighborhood: currentNeighborhood, location_verification: locationVerification },
+      current_user: { ...presence.current_user, current_neighborhood: currentNeighborhood, location_verification: locationVerification },
       totals: { ...totals, active_neighborhoods: activeNeighborhoods },
-      hubs: enriched,
+      hubs: globeHubs,
       neighborhoods: neighborhoods.filter((n) => n.geometry_verified).map((n) => ({ neighborhood_id: n.neighborhood_id, name: n.name, emoji: n.emoji, live_user_count: liveUsersByNeighborhood.get(n.id) ?? 0, gps_verified: true, geometry_effective_at: n.geometry_effective_at?.toISOString?.() ?? n.geometry_effective_at ?? null })),
     });
   } catch {
