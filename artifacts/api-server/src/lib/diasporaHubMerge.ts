@@ -41,7 +41,7 @@ export type LocalHubSummary = {
 
 type MergedHub<T extends MergeableHub> = T & { local_hubs?: LocalHubSummary[] };
 
-const addMetrics = (left: MergeableHub, right: MergeableHub) => ({
+const addMetrics = (left: MergeableHub, right: MergeableHub): MergeableHub => ({
   member_count: left.member_count + right.member_count,
   live_user_count: left.live_user_count + right.live_user_count,
   story_count: left.story_count + right.story_count,
@@ -74,7 +74,10 @@ export function mergeHubsForGlobeDisplay<T extends MergeableHub>(hubs: T[]): Mer
       const children = childrenByPrimary.get(hub.id);
       if (!children?.length) return hub;
 
-      const mergedMetrics = children.reduce(
+      // The accumulator is deliberately MergeableHub rather than T: the
+      // merged metrics are a new value and are not guaranteed to preserve
+      // arbitrary fields added by a caller's subtype.
+      const mergedMetrics = children.reduce<MergeableHub>(
         (acc, child) => addMetrics(acc, child),
         hub,
       );
