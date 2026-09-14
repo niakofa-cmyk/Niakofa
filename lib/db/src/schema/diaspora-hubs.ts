@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, timestamp, doublePrecision, numeric, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, doublePrecision, numeric, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
 
@@ -18,6 +18,11 @@ export const diasporaHubsTable = pgTable("diaspora_hubs", {
   country_code: text("country_code"),
   subdivision_code: text("subdivision_code"),
   anchor_city:  text("anchor_city"),
+  // Globe *display* grouping only — points a legacy local-city hub at its
+  // country's canonical hub so the Globe renders one marker per country.
+  // The child hub's own id, community_id, stories, pledges, and other
+  // relationships are completely unaffected; this never triggers a delete.
+  primary_hub_id: integer("primary_hub_id").references((): AnyPgColumn => diasporaHubsTable.id),
   note:         text("note"),
   community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
   is_seed:      boolean("is_seed").notNull().default(false),

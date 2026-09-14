@@ -71,6 +71,7 @@ export default function DiasporaDashboardPage() {
             reserved_balance: (hub.reserved_balance as string | number | null | undefined) ?? null,
             is_crisis: hub.is_crisis === true,
             crisis_message: typeof hub.crisis_message === "string" ? hub.crisis_message : null,
+            local_hubs: Array.isArray(hub.local_hubs) ? hub.local_hubs as DiasporaGlobeHub["local_hubs"] : null,
           })) as DiasporaGlobeHub[];
           setHubs(nextHubs.filter((hub) => Number.isFinite(hub.id) && Number.isFinite(hub.lat) && Number.isFinite(hub.lng)));
         }
@@ -104,7 +105,7 @@ export default function DiasporaDashboardPage() {
 
         <section className={`${diasporaTheme.radius} border border-white/10 bg-white/[0.025] p-4 sm:p-5`}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="flex min-w-0 flex-1 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300/10"><TreePine className="h-4 w-4 text-amber-300" /></span><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300/65">My Family</p><p className="truncate text-sm font-semibold text-white/80">{familyLabel}</p></div></div>
+            <div className="flex min-w-0 flex-1 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300/10"><TreePine className="h-4 w-4 text-amber-300" /></span><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300/65">My Family</p><p className="truncate text-sm font-semibold text-white/80">{familyLabel}</p>{stats != null && <p className="truncate text-[11px] text-white/40">Curated heritage catalog · {stats.heritage_collections} collections</p>}</div></div>
             <div className="flex flex-wrap gap-2"><SmallAction icon={Users} label="Family" onClick={() => navigate("/diaspora/family")} /><SmallAction icon={Mic} label="Record" onClick={() => navigate("/diaspora/family?intent=oral-history")} /><SmallAction icon={History} label="Legacy" onClick={() => navigate("/diaspora/timeline")} /><SmallAction icon={ArrowRight} label="Open" onClick={() => navigate("/diaspora/family")} /></div>
           </div>
         </section>
