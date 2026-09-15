@@ -50,6 +50,7 @@ import diasporaResearchRouter from "./diaspora-research";
 import diasporaConnectionsRouter from "./diaspora-connections";
 import diasporaCompletionRouter from "./diaspora-completion";
 import diasporaRouter from "./diaspora";
+import diasporaHubMessagesRouter from "./diaspora-hub-messages";
 import { stampLocationUpdatedAt } from "../middlewares/stamp-location-updated-at";
 
 const router: IRouter = Router();
@@ -121,5 +122,6 @@ router.use(diasporaConnectionsRouter);
 // Must precede diasporaRouter so the corrected aggregate dashboard and durable Preserve endpoints win over older bounded implementations.
 router.use(diasporaCompletionRouter);
 router.use(diasporaRouter);
+router.use(diasporaHubMessagesRouter);
 
 export default router;

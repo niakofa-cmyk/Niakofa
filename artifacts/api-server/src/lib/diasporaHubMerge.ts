@@ -42,6 +42,8 @@ export type LocalHubSummary = {
 type MergedHub<T extends MergeableHub> = T & { local_hubs?: LocalHubSummary[] };
 
 const addMetrics = (left: MergeableHub, right: MergeableHub): MergeableHub => ({
+  id: left.id,
+  name: left.name,
   member_count: left.member_count + right.member_count,
   live_user_count: left.live_user_count + right.live_user_count,
   story_count: left.story_count + right.story_count,

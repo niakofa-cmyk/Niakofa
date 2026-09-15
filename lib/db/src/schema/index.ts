@@ -21,6 +21,7 @@ export * from "./gratitude-likes";
 export * from "./griot-stories";
 export * from "./griot-transcription-jobs";
 export * from "./diaspora-hubs";
+export * from "./diaspora-hub-messages";
 export * from "./hub-leaders";
 export * from "./hub-pledges";
 export * from "./crisis-state";

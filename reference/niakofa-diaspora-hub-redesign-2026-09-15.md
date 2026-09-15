@@ -14,6 +14,9 @@ redesign.
 - Selecting a Hub exposes community, Hub messaging, Spirals, stories, and
   Community Pool navigation without creating a second messaging system or
   financial ledger.
+- Hub messaging is a durable, canonical pair conversation. The sending Hub is
+  selected only from approved membership, both Hubs must be approved, and
+  messages are capped at 2,000 characters.
 - Family, oral-history, Legacy, live-presence, and research capabilities remain
   available on their existing routes instead of competing on the landing page.
 
@@ -35,3 +38,14 @@ outputs and a second full copy of the project.
 The uploaded files were scanned for common credential-shaped values before the
 review documents and patch were preserved. No credential-shaped values were
 detected.
+
+## Verification record — 2026-09-15
+
+- Migration `0138_diaspora_hub_messages.sql` applied successfully in the
+  development database.
+- Authenticated local browser verification rendered the live Mapbox Globe with
+  12 Hub markers and 12 village-pulse Hubs; Globe search was visible.
+- Selecting a Hub and opening “Message hub” rendered the approved-membership
+  gate for a member without a sending Hub.
+- Screenshot evidence is preserved at
+  `screenshots/diaspora-globe-authenticated-2026-09-15.png`.

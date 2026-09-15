@@ -107,6 +107,15 @@ export default defineConfig({
       },
     },
   },
+  // Mapbox public tokens are intentionally browser-visible. Accept the
+  // existing MAPBOX_TOKEN secret as a build-time source so managed workflows
+  // do not silently render the no-map fallback when only the canonical secret
+  // name is configured. An explicit VITE_MAPBOX_TOKEN still wins.
+  define: {
+    "import.meta.env.VITE_MAPBOX_TOKEN": JSON.stringify(
+      process.env.VITE_MAPBOX_TOKEN ?? process.env.MAPBOX_TOKEN ?? "",
+    ),
+  },
   server: {
     port,
     strictPort: true,
