@@ -214,8 +214,8 @@ Godfather (Replit agent, this file), and Grandfather (Coworker AI,
 **Never step on each other's toes.** Specifically:
 
 - **Never delete the Replit development database** (`DATABASE_URL` inside
-  Replit — provisioned July 2026 with all 25 migrations, 19 seeded civic
-  resources, and test accounts), the Railway production database, Redis,
+  Replit — provisioned July 2026 with seeded civic resources and test
+  accounts), the Railway production database, Redis,
   or any database another agent's work depends on.
 - **Never delete necessary code or infrastructure belonging to another
   agent.** If something looks unused, check all three family docs first.
@@ -890,3 +890,39 @@ disposable account against the exact served revision:
 **Acceptance lesson:** approved identity, explicit API authentication,
 served-commit parity, and user-visible route evidence are all required before
 calling production live presence verified.
+
+---
+
+### Session: September 15, 2026 — Diaspora Globe geography and API test harness
+
+The Globe-first Diaspora surface and backend verification gates were hardened
+without changing the existing service boundaries:
+
+- Canonical Globe geography is now explicit: non-U.S. roots represent
+  countries, U.S. roots represent states, and grouped local Hubs remain
+  drill-down data rather than independent Globe markers.
+- Migration `0139_diaspora_hub_geography_invariants.sql` adds the canonical
+  geography constraint and approved-root uniqueness indexes. Migration `0138`
+  remains the durable Hub-messaging migration; the duplicate geography
+  migration was removed so migration ordering cannot be ambiguous.
+- `/api/griot/village-pulse` filters its final Globe output to approved
+  canonical country/state Hubs while preserving local aggregation and search.
+  The Globe UI no longer classifies Home as geography or offers redundant
+  full-Globe navigation.
+- The architecture review, hardening ZIP, desktop/mobile concepts, design
+  tokens, implementation map, and browser verification screenshot are
+  preserved under
+  `reference/niakofa-diaspora-globe-visual-system-2026-09-15/`.
+- The API Jest harness now runs through Node's ESM VM mode with serialized
+  execution and pins `NIA_SERVICE_URL` to `http://localhost:3001` in
+  `jest.setup.ts`, preventing workspace workflow secrets from redirecting
+  health tests to production.
+- Full API verification passed: 49 Jest suites / 401 tests, 19 additional
+  endpoint tests, 19 standalone tests, API typechecks, and diff hygiene.
+  Local `main` and GitHub `origin/main` independently match commit
+  `b244a25e1b7e54d1794eed3f69a34e0dd9e7d1a7` with a clean working tree.
+
+**Release lesson:** invoke the API package test command with its ESM VM flag;
+direct Jest invocation produces misleading `import.meta` and mock failures.
+Test setup must also isolate every external service URL that can be injected
+through the workspace environment.
