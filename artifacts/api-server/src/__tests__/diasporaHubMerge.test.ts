@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { mergeHubsForGlobeDisplay, type MergeableHub } from "../lib/diasporaHubMerge";
+import { isCanonicalGlobeHub, mergeHubsForGlobeDisplay, type MergeableHub } from "../lib/diasporaHubMerge";
 
 function hub(overrides: Partial<MergeableHub> & { id: number; name: string }): MergeableHub {
   return {
@@ -63,5 +63,38 @@ describe("mergeHubsForGlobeDisplay", () => {
     const result = mergeHubsForGlobeDisplay(hubs);
     expect(result).toHaveLength(1);
     expect(result[0].activity).toEqual({ active_helpers: 5, requests_fulfilled: 5, pool_balance: 150 });
+  });
+});
+
+describe("isCanonicalGlobeHub", () => {
+  it("accepts non-US country roots and U.S. state roots", () => {
+    expect(isCanonicalGlobeHub({
+      primary_hub_id: null,
+      status: "approved",
+      hub_scope: "country",
+      country_code: "GH",
+      subdivision_code: null,
+    })).toBe(true);
+    expect(isCanonicalGlobeHub({
+      primary_hub_id: null,
+      status: "approved",
+      hub_scope: "us_state",
+      country_code: "US",
+      subdivision_code: "TX",
+    })).toBe(true);
+  });
+
+  it("rejects Home-shaped, grouped, incomplete, and non-approved rows", () => {
+    const base = {
+      primary_hub_id: null,
+      status: "approved",
+      hub_scope: "country",
+      country_code: "GH",
+      subdivision_code: null,
+    };
+    expect(isCanonicalGlobeHub({ ...base, hub_scope: "home" })).toBe(false);
+    expect(isCanonicalGlobeHub({ ...base, primary_hub_id: 5 })).toBe(false);
+    expect(isCanonicalGlobeHub({ ...base, country_code: null })).toBe(false);
+    expect(isCanonicalGlobeHub({ ...base, status: "pending" })).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ import {
   getNeighborhoodGeometryStatus,
   isActiveNeighborhood,
 } from "../lib/neighborhoodGeofence";
-import { mergeHubsForGlobeDisplay } from "../lib/diasporaHubMerge";
+import { isCanonicalGlobeHub, mergeHubsForGlobeDisplay } from "../lib/diasporaHubMerge";
 
 const router = Router();
 
@@ -221,7 +221,11 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
     // underlying hub rows changes — community_id, stories, pledges, and
     // hub ids are untouched; the merged cities are still reachable via
     // local_hubs for drill-down inside the country's Hub view.
-    const globeHubs = mergeHubsForGlobeDisplay(enriched);
+    // Keep local/city rows available while enriching and aggregating their
+    // activity, then emit only canonical country/state roots to the Globe.
+    // `mergeHubsForGlobeDisplay` attaches grouped local rows beneath those
+    // roots without creating extra markers.
+    const globeHubs = mergeHubsForGlobeDisplay(enriched).filter(isCanonicalGlobeHub);
 
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("Vary", "Authorization, Cookie");

@@ -39,6 +39,34 @@ export type LocalHubSummary = {
   story_count: number;
 };
 
+export type GlobeHubGeography = Pick<MergeableHub, "primary_hub_id"> & {
+  status?: string | null;
+  hub_scope?: string | null;
+  country_code?: string | null;
+  subdivision_code?: string | null;
+};
+
+/**
+ * Returns true only for a Hub that is allowed to become a canonical Globe
+ * marker. Local/city rows can still be merged beneath a canonical parent, but
+ * invalid or Home-shaped rows must not leak into the Globe response.
+ */
+export function isCanonicalGlobeHub(hub: GlobeHubGeography): boolean {
+  if (hub.status != null && hub.status !== "approved") return false;
+  if (hub.primary_hub_id != null) return false;
+
+  const countryCode = hub.country_code?.trim().toUpperCase() ?? "";
+  if (countryCode === "US") {
+    return hub.hub_scope === "us_state" && Boolean(hub.subdivision_code?.trim());
+  }
+
+  return Boolean(
+    countryCode &&
+    hub.hub_scope === "country" &&
+    !hub.subdivision_code?.trim(),
+  );
+}
+
 type MergedHub<T extends MergeableHub> = T & { local_hubs?: LocalHubSummary[] };
 
 const addMetrics = (left: MergeableHub, right: MergeableHub): MergeableHub => ({

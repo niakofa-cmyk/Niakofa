@@ -46,7 +46,6 @@ type HubMessage = {
 
 function hubLabel(hub: Hub) { return hub.display_name?.trim() || hub.name; }
 function hubKind(hub: Hub) {
-  if (hub.hub_scope === "home" || hub.tag === "home") return "Home hub";
   if (hub.hub_scope === "us_state" || hub.country_code === "US" || /^us(?:-|_|$)/i.test(hub.tag)) return "U.S. state hub";
   return "Country hub";
 }
@@ -78,15 +77,14 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
     <section className={`${diasporaTheme.radiusHero} relative h-[calc(100vh-5.5rem)] min-h-[620px] overflow-hidden border border-teal-300/20 bg-[#071312] ${diasporaTheme.shadow}`}>
       {loading && <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#071312]/70 backdrop-blur-sm"><div className="rounded-xl border border-white/10 bg-black/70 px-4 py-3 text-xs text-white/70">Loading Diaspora Hubs…</div></div>}
       {token ? <Map initialViewState={{ longitude: -20, latitude: 18, zoom: 1.25 }} projection="globe" mapStyle="mapbox://styles/mapbox/dark-v11" mapboxAccessToken={token} attributionControl={false}>
-        {filteredHubs.map((hub) => <Marker key={hub.id} longitude={hub.lng} latitude={hub.lat} anchor="center"><button onClick={() => openHub(hub)} aria-label={`Open ${hubLabel(hub)} Hub`} title={hubLabel(hub)} className={`relative h-10 w-10 rounded-full border-2 shadow-lg transition-transform hover:scale-110 ${hub.is_crisis ? "border-rose-300 bg-rose-300/30" : hub.hub_scope === "home" || hub.tag === "home" ? "border-amber-300 bg-amber-300/30" : "border-teal-300 bg-teal-300/25"}`}><span aria-hidden="true" className="pointer-events-none absolute inset-1 rounded-full border border-white/30 animate-pulse" /></button></Marker>)}
+        {filteredHubs.map((hub) => <Marker key={hub.id} longitude={hub.lng} latitude={hub.lat} anchor="center"><button onClick={() => openHub(hub)} aria-label={`Open ${hubLabel(hub)} Hub`} title={hubLabel(hub)} className={`relative h-10 w-10 rounded-full border-2 shadow-lg transition-transform hover:scale-110 ${hub.is_crisis ? "border-rose-300 bg-rose-300/30" : "border-teal-300 bg-teal-300/25"}`}><span aria-hidden="true" className="pointer-events-none absolute inset-1 rounded-full border border-white/30 animate-pulse" /></button></Marker>)}
       </Map> : <div className="absolute inset-0 flex items-center justify-center p-8 text-center"><div><Globe2 className="mx-auto h-12 w-12 text-teal-200/20" /><p className="mt-3 text-sm font-semibold text-white/60">Interactive globe unavailable</p><p className="mt-1 max-w-sm text-xs leading-relaxed text-white/35">Add the Mapbox public token to enable the live globe. Hub discovery remains available through search.</p></div></div>}
 
       <div className="absolute left-3 right-3 top-3 z-20 sm:left-5 sm:right-auto sm:top-5 sm:w-[430px]">
         <div className="rounded-2xl border border-white/10 bg-[#071312]/90 p-4 shadow-2xl backdrop-blur-xl sm:p-5">
           <div className="flex items-start gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-teal-300/20 bg-teal-300/10"><Globe2 className="h-4 w-4 text-teal-300" /></span>
-            <div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.24em] text-teal-300/75">Niakofa Diaspora</p><h1 className="mt-0.5 text-lg font-black text-white sm:text-xl">Find your Diaspora Hub</h1><p className="mt-1 text-xs leading-relaxed text-white/45">Countries worldwide. Individual states within the United States.</p></div>
-            <button onClick={() => navigate("/diaspora/heritage/globe")} aria-label="Open full globe" className={`rounded-xl border border-white/10 p-2 text-white/45 hover:bg-white/5 hover:text-white ${diasporaTheme.focus}`}><ArrowRight className="h-4 w-4" /></button>
+            <div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.24em] text-teal-300/75">Niakofa Diaspora</p><h1 className="mt-0.5 text-lg font-black text-white sm:text-xl">Find your Diaspora Hub</h1><p className="mt-1 text-xs leading-relaxed text-white/45">Countries worldwide. U.S. communities are organized by state.</p></div>
           </div>
           <div className="relative mt-4">
           <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-white/30" />
@@ -94,7 +92,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
           {query && <button onClick={() => setQuery("")} aria-label="Clear hub search" className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 hover:text-white"><X className="h-4 w-4" /></button>}
           {query && <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 max-h-64 overflow-auto rounded-2xl border border-white/10 bg-[#0a1918] p-2 shadow-2xl">{filteredHubs.length === 0 ? <p className="p-3 text-xs text-white/40">No Diaspora Hub matches that search.</p> : filteredHubs.slice(0, 12).map((hub) => <button key={hub.id} onClick={() => openHub(hub)} className="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-white/5"><span className="flex h-8 w-8 items-center justify-center rounded-full border border-teal-300/30 bg-teal-300/10"><MapPin className="h-3.5 w-3.5 text-teal-300" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-white">{hubLabel(hub)}</span><span className="block text-[11px] text-white/40">{hubKind(hub)} · {hub.region}{hub.local_hubs && hub.local_hubs.length > 1 ? ` · ${hub.local_hubs.length} local hubs` : ""}</span></span><ArrowRight className="h-3.5 w-3.5 text-white/20" /></button>)}</div>}
           </div>
-          <p className="mt-2 text-[10px] text-white/30">{filteredHubs.length} Hubs available · Select a marker or search result</p>
+          <p className="mt-2 text-[10px] text-white/30">{filteredHubs.length} canonical Hubs · Select a marker or search result</p>
         </div>
       </div>
 
