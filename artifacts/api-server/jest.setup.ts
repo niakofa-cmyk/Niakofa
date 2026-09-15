@@ -4,6 +4,9 @@
 process.env.SESSION_SECRET ??= "test-session-secret-not-for-production-use-only";
 process.env.DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.INTERNAL_SECRET ??= "test-secret";
+// Keep API tests on the co-located Nia boundary even when the workspace has a
+// production NIA_SERVICE_URL configured for running workflows.
+process.env.NIA_SERVICE_URL = "http://localhost:3001";
 // Force-disable Redis in tests, overriding whatever real REDIS_URL secret is
 // configured in this environment. Unit tests must never open a real network
 // connection: besides being slow/flaky, a real ioredis connection created at

@@ -37,3 +37,12 @@ modules enabled.
 
 **How to apply:** Use the package's test command for CI-equivalent validation
 and avoid diagnosing direct-Jest failures as production module problems.
+
+Test setup must pin service URLs that can be injected as workspace secrets
+(especially `NIA_SERVICE_URL`) to local test endpoints before importing routes.
+
+**Why:** A configured workflow secret can silently redirect a mocked health
+probe to production while the test still passes its other dependency guards.
+
+**How to apply:** Override external service URL environment variables in
+`jest.setup.ts`; restore per-test overrides explicitly when a suite needs them.
