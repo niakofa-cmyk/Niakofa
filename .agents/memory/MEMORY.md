@@ -45,3 +45,4 @@
 - [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
 - [Authenticated Admin browser checks](admin-live-acceptance.md) — storage state authenticates navigation, but page.evaluate fetches still need explicit Bearer headers and exact role selectors.
 - [Spiral catalog location boundary](spiral-catalog-location-boundary.md) — curated discovery is independent from GIS verification and legacy inactive-city sentinels.
+- [Diaspora Hub messaging](diaspora-hub-messaging.md) — direct Hub threads use canonical pairs and server-side approved-membership checks.
