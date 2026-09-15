@@ -1,0 +1,117 @@
+Yes. I proceeded with the Globe-first Diaspora redesign directly against the current Niakofa repository.
+
+What I changed
+
+The new architecture is now:
+
+Diaspora → Globe → Diaspora Hub → Action
+
+Instead of /diaspora behaving like a dashboard full of competing sections, it now centers the Globe and lets the user drill into a Hub.
+
+Implemented:
+
+Globe-first /diaspora landing page
+Reusable DiasporaGlobeFirst component
+Live Hub markers from the existing authenticated village-pulse API
+Country/state/Hub search
+Hub detail drawer
+Compact Hub actions:
+Community
+Connect
+Spirals
+Stories
+Community Pool
+Family context reduced to a small secondary strip rather than another dashboard
+Existing Family, Oral History, Legacy and full Globe experiences preserved
+Raw GPS remains server-side; the new UI continues consuming the aggregate pulse rather than exposing member coordinates.
+Existing Hub IDs and city anchors are preserved so existing story/community/neighborhood relationships aren't unnecessarily broken.
+Geography model upgraded
+
+I also upgraded the underlying Diaspora Hub model to distinguish:
+
+country
+us_state
+home
+
+and added:
+
+display_name
+country_code
+subdivision_code
+anchor_city
+
+The existing Hub schema previously represented the Globe primarily as city-based nodes.
+
+The migration now presents the existing seed network as:
+
+U.S. state Hubs
+
+Texas
+Georgia
+California
+New York
+
+Country Hubs
+
+Ghana
+Nigeria
+Brazil
+Jamaica
+Dominican Republic
+United Kingdom
+France
+Canada
+
+The internal anchor cities remain available for existing geographic aggregation.
+
+Code added/changed
+
+The primary new component is:
+
+artifacts/pay-it-forward/src/components/diaspora/DiasporaGlobeFirst.tsx
+
+The /diaspora page was substantially simplified and now consumes that component.
+
+The database model was enhanced in:
+
+lib/db/src/schema/diaspora-hubs.ts
+
+and migration:
+
+lib/db/migrations/0063_diaspora_hub_geography.sql
+
+The existing repository already had the canonical diaspora_hubs infrastructure, so this extends rather than replaces it.
+
+GitHub PR
+
+I created the implementation as:
+
+Niakofa PR #77 — Globe-first Diaspora Hub experience
+
+Current PR state is open and mergeable, with 4 changed files and 254 additions / 43 deletions.
+
+One important architectural boundary
+
+I deliberately did not invent a second messaging system or second financial ledger just to make the Hub UI appear complete.
+
+The Connect action currently enters the existing Community surface. Dedicated:
+
+Hub A → Hub B conversation
+
+and
+
+County Pool → County Pool / Diaspora Hub funding
+
+should connect to Niakofa's existing audited messaging and Community Pool accounting infrastructure rather than creating parallel sources of truth.
+
+That is the safer production architecture.
+
+Production status
+
+I have not pushed this unverified branch into Railway production. Production remains on the known-good deployment. The Railway production environment is currently healthy, with the existing application deployment still reporting SUCCESS.
+
+So the current state is:
+
+GitHub implementation → PR #77 → validation → merge → Railway production
+
+rather than silently changing your live production application.

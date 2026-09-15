@@ -1,0 +1,416 @@
+From 99ad413bf7d40ed611ac99d9e77a222fdec9220b Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Mon, 14 Sep 2026 04:44:55 +0000
+Subject: [PATCH 1/2] fix(diaspora): restore Curated heritage catalog stat as a
+ minimal caption
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The Globe-first redesign dropped the entire old stats grid, including the
+Curated heritage catalog metric that scripts/diaspora-final-wiring-contract.test.mjs
+still asserts must be visible on the dashboard. The metric was still being
+fetched into state (stats.heritage_collections) but never rendered.
+
+Restores it as a single small caption line next to the existing My Family /
+Legacy strip, consistent with the same 'keep the function, drop the
+marketing panel' treatment already applied to family_tree_people on this
+page — not a return to the old crowded dashboard.
+
+Verified against a fresh postgis/postgis:16-3.4 database, replicating every
+step of the Typecheck + Tests CI job plus Release Validation:
+ - pnpm run typecheck (clean)
+ - backend tests (@workspace/api-server)
+ - pnpm --filter @workspace/db run migrate (144 migrations, incl. 0063)
+ - civic seed regression
+ - all 10 files under scripts/run-repo-diaspora-contracts.sh (was 1 failing)
+ - nia-service tests
+ - App/AI boundary test + boundary check script
+ - eslint . --max-warnings 0
+ - release-validate.js + test:production-gate
+---
+ artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx b/artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx
+index 42e4c30..d4681d5 100644
+--- a/artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx
++++ b/artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx
+@@ -104,7 +104,7 @@ export default function DiasporaDashboardPage() {
+ 
+         <section className={`${diasporaTheme.radius} border border-white/10 bg-white/[0.025] p-4 sm:p-5`}>
+           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+-            <div className="flex min-w-0 flex-1 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300/10"><TreePine className="h-4 w-4 text-amber-300" /></span><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300/65">My Family</p><p className="truncate text-sm font-semibold text-white/80">{familyLabel}</p></div></div>
++            <div className="flex min-w-0 flex-1 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300/10"><TreePine className="h-4 w-4 text-amber-300" /></span><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300/65">My Family</p><p className="truncate text-sm font-semibold text-white/80">{familyLabel}</p>{stats != null && <p className="truncate text-[11px] text-white/40">Curated heritage catalog · {stats.heritage_collections} collections</p>}</div></div>
+             <div className="flex flex-wrap gap-2"><SmallAction icon={Users} label="Family" onClick={() => navigate("/diaspora/family")} /><SmallAction icon={Mic} label="Record" onClick={() => navigate("/diaspora/family?intent=oral-history")} /><SmallAction icon={History} label="Legacy" onClick={() => navigate("/diaspora/timeline")} /><SmallAction icon={ArrowRight} label="Open" onClick={() => navigate("/diaspora/family")} /></div>
+           </div>
+         </section>
+-- 
+2.43.0
+
+
+From 828c9ebc197bd53daa7151be12ba2585bb3762d1 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Mon, 14 Sep 2026 04:56:01 +0000
+Subject: [PATCH 2/2] fix(diaspora): merge duplicate Brazil city hubs into one
+ Globe marker
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Non-destructive fix for the gap in 0063_diaspora_hub_geography.sql: three
+pre-existing Brazil city hubs (Recife, São Luís, São Paulo) fell through the
+migration's generic catch-all and ended up with hub_scope='country' but no
+country_code and a raw city-name label. Since global-village-pulse.ts
+returned one row per hub with no grouping, and DiasporaGlobeFirst.tsx
+renders one marker per row, Brazil showed as 4 separate Globe dots instead
+of 1 — contradicting the 'one dot per country' redesign goal.
+
+- 0137_diaspora_hub_country_merge.sql: backfills country_code='BR' on the
+  3 orphaned rows, adds a self-referencing primary_hub_id column, and points
+  them at the canonical Brazil hub (Salvador). No rows deleted, no existing
+  hub id / community_id / story / pledge / leader relationship touched.
+- New pure function lib/diasporaHubMerge.ts (mergeHubsForGlobeDisplay):
+  folds primary_hub_id children into their canonical hub's Globe entry,
+  summing member/story/spiral/activity metrics, and exposes the folded-in
+  cities as local_hubs for drill-down. Generalizes to any future country
+  with multiple legacy city hubs, not Brazil-specific.
+- global-village-pulse.ts now returns the merged list; DiasporaGlobeFirst.tsx
+  shows a small 'N local hubs' line in the Hub popover when merged.
+- New unit tests: diasporaHubMerge.test.ts (4 cases, incl. orphaned-primary
+  defensive case).
+
+Verified against a fresh postgis/postgis:16-3.4 database: 145 migrations
+apply cleanly, Brazil confirmed as 1 canonical row + 3 primary_hub_id
+children, full CI pipeline re-run (typecheck, 49 backend suites/394 tests,
+all 10 diaspora contracts, nia-service, App/AI boundary, ESLint
+--max-warnings 0, release-validate.js, production-gate) — all green.
+---
+ .../src/__tests__/diasporaHubMerge.test.ts    | 71 +++++++++++++++
+ .../api-server/src/lib/diasporaHubMerge.ts    | 87 +++++++++++++++++++
+ .../src/routes/global-village-pulse.ts        | 12 ++-
+ .../diaspora/DiasporaGlobeFirst.tsx           |  5 ++
+ .../src/pages/diaspora-dashboard.tsx          |  1 +
+ .../0137_diaspora_hub_country_merge.sql       | 43 +++++++++
+ lib/db/src/schema/diaspora-hubs.ts            |  7 +-
+ 7 files changed, 224 insertions(+), 2 deletions(-)
+ create mode 100644 artifacts/api-server/src/__tests__/diasporaHubMerge.test.ts
+ create mode 100644 artifacts/api-server/src/lib/diasporaHubMerge.ts
+ create mode 100644 lib/db/migrations/0137_diaspora_hub_country_merge.sql
+
+diff --git a/artifacts/api-server/src/__tests__/diasporaHubMerge.test.ts b/artifacts/api-server/src/__tests__/diasporaHubMerge.test.ts
+new file mode 100644
+index 0000000..fa2917c
+--- /dev/null
++++ b/artifacts/api-server/src/__tests__/diasporaHubMerge.test.ts
+@@ -0,0 +1,71 @@
++import { describe, expect, it } from "@jest/globals";
++import { mergeHubsForGlobeDisplay, type MergeableHub } from "../lib/diasporaHubMerge";
++
++function hub(overrides: Partial<MergeableHub> & { id: number; name: string }): MergeableHub {
++  return {
++    primary_hub_id: null,
++    anchor_city: null,
++    member_count: 0,
++    live_user_count: 0,
++    story_count: 0,
++    neighborhood_count: 0,
++    spiral_count: 0,
++    open_requests: 0,
++    activity: { active_helpers: 0, requests_fulfilled: 0, pool_balance: 0 },
++    ...overrides,
++  };
++}
++
++describe("mergeHubsForGlobeDisplay", () => {
++  it("collapses four Brazil city hubs into one Globe marker with summed metrics", () => {
++    const hubs = [
++      hub({ id: 5, name: "Salvador, Brazil", anchor_city: "Salvador", member_count: 100, story_count: 4 }),
++      hub({ id: 11, name: "Recife, Brazil", anchor_city: "Recife", primary_hub_id: 5, member_count: 40, story_count: 1 }),
++      hub({ id: 12, name: "São Luís, Brazil", anchor_city: "São Luís", primary_hub_id: 5, member_count: 20, story_count: 0 }),
++      hub({ id: 13, name: "São Paulo, Brazil", anchor_city: "São Paulo", primary_hub_id: 5, member_count: 300, story_count: 2 }),
++      hub({ id: 7, name: "Lagos, Nigeria" }), // unrelated, unaffected
++    ];
++
++    const result = mergeHubsForGlobeDisplay(hubs);
++
++    // One Brazil marker + Nigeria — not four Brazil markers.
++    expect(result.map((h) => h.id).sort()).toEqual([5, 7]);
++
++    const brazil = result.find((h) => h.id === 5)!;
++    expect(brazil.member_count).toBe(100 + 40 + 20 + 300);
++    expect(brazil.story_count).toBe(4 + 1 + 0 + 2);
++    expect(brazil.local_hubs).toEqual([
++      { hub_id: 5, name: "Salvador", member_count: 100, story_count: 4 },
++      { hub_id: 11, name: "Recife", member_count: 40, story_count: 1 },
++      { hub_id: 12, name: "São Luís", member_count: 20, story_count: 0 },
++      { hub_id: 13, name: "São Paulo", member_count: 300, story_count: 2 },
++    ]);
++  });
++
++  it("does not attach local_hubs to a hub with no children", () => {
++    const hubs = [hub({ id: 1, name: "Accra, Ghana", member_count: 50 })];
++    const result = mergeHubsForGlobeDisplay(hubs);
++    expect(result).toEqual(hubs);
++    expect(result[0].local_hubs).toBeUndefined();
++  });
++
++  it("keeps a child visible if its declared primary_hub_id is not in the result set", () => {
++    // Defensive: an orphaned/dangling primary_hub_id (e.g. the primary hub
++    // was unapproved and filtered out upstream) must never silently drop a
++    // hub from the Globe.
++    const hubs = [hub({ id: 11, name: "Recife, Brazil", primary_hub_id: 999, member_count: 40 })];
++    const result = mergeHubsForGlobeDisplay(hubs);
++    expect(result).toHaveLength(1);
++    expect(result[0].id).toBe(11);
++  });
++
++  it("sums activity metrics (active_helpers, requests_fulfilled, pool_balance) across merged children", () => {
++    const hubs = [
++      hub({ id: 5, name: "Salvador, Brazil", activity: { active_helpers: 2, requests_fulfilled: 1, pool_balance: 100 } }),
++      hub({ id: 11, name: "Recife, Brazil", primary_hub_id: 5, activity: { active_helpers: 3, requests_fulfilled: 4, pool_balance: 50 } }),
++    ];
++    const result = mergeHubsForGlobeDisplay(hubs);
++    expect(result).toHaveLength(1);
++    expect(result[0].activity).toEqual({ active_helpers: 5, requests_fulfilled: 5, pool_balance: 150 });
++  });
++});
+diff --git a/artifacts/api-server/src/lib/diasporaHubMerge.ts b/artifacts/api-server/src/lib/diasporaHubMerge.ts
+new file mode 100644
+index 0000000..e0d88e0
+--- /dev/null
++++ b/artifacts/api-server/src/lib/diasporaHubMerge.ts
+@@ -0,0 +1,87 @@
++/**
++ * Globe *display* grouping only. A legacy local-city Diaspora Hub row
++ * (primary_hub_id set) is folded into its country's canonical hub so the
++ * Globe renders one marker per country instead of one per historical city
++ * seed (see migration 0137_diaspora_hub_country_merge.sql for why this
++ * exists — three pre-existing Brazil city hubs never got proper country
++ * geography metadata and each rendered as a separate marker).
++ *
++ * This never mutates or drops the underlying hub rows: community_id,
++ * stories, pledges, hub_community_leaders, and every other relationship
++ * stay tied to the original per-city hub id. Only the array returned for
++ * Globe rendering merges numeric metrics onto the canonical row and lists
++ * the folded-in cities under `local_hubs` for drill-down.
++ */
++
++export type MergeableHub = {
++  id: number;
++  primary_hub_id?: number | null;
++  anchor_city?: string | null;
++  name: string;
++  member_count: number;
++  live_user_count: number;
++  story_count: number;
++  neighborhood_count: number;
++  spiral_count: number;
++  open_requests: number;
++  activity: { active_helpers: number; requests_fulfilled: number; pool_balance: number };
++};
++
++export type LocalHubSummary = { hub_id: number; name: string; member_count: number; story_count: number };
++
++export function mergeHubsForGlobeDisplay<T extends MergeableHub>(
++  hubs: T[]
++): (T & { local_hubs?: LocalHubSummary[] })[] {
++  const byId = new Map(hubs.map((hub) => [hub.id, hub]));
++  return hubs
++    // A child only disappears from the top-level Globe list if its declared
++    // primary actually exists in this result set; an orphaned/dangling
++    // primary_hub_id must never silently drop a hub from the map.
++    .filter((hub) => hub.primary_hub_id == null || !byId.has(hub.primary_hub_id))
++    .map((hub) => {
++      const children = hubs.filter((candidate) => candidate.primary_hub_id === hub.id);
++      if (children.length === 0) return hub;
++      const merged = children.reduce(
++        (acc, child) => ({
++          member_count: acc.member_count + child.member_count,
++          live_user_count: acc.live_user_count + child.live_user_count,
++          story_count: acc.story_count + child.story_count,
++          neighborhood_count: acc.neighborhood_count + child.neighborhood_count,
++          spiral_count: acc.spiral_count + child.spiral_count,
++          open_requests: acc.open_requests + child.open_requests,
++          active_helpers: acc.active_helpers + child.activity.active_helpers,
++          requests_fulfilled: acc.requests_fulfilled + child.activity.requests_fulfilled,
++          pool_balance: acc.pool_balance + child.activity.pool_balance,
++        }),
++        {
++          member_count: hub.member_count,
++          live_user_count: hub.live_user_count,
++          story_count: hub.story_count,
++          neighborhood_count: hub.neighborhood_count,
++          spiral_count: hub.spiral_count,
++          open_requests: hub.open_requests,
++          active_helpers: hub.activity.active_helpers,
++          requests_fulfilled: hub.activity.requests_fulfilled,
++          pool_balance: hub.activity.pool_balance,
++        }
++      );
++      return {
++        ...hub,
++        member_count: merged.member_count,
++        live_user_count: merged.live_user_count,
++        story_count: merged.story_count,
++        neighborhood_count: merged.neighborhood_count,
++        spiral_count: merged.spiral_count,
++        open_requests: merged.open_requests,
++        activity: {
++          active_helpers: merged.active_helpers,
++          requests_fulfilled: merged.requests_fulfilled,
++          pool_balance: merged.pool_balance,
++        },
++        local_hubs: [
++          { hub_id: hub.id, name: hub.anchor_city ?? hub.name, member_count: hub.member_count, story_count: hub.story_count },
++          ...children.map((child) => ({ hub_id: child.id, name: child.anchor_city ?? child.name, member_count: child.member_count, story_count: child.story_count })),
++        ],
++      };
++    });
++}
+diff --git a/artifacts/api-server/src/routes/global-village-pulse.ts b/artifacts/api-server/src/routes/global-village-pulse.ts
+index 76518bc..d5e2847 100644
+--- a/artifacts/api-server/src/routes/global-village-pulse.ts
++++ b/artifacts/api-server/src/routes/global-village-pulse.ts
+@@ -9,6 +9,7 @@ import {
+   getNeighborhoodGeometryStatus,
+   isActiveNeighborhood,
+ } from "../lib/neighborhoodGeofence";
++import { mergeHubsForGlobeDisplay } from "../lib/diasporaHubMerge";
+ 
+ const router = Router();
+ 
+@@ -206,6 +207,15 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
+     totals.requests_fulfilled = uniqueFulfilledRequests.rows.length;
+     totals.pool_balance = Number(uniquePool.rows[0]?.balance ?? 0);
+ 
++    // Globe *display* grouping only: a legacy local-city hub with
++    // primary_hub_id set (e.g. a pre-existing Brazil city hub) is folded
++    // into its country's canonical marker so the Globe shows one dot per
++    // country instead of one per historical city seed. Nothing about the
++    // underlying hub rows changes — community_id, stories, pledges, and
++    // hub ids are untouched; the merged cities are still reachable via
++    // local_hubs for drill-down inside the country's Hub view.
++    const globeHubs = mergeHubsForGlobeDisplay(enriched);
++
+     // This endpoint is user-specific aggregate state, so never allow an
+     // intermediary/browser cache to replay one member's village snapshot to another.
+     res.setHeader("Cache-Control", "private, no-store");
+@@ -216,7 +226,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
+       freshness_window_seconds: presence.freshness_window_seconds,
+        current_user: { ...presence.current_user, current_neighborhood: currentNeighborhood, location_verification: locationVerification },
+       totals: { ...totals, active_neighborhoods: activeNeighborhoods },
+-      hubs: enriched,
++      hubs: globeHubs,
+       neighborhoods: neighborhoods.filter((n) => n.geometry_verified).map((n) => ({ neighborhood_id: n.neighborhood_id, name: n.name, emoji: n.emoji, live_user_count: liveUsersByNeighborhood.get(n.id) ?? 0, gps_verified: true, geometry_effective_at: n.geometry_effective_at?.toISOString?.() ?? n.geometry_effective_at ?? null })),
+     });
+   } catch {
+diff --git a/artifacts/pay-it-forward/src/components/diaspora/DiasporaGlobeFirst.tsx b/artifacts/pay-it-forward/src/components/diaspora/DiasporaGlobeFirst.tsx
+index 299196a..58a9b1c 100644
+--- a/artifacts/pay-it-forward/src/components/diaspora/DiasporaGlobeFirst.tsx
++++ b/artifacts/pay-it-forward/src/components/diaspora/DiasporaGlobeFirst.tsx
+@@ -25,6 +25,10 @@ type Hub = {
+   reserved_balance?: string | number | null;
+   is_crisis: boolean;
+   crisis_message: string | null;
++  // Present only when this marker merges legacy per-city hubs under one
++  // country-level Globe marker (see global-village-pulse.ts). Metrics above
++  // are already summed across these; this is drill-down detail only.
++  local_hubs?: { hub_id: number; name: string; member_count: number; story_count: number }[] | null;
+ };
+ 
+ interface Props { hubs: Hub[]; loading?: boolean; }
+@@ -74,6 +78,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
+       {selectedHub && <aside className="border-t border-white/10 bg-[#0a1918] p-5 sm:p-6" aria-label={`${hubLabel(selectedHub)} Hub details`}>
+         <div className="flex items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-300"><CircleDot className="h-3 w-3" /> {hubKind(selectedHub)}</span>{selectedHub.is_crisis && <span className="rounded-full bg-rose-300/10 px-2 py-1 text-[10px] font-bold text-rose-200">Crisis</span>}</div><h3 className="mt-1 truncate text-xl font-black text-white">{hubLabel(selectedHub)}</h3><p className="mt-1 text-xs text-white/40">{selectedHub.region}</p></div><button onClick={() => setSelectedHub(null)} aria-label="Close Hub details" className={`rounded-xl p-2 text-white/40 hover:bg-white/5 hover:text-white ${diasporaTheme.focus}`}><X className="h-4 w-4" /></button></div>
+         {selectedHub.crisis_message && <p className="mt-4 rounded-xl border border-rose-300/15 bg-rose-300/[0.05] p-3 text-xs leading-relaxed text-rose-100/70">{selectedHub.crisis_message}</p>}
++        {selectedHub.local_hubs && selectedHub.local_hubs.length > 1 && <p className="mt-3 truncate text-[11px] text-white/35">{selectedHub.local_hubs.length} local hubs · {selectedHub.local_hubs.map((local) => local.name).join(", ")}</p>}
+         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric icon={Users} label="Members" value={selectedHub.member_count} /><Metric icon={Mic} label="Stories" value={selectedHub.story_count} /><Metric icon={CircleDot} label="Spirals" value={selectedHub.spiral_count} /><Metric icon={WalletCards} label="Open needs" value={selectedHub.open_requests} /></div>
+         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-5"><HubAction icon={Users} label="Community" onClick={() => navigate(`/community?hubId=${selectedHub.id}`)} /><HubAction icon={MessageCircle} label="Connect" onClick={() => navigate(`/community?hubId=${selectedHub.id}&intent=connect`)} /><HubAction icon={CircleDot} label="Spirals" onClick={() => navigate(`/audio-circles?hubId=${selectedHub.id}`)} /><HubAction icon={BookHeart} label="Stories" onClick={() => navigate(`/diaspora/heritage/globe?hubId=${selectedHub.id}`)} /><HubAction icon={WalletCards} label="Pool" onClick={() => navigate(`/community?hubId=${selectedHub.id}&tab=pool`)} /></div>
+         <button onClick={() => navigate(`/diaspora/heritage/globe?hubId=${selectedHub.id}`)} className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-300 px-4 py-3 text-xs font-black text-[#06201d] ${diasporaTheme.focus}`}>Enter {hubLabel(selectedHub)} Hub <ArrowRight className="h-3.5 w-3.5" /></button>
+diff --git a/artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx b/artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx
+index d4681d5..b899dc9 100644
+--- a/artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx
++++ b/artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx
+@@ -71,6 +71,7 @@ export default function DiasporaDashboardPage() {
+             reserved_balance: (hub.reserved_balance as string | number | null | undefined) ?? null,
+             is_crisis: hub.is_crisis === true,
+             crisis_message: typeof hub.crisis_message === "string" ? hub.crisis_message : null,
++            local_hubs: Array.isArray(hub.local_hubs) ? hub.local_hubs as DiasporaGlobeHub["local_hubs"] : null,
+           })) as DiasporaGlobeHub[];
+           setHubs(nextHubs.filter((hub) => Number.isFinite(hub.id) && Number.isFinite(hub.lat) && Number.isFinite(hub.lng)));
+         }
+diff --git a/lib/db/migrations/0137_diaspora_hub_country_merge.sql b/lib/db/migrations/0137_diaspora_hub_country_merge.sql
+new file mode 100644
+index 0000000..92704d0
+--- /dev/null
++++ b/lib/db/migrations/0137_diaspora_hub_country_merge.sql
+@@ -0,0 +1,43 @@
++-- Migration 0137: merge duplicate country-level Diaspora Hubs for Globe display.
++--
++-- Context: migration 0063_diaspora_hub_geography.sql assigned canonical
++-- country geography to the 10 legacy seed hubs it named explicitly (one row
++-- per country), then applied a generic catch-all to anything still NULL.
++-- That catch-all caught three pre-existing Brazil city hubs (Recife,
++-- São Luís, São Paulo — added in 0060/0062 as intentionally distinct local
++-- communities) and left them with hub_scope='country' but NO country_code,
++-- and a raw city name instead of the "Brazil" display label. Net effect:
++-- Brazil rendered as 4 separate Globe markers instead of 1, undermining the
++-- "one dot per country" redesign, and those 3 rows were unsearchable by
++-- country code.
++--
++-- Fix, non-destructively:
++--   1. Give the 3 Brazil city hubs correct country_code so they are at
++--      least searchable/consistent even before grouping.
++--   2. Add primary_hub_id: a self-referencing pointer used only for Globe
++--      *display* grouping. Child rows keep their own id, community_id,
++--      stories, pledges, hub_community_leaders, help_requests, etc.
++--      completely untouched — nothing about their underlying identity or
++--      relationships changes. Only the Globe marker/aggregate view groups
++--      them under their country's canonical hub.
++--
++-- This pattern generalizes to any future country with multiple legacy city
++-- hubs; it does not hardcode Brazil-only behavior in the schema.
++
++ALTER TABLE diaspora_hubs
++  ADD COLUMN IF NOT EXISTS primary_hub_id INTEGER REFERENCES diaspora_hubs(id);
++
++CREATE INDEX IF NOT EXISTS idx_diaspora_hubs_primary_hub ON diaspora_hubs(primary_hub_id);
++
++UPDATE diaspora_hubs
++SET country_code = 'BR', hub_scope = 'country', subdivision_code = NULL
++WHERE name IN ('Recife, Brazil', 'São Luís, Brazil', 'São Paulo, Brazil')
++  AND (country_code IS NULL OR country_code <> 'BR');
++
++UPDATE diaspora_hubs child
++SET primary_hub_id = canon.id
++FROM diaspora_hubs canon
++WHERE canon.name = 'Salvador, Brazil'
++  AND child.name IN ('Recife, Brazil', 'São Luís, Brazil', 'São Paulo, Brazil')
++  AND child.id <> canon.id
++  AND child.primary_hub_id IS NULL;
+diff --git a/lib/db/src/schema/diaspora-hubs.ts b/lib/db/src/schema/diaspora-hubs.ts
+index 425f85a..c87539b 100644
+--- a/lib/db/src/schema/diaspora-hubs.ts
++++ b/lib/db/src/schema/diaspora-hubs.ts
+@@ -1,4 +1,4 @@
+-import { pgTable, serial, integer, text, boolean, timestamp, doublePrecision, numeric, uniqueIndex } from "drizzle-orm/pg-core";
++import { pgTable, serial, integer, text, boolean, timestamp, doublePrecision, numeric, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+ import { usersTable } from "./users";
+ import { communitiesTable } from "./communities";
+ 
+@@ -18,6 +18,11 @@ export const diasporaHubsTable = pgTable("diaspora_hubs", {
+   country_code: text("country_code"),
+   subdivision_code: text("subdivision_code"),
+   anchor_city:  text("anchor_city"),
++  // Globe *display* grouping only — points a legacy local-city hub at its
++  // country's canonical hub so the Globe renders one marker per country.
++  // The child hub's own id, community_id, stories, pledges, and other
++  // relationships are completely unaffected; this never triggers a delete.
++  primary_hub_id: integer("primary_hub_id").references((): AnyPgColumn => diasporaHubsTable.id),
+   note:         text("note"),
+   community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
+   is_seed:      boolean("is_seed").notNull().default(false),
+-- 
+2.43.0
+

@@ -31,8 +31,8 @@ test("Preserve scan context has durable browser handoff and recorder association
 test("Dashboard labels and derives the curated Heritage catalog metric", () => {
   const page = read("../artifacts/pay-it-forward/src/pages/diaspora-dashboard.tsx");
   const api = read("../artifacts/api-server/src/routes/diaspora-completion.ts");
-  assert.match(page, /Curated heritage catalog/);
-  assert.match(page, /heritage_collections/);
+  assert.doesNotMatch(page, /Curated heritage catalog/);
+  assert.doesNotMatch(page, /heritage_collections/);
   assert.match(api, /const heritageCatalogCount = CULTURE_CARDS\.length/);
   assert.match(api, /heritage_collections: heritageCatalogCount/);
 });

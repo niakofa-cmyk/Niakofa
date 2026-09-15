@@ -1,0 +1,674 @@
+1. 🔴 Critical: ledger reconciliation can declare a $4.55 discrepancy “OK”
+The live Railway worker reported:
+ledger balance: $4.55 Stripe total: $0 drift: $4.55
+Yet the worker logged the situation as:
+“ledger and Stripe within $10”
+The source sets:
+
+const DRIFT_ALERT_THRESHOLD = 10; // dollars
+
+This is not an acceptable production financial-control threshold.
+For ordinary application telemetry, a $10 alert tolerance might be reasonable.
+For a financial ledger, it is not.
+What I recommend
+Change reconciliation to operate in integer cents and make the acceptable difference effectively:
+
+expected Stripe balance
+        ↓
+Stripe financial events
+        ↓
+Community Pool financial ledger
+        ↓
+wallet/history representation
+
+Any unexplained difference should produce:
+
+$0.01+ → investigation
+
+or, if there is a documented rounding allowance:
+
+≤ 1 cent → tolerated
+> 1 cent → alert
+
+More importantly, the reconciliation should distinguish:
+* pending Stripe funds
+* available Stripe funds
+* paid-out funds
+* Stripe fees
+* Climate allocation
+* Community Pool ledger
+* wallet transaction history
+* cashout/payout ledger
+Do not compare unrelated Stripe totals to an application ledger and call the result reconciled.
+This is currently the biggest financial-system issue I found.
+
+2. 🟢 Community Pool hardening is materially better
+The new financial-integrity migration is real and correctly addresses several previous weaknesses.
+It converts dollar storage to exact numeric(12,2) and enforces:
+* positive gross contribution
+* nonnegative Stripe fee
+* nonnegative Climate contribution
+* nonnegative net
+* exact gross/fee/Climate/net reconciliation
+* verified Stripe status before availability
+* payout evidence before paid_out
+* unique terminal payout audit event
+The preflight has also been improved. It now checks both 0118 migrations and explicitly surfaces the duplicate 0118 prefix.
+Remaining Community Pool gap
+There is still no database invariant requiring:
+
+verified
+    ↓
+has Stripe balance transaction
+
+or:
+
+available
+    ↓
+has settlement evidence
+
+The application layer does much of this, but I would add a final DB-level defense-in-depth migration.
+Recommended next migration
+Something like:
+
+verified => balance_transaction_id exists
+available => balance_transaction_id + available_on exist
+paid_out => available_on exists
+
+That would make the database itself impossible to put into a contradictory settlement state.
+
+3. 🟢 The migration collision is now understood, but should eventually be cleaned up
+There are currently two files beginning with 0118:
+
+0118_pool_pending_scope.sql
+0118_community_pool_financial_integrity.sql
+
+The preflight explicitly documents this and checks both.
+The first migration only adds:
+* community_id
+* hub_id
+* scope index
+So this is not currently an immediate schema-breaking dependency problem.
+But it is still poor migration hygiene.
+Recommendation
+Eventually renumber one:
+
+0118_pool_pending_scope.sql
+0119_community_pool_financial_integrity.sql
+
+or vice versa, using the project's migration-history-safe procedure.
+Don't casually rename an already-applied migration.
+
+4. 🟢 Circles is now a real media architecture
+This is one of the strongest parts of the newest repo.
+The current media token route now requires:
+
+authentication
+↓
+approved user
+↓
+live Circle session
+↓
+active participant
+↓
+media policy
+↓
+LiveKit token
+
+And the media policy explicitly supports:
+Open room
+
+host        → publish
+co-host     → publish
+speaker     → publish
+listener    → publish
+
+Moderated room
+
+host        → publish
+co-host     → publish
+speaker     → publish
+listener    → subscribe only
+
+That directly addresses the design question you raised earlier about whether Circle participants should be able to speak/video without host approval.
+Yes — the current architecture supports that intentionally.
+The frontend also consumes the same policy instead of inventing a separate client-side rule.
+That's good architecture.
+
+5. 🟡 Circles still has one important LiveKit security/design issue
+The current token TTL is:
+
+const TOKEN_TTL_SECONDS = 60 * 60 * 4;
+
+That's 4 hours.
+LiveKit supports explicit TTLs, and its documentation recommends short-lived tokens for controlling stale permissions/reconnect behavior.
+For Niakofa Circles, I would reduce this substantially.
+For example:
+
+10–30 minutes
+
+with refresh/reissue.
+Why?
+Suppose:
+
+listener
+   ↓
+promoted to speaker
+   ↓
+later demoted
+
+or:
+
+participant removed
+
+or:
+
+Circle becomes moderated
+
+A four-hour credential is unnecessarily persistent.
+Better architecture
+
+App session
+   ↓
+Circle membership
+   ↓
+short-lived LiveKit token
+   ↓
+room connection
+   ↓
+permission changes
+   ↓
+token refresh / LiveKit permission update
+
+Also consider setting canPublishSources explicitly rather than giving every publisher unrestricted track-source capability. LiveKit supports source-specific grants such as camera/microphone/screen-share.
+
+6. 🟢 Circles has substantially matured beyond the earlier implementation
+The production bundle confirms the room is no longer a simplistic audio-room implementation.
+The build contains dedicated:
+* Circle media readiness
+* audio Circle room
+* media transport
+* realtime session manager
+* endurance metrics
+* recording consent
+* video UI
+* participant controls
+The deployed frontend contains a 691 KB Circle room chunk, which confirms the room is a substantial independently bundled surface rather than a placeholder. The production build itself succeeds.
+However, that chunk size is also a performance concern.
+
+7. 🟡 Frontend bundle size is becoming a real production issue
+The latest production build produced:
+
+index.js             1.35 MB
+Mapbox vendor        1.80 MB
+Circle room          691 KB
+Admin analytics      409 KB
+Admin                238 KB
+
+The Mapbox chunk alone is about 1.8 MB uncompressed.
+The overall build succeeds, but this is getting too large for a consumer application with:
+* maps
+* realtime media
+* profile
+* community
+* wallet
+* admin
+* family tree
+* Family Vault
+* DNA
+* diaspora
+* etc.
+Recommendation
+Aggressively isolate heavy features:
+
+Core shell
+   ↓
+small initial bundle
+
+Maps ───────── lazy
+Circles ────── lazy
+Family Tree ── lazy
+Wallet ─────── lazy
+Admin ──────── lazy
+Analytics ──── lazy
+DNA ────────── lazy
+Family Vault ─ lazy
+
+The Circle room is already split, which is good.
+Mapbox needs additional attention.
+
+8. 🟢 Routing audit improved — but the audit itself still isn't comprehensive enough
+The newest commit specifically fixed the route auditor so it understands routes backed by both:
+
+@/pages/*
+@/components/*
+
+rather than assuming every route must resolve to a page.
+That's a legitimate improvement.
+But there is still a conceptual limitation:
+The auditor primarily audits declared routes in App.tsx.
+It doesn't prove:
+
+client route
+      ↓
+API endpoint
+      ↓
+authorization
+      ↓
+database resource
+      ↓
+successful workflow
+
+It also doesn't comprehensively test dynamic navigation.
+More importantly
+Your production build script does not include:
+
+audit:routes
+verify:platform
+release-validate
+production-gate
+browser smoke
+
+The root package scripts expose all these tools, but ordinary build is primarily typecheck + workspace builds.
+That means:
+The existence of a route audit does not mean every production deployment is automatically route-audited.
+That should be fixed.
+
+9. 🟡 Production gate is far too shallow
+The current production gate only requires:
+
+BASE_URL
+NIAKOFA_API_ORIGIN
+
+then makes essentially one network check:
+
+GET /api/health
+
+and declares the network gate passed.
+The script itself admits:
+authenticated Community Pool testing still requires real credentials/operator execution.
+That is correct, but insufficient for a real release gate.
+Production gate should become
+
+1. Build
+2. Typecheck
+3. Route audit
+4. Admin audit
+5. AI boundary
+6. Migration validation
+7. Stripe webhook verification
+8. Authenticated API smoke
+9. Community Pool accounting matrix
+10. Circles token issuance
+11. WebSocket connection
+12. LiveKit configuration
+13. Health
+14. Readiness
+15. critical frontend routes
+
+Then:
+
+PASS
+  ↓
+deploy
+
+not:
+
+build succeeds
+  ↓
+deploy
+
+
+10. 🟡 Railway deployment is healthy, but the release pipeline isn't sufficiently gated
+Current Railway production:
+
+main
+↓
+Niakofa
+↓
+1 replica
+↓
+successful deployment
+↓
+healthcheck /api/healthz
+
+The current deployment is confirmed as commit 780d6c3....
+The production service is configured with:
+
+start: bash scripts/start.sh
+replicas: 1
+healthcheck: /api/healthz
+
+This is functional.
+But one replica means:
+For WebSocket-heavy Circles functionality, a single application replica is currently doing a lot of work:
+* HTTP
+* WebSocket
+* BullMQ
+* workers
+* Nia service supervision
+* scheduled workers
+* realtime
+* API
+That's acceptable for early production.
+It is not the architecture I would use for serious scale.
+Eventually:
+
+                    ┌── API replicas
+                    │
+Cloudflare/CDN ─────┼── WebSocket/realtime
+                    │
+                    ├── worker service
+                    │
+                    ├── Nia service
+                    │
+                    └── media infrastructure
+
+Redis is already present, which gives you a good foundation.
+
+11. 🟢 Redis/BullMQ infrastructure is much better than before
+The live deployment logs show:
+* Redis connected
+* Redis ready
+* BullMQ workers started
+* payout worker
+* cashout worker
+* notification worker
+* cleanup worker
+* recurring worker
+* anomaly detection
+* pool minimums
+* pool settlement
+* cashout reconciliation
+* ledger drift
+* etc.
+So the app has evolved well beyond a simple Express process.
+This is a significant improvement.
+
+12. 🔴 Worker architecture still needs a formal failure model
+You now have a large number of background workers running in the same application deployment.
+That introduces:
+
+API failure
+≠
+worker failure
+≠
+queue failure
+≠
+scheduler failure
+
+They need independent health semantics.
+For example:
+
+/api/readiness
+
+should report:
+
+{
+  "database": "ok",
+  "redis": "ok",
+  "queue": "ok",
+  "stripe": "configured",
+  "livekit": "configured",
+  "workers": {
+    "pool_settlement": "healthy",
+    "cashout": "healthy",
+    "notification": "healthy"
+  }
+}
+
+Not merely:
+
+server process is alive
+
+
+13. 🟡 WebSocket is working, but the live logs show reconnect churn
+The production logs show repeated:
+
+WS client connected
+WS client disconnected
+WS client connected
+
+with long-lived /ws requests.
+That's not automatically a failure — WebSockets naturally stay open and reconnect.
+But for Niakofa's realtime model, you need explicit metrics around:
+
+connect
+authenticate
+heartbeat
+reconnect
+disconnect reason
+duplicate socket
+stale socket
+presence cleanup
+broadcast latency
+
+Especially because Circles and other realtime features depend on reliable state.
+
+14. 🟡 SPA fallback is answering obvious scanner URLs with 200
+The live service returned:
+
+GET /wp-admin/install.php
+→ 200
+
+This appears to be SPA fallback rather than an actual WordPress endpoint.
+It's not evidence that WordPress is installed.
+But it is undesirable.
+A nonexistent path such as:
+
+/wp-admin/install.php
+
+should return:
+
+404
+
+rather than your application shell.
+Recommended
+Introduce an explicit static/known-route boundary:
+
+known SPA route
+    → index.html
+
+unknown API route
+    → 404 JSON
+
+obvious filesystem/admin probe
+    → 404
+
+asset
+    → asset
+
+health
+    → health response
+
+This reduces scanner ambiguity and makes monitoring much cleaner.
+
+15. 🟡 Security headers are good
+The production response headers are actually quite strong.
+The live server is emitting:
+* CSP
+* HSTS
+* X-Content-Type-Options
+* Referrer Policy
+* Permissions Policy
+* frame restrictions
+* COOP
+* CORP
+* request IDs
+* rate-limit headers
+This is a good sign.
+The production CSP also explicitly allows the required Stripe, Mapbox, Google, websocket and media-related resources.
+So I do not consider basic HTTP hardening a major remaining gap.
+
+16. 🟡 Admin is much better protected than before
+The repository now has an explicit admin-surface-audit contract that scans protected route files for requireAdmin() and checks documented/admin surface wiring.
+That's good.
+And the current production traffic shows /api/admin/nia-status being actively used.
+Remaining improvement
+The client-side /admin surface should still be treated as cosmetic.
+The actual security boundary must always be:
+
+request
+ ↓
+auth
+ ↓
+admin authorization
+ ↓
+operation
+
+Never rely on the React route guard.
+The server must remain authoritative.
+
+17. 🟡 Data privacy/media authorization deserves another pass
+The family asset system still needs stronger resource-level authorization than:
+
+possessing an unguessable asset identifier
+
+For sensitive family material, I recommend:
+
+user
+ ↓
+family membership
+ ↓
+asset membership
+ ↓
+purpose/access policy
+ ↓
+short-lived signed URL
+
+especially for:
+* Family Vault
+* family photos
+* oral histories
+* private recordings
+* Circle recordings
+* family documents.
+The principle should be:
+Not merely “can they guess the URL?” — “are they authorized to access this asset?”
+
+18. 🟡 Profile/history architecture should remain first-class
+The current app now has financial history and Community Pool breakdown components, which is good.
+But the broader Profile History should continue evolving toward:
+
+Financial
+Community
+Pay-It-Forward
+Circles
+Family
+Memories
+Achievements
+Contributions
+Requests
+Trust
+
+rather than becoming a payment-only ledger.
+This matters because Niakofa is not simply a payments application.
+
+19. 🟡 Legacy/RPG code is still present
+The production build still contains:
+
+legacy-timeline
+family-vault
+family-tree
+oral-history
+
+and other family-preservation surfaces.
+So the repository is not a clean “no Legacy/RPG runtime” architecture.
+This isn't necessarily a bug if these are now intentional family-preservation features.
+But if your intended architectural rule is:
+“Legacy/RPG is removed from the production app”
+then the newest repo still fails that requirement.
+If the intended direction is instead:
+“Legacy becomes part of the Family Legacy ecosystem”
+then the current architecture is much more defensible.
+
+20. 🟡 Repository architecture still has too much accumulated surface area
+The application is now large enough that the primary risk is becoming architectural drift.
+There are multiple:
+* audits
+* contracts
+* smoke tests
+* production gates
+* patch scripts
+* workers
+* feature-specific contracts
+* legacy compatibility surfaces
+* generated clients
+* visual-reference packages.
+This is normal during rapid development, but eventually you need a strict distinction between:
+
+SOURCE OF TRUTH
+
+and:
+
+historical / diagnostic / generated / experimental
+
+Otherwise a future agent or developer can modify the wrong implementation.
+
+The five things I would fix next
+If I were taking the repo from today's state toward a serious production release, my order would be:
+P0 — Fix financial reconciliation
+Replace:
+
+$10 tolerance
+
+with a cents-based reconciliation model and explicit Stripe-event-to-ledger reconciliation.
+This is the most important finding.
+P0 — Add settlement DB invariants
+Enforce:
+
+verified → Stripe balance transaction
+available → settlement evidence
+paid_out → available evidence + operator evidence
+
+P1 — Make release validation mandatory
+Production deployment should require:
+
+typecheck
++ route audit
++ admin audit
++ AI boundary
++ migrations
++ production contracts
++ critical browser smoke
+
+P1 — Harden LiveKit credentials
+Reduce the 4-hour Circle token lifetime and explicitly constrain publish sources.
+LiveKit's permission model supports this directly.
+P1 — Split infrastructure responsibilities
+Eventually:
+
+Web/API
+Realtime
+Workers
+Nia
+
+should become independently scalable services.
+
+Final verdict
+Is the newest Niakofa repo substantially improved?
+Yes. Absolutely.
+The latest changes show real engineering maturity:
+* route audit understands components
+* admin surface has a contract
+* Community Pool has database-level accounting constraints
+* Stripe settlement has verification states
+* payout evidence is tracked
+* LiveKit is formally integrated
+* Circles has explicit media policy
+* Redis/BullMQ infrastructure is running
+* health/readiness endpoints exist
+* production security headers are strong
+* Railway is deploying the exact newest commit successfully.
+Is it production-ready?
+Not quite.
+The remaining blocker isn't that Niakofa is missing another hundred features.
+It's that several production-control systems need to become authoritative rather than advisory.
+The biggest one is:
+The financial reconciliation system currently tolerates a $10 unexplained discrepancy.
+That should be corrected before I would call the Community Pool financial system production-grade.
+And the second major architectural issue is:
+Your release gates exist, but they aren't yet mandatory enough to guarantee that the safeguards are actually executed before deployment.
+So my current sign-off is:
+Production deployed: YES. Production capable: YES. Production hardened: NOT YET. Ready for serious financial/realtime scale: NOT YET. Close: YES — considerably closer than the previous forensic pass.
+The next hardening target should therefore be financial reconciliation + final Community Pool DB invariants + mandatory release gate + LiveKit token hardening, rather than adding more product

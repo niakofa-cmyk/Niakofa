@@ -1,0 +1,99 @@
+Fix niakofa-cmyk added 14 commits 6 hours ago
+feat(diaspora): add globe-first hub explorer
+d2ac0ba
+refactor(diaspora): make Globe the primary doorway
+b517dce
+fix(diaspora): keep globe map interactive
+e36f792
+feat(diaspora): model country and state hub scope
+9ccf25a
+feat(diaspora): migrate hubs to country and U.S. state geography
+b72884a
+feat(diaspora): retain hub anchor cities for local metrics
+0b9ee88
+fix(diaspora): correct hub schema field definition
+8f4781b
+fix(diaspora): restore foreign-key declaration shape
+7dd2e22
+feat(diaspora): separate public hub label from anchor identity
+ba3b744
+feat(diaspora): preserve anchor names while adding public geography l…
+30ea4bd
+feat(diaspora): render canonical country and state hub labels
+cf706f7
+fix(diaspora): pass canonical Hub geography metadata to globe
+7db08b5
+fix(diaspora): repair hub geography migration seed arity
+8350a3d
+test(diaspora): align experience contract with Globe-first Hub doorway
+5a32633
+This branch has not been deployed
+No deployments
+Merge info
+Some checks were not successful
+1 failing, 1 skipped, 2 successful checks
+failing checks
+* CI / Typecheck + Tests (pull_request)
+  Failing after 2m
+skipped checks
+* CI / Release Validation (pull_request)
+  Skipped 6 hours ago
+successful checks
+* CI / App/AI Boundary Check (pull_request)
+  Successful in 6s
+* CI / ESLint (pull_request)
+  Successful in 47s
+No conflicts with base branch. And use this to improve and enhance the code:  Repo is public now — I cloned it directly and verified PR #77 for real (installed a fresh Postgres 16 + PostGIS in this sandbox, applied every migration, ran every job the CI / Typecheck + Tests workflow runs, plus Release Validation). Here's the actual state, not a transcript summary:
+One real bug was actually blocking CI, and it wasn't what the changelog implied:
+* Migration 0063's arity fix is genuinely correct — 144 migrations apply cleanly on a fresh DB.
+* But test:diaspora runs 10 separate contract files (scripts/run-repo-diaspora-contracts.sh), and only 1 of them (diaspora-experience-completion-contract.test.mjs) was ever touched. A different one — diaspora-final-wiring-contract.test.mjs — still asserted that the dashboard shows a "Curated heritage catalog" stat, which the Globe-first redesign silently deleted (the data was still being fetched, just never rendered). That's what CI was actually failing on.
+* Fixed: restored it as one small caption line next to the existing "My Family" strip — same treatment already used for the family-tree-people stat, not a return to the old dashboard.
+* Re-ran the entire pipeline end to end after the fix: typecheck, backend tests, migrations, civic seed regression, all 10 diaspora contracts, nia-service tests, App/AI boundary test + script, ESLint (--max-warnings 0), release-validate.js, and the production-gate tests. All green.
+One thing I found that CI won't catch, and that you should decide on: the migration only promotes hubs it names explicitly (Fort Worth→Texas, Atlanta→Georgia, Salvador→Brazil, etc.) plus a catch-all for anything left NULL. But three pre-existing Brazil city hubs (Recife, São Luís, São Paulo — added in older migrations, intentionally distinct communities at the time) fall into that catch-all and end up with hub_scope='country' but no country_code and a raw city name instead of "Brazil" as the label. Since village-pulse returns one row per hub with zero grouping, and DiasporaGlobeFirst.tsx renders one marker per row with no dedup, Brazil will show up as 4 separate globe dots — 1 correctly labeled "Brazil," 3 labeled by city with broken country-code search. That directly contradicts the "one dot per country" goal you asked for.
+I didn't fix this myself because it's a product call, not a bug fix:
+How should the 3 extra Brazil city hubs (Recife, São Luís, São Paulo) be handled on the Globe?Merge into one Brazil dot (keep cities as internal detail)
+Good — that's the safer choice anyway, since it doesn't touch any foreign keys (community, stories, pledges all stay tied to their original hub IDs). Let me implement it as a non-destructive merge: new rows/IDs untouched, just grouped for display.
+Done. Two commits on top of PR #77's HEAD (5a32633):
+1. CI fix — restored the "Curated heritage catalog" stat as a small caption (this is what was actually failing).
+2. Brazil merge fix — the one you just approved:
+
+  * 0137_diaspora_hub_country_merge.sql backfills country_code='BR' on the 3 orphaned Brazil city hubs and points them at Salvador (the canonical Brazil hub) via a new primary_hub_id column — no deletes, no touched foreign keys, every existing community/story/pledge relationship stays exactly where it was.
+  * New pure function mergeHubsForGlobeDisplay in lib/diasporaHubMerge.ts folds child hubs into their canonical hub for the Globe response only, summing metrics and exposing merged cities as local_hubs.
+  * DiasporaGlobeFirst.tsx shows a one-line "4 local hubs · Salvador, Recife, São Luís, São Paulo" note in the Hub popover when a marker represents a merge — so the city-level detail isn't lost, just no longer cluttering the map.
+  * This pattern isn't Brazil-specific — any future country with multiple legacy city hubs gets the same treatment automatically.
+Verified for real, not from a changelog: fresh Postgres 16 + PostGIS in this sandbox, 145 migrations applied cleanly, Brazil confirmed as 1 canonical row + 3 children pointing at it, then the entire Typecheck + Tests CI job plus Release Validation re-run top to bottom — typecheck, 49 backend suites/394 tests (4 new, covering the merge logic including an orphaned-primary_hub_id edge case), all 10 diaspora contract files, nia-service, App/AI boundary, ESLint --max-warnings 0, release-validate.js, test:production-gate. All green.
+pr77-full-fix.patch applies cleanly on top of 5a32633 if you'd rather apply it directly to your branch than use the zip:
+` ``￼git checkout feature/diaspora-globe-first-hubs && git pull￼git am pr77-full-fix.patch￼git push origin feature/diaspora-globe-first-hubs￼`` `.    **PR #77 fixes are on the branch**
+
+Pushed your verified patch content to feature/diaspora-globe-first-hubs:
+
+| CommitWhat it does |                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| d4b58372           | Heritage catalog caption + merge lib/tests + migration 0137 + schema primary\_hub\_id |
+| 22f1821f           | mergeHubsForGlobeDisplay in village-pulse + local hubs line in Hub popover            |
+
+### CI failure that was real
+
+diaspora-final-wiring-contract.test.mjs expected **“Curated heritage catalog”** on the dashboard. Globe-first still fetched heritage\_collections but never rendered it. Restored as a **small caption** under My Family (not the old stats grid).
+
+### Brazil 4-dots → 1
+
+Non-destructive:
+
+- 0137\_diaspora\_hub\_country\_merge.sql — country\_code='BR', primary\_hub\_id → Salvador
+- **No deletes** — city hub IDs / community / stories / pledges unchanged
+- Globe folds children for **display only**; popover shows e.g. 4 local hubs · Salvador, Recife, …
+
+### Architecture (unchanged intent)
+
+text
+
+```
+Diaspora → Globe → Hub → Action
+```
+
+- Countries as country Hubs
+- US as state Hubs
+- One marker per country/state on the map
+
+Watch **PR #77** CI on 22f1821f. When green, merge; keep Railway on current production until you deliberately deploy. Fix, Improve, enhance code,@Railway . @GitHub @Stripe 
