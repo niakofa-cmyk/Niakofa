@@ -63,6 +63,7 @@ const hubs = [
     reserved_balance: null,
     is_crisis: false,
     crisis_message: null,
+    hero_image_url: "https://images.example.test/brazil-hub.jpg",
     local_hubs: [{ hub_id: 202, name: "Recife", member_count: 48, story_count: 2 }],
   },
   {
@@ -145,7 +146,9 @@ test.describe("Diaspora Globe V3 browser regression", () => {
     await page.getByRole("button", { name: /Brazil/ }).last().click();
     const brazilDrawer = page.getByRole("complementary", { name: "Brazil Hub details" });
     await expect(brazilDrawer).toBeVisible();
+    await expect(brazilDrawer.locator('img[alt="Brazil community"]')).toHaveAttribute("src", "https://images.example.test/brazil-hub.jpg");
     await page.getByText("More from Brazil").click();
+    await expect(brazilDrawer.getByRole("button", { name: "Family" })).toBeVisible();
     await expect(brazilDrawer.getByRole("button", { name: /Recife.*48 members/ })).toBeVisible();
     await page.getByRole("button", { name: "Reset Globe to worldwide view" }).click();
     await expect(brazilDrawer).toHaveCount(0);
@@ -157,6 +160,7 @@ test.describe("Diaspora Globe V3 browser regression", () => {
     await search.fill("Ghana");
     await page.getByRole("button", { name: /Ghana/ }).last().click();
     const ghanaDrawer = page.getByRole("complementary", { name: "Ghana Hub details" });
+    await expect(ghanaDrawer.locator('img[alt="Ghana community"]')).toHaveCount(0);
     await expect(ghanaDrawer).toContainText("126 active now");
     await page.getByRole("button", { name: "Message hub" }).click();
     await expect(page.getByRole("dialog", { name: "Message Ghana Hub" })).toBeVisible();
@@ -180,6 +184,9 @@ test.describe("Diaspora Globe V3 browser regression", () => {
     test(`mobile ${width}px keeps controls accessible without horizontal overflow`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await expect(page.getByRole("textbox", { name: "Find a Diaspora Hub" })).toBeVisible();
+      await expect(page.locator('img[alt="Ghana community"]')).toHaveCount(0);
+      await expect(page.locator(".mapboxgl-ctrl-bottom-right .mapboxgl-ctrl-group")).toBeVisible();
+      await expect(page.locator(".mapboxgl-ctrl-top-right .mapboxgl-ctrl-group")).toHaveCount(0);
       const marker = page.getByRole("button", { name: "Open Ghana Hub" });
       const markerBox = await marker.boundingBox();
       expect(markerBox?.width).toBeGreaterThanOrEqual(44);

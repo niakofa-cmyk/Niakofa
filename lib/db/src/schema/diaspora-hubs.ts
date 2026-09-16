@@ -18,6 +18,7 @@ export const diasporaHubsTable = pgTable("diaspora_hubs", {
   country_code: text("country_code"),
   subdivision_code: text("subdivision_code"),
   anchor_city:  text("anchor_city"),
+  hero_image_url: text("hero_image_url"),
   // Globe *display* grouping only — points a legacy local-city hub at its
   // country's canonical hub so the Globe renders one marker per country.
   // The child hub's own id, community_id, stories, pledges, and other

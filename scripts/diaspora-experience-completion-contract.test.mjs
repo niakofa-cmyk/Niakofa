@@ -25,11 +25,28 @@ test("Diaspora landing is a Globe-first Hub doorway", () => {
   assert.match(globe, /Reset Globe to worldwide view/);
   assert.match(globe, /live_user_count > 0/);
   assert.match(globe, /Other U\.S\. State Hubs/);
+  assert.match(globe, /position="bottom-right"/);
+  assert.match(globe, /hero_image_url/);
+  assert.match(globe, /label="Family"/);
+  assert.match(globe, /\/diaspora\/family\?hubId=/);
 
   // Hub actions stay one level deeper (not competing landing cards)
-  for (const label of ["Community", "Message hub", "Spirals", "Stories", "Pool"]) {
+  for (const label of ["Community", "Message hub", "Spirals", "Stories", "Family", "Pool"]) {
     assert.match(globe, new RegExp(`label=\"${label}\"`));
   }
+});
+
+test("V4 Hub context imagery and geography hardening are migration-backed", () => {
+  const schema = read("lib/db/src/schema/diaspora-hubs.ts");
+  const migration = read("lib/db/migrations/0140_diaspora_hub_context_hardening.sql");
+  const audit = read("sql/diaspora-globe-geography-audit.sql");
+
+  assert.match(schema, /hero_image_url: text\("hero_image_url"\)/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS hero_image_url text/);
+  assert.match(migration, /VALIDATE CONSTRAINT diaspora_hubs_globe_geography_check/);
+  assert.match(migration, /hero_image_url must use https/);
+  assert.match(audit, /WHERE primary_hub_id = id/);
+  assert.match(audit, /upper\(country_code\) <> 'US'/);
 });
 
 test("DNA copy stays provenance-safe on DNA surfaces", () => {

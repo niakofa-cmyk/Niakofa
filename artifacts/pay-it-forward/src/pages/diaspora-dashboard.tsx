@@ -43,6 +43,7 @@ export default function DiasporaDashboardPage() {
           hub_scope: typeof hub.hub_scope === "string" ? hub.hub_scope : null,
           country_code: typeof hub.country_code === "string" ? hub.country_code : null,
           subdivision_code: typeof hub.subdivision_code === "string" ? hub.subdivision_code : null,
+           hero_image_url: typeof hub.hero_image_url === "string" && /^https:\/\//i.test(hub.hero_image_url) ? hub.hero_image_url : null,
           story_count: Number(hub.story_count ?? 0),
           member_count: Number(hub.member_count ?? 0),
           live_user_count: Number(hub.live_user_count ?? 0),
