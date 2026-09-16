@@ -87,6 +87,18 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
       essential: true,
     });
   };
+  const resetGlobe = () => {
+    mapRef.current?.flyTo({
+      center: [-20, 18],
+      zoom: 1.25,
+      bearing: 0,
+      pitch: 0,
+      duration: 900,
+      essential: true,
+    });
+    setSelectedHub(null);
+    setQuery("");
+  };
   const openHub = (hub: Hub) => {
     setSelectedHub(hub);
     setQuery("");
@@ -138,6 +150,13 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
               }`}
             >
               <span className="text-[15px] leading-none" aria-hidden="true">{flagForHub(hub)}</span>
+              {hub.live_user_count > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-[#071312] bg-emerald-300 motion-safe:animate-pulse motion-reduce:animate-none"
+                  title={`${hub.live_user_count} people active now`}
+                />
+              )}
               <span
                 aria-hidden="true"
                 className="pointer-events-none absolute inset-1 rounded-full border border-white/30 motion-safe:animate-pulse motion-reduce:animate-none"
@@ -147,19 +166,49 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
         ))}
       </Map> : <div className="absolute inset-0 flex items-center justify-center p-8 text-center"><div><Globe2 className="mx-auto h-12 w-12 text-teal-200/20" /><p className="mt-3 text-sm font-semibold text-white/60">Interactive globe unavailable</p><p className="mt-1 max-w-sm text-xs leading-relaxed text-white/35">Add the Mapbox public token to enable the live globe. Hub discovery remains available through search.</p></div></div>}
 
-      <div className="absolute left-3 right-3 top-3 z-20 sm:left-5 sm:right-auto sm:top-5 sm:w-[430px]">
-        <div className="rounded-2xl border border-white/10 bg-[#071312]/90 p-4 shadow-2xl backdrop-blur-xl sm:p-5">
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-teal-300/20 bg-teal-300/10"><Globe2 className="h-4 w-4 text-teal-300" /></span>
-            <div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.24em] text-teal-300/75">Niakofa Diaspora</p><h1 className="mt-0.5 text-lg font-black text-white sm:text-xl">Find your Diaspora Hub</h1><p className="mt-1 text-xs leading-relaxed text-white/45">Countries worldwide. U.S. communities are organized by state.</p></div>
+      <div className="absolute left-3 right-3 top-3 z-20 sm:left-5 sm:right-auto sm:top-5 sm:w-[390px]">
+        <div className="rounded-2xl border border-white/10 bg-[#071312]/75 p-2.5 shadow-xl backdrop-blur-xl sm:p-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-teal-300/20 bg-teal-300/10" aria-hidden="true">
+              <Globe2 className="h-4 w-4 text-teal-300" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[11px] font-black text-white">Diaspora Globe</p>
+              <p className="truncate text-[9px] text-white/35">Countries worldwide · U.S. by state</p>
+            </div>
+            <button
+              onClick={resetGlobe}
+              aria-label="Reset Globe to worldwide view"
+              title="Reset Globe"
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/45 hover:bg-white/5 hover:text-white ${diasporaTheme.focus}`}
+            >
+              <Globe2 className="h-4 w-4" />
+            </button>
           </div>
-          <div className="relative mt-4">
-          <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-white/30" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Brazil, Ghana, Texas…" aria-label="Find a Diaspora Hub" className="w-full rounded-xl border border-white/10 bg-black/30 py-3 pl-9 pr-9 text-sm text-white outline-none placeholder:text-white/30 focus:border-teal-300/40" />
-          {query && <button onClick={() => setQuery("")} aria-label="Clear hub search" className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white"><X className="h-4 w-4" /></button>}
-          {query && <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 max-h-64 overflow-auto rounded-2xl border border-white/10 bg-[#0a1918] p-2 shadow-2xl">{filteredHubs.length === 0 ? <p className="p-3 text-xs text-white/40">No Diaspora Hub matches that search.</p> : filteredHubs.slice(0, 12).map((hub) => <button key={hub.id} onClick={() => openHub(hub)} className="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-white/5"><span className="flex h-8 w-8 items-center justify-center rounded-full border border-teal-300/30 bg-teal-300/10"><MapPin className="h-3.5 w-3.5 text-teal-300" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-white">{hubLabel(hub)}</span><span className="block text-[11px] text-white/40">{hubKind(hub)} · {hub.region}{hub.local_hubs && hub.local_hubs.length > 1 ? ` · ${hub.local_hubs.length} local hubs` : ""}</span></span><ArrowRight className="h-3.5 w-3.5 text-white/20" /></button>)}</div>}
+          <div className="relative mt-2">
+            <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-white/30" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search country, state or local hub…"
+              aria-label="Find a Diaspora Hub"
+              className="w-full rounded-xl border border-white/10 bg-black/30 py-3 pl-9 pr-9 text-sm text-white outline-none placeholder:text-white/30 focus:border-teal-300/40"
+            />
+            {query && <button onClick={() => setQuery("")} aria-label="Clear hub search" className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white"><X className="h-4 w-4" /></button>}
+            {query && <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 max-h-64 overflow-auto rounded-2xl border border-white/10 bg-[#0a1918] p-2 shadow-2xl">
+              {filteredHubs.length === 0 ? <p className="p-3 text-xs text-white/40">No Hub matches that search.</p> : filteredHubs.slice(0, 12).map((hub) => (
+                <button key={hub.id} onClick={() => openHub(hub)} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-white/5 ${diasporaTheme.focus}`}>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-teal-300/30 bg-teal-300/10 text-[13px]">{flagForHub(hub)}</span>
+                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-white">{hubLabel(hub)}</span><span className="block text-[11px] text-white/40">{hubKind(hub)} · {hub.region}{hub.local_hubs && hub.local_hubs.length > 0 ? ` · ${hub.local_hubs.length} local` : ""}</span></span>
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-white/20" />
+                </button>
+              ))}
+            </div>}
           </div>
-          <p className="mt-2 text-[10px] text-white/30" aria-live="polite">{filteredHubs.length} canonical Hubs · Select a marker or search result</p>
+          <div className="flex items-center justify-between px-1 pt-1.5 text-[9px] text-white/25">
+            <span aria-live="polite">{filteredHubs.length} canonical Hubs</span>
+            <span>Select a marker to open its Hub</span>
+          </div>
         </div>
       </div>
 
@@ -167,7 +216,28 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
         <div className="flex items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-300"><CircleDot className="h-3 w-3" /> {hubKind(selectedHub)}</span>{selectedHub.is_crisis && <span className="rounded-full bg-rose-300/10 px-2 py-1 text-[10px] font-bold text-rose-200">Crisis</span>}</div><h3 className="mt-1 truncate text-xl font-black text-white">{hubLabel(selectedHub)}</h3><p className="mt-1 text-xs text-white/40">{selectedHub.region}</p></div><button onClick={() => setSelectedHub(null)} aria-label="Close Hub details" className={`rounded-xl p-2 text-white/40 hover:bg-white/5 hover:text-white ${diasporaTheme.focus}`}><X className="h-4 w-4" /></button></div>
         {selectedHub.crisis_message && <p className="mt-4 rounded-xl border border-rose-300/15 bg-rose-300/[0.05] p-3 text-xs leading-relaxed text-rose-100/70">{selectedHub.crisis_message}</p>}
         <p className="mt-4 text-xs leading-relaxed text-white/50">{selectedHub.member_count} members · {selectedHub.story_count} stories · {selectedHub.spiral_count} Spirals · {selectedHub.open_requests} open needs</p>
+        {selectedHub.live_user_count > 0 && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-300/10 bg-emerald-300/[0.04] px-3 py-2 text-[11px] text-emerald-100/75">
+            <span className="h-2 w-2 rounded-full bg-emerald-300 motion-safe:animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+            <span><strong className="font-bold text-emerald-100">{selectedHub.live_user_count} active now</strong> in this Hub</span>
+          </div>
+        )}
         <div className="mt-4 grid grid-cols-3 gap-2"><HubAction icon={Users} label="Community" onClick={() => navigate(`/community?hubId=${selectedHub.id}`)} /><HubAction icon={MessageCircle} label="Message hub" onClick={() => setMessageHub(selectedHub)} /><HubAction icon={CircleDot} label="Spirals" onClick={() => navigate(`/audio-circles?hubId=${selectedHub.id}`)} /></div>
+        {selectedHub.hub_scope === "us_state" && (
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-white/30">Other U.S. State Hubs</p>
+              <span className="text-[9px] text-white/25">{hubs.filter((item) => item.hub_scope === "us_state").length} total</span>
+            </div>
+            <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5">
+              {hubs.filter((item) => item.hub_scope === "us_state" && item.id !== selectedHub.id).slice(0, 6).map((item) => (
+                <button key={item.id} onClick={() => openHub(item)} className={`shrink-0 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[10px] font-semibold text-white/60 hover:bg-white/[0.07] hover:text-white ${diasporaTheme.focus}`}>
+                  {hubLabel(item)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <details className="mt-3 rounded-xl border border-white/10 bg-white/[0.025]">
           <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-[11px] font-bold text-white/55"><span>More from {hubLabel(selectedHub)}</span><ChevronDown className="h-3.5 w-3.5" /></summary>
           <div className="grid grid-cols-2 gap-2 border-t border-white/10 p-3"><HubAction icon={BookHeart} label="Stories" onClick={() => navigate(`/diaspora/heritage/globe?hubId=${selectedHub.id}`)} /><HubAction icon={WalletCards} label="Pool" onClick={() => navigate(`/community?hubId=${selectedHub.id}&tab=pool`)} /></div>

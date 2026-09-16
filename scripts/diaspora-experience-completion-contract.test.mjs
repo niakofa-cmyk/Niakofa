@@ -11,17 +11,20 @@ test("Diaspora landing is a Globe-first Hub doorway", () => {
   // Product hierarchy: Diaspora → Globe → Hub → Action
   assert.match(source, /DiasporaGlobeFirst/);
   assert.match(source, /\/api\/griot\/village-pulse/);
-  assert.match(globe, /Find your Diaspora Hub/);
+  assert.match(globe, /Diaspora Globe/);
   assert.doesNotMatch(source, /\/diaspora\/family/);
   assert.doesNotMatch(source, /\/diaspora\/timeline/);
 
   // Globe is the navigation system — Hubs, not individual members
-  assert.match(globe, /Search Brazil, Ghana, Texas/);
+  assert.match(globe, /Search country, state or local hub/);
   assert.match(globe, /U\.S\. state hub/);
   assert.match(globe, /Country hub/);
   assert.match(globe, /hubId=/);
   assert.match(globe, /\/diaspora\/heritage\/globe/);
   assert.match(globe, /projection="globe"/);
+  assert.match(globe, /Reset Globe to worldwide view/);
+  assert.match(globe, /live_user_count > 0/);
+  assert.match(globe, /Other U\.S\. State Hubs/);
 
   // Hub actions stay one level deeper (not competing landing cards)
   for (const label of ["Community", "Message hub", "Spirals", "Stories", "Pool"]) {
