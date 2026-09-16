@@ -137,7 +137,7 @@ test.describe("Diaspora Globe V3 browser regression", () => {
     await page.routeWebSocket("**/ws", (webSocket) => webSocket.close());
     await mockAuthenticatedGlobe(page);
     await page.goto("/diaspora", { waitUntil: "networkidle" });
-    await expect(page.getByText("Diaspora Globe")).toBeVisible();
+    await expect(page.locator('[data-niakofa-surface="diaspora-globe"]')).toBeVisible();
   });
 
   test("search resolves country and local-city matches to the canonical Hub", async ({ page }) => {

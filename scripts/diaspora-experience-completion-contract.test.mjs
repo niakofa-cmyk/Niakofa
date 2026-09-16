@@ -29,6 +29,10 @@ test("Diaspora landing is a Globe-first Hub doorway", () => {
   assert.match(globe, /hero_image_url/);
   assert.match(globe, /label="Family"/);
   assert.match(globe, /\/diaspora\/family\?hubId=/);
+  assert.match(globe, /data-niakofa-surface="diaspora-globe"/);
+  assert.match(globe, /bg-\[#071312\]\/55 p-2 shadow-lg/);
+  assert.match(globe, /bottom-\[calc\(5rem\+env\(safe-area-inset-bottom\)\)\]/);
+  assert.match(globe, /Hub context/);
 
   // Hub actions stay one level deeper (not competing landing cards)
   for (const label of ["Community", "Message hub", "Spirals", "Stories", "Family", "Pool"]) {
