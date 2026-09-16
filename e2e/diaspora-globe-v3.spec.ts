@@ -146,6 +146,7 @@ test.describe("Diaspora Globe V3 browser regression", () => {
     await page.getByRole("button", { name: /Brazil/ }).last().click();
     const brazilDrawer = page.getByRole("complementary", { name: "Brazil Hub details" });
     await expect(brazilDrawer).toBeVisible();
+    await expect(brazilDrawer).toHaveClass(/bottom-\[calc\(5rem\+env\(safe-area-inset-bottom\)\)\]/);
     await expect(brazilDrawer.locator('img[alt="Brazil community"]')).toHaveAttribute("src", "https://images.example.test/brazil-hub.jpg");
     await page.getByText("More from Brazil").click();
     await expect(brazilDrawer.getByRole("button", { name: "Family" })).toBeVisible();

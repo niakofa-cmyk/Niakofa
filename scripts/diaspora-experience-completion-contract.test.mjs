@@ -11,7 +11,7 @@ test("Diaspora landing is a Globe-first Hub doorway", () => {
   // Product hierarchy: Diaspora → Globe → Hub → Action
   assert.match(source, /DiasporaGlobeFirst/);
   assert.match(source, /\/api\/griot\/village-pulse/);
-  assert.match(globe, /Diaspora Globe/);
+  assert.doesNotMatch(globe, /Countries worldwide · U\.S\. by state/);
   assert.doesNotMatch(source, /\/diaspora\/family/);
   assert.doesNotMatch(source, /\/diaspora\/timeline/);
 
