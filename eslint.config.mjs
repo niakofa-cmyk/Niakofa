@@ -24,6 +24,7 @@ export default tseslint.config(
       "**/generated/**",
       "niakofa-repo/**",
       "archive/**",
+      "reference/**",
       "attached_assets/**",
       ".local/**",
       "pnpm-lock.yaml",
