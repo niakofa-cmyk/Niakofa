@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import Map, { Marker } from "react-map-gl/mapbox";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Map, { Marker, NavigationControl, type MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { ArrowRight, BookHeart, CheckCircle2, ChevronDown, CircleDot, Globe2, Loader2, MapPin, MessageCircle, Send, Users, WalletCards, X } from "lucide-react";
 import { useLocation } from "wouter";
@@ -45,6 +45,13 @@ type HubMessage = {
 };
 
 function hubLabel(hub: Hub) { return hub.display_name?.trim() || hub.name; }
+function flagForHub(hub: Hub): string {
+  const code = hub.country_code?.trim().toUpperCase() ?? "";
+  if (!/^[A-Z]{2}$/.test(code)) return "•";
+  return [...code]
+    .map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0)))
+    .join("");
+}
 function hubKind(hub: Hub) {
   if (hub.hub_scope === "us_state" || hub.country_code === "US" || /^us(?:-|_|$)/i.test(hub.tag)) return "U.S. state hub";
   return "Country hub";
@@ -67,17 +74,77 @@ function matchesQuery(hub: Hub, query: string) {
 
 export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
   const [, navigate] = useLocation();
+  const mapRef = useRef<MapRef | null>(null);
   const [selectedHub, setSelectedHub] = useState<Hub | null>(null);
   const [messageHub, setMessageHub] = useState<Hub | null>(null);
   const [query, setQuery] = useState("");
   const filteredHubs = useMemo(() => hubs.filter((hub) => matchesQuery(hub, query)), [hubs, query]);
-  const openHub = (hub: Hub) => { setSelectedHub(hub); setQuery(""); };
+  const focusHub = (hub: Hub) => {
+    mapRef.current?.flyTo({
+      center: [hub.lng, hub.lat],
+      zoom: hub.hub_scope === "us_state" ? 4.2 : 3.1,
+      duration: 1100,
+      essential: true,
+    });
+  };
+  const openHub = (hub: Hub) => {
+    setSelectedHub(hub);
+    setQuery("");
+    focusHub(hub);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (messageHub) {
+        setMessageHub(null);
+        return;
+      }
+      if (selectedHub) setSelectedHub(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [messageHub, selectedHub]);
 
   return (
     <section className={`${diasporaTheme.radiusHero} relative h-[calc(100vh-5.5rem)] min-h-[520px] overflow-hidden border border-teal-300/20 bg-[#071312] ${diasporaTheme.shadow} sm:min-h-[620px]`}>
       {loading && <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#071312]/70 backdrop-blur-sm"><div className="rounded-xl border border-white/10 bg-black/70 px-4 py-3 text-xs text-white/70">Loading Diaspora Hubs…</div></div>}
-      {token ? <Map initialViewState={{ longitude: -20, latitude: 18, zoom: 1.25 }} projection="globe" mapStyle="mapbox://styles/mapbox/dark-v11" mapboxAccessToken={token} attributionControl={false}>
-        {filteredHubs.map((hub) => <Marker key={hub.id} longitude={hub.lng} latitude={hub.lat} anchor="center"><button onClick={() => openHub(hub)} aria-label={`Open ${hubLabel(hub)} Hub`} title={hubLabel(hub)} className={`relative h-11 w-11 rounded-full border-2 shadow-lg transition-transform hover:scale-110 ${hub.is_crisis ? "border-rose-300 bg-rose-300/30" : "border-teal-300 bg-teal-300/25"}`}><span aria-hidden="true" className="pointer-events-none absolute inset-1 rounded-full border border-white/30 motion-safe:animate-pulse motion-reduce:animate-none" /></button></Marker>)}
+      {token ? <Map
+        ref={mapRef}
+        initialViewState={{ longitude: -20, latitude: 18, zoom: 1.25 }}
+        projection="globe"
+        mapStyle="mapbox://styles/mapbox/dark-v11"
+        mapboxAccessToken={token}
+        attributionControl={false}
+      >
+        <NavigationControl
+          position="top-right"
+          showZoom
+          showCompass
+          visualizePitch={false}
+        />
+        {filteredHubs.map((hub) => (
+          <Marker key={hub.id} longitude={hub.lng} latitude={hub.lat} anchor="center">
+            <button
+              onClick={() => openHub(hub)}
+              aria-label={`Open ${hubLabel(hub)} Hub`}
+              title={hubLabel(hub)}
+              className={`relative flex h-11 w-11 items-center justify-center rounded-full border-2 shadow-lg transition-transform hover:scale-110 ${
+                selectedHub?.id === hub.id
+                  ? "scale-110 border-white bg-teal-200/35 ring-4 ring-teal-200/20"
+                  : hub.is_crisis
+                    ? "border-rose-300 bg-rose-300/30"
+                    : "border-teal-300 bg-teal-300/25"
+              }`}
+            >
+              <span className="text-[15px] leading-none" aria-hidden="true">{flagForHub(hub)}</span>
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-1 rounded-full border border-white/30 motion-safe:animate-pulse motion-reduce:animate-none"
+              />
+            </button>
+          </Marker>
+        ))}
       </Map> : <div className="absolute inset-0 flex items-center justify-center p-8 text-center"><div><Globe2 className="mx-auto h-12 w-12 text-teal-200/20" /><p className="mt-3 text-sm font-semibold text-white/60">Interactive globe unavailable</p><p className="mt-1 max-w-sm text-xs leading-relaxed text-white/35">Add the Mapbox public token to enable the live globe. Hub discovery remains available through search.</p></div></div>}
 
       <div className="absolute left-3 right-3 top-3 z-20 sm:left-5 sm:right-auto sm:top-5 sm:w-[430px]">
@@ -92,7 +159,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
           {query && <button onClick={() => setQuery("")} aria-label="Clear hub search" className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white"><X className="h-4 w-4" /></button>}
           {query && <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 max-h-64 overflow-auto rounded-2xl border border-white/10 bg-[#0a1918] p-2 shadow-2xl">{filteredHubs.length === 0 ? <p className="p-3 text-xs text-white/40">No Diaspora Hub matches that search.</p> : filteredHubs.slice(0, 12).map((hub) => <button key={hub.id} onClick={() => openHub(hub)} className="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-white/5"><span className="flex h-8 w-8 items-center justify-center rounded-full border border-teal-300/30 bg-teal-300/10"><MapPin className="h-3.5 w-3.5 text-teal-300" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-white">{hubLabel(hub)}</span><span className="block text-[11px] text-white/40">{hubKind(hub)} · {hub.region}{hub.local_hubs && hub.local_hubs.length > 1 ? ` · ${hub.local_hubs.length} local hubs` : ""}</span></span><ArrowRight className="h-3.5 w-3.5 text-white/20" /></button>)}</div>}
           </div>
-          <p className="mt-2 text-[10px] text-white/30">{filteredHubs.length} canonical Hubs · Select a marker or search result</p>
+          <p className="mt-2 text-[10px] text-white/30" aria-live="polite">{filteredHubs.length} canonical Hubs · Select a marker or search result</p>
         </div>
       </div>
 
@@ -104,7 +171,23 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
         <details className="mt-3 rounded-xl border border-white/10 bg-white/[0.025]">
           <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-[11px] font-bold text-white/55"><span>More from {hubLabel(selectedHub)}</span><ChevronDown className="h-3.5 w-3.5" /></summary>
           <div className="grid grid-cols-2 gap-2 border-t border-white/10 p-3"><HubAction icon={BookHeart} label="Stories" onClick={() => navigate(`/diaspora/heritage/globe?hubId=${selectedHub.id}`)} /><HubAction icon={WalletCards} label="Pool" onClick={() => navigate(`/community?hubId=${selectedHub.id}&tab=pool`)} /></div>
-          {selectedHub.local_hubs && selectedHub.local_hubs.length > 1 && <div className="border-t border-white/10 px-3 py-3"><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-white/30">Local communities</p><p className="mt-1 text-[11px] leading-relaxed text-white/50">{selectedHub.local_hubs.map((local) => local.name).join(" · ")}</p></div>}
+           {selectedHub.local_hubs && selectedHub.local_hubs.length > 0 && (
+             <div className="border-t border-white/10 px-3 py-3">
+               <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-white/30">Local communities</p>
+               <div className="mt-2 grid gap-1.5">
+                 {selectedHub.local_hubs.map((local) => (
+                   <button
+                     key={local.hub_id}
+                     onClick={() => navigate(`/community?hubId=${local.hub_id}`)}
+                     className={`flex min-h-11 items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/[0.02] px-3 text-left text-[11px] text-white/60 hover:bg-white/[0.05] hover:text-white ${diasporaTheme.focus}`}
+                   >
+                     <span className="min-w-0 truncate">{local.name}</span>
+                     <span className="shrink-0 text-[9px] text-white/30">{local.member_count} members</span>
+                   </button>
+                 ))}
+               </div>
+             </div>
+           )}
         </details>
       </aside>}
       {messageHub && <HubMessagingPanel hub={messageHub} hubs={hubs} onClose={() => setMessageHub(null)} />}
@@ -202,7 +285,7 @@ function HubMessagingPanel({ hub, hubs, onClose }: { hub: Hub; hubs: Hub[]; onCl
   const selectedSource = sourceHubs.find((item) => item.id === Number(sourceId));
   return (
     <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/55 p-3 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true" aria-label={`Message ${hubLabel(hub)} Hub`}>
-      <div className="flex max-h-[92%] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-teal-300/20 bg-[#0a1918] shadow-2xl">
+       <div className="flex max-h-[calc(100%-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-teal-300/20 bg-[#0a1918] shadow-2xl sm:max-h-[92%] sm:rounded-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-4">
           <div><p className="text-[9px] font-bold uppercase tracking-[0.2em] text-teal-300/75">Hub-to-Hub message</p><h3 className="mt-1 text-lg font-black text-white">Connect {hubLabel(hub)}</h3><p className="mt-1 text-xs text-white/45">Messages are saved to one shared thread for both Hubs.</p></div>
           <button onClick={onClose} aria-label="Close Hub messaging" className="rounded-xl p-2 text-white/40 hover:bg-white/5 hover:text-white"><X className="h-4 w-4" /></button>
