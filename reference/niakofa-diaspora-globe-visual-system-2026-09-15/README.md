@@ -34,6 +34,14 @@ Community, Message Hub, Spirals, Stories, Family, Pool, and local communities.
 - `uploaded-hardening-package.zip` — original uploaded hardening package,
   retained as source reference. Its proposed `0138` migration was adapted to
   repository migration `0139` because `0138` is already durable Hub messaging.
+- `mobile-hardening-review-2026-09-16.md` — full review of the current Globe
+  and mobile interaction system.
+- `mobile-architecture-review-2026-09-16.md` — product architecture review
+  identifying the remaining mobile hardening gaps.
+- `Niakofa_Diaspora_Globe_Mobile_Hardening_2026-09-16.zip` — complete uploaded
+  mobile hardening package, preserved unchanged.
+- `mobile-hardening-package/` — extracted package contents, including the QA
+  checklist, deterministic patch script, and visual implementation gap note.
 
 ## Current implementation mapping
 
@@ -72,3 +80,7 @@ Community, Message Hub, Spirals, Stories, Family, Pool, and local communities.
    geography roots.
 8. The mobile layout keeps search, marker selection, Hub actions, messaging,
    Stories, Spirals, and Pool usable without horizontal scrolling.
+9. Globe markers and the search clear control are at least 44px on mobile.
+10. Reduced-motion preferences disable decorative marker pulsing.
+11. The selected Hub sheet stays above the fixed mobile navigation on short
+    screens.
