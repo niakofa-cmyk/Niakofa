@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useNiaStory } from "@/hooks/useNiaStory";
@@ -853,7 +853,7 @@ function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (
 
 
 export default function CommunityScreen() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const initialTab = (() => {
     if (typeof window === "undefined") return "feed" as Tab;
     const t = new URLSearchParams(window.location.search).get("tab") as Tab | null;
@@ -867,6 +867,10 @@ export default function CommunityScreen() {
   const [postsLoading, setPostsLoading] = useState(true);
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const hubContextId = useMemo(() => {
+    const value = Number(new URLSearchParams(location.split("?")[1] ?? "").get("hubId"));
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }, [location]);
 
   const { currentUser, niaEnabled } = useAppContext();
   const sponsorHistory = useGetSponsorHistory(currentUser?.id ?? null);
@@ -1238,6 +1242,24 @@ export default function CommunityScreen() {
       </div>
 
       <div className="flex-1 p-4 max-w-lg mx-auto w-full">
+        {hubContextId && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary">Hub context</p>
+              <p className="truncate text-sm font-black">Selected Diaspora Hub #{hubContextId}</p>
+              <p className="text-[11px] text-muted-foreground">
+                This is a contextual doorway. The current local Community feed is not silently relabeled as Hub-scoped.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLocation(`/messages?mode=hub&sourceHub=${hubContextId}`)}
+              className="min-h-11 shrink-0 rounded-xl border border-primary/25 bg-primary/10 px-3 text-xs font-black text-primary"
+            >
+              Message Hub
+            </button>
+          </div>
+        )}
 
         {/* FEED TAB */}
         {tab === "feed" && (

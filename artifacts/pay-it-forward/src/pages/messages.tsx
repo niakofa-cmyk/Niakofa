@@ -5,6 +5,7 @@ import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { messagesPath, type MessageMode } from "@/lib/messageRoutes";
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
+import HubMessagesPanel from "@/components/messages/HubMessagesPanel";
 
 type DirectUser = {
   id: number;
@@ -75,10 +76,31 @@ function mergeDirectMessage(messages: DirectMessage[], incoming: DirectMessage):
 }
 
 function modeFromLocation(location: string): MessageMode {
-  const mode = new URLSearchParams(location.split("?")[1] ?? "").get("mode");
+  const [pathname, query] = location.split("?");
+  const params = new URLSearchParams(query ?? "");
+  const mode = params.get("mode");
   if (mode === "direct" || mode === "hub" || mode === "requests") return mode;
   if (mode === "request") return "requests";
+  if (
+    pathname === "/diaspora/messages" ||
+    params.has("sourceHub") ||
+    params.has("targetHub") ||
+    params.has("conversation")
+  ) return "hub";
   return "all";
+}
+
+function hubContextFromLocation(location: string): {
+  sourceHub: string | null;
+  targetHub: string | null;
+  conversation: string | null;
+} {
+  const params = new URLSearchParams(location.split("?")[1] ?? "");
+  return {
+    sourceHub: params.get("sourceHub"),
+    targetHub: params.get("targetHub"),
+    conversation: params.get("conversation"),
+  };
 }
 
 async function readError(response: Response, fallback: string): Promise<string> {
@@ -139,6 +161,7 @@ export default function MessagesPage() {
   const [location, navigate] = useLocation();
   const { currentUser } = useAppContext();
   const activeMode = modeFromLocation(location);
+  const hubContext = hubContextFromLocation(location);
   const [directConversations, setDirectConversations] = useState<DirectConversation[]>([]);
   const [hubConversations, setHubConversations] = useState<HubConversation[]>([]);
   const [requestConversations, setRequestConversations] = useState<RequestConversation[]>([]);
@@ -549,20 +572,16 @@ export default function MessagesPage() {
             </div>
           )}
 
-          {(activeMode === "all" || activeMode === "hub") && (
+           {activeMode === "hub" ? (
+             <HubMessagesPanel
+               initialSourceHub={hubContext.sourceHub}
+               initialTargetHub={hubContext.targetHub}
+               initialConversation={hubContext.conversation}
+             />
+           ) : activeMode === "all" && (
             <div>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Diaspora Hubs</h3><Radio className="h-4 w-4 text-primary" /></div>
-              {activeMode === "hub" && new URLSearchParams(location.split("?")[1] ?? "").get("sourceHub") && (
-                <div className="mb-3 rounded-2xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-primary">
-                  Hub context selected. Choose a conversation below or open the Hub composer to speak as your approved source Hub.
-                </div>
-              )}
-              {hubConversations.length === 0 ? <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">No Hub conversations yet. Select a Hub from the Diaspora Globe to start one.</p> : <div className="grid gap-2 sm:grid-cols-2">{hubConversations.map((conversation) => { const first = conversation.hub_a_display_name || conversation.hub_a_name; const second = conversation.hub_b_display_name || conversation.hub_b_name; return <button key={conversation.id} type="button" onClick={() => navigate(`/diaspora/messages?targetHub=${conversation.hub_b_id}`)} className="rounded-2xl border border-border p-3 text-left hover:border-primary/40"><p className="truncate text-sm font-black">{first} ↔ {second}</p><p className="mt-1 truncate text-xs text-muted-foreground">{conversation.last_message || "Open Hub conversation"}</p></button>; })}</div>}
-              {activeMode === "hub" && (
-                <button type="button" onClick={() => navigate("/diaspora/messages")} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-border px-4 text-sm font-bold text-muted-foreground hover:text-foreground">
-                  <Radio className="h-4 w-4" /> Open Hub composer
-                </button>
-              )}
+               {hubConversations.length === 0 ? <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">No Hub conversations yet. Select a Hub from the Diaspora Globe to start one.</p> : <div className="grid gap-2 sm:grid-cols-2">{hubConversations.map((conversation) => { const first = conversation.hub_a_display_name || conversation.hub_a_name; const second = conversation.hub_b_display_name || conversation.hub_b_name; return <button key={conversation.id} type="button" onClick={() => navigate(messagesPath("hub", { conversation: conversation.id }))} className="rounded-2xl border border-border p-3 text-left hover:border-primary/40"><p className="truncate text-sm font-black">{first} ↔ {second}</p><p className="mt-1 truncate text-xs text-muted-foreground">{conversation.last_message || "Open Hub conversation"}</p></button>; })}</div>}
             </div>
           )}
 

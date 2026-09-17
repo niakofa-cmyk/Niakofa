@@ -51,8 +51,10 @@ const FamilyVaultPage      = lazy(() => import("@/pages/family-vault"));
 const FamilyMemoryPage     = lazy(() => import("@/pages/family-memory"));
 const DashboardPage        = lazy(() => import("@/pages/dashboard"));
 const DiasporaDashboardPage = lazy(() => import("@/pages/diaspora-dashboard"));
-const DiasporaHubMessagesPage = lazy(() => import("@/pages/diaspora-hub-messages"));
 const MessagesPage = lazy(() => import("@/pages/messages"));
+// Compatibility doorway: legacy Diaspora links render the canonical Messages
+// surface instead of loading a second full-page messenger.
+const DiasporaHubMessagesPage = MessagesPage;
 const FamilyTreePage        = lazy(() => import("@/pages/family-tree"));
 const DnaConnectionsPage   = lazy(() => import("@/pages/dna-connections"));
 const HeritageCollectionsPage = lazy(() => import("@/pages/heritage-collections"));

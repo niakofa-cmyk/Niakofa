@@ -41,12 +41,14 @@ test("V12 canonical Messages surface preserves request and Hub entry points", as
   const community = await source("artifacts/pay-it-forward/src/pages/community.tsx");
   const context = await source("artifacts/pay-it-forward/src/lib/diaspora/DiasporaHubContext.ts");
   assert.match(app, /Route path="\/messages" component=\{MessagesPage\}/);
+  assert.match(app, /const DiasporaHubMessagesPage = MessagesPage/);
   assert.match(page, /\/api\/messages\/direct\/conversations/);
   assert.match(page, /\/api\/requests\?requester_id=/);
-  assert.match(page, /\/diaspora\/messages\?targetHub=/);
+  assert.doesNotMatch(page, /navigate\(`\/diaspora\/messages/);
   assert.match(page, /messagesPath\("direct", \{ conversation: conversation\.id \}\)/);
-  assert.match(page, /Hub context selected/);
+  assert.match(page, /HubMessagesPanel/);
   assert.match(community, /CommunityMessageEntry/);
+  assert.match(community, /Hub context/);
   assert.match(context, /`\/messages\?mode=hub&\$\{query\}`/);
 });
 
