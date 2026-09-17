@@ -187,6 +187,24 @@ router.patch("/diaspora/hub-memberships/:id", requireAuth, generalApiLimiter, as
     return res.status(403).json({ error: "Only an approved Hub leader or admin can manage membership." });
   }
 
+  // V11 governance hardening:
+  // - ordinary Hub leaders manage ordinary member participation only;
+  // - only platform admins may change membership roles;
+  // - leaders cannot manage another leader;
+  // - leaders cannot mutate their own membership through this manager endpoint.
+  const [actor] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  const isAdmin = Boolean(actor?.is_admin);
+  if (!isAdmin && existing.role === "leader") {
+    return res.status(403).json({ error: "Only a platform admin can manage another Hub leader." });
+  }
+  if (!isAdmin && existing.user_id === userId) {
+    return res.status(403).json({ error: "Hub leaders cannot modify their own membership through the manager endpoint." });
+  }
+
   const status = req.body?.status;
   const role = req.body?.role;
   if (!isMembershipStatus(status) || status === "requested") {
@@ -194,6 +212,9 @@ router.patch("/diaspora/hub-memberships/:id", requireAuth, generalApiLimiter, as
   }
   if (role !== undefined && !isMembershipRole(role)) {
     return res.status(400).json({ error: "Invalid Hub membership role." });
+  }
+  if (!isAdmin && role !== undefined) {
+    return res.status(403).json({ error: "Only a platform admin can change Hub membership roles." });
   }
 
   const [updated] = await db

@@ -109,7 +109,7 @@ export default function DiasporaHubMessagesPage() {
         setSourceHubs(nextSources);
         setTargetHubs(nextTargets);
         const params = new URLSearchParams(window.location.search);
-        const requestedSource = resolveHubReference(nextSources, params.get("sourceHub"));
+        const requestedSource = resolveHubReference(nextSources, params.get("sourceHub") ?? params.get("hub"));
         const initialSource = requestedSource ?? nextSources[0];
         if (initialSource) setSourceId(String(initialSource.id));
         const requestedTarget = resolveHubReference(nextTargets, params.get("targetHub"));
