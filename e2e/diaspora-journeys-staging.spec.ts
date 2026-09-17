@@ -22,6 +22,19 @@ async function goto(page: Page, path: string) {
   await page.goto(new URL(path, base).toString(), { waitUntil: "networkidle" });
 }
 
+async function authHeaders(page: Page): Promise<Record<string, string>> {
+  const storageState = await page.context().storageState();
+  const token = storageState.origins
+    .flatMap((origin) => origin.localStorage)
+    .find((entry) => entry.name === "niakofa_token")?.value;
+  if (!token) throw new Error("Authenticated storage state does not contain a Niakofa token.");
+  return { Authorization: `Bearer ${token}` };
+}
+
+function hubLabel(hub: { name: string; display_name?: string | null }) {
+  return hub.display_name?.trim() || hub.name;
+}
+
 test.describe("Diaspora journeys — User A", () => {
   test.beforeAll(() => requireAuthenticatedState("USER_A_STATE"));
   test.use({ storageState: process.env.USER_A_STATE });
@@ -34,6 +47,49 @@ test.describe("Diaspora journeys — User A", () => {
   test("Globe opens and shows living map chrome", async ({ page }) => {
     await goto(page, "/diaspora/heritage/globe");
     await expect(page.getByText(/Diaspora Globe|Globe needs a Mapbox token/i).first()).toBeVisible();
+  });
+
+  test("Globe Message Hub preserves source context and enforces approved membership", async ({ page }) => {
+    const headers = await authHeaders(page);
+    const optionsResponse = await page.request.get(new URL("/api/diaspora/hub-messages/options", base).toString(), { headers });
+    expect(optionsResponse.ok()).toBeTruthy();
+    const options = await optionsResponse.json() as {
+      source_hubs?: Array<{ id: number; name: string; display_name?: string | null }>;
+      target_hubs?: Array<{ id: number; name: string; display_name?: string | null }>;
+    };
+    const sourceHub = options.source_hubs?.[0];
+    const targetHub = options.target_hubs?.find((hub) => hub.id !== sourceHub?.id);
+    expect(sourceHub, "The approved test account needs at least one source Hub membership.").toBeTruthy();
+    expect(targetHub, "The approved Hub catalog needs at least one different target Hub.").toBeTruthy();
+
+    const sourceLabel = hubLabel(sourceHub!);
+    await goto(page, "/diaspora");
+    const marker = page.getByRole("button", { name: `Open ${sourceLabel} Hub` });
+    if (await marker.count() === 0) {
+      await page.getByRole("textbox", { name: "Find a Diaspora Hub" }).fill(sourceLabel);
+    }
+    await expect(marker).toBeVisible();
+    await marker.click();
+
+    const details = page.getByRole("complementary", { name: `${sourceLabel} Hub details` });
+    await expect(details).toBeVisible();
+    await details.getByRole("button", { name: "Message hub" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/diaspora/messages\\?sourceHub=${sourceHub!.id}$`));
+    await expect(page.getByText(`Speaking as ${sourceLabel}`, { exact: true })).toBeVisible();
+
+    const unauthorizedSourceId = (options.target_hubs ?? [])
+      .find((hub) => !(options.source_hubs ?? []).some((source) => source.id === hub.id) && hub.id !== targetHub!.id)?.id
+      ?? Math.max(sourceHub!.id, targetHub!.id) + 1000000;
+    const boundaryResponse = await page.request.post(
+      new URL("/api/diaspora/hub-messages/conversations", base).toString(),
+      {
+        headers: { ...headers, "Content-Type": "application/json" },
+        data: { source_hub_id: unauthorizedSourceId, target_hub_id: targetHub!.id },
+      },
+    );
+    expect(boundaryResponse.status()).toBe(403);
+    expect((await boundaryResponse.json()).code).toBe("HUB_MEMBERSHIP_REQUIRED");
   });
 
   test("Research workspace can open cases list", async ({ page }) => {
