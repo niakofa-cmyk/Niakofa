@@ -60,11 +60,18 @@ authenticated product-flow certification.
 
 ## Authenticated Globe-to-Hub gate
 
-The authenticated browser acceptance flow remains **not certified** in this
-environment because no approved disposable Playwright storage state was available.
-The acceptance runner correctly requires an approved, distinct authenticated
-state and explicit disposable-account approval; no credential-bearing state was
-created, copied, logged, or committed.
+The authenticated browser acceptance flow remains **not certified** because the
+approved disposable account used for the attempted production check has no
+approved Hub membership. The storage state was generated privately, passed shape
+validation, and authenticated successfully. Production
+`/api/diaspora/hub-messages/options` returned an empty `source_hubs` list, so the
+browser check stopped at the explicit source-membership precondition before
+claiming a positive navigation result or performing any mutation.
+
+No membership request, approval, message, or other production mutation was
+attempted. A different approved disposable account with at least one approved
+Hub membership, or approval of a Hub membership for this account, is required
+to complete the positive flow.
 
 The required browser journey is:
 
