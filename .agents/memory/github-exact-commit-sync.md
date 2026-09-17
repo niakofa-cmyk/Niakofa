@@ -28,3 +28,15 @@ when base64-encoded, so GitHub created a valid but truncated orphan commit.
 **How to apply:** Compare each returned blob SHA before updating the ref. For
 large files, prefer the supported Git push path or another transport that
 preserves the full blob; never advance `main` after a partial upload.
+
+The GitHub connector may return `429` for parallel Git Data API blob creation
+even when the account rate limit is healthy. Upload changed blobs sequentially
+with backoff, then create and verify the tree before advancing the ref.
+
+**Why:** A concurrent exact-tree upload was throttled before any ref update;
+the same payload succeeded sequentially without changing the publication
+boundary.
+
+**How to apply:** Treat a connector `429` as a transport throttle, not
+permission to retry concurrently; preserve the no-ref-update gate until all
+blob and tree SHAs match.
