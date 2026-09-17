@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2, MessageCircle, Send, Users } from "lucide-react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { diasporaTheme } from "@/lib/diaspora/theme";
+import { hubDisplayName, resolveHubReference } from "@/lib/diaspora/DiasporaHubContext";
 
 type Hub = {
   id: number;
@@ -41,7 +42,7 @@ type ApiOptions = { source_hubs?: Hub[]; target_hubs?: Hub[] };
 type ApiConversation = { conversation?: { id?: number }; message?: Message; error?: string };
 
 function labelForHub(hub: Pick<Hub, "name" | "display_name">) {
-  return hub.display_name?.trim() || hub.name;
+  return hubDisplayName(hub);
 }
 
 function labelForConversation(conversation: Conversation) {
@@ -106,8 +107,14 @@ export default function DiasporaHubMessagesPage() {
         const nextTargets = Array.isArray(options.target_hubs) ? options.target_hubs : [];
         setSourceHubs(nextSources);
         setTargetHubs(nextTargets);
-        if (nextSources[0]) setSourceId(String(nextSources[0].id));
-        const firstTarget = nextTargets.find((hub) => hub.id !== nextSources[0]?.id);
+        const params = new URLSearchParams(window.location.search);
+        const requestedSource = resolveHubReference(nextSources, params.get("sourceHub"));
+        const initialSource = requestedSource ?? nextSources[0];
+        if (initialSource) setSourceId(String(initialSource.id));
+        const requestedTarget = resolveHubReference(nextTargets, params.get("targetHub"));
+        const firstTarget = requestedTarget && requestedTarget.id !== initialSource?.id
+          ? requestedTarget
+          : nextTargets.find((hub) => hub.id !== initialSource?.id);
         if (firstTarget) setTargetId(String(firstTarget.id));
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Could not load Hub messages.");
@@ -188,6 +195,7 @@ export default function DiasporaHubMessagesPage() {
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/55">
               Discover approved Hubs and speak for a Hub only when you have approved membership there.
             </p>
+                {sourceId && <p className="mt-2 text-xs font-semibold text-teal-200/75">Speaking as {labelForHub(sourceHubs.find((hub) => String(hub.id) === sourceId) ?? { name: "your approved Hub", display_name: null })}</p>}
           </div>
         </header>
 

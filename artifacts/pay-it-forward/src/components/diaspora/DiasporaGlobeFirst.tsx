@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Marker, NavigationControl, type MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { ArrowRight, BookHeart, CheckCircle2, ChevronDown, CircleDot, Globe2, Loader2, MapPin, MessageCircle, Send, Users, WalletCards, X } from "lucide-react";
+import { ArrowRight, BookHeart, CheckCircle2, ChevronDown, CircleDot, Globe2, MapPin, MessageCircle, Users, WalletCards, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { diasporaTheme } from "@/lib/diaspora/theme";
 import { authHeaders } from "@/lib/auth";
 import { parseGlobeHubQuery, resolveHubFromQuery } from "@/lib/diaspora/globeHubDeepLink";
+import { hubDisplayName, isUsStateHub, messageHubHref } from "@/lib/diaspora/DiasporaHubContext";
 
 // `/diaspora/heritage/globe` remains a compatibility route; new navigation
 // uses the canonical `/diaspora` Globe doorway.
@@ -36,21 +37,10 @@ type Hub = {
 interface Props { hubs: Hub[]; loading?: boolean; }
 const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
 
-type MessageHub = Pick<Hub, "id" | "name" | "display_name" | "region" | "hub_scope" | "country_code" | "subdivision_code">;
-type HubMessage = {
-  id: number;
-  conversation_id: number;
-  sender_user_id: number | null;
-  sender_hub_id: number;
-  sender_hub_name: string;
-  sender_name: string;
-  body: string;
-  created_at: string;
-};
 type MembershipStatus = "requested" | "approved" | "suspended" | "revoked" | "left";
 type HubMembership = { id: number; hub_id: number; status: MembershipStatus; role: string };
 
-function hubLabel(hub: Hub) { return hub.display_name?.trim() || hub.name; }
+function hubLabel(hub: Hub) { return hubDisplayName(hub); }
 function flagForHub(hub: Hub): string {
   const code = hub.country_code?.trim().toUpperCase() ?? "";
   if (!/^[A-Z]{2}$/.test(code)) return "•";
@@ -59,8 +49,7 @@ function flagForHub(hub: Hub): string {
     .join("");
 }
 function hubKind(hub: Hub) {
-  if (hub.hub_scope === "us_state" || hub.country_code === "US" || /^us(?:-|_|$)/i.test(hub.tag)) return "U.S. state hub";
-  return "Country hub";
+  return isUsStateHub(hub) ? "U.S. state hub" : "Country hub";
 }
 function matchesQuery(hub: Hub, query: string) {
   const q = query.trim().toLowerCase();
@@ -83,7 +72,6 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
   const mapRef = useRef<MapRef | null>(null);
   const [selectedHub, setSelectedHub] = useState<Hub | null>(null);
   const [deepLinkApplied, setDeepLinkApplied] = useState(false);
-  const [messageHub, setMessageHub] = useState<Hub | null>(null);
   const [membership, setMembership] = useState<HubMembership | null>(null);
   const [membershipBusy, setMembershipBusy] = useState(false);
   const [membershipError, setMembershipError] = useState<string | null>(null);
@@ -92,7 +80,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
   const focusHub = (hub: Hub) => {
     mapRef.current?.flyTo({
       center: [hub.lng, hub.lat],
-      zoom: hub.hub_scope === "us_state" ? 4.2 : 3.1,
+      zoom: isUsStateHub(hub) ? 4.2 : 3.1,
       duration: 1100,
       essential: true,
     });
@@ -174,15 +162,11 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (messageHub) {
-        setMessageHub(null);
-        return;
-      }
       if (selectedHub) setSelectedHub(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [messageHub, selectedHub]);
+  }, [selectedHub]);
 
   return (
     <section data-niakofa-surface="diaspora-globe" className={`${diasporaTheme.radiusHero} relative h-[calc(100vh-5.5rem)] min-h-[520px] overflow-hidden border border-teal-300/20 bg-[#071312] ${diasporaTheme.shadow} sm:min-h-[620px]`}>
@@ -324,7 +308,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
             <span><strong className="font-bold text-emerald-100">{selectedHub.live_user_count} active now</strong> in this Hub</span>
           </div>
         )}
-        <div className="mt-4 grid grid-cols-3 gap-2"><HubAction icon={Users} label="Community" onClick={() => navigate(`/community?hubId=${selectedHub.id}`)} /><HubAction icon={MessageCircle} label="Message hub" onClick={() => setMessageHub(selectedHub)} /><HubAction icon={CircleDot} label="Spirals" onClick={() => navigate(`/audio-circles?hubId=${selectedHub.id}`)} /></div>
+         <div className="mt-4 grid grid-cols-3 gap-2"><HubAction icon={Users} label="Community" onClick={() => navigate(`/community?hubId=${selectedHub.id}`)} /><HubAction icon={MessageCircle} label="Message hub" onClick={() => navigate(messageHubHref(selectedHub.id))} /><HubAction icon={CircleDot} label="Spirals" onClick={() => navigate(`/audio-circles?hubId=${selectedHub.id}`)} /></div>
         {selectedHub.hub_scope === "us_state" && (
           <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
             <div className="flex items-center justify-between gap-3">
@@ -362,123 +346,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
            )}
         </details>
       </aside>}
-       {messageHub && <HubMessagingPanel hub={messageHub} hubs={hubs} onClose={() => setMessageHub(null)} onRequestMembership={() => void requestMembership(messageHub.id)} membershipStatus={selectedHub?.id === messageHub.id ? membership?.status : undefined} />}
     </section>
-  );
-}
-
-function HubMessagingPanel({ hub, hubs, onClose, onRequestMembership, membershipStatus }: { hub: Hub; hubs: Hub[]; onClose: () => void; onRequestMembership: () => void; membershipStatus?: MembershipStatus }) {
-  const [sourceHubs, setSourceHubs] = useState<MessageHub[]>([]);
-  const [targetHubs, setTargetHubs] = useState<MessageHub[]>([]);
-  const [sourceId, setSourceId] = useState("");
-  const [targetId, setTargetId] = useState(String(hub.id));
-  const [conversationId, setConversationId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<HubMessage[]>([]);
-  const [body, setBody] = useState("");
-  const [loadingOptions, setLoadingOptions] = useState(true);
-  const [loadingConversation, setLoadingConversation] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const availableTargets = useMemo(
-    () => targetHubs.filter((item) => item.id !== Number(sourceId)),
-    [targetHubs, sourceId],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingOptions(true);
-    fetch("/api/diaspora/hub-messages/options", { headers: authHeaders() })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Hub messaging is unavailable right now.");
-        return response.json() as Promise<{ source_hubs?: MessageHub[]; target_hubs?: MessageHub[] }>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        const nextSources = Array.isArray(data.source_hubs) ? data.source_hubs : [];
-        const nextTargets = Array.isArray(data.target_hubs) ? data.target_hubs : hubs;
-        setSourceHubs(nextSources);
-        setTargetHubs(nextTargets);
-        setSourceId(String(nextSources[0]?.id ?? ""));
-        if (!nextTargets.some((item) => item.id === hub.id)) setTargetId(String(nextTargets[0]?.id ?? ""));
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "Hub messaging is unavailable right now.");
-      })
-      .finally(() => { if (!cancelled) setLoadingOptions(false); });
-    return () => { cancelled = true; };
-  }, [hub.id, hubs]);
-
-  const openConversation = async () => {
-    if (!sourceId || !targetId || sourceId === targetId) return;
-    setLoadingConversation(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/diaspora/hub-messages/conversations", {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ source_hub_id: Number(sourceId), target_hub_id: Number(targetId) }),
-      });
-      const data = await response.json().catch(() => ({})) as { conversation?: { id: number }; error?: string };
-      if (!response.ok || !data.conversation) throw new Error(data.error ?? "Could not open Hub conversation.");
-      setConversationId(data.conversation.id);
-      const messagesResponse = await fetch(`/api/diaspora/hub-messages/conversations/${data.conversation.id}`, { headers: authHeaders() });
-      const messagesData = await messagesResponse.json().catch(() => ({})) as { messages?: HubMessage[]; error?: string };
-      if (!messagesResponse.ok) throw new Error(messagesData.error ?? "Could not load Hub messages.");
-      setMessages(Array.isArray(messagesData.messages) ? messagesData.messages : []);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Could not open Hub conversation.");
-    } finally {
-      setLoadingConversation(false);
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!conversationId || !sourceId || !body.trim() || sending) return;
-    setSending(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/diaspora/hub-messages/conversations/${conversationId}/messages`, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ sender_hub_id: Number(sourceId), body: body.trim() }),
-      });
-      const data = await response.json().catch(() => ({})) as { message?: HubMessage; error?: string };
-      if (!response.ok || !data.message) throw new Error(data.error ?? "Message could not be sent.");
-      setMessages((current) => [...current, data.message!]);
-      setBody("");
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Message could not be sent.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const selectedTarget = targetHubs.find((item) => item.id === Number(targetId));
-  const selectedSource = sourceHubs.find((item) => item.id === Number(sourceId));
-  return (
-    <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/55 p-3 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true" aria-label={`Message ${hubLabel(hub)} Hub`}>
-       <div className="flex max-h-[calc(100%-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-teal-300/20 bg-[#0a1918] shadow-2xl sm:max-h-[92%] sm:rounded-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 p-4">
-          <div><p className="text-[9px] font-bold uppercase tracking-[0.2em] text-teal-300/75">Hub-to-Hub message</p><h3 className="mt-1 text-lg font-black text-white">Connect {hubLabel(hub)}</h3><p className="mt-1 text-xs text-white/45">Messages are saved to one shared thread for both Hubs.</p></div>
-          <button onClick={onClose} aria-label="Close Hub messaging" className="rounded-xl p-2 text-white/40 hover:bg-white/5 hover:text-white"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="space-y-3 overflow-auto p-4">
-           {loadingOptions ? <div className="flex items-center gap-2 text-xs text-white/50"><Loader2 className="h-4 w-4 animate-spin" /> Loading Hub permissions…</div> : sourceHubs.length === 0 ? <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3 text-xs leading-relaxed text-amber-100/70"><p>You need approved membership in a Hub before you can send a Hub-to-Hub message.</p><button type="button" onClick={onRequestMembership} disabled={membershipStatus === "requested" || membershipStatus === "approved"} className={`mt-3 rounded-xl border border-amber-200/25 bg-amber-200/10 px-3 py-2 text-xs font-bold text-amber-100 disabled:opacity-50 ${diasporaTheme.focus}`}>{membershipStatus === "requested" ? "Membership requested" : membershipStatus === "approved" ? "Membership approved" : "Request membership"}</button></div> : <>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">From your Hub<select value={sourceId} onChange={(event) => setSourceId(event.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-white outline-none focus:border-teal-300/40">{sourceHubs.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.name}</option>)}</select></label>
-              <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">To Hub<select value={targetId} onChange={(event) => { setTargetId(event.target.value); setConversationId(null); setMessages([]); }} className="mt-1 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-white outline-none focus:border-teal-300/40">{availableTargets.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.name}</option>)}</select></label>
-            </div>
-            <button disabled={loadingConversation || !sourceId || !targetId || sourceId === targetId} onClick={() => void openConversation()} className={`flex w-full items-center justify-center gap-2 rounded-xl border border-teal-300/25 bg-teal-300/10 px-3 py-2.5 text-xs font-bold text-teal-100 hover:bg-teal-300/15 disabled:cursor-not-allowed disabled:opacity-40 ${diasporaTheme.focus}`}>{loadingConversation ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {conversationId ? `Conversation with ${selectedTarget?.display_name || selectedTarget?.name || "Hub"}` : `Open conversation with ${selectedTarget?.display_name || selectedTarget?.name || "a Hub"}`}</button>
-            {conversationId && <div className="space-y-2 rounded-xl border border-white/10 bg-black/15 p-3">
-              {messages.length === 0 ? <p className="py-4 text-center text-xs text-white/35">No messages yet. Start the conversation.</p> : messages.map((message) => <div key={message.id} className={`rounded-xl px-3 py-2 ${message.sender_hub_id === Number(sourceId) ? "ml-5 bg-teal-300/10" : "mr-5 bg-white/[0.05]"}`}><p className="text-[10px] font-bold text-teal-200/80">{message.sender_hub_name} · {message.sender_name}</p><p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-white/75">{message.body}</p></div>)}
-              <div className="flex items-end gap-2 border-t border-white/10 pt-3"><textarea value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} maxLength={2000} rows={2} placeholder={`Write to ${selectedTarget?.display_name || selectedTarget?.name || "this Hub"}…`} className="min-h-10 flex-1 resize-none rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs text-white outline-none placeholder:text-white/25 focus:border-teal-300/40" /><button onClick={() => void sendMessage()} disabled={sending || !body.trim()} aria-label="Send Hub message" className={`rounded-xl bg-teal-300 p-3 text-[#071312] hover:bg-teal-200 disabled:opacity-40 ${diasporaTheme.focus}`}>{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button></div>
-            </div>}
-            {selectedSource && <p className="text-[10px] text-white/30">Sending as {selectedSource.display_name || selectedSource.name}. Enter sends; Shift+Enter adds a line.</p>}
-          </>}
-          {error && <p role="alert" className="rounded-xl border border-rose-300/15 bg-rose-300/[0.05] p-3 text-xs text-rose-100/75">{error}</p>}
-        </div>
-      </div>
-    </div>
   );
 }
 
