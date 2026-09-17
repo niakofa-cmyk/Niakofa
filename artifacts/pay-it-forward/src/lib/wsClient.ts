@@ -38,6 +38,7 @@ export type WsEventType =
   | "new_report"
   | "report_reviewed"
   | "chat_message"
+  | "direct_message"
   | "typing"
   | "presence_update"
   | "crisis_update"

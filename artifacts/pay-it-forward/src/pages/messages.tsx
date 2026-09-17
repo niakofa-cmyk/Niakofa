@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, Check, Inbox, Loader2, MessageCircle, Radio, Search, Send, ShieldAlert, Users, X } from "lucide-react";
+import { Ban, Check, Inbox, Loader2, MessageCircle, Radio, Search, Send, ShieldAlert, Users, Wifi, WifiOff, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { messagesPath, type MessageMode } from "@/lib/messageRoutes";
+import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
 
 type DirectUser = {
   id: number;
@@ -58,6 +59,20 @@ type RequestConversation = {
 };
 
 type ApiError = { error?: string };
+
+type DirectMessageEvent = {
+  conversation_id?: number;
+  message?: DirectMessage;
+};
+
+function mergeDirectMessage(messages: DirectMessage[], incoming: DirectMessage): DirectMessage[] {
+  const next = [...messages.filter((message) => message.id !== incoming.id), incoming];
+  return next.sort((a, b) => {
+    const aTime = a.created_at ? Date.parse(a.created_at) : 0;
+    const bTime = b.created_at ? Date.parse(b.created_at) : 0;
+    return aTime - bTime || a.id - b.id;
+  });
+}
 
 function modeFromLocation(location: string): MessageMode {
   const mode = new URLSearchParams(location.split("?")[1] ?? "").get("mode");
@@ -138,6 +153,7 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [realtimeState, setRealtimeState] = useState<WsConnectionState>(() => wsGetConnectionSnapshot().state);
 
   const selectedConversation = useMemo(
     () => directConversations.find((conversation) => conversation.id === selectedDirectId) ?? null,
@@ -222,11 +238,58 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!selectedDirectId || activeMode !== "direct") return;
+    if (realtimeState === "connected") return;
     const interval = window.setInterval(() => {
       void loadDirectMessages(selectedDirectId).catch(() => {});
-    }, 15_000);
+    }, 30_000);
     return () => window.clearInterval(interval);
-  }, [activeMode, loadDirectMessages, selectedDirectId]);
+  }, [activeMode, loadDirectMessages, realtimeState, selectedDirectId]);
+
+  useEffect(() => {
+    const unsubscribeConnection = wsSubscribeConnection((snapshot) => {
+      setRealtimeState(snapshot.state);
+    });
+
+    const unsubscribeEvents = wsSubscribe((event: WsEvent) => {
+      if (event.type === "ws_reconnected") {
+        void loadInbox();
+        if (activeMode === "direct" && selectedDirectId) {
+          void loadDirectMessages(selectedDirectId).catch(() => {});
+        }
+        return;
+      }
+
+      if (event.type !== "direct_message") return;
+      const payload = event.payload as DirectMessageEvent | null;
+      const message = payload?.message;
+      const conversationId = payload?.conversation_id ?? message?.conversation_id;
+      if (!message || !conversationId) return;
+
+      setDirectMessages((current) =>
+        conversationId === selectedDirectId ? mergeDirectMessage(current, message) : current,
+      );
+      void loadDirectConversations().catch(() => {});
+
+      if (conversationId === selectedDirectId && message.sender_id !== currentUser?.id) {
+        void fetch(`/api/messages/direct/conversations/${conversationId}/read`, {
+          method: "POST",
+          headers: authHeaders(),
+        }).catch(() => {});
+      }
+    });
+
+    return () => {
+      unsubscribeConnection();
+      unsubscribeEvents();
+    };
+  }, [
+    activeMode,
+    currentUser?.id,
+    loadDirectConversations,
+    loadDirectMessages,
+    loadInbox,
+    selectedDirectId,
+  ]);
 
   useEffect(() => {
     const query = search.trim();
@@ -391,7 +454,11 @@ export default function MessagesPage() {
                   <Avatar user={activeRecipient} />
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate font-black">{activeRecipient.name}</h2>
-                    <p className="text-xs text-muted-foreground">{selectedDirectId ? "Direct conversation" : "New direct conversation"}</p>
+                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                       {selectedDirectId ? "Direct conversation" : "New direct conversation"}
+                       {selectedDirectId && realtimeState === "connected" && <><span aria-hidden="true">·</span><Wifi className="h-3 w-3 text-emerald-400" aria-label="Live delivery" /></>}
+                       {selectedDirectId && realtimeState !== "connected" && <><span aria-hidden="true">·</span><WifiOff className="h-3 w-3 text-amber-400" aria-label="Reconnecting" /></>}
+                     </p>
                   </div>
                   {selectedDirectId && (
                     <>

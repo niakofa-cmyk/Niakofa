@@ -18,9 +18,9 @@ test("V9 labels country and U.S. state Hubs explicitly", () => {
 });
 
 test("V9 Message Hub links preserve source and target context", () => {
-  assert.equal(messageHubHref(10), "/diaspora/messages?sourceHub=10");
-  assert.equal(messageHubHref(10, 20), "/diaspora/messages?sourceHub=10&targetHub=20");
-  assert.equal(messageHubHref(), "/diaspora/messages");
+  assert.equal(messageHubHref(10), "/messages?mode=hub&sourceHub=10");
+  assert.equal(messageHubHref(10, 20), "/messages?mode=hub&sourceHub=10&targetHub=20");
+  assert.equal(messageHubHref(), "/messages?mode=hub");
 });
 
 test("V9 Hub references accept ids and display names", () => {

@@ -20,11 +20,19 @@ test("V12 direct-message schema and migration cover durable conversation safegua
 
 test("V12 direct routes require approved accounts and membership-scoped reads", async () => {
   const route = await source("artifacts/api-server/src/routes/direct-messages.ts");
+  const wsHub = await source("artifacts/api-server/src/lib/ws-hub.ts");
+  const wsClient = await source("artifacts/pay-it-forward/src/lib/wsClient.ts");
+  const page = await source("artifacts/pay-it-forward/src/pages/messages.tsx");
   assert.match(route, /requireAuth, requireApproved/);
   assert.match(route, /isConversationMember/);
   assert.match(route, /DIRECT_MESSAGING_BLOCKED/);
   assert.match(route, /router\.post\("\/messages\/direct\/users\/:id\/block"/);
   assert.match(route, /router\.post\("\/messages\/direct\/conversations\/:conversationId\/report"/);
+  assert.match(route, /sendToUsers\(\[senderId, recipientId\]/);
+  assert.match(wsHub, /\| "direct_message"/);
+  assert.match(wsClient, /\| "direct_message"/);
+  assert.match(page, /event\.type !== "direct_message"/);
+  assert.match(page, /event\.type === "ws_reconnected"/);
 });
 
 test("V12 canonical Messages surface preserves request and Hub entry points", async () => {

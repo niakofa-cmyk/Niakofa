@@ -65,9 +65,15 @@ compatibility path for the existing Hub composer.
 - Community and BottomNav expose the canonical Messages surface.
 - Globe Hub deep-link helper preserves `sourceHub` in canonical mode.
 
-## Deliberate follow-up boundary
+## Realtime delivery
 
-Direct messages currently use authenticated REST with periodic refresh for the
-selected conversation. Request chat retains its existing WebSocket behavior,
-and Hub chat retains its existing REST behavior. A future shared realtime
-delivery layer can be added without changing these authorization boundaries.
+Direct messages use the existing authenticated `/ws` channel for targeted
+delivery to both conversation members after the message is durably persisted.
+The frontend deduplicates event delivery by message ID, refreshes the inbox on
+reconnect, and uses a 30-second selected-conversation REST refresh only while
+the websocket is disconnected. Request chat retains its existing WebSocket
+behavior, and Hub chat retains its existing REST behavior.
+
+The direct-message event is emitted only after the existing approved-account,
+block, and conversation-membership checks complete. Realtime transport does not
+change any conversation authorization boundary.

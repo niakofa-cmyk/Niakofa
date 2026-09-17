@@ -57,6 +57,7 @@ export type WsEventType =
   | "new_report"
   | "report_reviewed"
   | "chat_message"
+   | "direct_message"
   | "typing"
   | "help_chain_joined"
   | "help_chain_left"
@@ -231,6 +232,20 @@ export interface ReportEventPayload {
   reported_user_id?: number;
   reason?: string;
   reviewed?: boolean;
+}
+
+export interface DirectMessageEventPayload {
+  conversation_id: number;
+  message: {
+    id: number;
+    conversation_id: number;
+    sender_id: number;
+    sender_name: string;
+    sender_avatar: string | null;
+    body: string;
+    created_at: string | null;
+    read_at: string | null;
+  };
 }
 
 export interface GratitudeEventPayload {

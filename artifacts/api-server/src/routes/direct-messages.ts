@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
+import { sendToUsers } from "../lib/ws-hub";
 
 const router = Router();
 const MAX_BODY_LENGTH = 4_000;
@@ -247,6 +248,7 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
   if (await isBlockedBetween(senderId, recipientId)) {
     return res.status(403).json({ error: "Direct messaging is blocked between these accounts.", error_code: "DIRECT_MESSAGING_BLOCKED" });
   }
+  const sender = await getApprovedUser(senderId);
 
   const result = await db.transaction(async (tx) => {
     const mine = await tx
@@ -291,13 +293,25 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
     return { conversationId: conversation.id, message };
   });
 
+  const message = {
+    ...result.message,
+    sender_name: sender?.name ?? "Unknown",
+    sender_avatar: sender?.avatar_url ?? null,
+    created_at: serializeDate(result.message.created_at),
+    read_at: serializeDate(result.message.read_at),
+  };
+
+  sendToUsers([senderId, recipientId], {
+    type: "direct_message",
+    payload: {
+      conversation_id: result.conversationId,
+      message,
+    },
+  });
+
   return res.status(201).json({
     conversationId: result.conversationId,
-    message: {
-      ...result.message,
-      created_at: serializeDate(result.message.created_at),
-      read_at: serializeDate(result.message.read_at),
-    },
+    message,
   });
 });
 
