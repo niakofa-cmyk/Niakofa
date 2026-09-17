@@ -15,6 +15,7 @@ PGPORT="${NIAKOFA_LOCAL_PGPORT:-55432}"
 PGDATABASE="${NIAKOFA_LOCAL_PGDATABASE:-niakofa_dev}"
 PGUSER="${NIAKOFA_LOCAL_PGUSER:-$(id -un)}"
 PGLOG="${NIAKOFA_LOCAL_PGLOG:-/tmp/niakofa-postgres.log}"
+PG_SETUP_LOCK="${PGDATA}.setup.lock"
 
 if [[ ! "$PGPORT" =~ ^[0-9]+$ ]] || (( PGPORT < 1024 || PGPORT > 65535 )); then
   echo "[local-pg] ERROR: NIAKOFA_LOCAL_PGPORT must be an unprivileged TCP port" >&2
@@ -34,10 +35,26 @@ fi
 mkdir -p "$PGSOCKET"
 chmod 700 "$PGSOCKET"
 
+# API and Nia start together and may arrive here at the same time. Serialize
+# initialization, server startup, and database creation so two initdb processes
+# cannot corrupt the disposable cluster.
+while ! mkdir "$PG_SETUP_LOCK" 2>/dev/null; do
+  sleep 0.1
+done
+trap 'rmdir "$PG_SETUP_LOCK" 2>/dev/null || true' EXIT
+
 if [[ ! -f "$PGDATA/PG_VERSION" ]]; then
   if [[ -e "$PGDATA" && -n "$(find "$PGDATA" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
-    echo "[local-pg] ERROR: $PGDATA exists but is not a PostgreSQL data directory" >&2
-    exit 1
+    # An interrupted initdb can leave a partial cluster behind. This path is
+    # disposable by design; recover only the default /tmp cluster, and keep
+    # custom paths fail-closed instead of deleting operator-owned data.
+    if [[ "$PGDATA" == "/tmp/niakofa-postgres" && -d "$PGDATA/pg_wal" ]]; then
+      echo "[local-pg] removing incomplete disposable cluster at $PGDATA"
+      find "$PGDATA" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    else
+      echo "[local-pg] ERROR: $PGDATA exists but is not a PostgreSQL data directory" >&2
+      exit 1
+    fi
   fi
   mkdir -p "$PGDATA"
   chmod 700 "$PGDATA"
@@ -73,6 +90,8 @@ LOCAL_PSQL_ENV=(
   -u PGDATABASE
   -u PGUSER
   -u PGPASSWORD
+  -u REDIS_URL
+  -u REDIS_URLS
   PGHOST="$PGSOCKET"
   PGPORT="$PGPORT"
   PGUSER="$PGUSER"
@@ -99,7 +118,10 @@ export PGPORT="$PGPORT"
 export PGDATABASE="$PGDATABASE"
 export PGUSER="$PGUSER"
 export NIA_SERVICE_URL="${NIAKOFA_LOCAL_NIA_URL:-http://127.0.0.1:3001}"
-unset PGPASSWORD
+unset PGPASSWORD REDIS_URL REDIS_URLS
+
+trap - EXIT
+rmdir "$PG_SETUP_LOCK" 2>/dev/null || true
 
 echo "[local-pg] ready: database=$PGDATABASE host=127.0.0.1 port=$PGPORT"
 exec "$@"

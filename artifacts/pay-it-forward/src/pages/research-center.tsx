@@ -65,7 +65,13 @@ export default function ResearchCenterPage() {
     const members = await membersRes.json();
     const caseData = await casesRes.json();
     setPeople((members.members ?? []).filter((m: Person & { status?: string }) => m.status !== "inactive"));
-    setCases(caseData.cases ?? []);
+    const nextCases = (caseData.cases ?? []) as ResearchCase[];
+    setCases(nextCases);
+    // Returning researchers should land in the first existing case instead of
+    // seeing an empty create-case pane when the workspace already has work.
+    if (nextCases.length > 0 && (!selectedCase || selectedCase.family_id !== nextFamilyId)) {
+      await openCase(nextCases[0].id);
+    }
   }
 
   async function loadGuides() {
@@ -98,6 +104,9 @@ export default function ResearchCenterPage() {
   useEffect(() => {
     if (!familyId) return;
     loadFamilyData(familyId).catch((err) => setError(err.message));
+    // loadFamilyData intentionally closes over the selected case so changing
+    // Family Space can select the first case without a render loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familyId]);
 
   async function createCase() {
@@ -225,7 +234,7 @@ export default function ResearchCenterPage() {
                       <option value="" className="bg-[#0b1917]">No person attached</option>
                       {people.map((p) => <option key={p.id} value={p.id} className="bg-[#0b1917]">{p.display_name}</option>)}
                     </select>
-                    {selectedCase.status !== 'resolved' && <button disabled={saving} onClick={() => updateCase({ status: 'resolved' })} className="rounded-xl border border-teal-300/20 bg-teal-300/10 px-4 py-2 text-sm font-medium text-teal-100 disabled:opacity-40 hover:bg-teal-300/20 transition-colors">Resolve after review</button>}
+                     {selectedCase.status !== 'resolved' && <button aria-label="resolved" disabled={saving} onClick={() => updateCase({ status: 'resolved' })} className="rounded-xl border border-teal-300/20 bg-teal-300/10 px-4 py-2 text-sm font-medium text-teal-100 disabled:opacity-40 hover:bg-teal-300/20 transition-colors">Resolve after review</button>}
                     {saving && <Loader2 className="w-4 h-4 animate-spin text-white/50"/>}
                   </div>
                 </div>

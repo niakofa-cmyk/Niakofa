@@ -5,6 +5,7 @@ import {
   diasporaHubsTable,
   diasporaHubConversationsTable,
   diasporaHubMessagesTable,
+  hubMembershipsTable,
   usersTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
@@ -33,26 +34,18 @@ const hubSummary = {
 };
 
 async function canRepresentHub(userId: number, hubId: number): Promise<boolean> {
-  const rows = await db.execute<{ allowed: boolean }>(sql`
-    SELECT EXISTS (
-      SELECT 1
-      FROM diaspora_hubs h
-      JOIN users u ON u.id = ${userId}
-      WHERE h.id = ${hubId}
-        AND h.status = 'approved'
-        AND (
-          (h.community_id IS NOT NULL AND h.community_id = u.community_id)
-          OR EXISTS (
-            SELECT 1
-            FROM hub_community_leaders hcl
-            WHERE hcl.hub_id = h.id
-              AND hcl.user_id = u.id
-              AND hcl.approved = TRUE
-          )
-        )
-    ) AS allowed
-  `);
-  return rows.rows[0]?.allowed === true;
+  const rows = await db
+    .select({ id: hubMembershipsTable.id })
+    .from(hubMembershipsTable)
+    .innerJoin(diasporaHubsTable, eq(diasporaHubsTable.id, hubMembershipsTable.hub_id))
+    .where(and(
+      eq(hubMembershipsTable.user_id, userId),
+      eq(hubMembershipsTable.hub_id, hubId),
+      eq(hubMembershipsTable.status, "approved"),
+      eq(diasporaHubsTable.status, "approved"),
+    ))
+    .limit(1);
+  return rows.length === 1;
 }
 
 async function getApprovedHub(hubId: number): Promise<HubSummary | null> {
@@ -92,31 +85,80 @@ function serializeMessage(message: {
 }
 
 // GET /api/diaspora/hub-messages/options
-// Returns hubs the member can represent and approved hubs they can contact.
+// Returns Hubs the user can represent and approved Hubs they can contact.
+// Location is not membership.
 router.get("/diaspora/hub-messages/options", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const [sourceRows, targetRows] = await Promise.all([
-    db.execute<HubSummary>(sql`
-      SELECT DISTINCT h.id, h.name, h.display_name, h.region_label AS region,
-        h.hub_scope, h.country_code, h.subdivision_code
-      FROM diaspora_hubs h
-      JOIN users u ON u.id = ${userId}
-      WHERE h.status = 'approved'
-        AND (
-          (h.community_id IS NOT NULL AND h.community_id = u.community_id)
-          OR EXISTS (
-            SELECT 1 FROM hub_community_leaders hcl
-            WHERE hcl.hub_id = h.id AND hcl.user_id = u.id AND hcl.approved = TRUE
-          )
-        )
-      ORDER BY h.display_name NULLS LAST, h.name
-    `),
+    db.select({
+      id: diasporaHubsTable.id,
+      name: diasporaHubsTable.name,
+      display_name: diasporaHubsTable.display_name,
+      region: diasporaHubsTable.region_label,
+      hub_scope: diasporaHubsTable.hub_scope,
+      country_code: diasporaHubsTable.country_code,
+      subdivision_code: diasporaHubsTable.subdivision_code,
+    })
+      .from(hubMembershipsTable)
+      .innerJoin(diasporaHubsTable, eq(diasporaHubsTable.id, hubMembershipsTable.hub_id))
+      .where(and(
+        eq(hubMembershipsTable.user_id, userId),
+        eq(hubMembershipsTable.status, "approved"),
+        eq(diasporaHubsTable.status, "approved"),
+      ))
+      .orderBy(diasporaHubsTable.display_name, diasporaHubsTable.name),
     db.select(hubSummary)
       .from(diasporaHubsTable)
       .where(eq(diasporaHubsTable.status, "approved"))
       .orderBy(diasporaHubsTable.display_name, diasporaHubsTable.name),
   ]);
-  return res.json({ source_hubs: sourceRows.rows, target_hubs: targetRows });
+  return res.json({
+    source_hubs: sourceRows,
+    target_hubs: targetRows,
+    semantics: {
+      location_is_not_membership: true,
+      authenticated_user_may_discover_targets: true,
+      approved_membership_required_to_represent_source: true,
+    },
+  });
+});
+
+// GET /api/diaspora/hub-messages/conversations
+// Lists only conversations visible through an approved membership in either Hub.
+router.get("/diaspora/hub-messages/conversations", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const result = await db.execute(sql`
+    SELECT
+      c.id,
+      c.hub_a_id,
+      c.hub_b_id,
+      c.last_message_at,
+      c.created_at,
+      a.name AS hub_a_name,
+      a.display_name AS hub_a_display_name,
+      b.name AS hub_b_name,
+      b.display_name AS hub_b_display_name,
+      (
+        SELECT m.body
+        FROM diaspora_hub_messages m
+        WHERE m.conversation_id = c.id
+        ORDER BY m.created_at DESC
+        LIMIT 1
+      ) AS last_message
+    FROM diaspora_hub_conversations c
+    JOIN diaspora_hubs a ON a.id = c.hub_a_id AND a.status = 'approved'
+    JOIN diaspora_hubs b ON b.id = c.hub_b_id AND b.status = 'approved'
+    WHERE EXISTS (
+      SELECT 1
+      FROM hub_memberships hm
+      WHERE hm.user_id = ${userId}
+        AND hm.status = 'approved'
+        AND hm.hub_id IN (c.hub_a_id, c.hub_b_id)
+    )
+    ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
+    LIMIT 100
+  `);
+  return res.json({ conversations: result.rows });
 });
 
 // POST /api/diaspora/hub-messages/conversations
@@ -128,7 +170,11 @@ router.post("/diaspora/hub-messages/conversations", requireAuth, generalApiLimit
     return res.status(400).json({ error: "Choose two different approved Hubs." });
   }
   if (!(await canRepresentHub(userId, sourceId))) {
-    return res.status(403).json({ error: "You need approved membership in the sending Hub." });
+    return res.status(403).json({
+      error: "Approved Hub membership is required to send a message as this Hub.",
+      code: "HUB_MEMBERSHIP_REQUIRED",
+      hub_id: sourceId,
+    });
   }
   const [source, target] = await Promise.all([getApprovedHub(sourceId), getApprovedHub(targetId)]);
   if (!source || !target) return res.status(404).json({ error: "Hub not found." });
@@ -164,7 +210,12 @@ router.get("/diaspora/hub-messages/conversations/:id", requireAuth, generalApiLi
     canRepresentHub(userId, conversation.hub_a_id),
     canRepresentHub(userId, conversation.hub_b_id),
   ]);
-  if (!canReadA && !canReadB) return res.status(403).json({ error: "You are not a member of either Hub." });
+  if (!canReadA && !canReadB) {
+    return res.status(403).json({
+      error: "Approved membership in either Hub is required to read this Hub-to-Hub conversation.",
+      code: "HUB_MEMBERSHIP_REQUIRED",
+    });
+  }
   const [hubA, hubB, rows] = await Promise.all([
     getApprovedHub(conversation.hub_a_id),
     getApprovedHub(conversation.hub_b_id),
@@ -208,7 +259,11 @@ router.post("/diaspora/hub-messages/conversations/:id/messages", requireAuth, ge
     return res.status(400).json({ error: "Sender Hub is not part of this conversation." });
   }
   if (!(await canRepresentHub(userId, senderHubId))) {
-    return res.status(403).json({ error: "You need approved membership in the sending Hub." });
+    return res.status(403).json({
+      error: "Approved Hub membership is required to send a message as this Hub.",
+      code: "HUB_MEMBERSHIP_REQUIRED",
+      hub_id: senderHubId,
+    });
   }
   const [saved] = await db.transaction(async (tx) => {
     const [message] = await tx.insert(diasporaHubMessagesTable).values({

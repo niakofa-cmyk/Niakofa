@@ -36,7 +36,7 @@ type PulseProps = { navigate?: (href: string) => void };
 
 const ITEMS = [
   { key: "members", label: "Members", icon: Users, href: "/community", tone: "text-amber-300 bg-amber-300/10 border-amber-300/20" },
-  { key: "live", label: "Live", icon: Radio, href: "/diaspora/heritage/globe", tone: "text-teal-300 bg-teal-300/10 border-teal-300/20" },
+  { key: "live", label: "Live", icon: Radio, href: "/diaspora", tone: "text-teal-300 bg-teal-300/10 border-teal-300/20" },
   { key: "neighborhood", label: "Neighborhoods", icon: MapPin, href: "/community", tone: "text-emerald-300 bg-emerald-300/10 border-emerald-300/20" },
   { key: "helping", label: "Helping", icon: HeartHandshake, href: "/helper-dashboard", tone: "text-sky-300 bg-sky-300/10 border-sky-300/20" },
   { key: "stories", label: "Stories", icon: Mic, href: "/diaspora/family?intent=oral-history", tone: "text-rose-300 bg-rose-300/10 border-rose-300/20" },

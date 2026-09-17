@@ -18,6 +18,7 @@
 
 import {
   parseRedisUrl,
+  resolveRedisUrl,
   productionRedisRequirementError,
 } from "../lib/queue.js";
 
@@ -102,6 +103,21 @@ describe("parseRedisUrl", () => {
   });
 });
 
+describe("resolveRedisUrl", () => {
+  it("accepts the plural managed-secret alias", () => {
+    expect(resolveRedisUrl({ REDIS_URLS: "rediss://user:pass@host:6380" })).toBe(
+      "rediss://user:pass@host:6380",
+    );
+  });
+
+  it("accepts a JSON array and ignores malformed candidates", () => {
+    expect(resolveRedisUrl({
+      REDIS_URL: "not-a-redis-url",
+      REDIS_URLS: '["not-a-redis-url","redis://localhost:6379"]',
+    })).toBe("redis://localhost:6379");
+  });
+});
+
 describe("productionRedisRequirementError", () => {
   it("does not gate development when Redis is unavailable", () => {
     expect(productionRedisRequirementError("development", "not_set")).toBeUndefined();
@@ -114,7 +130,7 @@ describe("productionRedisRequirementError", () => {
 
   it("fails closed when production Redis is missing", () => {
     expect(productionRedisRequirementError("production", "not_set")).toMatch(
-      /REDIS_URL is required in production/,
+      /REDIS_URL or REDIS_URLS is required in production/,
     );
   });
 

@@ -5,7 +5,10 @@ import { ArrowRight, BookHeart, CheckCircle2, ChevronDown, CircleDot, Globe2, Lo
 import { useLocation } from "wouter";
 import { diasporaTheme } from "@/lib/diaspora/theme";
 import { authHeaders } from "@/lib/auth";
+import { parseGlobeHubQuery, resolveHubFromQuery } from "@/lib/diaspora/globeHubDeepLink";
 
+// `/diaspora/heritage/globe` remains a compatibility route; new navigation
+// uses the canonical `/diaspora` Globe doorway.
 type Hub = {
   id: number;
   name: string;
@@ -77,6 +80,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
   const [, navigate] = useLocation();
   const mapRef = useRef<MapRef | null>(null);
   const [selectedHub, setSelectedHub] = useState<Hub | null>(null);
+  const [deepLinkApplied, setDeepLinkApplied] = useState(false);
   const [messageHub, setMessageHub] = useState<Hub | null>(null);
   const [query, setQuery] = useState("");
   const filteredHubs = useMemo(() => hubs.filter((hub) => matchesQuery(hub, query)), [hubs, query]);
@@ -105,6 +109,21 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
     setQuery("");
     focusHub(hub);
   };
+
+  useEffect(() => {
+    if (deepLinkApplied || !hubs.length) return;
+    const query = parseGlobeHubQuery(window.location.search);
+    if (query.hubId == null && !query.hubName) {
+      setDeepLinkApplied(true);
+      return;
+    }
+    const match = resolveHubFromQuery(hubs, query);
+    if (match) {
+      setSelectedHub(match);
+      focusHub(match);
+    }
+    setDeepLinkApplied(true);
+  }, [hubs, deepLinkApplied]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -255,7 +274,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
         )}
         <details className="mt-3 rounded-xl border border-white/10 bg-white/[0.025]">
           <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-[11px] font-bold text-white/55"><span>More from {hubLabel(selectedHub)}</span><ChevronDown className="h-3.5 w-3.5" /></summary>
-          <div className="grid grid-cols-3 gap-2 border-t border-white/10 p-3"><HubAction icon={BookHeart} label="Stories" onClick={() => navigate(`/diaspora/heritage/globe?hubId=${selectedHub.id}`)} /><HubAction icon={Users} label="Family" onClick={() => navigate(`/diaspora/family?hubId=${selectedHub.id}`)} /><HubAction icon={WalletCards} label="Pool" onClick={() => navigate(`/community?hubId=${selectedHub.id}&tab=pool`)} /></div>
+          <div className="grid grid-cols-3 gap-2 border-t border-white/10 p-3"><HubAction icon={BookHeart} label="Stories" onClick={() => navigate(`/diaspora?hub=${selectedHub.id}`)} /><HubAction icon={Users} label="Family" onClick={() => navigate(`/diaspora/family?hubId=${selectedHub.id}`)} /><HubAction icon={WalletCards} label="Pool" onClick={() => navigate(`/community?hubId=${selectedHub.id}&tab=pool`)} /></div>
            {selectedHub.local_hubs && selectedHub.local_hubs.length > 0 && (
              <div className="border-t border-white/10 px-3 py-3">
                <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-white/30">Local communities</p>

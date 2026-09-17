@@ -1,7 +1,7 @@
 /**
  * Shareable Globe hub links used by the Diaspora surfaces.
  */
-const GLOBE_BASE = "/diaspora/heritage/globe";
+const GLOBE_BASE = "/diaspora";
 
 export function globeHref(opts?: { hubId?: number | null; hubName?: string | null }): string {
   if (opts?.hubId != null && Number.isFinite(opts.hubId)) {

@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, DollarSign, Radio, Navigation2, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu } from "lucide-react";
+import { Map, Users, DollarSign, Radio, Navigation2, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu, MessageCircle } from "lucide-react";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,6 +28,7 @@ const BASE_TABS: Tab[] = [
   { path: "/community",     icon: Users,      labelKey: "nav.community" },
   { path: "/",              icon: Map,        labelKey: "nav.map"       },
   { path: "/diaspora",      icon: Globe2,     labelKey: "nav.diaspora"  },
+  { path: "/diaspora/messages", icon: MessageCircle, labelKey: "nav.messages" },
   { path: SPIRALS_PATHS.discovery, icon: Radio, labelKey: "nav.circles" },
 ];
 

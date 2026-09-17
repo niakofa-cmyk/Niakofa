@@ -7,7 +7,7 @@
  * of sync with each other.
  */
 import {
-  Map, Users, ClipboardList, Landmark, Globe2,
+  Map, Users, ClipboardList, Landmark, Globe2, MessageCircle,
   Sparkles, Bell, Settings, Wallet, Radio, LayoutDashboard,
 } from "lucide-react";
 import { SPIRALS_PATHS, isSpiralRoute } from "@/lib/spirals";
@@ -37,6 +37,8 @@ export function getAppNavItems(opts: { openNotifications: () => void }): AppNavI
       isActive: (l) =>
         l.startsWith("/diaspora") ||
         l.startsWith("/family") },
+    { key: "messages", label: "Messages", icon: MessageCircle, href: "/diaspora/messages",
+      isActive: (l) => l.startsWith("/diaspora/messages") },
     { key: "spirals", label: "Spirals", icon: Radio, href: SPIRALS_PATHS.discovery,
       isActive: isSpiralRoute },
     { key: "wallet", label: "Wallet", icon: Wallet, href: "/wallet",

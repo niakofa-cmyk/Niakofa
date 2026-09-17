@@ -1,5 +1,5 @@
 export const DIASPORA_JOURNEY = [
-  { key: "globe", label: "Globe", href: "/diaspora/heritage/globe", tone: "teal" },
+  { key: "globe", label: "Globe", href: "/diaspora", tone: "teal" },
   { key: "family", label: "Family", href: "/diaspora/family", tone: "emerald" },
   { key: "stories", label: "Stories", href: "/diaspora/family?intent=oral-history", tone: "rose" },
   { key: "tree", label: "Tree", href: "/diaspora/tree", tone: "emerald" },

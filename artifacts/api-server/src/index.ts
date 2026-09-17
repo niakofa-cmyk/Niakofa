@@ -160,7 +160,7 @@ server.listen(port, async () => {
     logger.info("bullmq: all workers started");
   } else {
     logger.warn(
-      "redis: REDIS_URL not set — BullMQ workers disabled. " +
+      "redis: REDIS_URL or REDIS_URLS not set — BullMQ workers disabled. " +
       "Falling back to legacy scheduler for payment reminders."
     );
     workerNoRedis("payout-worker",       "Payout Worker");

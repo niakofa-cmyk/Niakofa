@@ -15,6 +15,7 @@ const en = {
     active_job: "Active Job",
     family: "Family",
     diaspora: "Diaspora",
+    messages: "Messages",
     legacy: "Legacy",
   },
   common: {
@@ -146,6 +147,7 @@ const es: typeof en = {
     active_job: "Trabajo Activo",
     family: "Familia",
     diaspora: "Diáspora",
+    messages: "Mensajes",
     legacy: "Legado",
   },
   common: {

@@ -7,8 +7,9 @@
  * work cannot safely depend on interval fallbacks.
  *
  * Environment:
- *   REDIS_URL — Redis connection string (redis://user:pass@host:6379)
- *               On Railway this is ${{Redis.REDIS_URL}} or REDIS_PRIVATE_URL.
+ *   REDIS_URL or REDIS_URLS — Redis connection string
+ *   (redis://user:pass@host:6379). REDIS_URLS is accepted because some
+ *   managed Redis providers expose the connection under the plural name.
  */
 import IORedis from "ioredis";
 import { Queue, type JobsOptions } from "bullmq";
@@ -34,7 +35,7 @@ export function parseRedisUrl(raw: string): string | undefined {
   if (!url.startsWith("redis://") && !url.startsWith("rediss://")) {
     logger.warn(
       { hint: "value does not start with redis:// or rediss://" },
-      "queue: REDIS_URL is set but is not a valid redis URL — BullMQ queues disabled",
+      "queue: Redis connection setting is not a valid redis URL — BullMQ queues disabled",
     );
     return undefined;
   }
@@ -54,7 +55,7 @@ export function parseRedisUrl(raw: string): string | undefined {
   } catch {
     logger.warn(
       { hint: "value has a redis:// prefix but is not a structurally valid URL (missing/invalid host, or an unresolved template placeholder)" },
-      "queue: REDIS_URL is set but is not a valid redis URL — BullMQ queues disabled",
+      "queue: Redis connection setting is not a valid redis URL — BullMQ queues disabled",
     );
     return undefined;
   }
@@ -68,19 +69,53 @@ export function parseRedisUrl(raw: string): string | undefined {
     hostname.endsWith(".redis.amazonaws.com");
   return needsTls ? url.replace(/^redis:\/\//, "rediss://") : url;
 }
-const REDIS_URL = parseRedisUrl(process.env["REDIS_URL"] ?? "");
+
+type RedisEnvironment = Partial<Pick<NodeJS.ProcessEnv, "REDIS_URL" | "REDIS_URLS">>;
+
+function redisCandidates(raw: string | undefined): string[] {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return [];
+
+  // Accept a provider's JSON array or a plain value. For a delimited plain
+  // value, extract only complete Redis URLs and never log the secret itself.
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((value): value is string => typeof value === "string");
+      }
+    } catch {
+      // Fall through to the normal invalid-format path.
+    }
+  }
+  const matches = trimmed.match(/rediss?:\/\/[^\s,\]}"']+/gi);
+  return matches?.length ? matches : [trimmed];
+}
+
+export function resolveRedisUrl(env: RedisEnvironment = process.env): string | undefined {
+  const candidates = [
+    ...redisCandidates(env.REDIS_URL),
+    ...redisCandidates(env.REDIS_URLS),
+  ];
+  return candidates.map(parseRedisUrl).find((value): value is string => Boolean(value));
+}
+
+const REDIS_URL = resolveRedisUrl();
 
 /**
  * Distinguishes "not set at all" from "set but malformed" so ops tooling
  * (GET /api/admin/global-ops config_status, startup logs) can tell operators
  * exactly what's wrong instead of a single ambiguous boolean. This matters in
- * production: a malformed REDIS_URL silently disables pledge reminders,
+ * production: a malformed Redis URL silently disables pledge reminders,
  * payout retries, and cashout workers with no visible symptom besides a log
  * line that's easy to miss.
  */
 export function getRedisUrlStatus(): "not_set" | "invalid_format" | "valid" {
-  const raw = (process.env["REDIS_URL"] ?? "").trim();
-  if (!raw) return "not_set";
+  const hasValue = Boolean(
+    (process.env["REDIS_URL"] ?? "").trim() ||
+    (process.env["REDIS_URLS"] ?? "").trim(),
+  );
+  if (!hasValue) return "not_set";
   return REDIS_URL ? "valid" : "invalid_format";
 }
 
@@ -97,13 +132,13 @@ export function productionRedisRequirementError(
 
   if (redisStatus === "invalid_format") {
     return (
-      "REDIS_URL is set in production but is not a valid redis:// or rediss:// URL. " +
-      "Set a resolved Redis connection URL before starting the API."
+      "Redis configuration is present in production but is not a valid redis:// or rediss:// URL. " +
+      "Set a resolved REDIS_URL or REDIS_URLS connection URL before starting the API."
     );
   }
 
   return (
-    "REDIS_URL is required in production. " +
+    "REDIS_URL or REDIS_URLS is required in production. " +
     "Set a durable Redis connection URL before starting the API."
   );
 }
