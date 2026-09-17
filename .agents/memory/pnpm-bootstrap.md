@@ -22,12 +22,15 @@ installed package-local binaries directly when dependency mutation is not part
 of the task.
 
 If the workspace wrapper starts a dependency-status reconciliation and removes
-the root links, restore with the standalone Nix pnpm binary using
-`CI=true`, `--frozen-lockfile`, `--child-concurrency=1`, and
-`--network-concurrency=1`; then invoke local binaries directly for validation.
+the root links, restore with the cached exact-version Corepack runner (or
+standalone pnpm binary) using `CI=true`, `--frozen-lockfile`,
+`--child-concurrency=1`, and `--network-concurrency=1`; then invoke local
+binaries directly for validation.
 
 **Why:** Non-interactive reconciliation can fail after partially recreating
-`node_modules`, leaving package-local pnpm, TypeScript, and ESLint links absent.
+`node_modules`, leaving package-local pnpm, TypeScript, and ESLint links absent;
+the shell's older pnpm may also repeatedly bootstrap the declared version and
+abort under the workspace process limit.
 
 **How to apply:** Keep the declared package manager metadata intact in the
 final tree; use the temporary metadata override only around dependency
