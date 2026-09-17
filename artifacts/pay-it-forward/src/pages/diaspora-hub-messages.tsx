@@ -13,6 +13,7 @@ type Hub = {
   hub_scope: string;
   country_code: string | null;
   subdivision_code: string | null;
+  is_home?: boolean;
 };
 
 type Conversation = {
@@ -193,7 +194,7 @@ export default function DiasporaHubMessagesPage() {
             <p className="text-xs font-black uppercase tracking-[0.22em] text-teal-200/70">Diaspora</p>
             <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">Messages between Hubs</h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/55">
-              Discover approved Hubs and speak for a Hub only when you have approved membership there.
+               Your approved canonical home Hub is available automatically. Additional Hubs remain explicit memberships, and live location never changes who you represent.
             </p>
                 {sourceId && <p className="mt-2 text-xs font-semibold text-teal-200/75">Speaking as {labelForHub(sourceHubs.find((hub) => String(hub.id) === sourceId) ?? { name: "your approved Hub", display_name: null })}</p>}
           </div>
@@ -236,7 +237,7 @@ export default function DiasporaHubMessagesPage() {
                 Speak as
                 <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-sm text-white outline-none focus:border-teal-200/40">
                   <option value="">No approved membership</option>
-                  {sourceHubs.map((hub) => <option key={hub.id} value={hub.id}>{labelForHub(hub)}</option>)}
+                  {sourceHubs.map((hub) => <option key={hub.id} value={hub.id}>{labelForHub(hub)}{hub.is_home ? " · Home Hub" : ""}</option>)}
                 </select>
               </label>
               <label className="text-xs font-bold text-white/60">

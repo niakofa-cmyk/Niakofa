@@ -53,6 +53,17 @@ interface AdminUser {
   created_at: string;
   is_suspended?: boolean;
   is_admin?: boolean;
+  diaspora_hub_id?: number | null;
+}
+
+interface CanonicalHomeHub {
+  id: number;
+  name: string;
+  display_name: string | null;
+  region_label: string;
+  hub_scope: string;
+  country_code: string | null;
+  subdivision_code: string | null;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -1575,6 +1586,7 @@ function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
   const [showHelperOnly, setShowHelperOnly] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<Set<number>>(new Set());
   const [bulkMode, setBulkMode] = useState(false);
+  const [homeHubs, setHomeHubs] = useState<CanonicalHomeHub[]>([]);
 
   // Debounced server-side search — searching client-side over only the first
   // 200 fetched rows meant an admin could never find users past that cutoff,
@@ -1618,6 +1630,16 @@ function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
     return () => { clearTimeout(handle); controller.abort(); };
   }, [search, refreshTick]);
 
+  useEffect(() => {
+    const tok = getToken();
+    fetch(`${BASE}/api/admin/diaspora-home-hubs`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+      .then((response) => response.ok
+        ? response.json() as Promise<{ hubs?: CanonicalHomeHub[] }>
+        : Promise.reject(new Error("Could not load canonical Hubs")))
+      .then((data) => setHomeHubs(Array.isArray(data.hubs) ? data.hubs : []))
+      .catch(() => setHomeHubs([]));
+  }, [refreshTick]);
+
   // Helper filter is client-side only (applied over the already-fetched page).
   // Server-side filtering by helper status could be added later if needed.
   const filtered = users.filter(u => !showHelperOnly || u.is_helper);
@@ -1634,6 +1656,26 @@ function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
       setActionUser(null);
     } catch {
       toast({ title: "Action failed", variant: "destructive" });
+    }
+  };
+
+  const setCanonicalHomeHub = async (userId: number, value: string) => {
+    const tok = getToken();
+    const hub_id = value ? Number(value) : null;
+    try {
+      const response = await fetch(`${BASE}/api/admin/accounts/${userId}/diaspora-home-hub`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ hub_id }),
+      });
+      const data = await response.json().catch(() => ({})) as { diaspora_hub_id?: number | null; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Could not update the home Hub");
+      setUsers(previous => previous.map(user => user.id === userId
+        ? { ...user, diaspora_hub_id: data.diaspora_hub_id ?? null }
+        : user));
+      toast({ title: value ? "Canonical home Hub assigned" : "Canonical home Hub cleared" });
+    } catch (reason) {
+      toast({ title: reason instanceof Error ? reason.message : "Could not update the home Hub", variant: "destructive" });
     }
   };
 
@@ -1741,6 +1783,20 @@ function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
                   <span className="text-[10px] text-muted-foreground capitalize px-2 py-0.5 rounded-full border border-border">{(user as AdminUser & { account_type?: string }).account_type}</span>
                 )}
               </div>
+              <label className="mt-3 block text-[11px] font-bold text-muted-foreground">
+                Canonical home Hub
+                <select
+                  value={user.diaspora_hub_id ?? ""}
+                  onChange={(event) => void setCanonicalHomeHub(user.id, event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-normal text-foreground outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">Not assigned</option>
+                  {homeHubs.map((hub) => (
+                    <option key={hub.id} value={hub.id}>{hub.display_name || hub.name} · {hub.region_label}</option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-[10px] font-normal">Durable account geography; live GPS never changes membership.</span>
+              </label>
             </div>
             <button
               onClick={() => setActionUser(user)}

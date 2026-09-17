@@ -1245,6 +1245,7 @@ router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (req, res)
     suspended_reason: usersTable.suspended_reason,
     created_at: usersTable.created_at,
     approval_status: usersTable.approval_status,
+    diaspora_hub_id: usersTable.diaspora_hub_id,
     account_type: usersTable.account_type,
     is_admin: usersTable.is_admin,
     // Background check fields — used by BackgroundCheckAdmin in the admin UI

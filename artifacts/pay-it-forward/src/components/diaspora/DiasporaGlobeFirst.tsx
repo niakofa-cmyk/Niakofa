@@ -285,7 +285,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
              <div>
                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal-200/80">Hub membership</p>
                <p className="mt-1 text-xs leading-relaxed text-white/45">
-                 {membership?.status === "approved" ? "You are an approved member of this Hub." : membership?.status === "requested" ? "Your request is waiting for a Hub leader review." : "Membership is explicit; location alone does not represent you in this Hub."}
+                 {membership?.status === "approved" ? "You are an approved member of this Hub." : membership?.status === "requested" ? "Your request is waiting for a Hub leader review." : "Your approved canonical home Hub is automatic; additional Hubs require an explicit request. Live location never changes membership."}
                </p>
              </div>
              {membership?.status === "approved" && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" aria-label="Approved membership" />}

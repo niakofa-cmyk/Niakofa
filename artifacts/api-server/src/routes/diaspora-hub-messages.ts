@@ -38,11 +38,13 @@ async function canRepresentHub(userId: number, hubId: number): Promise<boolean> 
     .select({ id: hubMembershipsTable.id })
     .from(hubMembershipsTable)
     .innerJoin(diasporaHubsTable, eq(diasporaHubsTable.id, hubMembershipsTable.hub_id))
+    .innerJoin(usersTable, eq(usersTable.id, hubMembershipsTable.user_id))
     .where(and(
       eq(hubMembershipsTable.user_id, userId),
       eq(hubMembershipsTable.hub_id, hubId),
       eq(hubMembershipsTable.status, "approved"),
       eq(diasporaHubsTable.status, "approved"),
+      eq(usersTable.approval_status, "approved"),
     ))
     .limit(1);
   return rows.length === 1;
@@ -86,7 +88,8 @@ function serializeMessage(message: {
 
 // GET /api/diaspora/hub-messages/options
 // Returns Hubs the user can represent and approved Hubs they can contact.
-// Location is not membership.
+// The canonical home Hub is marked for context; membership is not inferred
+// from live location.
 router.get("/diaspora/hub-messages/options", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const [sourceRows, targetRows] = await Promise.all([
@@ -98,13 +101,16 @@ router.get("/diaspora/hub-messages/options", requireAuth, generalApiLimiter, asy
       hub_scope: diasporaHubsTable.hub_scope,
       country_code: diasporaHubsTable.country_code,
       subdivision_code: diasporaHubsTable.subdivision_code,
+      is_home: sql<boolean>`${usersTable.diaspora_hub_id} = ${diasporaHubsTable.id}`,
     })
       .from(hubMembershipsTable)
       .innerJoin(diasporaHubsTable, eq(diasporaHubsTable.id, hubMembershipsTable.hub_id))
+      .innerJoin(usersTable, eq(usersTable.id, hubMembershipsTable.user_id))
       .where(and(
         eq(hubMembershipsTable.user_id, userId),
         eq(hubMembershipsTable.status, "approved"),
         eq(diasporaHubsTable.status, "approved"),
+        eq(usersTable.approval_status, "approved"),
       ))
       .orderBy(diasporaHubsTable.display_name, diasporaHubsTable.name),
     db.select(hubSummary)
@@ -117,8 +123,10 @@ router.get("/diaspora/hub-messages/options", requireAuth, generalApiLimiter, asy
     target_hubs: targetRows,
     semantics: {
       location_is_not_membership: true,
+      approved_account_plus_canonical_home_hub_creates_member: true,
       authenticated_user_may_discover_targets: true,
       approved_membership_required_to_represent_source: true,
+      target_membership_not_required: true,
     },
   });
 });
@@ -151,8 +159,10 @@ router.get("/diaspora/hub-messages/conversations", requireAuth, generalApiLimite
     WHERE EXISTS (
       SELECT 1
       FROM hub_memberships hm
+      JOIN users viewer ON viewer.id = hm.user_id
       WHERE hm.user_id = ${userId}
         AND hm.status = 'approved'
+        AND viewer.approval_status = 'approved'
         AND hm.hub_id IN (c.hub_a_id, c.hub_b_id)
     )
     ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC

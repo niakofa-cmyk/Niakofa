@@ -5,7 +5,7 @@
  * All routes require authentication + admin role.
  */
 import { Router } from "express";
-import { db, requestsTable, usersTable, reportsTable, niaMemoriesTable, niaConversationsTable, niaToggleAuditTable } from "@workspace/db";
+import { db, requestsTable, usersTable, reportsTable, niaMemoriesTable, niaConversationsTable, niaToggleAuditTable, diasporaHubsTable } from "@workspace/db";
 import { eq, sql, and, gte, desc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
@@ -282,6 +282,7 @@ router.get("/admin/accounts", requireAuth, requireAdmin(), adminLimiter, async (
       is_suspended: usersTable.is_suspended,
       suspended_at: usersTable.suspended_at,
       suspended_reason: usersTable.suspended_reason,
+      diaspora_hub_id: usersTable.diaspora_hub_id,
       organization_name: usersTable.organization_name,
       created_at: usersTable.created_at,
     })
@@ -292,6 +293,28 @@ router.get("/admin/accounts", requireAuth, requireAdmin(), adminLimiter, async (
     .offset(offset);
 
   return res.json(users);
+});
+
+// GET /admin/diaspora-home-hubs — approved canonical Globe Hubs available for
+// durable account assignment. Local/city Hubs are intentionally excluded.
+router.get("/admin/diaspora-home-hubs", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const hubs = await db
+    .select({
+      id: diasporaHubsTable.id,
+      name: diasporaHubsTable.name,
+      display_name: diasporaHubsTable.display_name,
+      region_label: diasporaHubsTable.region_label,
+      hub_scope: diasporaHubsTable.hub_scope,
+      country_code: diasporaHubsTable.country_code,
+      subdivision_code: diasporaHubsTable.subdivision_code,
+    })
+    .from(diasporaHubsTable)
+    .where(and(
+      eq(diasporaHubsTable.status, "approved"),
+      sql`${diasporaHubsTable.primary_hub_id} IS NULL`,
+    ))
+    .orderBy(diasporaHubsTable.display_name, diasporaHubsTable.name);
+  return res.json({ hubs });
 });
 
 // GET /admin/helper-applications — list users who have applied to be helpers
@@ -660,6 +683,45 @@ router.patch("/admin/accounts/:id/approval", requireAuth, requireAdmin(), adminL
       payload: { user_id: updated.id, status },
     });
   }
+
+  const { password_hash: _ph, ...safe } = updated;
+  return res.json(safe);
+});
+
+// PATCH /admin/accounts/:id/diaspora-home-hub — assign durable canonical
+// geography without using live GPS. Clearing the assignment is allowed; it
+// never deletes prior memberships, which remain explicit governance records.
+router.patch("/admin/accounts/:id/diaspora-home-hub", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(req.params.id as string, 10);
+  if (!Number.isSafeInteger(userId) || userId <= 0) return res.status(400).json({ error: "Invalid id" });
+
+  const rawHubId = req.body?.hub_id;
+  const hubId = rawHubId === null || rawHubId === "" || rawHubId === undefined
+    ? null
+    : Number(rawHubId);
+  if (hubId !== null && (!Number.isSafeInteger(hubId) || hubId <= 0)) {
+    return res.status(400).json({ error: "hub_id must be a positive integer or null" });
+  }
+
+  if (hubId !== null) {
+    const [hub] = await db
+      .select({ id: diasporaHubsTable.id })
+      .from(diasporaHubsTable)
+      .where(and(
+        eq(diasporaHubsTable.id, hubId),
+        eq(diasporaHubsTable.status, "approved"),
+        sql`${diasporaHubsTable.primary_hub_id} IS NULL`,
+      ))
+      .limit(1);
+    if (!hub) return res.status(400).json({ error: "Choose an approved canonical Globe Hub." });
+  }
+
+  const [updated] = await db
+    .update(usersTable)
+    .set({ diaspora_hub_id: hubId, updated_at: new Date() })
+    .where(eq(usersTable.id, userId))
+    .returning();
+  if (!updated) return res.status(404).json({ error: "User not found" });
 
   const { password_hash: _ph, ...safe } = updated;
   return res.json(safe);

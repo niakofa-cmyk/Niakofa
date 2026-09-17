@@ -76,6 +76,10 @@ export const usersTable = pgTable("users", {
   // Community membership (migration 0047)
   // NULL = not yet assigned; falls back to global pool for legacy rows.
   community_id: integer("community_id"),
+  // Durable canonical Diaspora home Hub. This is account/onboarding context,
+  // never inferred from live GPS. Approved users assigned to an approved
+  // canonical Hub receive an approved member row automatically.
+  diaspora_hub_id: integer("diaspora_hub_id"),
   // Tier stickiness (migration 0047)
   highest_tier_reached: text("highest_tier_reached").notNull().default("member"),
   // No-show counter (migration 0059)
@@ -86,6 +90,7 @@ export const usersTable = pgTable("users", {
   index("users_is_helper_idx").on(t.is_helper),
   index("users_helper_mode_active_idx").on(t.helper_mode_active),
   index("users_location_updated_at_idx").on(t.location_updated_at),
+  index("users_diaspora_hub_id_idx").on(t.diaspora_hub_id),
 ]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, created_at: true, updated_at: true });
