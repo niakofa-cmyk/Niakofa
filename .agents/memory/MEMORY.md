@@ -49,3 +49,4 @@
 - [Spiral catalog location boundary](spiral-catalog-location-boundary.md) — curated discovery is independent from GIS verification and legacy inactive-city sentinels.
 - [Diaspora Hub messaging](diaspora-hub-messaging.md) — direct Hub threads use canonical pairs and server-side approved-membership checks.
 - [CI contract validation](ci-contract-validation.md) — isolate fallback tests from ambient services and keep canonical-route assertions separate from compatibility coverage.
+- [Unified messaging boundaries](unified-messaging-boundaries.md) — direct DMs stay approved-account-only while request and Hub conversations keep separate authorization models.
