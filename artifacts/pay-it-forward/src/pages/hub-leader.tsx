@@ -66,6 +66,16 @@ interface HubSummary {
   is_leader_or_admin: boolean;
 }
 
+interface HubMembership {
+  id: number;
+  user_id: number;
+  hub_id: number;
+  status: "requested" | "approved" | "suspended" | "revoked" | "left";
+  role: "member" | "representative" | "leader";
+  user_name: string | null;
+  requested_at: string;
+}
+
 export default function HubLeaderDashboard() {
   const [, params] = useRoute("/hub-leader/:id");
   const [, setLocation] = useLocation();
@@ -81,6 +91,7 @@ export default function HubLeaderDashboard() {
   const [crisisMessage, setCrisisMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [memberships, setMemberships] = useState<HubMembership[]>([]);
 
   const load = useCallback(async (silent = false) => {
     if (!Number.isFinite(hubId)) return;
@@ -94,6 +105,15 @@ export default function HubLeaderDashboard() {
       }
       const data = await res.json();
       setSummary(data);
+      if (data.is_leader_or_admin) {
+        const membershipResponse = await fetch(`/api/diaspora/hub-memberships?hub_id=${hubId}`, { headers: authHeaders() });
+        if (membershipResponse.ok) {
+          const membershipData = await membershipResponse.json() as { memberships?: HubMembership[] };
+          setMemberships(Array.isArray(membershipData.memberships) ? membershipData.memberships : []);
+        }
+      } else {
+        setMemberships([]);
+      }
       setError(null);
       setLastUpdated(new Date());
     } catch {
@@ -185,6 +205,25 @@ export default function HubLeaderDashboard() {
       toast({ title: "Failed to submit application", variant: "destructive" });
     } finally {
       setApplying(false);
+    }
+  }
+
+  async function updateMembership(membershipId: number, status: HubMembership["status"]) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/diaspora/hub-memberships/${membershipId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Membership update failed.");
+      toast({ title: status === "approved" ? "Membership approved" : `Membership ${status}` });
+      await load(true);
+    } catch (reason: unknown) {
+      toast({ title: reason instanceof Error ? reason.message : "Membership update failed", variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -427,14 +466,51 @@ export default function HubLeaderDashboard() {
         {/* Hub leadership actions — for leaders/admins */}
         {summary.is_leader_or_admin && (
           <div className="bg-card border border-border rounded-2xl p-4 space-y-2">
+             <div className="border-b border-border pb-3">
+               <div className="flex items-center justify-between gap-2">
+                 <div className="flex items-center gap-2">
+                   <ShieldCheck className="w-4 h-4 text-primary" />
+                   <p className="font-bold text-[13px]">Membership requests</p>
+                 </div>
+                 <span className="text-[10px] text-muted-foreground">{memberships.filter((membership) => membership.status === "requested").length} pending</span>
+               </div>
+               {memberships.filter((membership) => membership.status === "requested").length === 0 ? (
+                 <p className="mt-2 text-[12px] text-muted-foreground">No pending membership requests.</p>
+               ) : (
+                 <div className="mt-2 space-y-2">
+                   {memberships.filter((membership) => membership.status === "requested").map((membership) => (
+                     <div key={membership.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2">
+                       <div className="min-w-0">
+                         <p className="truncate text-[12px] font-semibold">{membership.user_name || `Member ${membership.user_id}`}</p>
+                         <p className="text-[10px] text-muted-foreground">Requested {new Date(membership.requested_at).toLocaleDateString()}</p>
+                       </div>
+                       <div className="flex shrink-0 gap-1.5">
+                         <button type="button" disabled={busy} onClick={() => void updateMembership(membership.id, "approved")} className="rounded-lg bg-primary px-2.5 py-1.5 text-[10px] font-bold text-primary-foreground disabled:opacity-50">Approve</button>
+                         <button type="button" disabled={busy} onClick={() => void updateMembership(membership.id, "revoked")} className="rounded-lg border border-border px-2.5 py-1.5 text-[10px] font-bold text-muted-foreground disabled:opacity-50">Decline</button>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               )}
+             </div>
             <div className="flex items-center gap-2 mb-1">
               <Users className="w-4 h-4 text-muted-foreground" />
-              <p className="font-bold text-[13px]">Approved Leaders</p>
+               <p className="font-bold text-[13px]">Members and leaders</p>
             </div>
-            {summary.leaders.length === 0 ? (
-              <p className="text-[12px] text-muted-foreground">No approved leaders yet.</p>
+             {memberships.filter((membership) => membership.status === "approved").length === 0 && summary.leaders.length === 0 ? (
+               <p className="text-[12px] text-muted-foreground">No approved members yet.</p>
             ) : (
               <div className="space-y-1.5">
+                 {memberships.filter((membership) => membership.status === "approved").map((membership) => (
+                   <div key={`membership-${membership.id}`} className="flex items-center justify-between gap-3 text-[12px]">
+                     <span className="truncate">{membership.user_name || `Member ${membership.user_id}`}</span>
+                     <div className="flex shrink-0 items-center gap-2">
+                       <span className="text-muted-foreground text-[10px] uppercase tracking-wide">{membership.role}</span>
+                       {membership.role !== "leader" && <button type="button" disabled={busy} onClick={() => void updateMembership(membership.id, "suspended")} className="text-[10px] font-bold text-amber-600 disabled:opacity-50">Suspend</button>}
+                       <button type="button" disabled={busy} onClick={() => void updateMembership(membership.id, "revoked")} className="text-[10px] font-bold text-destructive disabled:opacity-50">Revoke</button>
+                     </div>
+                   </div>
+                 ))}
                 {summary.leaders.map((l) => (
                   <div key={l.id} className="flex items-center justify-between text-[12px]">
                     <span>{l.name}</span>

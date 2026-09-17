@@ -9,19 +9,31 @@
  */
 
 import { useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { diasporaTheme } from "@/lib/diaspora/theme";
 import { DiasporaGlobeFirst, type DiasporaGlobeHub } from "@/components/diaspora/DiasporaGlobeFirst";
+import { normalizeDiasporaPath } from "@/lib/diaspora/diasporaRoutes";
+import DiasporaStoriesPage from "@/pages/diaspora-stories";
 import { toast } from "sonner";
 
 export default function DiasporaDashboardPage() {
   const { currentUser } = useAppContext();
+  const [location, navigate] = useLocation();
   const [hubs, setHubs] = useState<DiasporaGlobeHub[]>([]);
   const [loading, setLoading] = useState(true);
+  const isLegacyRoute = location === "/globe" || location === "/diaspora/heritage/globe";
+  const isStoriesView = new URLSearchParams(window.location.search).get("view") === "stories";
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!isLegacyRoute) return;
+    const target = normalizeDiasporaPath(window.location.pathname, window.location.search) ?? "/diaspora";
+    navigate(target, { replace: true });
+  }, [isLegacyRoute, navigate]);
+
+  useEffect(() => {
+    if (!currentUser || isLegacyRoute || isStoriesView) return;
     let cancelled = false;
 
     async function load() {
@@ -65,8 +77,10 @@ export default function DiasporaDashboardPage() {
 
     void load();
     return () => { cancelled = true; };
-  }, [currentUser]);
+  }, [currentUser, isLegacyRoute, isStoriesView]);
 
+  if (isLegacyRoute) return <div className="flex min-h-[50dvh] items-center justify-center bg-background px-6"><p className="text-sm text-muted-foreground">Opening the Diaspora Globe…</p></div>;
+  if (isStoriesView) return <DiasporaStoriesPage />;
   if (!currentUser) return <div className="flex min-h-screen items-center justify-center bg-background px-6"><p className="text-sm text-muted-foreground">Sign in to enter the Diaspora Globe.</p></div>;
 
   return (

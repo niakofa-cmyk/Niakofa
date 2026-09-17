@@ -47,6 +47,8 @@ type HubMessage = {
   body: string;
   created_at: string;
 };
+type MembershipStatus = "requested" | "approved" | "suspended" | "revoked" | "left";
+type HubMembership = { id: number; hub_id: number; status: MembershipStatus; role: string };
 
 function hubLabel(hub: Hub) { return hub.display_name?.trim() || hub.name; }
 function flagForHub(hub: Hub): string {
@@ -82,6 +84,9 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
   const [selectedHub, setSelectedHub] = useState<Hub | null>(null);
   const [deepLinkApplied, setDeepLinkApplied] = useState(false);
   const [messageHub, setMessageHub] = useState<Hub | null>(null);
+  const [membership, setMembership] = useState<HubMembership | null>(null);
+  const [membershipBusy, setMembershipBusy] = useState(false);
+  const [membershipError, setMembershipError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const filteredHubs = useMemo(() => hubs.filter((hub) => matchesQuery(hub, query)), [hubs, query]);
   const focusHub = (hub: Hub) => {
@@ -124,6 +129,47 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
     }
     setDeepLinkApplied(true);
   }, [hubs, deepLinkApplied]);
+
+  useEffect(() => {
+    if (!selectedHub) {
+      setMembership(null);
+      setMembershipError(null);
+      return;
+    }
+    let cancelled = false;
+    setMembershipError(null);
+    fetch(`/api/diaspora/hub-memberships?hub_id=${selectedHub.id}`, { headers: authHeaders() })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Membership status is unavailable.");
+        return response.json() as Promise<{ membership?: HubMembership | null }>;
+      })
+      .then((data) => {
+        if (!cancelled) setMembership(data.membership ?? null);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setMembershipError(reason instanceof Error ? reason.message : "Membership status is unavailable.");
+      });
+    return () => { cancelled = true; };
+  }, [selectedHub]);
+
+  const requestMembership = async (hubId: number) => {
+    setMembershipBusy(true);
+    setMembershipError(null);
+    try {
+      const response = await fetch("/api/diaspora/hub-memberships", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ hub_id: hubId }),
+      });
+      const data = await response.json().catch(() => ({})) as { membership?: HubMembership; error?: string };
+      if (!response.ok || !data.membership) throw new Error(data.error ?? "Membership request could not be sent.");
+      if (selectedHub?.id === hubId) setMembership(data.membership);
+    } catch (reason: unknown) {
+      setMembershipError(reason instanceof Error ? reason.message : "Membership request could not be sent.");
+    } finally {
+      setMembershipBusy(false);
+    }
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -250,6 +296,28 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
         )}
         {selectedHub.crisis_message && <p className="mt-4 rounded-xl border border-rose-300/15 bg-rose-300/[0.05] p-3 text-xs leading-relaxed text-rose-100/70">{selectedHub.crisis_message}</p>}
         <p className="mt-4 text-xs leading-relaxed text-white/50">{selectedHub.member_count} members · {selectedHub.story_count} stories · {selectedHub.spiral_count} Spirals · {selectedHub.open_requests} open needs</p>
+         <div className="mt-4 rounded-xl border border-teal-300/15 bg-teal-300/[0.04] p-3">
+           <div className="flex items-start justify-between gap-3">
+             <div>
+               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal-200/80">Hub membership</p>
+               <p className="mt-1 text-xs leading-relaxed text-white/45">
+                 {membership?.status === "approved" ? "You are an approved member of this Hub." : membership?.status === "requested" ? "Your request is waiting for a Hub leader review." : "Membership is explicit; location alone does not represent you in this Hub."}
+               </p>
+             </div>
+             {membership?.status === "approved" && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" aria-label="Approved membership" />}
+           </div>
+           {membership?.status !== "approved" && (
+             <button
+               type="button"
+               onClick={() => void requestMembership(selectedHub.id)}
+               disabled={membershipBusy || membership?.status === "requested"}
+               className={`mt-3 w-full rounded-xl border border-teal-300/25 bg-teal-300/10 px-3 py-2.5 text-xs font-bold text-teal-100 hover:bg-teal-300/15 disabled:cursor-not-allowed disabled:opacity-50 ${diasporaTheme.focus}`}
+             >
+               {membershipBusy ? "Sending request…" : membership?.status === "requested" ? "Membership requested" : "Request membership"}
+             </button>
+           )}
+           {membershipError && <p role="alert" className="mt-2 text-[11px] text-rose-200/80">{membershipError}</p>}
+         </div>
         {selectedHub.live_user_count > 0 && (
           <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-300/10 bg-emerald-300/[0.04] px-3 py-2 text-[11px] text-emerald-100/75">
             <span className="h-2 w-2 rounded-full bg-emerald-300 motion-safe:animate-pulse motion-reduce:animate-none" aria-hidden="true" />
@@ -274,7 +342,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
         )}
         <details className="mt-3 rounded-xl border border-white/10 bg-white/[0.025]">
           <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-[11px] font-bold text-white/55"><span>More from {hubLabel(selectedHub)}</span><ChevronDown className="h-3.5 w-3.5" /></summary>
-          <div className="grid grid-cols-3 gap-2 border-t border-white/10 p-3"><HubAction icon={BookHeart} label="Stories" onClick={() => navigate(`/diaspora?hub=${selectedHub.id}`)} /><HubAction icon={Users} label="Family" onClick={() => navigate(`/diaspora/family?hubId=${selectedHub.id}`)} /><HubAction icon={WalletCards} label="Pool" onClick={() => navigate(`/community?hubId=${selectedHub.id}&tab=pool`)} /></div>
+         <div className="grid grid-cols-3 gap-2 border-t border-white/10 p-3"><HubAction icon={BookHeart} label="Stories" onClick={() => navigate(`/diaspora?hub=${selectedHub.id}&view=stories`)} /><HubAction icon={Users} label="Family" onClick={() => navigate(`/diaspora/family?hubId=${selectedHub.id}`)} /><HubAction icon={WalletCards} label="Pool" onClick={() => navigate(`/community?hubId=${selectedHub.id}&tab=pool`)} /></div>
            {selectedHub.local_hubs && selectedHub.local_hubs.length > 0 && (
              <div className="border-t border-white/10 px-3 py-3">
                <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-white/30">Local communities</p>
@@ -294,12 +362,12 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
            )}
         </details>
       </aside>}
-      {messageHub && <HubMessagingPanel hub={messageHub} hubs={hubs} onClose={() => setMessageHub(null)} />}
+       {messageHub && <HubMessagingPanel hub={messageHub} hubs={hubs} onClose={() => setMessageHub(null)} onRequestMembership={() => void requestMembership(messageHub.id)} membershipStatus={selectedHub?.id === messageHub.id ? membership?.status : undefined} />}
     </section>
   );
 }
 
-function HubMessagingPanel({ hub, hubs, onClose }: { hub: Hub; hubs: Hub[]; onClose: () => void }) {
+function HubMessagingPanel({ hub, hubs, onClose, onRequestMembership, membershipStatus }: { hub: Hub; hubs: Hub[]; onClose: () => void; onRequestMembership: () => void; membershipStatus?: MembershipStatus }) {
   const [sourceHubs, setSourceHubs] = useState<MessageHub[]>([]);
   const [targetHubs, setTargetHubs] = useState<MessageHub[]>([]);
   const [sourceId, setSourceId] = useState("");
@@ -395,7 +463,7 @@ function HubMessagingPanel({ hub, hubs, onClose }: { hub: Hub; hubs: Hub[]; onCl
           <button onClick={onClose} aria-label="Close Hub messaging" className="rounded-xl p-2 text-white/40 hover:bg-white/5 hover:text-white"><X className="h-4 w-4" /></button>
         </div>
         <div className="space-y-3 overflow-auto p-4">
-          {loadingOptions ? <div className="flex items-center gap-2 text-xs text-white/50"><Loader2 className="h-4 w-4 animate-spin" /> Loading Hub permissions…</div> : sourceHubs.length === 0 ? <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3 text-xs leading-relaxed text-amber-100/70">You need approved membership in a Hub before you can send a Hub-to-Hub message.</div> : <>
+           {loadingOptions ? <div className="flex items-center gap-2 text-xs text-white/50"><Loader2 className="h-4 w-4 animate-spin" /> Loading Hub permissions…</div> : sourceHubs.length === 0 ? <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3 text-xs leading-relaxed text-amber-100/70"><p>You need approved membership in a Hub before you can send a Hub-to-Hub message.</p><button type="button" onClick={onRequestMembership} disabled={membershipStatus === "requested" || membershipStatus === "approved"} className={`mt-3 rounded-xl border border-amber-200/25 bg-amber-200/10 px-3 py-2 text-xs font-bold text-amber-100 disabled:opacity-50 ${diasporaTheme.focus}`}>{membershipStatus === "requested" ? "Membership requested" : membershipStatus === "approved" ? "Membership approved" : "Request membership"}</button></div> : <>
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">From your Hub<select value={sourceId} onChange={(event) => setSourceId(event.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-white outline-none focus:border-teal-300/40">{sourceHubs.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.name}</option>)}</select></label>
               <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">To Hub<select value={targetId} onChange={(event) => { setTargetId(event.target.value); setConversationId(null); setMessages([]); }} className="mt-1 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-white outline-none focus:border-teal-300/40">{availableTargets.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.name}</option>)}</select></label>

@@ -16,7 +16,7 @@
 
 import { Router } from "express";
 import Stripe from "stripe";
-import { db, griotStoriesTable, storyTranslationsTable, griotTranscriptionJobsTable, diasporaHubsTable, usersTable, requestsTable, communityPoolLedgerTable, reportsTable, hubCommunityLeadersTable, diasporaHubPledgesTable } from "@workspace/db";
+import { db, griotStoriesTable, storyTranslationsTable, griotTranscriptionJobsTable, diasporaHubsTable, usersTable, requestsTable, communityPoolLedgerTable, reportsTable, hubCommunityLeadersTable, hubMembershipsTable, diasporaHubPledgesTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { generalApiLimiter, paymentLimiter } from "../middlewares/rate-limit";
@@ -736,7 +736,19 @@ async function isHubLeaderOrAdmin(hubId: number, userId: number): Promise<boolea
       )
     )
     .limit(1);
-  return !!leader;
+  if (leader) return true;
+
+  const [membershipLeader] = await db
+    .select({ id: hubMembershipsTable.id })
+    .from(hubMembershipsTable)
+    .where(and(
+      eq(hubMembershipsTable.hub_id, hubId),
+      eq(hubMembershipsTable.user_id, userId),
+      eq(hubMembershipsTable.status, "approved"),
+      eq(hubMembershipsTable.role, "leader"),
+    ))
+    .limit(1);
+  return Boolean(membershipLeader);
 }
 
 // PATCH /griot/hubs/:id/claim — attach a real Niakofa community to an
@@ -842,6 +854,27 @@ router.patch("/griot/hubs/:id/leaders/:userId/approve", requireAuth, generalApiL
     .returning();
 
   if (!updated) { res.status(404).json({ error: "Application not found" }); return; }
+  await db
+    .insert(hubMembershipsTable)
+    .values({
+      user_id: targetUserId,
+      hub_id: hubId,
+      status: "approved",
+      role: "leader",
+      requested_at: new Date(),
+      approved_at: new Date(),
+      approved_by: callerId,
+    })
+    .onConflictDoUpdate({
+      target: [hubMembershipsTable.user_id, hubMembershipsTable.hub_id],
+      set: {
+        status: "approved",
+        role: "leader",
+        approved_at: new Date(),
+        approved_by: callerId,
+        updated_at: new Date(),
+      },
+    });
   res.json({ leader: updated });
 });
 

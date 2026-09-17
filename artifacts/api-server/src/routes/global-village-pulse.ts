@@ -29,32 +29,18 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
   const now = new Date();
   const currentUserId = req.authenticatedUserId!;
   try {
-    const [hubs, users, neighborhoodRows, currentRows, circles, leaderRows, uniqueMembers, uniqueOpenRequests, uniqueFulfilledRequests, uniquePool] = await Promise.all([
+    const [hubs, users, neighborhoodRows, currentRows, circles, approvedMembershipRows, uniqueOpenRequests, uniqueFulfilledRequests, uniquePool] = await Promise.all([
       db.select().from(diasporaHubsTable),
       db.select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, location_updated_at: usersTable.location_updated_at, helper_mode_active: usersTable.helper_mode_active, community_id: usersTable.community_id })
         .from(usersTable).where(and(isNotNull(usersTable.location_updated_at), gte(usersTable.location_updated_at, new Date(now.getTime() - LIVE_PRESENCE_WINDOW_MS)), lte(usersTable.location_updated_at, now))),
       db.select({ id: cityNeighborhoodsTable.id, city_key: cityNeighborhoodsTable.city_key, neighborhood_id: cityNeighborhoodsTable.neighborhood_id, name: cityNeighborhoodsTable.name, emoji: cityNeighborhoodsTable.emoji, center_lat: cityNeighborhoodsTable.center_lat, center_lng: cityNeighborhoodsTable.center_lng, radius_meters: cityNeighborhoodsTable.radius_meters, polygon_geojson: cityNeighborhoodsTable.polygon_geojson, geometry_verified: cityNeighborhoodsTable.geometry_verified, geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at, verified: cityNeighborhoodsTable.verified, source_kind: cityNeighborhoodsTable.source_kind, authority_level: cityNeighborhoodsTable.authority_level }).from(cityNeighborhoodsTable),
       db.select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, location_updated_at: usersTable.location_updated_at }).from(usersTable).where(eq(usersTable.id, currentUserId)).limit(1),
       db.select({ id: audioCirclesTable.id, city_key: audioCirclesTable.city_key, neighborhood_id: audioCirclesTable.neighborhood_id }).from(audioCirclesTable),
-      db.execute<{ hub_id: number; user_id: number }>(sql`
-        SELECT hcl.hub_id, hcl.user_id
-        FROM hub_community_leaders hcl
-        JOIN diaspora_hubs h ON h.id = hcl.hub_id
-        WHERE h.status = 'approved'
-      `),
-      db.execute<{ user_id: number }>(sql`
-        SELECT DISTINCT member.user_id
-        FROM (
-          SELECT u.id AS user_id
-          FROM users u
-          JOIN diaspora_hubs h ON h.community_id = u.community_id
-          WHERE h.status = 'approved' AND h.community_id IS NOT NULL
-          UNION
-          SELECT hcl.user_id
-          FROM hub_community_leaders hcl
-          JOIN diaspora_hubs h ON h.id = hcl.hub_id
-          WHERE h.status = 'approved'
-        ) member
+       db.execute<{ hub_id: number; user_id: number }>(sql`
+         SELECT hm.hub_id, hm.user_id
+         FROM hub_memberships hm
+         JOIN diaspora_hubs h ON h.id = hm.hub_id
+         WHERE h.status = 'approved' AND hm.status = 'approved'
       `),
       db.execute<{ id: number }>(sql`
         SELECT DISTINCT r.id
@@ -92,11 +78,13 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
 
     const presence = buildPresenceSnapshot({ now, hubs, users, currentUserId });
     const approvedHubs = hubs.filter((hub) => hub.status === "approved");
-    const leadersByHub = new Map<number, Set<number>>();
-    for (const row of leaderRows.rows) {
-      const leaders = leadersByHub.get(row.hub_id) ?? new Set<number>();
-      leaders.add(row.user_id);
-      leadersByHub.set(row.hub_id, leaders);
+    const membersByHub = new Map<number, Set<number>>();
+    const uniqueMemberIds = new Set<number>();
+    for (const row of approvedMembershipRows.rows) {
+      const members = membersByHub.get(row.hub_id) ?? new Set<number>();
+      members.add(row.user_id);
+      membersByHub.set(row.hub_id, members);
+      uniqueMemberIds.add(row.user_id);
     }
     const liveHelpersByHub = new Map<number, Set<number>>();
     for (const user of users) {
@@ -105,9 +93,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
       if (!resolvedHub) continue;
       const hub = approvedHubs.find((candidate) => candidate.id === resolvedHub.hub_id);
       if (!hub) continue;
-      const isCommunityMember = hub.community_id != null && user.community_id === hub.community_id;
-      const isHubLeader = leadersByHub.get(hub.id)?.has(user.id) ?? false;
-      if (!isCommunityMember && !isHubLeader) continue;
+       if (!(membersByHub.get(hub.id)?.has(user.id) ?? false)) continue;
       const helpers = liveHelpersByHub.get(hub.id) ?? new Set<number>();
       helpers.add(user.id);
       liveHelpersByHub.set(hub.id, helpers);
@@ -161,7 +147,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
         normalizedCityKey(circle.city_key) === hubCityKey
       ).length;
       const [memberRow, storyRow, openRequestRow, fulfilledRow, poolRow] = await Promise.all([
-        db.execute<{ count: number }>(sql`SELECT COUNT(DISTINCT u.id)::int AS count FROM users u WHERE ${hub.community_id != null ? sql`u.community_id = ${hub.community_id} OR EXISTS (SELECT 1 FROM hub_community_leaders hcl WHERE hcl.hub_id = ${hub.id} AND hcl.user_id = u.id)` : sql`EXISTS (SELECT 1 FROM hub_community_leaders hcl WHERE hcl.hub_id = ${hub.id} AND hcl.user_id = u.id)`}`),
+       db.execute<{ count: number }>(sql`SELECT COUNT(*)::int AS count FROM hub_memberships WHERE hub_id = ${hub.id} AND status = 'approved'`),
         db.select({ count: sql<number>`COUNT(*)::int` }).from(griotStoriesTable).where(and(eq(griotStoriesTable.hub_id, hub.id), eq(griotStoriesTable.status, "published"), eq(griotStoriesTable.visibility, "public"))),
         db.select({ count: sql<number>`COUNT(*)::int` }).from(requestsTable).where(and(
           eq(requestsTable.status, "open"),
@@ -208,7 +194,7 @@ router.get("/griot/village-pulse", requireAuth, generalApiLimiter, async (req, r
       requests_fulfilled: acc.requests_fulfilled + hub.activity.requests_fulfilled,
       pool_balance: acc.pool_balance + hub.activity.pool_balance,
     }), { members: 0, live: 0, stories: 0, active_helpers: 0, open_requests: 0, requests_fulfilled: 0, pool_balance: 0 });
-    totals.members = uniqueMembers.rows.length;
+    totals.members = uniqueMemberIds.size;
     totals.active_helpers = [...liveHelpersByHub.values()].reduce((total, helpers) => total + helpers.size, 0);
     totals.open_requests = uniqueOpenRequests.rows.length;
     totals.requests_fulfilled = uniqueFulfilledRequests.rows.length;

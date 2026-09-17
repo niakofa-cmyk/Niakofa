@@ -19,5 +19,10 @@ export const hubMembershipsTable = pgTable("hub_memberships", {
   index("hub_memberships_user_status_idx").on(t.user_id, t.status),
 ]);
 
+export const HUB_MEMBERSHIP_STATUSES = ["requested", "approved", "suspended", "revoked", "left"] as const;
+export const HUB_MEMBERSHIP_ROLES = ["member", "representative", "leader"] as const;
+
+export type HubMembershipStatus = (typeof HUB_MEMBERSHIP_STATUSES)[number];
+export type HubMembershipRole = (typeof HUB_MEMBERSHIP_ROLES)[number];
 export type HubMembership = typeof hubMembershipsTable.$inferSelect;
 export type NewHubMembership = typeof hubMembershipsTable.$inferInsert;
