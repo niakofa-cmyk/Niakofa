@@ -45,6 +45,7 @@
 - [GitHub exact-commit sync](github-exact-commit-sync.md) — Git Data API commit creation adds a terminal newline; match its raw commit bytes before advancing the branch ref.
 - [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
 - [Authenticated Admin browser checks](admin-live-acceptance.md) — storage state authenticates navigation, but page.evaluate fetches still need explicit Bearer headers and exact role selectors.
+- [Globe-to-Hub acceptance prerequisite](globe-hub-acceptance-prerequisite.md) — production acceptance needs an approved Hub membership, not just an approved user or valid storage state.
 - [Spiral catalog location boundary](spiral-catalog-location-boundary.md) — curated discovery is independent from GIS verification and legacy inactive-city sentinels.
 - [Diaspora Hub messaging](diaspora-hub-messaging.md) — direct Hub threads use canonical pairs and server-side approved-membership checks.
 - [CI contract validation](ci-contract-validation.md) — isolate fallback tests from ambient services and keep canonical-route assertions separate from compatibility coverage.
