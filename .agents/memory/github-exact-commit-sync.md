@@ -53,3 +53,13 @@ boundary.
 **How to apply:** Treat a connector `429` as a transport throttle, not
 permission to retry concurrently; preserve the no-ref-update gate until all
 blob and tree SHAs match.
+
+For large text blobs, the connection-backed proxy can avoid base64 expansion by
+using UTF-8 blob payloads, but every returned blob SHA must still match the
+local object before the tree or ref is considered safe.
+
+**Why:** Base64 increases request size near the connector's body limit, while a
+successful-looking upload is not evidence that the remote blob is complete.
+
+**How to apply:** Upload text blobs sequentially with `encoding: "utf-8"`,
+compare each SHA, and stop before tree/ref creation on any mismatch.
