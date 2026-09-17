@@ -3,14 +3,14 @@ import { RedisRateLimitStore, type RedisRateLimitClient } from "../lib/rateLimit
 
 describe("RedisRateLimitStore local fallback", () => {
   it("increments keys independently within a window", async () => {
-    const store = new RedisRateLimitStore(60_000, "test:");
+    const store = new RedisRateLimitStore(60_000, "test:", null);
     expect((await store.increment("a")).totalHits).toBe(1);
     expect((await store.increment("a")).totalHits).toBe(2);
     expect((await store.increment("b")).totalHits).toBe(1);
   });
 
   it("decrement reduces the count", async () => {
-    const store = new RedisRateLimitStore(60_000, "test:");
+    const store = new RedisRateLimitStore(60_000, "test:", null);
     await store.increment("key");
     await store.increment("key");
     await store.decrement("key");
@@ -18,7 +18,7 @@ describe("RedisRateLimitStore local fallback", () => {
   });
 
   it("resetKey clears the counter", async () => {
-    const store = new RedisRateLimitStore(60_000, "test:");
+    const store = new RedisRateLimitStore(60_000, "test:", null);
     await store.increment("key");
     await store.increment("key");
     await store.resetKey("key");
@@ -26,7 +26,7 @@ describe("RedisRateLimitStore local fallback", () => {
   });
 
   it("resets after the fixed window expires", async () => {
-    const store = new RedisRateLimitStore(20, "test:");
+    const store = new RedisRateLimitStore(20, "test:", null);
     await store.increment("key");
     await store.increment("key");
     await new Promise((resolve) => setTimeout(resolve, 40));

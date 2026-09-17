@@ -31,16 +31,20 @@ export class RedisRateLimitStore implements Store {
   prefix: string;
   windowMs: number;
   private localCounts = new Map<string, { count: number; resetAt: number }>();
-  private readonly redisOverride?: RedisRateLimitClient;
+  private readonly redisOverride?: RedisRateLimitClient | null;
 
-  constructor(windowMs: number, prefix = "rl:", redisOverride?: RedisRateLimitClient) {
+  constructor(
+    windowMs: number,
+    prefix = "rl:",
+    redisOverride?: RedisRateLimitClient | null,
+  ) {
     this.windowMs = windowMs;
     this.prefix = prefix;
     this.redisOverride = redisOverride;
   }
 
   private getRedis(): RedisRateLimitClient | null {
-    return this.redisOverride ?? redisClient();
+    return this.redisOverride === undefined ? redisClient() : this.redisOverride;
   }
 
   private incrementLocal(key: string): ClientRateLimitInfo {

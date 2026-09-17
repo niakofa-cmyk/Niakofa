@@ -1245,7 +1245,7 @@ export default function CommunityScreen() {
                 this card keeps it discoverable from Community without
                 duplicating the page here. */}
             <button
-              onClick={() => setLocation("/diaspora/heritage/globe")}
+              onClick={() => setLocation("/diaspora")}
               className="w-full flex items-center gap-3 bg-gradient-to-br from-primary/15 to-background border border-primary/30 rounded-2xl p-4 text-left hover:border-primary/50 transition-colors"
             >
               <span className="text-2xl shrink-0">🌍</span>

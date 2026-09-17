@@ -469,7 +469,7 @@ export default function HeritageCollectionsPage() {
       <div className="max-w-lg mx-auto px-4 pt-4">
         {/* Heritage Globe — centerpiece of Heritage within Diaspora */}
         <button
-          onClick={() => navigate("/diaspora/heritage/globe")}
+          onClick={() => navigate("/diaspora")}
           className="w-full bg-gradient-to-br from-teal-500/15 via-emerald-500/10 to-transparent border border-teal-500/25 rounded-2xl p-5 text-left active:opacity-70 mb-4"
         >
           <div className="flex items-center gap-3 mb-2">

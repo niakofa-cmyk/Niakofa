@@ -16,7 +16,9 @@ describe("production Redis configuration", () => {
   });
 
   test("production fails closed without Redis", () => {
-    expect(productionRedisRequirementError("production", "not_set")).toMatch(/REDIS_URL is required/);
+    expect(productionRedisRequirementError("production", "not_set")).toMatch(
+      /REDIS_URL or REDIS_URLS is required/,
+    );
     expect(productionRedisRequirementError("production", "invalid_format")).toMatch(/not a valid redis/);
     expect(productionRedisRequirementError("production", "valid")).toBeUndefined();
   });

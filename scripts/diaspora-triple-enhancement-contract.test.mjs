@@ -10,9 +10,9 @@ import { buildDnaEvidencePayload } from "../artifacts/pay-it-forward/src/lib/dia
 import { relationshipBandCopy } from "../artifacts/pay-it-forward/src/lib/diaspora/relationshipBandCopy.ts";
 
 test("Globe links use the canonical route and preserve a hub", () => {
-  assert.equal(globeHref({ hubId: 42 }), "/diaspora/heritage/globe?hub=42");
-  assert.equal(globeHref({ hubName: "Fort Worth" }), "/diaspora/heritage/globe?hubName=Fort%20Worth");
-  assert.equal(globeHref(), "/diaspora/heritage/globe");
+  assert.equal(globeHref({ hubId: 42 }), "/diaspora?hub=42");
+  assert.equal(globeHref({ hubName: "Fort Worth" }), "/diaspora?hubName=Fort%20Worth");
+  assert.equal(globeHref(), "/diaspora");
 });
 
 test("Globe query parsing accepts numeric IDs and names", () => {
