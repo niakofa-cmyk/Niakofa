@@ -68,6 +68,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   userSettingsTable:       { id: "id", user_id: "user_id" },
   poolPendingMinisumsTable: { id: "id", request_id: "request_id" },
   hubCommunityLeadersTable: { id: "id", user_id: "user_id", hub_id: "hub_id", approved: "approved", approved_at: "approved_at" },
+  hubMembershipsTable:      { id: "id", user_id: "user_id", hub_id: "hub_id", status: "status", role: "role", approved_at: "approved_at", approved_by: "approved_by", requested_at: "requested_at", updated_at: "updated_at" },
   niaToggleAuditTable:     { id: "id", enabled: "enabled", admin_user_id: "admin_user_id", admin_email: "admin_email", reason: "reason" },
   diasporaHubPledgesTable: { id: "id", from_hub_id: "from_hub_id", pledged_by: "pledged_by", amount: "amount", message: "message", status: "status", created_at: "created_at" },
   storyTranslationsTable:  { id: "id", story_id: "story_id", locale: "locale", title: "title", content: "content" },
