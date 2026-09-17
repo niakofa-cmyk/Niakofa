@@ -16,6 +16,19 @@ and a valid tree/parent is not sufficient if commit-object bytes differ.
 the ref, fetch the created commit object for byte comparison, reconstruct the
 local commit if necessary, and only then patch `refs/heads/main`.
 
+The connector-created commit may report its author/committer date as UTC through
+the REST API while storing the workspace-local `-0500` offset in the raw commit,
+and its message may have no terminal newline. `git commit-tree` can normalize
+these bytes differently; construct the verified raw commit object when exact
+SHA parity matters.
+
+**Why:** a visually identical tree and API metadata can still produce a
+different commit SHA when timezone and message-terminal bytes differ.
+
+**How to apply:** compare the candidate SHA by rebuilding the raw commit from
+the returned tree, parent, identity, epoch, offset, and exact message bytes
+before advancing the branch ref.
+
 Normalize CRLF path separators before creating Git Data API tree entries; otherwise a valid tree can publish a filename ending in `\r` while leaving the intended file unchanged.
 
 The connection-backed GitHub API can truncate request bodies near the 100 KB
