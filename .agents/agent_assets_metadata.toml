@@ -14,3 +14,31 @@ mtime_ms = 1788205191634
 storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:60f6808a-b80f-4d05-9a92-ce5c4955e3ff/3f1a3e51-df94-4c88-95a6-dfef6b654cf1/2e00079d-a82a-4364-9eac-62ef00bba704"
 storage_version_token = "1788205834810533"
 content_type = "image/jpeg"
+
+[[outputs]]
+id = "CVeq3A2YLwWv6nHAJAfqD"
+uri = "file://screenshots/production-diaspora-2026-09-17.png"
+type = "image"
+title = "Niakofa production Diaspora reference capture"
+description = "Canonical production capture saved with the 2026-09-17 release evidence."
+logical_id = "a42360c2-3631-4181-aad4-a0028dd1f4d0"
+content_hash = "sha256:ed8ca1913e575723b26450f4c3351ed20b239173fc82023070dca8e2fc14124e"
+size = 70320
+mtime_ms = 1789654544474
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:f4344a14-6de0-4c39-8834-1df8352b7563/a42360c2-3631-4181-aad4-a0028dd1f4d0/c788c486-e5df-4979-9740-9ab5ad09dd41"
+storage_version_token = "1789655343960528"
+content_type = "image/png"
+
+[[outputs]]
+id = "JjBr6ggg2Zt7jPRlXaXb8"
+uri = "file://reference/niakofa-production-release-evidence-2026-09-17.md"
+type = "text"
+title = "Niakofa production release evidence"
+description = "Production health, build, GitHub parity, visual reference, and authenticated acceptance gate record."
+logical_id = "41c4d105-d460-4fb0-872a-d55edd700b9a"
+content_hash = "sha256:2cc67a937054504019e8b6fa7c39dda2a2e2d7d7994cf084b6bf5bbc78d26041"
+size = 3292
+mtime_ms = 1789654906942
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:f4344a14-6de0-4c39-8834-1df8352b7563/41c4d105-d460-4fb0-872a-d55edd700b9a/a0a3c4d7-5a30-4c54-9c1d-6bc27cbc8f90"
+storage_version_token = "1789655344541355"
+content_type = "text/markdown"
