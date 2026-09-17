@@ -32,6 +32,7 @@
     "test:diaspora-final-wiring": "node --test scripts/diaspora-final-wiring-contract.test.mjs",
     "test:diaspora-membership": "node --test scripts/diaspora-membership-contract.test.mjs",
     "test:diaspora-governance-v11": "node --test tests/diaspora-hub-governance-v11.contract.test.mjs",
+    "test:diaspora-community-messaging-v12": "node --test tests/diaspora-community-messaging-v12.contract.test.mjs",
     "test:diaspora-final-wiring-live": "playwright test e2e/diaspora-final-wiring-live.spec.ts",
     "test:production-readiness-contract": "node --test scripts/production-readiness-contract-2026-09-05.mjs",
     "test:diaspora": "bash scripts/run-repo-diaspora-contracts.sh",

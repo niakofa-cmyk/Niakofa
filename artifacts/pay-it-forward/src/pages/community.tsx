@@ -17,6 +17,7 @@ import { PoolHealthStrip } from "@/components/PoolHealthStrip";
 import { useCivicResources } from "@/hooks/useCivicResources";
 import { SPIRALS_PATHS } from "@/lib/spirals";
 import { SpiralMark } from "@/components/SpiralMark";
+import { CommunityMessageEntry } from "@/components/CommunityMessageEntry";
 
 interface GratitudePost {
   id: number;
@@ -1241,6 +1242,7 @@ export default function CommunityScreen() {
         {/* FEED TAB */}
         {tab === "feed" && (
           <div className="space-y-4">
+            <CommunityMessageEntry />
             {/* Diaspora Globe pointer — the Globe now lives in Diaspora only,
                 this card keeps it discoverable from Community without
                 duplicating the page here. */}

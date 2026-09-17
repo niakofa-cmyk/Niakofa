@@ -28,7 +28,7 @@ const BASE_TABS: Tab[] = [
   { path: "/community",     icon: Users,      labelKey: "nav.community" },
   { path: "/",              icon: Map,        labelKey: "nav.map"       },
   { path: "/diaspora",      icon: Globe2,     labelKey: "nav.diaspora"  },
-  { path: "/diaspora/messages", icon: MessageCircle, labelKey: "nav.messages" },
+  { path: "/messages", icon: MessageCircle, labelKey: "nav.messages" },
   { path: SPIRALS_PATHS.discovery, icon: Radio, labelKey: "nav.circles" },
 ];
 

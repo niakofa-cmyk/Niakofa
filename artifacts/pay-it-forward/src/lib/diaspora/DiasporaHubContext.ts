@@ -47,7 +47,7 @@ export function messageHubHref(
   }
 
   const query = params.toString();
-  return query ? `/diaspora/messages?${query}` : "/diaspora/messages";
+  return query ? `/messages?mode=hub&${query}` : "/messages?mode=hub";
 }
 
 export type HubReference = { id: number | null; name: string | null };

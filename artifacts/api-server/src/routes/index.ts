@@ -52,6 +52,7 @@ import diasporaCompletionRouter from "./diaspora-completion";
 import diasporaRouter from "./diaspora";
 import diasporaHubMessagesRouter from "./diaspora-hub-messages";
 import diasporaHubMembershipsRouter from "./diaspora-hub-memberships";
+import directMessagesRouter from "./direct-messages";
 import { stampLocationUpdatedAt } from "../middlewares/stamp-location-updated-at";
 
 const router: IRouter = Router();
@@ -125,5 +126,6 @@ router.use(diasporaCompletionRouter);
 router.use(diasporaRouter);
 router.use(diasporaHubMembershipsRouter);
 router.use(diasporaHubMessagesRouter);
+router.use(directMessagesRouter);
 
 export default router;
