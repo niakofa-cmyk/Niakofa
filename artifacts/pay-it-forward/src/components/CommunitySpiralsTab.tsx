@@ -129,7 +129,7 @@ export function CommunitySpiralsTab() {
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3">
           <div className="min-w-0">
             <div className="text-[10px] font-black uppercase tracking-widest text-primary">Hub context</div>
-            <div className="mt-0.5 truncate text-xs font-bold text-foreground">Spirals opened from the selected Diaspora Hub</div>
+            <div className="mt-0.5 truncate text-xs font-bold text-foreground">Hub → local Community Spirals</div>
           </div>
           <span className="shrink-0 rounded-full border border-primary/20 bg-background/60 px-2 py-1 text-[10px] font-bold text-muted-foreground">Hub #{hubId}</span>
         </div>
@@ -140,7 +140,9 @@ export function CommunitySpiralsTab() {
           <SpiralMark className="w-4 h-4 text-primary" /> Community Spirals
         </h3>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Choose a curated neighborhood Spiral or the city-wide Spiral. Discovery, joining, and hosting do not require GPS.
+          {hubId !== null
+            ? "Explore the curated local Spirals attached to this Hub context. Discovery, joining, and hosting do not require GPS."
+            : "Choose a curated neighborhood Spiral or the city-wide Spiral. Discovery, joining, and hosting do not require GPS."}
         </p>
       </div>
 

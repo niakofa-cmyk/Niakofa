@@ -1,5 +1,5 @@
 /**
- * V17.1 — Meta-style Direct Messages pane.
+ * V19 — Meta-style Direct Messages pane.
  *
  * UI-only enhancement over the existing Direct Messages API.
  * Direct / Requests / Hubs remain one unified Messages product.

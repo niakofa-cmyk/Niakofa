@@ -35,6 +35,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { motion, AnimatePresence } from "framer-motion";
 import { haversineMeters, isNearbyUser } from "@/lib/geo-utils";
 import { newOperationKey } from "@/lib/retryableMutation";
+import { readCompletionError } from "@/lib/readCompletionError";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -547,11 +548,9 @@ export default function ActiveRequestScreen() {
           setTimeout(() => setShowRating(true), 900);
         },
         onError: (error: unknown) => {
-          const message = error instanceof Error && error.message
-            ? error.message
-            : "The server could not complete this request. Please try again.";
-          toast({ title: "Failed to complete", description: message, variant: "destructive" });
-          queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+          const details = readCompletionError(error);
+          toast({ title: details.title, description: details.description, variant: "destructive" });
+          void queryClient.refetchQueries({ queryKey: getGetRequestQueryKey(requestId) });
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
         }
      }

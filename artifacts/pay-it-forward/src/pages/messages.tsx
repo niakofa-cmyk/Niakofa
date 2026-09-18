@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { InAppChat } from "@/components/InAppChat";
+import { MetaStyleDirectPane } from "@/components/messages/MetaStyleDirectPane";
 import HubMessagesPanel from "@/components/messages/HubMessagesPanel";
 import { ConversationInfoPanel } from "@/components/messages/ConversationInfoPanel";
 import { ConversationList } from "@/components/messages/ConversationList";
@@ -422,6 +423,39 @@ export default function MessagesPage() {
     </div>
   );
 
+  const directV18 = activeMode === "direct" ? (
+    <div className="mx-auto w-full max-w-7xl px-2 pb-24 pt-3 sm:px-4 lg:pb-8">
+      <MetaStyleDirectPane
+        conversations={directConversations}
+        messages={directMessages}
+        selectedId={selectedDirectId}
+        recipient={activeRecipient}
+        search={search}
+        searchResults={searchResults}
+        body={body}
+        working={working}
+        currentUserId={currentUser?.id ?? null}
+        realtimeState={realtimeState}
+        reportOpen={showReport}
+        reportReason={reportReason}
+        onSearchChange={setSearch}
+        onSelectConversation={(id) => {
+          navigate(directConversationPath(id));
+          void loadDirectMessages(id).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load this conversation."));
+        }}
+        onSelectUser={startDirectWithUser}
+        onBackToList={clearSelection}
+        onBodyChange={setBody}
+        onSend={() => void sendDirectMessage()}
+        onBlock={() => void blockRecipient()}
+        onToggleReport={() => setShowReport((open) => !open)}
+        onReportReasonChange={setReportReason}
+        onReport={() => void reportConversation()}
+        onCancelReport={() => { setShowReport(false); setReportReason(""); }}
+      />
+    </div>
+  ) : null;
+
   return (
     <>
       {error && (
@@ -432,13 +466,20 @@ export default function MessagesPage() {
       )}
       {loading ? (
         <div className="mx-auto flex min-h-[32rem] max-w-7xl items-center justify-center px-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+      ) : activeMode === "direct" ? (
+        <>
+          <div className="mx-auto max-w-7xl px-2 pt-3 sm:px-4 lg:pt-5">
+            <MessageTypeTabs active={activeMode} counts={unreadCounts} onChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} />
+          </div>
+          {directV18}
+        </>
       ) : (
         <MessagesShell
           showThread={showThread}
           showInfo={showInfo}
           mobileTabs={<MessageTypeTabs active={activeMode} counts={unreadCounts} onChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} />}
           sidebar={<MessagesSidebar activeMode={activeMode} counts={unreadCounts} people={searchResults} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} onCompose={() => { clearSelection(); navigate(messagesPath("direct")); }} onSelectPerson={startDirectWithUser} />}
-          list={<ConversationList items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} emptyLabel={activeMode === "direct" ? "Search for an approved person to start a conversation." : "No conversations yet."} />}
+          list={<ConversationList items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} emptyLabel="No conversations yet." />}
           thread={thread}
           info={activeRecipient ? <ConversationInfoPanel name={activeRecipient.name} avatarUrl={activeRecipient.avatar_url} onViewProfile={() => navigate(`/helper/${activeRecipient.id}`)} onBlock={() => void blockRecipient()} onReport={() => setShowReport(true)} onClose={() => setShowInfo(false)} /> : null}
         />

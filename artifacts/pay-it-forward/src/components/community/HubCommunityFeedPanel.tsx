@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowRight, CircleDot, Loader2, MessageCircle, Users } from "lucide-react";
 import { useLocation } from "wouter";
 import { fetchHubCommunityFeed, type HubCommunityFeed } from "@/lib/hubCommunityFeed";
@@ -19,6 +19,32 @@ export default function HubCommunityFeedPanel({ hubId }: { hubId: number | strin
       });
     return () => { cancelled = true; };
   }, [hubId]);
+
+  type FeedItem =
+    | { kind: "gratitude"; id: number; createdAt: string | null; text: string; meta: string }
+    | { kind: "request"; id: number; createdAt: string | null; title: string; category: string; urgency: string };
+
+  const items = useMemo<FeedItem[]>(() => {
+    if (!feed) return [];
+    const gratitude: FeedItem[] = feed.gratitude.map((post) => ({
+      kind: "gratitude",
+      id: post.id,
+      createdAt: post.created_at,
+      text: post.message,
+      meta: `${post.author_name ?? "Community member"}${post.helper_name ? ` · thanked ${post.helper_name}` : ""}`,
+    }));
+    const requests: FeedItem[] = feed.requests.map((request) => ({
+      kind: "request",
+      id: request.id,
+      createdAt: request.created_at,
+      title: request.title,
+      category: request.category ?? "Community help",
+      urgency: request.urgency ?? "medium",
+    }));
+    return [...gratitude, ...requests]
+      .sort((a, b) => Date.parse(b.createdAt ?? "") - Date.parse(a.createdAt ?? ""))
+      .slice(0, 12);
+  }, [feed]);
 
   if (error) return <div role="alert" className="rounded-2xl border border-rose-300/20 bg-rose-300/5 p-4 text-sm text-rose-100">{error}</div>;
   if (!feed) return <div className="flex min-h-32 items-center justify-center rounded-2xl border border-border bg-card"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>;
@@ -49,36 +75,35 @@ export default function HubCommunityFeedPanel({ hubId }: { hubId: number | strin
         <Action label="Community Spirals" onClick={() => navigate(communitySpiralsPath(feed.hub.id))} />
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <FeedSection title="Latest gratitude">
-          {feed.gratitude.length === 0 ? <Empty text="No Hub-scoped gratitude yet." /> : feed.gratitude.slice(0, 6).map((post) => (
-            <article key={post.id} className="rounded-2xl border border-border/70 bg-background/40 p-3">
-              <p className="text-sm leading-relaxed">{post.message}</p>
-              <p className="mt-2 text-[10px] text-muted-foreground">{post.author_name ?? "Community member"}{post.helper_name ? ` · thanked ${post.helper_name}` : ""}</p>
+      <div className="mt-5">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Latest in this Hub</h3>
+          <span className="text-[10px] text-muted-foreground">{items.length} recent items</span>
+        </div>
+        <div className="grid gap-2">
+          {items.length === 0 ? <Empty text="This Hub has no gratitude posts or open requests yet." /> : items.map((item) => item.kind === "gratitude" ? (
+            <article key={`gratitude-${item.id}`} className="rounded-2xl border border-border/70 bg-background/40 p-3">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-primary"><CircleDot className="h-3 w-3" /> Gratitude</div>
+              <p className="mt-1 text-sm leading-relaxed">{item.text}</p>
+              <p className="mt-2 text-[10px] text-muted-foreground">{item.meta}</p>
             </article>
-          ))}
-        </FeedSection>
-
-        <FeedSection title="Open requests">
-          {feed.requests.length === 0 ? <Empty text="No open requests for this Hub right now." /> : feed.requests.slice(0, 6).map((request) => (
-            <button key={request.id} type="button" onClick={() => navigate(`/request/${request.id}/view`)} className="rounded-2xl border border-border/70 bg-background/40 p-3 text-left hover:border-primary/40">
-              <p className="truncate text-sm font-black">{request.title}</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">{request.category ?? "Community help"} · {request.urgency ?? "medium"}</p>
+          ) : (
+            <button key={`request-${item.id}`} type="button" onClick={() => navigate(`/request/${item.id}/view`)} className="rounded-2xl border border-border/70 bg-background/40 p-3 text-left hover:border-primary/40">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-primary"><ArrowRight className="h-3 w-3" /> Open request</div>
+              <p className="mt-1 truncate text-sm font-black">{item.title}</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">{item.category} · {item.urgency}</p>
             </button>
           ))}
-        </FeedSection>
+        </div>
       </div>
     </section>
   );
 }
 
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
   return <div className="rounded-2xl border border-border/70 bg-background/40 p-3"><div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground">{icon}{label}</div><p className="mt-1 text-lg font-black">{value}</p></div>;
 }
-function Action({ label, icon, onClick }: { label: string; icon?: React.ReactNode; onClick: () => void }) {
+function Action({ label, icon, onClick }: { label: string; icon?: ReactNode; onClick: () => void }) {
   return <button type="button" onClick={onClick} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-black hover:border-primary/40 hover:bg-primary/5">{icon}{label}</button>;
-}
-function FeedSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div><h3 className="mb-2 text-xs font-black uppercase tracking-widest text-muted-foreground">{title}</h3><div className="grid gap-2">{children}</div></div>;
 }
 function Empty({ text }: { text: string }) { return <p className="rounded-2xl border border-dashed border-border p-4 text-xs text-muted-foreground">{text}</p>; }
