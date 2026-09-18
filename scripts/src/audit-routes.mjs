@@ -20,6 +20,22 @@ for (const pattern of importPatterns) {
   }
 }
 
+// Compatibility routes may intentionally reuse the canonical page component
+// under a different local name. Resolve those aliases before checking routes.
+const localAliases = [...source.matchAll(
+  /(?:const|let)\s+(\w+)\s*=\s*(\w+)\s*;/g,
+)].map((match) => [match[1], match[2]]);
+let aliasesResolved = true;
+while (aliasesResolved) {
+  aliasesResolved = false;
+  for (const [alias, target] of localAliases) {
+    if (!importedModules.has(alias) && importedModules.has(target)) {
+      importedModules.set(alias, importedModules.get(target));
+      aliasesResolved = true;
+    }
+  }
+}
+
 const routes = [];
 const routePattern =
   /<Route\s+path=["']([^"']+)["']\s+component=\{([^}]+)\}\s*\/>/g;
