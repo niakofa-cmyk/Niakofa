@@ -27,16 +27,18 @@ the older mock could not execute, causing a false 500 in the test harness.
 builder method and configure terminal behavior per call rather than making one
 global mock return value serve incompatible query shapes.
 
-The Nia service's ESM Jest suites must run through the package test script (or
-with `NODE_OPTIONS=--experimental-vm-modules`); invoking Jest directly can skip
-the VM module runtime and produce misleading `import.meta`/mock failures.
+The API and Nia ESM Jest suites must run through their package test scripts (or
+with Node's `--experimental-vm-modules` flag); invoking the Jest binary directly
+can skip the VM module runtime and produce misleading auth/import/mock failures.
 
 **Why:** Its route tests use `jest.unstable_mockModule()` and `.js` ESM import
 aliases, which only behave correctly when Jest is launched with Node's VM
 modules enabled.
 
-**How to apply:** Use the package's test command for CI-equivalent validation
-and avoid diagnosing direct-Jest failures as production module problems.
+**How to apply:** Use the package's test command for CI-equivalent validation,
+or launch focused suites from the package directory with the same VM-module
+flag and explicit Jest config. Avoid diagnosing direct-Jest failures as
+production module problems.
 
 Test setup must forcibly pin secret-backed boundaries before importing routes:
 database, internal/session secrets, `NIA_SERVICE_URL`, and both Redis variable
