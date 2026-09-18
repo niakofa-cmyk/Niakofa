@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, Check, Inbox, Loader2, MessageCircle, Radio, Search, Send, ShieldAlert, Users, Wifi, WifiOff, X } from "lucide-react";
+import { Check, Inbox, Loader2, MessageCircle, Radio, ShieldAlert, Users, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { messagesPath, type MessageMode } from "@/lib/messageRoutes";
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
 import HubMessagesPanel from "@/components/messages/HubMessagesPanel";
+import { MetaStyleDirectPane } from "@/components/messages/MetaStyleDirectPane";
 
 type DirectUser = {
   id: number;
@@ -429,105 +430,47 @@ export default function MessagesPage() {
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       ) : activeMode === "direct" ? (
-        <div className="grid gap-4 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.2fr)]">
-          <section className="rounded-3xl border border-border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-black">Direct</h2>
-              <MessageCircle className="h-4 w-4 text-primary" />
-            </div>
-            <label className="relative block">
-              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Find an approved person"
-                className="min-h-11 w-full rounded-2xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary"
-              />
-            </label>
-            {searchResults.length > 0 && (
-              <div className="mt-2 space-y-1 rounded-2xl border border-border bg-background p-1">
-                {searchResults.map((user) => (
-                  <button key={user.id} type="button" onClick={() => { setNewRecipient(user); setSelectedDirectId(null); setDirectMessages([]); setSearch(""); setSearchResults([]); }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-muted">
-                    <Avatar user={user} />
-                    <span className="text-sm font-bold">{user.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="mt-4 space-y-2">
-              {directConversations.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Search for an approved person to start a conversation.</p>
-              ) : directConversations.map((conversation) => (
-                <button key={conversation.id} type="button" onClick={() => void loadDirectMessages(conversation.id)} className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${selectedDirectId === conversation.id ? "border-primary bg-primary/10" : "border-border hover:bg-muted/60"}`}>
-                  <Avatar user={conversation.other_user} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-black">{conversation.other_user.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{conversation.last_message?.body ?? "No messages yet"}</span>
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">{formatTime(conversation.updated_at)}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="flex min-h-[28rem] flex-col rounded-3xl border border-border bg-card p-4">
-            {activeRecipient ? (
-              <>
-                <div className="flex items-center gap-3 border-b border-border pb-3">
-                  <Avatar user={activeRecipient} />
-                  <div className="min-w-0 flex-1">
-                    <h2 className="truncate font-black">{activeRecipient.name}</h2>
-                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                       {selectedDirectId ? "Direct conversation" : "New direct conversation"}
-                       {selectedDirectId && realtimeState === "connected" && <><span aria-hidden="true">·</span><Wifi className="h-3 w-3 text-emerald-400" aria-label="Live delivery" /></>}
-                       {selectedDirectId && realtimeState !== "connected" && <><span aria-hidden="true">·</span><WifiOff className="h-3 w-3 text-amber-400" aria-label="Reconnecting" /></>}
-                     </p>
-                  </div>
-                  {selectedDirectId && (
-                    <>
-                      <button type="button" title="Report conversation" onClick={() => setShowReport((value) => !value)} className="rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><ShieldAlert className="h-4 w-4" /></button>
-                      <button type="button" title="Block user" onClick={() => void blockRecipient()} className="rounded-xl p-2 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-300"><Ban className="h-4 w-4" /></button>
-                    </>
-                  )}
-                </div>
-                {showReport && selectedDirectId && (
-                  <div className="mt-3 rounded-2xl border border-rose-300/20 bg-rose-300/5 p-3">
-                    <label className="text-xs font-bold text-muted-foreground">Why are you reporting this conversation?</label>
-                    <textarea value={reportReason} onChange={(event) => setReportReason(event.target.value)} maxLength={500} rows={2} className="mt-2 w-full rounded-xl border border-border bg-background p-2 text-sm outline-none focus:border-primary" />
-                    <div className="mt-2 flex justify-end gap-2">
-                      <button type="button" onClick={() => setShowReport(false)} className="rounded-xl px-3 py-2 text-xs font-bold text-muted-foreground">Cancel</button>
-                      <button type="button" disabled={working || !reportReason.trim()} onClick={() => void reportConversation()} className="rounded-xl bg-rose-500 px-3 py-2 text-xs font-black text-white disabled:opacity-50">Submit report</button>
-                    </div>
-                  </div>
-                )}
-                <div className="flex-1 space-y-3 overflow-y-auto py-4">
-                  {directMessages.length === 0 ? (
-                    <p className="py-12 text-center text-sm text-muted-foreground">Start the conversation with a kind message.</p>
-                  ) : directMessages.map((message) => (
-                    <div key={message.id} className={`flex ${message.sender_id === currentUser?.id ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${message.sender_id === currentUser?.id ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted text-foreground"}`}>
-                        <p className="whitespace-pre-wrap break-words">{message.body}</p>
-                        <p className="mt-1 text-[10px] opacity-65">{formatTime(message.created_at)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-end gap-2 border-t border-border pt-3">
-                  <textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={4000} rows={2} placeholder="Write a message" className="min-h-11 flex-1 resize-none rounded-2xl border border-border bg-background p-3 text-sm outline-none focus:border-primary" />
-                  <button type="button" disabled={working || !body.trim()} onClick={() => void sendDirectMessage()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground disabled:opacity-50" aria-label="Send message">
-                    {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center text-center">
-                <MessageCircle className="mb-3 h-8 w-8 text-primary/50" />
-                <h2 className="font-black">Choose a conversation</h2>
-                <p className="mt-1 max-w-xs text-sm text-muted-foreground">Select a direct conversation or search for an approved person.</p>
-              </div>
-            )}
-          </section>
-        </div>
+        <MetaStyleDirectPane
+          conversations={directConversations}
+          messages={directMessages}
+          selectedId={selectedDirectId}
+          recipient={activeRecipient}
+          search={search}
+          searchResults={searchResults}
+          body={body}
+          working={working}
+          currentUserId={currentUser?.id ?? null}
+          realtimeState={realtimeState}
+          reportOpen={showReport}
+          reportReason={reportReason}
+          onSearchChange={setSearch}
+          onSelectConversation={(id) => {
+            navigate(messagesPath("direct", { conversation: id }));
+            void loadDirectMessages(id);
+          }}
+          onSelectUser={(user) => {
+            setNewRecipient(user);
+            setSelectedDirectId(null);
+            setDirectMessages([]);
+            setSearch("");
+            setSearchResults([]);
+            navigate(messagesPath("direct"));
+          }}
+          onBackToList={() => {
+            setSelectedDirectId(null);
+            setNewRecipient(null);
+            setDirectMessages([]);
+            setShowReport(false);
+            navigate(messagesPath("direct"));
+          }}
+          onBodyChange={setBody}
+          onSend={() => void sendDirectMessage()}
+          onBlock={() => void blockRecipient()}
+          onToggleReport={() => setShowReport((value) => !value)}
+          onReportReasonChange={setReportReason}
+          onReport={() => void reportConversation()}
+          onCancelReport={() => { setShowReport(false); setReportReason(""); }}
+        />
       ) : (
         <section className="rounded-3xl border border-border bg-card p-4 sm:p-6">
           <div className="mb-5 flex items-center gap-3">

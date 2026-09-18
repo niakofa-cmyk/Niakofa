@@ -35,6 +35,7 @@
     "test:diaspora-community-messaging-v12": "node --test tests/diaspora-community-messaging-v12.contract.test.mjs",
     "test:diaspora-final-wiring-live": "playwright test e2e/diaspora-final-wiring-live.spec.ts",
     "test:production-readiness-contract": "node --test scripts/production-readiness-contract-2026-09-05.mjs",
+    "test:v17-1-contract": "node --test tests/v17-1-package-contract.test.mjs",
     "test:diaspora": "bash scripts/run-repo-diaspora-contracts.sh",
     "production-gate": "node scripts/production-gate.mjs"
   },

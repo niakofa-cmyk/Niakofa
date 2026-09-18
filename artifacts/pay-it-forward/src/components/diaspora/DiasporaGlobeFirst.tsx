@@ -7,6 +7,7 @@ import { diasporaTheme } from "@/lib/diaspora/theme";
 import { authHeaders } from "@/lib/auth";
 import { parseGlobeHubQuery, resolveHubFromQuery } from "@/lib/diaspora/globeHubDeepLink";
 import { hubDisplayName, isUsStateHub, messageHubHref } from "@/lib/diaspora/DiasporaHubContext";
+import { spiralsDiscoveryPath } from "@/lib/spirals";
 
 // `/diaspora/heritage/globe` remains a compatibility route; new navigation
 // uses the canonical `/diaspora` Globe doorway.
@@ -308,7 +309,7 @@ export function DiasporaGlobeFirst({ hubs, loading = false }: Props) {
             <span><strong className="font-bold text-emerald-100">{selectedHub.live_user_count} active now</strong> in this Hub</span>
           </div>
         )}
-         <div className="mt-4 grid grid-cols-3 gap-2"><HubAction icon={Users} label="Community" onClick={() => navigate(`/community?hubId=${selectedHub.id}`)} /><HubAction icon={MessageCircle} label="Message hub" onClick={() => navigate(messageHubHref(selectedHub.id))} /><HubAction icon={CircleDot} label="Spirals" onClick={() => navigate(`/audio-circles?hubId=${selectedHub.id}`)} /></div>
+         <div className="mt-4 grid grid-cols-3 gap-2"><HubAction icon={Users} label="Community" onClick={() => navigate(`/community?hubId=${selectedHub.id}`)} /><HubAction icon={MessageCircle} label="Message hub" onClick={() => navigate(messageHubHref(selectedHub.id))} /><HubAction icon={CircleDot} label="Spirals" onClick={() => navigate(spiralsDiscoveryPath({ hubId: selectedHub.id }))} /></div>
         {selectedHub.hub_scope === "us_state" && (
           <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
             <div className="flex items-center justify-between gap-3">

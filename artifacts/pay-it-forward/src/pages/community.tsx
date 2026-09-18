@@ -18,6 +18,7 @@ import { useCivicResources } from "@/hooks/useCivicResources";
 import { CommunityMessageEntry } from "@/components/CommunityMessageEntry";
 import RequestsCenter from "@/components/RequestsCenter";
 import { CommunitySpiralsTab } from "@/components/CommunitySpiralsTab";
+import HubCommunityFeedPanel from "@/components/community/HubCommunityFeedPanel";
 
 interface GratitudePost {
   id: number;
@@ -1002,6 +1003,7 @@ export default function CommunityScreen() {
         {/* FEED TAB */}
         {tab === "feed" && (
           <div className="space-y-4">
+            {hubContextId !== null && <HubCommunityFeedPanel hubId={hubContextId} />}
             <CommunityMessageEntry />
             {/* Diaspora Globe pointer — the Globe now lives in Diaspora only,
                 this card keeps it discoverable from Community without

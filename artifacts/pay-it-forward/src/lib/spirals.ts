@@ -62,3 +62,32 @@ export function isSpiralRoute(pathname: string): boolean {
     pathname.startsWith("/audio-circle/")
   );
 }
+
+/** Merge these helpers into the existing canonical spirals.ts. They preserve
+ * the existing curated city/neighborhood discovery model; hubId is context only.
+ */
+
+export function spiralsDiscoveryPath(params: {
+  neighborhood?: string;
+  hubId?: string | number;
+  city?: string;
+} = {}): string {
+  const q = new URLSearchParams();
+  if (params.neighborhood?.trim()) q.set("neighborhood", params.neighborhood.trim());
+  if (params.hubId !== undefined && String(params.hubId).trim()) q.set("hubId", String(params.hubId).trim());
+  if (params.city?.trim()) q.set("city", params.city.trim());
+  const suffix = q.toString();
+  return suffix ? `/audio-spirals?${suffix}` : "/audio-spirals";
+}
+
+export function communitySpiralsPath(hubId?: string | number): string {
+  if (hubId === undefined || !String(hubId).trim()) return "/community?tab=circles";
+  return `/community?tab=circles&hubId=${encodeURIComponent(String(hubId).trim())}`;
+}
+
+export function parseSpiralHubId(search: string): number | null {
+  const raw = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("hubId");
+  if (!raw || !/^\d+$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
