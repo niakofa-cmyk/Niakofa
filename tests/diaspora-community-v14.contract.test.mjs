@@ -11,6 +11,7 @@ const app = await source("artifacts/pay-it-forward/src/App.tsx");
 const gratitude = await source("artifacts/api-server/src/routes/gratitude.ts");
 const community = await source("artifacts/pay-it-forward/src/pages/community.tsx");
 const messages = await source("artifacts/pay-it-forward/src/pages/messages.tsx");
+const messageTabs = await source("artifacts/pay-it-forward/src/components/messages/MessageTypeTabs.tsx");
 const hubPanel = await source("artifacts/pay-it-forward/src/components/messages/HubMessagesPanel.tsx");
 const hubRoute = await source("artifacts/api-server/src/routes/diaspora-hub-messages.ts");
 
@@ -25,8 +26,8 @@ assert.match(gratitude, /usersTable\.is_suspended/);
 assert.match(community, /\/api\/gratitude/);
 assert.match(community, /hub_id=/);
 assert.match(community, /post\.diaspora_hub_id !== hubContextId/);
-assert.match(messages, /label="Direct"/);
-assert.match(messages, /label="Hubs"/);
+assert.match(messageTabs, /label: "Direct"/);
+assert.match(messageTabs, /label: "Hubs"/);
 assert.doesNotMatch(hubPanel, /Home Hub/);
 assert.match(hubRoute, /Approved Hub membership is required to send a message as this Hub/);
 assert.match(hubRoute, /target_membership_not_required: true/);
