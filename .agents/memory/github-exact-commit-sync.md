@@ -63,3 +63,14 @@ successful-looking upload is not evidence that the remote blob is complete.
 
 **How to apply:** Upload text blobs sequentially with `encoding: "utf-8"`,
 compare each SHA, and stop before tree/ref creation on any mismatch.
+
+When the remote ref has already advanced but the connector cannot expose the raw
+commit object for local import, do not point a local ref at an unknown object;
+leave the verified workspace changes staged until an authenticated Git read can
+reconcile the local commit.
+
+**Why:** a remote SHA without its local object is not a usable local checkout,
+and forcing the ref creates a broken repository state.
+
+**How to apply:** treat the GitHub ref and deployed commit as authoritative,
+preserve the staged tree, and reconcile through an authenticated fetch later.
