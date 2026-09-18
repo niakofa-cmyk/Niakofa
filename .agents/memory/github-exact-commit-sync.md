@@ -5,9 +5,12 @@ description: Preserve local commit SHA parity when publishing through the authen
 
 When publishing a local commit through GitHub's Git Data API, verify the tree
 first and compare the returned commit SHA before updating the branch ref.
-GitHub's commit endpoint can preserve an extra terminal newline in the commit
-message even when the API response omits it, so exact SHA parity may require
-reconstructing the local commit object with the observed raw message bytes.
+The Git Data API can produce a commit whose raw message bytes differ from a
+local `git commit` even when the API metadata looks identical. In one verified
+publication, the API commit matched the local object after removing the local
+message's final newline, so exact SHA parity may require reconstructing the
+local commit object from the returned tree, parent, identity, timestamp, and
+observed raw message bytes.
 
 **Why:** the repository requires remote `main` to match local `main` exactly,
 and a valid tree/parent is not sufficient if commit-object bytes differ.
@@ -17,10 +20,9 @@ the ref, fetch the created commit object for byte comparison, reconstruct the
 local commit if necessary, and only then patch `refs/heads/main`.
 
 The connector-created commit may report its author/committer date as UTC through
-the REST API while storing the workspace-local `-0500` offset in the raw commit,
-and its message may have no terminal newline. `git commit-tree` can normalize
-these bytes differently; construct the verified raw commit object when exact
-SHA parity matters.
+the REST API while storing a different raw message-terminal convention than
+workspace-local Git. `git commit-tree` can normalize these bytes differently;
+construct the verified raw commit object when exact SHA parity matters.
 
 **Why:** a visually identical tree and API metadata can still produce a
 different commit SHA when timezone and message-terminal bytes differ.
