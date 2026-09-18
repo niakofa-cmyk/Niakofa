@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useNiaStory } from "@/hooks/useNiaStory";
 import { authHeaders } from "@/lib/auth";
@@ -854,7 +854,8 @@ function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (
 
 
 export default function CommunityScreen() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
+  const search = useSearch();
   const initialTab = (() => {
     if (typeof window === "undefined") return "feed" as Tab;
     const t = new URLSearchParams(window.location.search).get("tab") as Tab | null;
@@ -869,9 +870,9 @@ export default function CommunityScreen() {
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const hubContextId = useMemo(() => {
-    const value = Number(new URLSearchParams(location.split("?")[1] ?? "").get("hubId"));
+    const value = Number(new URLSearchParams(search).get("hubId"));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
-  }, [location]);
+  }, [search]);
   const gratitudeFeedUrl = useMemo(() => {
     const path = `${base}/api/gratitude`;
     return hubContextId === null
