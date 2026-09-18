@@ -164,13 +164,13 @@ test.describe("Diaspora Globe V3 browser regression", () => {
     await expect(ghanaDrawer.locator('img[alt="Ghana community"]')).toHaveCount(0);
     await expect(ghanaDrawer).toContainText("126 active now");
     await page.getByRole("button", { name: "Message hub" }).click();
-    await expect(page.getByRole("dialog", { name: "Message Ghana Hub" })).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Message Ghana Hub" })).toHaveCount(0);
-    await expect(ghanaDrawer).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(ghanaDrawer).toHaveCount(0);
+    await expect(page).toHaveURL(/\/messages\?mode=hub&sourceHub=101/);
+    await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
 
+    // Return to the Globe before continuing the Hub-context checks. The
+    // canonical Messages surface replaces the retired Hub modal doorway.
+    await page.goto("/diaspora", { waitUntil: "networkidle" });
+    await expect(page.locator('[data-niakofa-surface="diaspora-globe"]')).toBeVisible();
     await search.fill("Texas");
     await page.getByRole("button", { name: /Texas/ }).last().click();
     const texasDrawer = page.getByRole("complementary", { name: "Texas Hub details" });
