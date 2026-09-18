@@ -199,11 +199,16 @@ export default function CivicTaskNav() {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...authHeaders() },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? `The server could not complete this civic task (HTTP ${res.status}).`);
       toast({ title: "✅ Civic task marked complete!", description: "Great work serving your community." });
       setLocation("/community");
-    } catch {
-      toast({ title: "Could not mark complete", description: "Try again from the community page.", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Could not mark complete",
+        description: error instanceof Error ? error.message : "The server could not complete this civic task. Try again.",
+        variant: "destructive",
+      });
     }
   }, [need, setLocation]);
 

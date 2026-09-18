@@ -1190,7 +1190,9 @@ router.patch("/civic/needs/:id/complete", requireAuth, generalApiLimiter, async 
 
   const result = await db.transaction(async (tx) => {
     // Only the claimant can mark it complete; guard is atomic on status+claimant.
-    const [completed] = await tx.update(civicNeedsTable)
+    // If the client lost the response after commit, return the same completion
+    // and invoice instead of turning a successful retry into a 409.
+    let [completed] = await tx.update(civicNeedsTable)
       .set({ status: "completed", completed_at: new Date(), updated_at: new Date() })
       .where(and(
         eq(civicNeedsTable.id, id),
@@ -1199,25 +1201,50 @@ router.patch("/civic/needs/:id/complete", requireAuth, generalApiLimiter, async 
       ))
       .returning();
 
-    if (!completed) return null;
+    let replayed = false;
+    if (!completed) {
+      [completed] = await tx
+        .select()
+        .from(civicNeedsTable)
+        .where(and(
+          eq(civicNeedsTable.id, id),
+          eq(civicNeedsTable.status, "completed"),
+          eq(civicNeedsTable.claimed_by_user_id, userId),
+        ))
+        .limit(1);
+      if (!completed) return null;
+      replayed = true;
+    }
 
-    const amount = final_cost !== undefined
-      ? final_cost
-      : (completed.estimated_cost !== null ? Number(completed.estimated_cost) : 0);
+    // Defensive repair for a legacy completed row that committed without its
+    // invoice. Normal completion creates exactly one invoice in this same
+    // transaction; retries reuse it.
+    let [invoice] = await tx
+      .select()
+      .from(civicInvoicesTable)
+      .where(eq(civicInvoicesTable.civic_need_id, completed.id))
+      .orderBy(desc(civicInvoicesTable.id))
+      .limit(1);
 
-    // NET30: due 30 days from completion.
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 30);
+    if (!invoice) {
+      const amount = final_cost !== undefined
+        ? final_cost
+        : (completed.estimated_cost !== null ? Number(completed.estimated_cost) : 0);
 
-    const [invoice] = await tx.insert(civicInvoicesTable).values({
-      civic_need_id: completed.id,
-      amount: String(amount),
-      due_date: dueDate.toISOString().slice(0, 10),
-      status: "pending",
-      notes: `NET30 invoice for civic need #${completed.id}: ${completed.title}`,
-    }).returning();
+      // NET30: due 30 days from completion.
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 30);
 
-    return { need: completed, invoice };
+      [invoice] = await tx.insert(civicInvoicesTable).values({
+        civic_need_id: completed.id,
+        amount: String(amount),
+        due_date: dueDate.toISOString().slice(0, 10),
+        status: "pending",
+        notes: `NET30 invoice for civic need #${completed.id}: ${completed.title}`,
+      }).returning();
+    }
+
+    return { need: completed, invoice, replayed };
   });
 
   if (!result) {
@@ -1226,13 +1253,17 @@ router.patch("/civic/needs/:id/complete", requireAuth, generalApiLimiter, async 
 
   logger.info(
     { civic_need_id: result.need.id, invoice_id: result.invoice.id, amount: result.invoice.amount, due_date: result.invoice.due_date },
-    "civic-needs: need completed, NET30 invoice generated",
+    result.replayed
+      ? "civic-needs: completion replayed, existing NET30 invoice returned"
+      : "civic-needs: need completed, NET30 invoice generated",
   );
 
   // Alert the sponsor that their need is done and an invoice is waiting.
-  notifySponsorOfCompletion(result.need.government_sponsor_id, result.need.title, result.invoice).catch((err) => {
-    logger.error({ err, civic_need_id: id }, "civic-needs: failed to notify sponsor of completion");
-  });
+  if (!result.replayed) {
+    notifySponsorOfCompletion(result.need.government_sponsor_id, result.need.title, result.invoice).catch((err) => {
+      logger.error({ err, civic_need_id: id }, "civic-needs: failed to notify sponsor of completion");
+    });
+  }
 
   return res.json(result);
 });

@@ -40,7 +40,12 @@ const GovSponsorApplyScreen = lazy(() => import("@/pages/gov-sponsor-apply"));
 const CivicPortalPage      = lazy(() => import("@/pages/civic-portal"));
 const CivicNeedsPage       = lazy(() => import("@/pages/civic-needs"));
 const StatusPage           = lazy(() => import("@/pages/status"));
-const RequestsBrowsePage   = lazy(() => import("@/pages/requests-browse"));
+const RequestsCenterPage   = lazy(() => import("@/components/RequestsCenter").then(({ default: RequestsCenter }) => ({
+  default: () => <RequestsCenter />,
+})));
+// Keep the existing route declaration stable while its implementation moves
+// to the shared Requests Center.
+const RequestsBrowsePage = RequestsCenterPage;
 const AudioCirclesScreen = lazy(() => import("@/pages/audio-circles"));
 const AudioCircleRoomScreen = lazy(() => import("@/pages/audio-circle-room"));
 const CountyImpactPage     = lazy(() => import("@/pages/county-impact"));

@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { AlertTriangle, Mic, Radio, Users } from "lucide-react";
+import { AlertTriangle, Loader2, Mic, Radio, RefreshCw, Users, Video } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { SPIRALS_PATHS } from "@/lib/spirals";
@@ -26,6 +26,7 @@ interface LiveSession {
 
 interface SpiralSummary {
   id: number;
+  neighborhood_id?: string | null;
   neighborhood_name: string | null;
   live_session: LiveSession | null;
 }
@@ -53,61 +54,62 @@ export function CommunitySpiralsTab() {
   const [liveByNeighborhood, setLiveByNeighborhood] = useState<Map<string, LiveSession>>(new Map());
   const [citywide, setCitywide] = useState<SpiralSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSpirals = useCallback(async (silent = false) => {
+    if (silent) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+
+    try {
+      const [neighborhoodResponse, spiralResponse] = await Promise.all([
+        fetch(`${base}/api/community/neighborhoods?city=${encodeURIComponent(city)}`, { headers: authHeaders() }),
+        fetch(`${base}/api/audio-circles?city=${encodeURIComponent(city)}`, { headers: authHeaders() }),
+      ]);
+      if (!neighborhoodResponse.ok) throw new Error(`Neighborhood catalog unavailable (HTTP ${neighborhoodResponse.status}).`);
+      if (!spiralResponse.ok) throw new Error(`Spiral status unavailable (HTTP ${spiralResponse.status}).`);
+
+      const neighborhoodData = await neighborhoodResponse.json() as { neighborhoods?: NeighborhoodInfo[] };
+      const spiralData = await spiralResponse.json() as { circles?: SpiralSummary[] };
+      const curated = Array.isArray(neighborhoodData.neighborhoods) ? neighborhoodData.neighborhoods : [];
+      const circles = Array.isArray(spiralData.circles) ? spiralData.circles : [];
+      const live = new Map<string, LiveSession>();
+      let citywideCircle: SpiralSummary | null = null;
+
+      for (const circle of circles) {
+        if (!circle.neighborhood_name && !circle.neighborhood_id) {
+          citywideCircle = circle;
+          continue;
+        }
+        if (circle.live_session) {
+          for (const value of [circle.neighborhood_id, circle.neighborhood_name]) {
+            if (value) live.set(keyFor(value), circle.live_session);
+          }
+        }
+      }
+
+      setNeighborhoods(curated.slice(0, 9));
+      setLiveByNeighborhood(live);
+      setCitywide(citywideCircle);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load Community Spirals.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [base, city]);
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(false);
-
-    Promise.all([
-      fetch(`${base}/api/community/neighborhoods?city=${encodeURIComponent(city)}`, { headers: authHeaders() })
-        .then((response) => {
-          if (!response.ok) throw new Error("neighborhoods request failed");
-          return response.json() as Promise<{ neighborhoods?: NeighborhoodInfo[] }>;
-        }),
-      fetch(`${base}/api/audio-circles?city=${encodeURIComponent(city)}`, { headers: authHeaders() })
-        .then((response) => {
-          if (!response.ok) throw new Error("spirals request failed");
-          return response.json() as Promise<{ circles?: SpiralSummary[] }>;
-        }),
-    ])
-      .then(([neighborhoodData, spiralData]) => {
-        if (cancelled) return;
-        const curated = Array.isArray(neighborhoodData.neighborhoods) ? neighborhoodData.neighborhoods : [];
-        const circles = Array.isArray(spiralData.circles) ? spiralData.circles : [];
-        const live = new Map<string, LiveSession>();
-        let citywideCircle: SpiralSummary | null = null;
-
-        for (const circle of circles) {
-          if (!circle.neighborhood_name) {
-            citywideCircle = circle;
-            continue;
-          }
-          if (circle.live_session) live.set(keyFor(circle.neighborhood_name), circle.live_session);
-        }
-
-        setNeighborhoods(curated.slice(0, 9));
-        setLiveByNeighborhood(live);
-        setCitywide(citywideCircle);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError(true);
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [base, city]);
+    void loadSpirals();
+    const refreshTimer = window.setInterval(() => void loadSpirals(true), 20_000);
+    return () => window.clearInterval(refreshTimer);
+  }, [loadSpirals]);
 
   const ordered = useMemo(() => neighborhoods.slice(0, 9), [neighborhoods]);
 
   const openSpiral = (neighborhoodName?: string) => {
-    const live = neighborhoodName ? liveByNeighborhood.get(keyFor(neighborhoodName)) : citywide?.live_session;
+        const live = neighborhoodName ? liveByNeighborhood.get(keyFor(neighborhoodName)) : citywide?.live_session;
     if (live?.id) {
       setLocation(SPIRALS_PATHS.room(live.id));
       return;
@@ -134,15 +136,18 @@ export function CommunitySpiralsTab() {
         </div>
       )}
 
-      {!loading && error && (
+      {error && (
         <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-2">
           <AlertTriangle className="w-8 h-8 text-muted-foreground/40 mx-auto" />
-          <div className="text-sm font-bold text-muted-foreground">Couldn't load Community Spirals</div>
-          <div className="text-xs text-muted-foreground/60">Try again to load the curated city catalog.</div>
+          <div className="text-sm font-bold text-muted-foreground">Couldn't refresh Community Spirals</div>
+          <div className="text-xs text-muted-foreground/60">{error}</div>
+          <button type="button" onClick={() => void loadSpirals()} className="mx-auto mt-2 inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-3 text-xs font-bold text-primary-foreground">
+            <RefreshCw className="h-3.5 w-3.5" /> Try again
+          </button>
         </div>
       )}
 
-      {!loading && !error && citywide && (
+      {!loading && citywide && (
         <button
           type="button"
           onClick={() => openSpiral()}
@@ -179,7 +184,7 @@ export function CommunitySpiralsTab() {
         </button>
       )}
 
-      {!loading && !error && ordered.map((hood) => {
+      {!loading && ordered.map((hood) => {
         const live = liveByNeighborhood.get(keyFor(hood.neighborhood_id)) ?? liveByNeighborhood.get(keyFor(hood.name));
         return (
           <button
@@ -209,6 +214,7 @@ export function CommunitySpiralsTab() {
                     <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                       <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {live.speaker_count} speakers</span>
                       <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {live.listener_count} audience</span>
+                      {live.video_enabled && <span className="flex items-center gap-1 text-primary"><Video className="w-3 h-3" /> Video</span>}
                     </div>
                   </div>
                 ) : (
@@ -223,9 +229,19 @@ export function CommunitySpiralsTab() {
         );
       })}
 
-      {!loading && !error && ordered.length === 0 && (
+      {!loading && ordered.length === 0 && (
         <div className="text-center py-10 text-sm text-muted-foreground">No curated neighborhood Spirals are configured for {city} yet.</div>
       )}
+
+      <button
+        type="button"
+        onClick={() => void loadSpirals(true)}
+        disabled={refreshing}
+        className="mx-auto flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-bold text-muted-foreground hover:bg-muted disabled:opacity-50"
+      >
+        {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+        Refresh live status
+      </button>
 
       <button
         type="button"

@@ -546,7 +546,14 @@ export default function ActiveRequestScreen() {
           // Show rating modal before navigating away
           setTimeout(() => setShowRating(true), 900);
         },
-        onError: () => toast({ title: "Failed to complete", variant: "destructive" })
+        onError: (error: unknown) => {
+          const message = error instanceof Error && error.message
+            ? error.message
+            : "The server could not complete this request. Please try again.";
+          toast({ title: "Failed to complete", description: message, variant: "destructive" });
+          queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+          queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
+        }
      }
     );
   };

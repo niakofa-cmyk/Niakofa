@@ -5,7 +5,7 @@ import { useNiaStory } from "@/hooks/useNiaStory";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
-import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock, AlertTriangle, ClipboardList, Radio } from "lucide-react";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock, AlertTriangle, ClipboardList } from "lucide-react";
 import { contributeToPool, useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey, useGetPoolStats, getGetPoolStatsQueryKey, useGetPoolLedger, getGetPoolLedgerQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -15,9 +15,9 @@ import { MAX_POOL_AMOUNT, MIN_POOL_AMOUNT, PoolContributionPanel } from "@/compo
 import { CommunityPoolFinancialBreakdown } from "@/components/CommunityPoolFinancialBreakdown";
 import { PoolHealthStrip } from "@/components/PoolHealthStrip";
 import { useCivicResources } from "@/hooks/useCivicResources";
-import { SPIRALS_PATHS } from "@/lib/spirals";
-import { SpiralMark } from "@/components/SpiralMark";
 import { CommunityMessageEntry } from "@/components/CommunityMessageEntry";
+import RequestsCenter from "@/components/RequestsCenter";
+import { CommunitySpiralsTab } from "@/components/CommunitySpiralsTab";
 
 interface GratitudePost {
   id: number;
@@ -85,7 +85,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: "💙 Other",
 };
 
-type Tab = "feed" | "heroes" | "pool" | "county" | "impact" | "resources" | "circles" | "skills";
+type Tab = "feed" | "requests" | "heroes" | "pool" | "county" | "impact" | "resources" | "circles" | "skills";
 
 interface CommunityStats {
   id: number;
@@ -359,279 +359,6 @@ function CivicResourcesTab() {
   );
 }
 
-interface NeighborhoodInfo {
-  id: number;
-  neighborhood_id: string;
-  name: string;
-  emoji: string | null;
-  description: string | null;
-  city_key: string;
-  city_display: string;
-}
-
-interface NeighborhoodLiveStatus {
-  session_id: number | null;
-  host_name: string | null;
-  speaker_count: number;
-  listener_count: number;
-  video_enabled: boolean;
-}
-
-interface VillagePulseNeighborhood {
-  neighborhood_id: string;
-  name: string;
-  emoji: string | null;
-  live_user_count: number;
-  gps_verified: boolean;
-}
-
-interface VillagePulse {
-  current_user?: {
-    current_neighborhood?: {
-      neighborhood_id: string;
-      name: string;
-      live_user_count: number;
-      gps_verified: boolean;
-    } | null;
-    location_verification?: string;
-  };
-  neighborhoods?: VillagePulseNeighborhood[];
-}
-
-function NeighborhoodSpiralsTab() {
-  const [, setLocation] = useLocation();
-  const { currentUser } = useAppContext();
-  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-
-  const city = currentUser?.city?.trim() || "Fort Worth";
-  const [neighborhoods, setNeighborhoods] = useState<NeighborhoodInfo[]>([]);
-  const [hoodLoading, setHoodLoading] = useState(true);
-  const [hoodError, setHoodError] = useState(false);
-  const [villagePulse, setVillagePulse] = useState<VillagePulse | null>(null);
-
-  // Fetch only active, authoritative neighborhood Spirals. The backend keeps
-  // generated and pending GIS rows out of this product surface.
-  useEffect(() => {
-    let cancelled = false;
-    setHoodLoading(true);
-    setHoodError(false);
-    fetch(`${base}/api/community/neighborhoods?city=${encodeURIComponent(city)}`, { headers: authHeaders() })
-      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-      .then((data: { neighborhoods?: NeighborhoodInfo[] }) => {
-        if (cancelled) return;
-        setNeighborhoods(Array.isArray(data.neighborhoods) ? data.neighborhoods : []);
-        setHoodLoading(false);
-      })
-      .catch(() => { if (!cancelled) { setHoodError(true); setHoodLoading(false); } });
-    return () => { cancelled = true; };
-  }, [base, city]);
-
-  // The profile neighborhood is descriptive only. Use the same
-  // GPS/geometry-verified signal as the Globe and Spiral discovery pages for
-  // local highlighting and live nearby counts.
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/griot/village-pulse", { headers: authHeaders() })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data: VillagePulse | null) => {
-        if (!cancelled) setVillagePulse(data);
-      })
-      .catch(() => {
-        if (!cancelled) setVillagePulse(null);
-      });
-    return () => { cancelled = true; };
-  }, [currentUser?.id]);
-
-  // Fetch live Spiral data so cards show real-time status
-  const [liveByHood, setLiveByHood] = useState<Map<string, NeighborhoodLiveStatus>>(new Map());
-  const [fetchedCity, setFetchedCity] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (fetchedCity === city) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${base}/api/audio-circles?city=${encodeURIComponent(city)}`, { headers: authHeaders() });
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        const map = new Map<string, NeighborhoodLiveStatus>();
-        for (const circle of data.circles ?? []) {
-          const key = (circle.neighborhood_name ?? "").toLowerCase().replace(/\s+/g, "_");
-          if (key) {
-            map.set(key, {
-              session_id: circle.live_session?.id ?? null,
-              host_name: circle.live_session?.host_name ?? null,
-              speaker_count: circle.live_session?.speaker_count ?? 0,
-              listener_count: circle.live_session?.listener_count ?? 0,
-              video_enabled: circle.live_session?.video_enabled ?? false,
-            });
-          }
-        }
-        if (!cancelled) { setLiveByHood(map); setFetchedCity(city); }
-      } catch { /* non-critical */ }
-    })();
-    return () => { cancelled = true; };
-  }, [base, city, fetchedCity]);
-
-  const hoodKey = (n: NeighborhoodInfo) => (n.neighborhood_id || n.name).toLowerCase().replace(/\s+/g, "_");
-  const currentNeighborhoodId = villagePulse?.current_user?.current_neighborhood?.neighborhood_id ?? null;
-  const liveByNeighborhood = new Map(
-    (villagePulse?.neighborhoods ?? []).map((neighborhood) => [
-      neighborhood.neighborhood_id.toLowerCase(),
-      neighborhood,
-    ]),
-  );
-  const orderedNeighborhoods = [...neighborhoods].sort((a, b) => {
-    if (currentNeighborhoodId == null) return 0;
-    const aIsCurrent = a.neighborhood_id.toLowerCase() === currentNeighborhoodId.toLowerCase();
-    const bIsCurrent = b.neighborhood_id.toLowerCase() === currentNeighborhoodId.toLowerCase();
-    return Number(bIsCurrent) - Number(aIsCurrent);
-  });
-
-  const openCircle = (hood: NeighborhoodInfo) => {
-    const key = hoodKey(hood);
-    const live = liveByHood.get(key);
-    if (live?.session_id) {
-      setLocation(SPIRALS_PATHS.room(live.session_id));
-    } else {
-      setLocation(`${SPIRALS_PATHS.discovery}?neighborhood=${encodeURIComponent(hood.name)}`);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
-        <h3 className="font-black text-sm flex items-center gap-2 mb-1">
-          <SpiralMark className="w-4 h-4 text-primary" /> Active Neighborhood Spirals
-        </h3>
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Tap your neighborhood to join or host a live Spiral — voice and video rooms where neighbors talk in real time.
-        </p>
-      </div>
-
-      {villagePulse?.current_user?.current_neighborhood && (
-        <div className="rounded-2xl border border-teal-300/20 bg-teal-300/[0.06] px-4 py-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-teal-200">
-            <Radio className="h-3.5 w-3.5" />
-            GPS-verified current neighborhood: {villagePulse.current_user.current_neighborhood.name}
-          </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-            This Spiral is promoted because your recent GPS fix is inside its reviewed boundary. Nearby Hub presence does not automatically create Hub membership.
-          </p>
-        </div>
-      )}
-
-      {!villagePulse?.current_user?.current_neighborhood && villagePulse?.current_user?.location_verification === "stale_or_missing_gps" && (
-        <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-[11px] leading-relaxed text-amber-100/80">
-          Allow a fresh GPS fix to identify your current neighborhood. Your profile neighborhood is not used as a substitute for verified location.
-        </div>
-      )}
-
-      {hoodLoading && (
-        <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
-          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Loading neighborhoods…</span>
-        </div>
-      )}
-
-      {!hoodLoading && hoodError && neighborhoods.length === 0 && (
-        <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-2">
-          <AlertTriangle className="w-8 h-8 text-muted-foreground/40 mx-auto" />
-          <div className="text-sm font-bold text-muted-foreground">Couldn't load neighborhoods</div>
-          <div className="text-xs text-muted-foreground/60">We had trouble reaching the server. Try again to load active neighborhood Spirals.</div>
-        </div>
-      )}
-
-      {orderedNeighborhoods.map((hood, i) => {
-        const key = hoodKey(hood);
-        const isYours = currentNeighborhoodId != null && hood.neighborhood_id.toLowerCase() === currentNeighborhoodId.toLowerCase();
-        const live = liveByHood.get(key);
-        const isLive = !!live?.session_id;
-        const livePresence = liveByNeighborhood.get(hood.neighborhood_id.toLowerCase());
-        return (
-          <motion.div
-            key={hood.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.03 }}
-            className={`bg-card border rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98] ${
-              isLive
-                ? "border-red-500/50 bg-red-500/5"
-                : isYours
-                  ? "border-primary/60 bg-primary/5"
-                  : "border-border hover:border-primary/30"
-            }`}
-            onClick={() => openCircle(hood)}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
-                {hood.emoji ?? "🏘️"}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="font-black text-sm">{hood.name}</div>
-                  {isYours && !isLive && (
-                    <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
-                      GPS verified here
-                    </span>
-                  )}
-                  {livePresence && livePresence.live_user_count > 0 && (
-                    <span className="text-[10px] font-bold text-teal-300/80 bg-teal-300/10 px-2 py-0.5 rounded-lg">
-                      {livePresence.live_user_count} live nearby
-                    </span>
-                  )}
-                  {isLive && (
-                    <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center gap-1">
-                      <Radio className="w-2.5 h-2.5" /> Live
-                    </span>
-                  )}
-                </div>
-                {isLive && live ? (
-                  <div className="mt-1 space-y-0.5">
-                    <div className="text-xs text-muted-foreground">
-                      Hosted by <span className="font-bold text-foreground">{live.host_name}</span>
-                      {live.video_enabled && <span className="ml-1 text-[10px] text-primary">· 🎥 Video</span>}
-                    </div>
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                      <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {live.speaker_count} speaker{live.speaker_count !== 1 ? "s" : ""}</span>
-                      <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {live.listener_count} audience</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground mt-0.5">{hood.description ?? "Neighborhood Spiral"}</div>
-                )}
-              </div>
-              {isLive ? (
-                <div className="shrink-0">
-                  <span className="text-xs font-black text-red-400 bg-red-500/10 border border-red-500/30 px-3 py-1.5 rounded-xl">Join</span>
-                </div>
-              ) : (
-                <div className="shrink-0">
-                  <span className="text-xs font-bold text-muted-foreground bg-muted px-3 py-1.5 rounded-xl">Host</span>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        );
-      })}
-
-      <button
-        type="button"
-        onClick={() => setLocation(SPIRALS_PATHS.discovery)}
-        className="w-full bg-gradient-to-br from-primary/15 via-card to-card border border-primary/30 rounded-2xl p-4 flex items-center gap-3 text-left cursor-pointer hover:border-primary/50 transition-colors"
-      >
-        <div className="w-11 h-11 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-          <SpiralMark className="w-5 h-5 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-black">Open active neighborhood Spirals</div>
-          <div className="text-xs text-muted-foreground mt-0.5">Your GPS-matched neighborhood appears first when it is verified.</div>
-        </div>
-      </button>
-    </div>
-  );
-}
-
 const SKILLS_DIRECTORY = [
   { id: "bilingual",            label: "Bilingual",    emoji: "🌐", desc: "Spanish, Vietnamese, or other language support", cats: ["groceries","errands","medical"] },
   { id: "truck_owner",          label: "Truck Owner",  emoji: "🚛", desc: "Move furniture, haul supplies, or transport large items", cats: ["transportation","errands","stock_shelves"] },
@@ -859,7 +586,7 @@ export default function CommunityScreen() {
   const initialTab = (() => {
     if (typeof window === "undefined") return "feed" as Tab;
     const t = new URLSearchParams(window.location.search).get("tab") as Tab | null;
-    const valid: Tab[] = ["feed", "heroes", "pool", "county", "impact", "resources", "circles", "skills"];
+    const valid: Tab[] = ["feed", "requests", "heroes", "pool", "county", "impact", "resources", "circles", "skills"];
     return t && valid.includes(t) ? t : "feed";
   })();
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -1217,6 +944,7 @@ export default function CommunityScreen() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "feed",      label: "💙 Feed" },
+    { key: "requests",  label: "📋 Requests" },
     { key: "circles",   label: "🌀 Spirals" },
     { key: "skills",    label: "🔧 Skills" },
     { key: "heroes",    label: "⭐ Heroes" },
@@ -2300,7 +2028,8 @@ export default function CommunityScreen() {
           </div>
         )}
 
-        {tab === "circles" && <NeighborhoodSpiralsTab />}
+        {tab === "requests" && <RequestsCenter embedded />}
+        {tab === "circles" && <CommunitySpiralsTab />}
         {tab === "skills" && <SkillsMarketplaceTab />}
       </div>
     </div>
