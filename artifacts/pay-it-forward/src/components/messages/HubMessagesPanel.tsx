@@ -13,7 +13,6 @@ type Hub = {
   hub_scope: string;
   country_code: string | null;
   subdivision_code: string | null;
-  is_home?: boolean;
 };
 
 type Conversation = {
@@ -317,7 +316,7 @@ export default function HubMessagesPanel({
               <option value="">No approved membership</option>
               {sourceHubs.map((hub) => (
                 <option key={hub.id} value={hub.id}>
-                  {hubDisplayName(hub)}{hub.is_home ? " · Home Hub" : ""}
+                  {hubDisplayName(hub)}
                 </option>
               ))}
             </select>

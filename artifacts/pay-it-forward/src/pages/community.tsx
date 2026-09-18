@@ -23,6 +23,7 @@ interface GratitudePost {
   id: number;
   author_name: string;
   author_avatar?: string | null;
+  diaspora_hub_id?: number | null;
   helper_name?: string | null;
   message: string;
   request_title?: string | null;
@@ -871,6 +872,12 @@ export default function CommunityScreen() {
     const value = Number(new URLSearchParams(location.split("?")[1] ?? "").get("hubId"));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
   }, [location]);
+  const gratitudeFeedUrl = useMemo(() => {
+    const path = `${base}/api/gratitude`;
+    return hubContextId === null
+      ? path
+      : `${path}?hub_id=${encodeURIComponent(String(hubContextId))}`;
+  }, [base, hubContextId]);
 
   const { currentUser, niaEnabled } = useAppContext();
   const sponsorHistory = useGetSponsorHistory(currentUser?.id ?? null);
@@ -880,7 +887,8 @@ export default function CommunityScreen() {
   // an error response (object/null) must not wipe posts already displayed
   // (flash-empty: user sees content disappear, then nothing, on a transient error).
   useEffect(() => {
-    fetch(`${base}/api/gratitude`)
+    setPostsLoading(true);
+    fetch(gratitudeFeedUrl)
       .then(r => r.json())
       .then((data: unknown) => {
         if (Array.isArray(data)) {
@@ -889,11 +897,12 @@ export default function CommunityScreen() {
         setPostsLoading(false);
       })
       .catch(() => setPostsLoading(false));
-  }, [base]);
+  }, [gratitudeFeedUrl]);
 
   // Real-time: new gratitude post arrives
   useWebSocket("new_gratitude", (event) => {
     const post = event.payload as GratitudePost;
+    if (hubContextId !== null && post.diaspora_hub_id !== hubContextId) return;
     setPosts(prev => [post, ...prev.slice(0, 49)]);
   });
 
@@ -1248,7 +1257,7 @@ export default function CommunityScreen() {
               <p className="text-[10px] font-black uppercase tracking-widest text-primary">Hub context</p>
               <p className="truncate text-sm font-black">Selected Diaspora Hub #{hubContextId}</p>
               <p className="text-[11px] text-muted-foreground">
-                This is a contextual doorway. The current local Community feed is not silently relabeled as Hub-scoped.
+                Showing approved gratitude from people assigned to this Hub.
               </p>
             </div>
             <button
@@ -1458,10 +1467,11 @@ export default function CommunityScreen() {
             onPosted={(_story: string) => {
               setShowNiaStory(false);
               // Re-fetch gratitude posts so the new story appears immediately
-              const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-              fetch(`${base}/api/gratitude`)
+              fetch(gratitudeFeedUrl)
                 .then(r => r.json())
-                .then((data: GratitudePost[]) => setPosts(data))
+                .then((data: unknown) => {
+                  if (Array.isArray(data)) setPosts(data as GratitudePost[]);
+                })
                 .catch(() => {});
             }}
           />

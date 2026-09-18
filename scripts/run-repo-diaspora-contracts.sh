@@ -12,4 +12,5 @@ node --import tsx --test scripts/diaspora-globe-geometry-contract.test.mjs
 node --import tsx --test scripts/diaspora-preserve-idempotency-contract.test.mjs
 node --import tsx --test scripts/diaspora-triple-enhancement-contract.test.mjs
 node --import tsx --test scripts/dna-matching-contract.test.mjs
+node --test tests/diaspora-community-v14.contract.test.mjs
 echo "All Diaspora source contracts passed."

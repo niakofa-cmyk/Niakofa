@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, gratitudePostsTable, gratitudeLikesTable, usersTable, griotStoriesTable, griotTranscriptionJobsTable } from "@workspace/db";
-import { desc, eq, sql, and, gte } from "drizzle-orm";
+import { db, gratitudePostsTable, gratitudeLikesTable, usersTable, diasporaHubsTable, griotStoriesTable, griotTranscriptionJobsTable } from "@workspace/db";
+import { desc, eq, sql, and, gte, isNull } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { z } from "zod";
 import { requireAuth } from "../middlewares/auth";
@@ -28,11 +28,65 @@ const CreateGratitudeBody = z.object({
 // all-caps matches as "pending" until an admin reviews them via
 // GET/POST /admin/moderation-queue — this filter is what actually makes that
 // hold meaningful; without it, pending posts were visible to everyone anyway.
-router.get("/gratitude", async (_req, res) => {
+router.get("/gratitude", async (req, res) => {
+  const rawHubId = req.query.hub_id;
+  if (rawHubId !== undefined && typeof rawHubId !== "string") {
+    return res.status(400).json({ error: "hub_id must be a positive integer." });
+  }
+
+  const hubIdText = typeof rawHubId === "string" ? rawHubId.trim() : "";
+  let hubId: number | null = null;
+  if (rawHubId !== undefined) {
+    if (!/^\d+$/.test(hubIdText)) {
+      return res.status(400).json({ error: "hub_id must be a positive integer." });
+    }
+    const parsedHubId = Number(hubIdText);
+    if (!Number.isSafeInteger(parsedHubId) || parsedHubId <= 0) {
+      return res.status(400).json({ error: "hub_id must be a positive integer." });
+    }
+    hubId = parsedHubId;
+  }
+
+  if (hubId !== null) {
+    const [hub] = await db
+      .select({ id: diasporaHubsTable.id })
+      .from(diasporaHubsTable)
+      .where(and(
+        eq(diasporaHubsTable.id, hubId),
+        eq(diasporaHubsTable.status, "approved"),
+        isNull(diasporaHubsTable.primary_hub_id),
+      ))
+      .limit(1);
+    if (!hub) return res.status(404).json({ error: "Canonical Hub not found." });
+  }
+
   const posts = await db
-    .select()
+    .select({
+      id: gratitudePostsTable.id,
+      request_id: gratitudePostsTable.request_id,
+      author_id: gratitudePostsTable.author_id,
+      author_name: gratitudePostsTable.author_name,
+      author_avatar: gratitudePostsTable.author_avatar,
+      helper_id: gratitudePostsTable.helper_id,
+      helper_name: gratitudePostsTable.helper_name,
+      message: gratitudePostsTable.message,
+      request_title: gratitudePostsTable.request_title,
+      likes: gratitudePostsTable.likes,
+      moderation_status: gratitudePostsTable.moderation_status,
+      moderation_reason: gratitudePostsTable.moderation_reason,
+      created_at: gratitudePostsTable.created_at,
+      diaspora_hub_id: usersTable.diaspora_hub_id,
+    })
     .from(gratitudePostsTable)
-    .where(eq(gratitudePostsTable.moderation_status, "approved"))
+    .innerJoin(usersTable, eq(usersTable.id, gratitudePostsTable.author_id))
+    .where(and(
+      eq(gratitudePostsTable.moderation_status, "approved"),
+      ...(hubId !== null ? [
+        eq(usersTable.diaspora_hub_id, hubId),
+        eq(usersTable.approval_status, "approved"),
+        eq(usersTable.is_suspended, false),
+      ] : []),
+    ))
     .orderBy(desc(gratitudePostsTable.created_at))
     .limit(50);
   return res.json(posts);
@@ -71,9 +125,19 @@ router.post("/admin/moderation-queue/:id/decide", requireAuth, requireAdmin(), a
     .returning();
   if (!approved) return res.status(404).json({ error: "Post not found" });
 
+  const [approvedAuthor] = await db
+    .select({ diaspora_hub_id: usersTable.diaspora_hub_id })
+    .from(usersTable)
+    .where(eq(usersTable.id, approved.author_id))
+    .limit(1);
+  const publicPost = {
+    ...approved,
+    diaspora_hub_id: approvedAuthor?.diaspora_hub_id ?? null,
+  };
+
   // Now that it's approved, surface it to the live Community feed.
-  broadcast({ type: "new_gratitude", payload: approved });
-  return res.json({ ok: true, id, decision: "approve", post: approved });
+  broadcast({ type: "new_gratitude", payload: publicPost });
+  return res.json({ ok: true, id, decision: "approve", post: publicPost });
 });
 
 // ── POST /gratitude — create a new thank-you post ────────────────────────────
@@ -91,7 +155,11 @@ router.post("/gratitude", requireAuth, communityPostLimiter, async (req, res) =>
 
   const authorId = req.authenticatedUserId!;
   const [author] = await db
-    .select({ name: usersTable.name, avatar_url: usersTable.avatar_url })
+    .select({
+      name: usersTable.name,
+      avatar_url: usersTable.avatar_url,
+      diaspora_hub_id: usersTable.diaspora_hub_id,
+    })
     .from(usersTable)
     .where(eq(usersTable.id, authorId))
     .limit(1);
@@ -145,11 +213,15 @@ router.post("/gratitude", requireAuth, communityPostLimiter, async (req, res) =>
 
   // Only broadcast to the live Community feed if it cleared moderation —
   // pending posts stay invisible until an admin approves them.
+  const publicPost = {
+    ...post,
+    diaspora_hub_id: author.diaspora_hub_id ?? null,
+  };
   if (post.moderation_status === "approved") {
-    broadcast({ type: "new_gratitude", payload: post });
+    broadcast({ type: "new_gratitude", payload: publicPost });
   }
 
-  return res.status(201).json(post);
+  return res.status(201).json(publicPost);
 });
 
 // ── POST /gratitude/:id/like — like a post (idempotent per user) ─────────────
