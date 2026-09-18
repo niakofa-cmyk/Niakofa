@@ -42,3 +42,17 @@ mtime_ms = 1789654906942
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:f4344a14-6de0-4c39-8834-1df8352b7563/41c4d105-d460-4fb0-872a-d55edd700b9a/a0a3c4d7-5a30-4c54-9c1d-6bc27cbc8f90"
 storage_version_token = "1789655344541355"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "EYKlbo4EHkPe1JK_erjVE"
+uri = "file://.local/outputs/niakofa-messages-v18-integrated.tar.gz"
+type = "unspecified"
+title = "Niakofa Messages V18 integrated package"
+description = "Downloadable archive of the integrated Messages V18 shell, API unread-summary route, focused contract test, and reference documentation from verified commit 4044a8582844174385a1af0223597317c9e19689."
+logical_id = "9f3233e1-35f3-4840-aa4f-4822fba788d3"
+content_hash = "sha256:405db1cb59222b94d39cb8c88d0193b284afa82951dbd0d8c3305c1ea4d08a9b"
+size = 16235
+mtime_ms = 1789758767799
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:f4344a14-6de0-4c39-8834-1df8352b7563/9f3233e1-35f3-4840-aa4f-4822fba788d3/eff4f964-4674-43f3-a468-986a97be38da"
+storage_version_token = "1789758857582505"
+content_type = "application/octet-stream"

@@ -66,6 +66,18 @@ successful-looking upload is not evidence that the remote blob is complete.
 **How to apply:** Upload text blobs sequentially with `encoding: "utf-8"`,
 compare each SHA, and stop before tree/ref creation on any mismatch.
 
+Normalize CRLF output from shell-backed Git reads before parsing commit headers
+or comparing refs, and use base64 blob uploads when the connector's UTF-8 path
+changes line endings.
+
+**Why:** Shell output can append `\r` to paths and commit fields, while the
+connector can normalize UTF-8 payloads; both produce misleading parity failures
+even when the checked-out source is correct.
+
+**How to apply:** Strip `\r` from metadata/path transport values, verify every
+blob SHA, verify the complete tree SHA, then create and compare the commit
+before advancing the branch ref.
+
 When the remote ref has already advanced but the connector cannot expose the raw
 commit object for local import, do not point a local ref at an unknown object;
 leave the verified workspace changes staged until an authenticated Git read can
