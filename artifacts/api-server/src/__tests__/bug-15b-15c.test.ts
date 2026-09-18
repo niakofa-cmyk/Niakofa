@@ -316,6 +316,17 @@ jest.unstable_mockModule("@anthropic-ai/sdk", () => ({
   })),
 }));
 
+// The check-in route delegates to the Nia service through this client. Keep
+// this unit suite on a deterministic local boundary instead of calling the
+// running Nia workflow, whose service secret is intentionally independent.
+jest.unstable_mockModule("../lib/nia-client.js", () => ({
+  requestNia: jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ nia_response: "Hey friend! How did your request go?" }),
+  }),
+}));
+
 describe("BUG-15c: POST /checkin — Nia check-in endpoint security", () => {
   let checkinApp: Express;
 

@@ -38,11 +38,16 @@ modules enabled.
 **How to apply:** Use the package's test command for CI-equivalent validation
 and avoid diagnosing direct-Jest failures as production module problems.
 
-Test setup must pin service URLs that can be injected as workspace secrets
-(especially `NIA_SERVICE_URL`) to local test endpoints before importing routes.
+Test setup must forcibly pin secret-backed boundaries before importing routes:
+database, internal/session secrets, `NIA_SERVICE_URL`, and both Redis variable
+names (`REDIS_URL` and `REDIS_URLS`). Nullish defaults are not sufficient when
+the workspace injects production values.
 
-**Why:** A configured workflow secret can silently redirect a mocked health
-probe to production while the test still passes its other dependency guards.
+**Why:** Configured workflow secrets can redirect mocked suites to production
+Postgres or Redis, or make in-process service-auth checks depend on deployed
+configuration. A leftover Redis connection also keeps Jest alive after tests
+pass.
 
-**How to apply:** Override external service URL environment variables in
-`jest.setup.ts`; restore per-test overrides explicitly when a suite needs them.
+**How to apply:** Override the full boundary in `jest.setup.ts`; restore
+per-test overrides explicitly when a suite needs them. Mock API-to-service
+clients such as Nia in route unit tests instead of calling a running workflow.
