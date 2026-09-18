@@ -10,7 +10,6 @@ const nav = await source("artifacts/pay-it-forward/src/lib/appNavItems.ts");
 const app = await source("artifacts/pay-it-forward/src/App.tsx");
 const gratitude = await source("artifacts/api-server/src/routes/gratitude.ts");
 const community = await source("artifacts/pay-it-forward/src/pages/community.tsx");
-const messages = await source("artifacts/pay-it-forward/src/pages/messages.tsx");
 const messageTabs = await source("artifacts/pay-it-forward/src/components/messages/MessageTypeTabs.tsx");
 const hubPanel = await source("artifacts/pay-it-forward/src/components/messages/HubMessagesPanel.tsx");
 const hubRoute = await source("artifacts/api-server/src/routes/diaspora-hub-messages.ts");
