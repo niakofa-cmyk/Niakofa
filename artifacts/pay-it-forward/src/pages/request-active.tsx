@@ -36,6 +36,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { haversineMeters, isNearbyUser } from "@/lib/geo-utils";
 import { newOperationKey, retryableMutation } from "@/lib/retryableMutation";
 import { readCompletionError } from "@/lib/readCompletionError";
+import { parseEtaSeconds } from "@/lib/eta";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -51,15 +52,6 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
 // distanceMeters is now haversineMeters from geo-utils — single source of truth
 // shared with map.tsx so any precision change propagates to both pages.
 
-
-function parseEtaSeconds(etaText: string): number {
-  const minMatch = etaText.match(/(\d+)\s*min/i);
-  const hrMatch = etaText.match(/(\d+)\s*hr/i);
-  let s = 0;
-  if (hrMatch) s += parseInt(hrMatch[1]) * 3600;
-  if (minMatch) s += parseInt(minMatch[1]) * 60;
-  return s || 0;
-}
 
 function ptToSegDist(
   lat: number, lng: number,
@@ -290,7 +282,14 @@ export default function ActiveRequestScreen() {
   }), [myLocation?.lat, myLocation?.lng, request?.lat, request?.lng, routingProfile]);
   const { data: routeData } = useGetRoute(routeParams, {
     query: {
-      enabled: !!myLocation && !!request,
+      enabled: !!(
+        myLocation
+        && request
+        && myLocation.lat != null
+        && myLocation.lng != null
+        && request.lat != null
+        && request.lng != null
+      ),
       refetchInterval: isOffRoute ? 2000 : 15000,
       queryKey: getGetRouteQueryKey(routeParams),
     }

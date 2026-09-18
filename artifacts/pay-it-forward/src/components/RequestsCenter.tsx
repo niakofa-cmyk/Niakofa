@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronRight, ClipboardList, Loader2, MapPin, RefreshCw, Route, Sparkles } from "lucide-react";
+import { CheckCircle2, ChevronRight, ClipboardList, Loader2, MapPin, Navigation2, RefreshCw, Route, Sparkles } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
+import { getRequestNavigationPath } from "@/lib/request-navigation";
 
 type RequestStatus = "open" | "claimed" | "en_route" | "arrived" | "completed" | "cancelled" | string;
 
@@ -192,7 +193,16 @@ export default function RequestsCenter({ embedded = false }: RequestsCenterProps
           {rows.map(row => {
             const active = isActive(row.status);
             const canNavigate = active && row.helper_id === userId;
-            const detailPath = canNavigate ? `/request/${row.id}` : `/request/${row.id}/view`;
+            const canTrack = active && row.requester_id === userId;
+            const detailPath = userId
+              ? getRequestNavigationPath({
+                id: row.id,
+                status: row.status,
+                requesterId: row.requester_id,
+                helperId: row.helper_id,
+                currentUserId: userId,
+              })
+              : `/request/${row.id}/view`;
             return (
               <article key={row.id} className="rounded-3xl border border-border bg-card p-4">
                 <div className="flex items-start gap-3">
@@ -228,8 +238,8 @@ export default function RequestsCenter({ embedded = false }: RequestsCenterProps
                     onClick={() => navigate(detailPath)}
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 text-sm font-bold"
                   >
-                    <ClipboardList className="h-4 w-4" />
-                    View request
+                    {canTrack ? <Navigation2 className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+                    {canTrack ? "Track helper" : canNavigate ? "Open navigation" : "View request"}
                   </button>
 
                   {canNavigate && (
@@ -239,7 +249,7 @@ export default function RequestsCenter({ embedded = false }: RequestsCenterProps
                       className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-sm font-black text-primary-foreground"
                     >
                       <MapPin className="h-4 w-4" />
-                      Open navigation
+                      Start navigation
                     </button>
                   )}
                 </div>

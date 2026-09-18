@@ -371,8 +371,8 @@ export default function MapScreen() {
   const queryCenter = useStableCenter(effectiveCenter, { precision: 3, debounceMs: 4000 });
 
   const requestsQuery = useGetNearbyRequests(
-    { lat: queryCenter?.lat || 0, lng: queryCenter?.lng || 0, radius_miles: radiusMiles },
-    { query: { enabled: !!queryCenter, queryKey: getGetNearbyRequestsQueryKey({ lat: queryCenter?.lat || 0, lng: queryCenter?.lng || 0, radius_miles: radiusMiles }), placeholderData: keepPreviousData } }
+    { lat: queryCenter?.lat ?? 0, lng: queryCenter?.lng ?? 0, radius_miles: radiusMiles },
+    { query: { enabled: !!queryCenter, queryKey: getGetNearbyRequestsQueryKey({ lat: queryCenter?.lat ?? 0, lng: queryCenter?.lng ?? 0, radius_miles: radiusMiles }), placeholderData: keepPreviousData } }
   );
   const { isSuccess: requestsLoaded, dataUpdatedAt: requestsUpdatedAt, refetch: refetchRequests, isFetching: requestsFetching } = requestsQuery;
   // placeholderData only covers the gap between two *successful* fetches —
@@ -383,8 +383,8 @@ export default function MapScreen() {
   const requests = useResilientData(requestsQuery, []);
 
   const helpersQuery = useGetOnlineHelpers(
-    { lat: queryCenter?.lat || 0, lng: queryCenter?.lng || 0, radius_miles: radiusMiles },
-    { query: { enabled: !!queryCenter, queryKey: getGetOnlineHelpersQueryKey({ lat: queryCenter?.lat || 0, lng: queryCenter?.lng || 0, radius_miles: radiusMiles }), placeholderData: keepPreviousData } }
+    { lat: queryCenter?.lat ?? 0, lng: queryCenter?.lng ?? 0, radius_miles: radiusMiles },
+    { query: { enabled: !!queryCenter, queryKey: getGetOnlineHelpersQueryKey({ lat: queryCenter?.lat ?? 0, lng: queryCenter?.lng ?? 0, radius_miles: radiusMiles }), placeholderData: keepPreviousData } }
   );
   const { isSuccess: helpersLoaded, refetch: refetchHelpers } = helpersQuery;
   const helpers = useResilientData(helpersQuery, []);
@@ -396,12 +396,12 @@ export default function MapScreen() {
   // Community (non-helper) mode's data — helpers online (already fetched
   // above), open civic needs, and civic resources/help centers. Only fetched
   // while !helperModeActive since helper mode never shows this data.
-  const civicNeedsParams = { lat: queryCenter?.lat || 0, lng: queryCenter?.lng || 0, radius_miles: radiusMiles };
+  const civicNeedsParams = { lat: queryCenter?.lat ?? 0, lng: queryCenter?.lng ?? 0, radius_miles: radiusMiles };
   const civicNeedsQuery = useGetCivicNeedsNearby(civicNeedsParams, {
     query: { enabled: !!queryCenter && !helperModeActive, queryKey: getGetCivicNeedsNearbyQueryKey(civicNeedsParams), placeholderData: keepPreviousData },
   });
   const civicNeeds = useResilientData(civicNeedsQuery, []);
-  const civicResourcesParams = { lat: queryCenter?.lat || 0, lng: queryCenter?.lng || 0, radius_miles: radiusMiles };
+  const civicResourcesParams = { lat: queryCenter?.lat ?? 0, lng: queryCenter?.lng ?? 0, radius_miles: radiusMiles };
   const civicResourcesQuery = useGetCivicResourcesNearby(civicResourcesParams, {
     query: { enabled: !!queryCenter && !helperModeActive, queryKey: getGetCivicResourcesNearbyQueryKey(civicResourcesParams), placeholderData: keepPreviousData },
   });
@@ -623,10 +623,10 @@ export default function MapScreen() {
     : null;
 
   const routeForActiveHelper = {
-    start_lat: activeHelper?.lat || 0,
-    start_lng: activeHelper?.lng || 0,
-    end_lat: activeRequest?.lat || 0,
-    end_lng: activeRequest?.lng || 0,
+    start_lat: activeHelper?.lat ?? 0,
+    start_lng: activeHelper?.lng ?? 0,
+    end_lat: activeRequest?.lat ?? 0,
+    end_lng: activeRequest?.lng ?? 0,
   };
   const { data: activeHelperRouteData } = useGetRoute(routeForActiveHelper, {
     query: {
@@ -1034,10 +1034,10 @@ export default function MapScreen() {
   // for the active in-progress job, so the card shows a real number instead
   // of asking the helper to eyeball distance-in-miles as time.
   const routeForBestMatch = {
-    start_lat: myLocation?.lat || 0,
-    start_lng: myLocation?.lng || 0,
-    end_lat: bestMatch?.lat || 0,
-    end_lng: bestMatch?.lng || 0,
+    start_lat: myLocation?.lat ?? 0,
+    start_lng: myLocation?.lng ?? 0,
+    end_lat: bestMatch?.lat ?? 0,
+    end_lng: bestMatch?.lng ?? 0,
   };
   const { data: bestMatchRouteData } = useGetRoute(routeForBestMatch, {
     query: {
@@ -1078,7 +1078,7 @@ export default function MapScreen() {
       return;
     }
     const req = activeJobRequest as HelpRequest;
-    if (!req.lat || !req.lng) {
+    if (req.lat == null || req.lng == null) {
       setBirdApproaching(false);
       return;
     }

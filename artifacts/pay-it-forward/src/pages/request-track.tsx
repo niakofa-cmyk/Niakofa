@@ -14,6 +14,7 @@ import { useWebSocket } from "@/lib/useWebSocket";
 import { toast } from "@/hooks/use-toast";
 import { InAppChat } from "@/components/InAppChat";
 import { getToken } from "@/lib/auth";
+import { parseEtaSeconds } from "@/lib/eta";
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -21,15 +22,6 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function parseEtaSeconds(etaText: string): number {
-  const minMatch = etaText.match(/(\d+)\s*min/i);
-  const hrMatch = etaText.match(/(\d+)\s*hr/i);
-  let s = 0;
-  if (hrMatch) s += parseInt(hrMatch[1]) * 3600;
-  if (minMatch) s += parseInt(minMatch[1]) * 60;
-  return s || 0;
 }
 
 const STATUS_STEPS = [
@@ -70,15 +62,21 @@ export default function RequesterTrackingScreen() {
   });
 
   const routeParams = {
-    start_lat: helperLocation?.lat || 0,
-    start_lng: helperLocation?.lng || 0,
-    end_lat: request?.lat || 0,
-    end_lng: request?.lng || 0,
+    start_lat: helperLocation?.lat ?? 0,
+    start_lng: helperLocation?.lng ?? 0,
+    end_lat: request?.lat ?? 0,
+    end_lng: request?.lng ?? 0,
   };
 
   const { data: routeData } = useGetRoute(routeParams, {
     query: {
-      enabled: !!(helperLocation && request && request.status === "en_route"),
+      enabled: !!(
+        helperLocation
+        && request
+        && request.status === "en_route"
+        && request.lat != null
+        && request.lng != null
+      ),
       refetchInterval: 15000,
       queryKey: getGetRouteQueryKey(routeParams),
     }
@@ -98,10 +96,10 @@ export default function RequesterTrackingScreen() {
   // "X helpers online near you" — shown only while waiting for a claim, so
   // requesters watching an unclaimed request see it's not sitting in a dead
   // zone. Reuses the same GET /helpers/online endpoint the map already calls.
-  const helperCountParams = { lat: request?.lat || 0, lng: request?.lng || 0, radius_miles: 10 };
+  const helperCountParams = { lat: request?.lat ?? 0, lng: request?.lng ?? 0, radius_miles: 10 };
   const { data: nearbyHelpers = [] } = useGetOnlineHelpers(helperCountParams, {
     query: {
-      enabled: !!request && request.status === "open",
+      enabled: !!request && request.status === "open" && request.lat != null && request.lng != null,
       queryKey: getGetOnlineHelpersQueryKey(helperCountParams),
       refetchInterval: 20000,
     },

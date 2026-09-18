@@ -9,7 +9,7 @@
  *
  * Wires to:
  *  PATCH /api/users/:id/helper-application  (skills, bio, languages, vehicle)
- *  POST  /api/users/:id/availability        (weekly windows)
+ *  PUT   /api/users/:id/availability        (weekly windows)
  */
 import { useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -331,7 +331,7 @@ export default function HelperOnboardingScreen() {
       // 2. Save availability windows
       if (availSlots.length > 0) {
         await fetch(`/api/users/${currentUser.id}/availability`, {
-          method: "POST",
+          method: "PUT",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
           body: JSON.stringify({
             windows: availSlots.map(s => ({
