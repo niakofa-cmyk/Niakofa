@@ -13,6 +13,8 @@ import { ConversationHeader } from "@/components/messages/ConversationHeader";
 import { MessageTypeTabs } from "@/components/messages/MessageTypeTabs";
 import { MessagesShell } from "@/components/messages/MessagesShell";
 import { MessagesSidebar } from "@/components/messages/MessagesSidebar";
+import type { PendingAttachment } from "@/components/messages/MessageComposerWithAttachments";
+import type { MessageAttachmentData } from "@/components/messages/MessageAttachment";
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
 import { directToUnified, hubToUnified, requestToUnified, sortUnified, type UnifiedConversation } from "@/lib/unifiedConversation";
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
@@ -28,6 +30,7 @@ type DirectConversation = {
     sender_id: number;
     created_at: string | null;
     read_at: string | null;
+    attachment_count?: number;
   } | null;
 };
 type DirectMessage = {
@@ -37,6 +40,7 @@ type DirectMessage = {
   sender_name: string;
   sender_avatar: string | null;
   body: string;
+  attachments?: MessageAttachmentData[];
   created_at: string | null;
   read_at: string | null;
 };
@@ -145,6 +149,7 @@ export default function MessagesPage() {
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<DirectUser[]>([]);
   const [body, setBody] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [reportReason, setReportReason] = useState("");
   const [showReport, setShowReport] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -287,18 +292,23 @@ export default function MessagesPage() {
   }, [activeMode, search]);
 
   async function sendDirectMessage() {
-    if (!activeRecipient || !body.trim()) return;
+    if (!activeRecipient || (!body.trim() && attachments.length === 0)) return;
     setWorking(true);
     setError(null);
     try {
       const response = await fetch("/api/messages/direct", {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ recipientId: activeRecipient.id, body: body.trim() }),
+        body: JSON.stringify({
+          recipientId: activeRecipient.id,
+          body: body.trim(),
+          attachments: attachments.map(({ data_url, original_name, alt_text }) => ({ data_url, original_name, alt_text })),
+        }),
       });
       if (!response.ok) throw new Error(await readError(response, "Could not send direct message."));
       const data = await response.json() as { conversationId?: number };
       setBody("");
+      setAttachments([]);
       setNewRecipient(null);
       await loadDirectConversations();
       await loadUnreadSummary();
@@ -411,10 +421,12 @@ export default function MessagesPage() {
       messages={directMessages}
       currentUserId={currentUser?.id ?? null}
       body={body}
+      attachments={attachments}
       working={working}
       onBack={clearSelection}
       onInfo={() => setShowInfo(true)}
       onBodyChange={setBody}
+      onAttachmentsChange={setAttachments}
       onSend={() => void sendDirectMessage()}
     />
   ) : (
@@ -433,6 +445,7 @@ export default function MessagesPage() {
         search={search}
         searchResults={searchResults}
         body={body}
+         attachments={attachments}
         working={working}
         currentUserId={currentUser?.id ?? null}
         realtimeState={realtimeState}
@@ -446,6 +459,7 @@ export default function MessagesPage() {
         onSelectUser={startDirectWithUser}
         onBackToList={clearSelection}
         onBodyChange={setBody}
+         onAttachmentsChange={setAttachments}
         onSend={() => void sendDirectMessage()}
         onBlock={() => void blockRecipient()}
         onToggleReport={() => setShowReport((open) => !open)}

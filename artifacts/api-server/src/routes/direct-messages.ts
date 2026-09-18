@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { and, asc, desc, eq, ilike, isNull, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
   db,
   directConversationMembersTable,
   directConversationsTable,
+  directMessageAttachmentsTable,
   directMessageBlocksTable,
   directMessageReportsTable,
   directMessagesTable,
@@ -11,11 +13,115 @@ import {
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
+import { deleteAsset, putAsset, streamOrRedirectAsset } from "../lib/storage";
 import { sendToUsers } from "../lib/ws-hub";
 
 const router = Router();
 const MAX_BODY_LENGTH = 4_000;
 const MAX_REPORT_LENGTH = 500;
+const MAX_DIRECT_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_DIRECT_ATTACHMENTS = 5;
+const MAX_DIRECT_ATTACHMENT_DATA_URL_LENGTH = 7_500_000;
+const DIRECT_ATTACHMENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "audio/mpeg",
+  "audio/ogg",
+  "audio/wav",
+  "application/pdf",
+]);
+const DIRECT_ATTACHMENT_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "audio/mpeg": "mp3",
+  "audio/ogg": "ogg",
+  "audio/wav": "wav",
+  "application/pdf": "pdf",
+};
+
+type DecodedDirectAttachment = {
+  buffer: Buffer;
+  mimeType: string;
+  originalName: string | null;
+  altText: string | null;
+};
+
+function hasExpectedSignature(buffer: Buffer, mimeType: string): boolean {
+  if (mimeType === "image/jpeg") return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  if (mimeType === "image/png") return buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (mimeType === "image/gif") return buffer.subarray(0, 4).toString("ascii") === "GIF8";
+  if (mimeType === "image/webp") return buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+  if (mimeType === "video/mp4") return buffer.subarray(4, 16).toString("ascii").includes("ftyp");
+  if (mimeType === "video/webm") return buffer.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+  if (mimeType === "audio/ogg") return buffer.subarray(0, 4).toString("ascii") === "OggS";
+  if (mimeType === "audio/wav") return buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WAVE";
+  if (mimeType === "application/pdf") return buffer.subarray(0, 5).toString("ascii") === "%PDF-";
+  if (mimeType === "audio/mpeg") {
+    return buffer.subarray(0, 3).toString("ascii") === "ID3"
+      || (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0);
+  }
+  return false;
+}
+
+function cleanAttachmentText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, maxLength);
+  return cleaned || null;
+}
+
+function decodeDirectAttachment(value: unknown): DecodedDirectAttachment | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as { data_url?: unknown; original_name?: unknown; alt_text?: unknown };
+  if (typeof candidate.data_url !== "string" || candidate.data_url.length > MAX_DIRECT_ATTACHMENT_DATA_URL_LENGTH) return null;
+  const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(candidate.data_url);
+  if (!match || !DIRECT_ATTACHMENT_TYPES.has(match[1])) return null;
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length || buffer.length > MAX_DIRECT_ATTACHMENT_BYTES || !hasExpectedSignature(buffer, match[1])) return null;
+  return {
+    buffer,
+    mimeType: match[1],
+    originalName: cleanAttachmentText(candidate.original_name, 255),
+    altText: cleanAttachmentText(candidate.alt_text, 500),
+  };
+}
+
+function parseDirectAttachments(value: unknown): { attachments: DecodedDirectAttachment[]; error?: string } {
+  if (value === undefined) return { attachments: [] };
+  if (!Array.isArray(value) || value.length > MAX_DIRECT_ATTACHMENTS) {
+    return { attachments: [], error: `A message can include at most ${MAX_DIRECT_ATTACHMENTS} attachments.` };
+  }
+  const attachments: DecodedDirectAttachment[] = [];
+  for (const incoming of value) {
+    const decoded = decodeDirectAttachment(incoming);
+    if (!decoded) {
+      return { attachments: [], error: "Unsupported attachment type, invalid file data, or file is larger than 5 MB." };
+    }
+    attachments.push(decoded);
+  }
+  return { attachments };
+}
+
+function serializeAttachment(attachment: {
+  id: number;
+  message_id: number;
+  mime_type: string;
+  byte_size: number;
+  original_name: string | null;
+  alt_text: string | null;
+}) {
+  return {
+    ...attachment,
+    media_url: `/api/messages/direct/attachments/${attachment.id}`,
+  };
+}
 
 function parsePositiveId(value: unknown): number | null {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -153,6 +259,13 @@ router.get("/messages/direct/conversations", requireAuth, requireApproved, gener
       .orderBy(desc(directMessagesTable.created_at))
       .limit(1);
 
+    const [attachmentSummary] = lastMessage
+      ? await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(directMessageAttachmentsTable)
+        .where(eq(directMessageAttachmentsTable.message_id, lastMessage.id))
+      : [{ count: 0 }];
+
     conversations.push({
       id: membership.conversation_id,
       updated_at: serializeDate(membership.updated_at),
@@ -163,6 +276,7 @@ router.get("/messages/direct/conversations", requireAuth, requireApproved, gener
         sender_id: lastMessage.sender_id,
         created_at: serializeDate(lastMessage.created_at),
         read_at: serializeDate(lastMessage.read_at),
+        attachment_count: Number(attachmentSummary?.count ?? 0),
       } : null,
     });
   }
@@ -208,6 +322,27 @@ router.get("/messages/direct/:conversationId", requireAuth, requireApproved, gen
     .orderBy(asc(directMessagesTable.created_at))
     .limit(100);
 
+  const messageIds = messages.map((message) => message.id);
+  const attachments = messageIds.length
+    ? await db
+      .select({
+        id: directMessageAttachmentsTable.id,
+        message_id: directMessageAttachmentsTable.message_id,
+        mime_type: directMessageAttachmentsTable.mime_type,
+        byte_size: directMessageAttachmentsTable.byte_size,
+        original_name: directMessageAttachmentsTable.original_name,
+        alt_text: directMessageAttachmentsTable.alt_text,
+      })
+      .from(directMessageAttachmentsTable)
+      .where(inArray(directMessageAttachmentsTable.message_id, messageIds))
+    : [];
+  const attachmentsByMessage = new Map<number, ReturnType<typeof serializeAttachment>[]>();
+  for (const attachment of attachments) {
+    const list = attachmentsByMessage.get(attachment.message_id) ?? [];
+    list.push(serializeAttachment(attachment));
+    attachmentsByMessage.set(attachment.message_id, list);
+  }
+
   await db
     .update(directMessagesTable)
     .set({ read_at: new Date() })
@@ -226,6 +361,7 @@ router.get("/messages/direct/:conversationId", requireAuth, requireApproved, gen
       ...message,
       created_at: serializeDate(message.created_at),
       read_at: serializeDate(message.read_at),
+      attachments: attachmentsByMessage.get(message.id) ?? [],
     })),
   });
 });
@@ -234,11 +370,15 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
   const senderId = req.authenticatedUserId!;
   const recipientId = parsePositiveId(req.body?.recipientId);
   const body = String(req.body?.body ?? "").trim();
+  const parsedAttachments = parseDirectAttachments(req.body?.attachments);
   if (!recipientId || recipientId === senderId) {
     return res.status(400).json({ error: "A valid different recipient is required." });
   }
-  if (!body || body.length > MAX_BODY_LENGTH) {
-    return res.status(400).json({ error: `Message must be 1-${MAX_BODY_LENGTH} characters.` });
+  if (parsedAttachments.error) {
+    return res.status(400).json({ error: parsedAttachments.error });
+  }
+  if ((!body && parsedAttachments.attachments.length === 0) || body.length > MAX_BODY_LENGTH) {
+    return res.status(400).json({ error: `Message must include text or an attachment, with text up to ${MAX_BODY_LENGTH} characters.` });
   }
 
   const recipient = await getApprovedUser(recipientId);
@@ -249,70 +389,127 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
     return res.status(403).json({ error: "Direct messaging is blocked between these accounts.", error_code: "DIRECT_MESSAGING_BLOCKED" });
   }
   const sender = await getApprovedUser(senderId);
+  const storedKeys: string[] = [];
 
-  const result = await db.transaction(async (tx) => {
-    const mine = await tx
-      .select({ conversation_id: directConversationMembersTable.conversation_id })
-      .from(directConversationMembersTable)
-      .innerJoin(
-        directConversationsTable,
-        eq(directConversationsTable.id, directConversationMembersTable.conversation_id),
-      )
-      .where(and(
-        eq(directConversationMembersTable.user_id, senderId),
-        eq(directConversationsTable.status, "active"),
-      ));
+  try {
+    const result = await db.transaction(async (tx) => {
+      const persistAttachments = async (messageId: number, conversationId: number) => {
+        const persisted = [];
+        for (const attachment of parsedAttachments.attachments) {
+          const extension = DIRECT_ATTACHMENT_EXTENSIONS[attachment.mimeType] ?? "bin";
+          const storageKey = `direct-messages/${conversationId}/${randomUUID()}.${extension}`;
+          await putAsset(storageKey, attachment.buffer, attachment.mimeType);
+          storedKeys.push(storageKey);
+          const [row] = await tx.insert(directMessageAttachmentsTable).values({
+            message_id: messageId,
+            storage_key: storageKey,
+            mime_type: attachment.mimeType,
+            byte_size: attachment.buffer.length,
+            original_name: attachment.originalName,
+            alt_text: attachment.altText,
+          }).returning({
+            id: directMessageAttachmentsTable.id,
+            message_id: directMessageAttachmentsTable.message_id,
+            mime_type: directMessageAttachmentsTable.mime_type,
+            byte_size: directMessageAttachmentsTable.byte_size,
+            original_name: directMessageAttachmentsTable.original_name,
+            alt_text: directMessageAttachmentsTable.alt_text,
+          });
+          persisted.push(serializeAttachment(row));
+        }
+        return persisted;
+      };
 
-    for (const membership of mine) {
-      const members = await tx
-        .select({ user_id: directConversationMembersTable.user_id })
-        .from(directConversationMembersTable)
-        .where(eq(directConversationMembersTable.conversation_id, membership.conversation_id));
-      if (members.length === 2 && members.some((member) => member.user_id === recipientId)) {
+      const createMessage = async (conversationId: number) => {
         const [message] = await tx
           .insert(directMessagesTable)
-          .values({ conversation_id: membership.conversation_id, sender_id: senderId, body })
+          .values({ conversation_id: conversationId, sender_id: senderId, body })
           .returning();
+        const attachments = await persistAttachments(message.id, conversationId);
         await tx
           .update(directConversationsTable)
           .set({ updated_at: new Date() })
-          .where(eq(directConversationsTable.id, membership.conversation_id));
-        return { conversationId: membership.conversation_id, message };
+          .where(eq(directConversationsTable.id, conversationId));
+        return { conversationId, message, attachments };
+      };
+
+      const mine = await tx
+        .select({ conversation_id: directConversationMembersTable.conversation_id })
+        .from(directConversationMembersTable)
+        .innerJoin(
+          directConversationsTable,
+          eq(directConversationsTable.id, directConversationMembersTable.conversation_id),
+        )
+        .where(and(
+          eq(directConversationMembersTable.user_id, senderId),
+          eq(directConversationsTable.status, "active"),
+        ));
+
+      for (const membership of mine) {
+        const members = await tx
+          .select({ user_id: directConversationMembersTable.user_id })
+          .from(directConversationMembersTable)
+          .where(eq(directConversationMembersTable.conversation_id, membership.conversation_id));
+        if (members.length === 2 && members.some((member) => member.user_id === recipientId)) {
+          return createMessage(membership.conversation_id);
+        }
       }
-    }
 
-    const [conversation] = await tx.insert(directConversationsTable).values({}).returning();
-    await tx.insert(directConversationMembersTable).values([
-      { conversation_id: conversation.id, user_id: senderId },
-      { conversation_id: conversation.id, user_id: recipientId },
-    ]);
-    const [message] = await tx
-      .insert(directMessagesTable)
-      .values({ conversation_id: conversation.id, sender_id: senderId, body })
-      .returning();
-    return { conversationId: conversation.id, message };
-  });
+      const [conversation] = await tx.insert(directConversationsTable).values({}).returning();
+      await tx.insert(directConversationMembersTable).values([
+        { conversation_id: conversation.id, user_id: senderId },
+        { conversation_id: conversation.id, user_id: recipientId },
+      ]);
+      return createMessage(conversation.id);
+    });
 
-  const message = {
-    ...result.message,
-    sender_name: sender?.name ?? "Unknown",
-    sender_avatar: sender?.avatar_url ?? null,
-    created_at: serializeDate(result.message.created_at),
-    read_at: serializeDate(result.message.read_at),
-  };
+    const message = {
+      ...result.message,
+      sender_name: sender?.name ?? "Unknown",
+      sender_avatar: sender?.avatar_url ?? null,
+      created_at: serializeDate(result.message.created_at),
+      read_at: serializeDate(result.message.read_at),
+      attachments: result.attachments,
+    };
 
-  sendToUsers([senderId, recipientId], {
-    type: "direct_message",
-    payload: {
-      conversation_id: result.conversationId,
+    sendToUsers([senderId, recipientId], {
+      type: "direct_message",
+      payload: {
+        conversation_id: result.conversationId,
+        message,
+      },
+    });
+
+    return res.status(201).json({
+      conversationId: result.conversationId,
       message,
-    },
-  });
+    });
+  } catch (error) {
+    await Promise.all(storedKeys.map((storageKey) => deleteAsset(storageKey)));
+    throw error;
+  }
+});
 
-  return res.status(201).json({
-    conversationId: result.conversationId,
-    message,
-  });
+router.get("/messages/direct/attachments/:attachmentId", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const attachmentId = parsePositiveId(req.params.attachmentId);
+  if (!attachmentId) return res.status(400).json({ error: "Invalid attachment id." });
+
+  const [row] = await db
+    .select({
+      storage_key: directMessageAttachmentsTable.storage_key,
+      conversation_id: directConversationsTable.id,
+    })
+    .from(directMessageAttachmentsTable)
+    .innerJoin(directMessagesTable, eq(directMessagesTable.id, directMessageAttachmentsTable.message_id))
+    .innerJoin(directConversationsTable, eq(directConversationsTable.id, directMessagesTable.conversation_id))
+    .where(eq(directMessageAttachmentsTable.id, attachmentId))
+    .limit(1);
+  if (!row || !(await isConversationMember(userId, row.conversation_id))) {
+    return res.status(404).json({ error: "Attachment not found." });
+  }
+
+  return streamOrRedirectAsset(row.storage_key, res);
 });
 
 router.post("/messages/direct/conversations/:conversationId/read", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {

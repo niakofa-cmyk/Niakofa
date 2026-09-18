@@ -5,15 +5,17 @@
  * Direct / Requests / Hubs remain one unified Messages product.
  */
 import { useEffect, useRef } from "react";
-import { ArrowLeft, Ban, Loader2, Search, Send, ShieldAlert, Wifi, WifiOff, X } from "lucide-react";
+import { ArrowLeft, Ban, Search, ShieldAlert, Wifi, WifiOff, X } from "lucide-react";
 import type { WsConnectionState } from "@/lib/wsClient";
+import { MessageAttachment, type MessageAttachmentData } from "./MessageAttachment";
+import { MessageComposerWithAttachments, type PendingAttachment } from "./MessageComposerWithAttachments";
 
 type DirectUser = { id: number; name: string; avatar_url: string | null };
 type DirectConversation = {
   id: number;
   updated_at: string | null;
   other_user: DirectUser;
-  last_message: { id: number; body: string; sender_id: number; created_at: string | null; read_at: string | null } | null;
+  last_message: { id: number; body: string; sender_id: number; created_at: string | null; read_at: string | null; attachment_count?: number } | null;
 };
 type DirectMessage = {
   id: number;
@@ -22,6 +24,7 @@ type DirectMessage = {
   sender_name: string;
   sender_avatar?: string | null;
   body: string;
+  attachments?: MessageAttachmentData[];
   created_at: string | null;
   read_at?: string | null;
 };
@@ -59,6 +62,7 @@ export type MetaStyleDirectPaneProps = {
   search: string;
   searchResults: DirectUser[];
   body: string;
+  attachments: PendingAttachment[];
   working: boolean;
   currentUserId: number | null;
   realtimeState?: WsConnectionState;
@@ -69,6 +73,7 @@ export type MetaStyleDirectPaneProps = {
   onSelectUser: (user: DirectUser) => void;
   onBackToList: () => void;
   onBodyChange: (value: string) => void;
+  onAttachmentsChange: (value: PendingAttachment[]) => void;
   onSend: () => void;
   onBlock: () => void;
   onToggleReport: () => void;
@@ -78,9 +83,10 @@ export type MetaStyleDirectPaneProps = {
 };
 
 export function MetaStyleDirectPane({
-  conversations, messages, selectedId, recipient, search, searchResults, body, working,
+  conversations, messages, selectedId, recipient, search, searchResults, body, attachments, working,
   currentUserId, realtimeState = "disconnected", reportOpen, reportReason,
   onSearchChange, onSelectConversation, onSelectUser, onBackToList, onBodyChange,
+  onAttachmentsChange,
   onSend, onBlock, onToggleReport, onReportReasonChange, onReport, onCancelReport,
 }: MetaStyleDirectPaneProps) {
   const showThread = Boolean(recipient);
@@ -136,7 +142,7 @@ export function MetaStyleDirectPane({
                     <span className="shrink-0 text-[10px] text-muted-foreground">{formatTime(conversation.last_message?.created_at ?? conversation.updated_at)}</span>
                   </span>
                   <span className={`mt-0.5 block truncate text-xs ${unread ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
-                    {conversation.last_message?.body ?? "Open conversation"}
+                    {conversation.last_message?.body || (conversation.last_message?.attachment_count ? "Attachment" : "Open conversation")}
                   </span>
                 </span>
                 {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
@@ -199,7 +205,10 @@ export function MetaStyleDirectPane({
                   return (
                     <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${mine ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted text-foreground"}`}>
-                        <p className="whitespace-pre-wrap break-words">{message.body}</p>
+                         {message.body && <p className="whitespace-pre-wrap break-words">{message.body}</p>}
+                         {message.attachments?.map((attachment) => (
+                           <MessageAttachment key={attachment.id} attachment={attachment} />
+                         ))}
                         <p className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{formatTime(message.created_at)}</p>
                       </div>
                     </div>
@@ -209,29 +218,14 @@ export function MetaStyleDirectPane({
               </div>
             </div>
 
-            <form
-              className="sticky bottom-0 flex shrink-0 items-end gap-2 border-t border-border bg-card/95 p-3 backdrop-blur supports-[padding:max(0px)]:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-              onSubmit={(event) => { event.preventDefault(); if (!working && body.trim()) onSend(); }}
-            >
-              <textarea
-                value={body}
-                onChange={(e) => onBodyChange(e.target.value)}
-                maxLength={4000}
-                rows={1}
-                placeholder="Write a message…"
-                aria-label="Message"
-                className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    if (!working && body.trim()) onSend();
-                  }
-                }}
-              />
-              <button type="submit" disabled={working || !body.trim()} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground disabled:opacity-50" aria-label="Send message">
-                {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              </button>
-            </form>
+            <MessageComposerWithAttachments
+              body={body}
+              attachments={attachments}
+              working={working}
+              onBodyChange={onBodyChange}
+              onAttachmentsChange={onAttachmentsChange}
+              onSend={onSend}
+            />
           </>
         )}
       </section>

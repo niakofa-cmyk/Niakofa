@@ -6,6 +6,7 @@ export * from "./ratings";
 export * from "./transactions";
 export * from "./chat-messages";
 export * from "./direct-messages";
+export * from "./direct-message-attachments";
 export * from "./communities";
 export * from "./community-pool";
 export * from "./helper-availability";

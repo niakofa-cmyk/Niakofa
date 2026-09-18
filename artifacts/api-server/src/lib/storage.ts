@@ -188,6 +188,7 @@ export async function assetExists(key: string): Promise<boolean> {
  * Callers must ensure the key has already been validated (no path traversal).
  */
 export async function streamOrRedirectAsset(key: string, res: Response): Promise<void> {
+  res.setHeader("Cache-Control", "private, no-store");
   if (isCloudStorageConfigured()) {
     const url = await getAssetUrl(key);
     res.redirect(307, url);

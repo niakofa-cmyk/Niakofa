@@ -191,8 +191,9 @@ app.use(
 );
 
 // ── Body parsing ───────────────────────────────────────────────────────────────
-// 10mb to allow base64 avatar uploads
-app.use(express.json({ limit: "10mb" }));
+// 40mb accommodates up to five 5mb direct-message attachments encoded as base64.
+// The route still enforces per-file and per-message attachment limits.
+app.use(express.json({ limit: "40mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // ── X-Request-ID propagation ──────────────────────────────────────────────────
