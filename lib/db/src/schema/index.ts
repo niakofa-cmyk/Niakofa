@@ -19,6 +19,7 @@ export * from "./government-sponsors";
 export * from "./businesses";
 export * from "./gratitude";
 export * from "./gratitude-likes";
+export * from "./hub-community";
 export * from "./griot-stories";
 export * from "./griot-transcription-jobs";
 export * from "./diaspora-hubs";

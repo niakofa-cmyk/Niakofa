@@ -227,6 +227,13 @@ export default function HubLeaderDashboard() {
     }
   }
 
+  async function suspendHubMessaging(membershipId: number) {
+    if (!window.confirm("Suspend Hub messaging for this member? They will remain on the Hub record but cannot post, comment, react, or represent the Hub until restored.")) {
+      return;
+    }
+    await updateMembership(membershipId, "suspended");
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -497,16 +504,18 @@ export default function HubLeaderDashboard() {
               <Users className="w-4 h-4 text-muted-foreground" />
                <p className="font-bold text-[13px]">Members and leaders</p>
             </div>
-             {memberships.filter((membership) => membership.status === "approved").length === 0 && summary.leaders.length === 0 ? (
+             <p className="mb-2 text-[11px] text-muted-foreground">Suspend Hub messaging to pause a member&apos;s posting, comments, reactions, and Hub representation without revoking their membership.</p>
+              {memberships.filter((membership) => membership.status === "approved" || membership.status === "suspended").length === 0 && summary.leaders.length === 0 ? (
                <p className="text-[12px] text-muted-foreground">No approved members yet.</p>
             ) : (
               <div className="space-y-1.5">
-                 {memberships.filter((membership) => membership.status === "approved").map((membership) => (
+                  {memberships.filter((membership) => membership.status === "approved" || membership.status === "suspended").map((membership) => (
                    <div key={`membership-${membership.id}`} className="flex items-center justify-between gap-3 text-[12px]">
                      <span className="truncate">{membership.user_name || `Member ${membership.user_id}`}</span>
                      <div className="flex shrink-0 items-center gap-2">
-                       <span className="text-muted-foreground text-[10px] uppercase tracking-wide">{membership.role}</span>
-                       {membership.role !== "leader" && <button type="button" disabled={busy} onClick={() => void updateMembership(membership.id, "suspended")} className="text-[10px] font-bold text-amber-600 disabled:opacity-50">Suspend</button>}
+                        <span className="text-muted-foreground text-[10px] uppercase tracking-wide">{membership.status === "suspended" ? "messaging suspended" : membership.role}</span>
+                        {membership.role !== "leader" && membership.status === "approved" && <button type="button" disabled={busy} onClick={() => void suspendHubMessaging(membership.id)} className="text-[10px] font-bold text-amber-600 disabled:opacity-50">Suspend Hub messaging</button>}
+                        {membership.role !== "leader" && membership.status === "suspended" && <button type="button" disabled={busy} onClick={() => void updateMembership(membership.id, "approved")} className="text-[10px] font-bold text-primary disabled:opacity-50">Restore Hub messaging</button>}
                        <button type="button" disabled={busy} onClick={() => void updateMembership(membership.id, "revoked")} className="text-[10px] font-bold text-destructive disabled:opacity-50">Revoke</button>
                      </div>
                    </div>

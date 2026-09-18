@@ -71,6 +71,9 @@ export const requestsTable = pgTable("help_requests", {
   // Client-generated operation key. A retry of request creation returns the
   // original row instead of creating a second help request.
   client_request_id: text("client_request_id"),
+  // Stable completion key supplied by the helper client. A lost response can
+  // replay the same completion without creating a second lifecycle operation.
+  completion_operation_key: text("completion_operation_key"),
   // Expiry nudge dedupe marker (migration 0065) — set once cleanup-worker sends the
   // "no one's claimed this yet" push at ~50% of the urgency's expiry threshold, so the
   // nudge never fires twice for the same request.
@@ -95,6 +98,7 @@ export const requestsTable = pgTable("help_requests", {
   // Hub-scoped requests (migration 0057)
   index("help_requests_hub_id_idx").on(t.hub_id),
   uniqueIndex("help_requests_requester_client_request_idx").on(t.requester_id, t.client_request_id),
+  uniqueIndex("help_requests_helper_completion_key_idx").on(t.helper_id, t.completion_operation_key),
 ]);
 
 export const insertRequestSchema = createInsertSchema(requestsTable).omit({

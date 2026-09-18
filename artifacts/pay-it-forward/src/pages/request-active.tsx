@@ -7,7 +7,7 @@ import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { detectVoiceLocale, pickBestVoice, detectUnits, detectMapLanguage } from "@/lib/locale-utils";
-import { useGetRequest, useGetRequests, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, useGetUserSettings, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey, getGetUserSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetRequest, useGetRequests, useGetRoute, useMarkEnRoute, useMarkArrived, useGetUserSettings, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey, getGetUserSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { motion, AnimatePresence } from "framer-motion";
 import { haversineMeters, isNearbyUser } from "@/lib/geo-utils";
-import { newOperationKey } from "@/lib/retryableMutation";
+import { newOperationKey, retryableMutation } from "@/lib/retryableMutation";
 import { readCompletionError } from "@/lib/readCompletionError";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
@@ -296,9 +296,7 @@ export default function ActiveRequestScreen() {
     }
   });
 
-  const completeMutation = useCompleteRequest({
-    request: { headers: { "Idempotency-Key": operationKey("complete") } },
-  });
+  const [completionPending, setCompletionPending] = useState(false);
   const enRouteMutation = useMarkEnRoute({
     request: { headers: { "Idempotency-Key": operationKey("en-route") } },
   });
@@ -532,29 +530,44 @@ export default function ActiveRequestScreen() {
     }
   }, [requestId, queryClient]));
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (!currentUser || !request) return;
-    completeMutation.mutate(
-      { id: requestId, data: { helper_id: currentUser.id } },
+    if (completionPending) return;
+    setCompletionPending(true);
+    try {
+      const response = await retryableMutation(
+        `/api/requests/${requestId}/complete`,
         {
-        onSuccess: () => {
-          const earned = request.payment_type === "immediate" && request.pay_it_forward_amount
-            ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
-            : request.payment_type === "goodwill" ? "+1 goodwill point earned" : "Thank you for helping!";
-          toast({ title: "🎉 Request Completed!", description: earned });
-          queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
-          queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
-          // Show rating modal before navigating away
-          setTimeout(() => setShowRating(true), 900);
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ helper_id: currentUser.id }),
         },
-        onError: (error: unknown) => {
-          const details = readCompletionError(error);
-          toast({ title: details.title, description: details.description, variant: "destructive" });
-          void queryClient.refetchQueries({ queryKey: getGetRequestQueryKey(requestId) });
-          queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
-        }
-     }
-    );
+        operationKey("complete"),
+        3,
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = Object.assign(new Error(payload?.error ?? payload?.message ?? `Completion failed (HTTP ${response.status}).`), {
+          status: response.status,
+          data: payload,
+        });
+        throw error;
+      }
+      const earned = request.payment_type === "immediate" && request.pay_it_forward_amount
+        ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
+        : request.payment_type === "goodwill" ? "+1 goodwill point earned" : "Thank you for helping!";
+      toast({ title: "🎉 Request Completed!", description: earned });
+      queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+      queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
+      setTimeout(() => setShowRating(true), 900);
+    } catch (error: unknown) {
+      const details = readCompletionError(error);
+      toast({ title: details.title, description: details.description, variant: "destructive" });
+      void queryClient.refetchQueries({ queryKey: getGetRequestQueryKey(requestId) });
+      queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
+    } finally {
+      setCompletionPending(false);
+    }
   };
 
   const CANCEL_REASON_OPTIONS: { value: "traffic" | "safety" | "request_changed" | "other"; label: string }[] = [
@@ -1057,9 +1070,9 @@ export default function ActiveRequestScreen() {
             isCompleted ? "bg-muted text-muted-foreground" : isArrived ? "bg-green-500 hover:bg-green-600 text-white" : ""
           }`}
           onClick={handleComplete}
-          disabled={completeMutation.isPending || isCompleted}
+          disabled={completionPending || isCompleted}
         >
-          {completeMutation.isPending ? "Processing..." : isCompleted ? "✓ Completed" : isArrived ? "✓ Mark Complete" : "I'm Here — Complete"}
+          {completionPending ? "Processing..." : isCompleted ? "✓ Completed" : isArrived ? "✓ Mark Complete" : "I'm Here — Complete"}
         </Button>
 
         {request.payment_type === "immediate" && earnAmount && (

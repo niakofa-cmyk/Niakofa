@@ -1128,6 +1128,10 @@ router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
 
 router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
+  const completionOperationKey = String(req.header("Idempotency-Key") ?? "").trim();
+  if (completionOperationKey.length > 128) {
+    return res.status(400).json({ error: "Idempotency-Key must be 128 characters or fewer." });
+  }
   const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) {
     return res.status(400).json({ error: "Invalid request id", details: pParsed.error.issues });
@@ -1154,13 +1158,33 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
     .from(requestsTable)
     .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, helperId), eq(requestsTable.status, "completed")))
     .limit(1);
-  if (alreadyCompleted) return res.json(alreadyCompleted);
+  if (alreadyCompleted) {
+    return res.json({ ...alreadyCompleted, idempotent_replay: true });
+  }
+
+  if (completionOperationKey) {
+    const [keyedCompletion] = await db
+      .select({ id: requestsTable.id })
+      .from(requestsTable)
+      .where(and(
+        eq(requestsTable.helper_id, helperId),
+        eq(requestsTable.completion_operation_key, completionOperationKey),
+      ))
+      .limit(1);
+    if (keyedCompletion && keyedCompletion.id !== pParsed.data.id) {
+      return res.status(409).json({ error: "This completion key was already used for another request." });
+    }
+  }
 
   // Status guard makes completion idempotent: a request can only transition to
   // completed ONCE, so every side effect below (help_count, pool front,
   // guaranteed minimum, payout) fires exactly once even on repeated calls.
   const [request] = await db.update(requestsTable)
-    .set({ status: "completed", completed_at: new Date() })
+    .set({
+      status: "completed",
+      completed_at: new Date(),
+      completion_operation_key: completionOperationKey || null,
+    })
     .where(and(
       eq(requestsTable.id, pParsed.data.id),
       eq(requestsTable.helper_id, helperId),
