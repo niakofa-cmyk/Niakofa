@@ -259,6 +259,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // ── useWebSocket subscriptions ────────────────────────────────────────────
+  // Requester lifecycle handoff: when a helper claims the current user's
+  // request, move the requester to the dedicated tracking screen regardless
+  // of which page they were viewing. Previously this lived only in map.tsx,
+  // so a requester sitting in Community, Messages, Requests, etc. could miss
+  // the handoff and remain on an unrelated screen.
+  useWebSocket("REQUEST_ACCEPTED", (event) => {
+    const req = event.payload as {
+      id?: number;
+      requester_id?: number;
+      helper_id?: number | null;
+    };
+    if (
+      !currentUser ||
+      req.requester_id == null ||
+      req.requester_id !== currentUser.id ||
+      req.id == null ||
+      location === `/request/${req.id}/track`
+    ) {
+      return;
+    }
+
+    toast({
+      title: "Your request was accepted",
+      description: "Your helper is on the way. Opening live tracking.",
+    });
+    setLocation(`/request/${req.id}/track`);
+  });
+
   // Show gratitude prompt when the current user's request is completed
   useWebSocket("new_gratitude_prompt", (event) => {
     const p = event.payload as {
