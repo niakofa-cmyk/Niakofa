@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { AlertTriangle, Loader2, Mic, Radio, RefreshCw, Users, Video } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
-import { SPIRALS_PATHS } from "@/lib/spirals";
+import { SPIRALS_PATHS, parseSpiralHubId, spiralsDiscoveryPath } from "@/lib/spirals";
 import { SpiralMark } from "@/components/SpiralMark";
 
 interface NeighborhoodInfo {
@@ -45,10 +45,16 @@ function keyFor(value: string): string {
  * neighborhood choices for a configured city.
  */
 export function CommunitySpiralsTab() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { currentUser } = useAppContext();
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const city = currentUser?.city?.trim() || "Fort Worth";
+  // Hub context is reactive to Community route changes and never grants
+  // membership or turns curated Spiral discovery into a GPS gate.
+  const hubId = useMemo(
+    () => parseSpiralHubId(location.includes("?") ? location.slice(location.indexOf("?")) : ""),
+    [location],
+  );
 
   const [neighborhoods, setNeighborhoods] = useState<NeighborhoodInfo[]>([]);
   const [liveByNeighborhood, setLiveByNeighborhood] = useState<Map<string, LiveSession>>(new Map());
@@ -114,12 +120,21 @@ export function CommunitySpiralsTab() {
       setLocation(SPIRALS_PATHS.room(live.id));
       return;
     }
-    const query = neighborhoodName ? `?neighborhood=${encodeURIComponent(neighborhoodName)}` : "";
-    setLocation(`${SPIRALS_PATHS.discovery}${query}`);
+    setLocation(spiralsDiscoveryPath({ neighborhood: neighborhoodName, hubId: hubId ?? undefined }));
   };
 
   return (
     <div className="space-y-4">
+      {hubId !== null && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-black uppercase tracking-widest text-primary">Hub context</div>
+            <div className="mt-0.5 truncate text-xs font-bold text-foreground">Spirals opened from the selected Diaspora Hub</div>
+          </div>
+          <span className="shrink-0 rounded-full border border-primary/20 bg-background/60 px-2 py-1 text-[10px] font-bold text-muted-foreground">Hub #{hubId}</span>
+        </div>
+      )}
+
       <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
         <h3 className="font-black text-sm flex items-center gap-2 mb-1">
           <SpiralMark className="w-4 h-4 text-primary" /> Community Spirals
@@ -245,7 +260,7 @@ export function CommunitySpiralsTab() {
 
       <button
         type="button"
-        onClick={() => setLocation(SPIRALS_PATHS.discovery)}
+        onClick={() => setLocation(spiralsDiscoveryPath({ hubId: hubId ?? undefined }))}
         className="w-full bg-gradient-to-br from-primary/15 via-card to-card border border-primary/30 rounded-2xl p-4 flex items-center gap-3 text-left cursor-pointer hover:border-primary/50 transition-colors"
       >
         <SpiralMark className="w-5 h-5 text-primary" />

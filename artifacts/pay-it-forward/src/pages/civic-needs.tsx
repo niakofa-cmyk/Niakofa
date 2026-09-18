@@ -226,14 +226,30 @@ export default function CivicNeedsPage() {
         const v = Number(finalCost);
         if (!isNaN(v) && v >= 0) body.final_cost = v;
       }
-      const res = await fetch(`${BASE}/api/civic/needs/${completing.id}/complete`, {
-        method: "PATCH",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      // The backend completion mutation is replay-safe, so one transient 5xx
+      // retry can recover when the server committed before the response was lost.
+      const requestComplete = async () => {
+        const res = await fetch(`${BASE}/api/civic/needs/${completing.id}/complete`, {
+          method: "PATCH",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { res, data };
+      };
+
+      let { res, data } = await requestComplete();
+      if (!res.ok && res.status >= 500 && res.status <= 599) {
+        await new Promise(resolve => setTimeout(resolve, 700));
+        ({ res, data } = await requestComplete());
+      }
+      if (!res.ok) throw new Error(data.error ?? `Failed to complete (HTTP ${res.status})`);
+      toast({
+        title: data.replayed ? "Completion confirmed 🎉" : "Marked complete 🎉",
+        description: data.replayed
+          ? "The server had already completed this need; the existing NET30 invoice was returned."
+          : "A NET30 invoice was generated for the sponsor.",
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to complete");
-      toast({ title: "Marked complete 🎉", description: "A NET30 invoice was generated for the sponsor." });
       setCompleting(null);
       setFinalCost("");
       fetchClaimed();
