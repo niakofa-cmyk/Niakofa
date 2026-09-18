@@ -1,22 +1,22 @@
 ---
 name: GitHub sync boundary
-description: Safe synchronization rule for the public Niakofa repository when GitHub write authorization is unavailable.
+description: Safe synchronization rule for the private Niakofa repository when GitHub write authorization is unavailable.
 ---
 
-The Niakofa repository can be inspected and fetched from its public GitHub
-source without credentials, but a local commit is not evidence that GitHub
-`main` changed. When the supported GitHub connection is unavailable, verify
-the public branch hash independently and stop at the push boundary rather than
-using a token pasted into chat or force-pushing.
+The Niakofa repository's current GitHub visibility is private, so shell
+fetch/pull may fail even when the connected GitHub API can read and write it.
+A local commit is never evidence that GitHub `main` changed. When the
+supported GitHub connection is unavailable, stop at the push boundary rather
+than using a token pasted into chat or force-pushing.
 
-**Why:** The repository is public for reads, while write authorization is
-separate; an attempted push can fail before identifying a usable remote even
-when the local checkout is otherwise valid.
+**Why:** The repository metadata currently reports private visibility, and a
+shell `git pull` failed with GitHub token authentication while the installed
+connection remained usable.
 
-**How to apply:** Compare local `HEAD` with the public `main` ref after every
-push attempt. If the HTTPS remote rejects authentication, use the attached
-GitHub connection's authenticated API for the write and then compare both
-hashes independently; never paste or print a token.
+**How to apply:** Compare local `HEAD` with the authenticated remote `main` ref
+after every push attempt. If the HTTPS remote rejects authentication, use the
+attached GitHub connection's authenticated API for the write and then compare
+both hashes independently; never paste or print a token.
 
 **Why:** The shell-backed HTTPS remote rejected authentication in this
 workspace, while the supported GitHub connection could read and confirm the
