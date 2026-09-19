@@ -154,7 +154,10 @@ export function MessengerMobileHome({
             <button key={person.id} type="button" onClick={() => onSelectPerson(person)} className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left active:bg-muted">
               <MessageAvatar name={person.name} avatarUrl={person.avatar_url} size={56} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[16px] font-bold">{person.name}</span>
+                <span className="flex items-center gap-1.5 truncate text-[16px] font-bold">
+                  <span className="truncate">{person.name}</span>
+                  {activePeople.some((candidate) => candidate.id === person.id) && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-label="Active now" />}
+                </span>
                 <span className="block truncate text-sm text-muted-foreground">Start a direct conversation</span>
               </span>
             </button>
