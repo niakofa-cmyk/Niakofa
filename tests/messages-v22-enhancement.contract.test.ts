@@ -85,3 +85,17 @@ test("Messages v24 preserves Hub feed context and Hub-to-Spirals navigation", ()
   assert.match(qa, /Messages[\s\S]*Mobile composer/i);
   assert.match(qa, /Hub[\s\S]*Spirals/i);
 });
+
+test("Messages v25 exposes in-thread search, sender avatars, and mobile composer guidance", () => {
+  const page = read("artifacts/pay-it-forward/src/pages/messages.tsx");
+  const thread = read("artifacts/pay-it-forward/src/components/messages/ConversationThread.tsx");
+  const bubble = read("artifacts/pay-it-forward/src/components/messages/MessageBubble.tsx");
+  const composer = read("artifacts/pay-it-forward/src/components/messages/MessageComposerWithAttachments.tsx");
+  assert.match(page, /threadSearchMatches/);
+  assert.match(page, /onNextSearchMatch/);
+  assert.match(thread, /Search this conversation/);
+  assert.match(thread, /MessageAvatar/);
+  assert.match(bubble, /<mark/);
+  assert.match(composer, /message-composer-hint/);
+  assert.match(composer, /enterKeyHint="send"/);
+});

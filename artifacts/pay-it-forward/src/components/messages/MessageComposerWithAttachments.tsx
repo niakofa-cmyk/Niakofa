@@ -129,6 +129,7 @@ export function MessageComposerWithAttachments(props: {
   return (
     <form
       className="flex shrink-0 flex-col gap-2 border-t border-border bg-card/95 p-3 backdrop-blur supports-[padding:max(0px)]:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      aria-busy={props.working}
       onSubmit={(event) => { event.preventDefault(); if (canSend) props.onSend(); }}
     >
       {props.attachments.length > 0 && (
@@ -163,7 +164,7 @@ export function MessageComposerWithAttachments(props: {
         </div>
       )}
 
-      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+      {error && <p role="alert" aria-live="assertive" className="text-xs text-destructive">{error}</p>}
 
       <div className="flex items-end gap-2">
         <input
@@ -196,6 +197,9 @@ export function MessageComposerWithAttachments(props: {
           maxLength={4000}
           placeholder="Write a message…"
           aria-label="Message"
+          aria-describedby="message-composer-hint"
+          enterKeyHint="send"
+          autoComplete="off"
           className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -208,6 +212,7 @@ export function MessageComposerWithAttachments(props: {
           {props.working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </button>
       </div>
+      <p id="message-composer-hint" className="sr-only">Press Enter to send. Press Shift plus Enter for a new line.</p>
     </form>
   );
 }

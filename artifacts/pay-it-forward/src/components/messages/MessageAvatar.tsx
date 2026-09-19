@@ -19,9 +19,9 @@ export function MessageAvatar({
   return (
     <span className="relative inline-flex shrink-0">
       {avatarUrl ? (
-        <img src={avatarUrl} alt="" className={`${dimension} rounded-2xl object-cover`} />
+        <img src={avatarUrl} alt="" className={`${dimension} rounded-full object-cover`} />
       ) : (
-        <span className={`flex ${dimension} items-center justify-center rounded-2xl bg-primary/15 font-black text-primary`}>
+        <span className={`flex ${dimension} items-center justify-center rounded-full bg-primary/15 font-black text-primary`}>
           {initials(name)}
         </span>
       )}

@@ -1,3 +1,4 @@
+- [Workspace hydration and preview limits](workspace-hydration-preview.md) — a healthy web preview does not certify missing API helpers, production parity, or physical devices.
 - [Workspace package-manager bootstrap](pnpm-bootstrap.md) — disable self-bootstrap when the declared pnpm version is unavailable; restore dependencies from the frozen lockfile.
 - [LiveKit media boundary](livekit-media-boundary.md) — production Circles/Spirals use LiveKit only; legacy TURN/ICE remains compatibility infrastructure.
 - [API preview database gate](api-preview-database-gate.md) — migration-first API previews must fail closed when the development database is unreachable.

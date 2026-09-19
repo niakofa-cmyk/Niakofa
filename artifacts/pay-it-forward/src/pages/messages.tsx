@@ -154,6 +154,8 @@ export default function MessagesPage() {
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<DirectUser[]>([]);
   const [messageSearchResults, setMessageSearchResults] = useState<MessageSearchResult[]>([]);
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
+  const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [contexts, setContexts] = useState<PendingContext[]>([]);
@@ -182,6 +184,17 @@ export default function MessagesPage() {
     () => directMessages.flatMap((message) => message.attachments ?? []),
     [directMessages],
   );
+  const threadSearchMatches = useMemo(() => {
+    const query = threadSearchQuery.trim().toLocaleLowerCase();
+    if (!query) return [];
+    return directMessages.filter((message) => message.body.toLocaleLowerCase().includes(query)).map((message) => message.id);
+  }, [directMessages, threadSearchQuery]);
+  const threadSearchMatchIndex = threadSearchMatches.length
+    ? Math.max(0, threadSearchMatches.indexOf(highlightedMessageId ?? threadSearchMatches[0]))
+    : 0;
+  const threadHighlightedMessageId = threadSearchOpen && threadSearchQuery.trim() && threadSearchMatches.length
+    ? threadSearchMatches[threadSearchMatchIndex]
+    : highlightedMessageId;
 
   const loadDirectConversations = useCallback(async () => {
     const response = await fetch("/api/messages/direct/conversations", { headers: authHeaders() });
@@ -259,10 +272,26 @@ export default function MessagesPage() {
     if (activeMode !== "direct") return;
     const conversationId = Number.parseInt(queryValue(location, "conversation") ?? "", 10);
     const targetMessageId = Number.parseInt(queryValue(location, "message") ?? "", 10);
-    if (Number.isSafeInteger(conversationId) && conversationId > 0 && (conversationId !== selectedDirectId || targetMessageId !== highlightedMessageId)) {
+    if (Number.isSafeInteger(conversationId) && conversationId > 0 && (conversationId !== selectedDirectId || (targetMessageId > 0 && targetMessageId !== highlightedMessageId))) {
       void loadDirectMessages(conversationId, Number.isSafeInteger(targetMessageId) ? targetMessageId : null).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load this conversation."));
     }
   }, [activeMode, highlightedMessageId, location, loadDirectMessages, selectedDirectId]);
+
+  useEffect(() => {
+    setThreadSearchOpen(false);
+    setThreadSearchQuery("");
+  }, [selectedDirectId]);
+
+  useEffect(() => {
+    if (!threadSearchOpen || !threadSearchQuery.trim()) return;
+    if (!threadSearchMatches.length) {
+      setHighlightedMessageId(null);
+      return;
+    }
+    if (!threadSearchMatches.includes(highlightedMessageId ?? -1)) {
+      setHighlightedMessageId(threadSearchMatches[0]);
+    }
+  }, [highlightedMessageId, threadSearchMatches, threadSearchOpen, threadSearchQuery]);
 
   useEffect(() => {
     if (!selectedDirectId || activeMode !== "direct" || realtimeState === "connected") return;
@@ -421,6 +450,8 @@ export default function MessagesPage() {
   function clearSelection() {
     setCallMode(null);
     setShowSharedMedia(false);
+    setThreadSearchOpen(false);
+    setThreadSearchQuery("");
     setSelectedDirectId(null);
     setNewRecipient(null);
     setDirectMessages([]);
@@ -451,6 +482,8 @@ export default function MessagesPage() {
   }
 
   function selectSearchMessage(conversationId: number, messageId: number) {
+    setThreadSearchOpen(false);
+    setThreadSearchQuery("");
     setSearch("");
     setSearchResults([]);
     setMessageSearchResults([]);
@@ -481,7 +514,7 @@ export default function MessagesPage() {
       active={realtimeState === "connected"}
       subtitle={realtimeState === "connected" ? "Active connection" : "Direct message"}
       messages={directMessages}
-       highlightedMessageId={highlightedMessageId}
+       highlightedMessageId={threadHighlightedMessageId}
       currentUserId={currentUser?.id ?? null}
       body={body}
       attachments={attachments}
@@ -489,6 +522,21 @@ export default function MessagesPage() {
       working={working}
       onBack={clearSelection}
       onInfo={() => setShowInfo(true)}
+       onSearch={() => setThreadSearchOpen(true)}
+       searchOpen={threadSearchOpen}
+       searchQuery={threadSearchQuery}
+       searchMatchCount={threadSearchMatches.length}
+       searchMatchIndex={threadSearchMatchIndex}
+       onSearchQueryChange={setThreadSearchQuery}
+       onNextSearchMatch={() => {
+         if (!threadSearchMatches.length) return;
+         setHighlightedMessageId(threadSearchMatches[(threadSearchMatchIndex + 1) % threadSearchMatches.length]);
+       }}
+       onPreviousSearchMatch={() => {
+         if (!threadSearchMatches.length) return;
+         setHighlightedMessageId(threadSearchMatches[(threadSearchMatchIndex - 1 + threadSearchMatches.length) % threadSearchMatches.length]);
+       }}
+       onCloseSearch={() => { setThreadSearchOpen(false); setThreadSearchQuery(""); }}
       onVoiceCall={() => setCallMode("voice")}
       onVideoCall={() => setCallMode("video")}
       onBodyChange={setBody}

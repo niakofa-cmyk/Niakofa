@@ -1,4 +1,4 @@
-import { ArrowLeft, MoreHorizontal, Phone, Video } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Phone, Search, Video } from "lucide-react";
 import { MessageAvatar } from "./MessageAvatar";
 
 export function ConversationHeader({
@@ -8,6 +8,7 @@ export function ConversationHeader({
   active,
   onBack,
   onInfo,
+  onSearch,
   onVoiceCall,
   onVideoCall,
 }: {
@@ -17,6 +18,7 @@ export function ConversationHeader({
   active?: boolean | null;
   onBack?: () => void;
   onInfo?: () => void;
+  onSearch?: () => void;
   onVoiceCall?: () => void;
   onVideoCall?: () => void;
 }) {
@@ -28,8 +30,9 @@ export function ConversationHeader({
         <p className="truncate text-sm font-black">{title}</p>
         <p className="text-[10px] text-muted-foreground">{active ? "Active now" : subtitle || "Conversation"}</p>
       </div>
-      <button type="button" onClick={onVoiceCall} disabled={!onVoiceCall} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 inline-flex" title="Voice call" aria-label="Voice call"><Phone className="h-4 w-4" /></button>
+      <button type="button" onClick={onVoiceCall} disabled={!onVoiceCall} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40" title="Voice call" aria-label="Voice call"><Phone className="h-4 w-4" /></button>
       <button type="button" onClick={onVideoCall} disabled={!onVideoCall} className="hidden min-h-10 min-w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 sm:inline-flex" title="Video call" aria-label="Video call"><Video className="h-4 w-4" /></button>
+      {onSearch && <button type="button" onClick={onSearch} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl hover:bg-muted" aria-label="Search this conversation" title="Search this conversation"><Search className="h-4 w-4" /></button>}
       {onInfo && <button type="button" onClick={onInfo} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl hover:bg-muted" aria-label="Conversation info"><MoreHorizontal className="h-4 w-4" /></button>}
     </header>
   );
