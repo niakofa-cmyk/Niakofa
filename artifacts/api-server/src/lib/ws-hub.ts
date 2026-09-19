@@ -17,8 +17,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage, Server as HttpServer } from "http";
 import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
-import { db, chatMessagesTable, requestsTable, usersTable, directConversationMembersTable, directConversationsTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { db, chatMessagesTable, requestsTable, usersTable, directConversationMembersTable, directConversationsTable, directMessageBlocksTable } from "@workspace/db";
+import { and, eq, or } from "drizzle-orm";
 import { buildWsOriginAllowlist, isWsOriginAllowed } from "./ws-origin";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
@@ -807,6 +807,15 @@ export function initWebSocketServer(server: HttpServer): WebSocketServer {
             ))
             .limit(1);
           if (!targetMember) return;
+
+          const [block] = await db.select({ blocker_id: directMessageBlocksTable.blocker_id })
+            .from(directMessageBlocksTable)
+            .where(or(
+              and(eq(directMessageBlocksTable.blocker_id, registeredUserId), eq(directMessageBlocksTable.blocked_id, toUserId)),
+              and(eq(directMessageBlocksTable.blocker_id, toUserId), eq(directMessageBlocksTable.blocked_id, registeredUserId)),
+            ))
+            .limit(1);
+          if (block) return;
 
           sendToUser(toUserId, {
             type: eventType,
