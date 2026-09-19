@@ -25,6 +25,7 @@ import { directToUnified, hubToUnified, requestToUnified, sortUnified, type Unif
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
 
 type DirectUser = { id: number; name: string; avatar_url: string | null };
+type MessageSearchResult = { conversation_id: number; message_id: number; sender_id: number; sender_name: string; sender_avatar: string | null; body: string; created_at: string | null; peer?: DirectUser };
 type DirectConversation = {
   id: number;
   updated_at: string | null;
@@ -151,6 +152,7 @@ export default function MessagesPage() {
   const [newRecipient, setNewRecipient] = useState<DirectUser | null>(null);
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<DirectUser[]>([]);
+  const [messageSearchResults, setMessageSearchResults] = useState<MessageSearchResult[]>([]);
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [reportReason, setReportReason] = useState("");
@@ -294,13 +296,26 @@ export default function MessagesPage() {
     const query = search.trim();
     if (query.length < 2 || activeMode === "hub" || activeMode === "requests") {
       setSearchResults([]);
+      setMessageSearchResults([]);
       return;
     }
     const timer = window.setTimeout(async () => {
-      const response = await fetch(`/api/messages/direct/users?q=${encodeURIComponent(query)}`, { headers: authHeaders() });
-      if (!response.ok) return;
-      const data = await response.json() as { users?: DirectUser[] };
-      setSearchResults(Array.isArray(data.users) ? data.users : []);
+      const [peopleResponse, messagesResponse] = await Promise.all([
+        fetch(`/api/messages/direct/users?q=${encodeURIComponent(query)}`, { headers: authHeaders() }),
+        fetch(`/api/messages/direct/search?q=${encodeURIComponent(query)}`, { headers: authHeaders() }),
+      ]);
+      if (peopleResponse.ok) {
+        const data = await peopleResponse.json() as { users?: DirectUser[] };
+        setSearchResults(Array.isArray(data.users) ? data.users : []);
+      } else {
+        setSearchResults([]);
+      }
+      if (messagesResponse.ok) {
+        const data = await messagesResponse.json() as { results?: MessageSearchResult[] };
+        setMessageSearchResults(Array.isArray(data.results) ? data.results : []);
+      } else {
+        setMessageSearchResults([]);
+      }
     }, 250);
     return () => window.clearTimeout(timer);
   }, [activeMode, search]);
@@ -428,6 +443,14 @@ export default function MessagesPage() {
     navigate(messagesPath("direct"));
   }
 
+  function selectSearchMessage(conversationId: number) {
+    setSearch("");
+    setSearchResults([]);
+    setMessageSearchResults([]);
+    navigate(directConversationPath(conversationId));
+    void loadDirectMessages(conversationId).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not open this conversation."));
+  }
+
   const thread = activeMode === "hub" ? (
     <HubMessagesPanel initialConversation={selectedHub ? String(selectedHub.id) : queryValue(location, "conversation")} initialSourceHub={queryValue(location, "sourceHub")} initialTargetHub={queryValue(location, "targetHub")} />
   ) : activeMode === "requests" && selectedRequest && currentUser ? (
@@ -485,7 +508,7 @@ export default function MessagesPage() {
           showInfo={showInfo}
           mobileTabs={<MessageTypeTabs active={activeMode} counts={unreadCounts} onChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} />}
           sidebar={<MessagesSidebar activeMode={activeMode} counts={unreadCounts} people={searchResults} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} onCompose={() => setShowNewMessage(true)} onSelectPerson={startDirectWithUser} />}
-          list={<ConversationList items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} onCompose={() => setShowNewMessage(true)} emptyLabel="No conversations yet." />}
+          list={<ConversationList items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} messageSearchResults={messageSearchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} onSelectMessageSearch={selectSearchMessage} onCompose={() => setShowNewMessage(true)} emptyLabel="No conversations yet." />}
           thread={thread}
           info={
             activeRecipient ? (
