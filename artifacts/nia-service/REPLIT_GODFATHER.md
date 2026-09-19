@@ -926,3 +926,34 @@ without changing the existing service boundaries:
 direct Jest invocation produces misleading `import.meta` and mock failures.
 Test setup must also isolate every external service URL that can be injected
 through the workspace environment.
+
+---
+
+### Session: September 18, 2026 — Messages V23 search, direct RTC, and media release gate
+
+The Messages enhancement was brought to a locally verified release state while
+preserving the existing Request, Hub, attachment, realtime, LiveKit, and mobile
+boundaries:
+
+- Messenger-style People and message search, direct-message search API coverage,
+  avatar results, global incoming Direct call handling, mobile audio unlock, and
+  the existing Messages V22 contract surface are present in the canonical
+  `artifacts/` source.
+- Direct-call publish permissions use the installed LiveKit `TrackSource`
+  enum, and voice/video controls remain threaded through
+  `ConversationThread` into the conversation header.
+- Direct Messages, attachment downloads, and RTC token issuance remain
+  bearer-authenticated and approved-account-only. An unauthenticated local
+  probe returned `401` for each protected route.
+- Production acceptance was deliberately not overstated: deployment metadata
+  reported no published URL, so live two-account calling, protected media, and
+  mobile attachment evidence remain blocked until a deployment and approved
+  disposable states exist.
+- Local verification passed: the web build, API build, five Messages V22/V23
+  contract tests, thirteen focused media tests, public web preview, API health,
+  migrated schema/readiness, and preserved reference checksums.
+
+**Release lesson:** local health and route protection prove the release is
+coherent, not that production RTC or media works. Treat published-URL,
+served-commit, provider-readiness, approved-identity, and authenticated
+browser/API evidence as separate gates before calling Messages live-ready.

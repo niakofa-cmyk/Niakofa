@@ -52,3 +52,4 @@
 - [Unified messaging boundaries](unified-messaging-boundaries.md) — direct DMs stay approved-account-only while request and Hub conversations keep separate authorization models.
 - [Direct-message attachment privacy](direct-message-attachments.md) — bearer-authenticated media must render through fetched object URLs, never public native media URLs.
 - [Mobile attachment acceptance](mobile-attachment-acceptance.md) — use pre-provisioned deployed states and open mobile threads from the inbox before asserting blob media.
+- [Live Messages acceptance](live-messages-acceptance.md) — local Messages/RTC checks are not production evidence without a published URL, served-commit parity, and approved disposable states.
