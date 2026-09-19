@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, ShieldAlert, X } from "lucide-react";
+import { ArrowLeft, Loader2, ShieldAlert, UsersRound, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
@@ -267,13 +267,25 @@ export default function MessagesPage() {
   const loadInbox = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      await Promise.all([loadDirectConversations(), loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load Messages.");
-    } finally {
-      setLoading(false);
+    const results = await Promise.allSettled([
+      loadDirectConversations(),
+      loadRequestConversations(),
+      loadHubConversations(),
+      loadUnreadSummary(),
+    ]);
+    const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    // Messages is a unified shell over four independent sources. Keep the
+    // shell usable when an optional source (for example Hub data) is briefly
+    // unavailable; only surface an error when the inbox itself cannot load.
+    const directFailed = results[0]?.status === "rejected";
+    if (directFailed) {
+      const reason = failures[0]?.reason;
+      setError(reason instanceof Error ? reason.message : "Could not load Messages.");
+    } else if (failures.length) {
+      const reason = failures[0]?.reason;
+      setError(reason instanceof Error ? reason.message : "Some Messages features are temporarily unavailable.");
     }
+    setLoading(false);
   }, [loadDirectConversations, loadHubConversations, loadRequestConversations, loadUnreadSummary]);
 
   useEffect(() => { void loadInbox(); }, [loadInbox]);
@@ -572,6 +584,18 @@ export default function MessagesPage() {
         <div className="mx-auto flex min-h-[32rem] max-w-7xl items-center justify-center px-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
       ) : (
         <>
+          <div className="mx-auto hidden w-full max-w-[82rem] items-center justify-between px-3 pb-2 pt-3 lg:flex">
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => navigate("/")} className="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Back to Niakofa app">
+                <ArrowLeft className="h-4 w-4" /> Niakofa
+              </button>
+              <span className="text-border">/</span>
+              <h1 className="text-xl font-black">Messages</h1>
+            </div>
+            <button type="button" onClick={() => navigate("/community")} className="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Open Niakofa Community">
+              <UsersRound className="h-4 w-4" /> Community
+            </button>
+          </div>
           {!showThread && (
             <div className="lg:hidden">
               <MessengerMobileHome
@@ -585,6 +609,8 @@ export default function MessagesPage() {
                 onCompose={() => setShowNewMessage(true)}
                 onNotifications={() => setShowMobileNotifications(true)}
                 onMenu={() => setShowMobileMenu(true)}
+                onBackToApp={() => navigate("/")}
+                onCommunity={() => navigate("/community")}
               />
               <NotificationsDrawer
                 open={showMobileNotifications}
