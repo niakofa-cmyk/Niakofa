@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { AccessToken } from "livekit-server-sdk";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   db,
   directConversationMembersTable,
   directConversationsTable,
+  directMessageBlocksTable,
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
@@ -54,6 +55,17 @@ router.post(
         eq(directConversationsTable.status, "active"),
       )).limit(1);
     if (!member) return res.status(404).json({ error: "Conversation not found." });
+
+    const otherMembers = await db.select({ user_id: directConversationMembersTable.user_id })
+      .from(directConversationMembersTable)
+      .where(eq(directConversationMembersTable.conversation_id, conversationId));
+    const otherUserId = otherMembers.find((row) => row.user_id !== userId)?.user_id;
+    if (!otherUserId) return res.status(409).json({ error: "Direct call requires exactly two conversation members." });
+    const [block] = await db.select({ blocker_id: directMessageBlocksTable.blocker_id })
+      .from(directMessageBlocksTable)
+      .where(sql`(${directMessageBlocksTable.blocker_id} = ${userId} AND ${directMessageBlocksTable.blocked_id} = ${otherUserId}) OR (${directMessageBlocksTable.blocker_id} = ${otherUserId} AND ${directMessageBlocksTable.blocked_id} = ${userId})`)
+      .limit(1);
+    if (block) return res.status(403).json({ error: "Direct calling is blocked between these accounts.", code: "DIRECT_CALL_BLOCKED" });
 
     try {
       const token = new AccessToken(apiKey, apiSecret, {
