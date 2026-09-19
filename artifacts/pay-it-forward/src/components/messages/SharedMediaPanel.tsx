@@ -67,7 +67,7 @@ export function SharedMediaPanel({
       const controller = new AbortController();
       controllers.push(controller);
       void fetch(item.media_url, { headers: authHeaders(), signal: controller.signal })
-        .then((response) => response.ok ? response.blob() : Promise.reject(new Error("media"))) 
+        .then((response) => response.ok ? response.blob() : Promise.reject(new Error("media")))
         .then((blob) => {
           if (cancelled) return;
           const url = URL.createObjectURL(blob);

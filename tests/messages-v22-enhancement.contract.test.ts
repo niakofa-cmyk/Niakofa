@@ -42,8 +42,10 @@ test("Messages v22 exposes authenticated Direct RTC", () => {
   const route = read("artifacts/api-server/src/routes/direct-call.ts");
   const panel = read("artifacts/pay-it-forward/src/components/messages/DirectCallPanel.tsx");
   const ws = read("artifacts/api-server/src/lib/ws-hub.ts");
+  const membersSchema = read("lib/db/src/schema/direct-messages.ts");
   assert.match(route, /AccessToken/);
-  assert.match(route, /direct_conversation_members/);
+  assert.match(route, /directConversationMembersTable/);
+  assert.match(membersSchema, /direct_conversation_members/);
   assert.match(panel, /createLocalTracks/);
   assert.match(panel, /room.connect/);
   assert.match(ws, /direct_call_invite/);

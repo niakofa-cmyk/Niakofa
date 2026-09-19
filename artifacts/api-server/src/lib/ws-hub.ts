@@ -643,7 +643,7 @@ export function initWebSocketServer(server: HttpServer): WebSocketServer {
     socket.on("pong", () => socketAlive.set(socket, true));
 
     // ── Message handler ───────────────────────────────────────────────────────
-    socket.on("message", (raw) => {
+    socket.on("message", async (raw) => {
       try {
         const msg = JSON.parse(raw.toString()) as WsEvent;
 
