@@ -19,5 +19,3 @@ assert.match(messages, /communityStoriesTable/);
 assert.match(scheduler, /startCommunityStoryCleanupWorker/);
 assert.doesNotMatch(rail, /\/api\/messages\/stories/);
 assert.doesNotMatch(messages, /message_stories/);
-
-console.log("Community Story enhanced boundary contract passed.");
