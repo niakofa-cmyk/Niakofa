@@ -492,7 +492,7 @@ export default function MessagesPage() {
     }
   }
 
-  function startDirectWithUser(user: DirectUser, initialBody = "") {
+  const startDirectWithUser = useCallback((user: DirectUser, initialBody = "") => {
     setNewRecipient(user);
     setSelectedDirectId(null);
     setDirectMessages([]);
@@ -501,7 +501,7 @@ export default function MessagesPage() {
     setSearchResults([]);
     setShowInfo(false);
     navigate(messagesPath("direct"));
-  }
+  }, [navigate]);
 
   useEffect(() => {
     const recipientId = Number.parseInt(queryValue(location, "recipientId") ?? "", 10);
@@ -518,7 +518,7 @@ export default function MessagesPage() {
     };
     void loadRecipient();
     return () => { cancelled = true; };
-  }, [activeRecipient?.id, location]);
+  }, [activeRecipient?.id, location, startDirectWithUser]);
 
   function selectSearchMessage(conversationId: number, messageId: number) {
     setThreadSearchOpen(false);
