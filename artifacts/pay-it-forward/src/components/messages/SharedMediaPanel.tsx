@@ -81,6 +81,7 @@ export function SharedMediaPanel({
       cancelled = true;
       controllers.forEach((controller) => controller.abort());
       Object.values(created).forEach((url) => URL.revokeObjectURL(url));
+      setObjectUrls({});
     };
   }, [visible]);
 
