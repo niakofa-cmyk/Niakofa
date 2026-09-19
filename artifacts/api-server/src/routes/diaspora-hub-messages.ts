@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
+import { sendToUsers } from "../lib/ws-hub";
 
 const router = Router();
 
@@ -288,6 +289,16 @@ router.post("/diaspora/hub-messages/conversations/:id/messages", requireAuth, ge
     return [message];
   });
   if (!saved) return res.status(500).json({ error: "Message could not be saved." });
+  const recipientRows = await db.execute<{ user_id: number }>(sql`
+    SELECT DISTINCT hm.user_id
+    FROM hub_memberships hm
+    JOIN users u ON u.id = hm.user_id
+    WHERE hm.hub_id IN (${conversation.hub_a_id}, ${conversation.hub_b_id})
+      AND hm.status = 'approved'
+      AND u.approval_status = 'approved'
+      AND u.is_suspended = false
+  `);
+  const recipientUserIds = recipientRows.rows.map((row) => Number(row.user_id)).filter((id) => id > 0);
   const [sender] = await db.select({
     id: diasporaHubMessagesTable.id,
     conversation_id: diasporaHubMessagesTable.conversation_id,
@@ -302,7 +313,14 @@ router.post("/diaspora/hub-messages/conversations/:id/messages", requireAuth, ge
     .leftJoin(diasporaHubsTable, eq(diasporaHubsTable.id, diasporaHubMessagesTable.sender_hub_id))
     .where(eq(diasporaHubMessagesTable.id, saved.id))
     .limit(1);
-  return res.status(201).json({ message: sender ? serializeMessage(sender) : null });
+  const serialized = sender ? serializeMessage(sender) : null;
+  if (serialized) {
+    sendToUsers(recipientUserIds, {
+      type: "hub_message",
+      payload: { conversation_id: conversationId, message: serialized },
+    });
+  }
+  return res.status(201).json({ message: serialized });
 });
 
 export default router;
