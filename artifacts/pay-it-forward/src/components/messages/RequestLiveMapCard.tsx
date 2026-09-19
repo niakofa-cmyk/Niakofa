@@ -46,6 +46,8 @@ export function RequestLiveMapCard({
   const start = isHelper
     ? (myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null)
     : helperLocation;
+  const startLat = start?.lat;
+  const startLng = start?.lng;
 
   useEffect(() => {
     if (isHelper || !request.helper_id) return;
@@ -60,7 +62,7 @@ export function RequestLiveMapCard({
 
   useEffect(() => {
     let cancelled = false;
-    if (!start || !Number.isFinite(request.lat) || !Number.isFinite(request.lng)) {
+    if (startLat === undefined || startLng === undefined || !Number.isFinite(request.lat) || !Number.isFinite(request.lng)) {
       setRoute(null);
       return;
     }
@@ -71,8 +73,8 @@ export function RequestLiveMapCard({
     const controller = new AbortController();
     setLoadingRoute(true);
     const params = new URLSearchParams({
-      start_lat: String(start.lat),
-      start_lng: String(start.lng),
+      start_lat: String(startLat),
+      start_lng: String(startLng),
       end_lat: String(request.lat),
       end_lng: String(request.lng),
       profile: "driving",
@@ -95,7 +97,7 @@ export function RequestLiveMapCard({
       cancelled = true;
       controller.abort();
     };
-  }, [request.lat, request.lng, start?.lat, start?.lng]);
+  }, [request.lat, request.lng, startLat, startLng]);
 
   const center = start ?? { lat: request.lat, lng: request.lng };
   const routeGeometry = useMemo(() => route?.geometry ?? null, [route?.geometry]);

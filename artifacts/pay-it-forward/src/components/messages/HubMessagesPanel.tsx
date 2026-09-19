@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Building2, Loader2, MessageCircle, Radio, Send, Users } from "lucide-react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
@@ -86,30 +86,30 @@ export default function HubMessagesPanel({
     [targetHubs, sourceId],
   );
 
-  async function markRead(id: number): Promise<void> {
+  const markRead = useCallback(async (id: number): Promise<void> => {
     await fetch("/api/messages/hubs/" + id + "/read", {
       method: "POST",
       headers: authHeaders(),
     }).catch(() => {});
-  }
+  }, []);
 
-  async function loadConversations(): Promise<Conversation[]> {
+  const loadConversations = useCallback(async (): Promise<Conversation[]> => {
     const response = await fetch("/api/diaspora/hub-messages/conversations", { headers: authHeaders() });
     if (!response.ok) throw new Error(await readError(response, "Could not load Hub conversations."));
     const data = await response.json() as { conversations?: Conversation[] };
     const next = Array.isArray(data.conversations) ? data.conversations : [];
     setConversations(next);
     return next;
-  }
+  }, []);
 
-  async function loadConversation(id: number): Promise<void> {
+  const loadConversation = useCallback(async (id: number): Promise<void> => {
     setSelectedId(id);
     const response = await fetch("/api/diaspora/hub-messages/conversations/" + id, { headers: authHeaders() });
     if (!response.ok) throw new Error(await readError(response, "Could not load this Hub conversation."));
     const data = await response.json() as { conversation?: Conversation; messages?: Message[] };
     setMessages(Array.isArray(data.messages) ? data.messages : []);
     await markRead(id);
-  }
+  }, [markRead]);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,9 +148,7 @@ export default function HubMessagesPanel({
     }
     void bootstrap();
     return () => { cancelled = true; };
-    // Routed Hub references intentionally control the bootstrap lifecycle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialConversation, initialSourceHub, initialTargetHub]);
+  }, [initialConversation, initialSourceHub, initialTargetHub, loadConversation, loadConversations]);
 
   useEffect(() => {
     if (targetId && targetId !== sourceId) return;
@@ -186,7 +184,7 @@ export default function HubMessagesPanel({
       }
     });
     return unsubscribe;
-  }, [selectedId]);
+  }, [loadConversation, loadConversations, markRead, selectedId]);
 
   async function selectConversation(id: number): Promise<void> {
     const conversation = conversations.find((item) => item.id === id);

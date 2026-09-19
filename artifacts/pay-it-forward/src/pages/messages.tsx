@@ -288,7 +288,7 @@ export default function MessagesPage() {
       }
     });
     return () => { unsubscribeConnection(); unsubscribeEvents(); };
-  }, [activeMode, currentUser?.id, loadDirectConversations, loadDirectMessages, loadInbox, loadUnreadSummary, selectedDirectId]);
+  }, [activeMode, currentUser?.id, loadDirectConversations, loadDirectMessages, loadHubConversations, loadInbox, loadRequestConversations, loadUnreadSummary, selectedDirectId]);
 
   useEffect(() => {
     const query = search.trim();

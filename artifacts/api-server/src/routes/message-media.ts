@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   db,
   directConversationMembersTable,
