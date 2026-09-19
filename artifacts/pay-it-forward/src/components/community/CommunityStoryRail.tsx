@@ -8,7 +8,6 @@ import {
   MessageCircle,
   MoreHorizontal,
   Music2,
-  Play,
   Send,
   Share2,
   Sparkles,
@@ -16,7 +15,6 @@ import {
   Trash2,
   Type,
   Users,
-  Volume2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
