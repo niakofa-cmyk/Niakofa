@@ -216,7 +216,7 @@ router.get("/messages/direct/search", requireAuth, requireApproved, generalApiLi
   const query = String(req.query.q ?? "").trim();
   if (query.length < 2) return res.json({ results: [] });
 
-  const pattern = `%${query.replace(/[%_]/g, "\\router.get("/messages/direct/conversations", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {")}%`;
+  const pattern = `%${query.replace(/[%_]/g, "\\$&")}%`;
   const memberships = await db
     .select({ conversation_id: directConversationMembersTable.conversation_id })
     .from(directConversationMembersTable)
