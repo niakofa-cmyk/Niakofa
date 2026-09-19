@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Download, FileText, Loader2 } from "lucide-react";
+import { Download, FileText, Loader2, Sparkles } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 
 export type MessageAttachmentData = {
   id: number;
   message_id: number;
-  attachment_type?: "file" | "link" | "location" | string;
+   attachment_type?: "file" | "link" | "location" | "story" | string;
   mime_type: string;
   byte_size: number;
   original_name: string | null;
@@ -66,6 +66,10 @@ export function MessageAttachment({ attachment, compact = false }: { attachment:
   if (attachment.attachment_type === "location" && attachment.location_lat !== null && attachment.location_lat !== undefined && attachment.location_lng !== null && attachment.location_lng !== undefined) {
     const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${attachment.location_lat},${attachment.location_lng}`)}`;
     return <a href={mapUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold text-primary"><span>{attachment.location_label || "Shared location"}</span><span className="text-muted-foreground">{attachment.location_lat.toFixed(4)}, {attachment.location_lng.toFixed(4)}</span></a>;
+  }
+
+  if (attachment.attachment_type === "story") {
+    return <a href={`/community?storyId=${encodeURIComponent(attachment.original_name?.match(/\d+/)?.[0] ?? "")}`} className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs font-bold text-primary"><Sparkles className="h-4 w-4 shrink-0" /><span>{attachment.original_name || "Community Story"}</span></a>;
   }
 
   if (error) return <p role="status" className="text-xs text-muted-foreground">{error}</p>;

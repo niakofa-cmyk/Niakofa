@@ -28,6 +28,8 @@ type StoryMedia = {
   mime_type: string;
   duration_ms: number | null;
   media_url: string;
+  width?: number | null;
+  height?: number | null;
 };
 
 type CommunityStory = {
@@ -42,9 +44,11 @@ type CommunityStory = {
   expires_at: string | null;
   author: { id: number; name: string; avatar_url: string | null };
   media: StoryMedia[];
-  elements: Array<{ id: number; type: string; payload: Record<string, unknown> }>;
+  elements: Array<{ id: number; type: string; payload: Record<string, unknown>; position_x?: number; position_y?: number; scale?: number; rotation?: number; z_index?: number }>;
 };
 
+type StoryFrame = { story: CommunityStory; media: StoryMedia | null };
+type StoryAuthor = { author_user_id: number; author: CommunityStory["author"]; frames: StoryFrame[] };
 type Tool = "music" | "stickers" | "text" | "effects" | "mention";
 type Effect = "none" | "warmth" | "contrast" | "grayscale" | "vignette";
 
@@ -63,12 +67,15 @@ function timeLeft(expiresAt: string | null): string {
   return `${hours}h left`;
 }
 
-function groupStories(stories: CommunityStory[]): CommunityStory[] {
-  const firstByAuthor = new Map<number, CommunityStory>();
-  stories.forEach((story) => {
-    if (!firstByAuthor.has(story.author_user_id)) firstByAuthor.set(story.author_user_id, story);
-  });
-  return Array.from(firstByAuthor.values());
+function groupStories(stories: CommunityStory[]): StoryAuthor[] {
+  const byAuthor = new Map<number, StoryAuthor>();
+  for (const story of [...stories].sort((a, b) => Date.parse(a.created_at ?? "") - Date.parse(b.created_at ?? ""))) {
+    const group = byAuthor.get(story.author_user_id) ?? { author_user_id: story.author_user_id, author: story.author, frames: [] };
+    if (story.media.length) story.media.forEach((media) => group.frames.push({ story, media }));
+    else group.frames.push({ story, media: null });
+    byAuthor.set(story.author_user_id, group);
+  }
+  return Array.from(byAuthor.values());
 }
 
 export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
@@ -78,6 +85,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const [error, setError] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [mediaIndex, setMediaIndex] = useState(0);
   const [mediaUrls, setMediaUrls] = useState<Record<number, string>>({});
   const [files, setFiles] = useState<File[]>([]);
   const [caption, setCaption] = useState("");
@@ -87,12 +95,20 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const [music, setMusic] = useState("Original audio");
   const [sticker, setSticker] = useState("💙");
   const [mention, setMention] = useState("");
+  const [mentionUserId, setMentionUserId] = useState<number | null>(null);
+  const [mentionCandidates, setMentionCandidates] = useState<Array<{ id: number; name: string; avatar_url: string | null }>>([]);
+  const [textColor, setTextColor] = useState("#ffffff");
+  const [textSize, setTextSize] = useState("18");
+  const [textAlign, setTextAlign] = useState<"left" | "center" | "right">("center");
   const [publishing, setPublishing] = useState(false);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
 
   const authors = useMemo(() => groupStories(stories), [stories]);
-  const selectedStory = viewerIndex === null ? null : authors[viewerIndex] ?? null;
+  const selectedAuthor = viewerIndex === null ? null : authors[viewerIndex] ?? null;
+  const selectedFrame = selectedAuthor?.frames[mediaIndex] ?? null;
+  const selectedStory = selectedFrame?.story ?? null;
+  const selectedMedia = selectedFrame?.media ?? null;
   const selectedFileUrl = files[0] ? URL.createObjectURL(files[0]) : null;
   const filter = effect === "warmth"
     ? "sepia(.25) saturate(1.25)"
@@ -127,7 +143,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     let cancelled = false;
     const urls: string[] = [];
     const loadMedia = async () => {
-      const visible = stories.slice(0, 24).flatMap((story) => story.media.slice(0, 1));
+      const visible = stories.slice(0, 24).flatMap((story) => story.media);
       const entries = await Promise.all(visible.map(async (media) => {
         try {
           const response = await fetch(media.media_url, { headers: authHeaders() });
@@ -160,6 +176,11 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     setMusic("Original audio");
     setSticker("💙");
     setMention("");
+    setMentionUserId(null);
+    setMentionCandidates([]);
+    setTextColor("#ffffff");
+    setTextSize("18");
+    setTextAlign("center");
     setAudience(hubId ? "hub" : "community");
   };
 
@@ -174,11 +195,11 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
         mime_type: file.type,
       })));
       const elements: Array<Record<string, unknown>> = [];
-      if (caption.trim()) elements.push({ type: "text", payload: { text: caption.trim() }, position_x: 50, position_y: 78, z_index: 10 });
+       if (caption.trim()) elements.push({ type: "text", payload: { text: caption.trim(), color: textColor, font_size: Number(textSize), align: textAlign }, position_x: 50, position_y: 78, z_index: 10 });
       if (tool === "music") elements.push({ type: "music", payload: { audio_source: "niakofa_library", track: music, volume: 1 }, position_x: 50, position_y: 12 });
       if (tool === "stickers") elements.push({ type: "sticker", payload: { sticker }, position_x: 50, position_y: 50, scale: 1.2, z_index: 20 });
       if (tool === "effects") elements.push({ type: "effect", payload: { effect }, position_x: 50, position_y: 50 });
-      if (tool === "mention" && mention.trim()) elements.push({ type: "mention", payload: { display_name: mention.trim() }, position_x: 50, position_y: 64, z_index: 20 });
+       if (tool === "mention" && mentionUserId) elements.push({ type: "mention", payload: { mention_user_id: mentionUserId, display_name: mention.trim() }, position_x: 50, position_y: 64, z_index: 20 });
       const response = await fetch("/api/community/stories", {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -204,6 +225,53 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     const selected = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
     setFiles(selected.slice(0, 6));
     event.target.value = "";
+  };
+
+  useEffect(() => {
+    if (tool !== "mention") return;
+    const timer = window.setTimeout(async () => {
+      const response = await fetch(`/api/community/stories/mention-candidates?q=${encodeURIComponent(mention)}`, { headers: authHeaders() });
+      if (response.ok) {
+        const data = await response.json() as { users?: Array<{ id: number; name: string; avatar_url: string | null }> };
+        setMentionCandidates(Array.isArray(data.users) ? data.users : []);
+      }
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [mention, tool]);
+
+  useEffect(() => {
+    if (!selectedStory) return;
+    void fetch(`/api/community/stories/${selectedStory.id}/view`, { method: "POST", headers: authHeaders() }).catch(() => {});
+  }, [selectedStory?.id]);
+
+  const advanceFrame = (direction: 1 | -1) => {
+    if (!selectedAuthor || viewerIndex === null) return;
+    const next = mediaIndex + direction;
+    if (next >= 0 && next < selectedAuthor.frames.length) {
+      setMediaIndex(next);
+      return;
+    }
+    const nextAuthor = viewerIndex + direction;
+    if (nextAuthor >= 0 && nextAuthor < authors.length) {
+      setViewerIndex(nextAuthor);
+      setMediaIndex(direction > 0 ? 0 : authors[nextAuthor].frames.length - 1);
+    } else if (direction > 0) {
+      setViewerIndex(null);
+    }
+  };
+
+  const renderElement = (element: CommunityStory["elements"][number]) => {
+    const payload = element.payload;
+    const style = {
+      left: `${element.position_x ?? 50}%`,
+      top: `${element.position_y ?? 50}%`,
+      transform: `translate(-50%, -50%) rotate(${element.rotation ?? 0}deg) scale(${element.scale ?? 1})`,
+      zIndex: element.z_index ?? 0,
+    };
+    if (element.type === "text") return <span style={{ ...style, color: typeof payload.color === "string" ? payload.color : "#fff", fontSize: `${Number(payload.font_size) || 18}px`, textAlign: payload.align === "left" || payload.align === "right" ? payload.align : "center" }} className="absolute max-w-[86%] whitespace-pre-wrap font-black drop-shadow-lg">{String(payload.text ?? "")}</span>;
+    if (element.type === "sticker") return <span style={style} className="absolute text-5xl drop-shadow-lg">{String(payload.sticker ?? "✨")}</span>;
+    if (element.type === "mention") return <span style={style} className="absolute rounded-full bg-black/60 px-3 py-1 text-sm font-black text-white">@{String(payload.display_name ?? "neighbor")}</span>;
+    return null;
   };
 
   const toolButtons: Array<{ key: Tool; label: string; icon: typeof Music2 }> = [
@@ -237,7 +305,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
               <span className="max-w-20 truncate text-[11px] font-bold">Your Story</span>
             </button>
             {authors.map((story, index) => (
-              <button key={story.author_user_id} type="button" onClick={() => setViewerIndex(index)} className="flex w-20 shrink-0 flex-col items-center gap-1.5">
+              <button key={story.author_user_id} type="button" onClick={() => { setViewerIndex(index); setMediaIndex(0); }} className="flex w-20 shrink-0 flex-col items-center gap-1.5">
                 <span className="rounded-full bg-gradient-to-br from-primary via-fuchsia-500 to-amber-400 p-[2px]">
                   <MessageAvatar name={story.author.name} avatarUrl={story.author.avatar_url} size={60} />
                 </span>
@@ -277,8 +345,8 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
               {tool === "music" && <div className="mt-3 flex gap-2 overflow-x-auto">{["Original audio", "Sunrise", "Neighborhood pulse", "Quiet strength"].map((track) => <button key={track} type="button" onClick={() => setMusic(track)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold ${music === track ? "border-primary bg-primary/10 text-primary" : "border-border"}`}><Music2 className="mr-1 inline h-3 w-3" />{track}</button>)}</div>}
               {tool === "stickers" && <div className="mt-3 flex gap-2 overflow-x-auto">{["💙", "🙏", "🤝", "🌍", "🙌", "✨", "📍"].map((item) => <button key={item} type="button" onClick={() => setSticker(item)} className={`h-11 w-11 shrink-0 rounded-xl border text-xl ${sticker === item ? "border-primary bg-primary/10" : "border-border"}`}>{item}</button>)}</div>}
               {tool === "effects" && <div className="mt-3 flex gap-2 overflow-x-auto">{(["none", "warmth", "contrast", "grayscale", "vignette"] as Effect[]).map((item) => <button key={item} type="button" onClick={() => setEffect(item)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold capitalize ${effect === item ? "border-primary bg-primary/10 text-primary" : "border-border"}`}>{item}</button>)}</div>}
-              {tool === "mention" && <input value={mention} onChange={(event) => setMention(event.target.value)} className="mt-3 min-h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary" placeholder="@ Mention a community member (display name)" />}
-              {tool === "text" && <p className="mt-3 rounded-xl bg-primary/10 px-3 py-2 text-xs text-primary">Use the caption field below to place styled text on your Story preview.</p>}
+               {tool === "mention" && <div className="mt-3 space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); }} className="min-h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-border"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
+               {tool === "text" && <div className="mt-3 grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-muted-foreground">Color<input type="color" value={textColor} onChange={(event) => setTextColor(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-card" /></label><label className="text-[10px] font-bold text-muted-foreground">Size<select value={textSize} onChange={(event) => setTextSize(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-muted-foreground">Align<select value={textAlign} onChange={(event) => setTextAlign(event.target.value as "left" | "center" | "right")} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label></div>}
               <textarea value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={1000} rows={3} className="mt-4 w-full resize-none rounded-2xl border border-border bg-card p-3 text-sm outline-none focus:border-primary" placeholder="Add text to your Moment…" />
               <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-3 py-2">
                 <div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><div><p className="text-xs font-black">Share with</p><p className="text-[10px] text-muted-foreground">{audience === "hub" ? "Selected Hub members" : "Your approved community"}</p></div></div>
@@ -294,20 +362,21 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
         </div>
       )}
 
-      {selectedStory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3" role="dialog" aria-modal="true" aria-label={`${selectedStory.author.name}'s Story`}>
+      {selectedStory && selectedAuthor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3" role="dialog" aria-modal="true" aria-label={`${selectedAuthor.author.name}'s Story`}>
           <div className="relative flex h-full max-h-[900px] w-full max-w-md flex-col overflow-hidden rounded-3xl bg-zinc-950 text-white">
-            <div className="flex gap-1 px-3 pt-3">{authors.map((story, index) => <span key={story.author_user_id} className={`h-1 flex-1 rounded-full ${index === viewerIndex ? "bg-white" : "bg-white/25"}`} />)}</div>
-            <header className="flex items-center gap-3 px-4 py-3"><MessageAvatar name={selectedStory.author.name} avatarUrl={selectedStory.author.avatar_url} size={38} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-black">{selectedStory.author.name}</p><p className="text-[10px] text-white/60">{timeLeft(selectedStory.expires_at)}</p></div><button type="button" className="p-2" aria-label="Story options"><MoreHorizontal className="h-5 w-5" /></button><button type="button" onClick={() => setViewerIndex(null)} className="p-2" aria-label="Close Story viewer"><X className="h-5 w-5" /></button></header>
+            <div className="flex gap-1 px-3 pt-3">{selectedAuthor.frames.map((frame, index) => <span key={`${frame.story.id}-${frame.media?.id ?? "text"}`} className={`h-1 flex-1 rounded-full ${index <= mediaIndex ? "bg-white" : "bg-white/25"}`} />)}</div>
+            <header className="flex items-center gap-3 px-4 py-3"><MessageAvatar name={selectedAuthor.author.name} avatarUrl={selectedAuthor.author.avatar_url} size={38} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-black">{selectedAuthor.author.name}</p><p className="text-[10px] text-white/60">{timeLeft(selectedStory.expires_at)}</p></div><button type="button" className="p-2" aria-label="Story options"><MoreHorizontal className="h-5 w-5" /></button><button type="button" onClick={() => setViewerIndex(null)} className="p-2" aria-label="Close Story viewer"><X className="h-5 w-5" /></button></header>
             <div className="relative min-h-0 flex-1 overflow-hidden">
-              {selectedStory.media[0] && mediaUrls[selectedStory.media[0].id] ? (selectedStory.media[0].media_type === "video" ? <video src={mediaUrls[selectedStory.media[0].id]} autoPlay controls playsInline className="h-full w-full object-contain" /> : <img src={mediaUrls[selectedStory.media[0].id]} alt="" className="h-full w-full object-contain" />) : <div className="flex h-full items-center justify-center px-8 text-center text-2xl font-black">{selectedStory.caption || "Community Moment"}</div>}
-              <button type="button" onClick={() => setViewerIndex(Math.max(0, (viewerIndex ?? 0) - 1))} className="absolute inset-y-0 left-0 w-1/3" aria-label="Previous Story"><ChevronLeft className="absolute left-2 top-1/2 h-7 w-7 text-white/70" /></button>
-              <button type="button" onClick={() => setViewerIndex((viewerIndex ?? 0) + 1 < authors.length ? (viewerIndex ?? 0) + 1 : null)} className="absolute inset-y-0 right-0 w-1/3" aria-label="Next Story"><ChevronRight className="absolute right-2 top-1/2 h-7 w-7 text-white/70" /></button>
+              {selectedMedia && mediaUrls[selectedMedia.id] ? (selectedMedia.media_type === "video" ? <video key={selectedMedia.id} src={mediaUrls[selectedMedia.id]} autoPlay controls playsInline className="h-full w-full object-contain" /> : <img src={mediaUrls[selectedMedia.id]} alt="" className="h-full w-full object-contain" />) : <div className="flex h-full items-center justify-center px-8 text-center text-2xl font-black">{selectedStory.caption || "Community Moment"}</div>}
+              {selectedStory.elements.map(renderElement)}
+              <button type="button" onClick={() => advanceFrame(-1)} className="absolute inset-y-0 left-0 w-1/3" aria-label="Previous Story"><ChevronLeft className="absolute left-2 top-1/2 h-7 w-7 text-white/70" /></button>
+              <button type="button" onClick={() => advanceFrame(1)} className="absolute inset-y-0 right-0 w-1/3" aria-label="Next Story"><ChevronRight className="absolute right-2 top-1/2 h-7 w-7 text-white/70" /></button>
             </div>
             <div className="space-y-3 p-4">
               {selectedStory.caption && <p className="text-sm leading-relaxed">{selectedStory.caption}</p>}
-              <div className="flex items-center gap-2"><button type="button" className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-white/10 text-sm font-bold"><MessageCircle className="h-4 w-4" /> Reply</button><button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10" aria-label="React to Story"><span aria-hidden>💙</span></button><button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10" aria-label="Share Story"><Share2 className="h-4 w-4" /></button></div>
-              {selectedStory.reply_enabled && selectedStory.author_user_id !== 0 && <button type="button" onClick={() => navigate(`/messages?mode=direct&recipientId=${selectedStory.author_user_id}&storyId=${selectedStory.id}`)} className="w-full text-center text-[11px] font-bold text-primary">Reply privately in Messages with Story context</button>}
+              <div className="flex items-center gap-2"><button type="button" onClick={() => navigate(`/messages?mode=direct&recipientId=${selectedStory.author_user_id}&storyId=${selectedStory.id}`)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-white/10 text-sm font-bold"><MessageCircle className="h-4 w-4" /> Reply</button><button type="button" onClick={() => void fetch(`/api/community/stories/${selectedStory.id}/reaction`, { method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ reaction: "💙" }) })} className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10" aria-label="React to Story"><span aria-hidden>💙</span></button><button type="button" onClick={() => void fetch(`/api/community/stories/${selectedStory.id}/share`, { method: "POST", headers: authHeaders() })} className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10" aria-label="Share Story"><Share2 className="h-4 w-4" /></button></div>
+              {selectedStory.reply_enabled && <p className="text-center text-[11px] font-bold text-primary">Replies include Story context in Messages.</p>}
             </div>
           </div>
         </div>

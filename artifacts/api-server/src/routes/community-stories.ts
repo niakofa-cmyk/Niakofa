@@ -13,6 +13,9 @@ import { requireApproved, requireAuth } from "../middlewares/auth";
 import { communityPostLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
 import { deleteAsset, putAsset, streamOrRedirectAsset } from "../lib/storage";
+import { hasExpectedSignature, inspectMedia } from "../lib/media-validation";
+import { broadcast } from "../lib/ws-hub";
+import { createMessageNotification } from "../lib/message-notifications";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
@@ -67,7 +70,7 @@ function decodeMediaDataUrl(value: string): { buffer: Buffer; mimeType: string }
   const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(value);
   if (!match || !ALLOWED_MEDIA.has(match[1])) return null;
   const buffer = Buffer.from(match[2], "base64");
-  if (!buffer.length || buffer.length > MAX_MEDIA_BYTES) return null;
+  if (!buffer.length || buffer.length > MAX_MEDIA_BYTES || !hasExpectedSignature(buffer, match[1])) return null;
   return { buffer, mimeType: match[1] };
 }
 
@@ -100,7 +103,7 @@ async function approvedCanonicalHub(hubId: number): Promise<boolean> {
   return Boolean(hub);
 }
 
-async function viewerCanReadStory(userId: number, story: { author_user_id: number; hub_id: number | null; community_id: number | null; audience: string }): Promise<boolean> {
+export async function viewerCanReadStory(userId: number, story: { author_user_id: number; hub_id: number | null; community_id: number | null; audience: string }): Promise<boolean> {
   if (story.author_user_id === userId || story.audience === "community" && story.community_id === null) return true;
   if (story.audience === "hub") return story.hub_id !== null && await approvedHubMember(userId, story.hub_id);
   const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
@@ -227,10 +230,36 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const storedKeys: string[] = [];
   try {
-    const decodedMedia = parsed.data.media.map((item) => ({ ...item, decoded: decodeMediaDataUrl(item.data_url) }));
+    const decodedMedia = await Promise.all(parsed.data.media.map(async (item) => {
+      const decoded = decodeMediaDataUrl(item.data_url);
+      if (!decoded || decoded.mimeType !== item.mime_type || (item.media_type === "photo" && !decoded.mimeType.startsWith("image/")) || (item.media_type === "video" && !decoded.mimeType.startsWith("video/"))) {
+        return { ...item, decoded: null, metadata: null };
+      }
+      return { ...item, decoded, metadata: await inspectMedia(decoded.buffer, decoded.mimeType) };
+    }));
     if (decodedMedia.some((item) => !item.decoded || item.decoded.mimeType !== item.mime_type)) {
       return res.status(400).json({ error: "Unsupported media type or a file is larger than 12 MB." });
     }
+    if (decodedMedia.some((item) => item.media_type === "photo" && !item.metadata)) {
+      return res.status(400).json({ error: "The image could not be inspected. Please choose another image." });
+    }
+    if (decodedMedia.some((item) => item.media_type === "video" && (!item.metadata || !item.metadata.duration_ms))) {
+      return res.status(503).json({ error: "Video processing is temporarily unavailable. Please try again shortly." });
+    }
+    if (decodedMedia.some((item) => (item.metadata?.duration_ms ?? 0) > 60_000)) {
+      return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    }
+    const mentionIds = parsed.data.elements
+      .filter((element) => element.type === "mention")
+      .map((element) => Number(element.payload.mention_user_id))
+      .filter((id) => Number.isSafeInteger(id) && id > 0);
+    if (parsed.data.elements.some((element) => element.type === "mention" && !Number.isSafeInteger(Number(element.payload.mention_user_id)))) {
+      return res.status(400).json({ error: "Choose a community member from the mention suggestions." });
+    }
+    const mentionUsers = mentionIds.length ? await db.select({ id: usersTable.id, name: usersTable.name })
+      .from(usersTable)
+      .where(and(inArray(usersTable.id, mentionIds), eq(usersTable.approval_status, "approved"), eq(usersTable.is_suspended, false))) : [];
+    if (mentionUsers.length !== mentionIds.length) return res.status(400).json({ error: "One or more Story mentions are no longer available." });
     const result = await db.transaction(async (tx) => {
       const [story] = await tx.insert(communityStoriesTable).values({
         author_user_id: userId,
@@ -255,9 +284,9 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           media_type: item.media_type,
           mime_type: decoded.mimeType,
           byte_size: decoded.buffer.length,
-          duration_ms: item.duration_ms ?? null,
-          width: item.width ?? null,
-          height: item.height ?? null,
+          duration_ms: item.metadata?.duration_ms ?? null,
+          width: item.metadata?.width ?? null,
+          height: item.metadata?.height ?? null,
         });
       }
       if (parsed.data.elements.length) {
@@ -274,6 +303,19 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       }
       return story;
     });
+    if (result.status === "published") {
+      broadcast({ type: "community_story_created", payload: { story_id: result.id, author_user_id: userId, audience: result.audience, hub_id: result.hub_id } });
+      const [author] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+      await Promise.all(mentionUsers.filter((user) => user.id !== userId).map((user) => createMessageNotification({
+        userId: user.id,
+        actorUserId: userId,
+        type: "story_mention",
+        title: "You were mentioned in a Story",
+        body: `${author?.name ?? "A neighbor"} mentioned you in a Community Story.`,
+        actionUrl: `/community?storyId=${result.id}`,
+        metadata: { story_id: result.id, mention_user_id: user.id },
+      })));
+    }
     return res.status(201).json({ story: { id: result.id, status: result.status, expires_at: result.expires_at.toISOString() } });
   } catch (error) {
     await Promise.all(storedKeys.map((key) => deleteAsset(key)));

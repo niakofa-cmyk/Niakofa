@@ -6,6 +6,9 @@ export type MessageNotificationType =
   | "call"
   | "hub_message"
   | "story"
+  | "story_reaction"
+  | "story_share"
+  | "story_mention"
   | "community"
   | "system";
 

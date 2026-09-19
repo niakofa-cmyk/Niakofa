@@ -3,7 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { getStripeSecretKey, getStripeWebhookSecret } from "./lib/stripe-config";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startNet30InvoiceReminderWorker } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startNet30InvoiceReminderWorker, startCommunityStoryCleanupWorker } from "./lib/scheduler";
 import { startLedgerDriftMonitor } from "./lib/ledger-stripe-drift";
 import {
   isRedisConfigured,
@@ -142,6 +142,7 @@ server.listen(port, async () => {
   registerWorker("net30-invoices",      "NET30 Invoice Reminders",false);
   registerWorker("daily-kindness",      "Daily Kindness Engine",  false);
   registerWorker("payment-reminder",    "Payment Reminder",       false);
+  registerWorker("community-story-cleanup", "Community Story Cleanup", false);
   registerWorker("pool-settlement",     "Pool Settlement Status",  false);
 
   if (isRedisConfigured()) {
@@ -204,6 +205,7 @@ server.listen(port, async () => {
   // Stripe Balance Transactions move from pending to available after the
   // webhook; keep the financial event and linked History projection current.
   startPoolSettlementStatusWorker(); workerStarted("pool-settlement", "Pool Settlement Status", false);
+  startCommunityStoryCleanupWorker(); workerStarted("community-story-cleanup", "Community Story Cleanup", false);
   // Recurring requests — fire any due recurring requests every hour
   processRecurringRequests().catch((err: unknown) =>
     logger.error({ err }, "recurring-worker: initial run failed — non-fatal")

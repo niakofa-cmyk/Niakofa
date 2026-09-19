@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { FileImage, FileText, Link2, Loader2, MapPinned, Paperclip, Send, X } from "lucide-react";
+import { FileImage, FileText, Link2, Loader2, MapPinned, Paperclip, Send, Sparkles, X } from "lucide-react";
 
 export type PendingAttachment = {
   data_url: string;
@@ -10,7 +10,8 @@ export type PendingAttachment = {
 
 export type PendingContext =
   | { type: "link"; url: string; label: string }
-  | { type: "location"; latitude: number; longitude: number; label: string };
+  | { type: "location"; latitude: number; longitude: number; label: string }
+  | { type: "story"; story_id: number; label: string };
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENTS = 5;
@@ -154,7 +155,7 @@ export function MessageComposerWithAttachments(props: {
         <div className="flex flex-wrap gap-2" aria-label="Pending shared context">
           {props.contexts.map((context, index) => (
             <div key={`${context.type}-${index}`} className="flex max-w-full items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-primary">
-              {context.type === "link" ? <Link2 className="h-3.5 w-3.5 shrink-0" /> : <MapPinned className="h-3.5 w-3.5 shrink-0" />}
+              {context.type === "link" ? <Link2 className="h-3.5 w-3.5 shrink-0" /> : context.type === "location" ? <MapPinned className="h-3.5 w-3.5 shrink-0" /> : <Sparkles className="h-3.5 w-3.5 shrink-0" />}
               <span className="max-w-40 truncate">{context.label}</span>
               <button type="button" onClick={() => props.onContextsChange(props.contexts.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${context.label}`} className="rounded p-1 hover:bg-muted">
                 <X className="h-3.5 w-3.5" />

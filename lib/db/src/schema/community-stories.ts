@@ -8,6 +8,7 @@ import {
   jsonb,
   real,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
@@ -66,6 +67,39 @@ export const communityStoryElementsTable = pgTable("community_story_elements", {
   index("community_story_elements_story_idx").on(table.story_id),
 ]);
 
+export const communityStoryViewsTable = pgTable("community_story_views", {
+  id: serial("id").primaryKey(),
+  story_id: integer("story_id").notNull().references(() => communityStoriesTable.id, { onDelete: "cascade" }),
+  viewer_user_id: integer("viewer_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  viewed_at: timestamp("viewed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("community_story_views_story_viewer_uidx").on(table.story_id, table.viewer_user_id),
+  index("community_story_views_story_idx").on(table.story_id, table.viewed_at),
+]);
+
+export const communityStoryReactionsTable = pgTable("community_story_reactions", {
+  id: serial("id").primaryKey(),
+  story_id: integer("story_id").notNull().references(() => communityStoriesTable.id, { onDelete: "cascade" }),
+  user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  reaction: text("reaction").notNull().default("💙"),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("community_story_reactions_story_user_uidx").on(table.story_id, table.user_id),
+  index("community_story_reactions_story_idx").on(table.story_id),
+]);
+
+export const communityStorySharesTable = pgTable("community_story_shares", {
+  id: serial("id").primaryKey(),
+  story_id: integer("story_id").notNull().references(() => communityStoriesTable.id, { onDelete: "cascade" }),
+  user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("community_story_shares_story_idx").on(table.story_id, table.created_at),
+]);
+
 export type CommunityStory = typeof communityStoriesTable.$inferSelect;
 export type CommunityStoryMedia = typeof communityStoryMediaTable.$inferSelect;
 export type CommunityStoryElement = typeof communityStoryElementsTable.$inferSelect;
+export type CommunityStoryView = typeof communityStoryViewsTable.$inferSelect;
+export type CommunityStoryReaction = typeof communityStoryReactionsTable.$inferSelect;
+export type CommunityStoryShare = typeof communityStorySharesTable.$inferSelect;

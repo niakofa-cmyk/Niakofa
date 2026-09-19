@@ -8,8 +8,8 @@
  * Users still control fulfillment via the "Pay Now" button, but they get
  * a nudge when their target date arrives.
  */
-import { db, scheduledPaymentsTable, walletCashoutsTable, usersTable, transactionsTable } from "@workspace/db";
-import { eq, and, lte, sql } from "drizzle-orm";
+import { db, scheduledPaymentsTable, walletCashoutsTable, usersTable, transactionsTable, communityStoriesTable, communityStoryMediaTable } from "@workspace/db";
+import { eq, and, lte, sql, inArray } from "drizzle-orm";
 import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "./logger";
@@ -17,8 +17,37 @@ import { getStripeSecretKey } from "./stripe-config";
 import { isAmbiguousStripeError } from "./stripe-errors";
 import { buildCashoutTransferParams, cashoutIdempotencyKey } from "./stripe-cashout";
 import { workerRan } from "./worker-registry";
+import { deleteAsset } from "./storage";
+import { broadcast } from "./ws-hub";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
+const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+
+async function processCommunityStoryCleanup(): Promise<void> {
+  const expired = await db.select({
+    id: communityStoriesTable.id,
+    media_key: communityStoryMediaTable.storage_key,
+    thumbnail_key: communityStoryMediaTable.thumbnail_storage_key,
+  }).from(communityStoriesTable)
+    .leftJoin(communityStoryMediaTable, eq(communityStoryMediaTable.story_id, communityStoriesTable.id))
+    .where(lte(communityStoriesTable.expires_at, new Date()));
+  const ids = [...new Set(expired.map((row) => row.id))];
+  if (!ids.length) return;
+  await db.delete(communityStoriesTable).where(inArray(communityStoriesTable.id, ids));
+  await Promise.all(expired.flatMap((row) => [row.media_key, row.thumbnail_key].filter((key): key is string => Boolean(key)).map((key) => deleteAsset(key).catch(() => {}))));
+  broadcast({ type: "community_story_expired", payload: { story_ids: ids } });
+  logger.info({ count: ids.length }, "community-story cleanup: expired stories and assets removed");
+}
+
+export function startCommunityStoryCleanupWorker(): () => void {
+  processCommunityStoryCleanup().then(() => workerRan("community-story-cleanup", true)).catch((err) => { logger.warn({ err }, "community-story cleanup: initial run failed"); workerRan("community-story-cleanup", false); });
+  const interval = setInterval(() => {
+    processCommunityStoryCleanup().then(() => workerRan("community-story-cleanup", true)).catch((err) => { logger.warn({ err }, "community-story cleanup: run failed"); workerRan("community-story-cleanup", false); });
+  }, STORY_CLEANUP_INTERVAL_MS);
+  logger.info({ intervalMs: STORY_CLEANUP_INTERVAL_MS }, "scheduler: Community Story cleanup worker started");
+  return () => clearInterval(interval);
+}
 
 async function processScheduledReminders(): Promise<void> {
   const now = new Date();

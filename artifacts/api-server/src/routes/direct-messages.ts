@@ -16,6 +16,8 @@ import { generalApiLimiter } from "../middlewares/rate-limit";
 import { deleteAsset, putAsset, streamOrRedirectAsset } from "../lib/storage";
 import { sendToUsers } from "../lib/ws-hub";
 import { createMessageNotification } from "../lib/message-notifications";
+import { hasExpectedSignature } from "../lib/media-validation";
+import { communityStoriesTable } from "@workspace/db";
 
 const router = Router();
 const MAX_BODY_LENGTH = 4_000;
@@ -57,24 +59,8 @@ type DecodedDirectAttachment = {
 
 type DirectMessageContext =
   | { type: "link"; url: string; label: string | null }
-  | { type: "location"; latitude: number; longitude: number; label: string | null };
-
-function hasExpectedSignature(buffer: Buffer, mimeType: string): boolean {
-  if (mimeType === "image/jpeg") return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
-  if (mimeType === "image/png") return buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  if (mimeType === "image/gif") return buffer.subarray(0, 4).toString("ascii") === "GIF8";
-  if (mimeType === "image/webp") return buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
-  if (mimeType === "video/mp4") return buffer.subarray(4, 16).toString("ascii").includes("ftyp");
-  if (mimeType === "video/webm") return buffer.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
-  if (mimeType === "audio/ogg") return buffer.subarray(0, 4).toString("ascii") === "OggS";
-  if (mimeType === "audio/wav") return buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WAVE";
-  if (mimeType === "application/pdf") return buffer.subarray(0, 5).toString("ascii") === "%PDF-";
-  if (mimeType === "audio/mpeg") {
-    return buffer.subarray(0, 3).toString("ascii") === "ID3"
-      || (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0);
-  }
-  return false;
-}
+  | { type: "location"; latitude: number; longitude: number; label: string | null }
+  | { type: "story"; storyId: number; label: string | null };
 
 function cleanAttachmentText(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null;
@@ -125,7 +111,7 @@ function parseDirectMessageContexts(value: unknown): { contexts: DirectMessageCo
     if (!incoming || typeof incoming !== "object") {
       return { contexts: [], error: "Invalid message context." };
     }
-    const candidate = incoming as { type?: unknown; url?: unknown; latitude?: unknown; longitude?: unknown; label?: unknown };
+    const candidate = incoming as { type?: unknown; url?: unknown; latitude?: unknown; longitude?: unknown; story_id?: unknown; label?: unknown };
     const label = cleanAttachmentText(candidate.label, 255);
     if (candidate.type === "link") {
       if (typeof candidate.url !== "string" || candidate.url.length > 2_000) {
@@ -147,6 +133,12 @@ function parseDirectMessageContexts(value: unknown): { contexts: DirectMessageCo
         return { contexts: [], error: "Location coordinates are invalid." };
       }
       contexts.push({ type: "location", latitude, longitude, label });
+      continue;
+    }
+    if (candidate.type === "story") {
+      const storyId = parsePositiveId(candidate.story_id);
+      if (!storyId) return { contexts: [], error: "Story context is invalid." };
+      contexts.push({ type: "story", storyId, label: label || "Community Story" });
       continue;
     }
     return { contexts: [], error: "Unsupported message context." };
@@ -258,6 +250,17 @@ router.get("/messages/direct/users", requireAuth, requireApproved, generalApiLim
     if (!(await isBlockedBetween(userId, candidate.id))) users.push(serializeUser(candidate));
   }
   return res.json({ users });
+});
+
+router.get("/messages/direct/users/:id", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const targetId = parsePositiveId(req.params.id);
+  if (!targetId || targetId === userId) return res.status(404).json({ error: "Recipient not found." });
+  const user = await getApprovedUser(targetId);
+  if (!user || user.approval_status !== "approved" || user.is_suspended || await isBlockedBetween(userId, targetId)) {
+    return res.status(404).json({ error: "Recipient not found." });
+  }
+  return res.json({ user: serializeUser(user) });
 });
 
 
@@ -586,19 +589,30 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
         const persisted = [];
         for (const context of parsedContexts.contexts) {
           const isLink = context.type === "link";
+          if (context.type === "story") {
+            const [story] = await tx.select({
+              id: communityStoriesTable.id,
+              author_user_id: communityStoriesTable.author_user_id,
+              status: communityStoriesTable.status,
+              expires_at: communityStoriesTable.expires_at,
+            }).from(communityStoriesTable).where(eq(communityStoriesTable.id, context.storyId)).limit(1);
+            if (!story || story.status !== "published" || story.expires_at <= new Date() || (story.author_user_id !== recipientId && story.author_user_id !== senderId)) {
+              throw new Error("That Story is no longer available for replies.");
+            }
+          }
           const storageKey = `direct-contexts/${conversationId}/${randomUUID()}`;
           const [row] = await tx.insert(directMessageAttachmentsTable).values({
             message_id: messageId,
             attachment_type: context.type,
             storage_key: storageKey,
-            mime_type: isLink ? "text/uri-list" : "application/x-niakofa-location+json",
+            mime_type: context.type === "story" ? "application/x-niakofa-story+json" : isLink ? "text/uri-list" : "application/x-niakofa-location+json",
             byte_size: 1,
-            original_name: context.label,
+            original_name: context.type === "story" ? `Community Story #${context.storyId}` : context.label,
             alt_text: context.label,
             link_url: isLink ? context.url : null,
-            location_lat: isLink ? null : context.latitude,
-            location_lng: isLink ? null : context.longitude,
-            location_label: isLink ? null : context.label,
+            location_lat: context.type === "location" ? context.latitude : null,
+            location_lng: context.type === "location" ? context.longitude : null,
+            location_label: context.type === "location" ? context.label : null,
           }).returning({
             id: directMessageAttachmentsTable.id,
             message_id: directMessageAttachmentsTable.message_id,

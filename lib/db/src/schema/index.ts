@@ -7,7 +7,6 @@ export * from "./transactions";
 export * from "./chat-messages";
 export * from "./message-read-states";
 export * from "./message-notifications";
-export * from "./message-stories";
 export * from "./community-stories";
 export * from "./message-activity-events";
 export * from "./direct-messages";

@@ -375,7 +375,7 @@ export default function MessagesPage() {
   }, [activeMode, search]);
 
   async function sendDirectMessage() {
-    if (!activeRecipient || (!body.trim() && attachments.length === 0)) return;
+    if (!activeRecipient || (!body.trim() && attachments.length === 0 && contexts.length === 0)) return;
     setWorking(true);
     setError(null);
     try {
@@ -506,14 +506,16 @@ export default function MessagesPage() {
   useEffect(() => {
     const recipientId = Number.parseInt(queryValue(location, "recipientId") ?? "", 10);
     if (!Number.isSafeInteger(recipientId) || recipientId <= 0 || activeRecipient?.id === recipientId) return;
+    const storyId = Number.parseInt(queryValue(location, "storyId") ?? "", 10);
     let cancelled = false;
     const loadRecipient = async () => {
-      const response = await fetch(`/api/messages/direct/users?q=${recipientId}`, { headers: authHeaders() });
+      const response = await fetch(`/api/messages/direct/users/${recipientId}`, { headers: authHeaders() });
       if (!response.ok || cancelled) return;
-      const data = await response.json() as { users?: DirectUser[] };
-      const recipient = data.users?.find((user) => user.id === recipientId);
+      const data = await response.json() as { user?: DirectUser };
+      const recipient = data.user;
       if (recipient && !cancelled) {
         startDirectWithUser(recipient, `Replying to ${recipient.name}'s Story`);
+        if (Number.isSafeInteger(storyId) && storyId > 0) setContexts([{ type: "story", story_id: storyId, label: "Community Story" }]);
       }
     };
     void loadRecipient();
