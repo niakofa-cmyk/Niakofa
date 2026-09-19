@@ -9,6 +9,7 @@ import {
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { isValidLiveKitUrl } from "../lib/circleMediaConfig";
+import { logger } from "../lib/logger";
 
 const router = Router();
 const CALL_ID_RE = /^[A-Za-z0-9_-]{12,80}$/;
@@ -76,7 +77,7 @@ router.post(
         expires_in: MAX_CALL_TTL_SECONDS,
       });
     } catch (error) {
-      req.log?.error?.(error);
+      logger.error({ err: error, conversationId, userId }, "direct-call: failed to mint token");
       return res.status(500).json({ error: "Failed to create direct call session." });
     }
   },
