@@ -53,7 +53,7 @@ export function MessengerMobileHome({
   onCommunity: () => void;
 }) {
   const [view, setView] = useState<"chats" | "people">("chats");
-  const [activePeople, setActivePeople] = useState<Person[]>(people);
+  const [activePeople, setActivePeople] = useState<Array<Person & { active_now?: boolean }>>(people);
   const [stories, setStories] = useState<Array<{
     user_id: number;
     name: string;
@@ -75,7 +75,7 @@ export function MessengerMobileHome({
       ]);
       if (cancelled) return;
       if (peopleResponse.ok) {
-        const data = await peopleResponse.json() as { people?: Person[] };
+        const data = await peopleResponse.json() as { people?: Array<Person & { active_now?: boolean }> };
         if (Array.isArray(data.people)) setActivePeople(data.people);
       }
       if (storiesResponse.ok) {
@@ -156,7 +156,7 @@ export function MessengerMobileHome({
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5 truncate text-[16px] font-bold">
                   <span className="truncate">{person.name}</span>
-                  {activePeople.some((candidate) => candidate.id === person.id) && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-label="Active now" />}
+                  {activePeople.some((candidate) => candidate.id === person.id && candidate.active_now) && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-label="Active now" />}
                 </span>
                 <span className="block truncate text-sm text-muted-foreground">Start a direct conversation</span>
               </span>
