@@ -11,6 +11,7 @@ import {
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { sendToUsers } from "../lib/ws-hub";
+import { createMessageNotification } from "../lib/message-notifications";
 
 const router = Router();
 
@@ -319,6 +320,18 @@ router.post("/diaspora/hub-messages/conversations/:id/messages", requireAuth, ge
       type: "hub_message",
       payload: { conversation_id: conversationId, message: serialized },
     });
+    const notificationRecipients = recipientUserIds.filter((id) => id !== userId);
+    await Promise.all(notificationRecipients.map((recipientId) =>
+      createMessageNotification({
+        userId: recipientId,
+        actorUserId: userId,
+        type: "hub_message",
+        title: `New Hub message from ${serialized.sender_hub_name ?? "a Hub"}`,
+        body,
+        actionUrl: `/messages/hub?conversation=${conversationId}`,
+        metadata: { conversation_id: conversationId, sender_hub_id: senderHubId, message_id: saved.id },
+      })
+    ));
   }
   return res.status(201).json({ message: serialized });
 });
