@@ -1,4 +1,4 @@
-import { Bell, MessageCircle, Menu, PenSquare, Search, UsersRound } from "lucide-react";
+import { ArrowLeft, MessageCircle, Menu, PenSquare, Search, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { UnifiedConversation } from "@/lib/unifiedConversation";
 import { MessageAvatar } from "./MessageAvatar";
@@ -45,6 +45,8 @@ export function MessengerMobileHome({
   onCompose: () => void;
   onNotifications: () => void;
   onMenu: () => void;
+  onBackToApp: () => void;
+  onCommunity: () => void;
 }) {
   const [view, setView] = useState<"chats" | "people">("chats");
   const visiblePeople = useMemo(() => {
@@ -57,13 +59,18 @@ export function MessengerMobileHome({
     <main className="min-h-[100dvh] bg-background text-foreground pb-[5.5rem]">
       <header className="px-4 pb-2 pt-5">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-[2rem] font-black tracking-[-0.04em]">Niakofa</h1>
+          <div className="flex min-w-0 items-center gap-2">
+            <button type="button" onClick={onBackToApp} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-muted" aria-label="Back to Niakofa app" title="Back to Niakofa app">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <h1 className="truncate text-[2rem] font-black tracking-[-0.04em]">Messages</h1>
+          </div>
           <div className="flex items-center gap-1">
-            <button type="button" onClick={onCompose} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted" aria-label="New message">
+            <button type="button" onClick={onCompose} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted" aria-label="New message" title="New message">
               <PenSquare className="h-6 w-6" />
             </button>
-            <button type="button" onClick={onNotifications} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted" aria-label="Notifications">
-              <Bell className="h-6 w-6" />
+            <button type="button" onClick={onCommunity} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted" aria-label="Open Niakofa Community" title="Open Niakofa Community">
+              <UsersRound className="h-6 w-6" />
             </button>
           </div>
         </div>
