@@ -55,6 +55,9 @@ import diasporaHubMessagesRouter from "./diaspora-hub-messages";
 import diasporaHubMembershipsRouter from "./diaspora-hub-memberships";
 import directMessagesRouter from "./direct-messages";
 import messagesUnreadSummaryRouter from "./messages-unread-summary";
+import messagesContextRouter from "./messages-context";
+import messageMediaRouter from "./message-media";
+import directCallRouter from "./direct-call";
 import { stampLocationUpdatedAt } from "../middlewares/stamp-location-updated-at";
 
 const router: IRouter = Router();
@@ -129,7 +132,10 @@ router.use(diasporaCompletionRouter);
 router.use(diasporaRouter);
 router.use(diasporaHubMembershipsRouter);
 router.use(diasporaHubMessagesRouter);
+router.use(messagesContextRouter);
 router.use(messagesUnreadSummaryRouter);
+router.use(messageMediaRouter);
+router.use(directCallRouter);
 router.use(directMessagesRouter);
 
 export default router;
