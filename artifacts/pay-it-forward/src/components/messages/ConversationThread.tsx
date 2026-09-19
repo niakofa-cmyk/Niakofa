@@ -16,6 +16,8 @@ export function ConversationThread({
   working,
   onBack,
   onInfo,
+  onVoiceCall,
+  onVideoCall,
   onBodyChange,
   onAttachmentsChange,
   onSend,
@@ -31,6 +33,8 @@ export function ConversationThread({
   working: boolean;
   onBack?: () => void;
   onInfo?: () => void;
+  onVoiceCall?: () => void;
+  onVideoCall?: () => void;
   onBodyChange: (value: string) => void;
   onAttachmentsChange: (value: PendingAttachment[]) => void;
   onSend: () => void;
@@ -39,7 +43,16 @@ export function ConversationThread({
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [messages.length, title]);
   return (
     <section className="flex h-full min-h-0 flex-col">
-      <ConversationHeader title={title} subtitle={subtitle} avatarUrl={avatarUrl} active={active} onBack={onBack} onInfo={onInfo} />
+      <ConversationHeader
+        title={title}
+        subtitle={subtitle}
+        avatarUrl={avatarUrl}
+        active={active}
+        onBack={onBack}
+        onInfo={onInfo}
+        onVoiceCall={onVoiceCall}
+        onVideoCall={onVideoCall}
+      />
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-4" aria-live="polite">
         {messages.length === 0 ? <p className="py-12 text-center text-xs text-muted-foreground">Say hello to start the conversation.</p> : messages.map((message) => (
           <div key={message.id} className={message.sender_id === currentUserId ? "flex justify-end" : "flex justify-start"}>

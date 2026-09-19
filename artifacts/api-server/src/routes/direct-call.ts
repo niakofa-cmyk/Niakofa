@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { and, eq, sql } from "drizzle-orm";
 import {
   db,
@@ -78,7 +78,7 @@ router.post(
         canPublish: true,
         canSubscribe: true,
         canPublishData: true,
-        canPublishSources: ["camera", "microphone"],
+        canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE],
       } as Parameters<AccessToken["addGrant"]>[0]);
       return res.json({
         media_url: livekitUrl,

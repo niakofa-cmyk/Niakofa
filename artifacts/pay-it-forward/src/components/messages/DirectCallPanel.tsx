@@ -8,12 +8,14 @@ type CallMode = "voice" | "video";
 type CallPhase = "idle" | "outgoing" | "incoming" | "connecting" | "connected";
 
 type Props = {
-  conversationId: number;
-  peerId: number;
-  peerName: string;
+  conversationId?: number | null;
+  peerId?: number | null;
+  peerName?: string;
   autoStartMode?: CallMode | null;
   onAutoStartConsumed?: () => void;
   onClose?: () => void;
+  listenGlobally?: boolean;
+  resolvePeer?: (userId: number, conversationId: number) => { id: number; name: string } | null;
 };
 
 function newCallId(): string {
@@ -27,13 +29,19 @@ export function DirectCallPanel({
   autoStartMode,
   onAutoStartConsumed,
   onClose,
+  listenGlobally = false,
+  resolvePeer,
 }: Props) {
   const [phase, setPhase] = useState<CallPhase>("idle");
   const [mode, setMode] = useState<CallMode>("voice");
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(conversationId ?? null);
+  const [activePeerId, setActivePeerId] = useState<number | null>(peerId ?? null);
+  const [activePeerName, setActivePeerName] = useState(peerName || "Niakofa user");
   const [callId, setCallId] = useState<string | null>(null);
   const [remoteUserId, setRemoteUserId] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [audioNeedsStart, setAudioNeedsStart] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const roomRef = useRef<Room | null>(null);
   const localTracksRef = useRef<LocalTrack[]>([]);
@@ -72,9 +80,11 @@ export function DirectCallPanel({
   }, []);
 
   const connect = useCallback(async (nextCallId: string, nextMode: CallMode, peer: number) => {
+    const callConversationId = activeConversationId;
+    if (!callConversationId) throw new Error("No Direct conversation is available for this call.");
     setPhase("connecting");
     setError(null);
-    const response = await fetch("/api/messages/direct/" + conversationId + "/call-token", {
+    const response = await fetch("/api/messages/direct/" + callConversationId + "/call-token", {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ callId: nextCallId, mode: nextMode }),
@@ -88,7 +98,11 @@ export function DirectCallPanel({
     room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => track.detach());
     room.on(RoomEvent.Disconnected, () => {
       setPhase("idle");
+      setAudioNeedsStart(false);
       void cleanupRoom();
+    });
+    room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+      setAudioNeedsStart(!room.canPlaybackAudio);
     });
 
     await room.connect(data.media_url, data.media_token, { autoSubscribe: true });
@@ -103,14 +117,14 @@ export function DirectCallPanel({
     setCameraEnabled(nextMode === "video");
     setRemoteUserId(peer);
     setPhase("connected");
-    await room.startAudio().catch(() => {});
-  }, [attachTrack, cleanupRoom, conversationId]);
+    await room.startAudio().then(() => setAudioNeedsStart(false)).catch(() => setAudioNeedsStart(true));
+  }, [activeConversationId, attachTrack, cleanupRoom]);
 
   const endCall = useCallback(() => {
-    if (callId && remoteUserId) {
+    if (callId && remoteUserId && activeConversationId) {
       wsSend({
         type: "direct_call_end",
-        payload: { conversation_id: conversationId, to_user_id: remoteUserId, call_id: callId, mode },
+        payload: { conversation_id: activeConversationId, to_user_id: remoteUserId, call_id: callId, mode },
       });
     }
     void cleanupRoom();
@@ -120,27 +134,33 @@ export function DirectCallPanel({
     setCameraEnabled(false);
     setMuted(false);
     onClose?.();
-  }, [callId, cleanupRoom, conversationId, mode, onClose, remoteUserId]);
+  }, [activeConversationId, callId, cleanupRoom, mode, onClose, remoteUserId]);
 
   useEffect(() => {
     const unsubscribe = wsSubscribe((event: WsEvent) => {
       if (event.type !== "direct_call_invite" && event.type !== "direct_call_accept" && event.type !== "direct_call_end") return;
       const payload = event.payload as { conversation_id?: number; from_user_id?: number; call_id?: string; mode?: CallMode } | null;
-      if (!payload || payload.conversation_id !== conversationId || !payload.call_id || !payload.mode) return;
+      if (!payload?.conversation_id || !payload.call_id || !payload.mode) return;
+      if (!listenGlobally && payload.conversation_id !== conversationId) return;
 
       if (event.type === "direct_call_invite") {
+        const resolved = resolvePeer?.(payload.from_user_id ?? 0, payload.conversation_id) ?? null;
+        setActiveConversationId(payload.conversation_id);
+        setActivePeerId(payload.from_user_id ?? null);
+        setActivePeerName(resolved?.name || peerName || "Niakofa user");
         setCallId(payload.call_id);
         setMode(payload.mode);
         setRemoteUserId(payload.from_user_id ?? null);
         setPhase("incoming");
-      } else if (event.type === "direct_call_accept" && payload.call_id === callId) {
-        const peer = payload.from_user_id ?? peerId;
+      } else if (event.type === "direct_call_accept" && payload.call_id === callId && payload.conversation_id === activeConversationId) {
+        const peer = payload.from_user_id ?? activePeerId;
+        if (!peer) return;
         void connect(payload.call_id, payload.mode, peer).catch((connectError) => {
           setError(connectError instanceof Error ? connectError.message : "Could not connect the call.");
           void cleanupRoom();
           setPhase("idle");
         });
-      } else if (event.type === "direct_call_end" && payload.call_id === callId) {
+      } else if (event.type === "direct_call_end" && payload.call_id === callId && payload.conversation_id === activeConversationId) {
         void cleanupRoom();
         setCallId(null);
         setPhase("idle");
@@ -148,10 +168,13 @@ export function DirectCallPanel({
       }
     });
     return unsubscribe;
-  }, [callId, cleanupRoom, connect, conversationId, onClose, peerId]);
+  }, [activeConversationId, activePeerId, callId, cleanupRoom, connect, conversationId, listenGlobally, onClose, peerName, resolvePeer]);
 
   useEffect(() => {
-    if (!autoStartMode || phase !== "idle") return;
+    if (!autoStartMode || phase !== "idle" || !conversationId || !peerId) return;
+    setActiveConversationId(conversationId);
+    setActivePeerId(peerId);
+    setActivePeerName(peerName || "Niakofa user");
     const nextCallId = newCallId();
     setMode(autoStartMode);
     setCallId(nextCallId);
@@ -163,20 +186,21 @@ export function DirectCallPanel({
       payload: { conversation_id: conversationId, to_user_id: peerId, call_id: nextCallId, mode: autoStartMode },
     });
     onAutoStartConsumed?.();
-  }, [autoStartMode, conversationId, onAutoStartConsumed, peerId, phase]);
+  }, [autoStartMode, conversationId, onAutoStartConsumed, peerId, peerName, phase]);
 
   const acceptIncoming = useCallback(() => {
     if (!callId || !remoteUserId) return;
+    if (!activeConversationId) return;
     wsSend({
       type: "direct_call_accept",
-      payload: { conversation_id: conversationId, to_user_id: remoteUserId, call_id: callId, mode },
+      payload: { conversation_id: activeConversationId, to_user_id: remoteUserId, call_id: callId, mode },
     });
     void connect(callId, mode, remoteUserId).catch((connectError) => {
       setError(connectError instanceof Error ? connectError.message : "Could not connect the call.");
       void cleanupRoom();
       setPhase("idle");
     });
-  }, [callId, cleanupRoom, connect, conversationId, mode, remoteUserId]);
+  }, [activeConversationId, callId, cleanupRoom, connect, mode, remoteUserId]);
 
   if (phase === "idle" && !autoStartMode) return null;
 
@@ -184,21 +208,21 @@ export function DirectCallPanel({
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label={mode === "video" ? "Video call" : "Voice call"}>
       <section className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] border border-border bg-slate-950 shadow-2xl">
         <header className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
-          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">{mode === "video" ? "Video call" : "Voice call"}</p><h2 className="mt-1 text-sm font-black">{peerName}</h2></div>
+          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">{mode === "video" ? "Video call" : "Voice call"}</p><h2 className="mt-1 text-sm font-black">{activePeerName}</h2></div>
           <span className="rounded-full border border-white/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-white/70">{phase}</span>
         </header>
 
         {phase === "incoming" ? (
           <div className="flex min-h-72 flex-col items-center justify-center p-8 text-center text-white">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/15 text-primary"><PhoneCall className="h-9 w-9" /></div>
-            <p className="mt-4 text-xl font-black">{peerName} is calling</p>
+            <p className="mt-4 text-xl font-black">{activePeerName} is calling</p>
             <p className="mt-1 text-xs text-white/60">{mode === "video" ? "Video call" : "Voice call"}</p>
             <div className="mt-6 flex gap-3"><button type="button" onClick={acceptIncoming} className="min-h-11 rounded-xl bg-emerald-500 px-5 text-sm font-black text-white">Accept</button><button type="button" onClick={endCall} className="min-h-11 rounded-xl bg-rose-500 px-5 text-sm font-black text-white">Decline</button></div>
           </div>
         ) : phase === "outgoing" || phase === "connecting" ? (
           <div className="flex min-h-72 flex-col items-center justify-center p-8 text-center text-white">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/15 text-primary animate-pulse"><Phone className="h-9 w-9" /></div>
-            <p className="mt-4 text-xl font-black">{phase === "outgoing" ? "Calling " + peerName + "…" : "Connecting…"}</p>
+            <p className="mt-4 text-xl font-black">{phase === "outgoing" ? "Calling " + activePeerName + "…" : "Connecting…"}</p>
             <button type="button" onClick={endCall} className="mt-6 flex min-h-11 items-center gap-2 rounded-xl bg-rose-500 px-5 text-sm font-black text-white"><PhoneOff className="h-4 w-4" /> End call</button>
           </div>
         ) : phase === "connected" ? (
@@ -211,9 +235,14 @@ export function DirectCallPanel({
             ) : (
               <div className="flex h-80 flex-col items-center justify-center">
                 <div className="flex h-24 w-24 items-center justify-center rounded-full bg-primary/15 text-primary"><Phone className="h-10 w-10" /></div>
-                <p className="mt-4 text-lg font-black">{peerName}</p>
+                <p className="mt-4 text-lg font-black">{activePeerName}</p>
                 <audio ref={remoteAudioRef} autoPlay />
               </div>
+            )}
+            {audioNeedsStart && (
+              <button type="button" onClick={() => void roomRef.current?.startAudio().then(() => setAudioNeedsStart(false)).catch(() => {})} className="mx-auto mb-3 block min-h-10 rounded-xl bg-primary px-4 text-xs font-black text-primary-foreground">
+                Start audio
+              </button>
             )}
             <div className="mt-3 flex justify-center gap-2">
               <button type="button" onClick={() => { const track = localTracksRef.current.find((item) => item.kind === Track.Kind.Audio); if (track) { track.mediaStreamTrack.enabled = !track.mediaStreamTrack.enabled; setMuted(!track.mediaStreamTrack.enabled); } }} className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/10">{muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</button>
