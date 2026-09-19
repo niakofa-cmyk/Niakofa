@@ -1,4 +1,4 @@
-import { Ban, FileText, Flag, MapPinned, Radio, User, X } from "lucide-react";
+import { Ban, FileText, Flag, Images, MapPinned, Radio, User, X } from "lucide-react";
 import type { MessageAttachmentData } from "./MessageAttachment";
 import { MessageAttachment } from "./MessageAttachment";
 import { MessageAvatar } from "./MessageAvatar";
@@ -14,6 +14,7 @@ export function ConversationInfoPanel({
   sharedAttachments = [],
   onOpenContext,
   onViewProfile,
+  onViewSharedMedia,
   onBlock,
   onReport,
   onClose,
@@ -28,6 +29,7 @@ export function ConversationInfoPanel({
   sharedAttachments?: MessageAttachmentData[];
   onOpenContext?: () => void;
   onViewProfile?: () => void;
+  onViewSharedMedia?: () => void;
   onBlock?: () => void;
   onReport?: () => void;
   onClose?: () => void;
@@ -52,6 +54,7 @@ export function ConversationInfoPanel({
       )}
       <div className="space-y-1 p-3">
         {onViewProfile && <button type="button" onClick={onViewProfile} className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-sm font-bold hover:bg-muted"><User className="h-4 w-4 text-primary" /> View profile</button>}
+        {onViewSharedMedia && <button type="button" onClick={onViewSharedMedia} className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-sm font-bold hover:bg-muted"><Images className="h-4 w-4 text-primary" /> Open shared media</button>}
         {onBlock && <button type="button" onClick={onBlock} className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-sm font-bold text-rose-400 hover:bg-rose-500/10"><Ban className="h-4 w-4" /> Block</button>}
         {onReport && <button type="button" onClick={onReport} className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-sm font-bold text-muted-foreground hover:bg-muted"><Flag className="h-4 w-4" /> Report</button>}
       </div>
