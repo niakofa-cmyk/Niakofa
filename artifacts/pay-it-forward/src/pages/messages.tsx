@@ -9,7 +9,6 @@ import { ConversationInfoPanel } from "@/components/messages/ConversationInfoPan
 import { ConversationList } from "@/components/messages/ConversationList";
 import { ConversationThread } from "@/components/messages/ConversationThread";
 import { ConversationHeader } from "@/components/messages/ConversationHeader";
-import { MessageTypeTabs } from "@/components/messages/MessageTypeTabs";
 import { MessagesShell } from "@/components/messages/MessagesShell";
 import { NewMessageRail } from "@/components/messages/NewMessageRail";
 import { NewMessageDialog } from "@/components/messages/NewMessageDialog";
@@ -17,6 +16,10 @@ import { RequestContextCard } from "@/components/messages/RequestContextCard";
 import { RequestLiveMapCard } from "@/components/messages/RequestLiveMapCard";
 import { SharedMediaPanel } from "@/components/messages/SharedMediaPanel";
 import { DirectCallPanel } from "@/components/messages/DirectCallPanel";
+import { MessengerMobileHome } from "@/components/messages/MessengerMobileHome";
+import { MobileNavDrawer } from "@/components/MobileNavDrawer";
+import { NotificationsDrawer } from "@/components/NotificationsDrawer";
+import { SEED_NOTIFICATIONS } from "@/components/BottomNav";
 import type { PendingAttachment, PendingContext } from "@/components/messages/MessageComposerWithAttachments";
 import type { MessageAttachmentData } from "@/components/messages/MessageAttachment";
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
@@ -83,7 +86,8 @@ function modeFromLocation(location: string): MessageMode {
   const mode = params.get("mode");
   if (mode === "direct" || mode === "hub" || mode === "requests") return mode;
   if (mode === "request") return "requests";
-  if (pathname === "/diaspora/messages" || params.has("sourceHub") || params.has("targetHub") || params.has("conversation")) return "hub";
+  if (params.has("sourceHub") || params.has("targetHub")) return "hub";
+  if (pathname === "/diaspora/messages") return "all";
   return "all";
 }
 
@@ -163,6 +167,8 @@ export default function MessagesPage() {
   const [showReport, setShowReport] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [showMobileNotifications, setShowMobileNotifications] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showSharedMedia, setShowSharedMedia] = useState(false);
   const [callMode, setCallMode] = useState<"voice" | "video" | null>(null);
   const [loading, setLoading] = useState(true);
@@ -180,6 +186,10 @@ export default function MessagesPage() {
   const selectedHubId = Number.parseInt(queryValue(location, "conversation") ?? "", 10);
   const selectedRequest = requestConversations.find((request) => request.id === selectedRequestId) ?? null;
   const selectedHub = hubConversations.find((conversation) => conversation.id === selectedHubId) ?? null;
+  const mobilePeople = useMemo(
+    () => directConversations.map((conversation) => conversation.other_user),
+    [directConversations],
+  );
   const sharedAttachments = useMemo(
     () => directMessages.flatMap((message) => message.attachments ?? []),
     [directMessages],
@@ -561,13 +571,39 @@ export default function MessagesPage() {
       {loading ? (
         <div className="mx-auto flex min-h-[32rem] max-w-7xl items-center justify-center px-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
       ) : (
-        <MessagesShell
-          showThread={showThread}
-          showInfo={showInfo}
-          mobileTabs={<MessageTypeTabs active={activeMode} counts={unreadCounts} onChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} />}
-          list={<ConversationList activeMode={activeMode} counts={unreadCounts} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} messageSearchResults={messageSearchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} onSelectMessageSearch={selectSearchMessage} onCompose={() => setShowNewMessage(true)} emptyLabel="No conversations yet." />}
-          thread={thread}
-          info={
+        <>
+          {!showThread && (
+            <div className="lg:hidden">
+              <MessengerMobileHome
+                items={visibleItems}
+                people={mobilePeople}
+                searchResults={searchResults}
+                search={search}
+                onSearchChange={setSearch}
+                onSelect={selectUnified}
+                onSelectPerson={startDirectWithUser}
+                onCompose={() => setShowNewMessage(true)}
+                onNotifications={() => setShowMobileNotifications(true)}
+                onMenu={() => setShowMobileMenu(true)}
+              />
+              <NotificationsDrawer
+                open={showMobileNotifications}
+                onClose={() => setShowMobileNotifications(false)}
+                notifications={SEED_NOTIFICATIONS}
+              />
+              <MobileNavDrawer
+                open={showMobileMenu}
+                onClose={() => setShowMobileMenu(false)}
+              />
+            </div>
+          )}
+          <div className={showThread ? "" : "hidden lg:block"}>
+            <MessagesShell
+              showThread={showThread}
+              showInfo={showInfo}
+              list={<ConversationList activeMode={activeMode} counts={unreadCounts} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} messageSearchResults={messageSearchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} onSelectMessageSearch={selectSearchMessage} onCompose={() => setShowNewMessage(true)} emptyLabel="No conversations yet." />}
+              thread={thread}
+              info={
             activeRecipient ? (
               <ConversationInfoPanel
                 name={activeRecipient.name}
@@ -606,8 +642,10 @@ export default function MessagesPage() {
               onSelectHub={(sourceId, targetId) => { clearSelection(); navigate(messagesPath("hub", { sourceHub: sourceId, targetHub: targetId })); }}
               onSelectCommunity={() => navigate("/community")}
             />
-          }
-        />
+            }
+            />
+          </div>
+        </>
       )}
       {currentUser && (
         <DirectCallPanel
