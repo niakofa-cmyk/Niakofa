@@ -19,7 +19,6 @@ import { DirectCallPanel } from "@/components/messages/DirectCallPanel";
 import { MessengerMobileHome } from "@/components/messages/MessengerMobileHome";
 import { MobileNavDrawer } from "@/components/MobileNavDrawer";
 import { NotificationsDrawer } from "@/components/NotificationsDrawer";
-import { SEED_NOTIFICATIONS } from "@/components/BottomNav";
 import type { PendingAttachment, PendingContext } from "@/components/messages/MessageComposerWithAttachments";
 import type { MessageAttachmentData } from "@/components/messages/MessageAttachment";
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
@@ -615,7 +614,6 @@ export default function MessagesPage() {
               <NotificationsDrawer
                 open={showMobileNotifications}
                 onClose={() => setShowMobileNotifications(false)}
-                notifications={SEED_NOTIFICATIONS}
               />
               <MobileNavDrawer
                 open={showMobileMenu}
