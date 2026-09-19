@@ -2,6 +2,8 @@ import { Search } from "lucide-react";
 import type { UnifiedConversation } from "@/lib/unifiedConversation";
 import { ConversationListItem } from "./ConversationListItem";
 import { MessageAvatar } from "./MessageAvatar";
+import { MessageTypeTabs } from "./MessageTypeTabs";
+import type { MessageMode } from "@/lib/messageRoutes";
 
 type Person = { id: number; name: string; avatar_url: string | null };
 type MessageSearchResult = { conversation_id: number; message_id: number; sender_id: number; sender_name: string; sender_avatar: string | null; body: string; created_at: string | null; peer?: Person };
@@ -17,6 +19,9 @@ export function ConversationList({
   onSelectPerson,
   onSelectMessageSearch,
   onCompose,
+  activeMode,
+  counts,
+  onModeChange,
   emptyLabel,
 }: {
   items: UnifiedConversation[];
@@ -29,6 +34,9 @@ export function ConversationList({
   onSelectPerson?: (person: Person) => void;
   onSelectMessageSearch: (conversationId: number, messageId: number) => void;
   onCompose?: () => void;
+  activeMode?: MessageMode;
+  counts?: { all: number; direct: number; requests: number; hubs: number };
+  onModeChange?: (mode: MessageMode) => void;
   emptyLabel: string;
 }) {
   return (
@@ -45,6 +53,7 @@ export function ConversationList({
             </button>
           )}
         </div>
+        {activeMode && onModeChange && <div className="mb-3"><MessageTypeTabs active={activeMode} counts={counts} onChange={onModeChange} /></div>}
         <label className="relative block">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <input data-testid="input-message-search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search conversations…" aria-label="Search messages or people" className="min-h-11 w-full rounded-2xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
