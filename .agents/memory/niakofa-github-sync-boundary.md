@@ -18,6 +18,19 @@ after every push attempt. If the HTTPS remote rejects authentication, use the
 attached GitHub connection's authenticated API for the write and then compare
 both hashes independently; never paste or print a token.
 
+An installed GitHub integration may still be `not_added` in the current
+execution context. Resolve its exact connection ID and bind it before calling
+`listConnections("github")`; an empty credential list is not proof that the
+integration is unavailable.
+
+**Why:** The workspace showed GitHub as installed while the first credential
+lookup returned no connection until the existing authorized connection was
+attached to the Repl.
+
+**How to apply:** Use the integration status directory and `addIntegration`
+for the exact existing connection, then use the connector-backed API without
+handling credentials directly.
+
 **Why:** The shell-backed HTTPS remote rejected authentication in this
 workspace, while the supported GitHub connection could read and confirm the
 public ref without exposing credentials.
