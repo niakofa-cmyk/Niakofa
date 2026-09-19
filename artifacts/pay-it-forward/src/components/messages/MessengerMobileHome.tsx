@@ -1,5 +1,7 @@
 import { ArrowLeft, Bell, MessageCircle, Menu, PenSquare, Search, UsersRound } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { authHeaders } from "@/lib/auth";
+import { MessengerAskNia } from "./MessengerAskNia";
 import type { UnifiedConversation } from "@/lib/unifiedConversation";
 import { MessageAvatar } from "./MessageAvatar";
 
@@ -51,11 +53,41 @@ export function MessengerMobileHome({
   onCommunity: () => void;
 }) {
   const [view, setView] = useState<"chats" | "people">("chats");
+  const [activePeople, setActivePeople] = useState<Person[]>(people);
+  const [stories, setStories] = useState<Array<{
+    user_id: number;
+    name: string;
+    avatar_url: string | null;
+    active_now: boolean;
+    stories: Array<{ id: number; body: string | null; media_url: string | null; media_type: string | null; created_at: string | null; expires_at: string | null }>;
+  }>>([]);
+  const [storyUser, setStoryUser] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const [peopleResponse, storiesResponse] = await Promise.all([
+        fetch("/api/messages/people", { headers: authHeaders() }),
+        fetch("/api/messages/stories", { headers: authHeaders() }),
+      ]);
+      if (cancelled) return;
+      if (peopleResponse.ok) {
+        const data = await peopleResponse.json() as { people?: Person[] };
+        if (Array.isArray(data.people)) setActivePeople(data.people);
+      }
+      if (storiesResponse.ok) {
+        const data = await storiesResponse.json() as { people?: typeof stories };
+        if (Array.isArray(data.people)) setStories(data.people);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, []);
   const visiblePeople = useMemo(() => {
     if (search.trim()) return searchResults;
-    return people;
-  }, [people, search, searchResults]);
-  const storyPeople = people.slice(0, 8);
+    return activePeople;
+  }, [activePeople, search, searchResults]);
+  const storyPeople = stories.slice(0, 8);
 
   return (
     <main className="min-h-[100dvh] bg-background text-foreground pb-[5.5rem]">
@@ -88,8 +120,12 @@ export function MessengerMobileHome({
         </label>
       </header>
 
+      {search.trim().length >= 2 && (
+        <MessengerAskNia query={search} onClose={() => onSearchChange("")} />
+      )}
+
       {view === "chats" && (
-        <section aria-label="People" className="overflow-x-auto px-4 pb-4 pt-5">
+        <section aria-label="Stories" className="overflow-x-auto px-4 pb-4 pt-5">
           <div className="flex w-max gap-4">
             <button type="button" onClick={onCompose} className="flex w-16 flex-col items-center gap-1.5">
               <span className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-primary/60 bg-primary/10">
@@ -97,9 +133,9 @@ export function MessengerMobileHome({
               </span>
               <span className="max-w-16 truncate text-[11px] font-semibold">Your story</span>
             </button>
-            {storyPeople.map((person, index) => (
-              <button key={person.id} type="button" onClick={() => onSelectPerson(person)} className="flex w-16 flex-col items-center gap-1.5">
-                <span className={`rounded-full p-[2px] ${index < 4 ? "bg-primary" : "bg-border"}`}>
+            {storyPeople.map((person) => (
+              <button key={person.user_id} type="button" onClick={() => setStoryUser(person.user_id)} className="flex w-16 flex-col items-center gap-1.5">
+                <span className={`rounded-full p-[2px] ${person.active_now ? "bg-primary" : "bg-border"}`}>
                   <MessageAvatar name={person.name} avatarUrl={person.avatar_url} size={56} />
                 </span>
                 <span className="max-w-16 truncate text-[11px] font-semibold">{person.name}</span>
@@ -123,7 +159,7 @@ export function MessengerMobileHome({
             <div className="px-6 py-16 text-center">
               <UsersRound className="mx-auto h-10 w-10 text-muted-foreground" />
               <p className="mt-3 text-base font-black">No people found</p>
-              <p className="mt-1 text-sm text-muted-foreground">Search for an approved Niakofa member above.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Search for an approved Niakofa member above. Active people appear first.</p>
             </div>
           )
         ) : items.length === 0 ? (
@@ -149,6 +185,35 @@ export function MessengerMobileHome({
           ))
         )}
       </section>
+
+      {storyUser !== null && (() => {
+        const group = stories.find((item) => item.user_id === storyUser);
+        if (!group) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-5" role="dialog" aria-modal="true" onClick={() => setStoryUser(null)}>
+            <div className="w-full max-w-sm rounded-3xl bg-card p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center gap-3">
+                <MessageAvatar name={group.name} avatarUrl={group.avatar_url} size={48} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-black">{group.name}</p>
+                  <p className="text-xs text-muted-foreground">{group.active_now ? "Active now" : "Story"}</p>
+                </div>
+                <button type="button" onClick={() => setStoryUser(null)} className="rounded-full p-2 hover:bg-muted" aria-label="Close Story"><X className="h-5 w-5" /></button>
+              </div>
+              <div className="mt-5 space-y-3">
+                {group.stories.map((story) => (
+                  <article key={story.id} className="rounded-2xl bg-muted p-4">
+                    {story.media_url && <img src={story.media_url} alt="" className="mb-3 max-h-80 w-full rounded-xl object-cover" />}
+                    {story.body && <p className="whitespace-pre-wrap text-sm leading-6">{story.body}</p>}
+                    <p className="mt-2 text-[10px] text-muted-foreground">{story.created_at ? formatTime(story.created_at) : ""}</p>
+                  </article>
+                ))}
+              </div>
+              <button type="button" onClick={() => { setStoryUser(null); onSelectPerson({ id: group.user_id, name: group.name, avatar_url: group.avatar_url }); }} className="mt-4 w-full rounded-full bg-primary py-3 text-sm font-black text-primary-foreground">Message {group.name}</button>
+            </div>
+          </div>
+        );
+      })()}
 
       <nav aria-label="Messages navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1 backdrop-blur-xl">
         <div className="flex items-center justify-around">
