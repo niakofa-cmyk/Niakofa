@@ -54,6 +54,10 @@ type DecodedDirectAttachment = {
   altText: string | null;
 };
 
+type DirectMessageContext =
+  | { type: "link"; url: string; label: string | null }
+  | { type: "location"; latitude: number; longitude: number; label: string | null };
+
 function hasExpectedSignature(buffer: Buffer, mimeType: string): boolean {
   if (mimeType === "image/jpeg") return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
   if (mimeType === "image/png") return buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
@@ -109,13 +113,58 @@ function parseDirectAttachments(value: unknown): { attachments: DecodedDirectAtt
   return { attachments };
 }
 
+function parseDirectMessageContexts(value: unknown): { contexts: DirectMessageContext[]; error?: string } {
+  if (value === undefined) return { contexts: [] };
+  if (!Array.isArray(value) || value.length > MAX_DIRECT_ATTACHMENTS) {
+    return { contexts: [], error: `A message can include at most ${MAX_DIRECT_ATTACHMENTS} attachments or context cards.` };
+  }
+
+  const contexts: DirectMessageContext[] = [];
+  for (const incoming of value) {
+    if (!incoming || typeof incoming !== "object") {
+      return { contexts: [], error: "Invalid message context." };
+    }
+    const candidate = incoming as { type?: unknown; url?: unknown; latitude?: unknown; longitude?: unknown; label?: unknown };
+    const label = cleanAttachmentText(candidate.label, 255);
+    if (candidate.type === "link") {
+      if (typeof candidate.url !== "string" || candidate.url.length > 2_000) {
+        return { contexts: [], error: "Links must be valid HTTP or HTTPS URLs." };
+      }
+      try {
+        const url = new URL(candidate.url);
+        if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("unsupported protocol");
+        contexts.push({ type: "link", url: url.toString(), label });
+      } catch {
+        return { contexts: [], error: "Links must be valid HTTP or HTTPS URLs." };
+      }
+      continue;
+    }
+    if (candidate.type === "location") {
+      const latitude = Number(candidate.latitude);
+      const longitude = Number(candidate.longitude);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        return { contexts: [], error: "Location coordinates are invalid." };
+      }
+      contexts.push({ type: "location", latitude, longitude, label });
+      continue;
+    }
+    return { contexts: [], error: "Unsupported message context." };
+  }
+  return { contexts };
+}
+
 function serializeAttachment(attachment: {
   id: number;
   message_id: number;
+  attachment_type?: string | null;
   mime_type: string;
   byte_size: number;
   original_name: string | null;
   alt_text: string | null;
+  link_url?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
+  location_label?: string | null;
 }) {
   return {
     ...attachment,
@@ -426,6 +475,11 @@ router.get("/messages/direct/:conversationId", requireAuth, requireApproved, gen
         byte_size: directMessageAttachmentsTable.byte_size,
         original_name: directMessageAttachmentsTable.original_name,
         alt_text: directMessageAttachmentsTable.alt_text,
+        attachment_type: directMessageAttachmentsTable.attachment_type,
+        link_url: directMessageAttachmentsTable.link_url,
+        location_lat: directMessageAttachmentsTable.location_lat,
+        location_lng: directMessageAttachmentsTable.location_lng,
+        location_label: directMessageAttachmentsTable.location_label,
       })
       .from(directMessageAttachmentsTable)
       .where(inArray(directMessageAttachmentsTable.message_id, messageIds))
@@ -465,13 +519,20 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
   const recipientId = parsePositiveId(req.body?.recipientId);
   const body = String(req.body?.body ?? "").trim();
   const parsedAttachments = parseDirectAttachments(req.body?.attachments);
+  const parsedContexts = parseDirectMessageContexts(req.body?.contexts);
   if (!recipientId || recipientId === senderId) {
     return res.status(400).json({ error: "A valid different recipient is required." });
   }
   if (parsedAttachments.error) {
     return res.status(400).json({ error: parsedAttachments.error });
   }
-  if ((!body && parsedAttachments.attachments.length === 0) || body.length > MAX_BODY_LENGTH) {
+  if (parsedContexts.error) {
+    return res.status(400).json({ error: parsedContexts.error });
+  }
+  if (parsedAttachments.attachments.length + parsedContexts.contexts.length > MAX_DIRECT_ATTACHMENTS) {
+    return res.status(400).json({ error: `A message can include at most ${MAX_DIRECT_ATTACHMENTS} attachments or context cards.` });
+  }
+  if ((!body && parsedAttachments.attachments.length === 0 && parsedContexts.contexts.length === 0) || body.length > MAX_BODY_LENGTH) {
     return res.status(400).json({ error: `Message must include text or an attachment, with text up to ${MAX_BODY_LENGTH} characters.` });
   }
 
@@ -496,6 +557,7 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
           storedKeys.push(storageKey);
           const [row] = await tx.insert(directMessageAttachmentsTable).values({
             message_id: messageId,
+            attachment_type: "file",
             storage_key: storageKey,
             mime_type: attachment.mimeType,
             byte_size: attachment.buffer.length,
@@ -508,6 +570,46 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
             byte_size: directMessageAttachmentsTable.byte_size,
             original_name: directMessageAttachmentsTable.original_name,
             alt_text: directMessageAttachmentsTable.alt_text,
+            attachment_type: directMessageAttachmentsTable.attachment_type,
+            link_url: directMessageAttachmentsTable.link_url,
+            location_lat: directMessageAttachmentsTable.location_lat,
+            location_lng: directMessageAttachmentsTable.location_lng,
+            location_label: directMessageAttachmentsTable.location_label,
+          });
+          persisted.push(serializeAttachment(row));
+        }
+        return persisted;
+      };
+
+      const persistContexts = async (messageId: number, conversationId: number) => {
+        const persisted = [];
+        for (const context of parsedContexts.contexts) {
+          const isLink = context.type === "link";
+          const storageKey = `direct-contexts/${conversationId}/${randomUUID()}`;
+          const [row] = await tx.insert(directMessageAttachmentsTable).values({
+            message_id: messageId,
+            attachment_type: context.type,
+            storage_key: storageKey,
+            mime_type: isLink ? "text/uri-list" : "application/x-niakofa-location+json",
+            byte_size: 1,
+            original_name: context.label,
+            alt_text: context.label,
+            link_url: isLink ? context.url : null,
+            location_lat: isLink ? null : context.latitude,
+            location_lng: isLink ? null : context.longitude,
+            location_label: isLink ? null : context.label,
+          }).returning({
+            id: directMessageAttachmentsTable.id,
+            message_id: directMessageAttachmentsTable.message_id,
+            attachment_type: directMessageAttachmentsTable.attachment_type,
+            mime_type: directMessageAttachmentsTable.mime_type,
+            byte_size: directMessageAttachmentsTable.byte_size,
+            original_name: directMessageAttachmentsTable.original_name,
+            alt_text: directMessageAttachmentsTable.alt_text,
+            link_url: directMessageAttachmentsTable.link_url,
+            location_lat: directMessageAttachmentsTable.location_lat,
+            location_lng: directMessageAttachmentsTable.location_lng,
+            location_label: directMessageAttachmentsTable.location_label,
           });
           persisted.push(serializeAttachment(row));
         }
@@ -520,11 +622,12 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
           .values({ conversation_id: conversationId, sender_id: senderId, body })
           .returning();
         const attachments = await persistAttachments(message.id, conversationId);
+        const contexts = await persistContexts(message.id, conversationId);
         await tx
           .update(directConversationsTable)
           .set({ updated_at: new Date() })
           .where(eq(directConversationsTable.id, conversationId));
-        return { conversationId, message, attachments };
+        return { conversationId, message, attachments: [...attachments, ...contexts] };
       };
 
       const mine = await tx

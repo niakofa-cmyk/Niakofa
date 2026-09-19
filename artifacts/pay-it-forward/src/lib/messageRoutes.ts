@@ -15,8 +15,8 @@ export function messagesPath(
 
 export const directMessagePath = (userId: number | string) => messagesPath("direct", { to: userId });
 export const hubMessagePath = (hubId: number | string) => messagesPath("hub", { sourceHub: hubId });
-export const directConversationPath = (conversationId: number | string) =>
-  messagesPath("direct", { conversation: conversationId });
+export const directConversationPath = (conversationId: number | string, messageId?: number | string) =>
+  messagesPath("direct", { conversation: conversationId, message: messageId });
 export const requestConversationPath = (requestId: number | string) =>
   messagesPath("requests", { request: requestId });
 export const hubConversationPath = (conversationId: number | string) =>

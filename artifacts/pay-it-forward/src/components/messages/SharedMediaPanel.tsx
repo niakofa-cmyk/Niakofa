@@ -5,12 +5,17 @@ import { authHeaders } from "@/lib/auth";
 type MediaItem = {
   id: number;
   message_id: number;
+  attachment_type?: "file" | "link" | "location" | string;
   mime_type: string;
   byte_size: number;
   original_name: string | null;
   alt_text: string | null;
   created_at: string | null;
   media_url: string;
+  link_url?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
+  location_label?: string | null;
 };
 
 type Tab = "photos" | "videos" | "audio" | "files" | "links" | "location";
@@ -53,9 +58,14 @@ export function SharedMediaPanel({
     if (tab === "photos") return items.filter((item) => item.mime_type.startsWith("image/"));
     if (tab === "videos") return items.filter((item) => item.mime_type.startsWith("video/"));
     if (tab === "audio") return items.filter((item) => item.mime_type.startsWith("audio/"));
-    if (tab === "files") return items.filter((item) => !item.mime_type.startsWith("image/") && !item.mime_type.startsWith("video/") && !item.mime_type.startsWith("audio/"));
+    if (tab === "files") return items.filter((item) => item.attachment_type === "file" && !item.mime_type.startsWith("image/") && !item.mime_type.startsWith("video/") && !item.mime_type.startsWith("audio/"));
     return [];
   }, [items, tab]);
+
+  const contextItems = useMemo(
+    () => items.filter((item) => item.attachment_type === tab),
+    [items, tab],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -109,12 +119,18 @@ export function SharedMediaPanel({
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {loading && <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>}
           {error && <p role="alert" className="rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
-          {!loading && !error && (tab === "links" || tab === "location") && (
+          {!loading && !error && (tab === "links" || tab === "location") && contextItems.length === 0 && (
             <div className="flex min-h-48 flex-col items-center justify-center text-center">
               {tab === "links" ? <Link2 className="h-8 w-8 text-primary/50" /> : <MapPinned className="h-8 w-8 text-primary/50" />}
               <p className="mt-3 text-sm font-black">{tab === "links" ? "No shared links stored" : "No shared locations stored"}</p>
-              <p className="mt-1 max-w-sm text-xs text-muted-foreground">The current Direct attachment schema stores private media/files. Link and location cards are intentionally empty until those message types are persisted.</p>
+              <p className="mt-1 max-w-sm text-xs text-muted-foreground">Shared {tab === "links" ? "links" : "locations"} appear here when they are posted in this conversation.</p>
             </div>
+          )}
+          {!loading && !error && tab === "links" && contextItems.length > 0 && (
+            <div className="space-y-2">{contextItems.map((item) => item.link_url ? <a key={item.id} href={item.link_url} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-2xl border border-border bg-background p-3 text-sm font-bold text-primary"><Link2 className="h-5 w-5 shrink-0" /><span className="min-w-0 truncate">{item.original_name || item.link_url}</span></a> : null)}</div>
+          )}
+          {!loading && !error && tab === "location" && contextItems.length > 0 && (
+            <div className="space-y-2">{contextItems.map((item) => item.location_lat !== null && item.location_lat !== undefined && item.location_lng !== null && item.location_lng !== undefined ? <a key={item.id} href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.location_lat},${item.location_lng}`)}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-2xl border border-border bg-background p-3 text-sm font-bold text-primary"><MapPinned className="h-5 w-5 shrink-0" /><span className="min-w-0 truncate">{item.location_label || "Shared location"} · {item.location_lat.toFixed(4)}, {item.location_lng.toFixed(4)}</span></a> : null)}</div>
           )}
           {!loading && !error && tab !== "links" && tab !== "location" && visible.length === 0 && (
             <div className="flex min-h-48 flex-col items-center justify-center text-center">

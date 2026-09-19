@@ -5,11 +5,16 @@ import { authHeaders } from "@/lib/auth";
 export type MessageAttachmentData = {
   id: number;
   message_id: number;
+  attachment_type?: "file" | "link" | "location" | string;
   mime_type: string;
   byte_size: number;
   original_name: string | null;
   alt_text: string | null;
   media_url: string;
+  link_url?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
+  location_label?: string | null;
 };
 
 function formatBytes(value: number) {
@@ -21,6 +26,15 @@ function formatBytes(value: number) {
 export function MessageAttachment({ attachment, compact = false }: { attachment: MessageAttachmentData; compact?: boolean }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  if (attachment.attachment_type === "link" && attachment.link_url) {
+    return <a href={attachment.link_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold text-primary"><span className="truncate">{attachment.original_name || attachment.link_url}</span></a>;
+  }
+
+  if (attachment.attachment_type === "location" && attachment.location_lat !== null && attachment.location_lat !== undefined && attachment.location_lng !== null && attachment.location_lng !== undefined) {
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${attachment.location_lat},${attachment.location_lng}`)}`;
+    return <a href={mapUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold text-primary"><span>{attachment.location_label || "Shared location"}</span><span className="text-muted-foreground">{attachment.location_lat.toFixed(4)}, {attachment.location_lng.toFixed(4)}</span></a>;
+  }
 
   useEffect(() => {
     const controller = new AbortController();

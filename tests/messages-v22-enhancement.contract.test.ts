@@ -74,14 +74,14 @@ test("Messages v23 has Messenger-style People + message search and global call l
 test("Messages v24 preserves Hub feed context and Hub-to-Spirals navigation", () => {
   const feed = read("artifacts/api-server/src/routes/community-hub-feed.ts");
   const hubPanel = read("artifacts/pay-it-forward/src/components/messages/HubMessagesPanel.tsx");
-  const qa = read("docs/reference/niakofa-v17.2.1/DEVICE_QA.md");
+  const qa = read("docs/reference/uploads/2026-09-18/messages-v24/DEVICE_QA.md");
   assert.match(feed, /\/community\/hubs\/:hubId\/feed/);
   assert.match(feed, /messages: .*\/messages\?mode=hub&sourceHub=/);
   assert.match(feed, /spirals: .*\/audio-spirals\?hubId=/);
   assert.match(hubPanel, /\/api\/community\/hubs\/\$\{sourceId\}\/feed/);
   assert.match(hubPanel, /Hub context/);
   assert.match(hubPanel, /actions\.spirals/);
-  assert.match(qa, /Globe[\\s\\S]*Hub[\\s\\S]*Community/i);
-  assert.match(qa, /Messages[\\s\\S]*On mobile/i);
-  assert.match(qa, /Hub[\\s\\S]*Spirals/i);
+  assert.match(qa, /Globe[\s\S]*Hub[\s\S]*Community/i);
+  assert.match(qa, /Messages[\s\S]*Mobile composer/i);
+  assert.match(qa, /Hub[\s\S]*Spirals/i);
 });

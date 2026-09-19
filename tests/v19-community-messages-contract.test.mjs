@@ -6,10 +6,10 @@ const root = new URL("../", import.meta.url);
 const source = async (path) => readFile(new URL(path, root), "utf8");
 
 describe("Niakofa V19 Community + Messages contracts", () => {
-  it("mounts the existing Meta-style Direct pane", async () => {
+  it("mounts the maintained unified Direct conversation thread", async () => {
     const page = await source("artifacts/pay-it-forward/src/pages/messages.tsx");
-    assert.match(page, /import \{ MetaStyleDirectPane \} from "@\/components\/messages\/MetaStyleDirectPane"/);
-    assert.match(page, /activeMode === "direct"[\s\S]*MetaStyleDirectPane/);
+    assert.match(page, /import \{ ConversationThread \} from "@\/components\/messages\/ConversationThread"/);
+    assert.match(page, /activeRecipient \?[\s\S]*ConversationThread/);
   });
 
   it("keeps one four-mode Messages product", async () => {

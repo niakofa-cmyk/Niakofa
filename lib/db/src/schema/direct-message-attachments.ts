@@ -1,4 +1,4 @@
-import { integer, index, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { doublePrecision, integer, index, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { directMessagesTable } from "./direct-messages";
 
@@ -8,10 +8,15 @@ export const directMessageAttachmentsTable = pgTable("direct_message_attachments
     .notNull()
     .references(() => directMessagesTable.id, { onDelete: "cascade" }),
   storage_key: text("storage_key").notNull().unique(),
+  attachment_type: text("attachment_type").notNull().default("file"),
   mime_type: text("mime_type").notNull(),
   byte_size: integer("byte_size").notNull(),
   original_name: text("original_name"),
   alt_text: text("alt_text"),
+  link_url: text("link_url"),
+  location_lat: doublePrecision("location_lat"),
+  location_lng: doublePrecision("location_lng"),
+  location_label: text("location_label"),
   created_at: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),

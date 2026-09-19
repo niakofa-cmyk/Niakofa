@@ -17,7 +17,7 @@ import { RequestContextCard } from "@/components/messages/RequestContextCard";
 import { RequestLiveMapCard } from "@/components/messages/RequestLiveMapCard";
 import { SharedMediaPanel } from "@/components/messages/SharedMediaPanel";
 import { DirectCallPanel } from "@/components/messages/DirectCallPanel";
-import type { PendingAttachment } from "@/components/messages/MessageComposerWithAttachments";
+import type { PendingAttachment, PendingContext } from "@/components/messages/MessageComposerWithAttachments";
 import type { MessageAttachmentData } from "@/components/messages/MessageAttachment";
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
@@ -148,6 +148,7 @@ export default function MessagesPage() {
   const [hubConversations, setHubConversations] = useState<HubConversation[]>([]);
   const [requestConversations, setRequestConversations] = useState<RequestConversation[]>([]);
   const [selectedDirectId, setSelectedDirectId] = useState<number | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>([]);
   const [newRecipient, setNewRecipient] = useState<DirectUser | null>(null);
   const [search, setSearch] = useState("");
@@ -155,6 +156,7 @@ export default function MessagesPage() {
   const [messageSearchResults, setMessageSearchResults] = useState<MessageSearchResult[]>([]);
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [contexts, setContexts] = useState<PendingContext[]>([]);
   const [reportReason, setReportReason] = useState("");
   const [showReport, setShowReport] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -190,13 +192,14 @@ export default function MessagesPage() {
     return next;
   }, []);
 
-  const loadDirectMessages = useCallback(async (conversationId: number) => {
+  const loadDirectMessages = useCallback(async (conversationId: number, targetMessageId?: number | null) => {
     const response = await fetch(`/api/messages/direct/${conversationId}`, { headers: authHeaders() });
     if (!response.ok) throw new Error(await readError(response, "Could not load this conversation."));
     const data = await response.json() as { messages?: DirectMessage[] };
     setSelectedDirectId(conversationId);
     setNewRecipient(null);
     setDirectMessages(Array.isArray(data.messages) ? data.messages : []);
+    setHighlightedMessageId(targetMessageId && targetMessageId > 0 ? targetMessageId : null);
     await fetch(`/api/messages/direct/conversations/${conversationId}/read`, { method: "POST", headers: authHeaders() });
   }, []);
 
@@ -255,10 +258,11 @@ export default function MessagesPage() {
   useEffect(() => {
     if (activeMode !== "direct") return;
     const conversationId = Number.parseInt(queryValue(location, "conversation") ?? "", 10);
-    if (Number.isSafeInteger(conversationId) && conversationId > 0 && conversationId !== selectedDirectId) {
-      void loadDirectMessages(conversationId).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load this conversation."));
+    const targetMessageId = Number.parseInt(queryValue(location, "message") ?? "", 10);
+    if (Number.isSafeInteger(conversationId) && conversationId > 0 && (conversationId !== selectedDirectId || targetMessageId !== highlightedMessageId)) {
+      void loadDirectMessages(conversationId, Number.isSafeInteger(targetMessageId) ? targetMessageId : null).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load this conversation."));
     }
-  }, [activeMode, location, loadDirectMessages, selectedDirectId]);
+  }, [activeMode, highlightedMessageId, location, loadDirectMessages, selectedDirectId]);
 
   useEffect(() => {
     if (!selectedDirectId || activeMode !== "direct" || realtimeState === "connected") return;
@@ -331,13 +335,15 @@ export default function MessagesPage() {
         body: JSON.stringify({
           recipientId: activeRecipient.id,
           body: body.trim(),
-          attachments: attachments.map(({ data_url, original_name, alt_text }) => ({ data_url, original_name, alt_text })),
+           attachments: attachments.map(({ data_url, original_name, alt_text }) => ({ data_url, original_name, alt_text })),
+           contexts,
         }),
       });
       if (!response.ok) throw new Error(await readError(response, "Could not send direct message."));
       const data = await response.json() as { conversationId?: number };
       setBody("");
       setAttachments([]);
+      setContexts([]);
       setNewRecipient(null);
       await loadDirectConversations();
       await loadUnreadSummary();
@@ -418,6 +424,7 @@ export default function MessagesPage() {
     setSelectedDirectId(null);
     setNewRecipient(null);
     setDirectMessages([]);
+    setHighlightedMessageId(null);
     setShowInfo(false);
     navigate(messagesPath(activeMode));
   }
@@ -443,12 +450,12 @@ export default function MessagesPage() {
     navigate(messagesPath("direct"));
   }
 
-  function selectSearchMessage(conversationId: number) {
+  function selectSearchMessage(conversationId: number, messageId: number) {
     setSearch("");
     setSearchResults([]);
     setMessageSearchResults([]);
-    navigate(directConversationPath(conversationId));
-    void loadDirectMessages(conversationId).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not open this conversation."));
+    navigate(directConversationPath(conversationId, messageId));
+    void loadDirectMessages(conversationId, messageId).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not open this conversation."));
   }
 
   const thread = activeMode === "hub" ? (
@@ -474,9 +481,11 @@ export default function MessagesPage() {
       active={realtimeState === "connected"}
       subtitle={realtimeState === "connected" ? "Active connection" : "Direct message"}
       messages={directMessages}
+       highlightedMessageId={highlightedMessageId}
       currentUserId={currentUser?.id ?? null}
       body={body}
       attachments={attachments}
+       contexts={contexts}
       working={working}
       onBack={clearSelection}
       onInfo={() => setShowInfo(true)}
@@ -484,6 +493,7 @@ export default function MessagesPage() {
       onVideoCall={() => setCallMode("video")}
       onBodyChange={setBody}
       onAttachmentsChange={setAttachments}
+       onContextsChange={setContexts}
       onSend={() => void sendDirectMessage()}
     />
   ) : (

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { FileImage, FileText, Loader2, Paperclip, Send, X } from "lucide-react";
+import { FileImage, FileText, Link2, Loader2, MapPinned, Paperclip, Send, X } from "lucide-react";
 
 export type PendingAttachment = {
   data_url: string;
@@ -7,6 +7,10 @@ export type PendingAttachment = {
   alt_text?: string;
   mime_type?: string;
 };
+
+export type PendingContext =
+  | { type: "link"; url: string; label: string }
+  | { type: "location"; latitude: number; longitude: number; label: string };
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENTS = 5;
@@ -35,9 +39,11 @@ function readAsDataUrl(file: File): Promise<string> {
 export function MessageComposerWithAttachments(props: {
   body: string;
   attachments: PendingAttachment[];
+  contexts: PendingContext[];
   working: boolean;
   onBodyChange: (value: string) => void;
   onAttachmentsChange: (value: PendingAttachment[]) => void;
+  onContextsChange: (value: PendingContext[]) => void;
   onSend: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,7 +81,50 @@ export function MessageComposerWithAttachments(props: {
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  const canSend = !props.working && (props.body.trim().length > 0 || props.attachments.length > 0);
+  function addLink() {
+    const rawUrl = window.prompt("Paste a link to share");
+    if (!rawUrl?.trim()) return;
+    try {
+      const url = new URL(rawUrl.trim());
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("unsupported protocol");
+      if (props.attachments.length + props.contexts.length >= MAX_ATTACHMENTS) {
+        setError(`You can attach up to ${MAX_ATTACHMENTS} items per message.`);
+        return;
+      }
+      const label = window.prompt("Link label (optional)", url.hostname) || url.hostname;
+      props.onContextsChange([...props.contexts, { type: "link", url: url.toString(), label: label.trim().slice(0, 255) || url.hostname }]);
+      setError(null);
+    } catch {
+      setError("Enter a valid HTTP or HTTPS link.");
+    }
+  }
+
+  function addLocation() {
+    if (!navigator.geolocation) {
+      setError("Location sharing is not available in this browser.");
+      return;
+    }
+    if (props.attachments.length + props.contexts.length >= MAX_ATTACHMENTS) {
+      setError(`You can attach up to ${MAX_ATTACHMENTS} items per message.`);
+      return;
+    }
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const label = window.prompt("Location label (optional)", "Shared location") || "Shared location";
+        props.onContextsChange([...props.contexts, {
+          type: "location",
+          latitude: Number(coords.latitude.toFixed(6)),
+          longitude: Number(coords.longitude.toFixed(6)),
+          label: label.trim().slice(0, 255) || "Shared location",
+        }]);
+      },
+      () => setError("Location permission was not granted."),
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }
+
+  const canSend = !props.working && (props.body.trim().length > 0 || props.attachments.length > 0 || props.contexts.length > 0);
 
   return (
     <form
@@ -94,6 +143,19 @@ export function MessageComposerWithAttachments(props: {
                 aria-label={`Remove ${file.original_name}`}
                 className="rounded p-1 hover:bg-muted"
               >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {props.contexts.length > 0 && (
+        <div className="flex flex-wrap gap-2" aria-label="Pending shared context">
+          {props.contexts.map((context, index) => (
+            <div key={`${context.type}-${index}`} className="flex max-w-full items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-primary">
+              {context.type === "link" ? <Link2 className="h-3.5 w-3.5 shrink-0" /> : <MapPinned className="h-3.5 w-3.5 shrink-0" />}
+              <span className="max-w-40 truncate">{context.label}</span>
+              <button type="button" onClick={() => props.onContextsChange(props.contexts.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${context.label}`} className="rounded p-1 hover:bg-muted">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -120,6 +182,12 @@ export function MessageComposerWithAttachments(props: {
           aria-label="Add attachment"
         >
           <Paperclip className="h-4 w-4" />
+        </button>
+        <button type="button" onClick={addLink} disabled={props.working} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-muted disabled:opacity-50" aria-label="Share a link">
+          <Link2 className="h-4 w-4" />
+        </button>
+        <button type="button" onClick={addLocation} disabled={props.working} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-muted disabled:opacity-50" aria-label="Share your location">
+          <MapPinned className="h-4 w-4" />
         </button>
         <textarea
           value={props.body}

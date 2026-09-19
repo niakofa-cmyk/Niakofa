@@ -8,7 +8,7 @@ import { useEffect, useRef } from "react";
 import { ArrowLeft, Ban, Search, ShieldAlert, Wifi, WifiOff, X } from "lucide-react";
 import type { WsConnectionState } from "@/lib/wsClient";
 import { MessageAttachment, type MessageAttachmentData } from "./MessageAttachment";
-import { MessageComposerWithAttachments, type PendingAttachment } from "./MessageComposerWithAttachments";
+import { MessageComposerWithAttachments, type PendingAttachment, type PendingContext } from "./MessageComposerWithAttachments";
 
 type DirectUser = { id: number; name: string; avatar_url: string | null };
 type DirectConversation = {
@@ -63,6 +63,7 @@ export type MetaStyleDirectPaneProps = {
   searchResults: DirectUser[];
   body: string;
   attachments: PendingAttachment[];
+  contexts?: PendingContext[];
   working: boolean;
   currentUserId: number | null;
   realtimeState?: WsConnectionState;
@@ -74,6 +75,7 @@ export type MetaStyleDirectPaneProps = {
   onBackToList: () => void;
   onBodyChange: (value: string) => void;
   onAttachmentsChange: (value: PendingAttachment[]) => void;
+  onContextsChange?: (value: PendingContext[]) => void;
   onSend: () => void;
   onBlock: () => void;
   onToggleReport: () => void;
@@ -86,7 +88,7 @@ export function MetaStyleDirectPane({
   conversations, messages, selectedId, recipient, search, searchResults, body, attachments, working,
   currentUserId, realtimeState = "disconnected", reportOpen, reportReason,
   onSearchChange, onSelectConversation, onSelectUser, onBackToList, onBodyChange,
-  onAttachmentsChange,
+  onAttachmentsChange, contexts = [], onContextsChange = () => {},
   onSend, onBlock, onToggleReport, onReportReasonChange, onReport, onCancelReport,
 }: MetaStyleDirectPaneProps) {
   const showThread = Boolean(recipient);
@@ -221,9 +223,11 @@ export function MetaStyleDirectPane({
             <MessageComposerWithAttachments
               body={body}
               attachments={attachments}
+              contexts={contexts}
               working={working}
               onBodyChange={onBodyChange}
               onAttachmentsChange={onAttachmentsChange}
+              onContextsChange={onContextsChange}
               onSend={onSend}
             />
           </>

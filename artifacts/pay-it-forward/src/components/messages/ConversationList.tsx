@@ -27,7 +27,7 @@ export function ConversationList({
   onSearchChange: (value: string) => void;
   onSelect: (item: UnifiedConversation) => void;
   onSelectPerson?: (person: Person) => void;
-  onSelectMessageSearch: (conversationId: number) => void;
+  onSelectMessageSearch: (conversationId: number, messageId: number) => void;
   onCompose?: () => void;
   emptyLabel: string;
 }) {
@@ -70,7 +70,7 @@ export function ConversationList({
                 <p className="px-2 pb-1 text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground">Messages</p>
                 <div className="space-y-0.5">
                   {messageSearchResults.map((result) => (
-                    <button key={`${result.conversation_id}-${result.message_id}`} type="button" onClick={() => onSelectMessageSearch(result.conversation_id)} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-muted">
+                    <button key={`${result.conversation_id}-${result.message_id}`} type="button" onClick={() => onSelectMessageSearch(result.conversation_id, result.message_id)} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-muted">
                       <MessageAvatar name={result.peer?.name || result.sender_name} avatarUrl={result.peer?.avatar_url || result.sender_avatar} size={36} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-black">{result.peer?.name || result.sender_name}</span>

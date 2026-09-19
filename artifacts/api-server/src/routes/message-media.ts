@@ -35,10 +35,15 @@ router.get("/messages/direct/:conversationId/media", requireAuth, requireApprove
   const rows = await db.select({
     id: directMessageAttachmentsTable.id,
     message_id: directMessageAttachmentsTable.message_id,
+    attachment_type: directMessageAttachmentsTable.attachment_type,
     mime_type: directMessageAttachmentsTable.mime_type,
     byte_size: directMessageAttachmentsTable.byte_size,
     original_name: directMessageAttachmentsTable.original_name,
     alt_text: directMessageAttachmentsTable.alt_text,
+    link_url: directMessageAttachmentsTable.link_url,
+    location_lat: directMessageAttachmentsTable.location_lat,
+    location_lng: directMessageAttachmentsTable.location_lng,
+    location_label: directMessageAttachmentsTable.location_label,
     created_at: directMessagesTable.created_at,
   }).from(directMessageAttachmentsTable)
     .innerJoin(directMessagesTable, eq(directMessagesTable.id, directMessageAttachmentsTable.message_id))
