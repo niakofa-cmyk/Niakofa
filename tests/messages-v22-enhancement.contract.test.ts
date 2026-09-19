@@ -81,7 +81,7 @@ test("Messages v24 preserves Hub feed context and Hub-to-Spirals navigation", ()
   assert.match(hubPanel, /\/api\/community\/hubs\/\$\{sourceId\}\/feed/);
   assert.match(hubPanel, /Hub context/);
   assert.match(hubPanel, /actions\.spirals/);
-  assert.match(qa, /Globe.*Hub.*Community/i);
-  assert.match(qa, /Messages mobile/i);
-  assert.match(qa, /Hub.*Spirals/i);
+  assert.match(qa, /Globe[\\s\\S]*Hub[\\s\\S]*Community/i);
+  assert.match(qa, /Messages[\\s\\S]*On mobile/i);
+  assert.match(qa, /Hub[\\s\\S]*Spirals/i);
 });
