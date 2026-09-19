@@ -100,6 +100,9 @@ jest.unstable_mockModule("@workspace/db", () => ({
   paymentTransactionsTable: { id: "id", request_id: "request_id", state: "state" },
   transactionsTable: { id: "id", user_id: "user_id" },
   ratingsTable: { id: "id", request_id: "request_id", stars: "stars" },
+  // scheduler imports these tables for expired Community Story cleanup.
+  communityStoriesTable: { id: "id", expires_at: "expires_at", author_user_id: "author_user_id" },
+  communityStoryMediaTable: { id: "id", story_id: "story_id", storage_key: "storage_key" },
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({
