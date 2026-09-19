@@ -37,6 +37,12 @@ export function MessageAttachment({ attachment, compact = false }: { attachment:
   }
 
   useEffect(() => {
+    if (attachment.attachment_type === "link" || attachment.attachment_type === "location") {
+      setObjectUrl(null);
+      setError(null);
+      return;
+    }
+
     const controller = new AbortController();
     let nextObjectUrl: string | null = null;
     setObjectUrl(null);
@@ -60,7 +66,7 @@ export function MessageAttachment({ attachment, compact = false }: { attachment:
       controller.abort();
       if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
     };
-  }, [attachment.media_url]);
+  }, [attachment.attachment_type, attachment.media_url]);
 
   if (error) return <p role="status" className="text-xs text-muted-foreground">{error}</p>;
   if (!objectUrl) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Loading attachment" />;
