@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Clock3, MapPinned, Navigation2, Radio } from "lucide-react";
@@ -41,6 +41,7 @@ export function RequestLiveMapCard({
   const [helperLocation, setHelperLocation] = useState<LocationPoint | null>(null);
   const [route, setRoute] = useState<RouteData | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
+  const lastRouteAtRef = useRef(0);
 
   const start = isHelper
     ? (myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null)
@@ -64,6 +65,9 @@ export function RequestLiveMapCard({
       return;
     }
 
+    const now = Date.now();
+    if (now - lastRouteAtRef.current < 10_000) return;
+    lastRouteAtRef.current = now;
     const controller = new AbortController();
     setLoadingRoute(true);
     const params = new URLSearchParams({
