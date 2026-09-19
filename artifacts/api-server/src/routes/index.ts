@@ -60,6 +60,7 @@ import messagesSocialRouter from "./messages-social";
 import messageMediaRouter from "./message-media";
 import directCallRouter from "./direct-call";
 import { stampLocationUpdatedAt } from "../middlewares/stamp-location-updated-at";
+import { messageActivityAudit } from "../middlewares/message-activity-audit";
 
 const router: IRouter = Router();
 
@@ -76,6 +77,7 @@ router.use((req, _res, next) => {
 router.use(healthRouter);
 router.use(verificationRouter);
 router.use(stampLocationUpdatedAt);
+router.use(messageActivityAudit);
 router.use(usersRouter);
 router.use(requestsRouter);
 router.use(helpersRouter);
