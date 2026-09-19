@@ -545,12 +545,19 @@ export default function MessagesPage() {
           }
         />
       )}
-      {activeRecipient && selectedDirectId && currentUser && (
+      {currentUser && (
         <DirectCallPanel
           conversationId={selectedDirectId}
-          peerId={activeRecipient.id}
-          peerName={activeRecipient.name}
+          peerId={activeRecipient?.id ?? null}
+          peerName={activeRecipient?.name}
           autoStartMode={callMode}
+          listenGlobally
+          resolvePeer={(userId, conversationId) => {
+            const conversation = directConversations.find((item) => item.id === conversationId);
+            if (conversation) return { id: conversation.other_user.id, name: conversation.other_user.name };
+            const person = directConversations.find((item) => item.other_user.id === userId)?.other_user;
+            return person ? { id: person.id, name: person.name } : null;
+          }}
           onAutoStartConsumed={() => setCallMode(null)}
           onClose={() => setCallMode(null)}
         />
