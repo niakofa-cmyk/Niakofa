@@ -41,6 +41,7 @@ export function DirectCallPanel({
   const [remoteUserId, setRemoteUserId] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [audioNeedsStart, setAudioNeedsStart] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const roomRef = useRef<Room | null>(null);
   const localTracksRef = useRef<LocalTrack[]>([]);
@@ -97,7 +98,11 @@ export function DirectCallPanel({
     room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => track.detach());
     room.on(RoomEvent.Disconnected, () => {
       setPhase("idle");
+      setAudioNeedsStart(false);
       void cleanupRoom();
+    });
+    room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+      setAudioNeedsStart(!room.canPlaybackAudio);
     });
 
     await room.connect(data.media_url, data.media_token, { autoSubscribe: true });
@@ -112,7 +117,7 @@ export function DirectCallPanel({
     setCameraEnabled(nextMode === "video");
     setRemoteUserId(peer);
     setPhase("connected");
-    await room.startAudio().catch(() => {});
+    await room.startAudio().then(() => setAudioNeedsStart(false)).catch(() => setAudioNeedsStart(true));
   }, [activeConversationId, attachTrack, cleanupRoom]);
 
   const endCall = useCallback(() => {
@@ -233,6 +238,11 @@ export function DirectCallPanel({
                 <p className="mt-4 text-lg font-black">{activePeerName}</p>
                 <audio ref={remoteAudioRef} autoPlay />
               </div>
+            )}
+            {audioNeedsStart && (
+              <button type="button" onClick={() => void roomRef.current?.startAudio().then(() => setAudioNeedsStart(false)).catch(() => {})} className="mx-auto mb-3 block min-h-10 rounded-xl bg-primary px-4 text-xs font-black text-primary-foreground">
+                Start audio
+              </button>
             )}
             <div className="mt-3 flex justify-center gap-2">
               <button type="button" onClick={() => { const track = localTracksRef.current.find((item) => item.kind === Track.Kind.Audio); if (track) { track.mediaStreamTrack.enabled = !track.mediaStreamTrack.enabled; setMuted(!track.mediaStreamTrack.enabled); } }} className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/10">{muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</button>
