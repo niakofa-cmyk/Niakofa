@@ -40,6 +40,8 @@ packages:
   - "packages/*"
   - "services/*"
   - artifacts/*
+  # Reference/mockup workspace is intentionally excluded from install/typecheck; it is not production code.
+  - "!artifacts/mockup-sandbox"
   - lib/*
   - lib/integrations/*
   - scripts
