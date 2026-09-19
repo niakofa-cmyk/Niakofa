@@ -23,3 +23,13 @@ export const pool = new Pool({
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
+// Explicitly re-export the canonical Community Story tables from the package root.
+// This keeps ESM/Jest consumers stable even when schema barrel resolution is stale.
+export {
+  communityStoriesTable,
+  communityStoryMediaTable,
+  communityStoryElementsTable,
+  communityStoryViewsTable,
+  communityStoryReactionsTable,
+  communityStorySharesTable,
+} from "./schema/community-stories";
