@@ -328,7 +328,7 @@ router.post("/diaspora/hub-messages/conversations/:id/messages", requireAuth, ge
         type: "hub_message",
         title: `New Hub message from ${serialized.sender_hub_name ?? "a Hub"}`,
         body,
-        actionUrl: `/messages/hub?conversation=${conversationId}`,
+        actionUrl: `/messages?mode=hub&conversation=${conversationId}`,
         metadata: { conversation_id: conversationId, sender_hub_id: senderHubId, message_id: saved.id },
       })
     ));
