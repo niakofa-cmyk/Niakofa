@@ -28,7 +28,7 @@ export function ConversationHeader({
         <p className="truncate text-sm font-black">{title}</p>
         <p className="text-[10px] text-muted-foreground">{active ? "Active now" : subtitle || "Conversation"}</p>
       </div>
-      <button type="button" onClick={onVoiceCall} disabled={!onVoiceCall} className="hidden min-h-10 min-w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 sm:inline-flex" title="Voice call" aria-label="Voice call"><Phone className="h-4 w-4" /></button>
+      <button type="button" onClick={onVoiceCall} disabled={!onVoiceCall} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 inline-flex" title="Voice call" aria-label="Voice call"><Phone className="h-4 w-4" /></button>
       <button type="button" onClick={onVideoCall} disabled={!onVideoCall} className="hidden min-h-10 min-w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 sm:inline-flex" title="Video call" aria-label="Video call"><Video className="h-4 w-4" /></button>
       {onInfo && <button type="button" onClick={onInfo} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl hover:bg-muted" aria-label="Conversation info"><MoreHorizontal className="h-4 w-4" /></button>}
     </header>
