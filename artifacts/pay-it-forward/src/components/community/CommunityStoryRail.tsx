@@ -17,10 +17,19 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
+import { StoryMediaPlayer } from "./StoryMediaPlayer";
+import { StoryShareSheet } from "./StoryShareSheet";
+import { normalizeStoryFiles, useObjectUrl } from "./StoryComposerMedia";
+import {
+  getStoryMetrics,
+  reactToStory,
+  recordStoryView,
+  removeStoryReaction,
+} from "@/lib/community-story-client";
 
 type StoryMedia = {
   id: number;
@@ -87,6 +96,9 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [mediaIndex, setMediaIndex] = useState(0);
   const [mediaUrls, setMediaUrls] = useState<Record<number, string>>({});
+  const [shareStoryId, setShareStoryId] = useState<number | null>(null);
+  const [reactedStoryIds, setReactedStoryIds] = useState<Record<number, boolean>>({});
+  const [storyProgress, setStoryProgress] = useState(0);
   const [files, setFiles] = useState<File[]>([]);
   const [caption, setCaption] = useState("");
   const [audience, setAudience] = useState<"community" | "hub">(hubId ? "hub" : "community");
@@ -110,7 +122,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const selectedStory = selectedFrame?.story ?? null;
   const selectedStoryId = selectedStory?.id ?? null;
   const selectedMedia = selectedFrame?.media ?? null;
-  const selectedFileUrl = files[0] ? URL.createObjectURL(files[0]) : null;
+  const selectedFileUrl = useObjectUrl(files[0] ?? null);
   const filter = effect === "warmth"
     ? "sepia(.25) saturate(1.25)"
     : effect === "contrast"
@@ -164,10 +176,6 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
       urls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [stories]);
-
-  useEffect(() => () => {
-    if (selectedFileUrl) URL.revokeObjectURL(selectedFileUrl);
-  }, [selectedFileUrl]);
 
   const resetComposer = () => {
     setFiles([]);
@@ -223,8 +231,9 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   };
 
   const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
-    setFiles(selected.slice(0, 6));
+    const { files: selected, errors } = normalizeStoryFiles(Array.from(event.target.files ?? []));
+    if (errors.length) setError(errors[0]);
+    setFiles(selected);
     event.target.value = "";
   };
 
@@ -242,10 +251,14 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
 
   useEffect(() => {
     if (selectedStoryId === null) return;
-    void fetch(`/api/community/stories/${selectedStoryId}/view`, { method: "POST", headers: authHeaders() }).catch(() => {});
+    setStoryProgress(0);
+    void recordStoryView(selectedStoryId).catch(() => {});
+    void getStoryMetrics(selectedStoryId)
+      .then((metrics) => setReactedStoryIds((current) => ({ ...current, [selectedStoryId]: Boolean(metrics.viewer_reaction) })))
+      .catch(() => {});
   }, [selectedStoryId]);
 
-  const advanceFrame = (direction: 1 | -1) => {
+  const advanceFrame = useCallback((direction: 1 | -1) => {
     if (!selectedAuthor || viewerIndex === null) return;
     const next = mediaIndex + direction;
     if (next >= 0 && next < selectedAuthor.frames.length) {
@@ -259,21 +272,27 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     } else if (direction > 0) {
       setViewerIndex(null);
     }
-  };
+  }, [authors, mediaIndex, selectedAuthor, viewerIndex]);
+  const completeSelectedFrame = useCallback(() => advanceFrame(1), [advanceFrame]);
 
-  const renderElement = (element: CommunityStory["elements"][number]) => {
-    const payload = element.payload;
-    const style = {
-      left: `${element.position_x ?? 50}%`,
-      top: `${element.position_y ?? 50}%`,
-      transform: `translate(-50%, -50%) rotate(${element.rotation ?? 0}deg) scale(${element.scale ?? 1})`,
-      zIndex: element.z_index ?? 0,
-    };
-    if (element.type === "text") return <span style={{ ...style, color: typeof payload.color === "string" ? payload.color : "#fff", fontSize: `${Number(payload.font_size) || 18}px`, textAlign: payload.align === "left" || payload.align === "right" ? payload.align : "center" }} className="absolute max-w-[86%] whitespace-pre-wrap font-black drop-shadow-lg">{String(payload.text ?? "")}</span>;
-    if (element.type === "sticker") return <span style={style} className="absolute text-5xl drop-shadow-lg">{String(payload.sticker ?? "✨")}</span>;
-    if (element.type === "mention") return <span style={style} className="absolute rounded-full bg-black/60 px-3 py-1 text-sm font-black text-white">@{String(payload.display_name ?? "neighbor")}</span>;
-    return null;
-  };
+  const selectedPlayerMedia = useMemo(() => {
+    if (!selectedMedia) return null;
+    const mediaUrl = mediaUrls[selectedMedia.id];
+    if (!mediaUrl) return null;
+    return { ...selectedMedia, media_url: mediaUrl };
+  }, [mediaUrls, selectedMedia]);
+
+  async function toggleReaction() {
+    if (!selectedStoryId) return;
+    const alreadyReacted = Boolean(reactedStoryIds[selectedStoryId]);
+    try {
+      if (alreadyReacted) await removeStoryReaction(selectedStoryId);
+      else await reactToStory(selectedStoryId);
+      setReactedStoryIds((current) => ({ ...current, [selectedStoryId]: !alreadyReacted }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not update your reaction.");
+    }
+  }
 
   const toolButtons: Array<{ key: Tool; label: string; icon: typeof Music2 }> = [
     { key: "music", label: "Music", icon: Music2 },
@@ -366,22 +385,37 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
       {selectedStory && selectedAuthor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3" role="dialog" aria-modal="true" aria-label={`${selectedAuthor.author.name}'s Story`}>
           <div className="relative flex h-full max-h-[900px] w-full max-w-md flex-col overflow-hidden rounded-3xl bg-zinc-950 text-white">
-            <div className="flex gap-1 px-3 pt-3">{selectedAuthor.frames.map((frame, index) => <span key={`${frame.story.id}-${frame.media?.id ?? "text"}`} className={`h-1 flex-1 rounded-full ${index <= mediaIndex ? "bg-white" : "bg-white/25"}`} />)}</div>
+            <div className="flex gap-1 px-3 pt-3">
+              {selectedAuthor.frames.map((frame, index) => (
+                <span key={`${frame.story.id}-${frame.media?.id ?? "text"}`} className="relative h-1 flex-1 overflow-hidden rounded-full bg-white/25">
+                  <span
+                    className="absolute inset-y-0 left-0 rounded-full bg-white"
+                    style={{ width: index < mediaIndex ? "100%" : index === mediaIndex ? `${storyProgress * 100}%` : "0%" }}
+                  />
+                </span>
+              ))}
+            </div>
             <header className="flex items-center gap-3 px-4 py-3"><MessageAvatar name={selectedAuthor.author.name} avatarUrl={selectedAuthor.author.avatar_url} size={38} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-black">{selectedAuthor.author.name}</p><p className="text-[10px] text-white/60">{timeLeft(selectedStory.expires_at)}</p></div><button type="button" className="p-2" aria-label="Story options"><MoreHorizontal className="h-5 w-5" /></button><button type="button" onClick={() => setViewerIndex(null)} className="p-2" aria-label="Close Story viewer"><X className="h-5 w-5" /></button></header>
             <div className="relative min-h-0 flex-1 overflow-hidden">
-              {selectedMedia && mediaUrls[selectedMedia.id] ? (selectedMedia.media_type === "video" ? <video key={selectedMedia.id} src={mediaUrls[selectedMedia.id]} autoPlay controls playsInline className="h-full w-full object-contain" /> : <img src={mediaUrls[selectedMedia.id]} alt="" className="h-full w-full object-contain" />) : <div className="flex h-full items-center justify-center px-8 text-center text-2xl font-black">{selectedStory.caption || "Community Moment"}</div>}
-              {selectedStory.elements.map(renderElement)}
+              <StoryMediaPlayer
+                media={selectedPlayerMedia}
+                elements={selectedStory.elements}
+                fallbackText={selectedMedia ? "Loading Story media…" : selectedStory.caption || "Community Moment"}
+                onComplete={completeSelectedFrame}
+                onProgress={setStoryProgress}
+              />
               <button type="button" onClick={() => advanceFrame(-1)} className="absolute inset-y-0 left-0 w-1/3" aria-label="Previous Story"><ChevronLeft className="absolute left-2 top-1/2 h-7 w-7 text-white/70" /></button>
               <button type="button" onClick={() => advanceFrame(1)} className="absolute inset-y-0 right-0 w-1/3" aria-label="Next Story"><ChevronRight className="absolute right-2 top-1/2 h-7 w-7 text-white/70" /></button>
             </div>
             <div className="space-y-3 p-4">
               {selectedStory.caption && <p className="text-sm leading-relaxed">{selectedStory.caption}</p>}
-              <div className="flex items-center gap-2"><button type="button" onClick={() => navigate(`/messages?mode=direct&recipientId=${selectedStory.author_user_id}&storyId=${selectedStory.id}`)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-white/10 text-sm font-bold"><MessageCircle className="h-4 w-4" /> Reply</button><button type="button" onClick={() => void fetch(`/api/community/stories/${selectedStory.id}/reaction`, { method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ reaction: "💙" }) })} className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10" aria-label="React to Story"><span aria-hidden>💙</span></button><button type="button" onClick={() => void fetch(`/api/community/stories/${selectedStory.id}/share`, { method: "POST", headers: authHeaders() })} className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10" aria-label="Share Story"><Share2 className="h-4 w-4" /></button></div>
+              <div className="flex items-center gap-2"><button type="button" onClick={() => navigate(`/messages?mode=direct&recipientId=${selectedStory.author_user_id}&storyId=${selectedStory.id}`)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-white/10 text-sm font-bold"><MessageCircle className="h-4 w-4" /> Reply</button><button type="button" onClick={() => void toggleReaction()} className={`inline-flex h-11 w-11 items-center justify-center rounded-full ${reactedStoryIds[selectedStory.id] ? "bg-primary text-primary-foreground" : "bg-white/10"}`} aria-label={reactedStoryIds[selectedStory.id] ? "Remove Story reaction" : "React to Story"}><span aria-hidden>💙</span></button><button type="button" onClick={() => setShareStoryId(selectedStory.id)} className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10" aria-label="Share Story"><Share2 className="h-4 w-4" /></button></div>
               {selectedStory.reply_enabled && <p className="text-center text-[11px] font-bold text-primary">Replies include Story context in Messages.</p>}
             </div>
           </div>
         </div>
       )}
+      {shareStoryId !== null && <StoryShareSheet storyId={shareStoryId} onClose={() => setShareStoryId(null)} />}
     </>
   );
 }
