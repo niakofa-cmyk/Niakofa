@@ -210,6 +210,82 @@ router.get("/messages/direct/users", requireAuth, requireApproved, generalApiLim
   return res.json({ users });
 });
 
+
+router.get("/messages/direct/search", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const query = String(req.query.q ?? "").trim();
+  if (query.length < 2) return res.json({ results: [] });
+
+  const pattern = `%${query.replace(/[%_]/g, "\\router.get("/messages/direct/conversations", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {")}%`;
+  const memberships = await db
+    .select({ conversation_id: directConversationMembersTable.conversation_id })
+    .from(directConversationMembersTable)
+    .innerJoin(
+      directConversationsTable,
+      eq(directConversationsTable.id, directConversationMembersTable.conversation_id),
+    )
+    .where(and(
+      eq(directConversationMembersTable.user_id, userId),
+      eq(directConversationsTable.status, "active"),
+    ))
+    .limit(100);
+
+  const conversationIds = memberships.map((row) => row.conversation_id);
+  if (conversationIds.length === 0) return res.json({ results: [] });
+
+  const messages = await db
+    .select({
+      id: directMessagesTable.id,
+      conversation_id: directMessagesTable.conversation_id,
+      sender_id: directMessagesTable.sender_id,
+      sender_name: usersTable.name,
+      sender_avatar: usersTable.avatar_url,
+      body: directMessagesTable.body,
+      created_at: directMessagesTable.created_at,
+    })
+    .from(directMessagesTable)
+    .innerJoin(usersTable, eq(usersTable.id, directMessagesTable.sender_id))
+    .where(and(
+      inArray(directMessagesTable.conversation_id, conversationIds),
+      ilike(directMessagesTable.body, pattern),
+    ))
+    .orderBy(desc(directMessagesTable.created_at))
+    .limit(30);
+
+  const peerByConversation = new Map<number, { id: number; name: string; avatar_url: string | null }>();
+  for (const conversationId of conversationIds) {
+    const [peer] = await db
+      .select({
+        id: usersTable.id,
+        name: usersTable.name,
+        avatar_url: usersTable.avatar_url,
+      })
+      .from(directConversationMembersTable)
+      .innerJoin(usersTable, eq(usersTable.id, directConversationMembersTable.user_id))
+      .where(and(
+        eq(directConversationMembersTable.conversation_id, conversationId),
+        ne(directConversationMembersTable.user_id, userId),
+      ))
+      .limit(1);
+    if (peer && !(await isBlockedBetween(userId, peer.id))) peerByConversation.set(conversationId, peer);
+  }
+
+  return res.json({
+    results: messages
+      .filter((message) => peerByConversation.has(message.conversation_id))
+      .map((message) => ({
+        conversation_id: message.conversation_id,
+        message_id: message.id,
+        sender_id: message.sender_id,
+        sender_name: message.sender_name,
+        sender_avatar: message.sender_avatar,
+        body: message.body,
+        created_at: serializeDate(message.created_at),
+        peer: peerByConversation.get(message.conversation_id),
+      })),
+  });
+});
+
 router.get("/messages/direct/conversations", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const memberships = await db
