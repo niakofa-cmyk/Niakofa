@@ -4,7 +4,6 @@ import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { InAppChat } from "@/components/InAppChat";
-import { MetaStyleDirectPane } from "@/components/messages/MetaStyleDirectPane";
 import HubMessagesPanel from "@/components/messages/HubMessagesPanel";
 import { ConversationInfoPanel } from "@/components/messages/ConversationInfoPanel";
 import { ConversationList } from "@/components/messages/ConversationList";
@@ -13,9 +12,12 @@ import { ConversationHeader } from "@/components/messages/ConversationHeader";
 import { MessageTypeTabs } from "@/components/messages/MessageTypeTabs";
 import { MessagesShell } from "@/components/messages/MessagesShell";
 import { MessagesSidebar } from "@/components/messages/MessagesSidebar";
+import { NewMessageDialog } from "@/components/messages/NewMessageDialog";
+import { RequestContextCard } from "@/components/messages/RequestContextCard";
 import type { PendingAttachment } from "@/components/messages/MessageComposerWithAttachments";
 import type { MessageAttachmentData } from "@/components/messages/MessageAttachment";
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
+import { getRequestNavigationPath } from "@/lib/request-navigation";
 import { directToUnified, hubToUnified, requestToUnified, sortUnified, type UnifiedConversation } from "@/lib/unifiedConversation";
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
 
@@ -116,15 +118,7 @@ function RequestThread({
     <section className="flex h-full min-h-0 flex-col">
       <ConversationHeader title={request.title} subtitle={`${request.status} · ${otherName}`} onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-background p-3">
-          <div>
-            <p className="text-xs font-black uppercase tracking-widest text-primary">Request conversation</p>
-            <p className="mt-1 text-sm text-muted-foreground">The existing request chat, authorization, and realtime behavior remain in place.</p>
-          </div>
-          <button type="button" onClick={onOpenRequest} className="min-h-10 rounded-xl border border-primary/30 px-3 text-xs font-black text-primary hover:bg-primary/10">
-            Open request
-          </button>
-        </div>
+        <RequestContextCard request={request} currentUserId={currentUserId} onOpen={onOpenRequest} />
         <InAppChat
           requestId={request.id}
           currentUserId={currentUserId}
@@ -153,6 +147,7 @@ export default function MessagesPage() {
   const [reportReason, setReportReason] = useState("");
   const [showReport, setShowReport] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [showNewMessage, setShowNewMessage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -168,6 +163,10 @@ export default function MessagesPage() {
   const selectedHubId = Number.parseInt(queryValue(location, "conversation") ?? "", 10);
   const selectedRequest = requestConversations.find((request) => request.id === selectedRequestId) ?? null;
   const selectedHub = hubConversations.find((conversation) => conversation.id === selectedHubId) ?? null;
+  const sharedAttachments = useMemo(
+    () => directMessages.flatMap((message) => message.attachments ?? []),
+    [directMessages],
+  );
 
   const loadDirectConversations = useCallback(async () => {
     const response = await fetch("/api/messages/direct/conversations", { headers: authHeaders() });
@@ -374,10 +373,13 @@ export default function MessagesPage() {
     return unifiedItems.filter((item) => item.title.toLowerCase().includes(query) || item.lastMessage?.toLowerCase().includes(query));
   }, [activeMode, search, unifiedItems]);
 
-  const selectedKey = activeMode === "direct" && (selectedDirectId || activeRecipient)
-    ? (selectedDirectId ? `direct:${selectedDirectId}` : null)
-    : activeMode === "requests" && selectedRequest ? `request:${selectedRequest.id}`
-      : activeMode === "hub" && selectedHub ? `hub:${selectedHub.id}` : null;
+  const selectedKey = selectedDirectId
+    ? `direct:${selectedDirectId}`
+    : selectedRequest
+      ? `request:${selectedRequest.id}`
+      : selectedHub
+        ? `hub:${selectedHub.id}`
+        : null;
   const showThread = Boolean(activeRecipient || selectedRequest || selectedHub);
 
   function clearSelection() {
@@ -412,11 +414,24 @@ export default function MessagesPage() {
   const thread = activeMode === "hub" ? (
     <HubMessagesPanel initialConversation={selectedHub ? String(selectedHub.id) : queryValue(location, "conversation")} initialSourceHub={queryValue(location, "sourceHub")} initialTargetHub={queryValue(location, "targetHub")} />
   ) : activeMode === "requests" && selectedRequest && currentUser ? (
-    <RequestThread request={selectedRequest} currentUserId={currentUser.id} currentUserName={currentUser.name ?? "You"} onBack={clearSelection} onOpenRequest={() => navigate(`/request/${selectedRequest.id}`)} />
+    <RequestThread
+      request={selectedRequest}
+      currentUserId={currentUser.id}
+      currentUserName={currentUser.name ?? "You"}
+      onBack={clearSelection}
+      onOpenRequest={() => navigate(getRequestNavigationPath({
+        id: selectedRequest.id,
+        status: selectedRequest.status,
+        requesterId: selectedRequest.requester_id,
+        helperId: selectedRequest.helper_id,
+        currentUserId: currentUser.id,
+      }))}
+    />
   ) : activeRecipient ? (
     <ConversationThread
       title={activeRecipient.name}
       avatarUrl={activeRecipient.avatar_url}
+      active={realtimeState === "connected"}
       subtitle={realtimeState === "connected" ? "Active connection" : "Direct message"}
       messages={directMessages}
       currentUserId={currentUser?.id ?? null}
@@ -435,41 +450,6 @@ export default function MessagesPage() {
     </div>
   );
 
-  const directV18 = activeMode === "direct" ? (
-    <div className="mx-auto w-full max-w-7xl px-2 pb-24 pt-3 sm:px-4 lg:pb-8">
-      <MetaStyleDirectPane
-        conversations={directConversations}
-        messages={directMessages}
-        selectedId={selectedDirectId}
-        recipient={activeRecipient}
-        search={search}
-        searchResults={searchResults}
-        body={body}
-         attachments={attachments}
-        working={working}
-        currentUserId={currentUser?.id ?? null}
-        realtimeState={realtimeState}
-        reportOpen={showReport}
-        reportReason={reportReason}
-        onSearchChange={setSearch}
-        onSelectConversation={(id) => {
-          navigate(directConversationPath(id));
-          void loadDirectMessages(id).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load this conversation."));
-        }}
-        onSelectUser={startDirectWithUser}
-        onBackToList={clearSelection}
-        onBodyChange={setBody}
-         onAttachmentsChange={setAttachments}
-        onSend={() => void sendDirectMessage()}
-        onBlock={() => void blockRecipient()}
-        onToggleReport={() => setShowReport((open) => !open)}
-        onReportReasonChange={setReportReason}
-        onReport={() => void reportConversation()}
-        onCancelReport={() => { setShowReport(false); setReportReason(""); }}
-      />
-    </div>
-  ) : null;
-
   return (
     <>
       {error && (
@@ -480,22 +460,46 @@ export default function MessagesPage() {
       )}
       {loading ? (
         <div className="mx-auto flex min-h-[32rem] max-w-7xl items-center justify-center px-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-      ) : activeMode === "direct" ? (
-        <>
-          <div className="mx-auto max-w-7xl px-2 pt-3 sm:px-4 lg:pt-5">
-            <MessageTypeTabs active={activeMode} counts={unreadCounts} onChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} />
-          </div>
-          {directV18}
-        </>
       ) : (
         <MessagesShell
           showThread={showThread}
           showInfo={showInfo}
           mobileTabs={<MessageTypeTabs active={activeMode} counts={unreadCounts} onChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} />}
-          sidebar={<MessagesSidebar activeMode={activeMode} counts={unreadCounts} people={searchResults} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} onCompose={() => { clearSelection(); navigate(messagesPath("direct")); }} onSelectPerson={startDirectWithUser} />}
-          list={<ConversationList items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} emptyLabel="No conversations yet." />}
+          sidebar={<MessagesSidebar activeMode={activeMode} counts={unreadCounts} people={searchResults} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} onCompose={() => setShowNewMessage(true)} onSelectPerson={startDirectWithUser} />}
+          list={<ConversationList items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} onCompose={() => setShowNewMessage(true)} emptyLabel="No conversations yet." />}
           thread={thread}
-          info={activeRecipient ? <ConversationInfoPanel name={activeRecipient.name} avatarUrl={activeRecipient.avatar_url} onViewProfile={() => navigate(`/helper/${activeRecipient.id}`)} onBlock={() => void blockRecipient()} onReport={() => setShowReport(true)} onClose={() => setShowInfo(false)} /> : null}
+          info={
+            activeRecipient ? (
+              <ConversationInfoPanel
+                name={activeRecipient.name}
+                avatarUrl={activeRecipient.avatar_url}
+                active={realtimeState === "connected"}
+                sharedAttachments={sharedAttachments}
+                onViewProfile={() => navigate(`/helper/${activeRecipient.id}`)}
+                onBlock={() => void blockRecipient()}
+                onReport={() => setShowReport(true)}
+                onClose={() => setShowInfo(false)}
+              />
+            ) : selectedRequest ? (
+              <ConversationInfoPanel
+                name={selectedRequest.requester_id === currentUser?.id ? selectedRequest.helper_name || "Your helper" : selectedRequest.requester_name || "Request owner"}
+                kind="request"
+                contextTitle={selectedRequest.title}
+                contextStatus={selectedRequest.status}
+                contextMeta="Request chat stays tied to the existing request authorization."
+                onOpenContext={() => currentUser && navigate(getRequestNavigationPath({ id: selectedRequest.id, status: selectedRequest.status, requesterId: selectedRequest.requester_id, helperId: selectedRequest.helper_id, currentUserId: currentUser.id }))}
+                onClose={() => setShowInfo(false)}
+              />
+            ) : selectedHub ? (
+              <ConversationInfoPanel
+                name={`${selectedHub.hub_a_display_name || selectedHub.hub_a_name} ↔ ${selectedHub.hub_b_display_name || selectedHub.hub_b_name}`}
+                kind="hub"
+                contextTitle={`${selectedHub.hub_a_display_name || selectedHub.hub_a_name} ↔ ${selectedHub.hub_b_display_name || selectedHub.hub_b_name}`}
+                contextMeta="Send only as an approved source Hub."
+                onClose={() => setShowInfo(false)}
+              />
+            ) : null
+          }
         />
       )}
       {showReport && activeRecipient && selectedDirectId && (
@@ -510,6 +514,14 @@ export default function MessagesPage() {
             </div>
           </div>
         </div>
+      )}
+      {showNewMessage && (
+        <NewMessageDialog
+          onClose={() => setShowNewMessage(false)}
+          onSelectPerson={(person) => { setShowNewMessage(false); startDirectWithUser(person); }}
+          onSelectHub={(sourceId, targetId) => { setShowNewMessage(false); clearSelection(); navigate(messagesPath("hub", { sourceHub: sourceId, targetHub: targetId })); }}
+          onSelectCommunity={() => { setShowNewMessage(false); navigate("/community"); }}
+        />
       )}
     </>
   );

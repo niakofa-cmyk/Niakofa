@@ -1,0 +1,1128 @@
+Yes. I checked the current main branch of Niakofa against the Messages concept image we just created. The important point is that we should not rebuild Messages from scratch. The current repo already has the correct architectural foundation; the image should become a visual/product evolution of that foundation.
+
+Niakofa GitHub repository
+
+1. What the current Niakofa Messages already has
+
+The current implementation at main already has the core unified architecture we have been designing:
+
+/messages
+
+All
+Direct
+Requests
+Hubs
+
+The frontend uses:
+
+MessagesShell
+MessagesSidebar
+MessageTypeTabs
+ConversationList
+ConversationThread
+ConversationInfoPanel
+MetaStyleDirectPane
+HubMessagesPanel
+MessageComposerWithAttachments
+MessageAttachment
+
+The current page also has URL-aware routing through messageRoutes.ts, including:
+
+/messages
+/messages?mode=direct
+/messages?mode=requests
+/messages?mode=hub
+
+/messages?mode=direct&conversation=123
+/messages?mode=requests&request=456
+/messages?mode=hub&conversation=789
+
+The important architectural decision is already correct: Direct, Request, and Hub conversations remain separate backend systems but are presented as one Messages product. The repository documentation explicitly defines that boundary. Current Messages V18 architecture
+
+The current Direct backend also has durable conversations, members, messages, blocks and reports, while the new direct-message attachment system is already present. Direct Messages schema
+
+So the image is not asking us to replace the architecture.
+
+It is asking us to take the existing architecture and make it feel like a much more complete, premium messaging product.
+
+2. The biggest difference between the image and today's implementation
+
+The concept image represents this:
+
+                 NIAKOFA MESSAGES
+                       │
+        ┌──────────────┼──────────────┐
+        ↓              ↓              ↓
+     PEOPLE          REQUESTS        HUBS
+        │              │              │
+        └──────────────┼──────────────┘
+                       ↓
+                 ONE MESSAGE SPACE
+                       │
+        ┌──────────────┼──────────────┐
+        ↓              ↓              ↓
+      Chat          Context          Actions
+        │              │              │
+        ↓              ↓              ↓
+    Media/File      Request/Map     Profile/Hub
+    Location        Status          Information
+    Voice           Tracking        Shared media
+    Video
+
+Today's Messages is closer to:
+
+Sidebar → Conversation list → Thread
+                         ↘
+                          Info
+
+The architecture is right, but the contextual experience is not yet deep enough.
+
+That is where I would focus.
+
+3. What I would NOT do
+
+This is important.
+
+Do not create another messaging backend.
+
+We already have:
+
+Direct
+Request
+Hub
+
+with different authorization requirements.
+
+Keep that.
+
+Do not create a second Community messaging system.
+
+Community should hand users into Messages.
+
+Do not turn Messages into a giant Facebook clone.
+
+The image is a visual reference, not a specification to copy every social-media feature.
+
+Do not make voice/video buttons fake.
+
+The current code correctly has voice/video marked as coming soon rather than pretending there is a working RTC system.
+
+That should remain true until the real-time media system is implemented.
+
+4. The new Messages architecture I recommend
+
+I would evolve the current UI into a four-layer Messages experience.
+
+Layer 1 — Message navigation
+
+Desktop:
+
+┌───────────────────────────────────────────────────────────────┐
+│ NIAKOFA                                                       │
+│                                                               │
+│ Messages                                                      │
+│                                                               │
+│ All                                                         + │
+│ Direct                                                        │
+│ Requests                                                      │
+│ Hubs                                                         │
+│                                                               │
+│ ─────────────────────────                                     │
+│ New Message                                                   │
+│ Search                                                        │
+└───────────────────────────────────────────────────────────────┘
+
+This is mostly already present.
+
+But I would visually simplify it.
+
+The image's strongest design principle is:
+
+Messages should feel like a destination, not a collection of controls.
+
+5. Layer 2 — Intelligent conversation list
+
+The current ConversationList should become much richer.
+
+Today it knows:
+
+title
+subtitle
+lastMessage
+timestamp
+unreadCount
+status
+avatar
+
+That's good.
+
+We should add presentation-level context:
+
+Direct
+Amina Okafor
+Thanks! I'll be there in 10 minutes.
+2:45 PM                         ●
+Request
+Yard Work Request #2847
+Amina Okafor · Helper
+En route
+2:42 PM
+Hub
+Accra Hub ↔ Dallas Hub
+Community coordination...
+12:18 PM
+Important
+
+The list should visually distinguish conversation type without creating four separate UI products.
+
+For example:
+
+[avatar] Amina Okafor
+         Thanks! I'll be there...
+         Direct                         2:45 PM
+
+[map]    Yard Work #2847
+         Helper is en route
+         Request                       2:42 PM
+
+[hub]    Accra ↔ Dallas
+         Community coordination...
+         Hub                           12:18 PM
+
+That would make the All tab genuinely useful.
+
+6. Layer 3 — The conversation becomes contextual
+
+This is the biggest upgrade represented by the image.
+
+The thread should not simply be:
+
+Person
+──────
+message
+message
+message
+──────
+composer
+
+It should understand what the conversation is about.
+
+For example, a Yard Work conversation:
+
+┌─────────────────────────────────────────┐
+│ Amina Okafor                    ● Active │
+│ Helper · Yard Work Request #2847        │
+├─────────────────────────────────────────┤
+│                                         │
+│  I'll be there in about 10 minutes.     │
+│                                         │
+│ ┌─────────────────────────────────────┐ │
+│ │       LIVE REQUEST MAP              │ │
+│ │                                     │ │
+│ │        🚗 ─────────────── 📍        │ │
+│ │                                     │ │
+│ │ Arriving in 10 min                  │ │
+│ │                                     │ │
+│ │          [ View Route ]             │ │
+│ └─────────────────────────────────────┘ │
+│                                         │
+│ Great! I'll meet you at the front yard. │
+│                                         │
+├─────────────────────────────────────────┤
+│ 📎   Write a message...          🎤  ➤ │
+└─────────────────────────────────────────┘
+
+That is much closer to the concept image.
+
+7. Requests should become first-class conversations
+
+This is one of the most important changes.
+
+The current RequestThread is basically:
+
+Request conversation
+The existing request chat...
+[Open request]
+
+<InAppChat>
+
+That works, but it doesn't take advantage of the fact that Niakofa Requests contain a lot of contextual information.
+
+We should turn the top of the conversation into a Request Context Card.
+
+For example:
+
+YARD WORK REQUEST #2847
+
+Status
+● En route
+
+Requester
+Sarah Johnson
+
+Helper
+Amina Okafor
+
+Location
+Dallas, TX
+
+ETA
+10 minutes
+
+[ View Request ] [ View Route ]
+
+Then the chat continues underneath.
+
+This means the user doesn't have to leave Messages just to understand the request.
+
+8. This connects directly to the routing work we just hardened
+
+This is where the new Messages design can become genuinely useful to Niakofa.
+
+The current request routing architecture already distinguishes:
+
+Requester
+   ↓
+/request/:id/track
+
+Helper
+   ↓
+/request/:id
+
+The Messages UI should respect that.
+
+Requester sees:
+Helper:
+Amina Okafor
+
+Status:
+En route
+
+ETA:
+10 minutes
+
+[Track helper]
+Helper sees:
+Requester:
+Sarah Johnson
+
+Destination:
+Request location
+
+[Open navigation]
+
+So Messages becomes another contextual doorway into the existing Request system, rather than duplicating it.
+
+That is exactly what we want.
+
+9. Add the Map card
+
+The concept image has a map embedded in the conversation.
+
+I strongly recommend this.
+
+But we should reuse Niakofa's existing directional-routing infrastructure, not create another map-routing system.
+
+The card should consume the existing route information.
+
+Conceptually:
+
+<RequestRouteCard
+    requestId={request.id}
+    role={currentUserIsHelper ? "helper" : "requester"}
+    onOpenRoute={...}
+/>
+
+It can show:
+
+🚗 Amina is on the way
+
+Arriving in approximately 10 minutes
+
+[map]
+
+[View Route]
+
+For the helper:
+
+📍 Destination
+
+2.1 miles
+
+[Start Navigation]
+
+This would tie Messages directly into the routing improvements already made.
+
+10. The right-side Information Panel needs a major upgrade
+
+The current ConversationInfoPanel is relatively minimal:
+
+Avatar
+Name
+
+View profile
+Block
+Report
+
+Shared media will appear here...
+
+The image suggests a much more useful panel.
+
+I recommend:
+
+┌─────────────────────────────┐
+│                             │
+│          [Avatar]           │
+│                             │
+│       Amina Okafor          │
+│       ● Active now          │
+│                             │
+│ [Profile] [Call] [Video]   │
+│                             │
+├─────────────────────────────┤
+│ REQUEST                     │
+│ Yard Work #2847             │
+│ En route                    │
+│                             │
+│ [Open request]              │
+├─────────────────────────────┤
+│ SHARED MEDIA                │
+│                             │
+│ [photo] [photo] [+12]      │
+│                             │
+├─────────────────────────────┤
+│ SHARED FILES                │
+│                             │
+│ 📄 yard-work-guide.pdf      │
+│ 📄 route.png                │
+│                             │
+├─────────────────────────────┤
+│ INFORMATION                 │
+│                             │
+│ Dallas Hub                  │
+│ Helper                      │
+│ Member since...             │
+│                             │
+├─────────────────────────────┤
+│ Block                       │
+│ Report                      │
+└─────────────────────────────┘
+
+This is one of the clearest gaps between the image and current implementation.
+
+11. Shared Media should actually use the attachment backend
+
+This is especially important because the repository has already crossed the boundary into real Direct Message attachments.
+
+The current attachment architecture already stores metadata in:
+
+direct_message_attachments
+
+and the Direct message response exposes:
+
+media_url
+mime_type
+byte_size
+original_name
+alt_text
+
+Direct-message attachments schema
+
+Therefore we should stop treating Shared Media as a placeholder.
+
+Build a derived conversation-media view:
+
+Conversation
+      ↓
+messages
+      ↓
+attachments
+      ↓
+group by type
+      ↓
+Shared Media
+
+Tabs:
+
+Photos | Videos | Files | Links
+
+Initially:
+
+Photos
+Videos
+Files
+
+Then later:
+
+Links
+12. The attachment experience should become visual
+
+Current composer:
+
+📎
+[Write a message...]
+➤
+
+is functional.
+
+The new experience should be:
+
+┌───────────────────────────────────────────┐
+│ [photo] [photo]                           │
+│   ×       ×                              │
+├───────────────────────────────────────────┤
+│ 📎   Write a message...           🎤  ➤ │
+└───────────────────────────────────────────┘
+
+Images should display thumbnails before sending.
+
+Files:
+
+📄 yard-work-guide.pdf
+2.4 MB                         ×
+
+Audio:
+
+🎵 voice-message.webm
+0:32                           ×
+
+This should build on the current attachment implementation rather than replacing it.
+
+13. We should add a proper New Message experience
+
+The image has:
+
+New Message
+
+Search users, hubs, or communities...
+
+Contacts
+Hubs
+Groups
+
+For Niakofa I would change that slightly.
+
+New Message
+Search people, Hubs, or communities
+
+Then:
+
+PEOPLE
+
+Amina Okafor
+Kwame Mensah
+Sarah Johnson
+
+
+HUBS
+
+Accra Hub
+Dallas Hub
+Jamaica Hub
+Nigeria Hub
+
+
+COMMUNITIES
+
+Accra Community
+Dallas Community
+
+Selecting a person:
+
+→ Direct
+
+Selecting a Hub:
+
+→ Hubs
+
+Selecting a Community:
+
+→ Community
+
+This respects Niakofa's architecture instead of introducing an ambiguous "group message" backend.
+
+14. Hubs needs its own visual treatment
+
+The current HubMessagesPanel is functional but visually much further away from the concept image.
+
+Today it contains:
+
+Hub conversations
+Speak as
+Contact approved Hub
+New or existing conversation
+message list
+composer
+
+We should transform that into:
+
+┌──────────────────────────────────────────────┐
+│ ACCRA HUB ↔ DALLAS HUB                       │
+│                                              │
+│ Accra Hub                         Dallas Hub │
+│ 2.1k members                    8.4k members │
+├──────────────────────────────────────────────┤
+│                                              │
+│ Hub conversation                             │
+│                                              │
+│ Accra Hub                                    │
+│ We would like to coordinate...               │
+│                                              │
+│                           Dallas Hub          │
+│                           Absolutely...       │
+│                                              │
+├──────────────────────────────────────────────┤
+│ Speak as: [Accra Hub ▼]                     │
+│                                              │
+│ Write a Hub message...                 ➤     │
+└──────────────────────────────────────────────┘
+
+And preserve the existing authorization:
+
+User must have approved membership in the source Hub to speak as that Hub.
+
+That authorization is already implemented in the backend. Hub messaging routes
+
+15. Requests tab needs real unread/read semantics
+
+There is an important backend gap I found in the current implementation.
+
+The current unread summary explicitly does:
+
+direct = calculated
+requests = 0
+hubs = 0
+
+because Requests and Hubs don't yet have durable per-user read state.
+
+Messages unread summary route
+
+This matters for the image because it shows badges such as:
+
+All       3
+Requests  1
+
+We shouldn't visually fake those numbers.
+
+Recommended backend phase
+
+Create durable read state for:
+
+request conversation + user
+hub conversation + user
+
+For example conceptually:
+
+message_conversation_reads
+--------------------------
+conversation_kind
+conversation_id
+user_id
+last_read_message_id
+last_read_at
+
+But I would not rush to a generic table until we inspect the existing Request/Hub message semantics carefully.
+
+The key is:
+
+Direct → durable read
+Request → durable read
+Hub → durable read
+
+Then:
+
+All = Direct + Requests + Hubs
+
+becomes trustworthy.
+
+16. Realtime should eventually cover all three message modes
+
+Currently Direct has the strongest realtime behavior.
+
+The page already listens for:
+
+direct_message
+ws_reconnected
+
+and has a REST fallback.
+
+That is good.
+
+The next architecture should be:
+
+                    WebSocket
+                       │
+          ┌────────────┼────────────┐
+          ↓            ↓            ↓
+       Direct       Request         Hub
+          │            │            │
+          ↓            ↓            ↓
+       message       message       message
+          │            │            │
+          └────────────┼────────────┘
+                       ↓
+                 Messages UI
+
+Events could eventually be:
+
+direct_message
+request_message
+hub_message
+
+request_status_changed
+helper_location_updated
+request_arrived
+request_completed
+
+conversation_read
+
+The important part is that Messages becomes a realtime client, while the underlying domain systems remain authoritative.
+
+17. Voice and video: build the UI now, infrastructure separately
+
+The concept image shows:
+
+☎
+🎥
+
+The current code correctly disables these buttons:
+
+Voice call — coming soon
+Video call — coming soon
+
+I would keep the UI design but make the buttons visually consistent with the final product.
+
+Then, when we implement the real-time media system:
+
+Messages
+   ↓
+Call action
+   ↓
+RTC session service
+   ↓
+permission
+   ↓
+signaling
+   ↓
+WebRTC
+   ↓
+voice/video session
+
+Do not simulate calls with a modal that doesn't actually establish media.
+
+18. Desktop layout I recommend
+
+The final desktop experience should be approximately:
+
+┌──────────┬───────────────┬──────────────────────────┬─────────────┐
+│          │               │                          │             │
+│ Niakofa  │ Conversations │       Conversation       │ Information │
+│          │               │                          │             │
+│ Messages │ Search        │ Amina Okafor             │ Amina       │
+│          │               │ ● Active                 │             │
+│ All      │ ────────────  │                          │ Profile     │
+│ Direct   │ Amina         │ message                  │             │
+│ Requests │ Kwame         │ message                  │             │
+│ Hubs     │ Sarah         │                          │ Request     │
+│          │               │       MAP                │ Media       │
+│ + New    │ Request       │                          │ Files       │
+│          │ Hub           │                          │ Info        │
+│          │               │                          │             │
+│          │               │ composer                 │             │
+└──────────┴───────────────┴──────────────────────────┴─────────────┘
+
+The existing MessagesShell is already structurally capable of doing this.
+
+So this is mostly a component enhancement, not a routing rewrite.
+
+19. Mobile layout
+
+The image's mobile concept is also important.
+
+We should preserve:
+
+Inbox
+ ↓
+Conversation
+ ↓
+Back
+
+rather than trying to cram desktop's four columns onto a phone.
+
+Mobile:
+┌───────────────────────┐
+│ Messages         +    │
+├───────────────────────┤
+│ All Direct Requests   │
+│ Hubs                  │
+├───────────────────────┤
+│ 🔍 Search             │
+├───────────────────────┤
+│                       │
+│ Amina Okafor      2:45│
+│ Thanks! I'll be...  ● │
+│                       │
+│ Kwame Mensah      1:32│
+│ Can you share...      │
+│                       │
+│ Yard Work #2847 12:18 │
+│ En route              │
+│                       │
+└───────────────────────┘
+
+Open conversation:
+
+┌───────────────────────┐
+│ ← Amina Okafor    ⋯  │
+├───────────────────────┤
+│                       │
+│        messages       │
+│                       │
+│      ┌─────────────┐  │
+│      │ map         │  │
+│      └─────────────┘  │
+│                       │
+├───────────────────────┤
+│ 📎 Write...      ➤    │
+└───────────────────────┘
+
+The current shell already implements the basic list → thread → Back model, so we should preserve that behavior.
+
+20. The image should NOT become a static mockup
+
+This is probably the most important implementation principle.
+
+Every visible component should map to real Niakofa functionality.
+
+Image element	Implementation
+Person avatar	Existing user/avatar system
+Active status	Existing/realtime presence where available
+All	Unified conversation projection
+Direct	Existing Direct backend
+Requests	Existing request backend
+Hubs	Existing Hub messaging backend
+Search	Existing approved-user search + Hub discovery
+Message thread	Existing message APIs
+Attachments	Existing direct attachment system
+Shared media	Derived from actual attachment records
+Request card	Existing request API
+Map	Existing routing/map system
+ETA	Existing request/navigation data
+View Route	Existing request/navigation route
+Profile	Existing user/profile routes
+Block	Existing safety endpoint
+Report	Existing report endpoint
+Voice	Future RTC
+Video	Future RTC
+Realtime indicator	Existing WebSocket state
+Notifications	Existing unread system, expanded later
+
+That gives us a real product, not a pretty screenshot.
+
+21. Recommended implementation phases
+Phase 1 — Visual foundation
+
+Upgrade:
+
+MessagesShell
+MessagesSidebar
+MessageTypeTabs
+ConversationList
+ConversationListItem
+ConversationHeader
+
+Goal:
+
+Make current Messages visually match the image's hierarchy.
+
+No backend changes.
+
+Phase 2 — Direct Messages visual upgrade
+
+Upgrade:
+
+MetaStyleDirectPane
+ConversationThread
+MessageBubble
+MessageComposerWithAttachments
+MessageAttachment
+
+Add:
+
+better message grouping
+avatar behavior
+timestamps
+attachment thumbnails
+image previews
+file cards
+richer composer
+contextual header
+cleaner spacing
+responsive behavior
+Phase 3 — Conversation Info
+
+Replace the current lightweight:
+
+View profile
+Block
+Report
+
+with:
+
+Profile
+Status
+Shared media
+Shared files
+Request context
+Hub context
+Safety actions
+Phase 4 — Request-aware Messages
+
+Create reusable:
+
+RequestContextCard
+RequestStatusCard
+RequestRouteCard
+RequestLocationCard
+
+Then:
+
+Messages
+   ↓
+Request conversation
+   ↓
+Request context
+   ↓
+Map
+   ↓
+Existing request route
+
+This is where our recent Request/Helper routing work pays off.
+
+Phase 5 — Shared Media
+
+Use the actual:
+
+direct_message_attachments
+
+data.
+
+Add:
+
+SharedMediaPanel
+MediaGallery
+FileList
+
+No fake media counts.
+
+Phase 6 — Hub Messages redesign
+
+Upgrade:
+
+HubMessagesPanel
+
+to visually match the rest of Messages.
+
+Preserve:
+
+source Hub membership
+target Hub discovery
+Hub authorization
+Phase 7 — Durable unread state
+
+Implement:
+
+Direct unread
+Request unread
+Hub unread
+All unread
+
+instead of:
+
+Direct = real
+Requests = 0
+Hubs = 0
+
+This is a backend improvement that the image exposes as a product requirement.
+
+Phase 8 — Realtime expansion
+
+Move toward:
+
+Direct
+Request
+Hub
+Request status
+Location
+
+realtime events.
+
+Phase 9 — New Message launcher
+
+Create:
+
+NewMessageDialog
+
+with:
+
+People
+Hubs
+Communities
+
+and route each selection to the correct existing system.
+
+Phase 10 — RTC
+
+Only after the above is solid:
+
+Voice
+Video
+
+with a formally defined realtime media system.
+
+22. Component architecture I would target
+
+I would evolve the current component tree toward:
+
+MessagesPage
+│
+├── MessagesShell
+│
+├── MessagesNavigation
+│   ├── All
+│   ├── Direct
+│   ├── Requests
+│   └── Hubs
+│
+├── ConversationList
+│   ├── ConversationSearch
+│   ├── ConversationFilters
+│   └── ConversationListItem
+│
+├── ConversationWorkspace
+│   │
+│   ├── ConversationHeader
+│   │   ├── Avatar
+│   │   ├── Presence
+│   │   ├── Voice
+│   │   ├── Video
+│   │   └── More
+│   │
+│   ├── ConversationContext
+│   │   ├── RequestContextCard
+│   │   ├── HubContextCard
+│   │   └── RouteCard
+│   │
+│   ├── MessageTimeline
+│   │   ├── MessageGroup
+│   │   ├── MessageBubble
+│   │   ├── ImageAttachment
+│   │   ├── VideoAttachment
+│   │   ├── AudioAttachment
+│   │   └── FileAttachment
+│   │
+│   └── MessageComposer
+│       ├── AttachmentPicker
+│       ├── AttachmentPreview
+│       ├── VoiceButton
+│       └── SendButton
+│
+└── ConversationInfoPanel
+    ├── Profile
+    ├── SharedMedia
+    ├── SharedFiles
+    ├── RequestInfo
+    ├── HubInfo
+    └── Safety
+23. The most important architectural improvement
+
+I would introduce one additional concept:
+
+ConversationContext
+
+Not a new database conversation type.
+
+A frontend/domain adapter.
+
+For example:
+
+type ConversationContext =
+  | {
+      kind: "direct";
+      userId: number;
+    }
+  | {
+      kind: "request";
+      requestId: number;
+      role: "requester" | "helper";
+    }
+  | {
+      kind: "hub";
+      conversationId: number;
+      sourceHubId: number;
+      targetHubId: number;
+    };
+
+Then the UI can ask:
+
+What kind of conversation is this?
+
+and render the appropriate context.
+
+This keeps the architecture clean.
+
+24. The final experience
+
+The image should ultimately become this:
+
+                 NIAKOFA
+                    │
+                MESSAGES
+                    │
+       ┌────────────┼────────────┐
+       ↓            ↓            ↓
+     DIRECT      REQUESTS       HUBS
+       │            │            │
+       └────────────┼────────────┘
+                    ↓
+             CONVERSATION
+                    │
+       ┌────────────┼────────────┐
+       ↓            ↓            ↓
+     PEOPLE       CONTEXT       ACTIONS
+       │            │            │
+       │        ┌───┴────┐       │
+       │        ↓        ↓       │
+       │      Request    Hub     │
+       │        │        │       │
+       │        ↓        ↓       │
+       │       Map     Hub info  │
+       │        │                │
+       └────────┼────────────────┘
+                ↓
+          MESSAGE TIMELINE
+                ↓
+       ┌────────┼─────────┐
+       ↓        ↓         ↓
+     Text     Media     Files
+       │
+       ↓
+    Composer
+       │
+       ├── Attachment
+       ├── Voice
+       ├── Video
+       └── Send
+My assessment of the current repo
+
+The current Messages architecture is worth keeping. The recent V18/V19/V20 work has already established the correct foundation: one Messages product, unified frontend projections, real Direct persistence, Hub authorization, Request integration, realtime Direct delivery, and private Direct attachments.
+
+The main work now is not another backend rewrite.
+
+It is the transition from:
+
+"functional unified messaging UI"
+
+to:
+
+"Niakofa's contextual communication center."

@@ -13,6 +13,7 @@ export function ConversationList({
   onSearchChange,
   onSelect,
   onSelectPerson,
+  onCompose,
   emptyLabel,
 }: {
   items: UnifiedConversation[];
@@ -22,19 +23,31 @@ export function ConversationList({
   onSearchChange: (value: string) => void;
   onSelect: (item: UnifiedConversation) => void;
   onSelectPerson?: (person: Person) => void;
+  onCompose?: () => void;
   emptyLabel: string;
 }) {
   return (
     <section className="flex h-full min-h-0 flex-col bg-card lg:border-r lg:border-border">
       <div className="border-b border-border p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Inbox</p>
+            <h2 className="text-base font-black">Conversations</h2>
+          </div>
+          {onCompose && (
+            <button type="button" onClick={onCompose} data-testid="button-new-message-list" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl bg-primary/10 text-primary hover:bg-primary/15" aria-label="New message">
+              <span className="text-xl leading-none">+</span>
+            </button>
+          )}
+        </div>
         <label className="relative block">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-          <input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search messages or people" aria-label="Search messages or people" className="min-h-11 w-full rounded-2xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
+          <input data-testid="input-message-search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search conversations…" aria-label="Search messages or people" className="min-h-11 w-full rounded-2xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
         </label>
         {searchResults.length > 0 && onSelectPerson && (
           <div className="mt-2 max-h-44 space-y-0.5 overflow-y-auto rounded-2xl border border-border bg-background p-1">
             {searchResults.map((person) => (
-              <button key={person.id} type="button" onClick={() => onSelectPerson(person)} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-muted">
+              <button key={person.id} type="button" onClick={() => onSelectPerson(person)} data-testid={`button-message-person-${person.id}`} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-muted">
                 <MessageAvatar name={person.name} avatarUrl={person.avatar_url} size={36} />
                 <span className="text-sm font-bold">{person.name}</span>
               </button>

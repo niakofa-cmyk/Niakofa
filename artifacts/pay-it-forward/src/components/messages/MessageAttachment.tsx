@@ -18,7 +18,7 @@ function formatBytes(value: number) {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function MessageAttachment({ attachment }: { attachment: MessageAttachmentData }) {
+export function MessageAttachment({ attachment, compact = false }: { attachment: MessageAttachmentData; compact?: boolean }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,7 +58,7 @@ export function MessageAttachment({ attachment }: { attachment: MessageAttachmen
           src={objectUrl}
           alt={attachment.alt_text || attachment.original_name || "Message attachment"}
           loading="lazy"
-          className="max-h-80 max-w-full rounded-2xl object-cover"
+          className={compact ? "h-20 w-24 rounded-xl object-cover" : "max-h-80 max-w-full rounded-2xl object-cover"}
         />
       </a>
     );
@@ -76,7 +76,7 @@ export function MessageAttachment({ attachment }: { attachment: MessageAttachmen
     <a
       href={objectUrl}
       download={attachment.original_name || "message-attachment"}
-      className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold"
+      className={`flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold ${compact ? "min-w-0 p-2" : ""}`}
     >
       <FileText className="h-4 w-4 shrink-0" />
       <span className="min-w-0 flex-1 truncate">{attachment.original_name || "Document"} · {formatBytes(attachment.byte_size)}</span>
