@@ -27,15 +27,6 @@ export function MessageAttachment({ attachment, compact = false }: { attachment:
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (attachment.attachment_type === "link" && attachment.link_url) {
-    return <a href={attachment.link_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold text-primary"><span className="truncate">{attachment.original_name || attachment.link_url}</span></a>;
-  }
-
-  if (attachment.attachment_type === "location" && attachment.location_lat !== null && attachment.location_lat !== undefined && attachment.location_lng !== null && attachment.location_lng !== undefined) {
-    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${attachment.location_lat},${attachment.location_lng}`)}`;
-    return <a href={mapUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold text-primary"><span>{attachment.location_label || "Shared location"}</span><span className="text-muted-foreground">{attachment.location_lat.toFixed(4)}, {attachment.location_lng.toFixed(4)}</span></a>;
-  }
-
   useEffect(() => {
     if (attachment.attachment_type === "link" || attachment.attachment_type === "location") {
       setObjectUrl(null);
@@ -67,6 +58,15 @@ export function MessageAttachment({ attachment, compact = false }: { attachment:
       if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
     };
   }, [attachment.attachment_type, attachment.media_url]);
+
+  if (attachment.attachment_type === "link" && attachment.link_url) {
+    return <a href={attachment.link_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold text-primary"><span className="truncate">{attachment.original_name || attachment.link_url}</span></a>;
+  }
+
+  if (attachment.attachment_type === "location" && attachment.location_lat !== null && attachment.location_lat !== undefined && attachment.location_lng !== null && attachment.location_lng !== undefined) {
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${attachment.location_lat},${attachment.location_lng}`)}`;
+    return <a href={mapUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold text-primary"><span>{attachment.location_label || "Shared location"}</span><span className="text-muted-foreground">{attachment.location_lat.toFixed(4)}, {attachment.location_lng.toFixed(4)}</span></a>;
+  }
 
   if (error) return <p role="status" className="text-xs text-muted-foreground">{error}</p>;
   if (!objectUrl) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Loading attachment" />;
