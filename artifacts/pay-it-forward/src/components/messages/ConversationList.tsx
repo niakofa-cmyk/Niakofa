@@ -55,7 +55,7 @@ export function ConversationList({
                 <div className="space-y-0.5">
                   {searchResults.map((person) => (
                     <button key={person.id} type="button" onClick={() => onSelectPerson(person)} data-testid={`button-message-person-${person.id}`} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-muted">
-                      <MessageAvatar name={person.name} avatarUrl={person.avatar_url} size={36} active />
+                      <MessageAvatar name={person.name} avatarUrl={person.avatar_url} size={36} />
                       <span className="min-w-0 flex-1 truncate text-sm font-bold">{person.name}</span>
                       <span className="text-[9px] font-black text-primary">Message</span>
                     </button>
