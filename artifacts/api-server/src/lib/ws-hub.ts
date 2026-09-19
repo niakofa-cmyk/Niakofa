@@ -59,6 +59,7 @@ export type WsEventType =
   | "report_reviewed"
   | "chat_message"
    | "direct_message"
+  | "hub_message"
   | "message_read"
   | "direct_call_invite"
   | "direct_call_accept"
