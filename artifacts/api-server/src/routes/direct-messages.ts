@@ -252,22 +252,40 @@ router.get("/messages/direct/search", requireAuth, requireApproved, generalApiLi
     .orderBy(desc(directMessagesTable.created_at))
     .limit(30);
 
+  const peers = await db
+    .select({
+      conversation_id: directConversationMembersTable.conversation_id,
+      id: usersTable.id,
+      name: usersTable.name,
+      avatar_url: usersTable.avatar_url,
+    })
+    .from(directConversationMembersTable)
+    .innerJoin(usersTable, eq(usersTable.id, directConversationMembersTable.user_id))
+    .where(and(
+      inArray(directConversationMembersTable.conversation_id, conversationIds),
+      ne(directConversationMembersTable.user_id, userId),
+    ));
+
+  const blockedRows = await db
+    .select({
+      blocker_id: directMessageBlocksTable.blocker_id,
+      blocked_id: directMessageBlocksTable.blocked_id,
+    })
+    .from(directMessageBlocksTable)
+    .where(or(
+      eq(directMessageBlocksTable.blocker_id, userId),
+      eq(directMessageBlocksTable.blocked_id, userId),
+    ));
+  const blockedUserIds = new Set(
+    blockedRows.map((row) => row.blocker_id === userId ? row.blocked_id : row.blocker_id),
+  );
   const peerByConversation = new Map<number, { id: number; name: string; avatar_url: string | null }>();
-  for (const conversationId of conversationIds) {
-    const [peer] = await db
-      .select({
-        id: usersTable.id,
-        name: usersTable.name,
-        avatar_url: usersTable.avatar_url,
-      })
-      .from(directConversationMembersTable)
-      .innerJoin(usersTable, eq(usersTable.id, directConversationMembersTable.user_id))
-      .where(and(
-        eq(directConversationMembersTable.conversation_id, conversationId),
-        ne(directConversationMembersTable.user_id, userId),
-      ))
-      .limit(1);
-    if (peer && !(await isBlockedBetween(userId, peer.id))) peerByConversation.set(conversationId, peer);
+  for (const peer of peers) {
+    if (!blockedUserIds.has(peer.id)) peerByConversation.set(peer.conversation_id, {
+      id: peer.id,
+      name: peer.name,
+      avatar_url: peer.avatar_url,
+    });
   }
 
   return res.json({
