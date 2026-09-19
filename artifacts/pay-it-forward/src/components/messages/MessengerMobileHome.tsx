@@ -1,6 +1,7 @@
 import { ArrowLeft, Bell, MessageCircle, Menu, PenSquare, Search, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { authHeaders } from "@/lib/auth";
+import { wsSubscribe } from "@/lib/wsClient";
 import { MessengerAskNia } from "./MessengerAskNia";
 import type { UnifiedConversation } from "@/lib/unifiedConversation";
 import { MessageAvatar } from "./MessageAvatar";
@@ -86,6 +87,18 @@ export function MessengerMobileHome({
     void load();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => wsSubscribe((event) => {
+    if (event.type !== "presence_update") return;
+    const payload = event.payload as { user_id?: number; status?: string };
+    if (!payload.user_id) return;
+    setActivePeople((current) => current.map((person) => (
+      person.id === payload.user_id
+        ? { ...person, active_now: payload.status === "ONLINE" }
+        : person
+    )));
+  }), []);
+
   const visiblePeople = useMemo(() => {
     if (search.trim()) return searchResults;
     return activePeople;
