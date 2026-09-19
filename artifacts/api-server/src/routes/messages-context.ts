@@ -41,10 +41,10 @@ async function assertHubParticipant(userId: number, conversationId: number) {
 
   const membership = await db.execute(sql`
     SELECT 1
-    FROM diaspora_hub_memberships m
+    FROM hub_memberships m
     WHERE m.user_id = ${userId}
       AND m.hub_id IN (${conversation.hub_a_id}, ${conversation.hub_b_id})
-      AND COALESCE(m.status, 'active') = 'active'
+      AND m.status = 'approved'
     LIMIT 1
   `);
   return membership.rows.length ? conversation : null;
