@@ -10,6 +10,7 @@ import { pino } from "pino";
 import { parseOptionalAuth } from "../lib/auth.js";
 import { getFreshKnowledge } from "../workers/continuous-learning-worker.js";
 import { buildCommunityAwarenessPrefix } from "../lib/community-context.js";
+import { createNiaPipeline, createNiaPipelineContext } from "../middleware/nia-pipeline.js";
 
 const logger = pino({ level: "info" });
 const router = Router();
@@ -61,12 +62,23 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }
 
   const body = req.body as Record<string, unknown>;
-  const message = typeof body.message === "string" ? body.message : "";
+  const rawMessage = typeof body.message === "string" ? body.message : "";
   const sessionId = Array.isArray(body.sessionId) ? body.sessionId[0] : typeof body.sessionId === "string" ? body.sessionId : "";
   // HIGH-002: userId now comes ONLY from a verified Bearer token, never from
   // the client-supplied body — a body.userId previously let any caller read
   // or write another user's memory, history, and rate-limit bucket.
   const userId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId ?? null;
+  const niaPipeline = createNiaPipeline();
+  const pipelineContext = createNiaPipelineContext({
+    sessionId,
+    userId,
+    message: rawMessage,
+  });
+  await niaPipeline.run("receive", pipelineContext);
+  if (pipelineContext.stopped || !sessionId) {
+    return res.status(400).json({ error: "message and sessionId required" });
+  }
+  const message = pipelineContext.envelope.message;
   const gpsLat = typeof body.lat === "number" ? body.lat : null;
   const gpsLon = typeof body.lon === "number" ? body.lon : null;
   const userName = typeof body.userName === "string" ? body.userName : null;
@@ -88,7 +100,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   const foodSignal = typeof body.foodSignal === "string" ? body.foodSignal : null;
   const foodSignalCount = typeof body.foodSignalCount === "number" ? body.foodSignalCount : 0;
 
-  if (!message.trim() || !sessionId) {
+  if (!message) {
     return res.status(400).json({ error: "message and sessionId required" });
   }
 
@@ -112,6 +124,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }
 
   const safety = checkSafety(message);
+  pipelineContext.metadata.safety = safety;
+  await niaPipeline.run("interpret", pipelineContext);
   if (safety.flagged) {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -441,6 +455,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     const estimatedCostUsd = (inputTokens * 0.000003) + (outputTokens * 0.000015);
 
     clearTimeout(timeoutHandle);
+    pipelineContext.output = fullResponse;
+    await niaPipeline.run("send", pipelineContext);
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     await saveConversation(userId, sessionId, message, fullResponse);
 

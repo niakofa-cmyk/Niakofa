@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, ShieldAlert, UsersRound, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
@@ -24,6 +24,7 @@ import type { MessageAttachmentData } from "@/components/messages/MessageAttachm
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
 import { directToUnified, hubToUnified, requestToUnified, sortUnified, type UnifiedConversation } from "@/lib/unifiedConversation";
+import { applyConversationEvent, createConversationState, markConversationRead, shouldNotifyConversation, type ConversationEvent, type ConversationState } from "@/lib/conversationState";
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
 
 type DirectUser = { id: number; name: string; avatar_url: string | null };
@@ -78,6 +79,16 @@ type RequestConversation = {
 type Counts = { all: number; direct: number; requests: number; hubs: number };
 type ApiError = { error?: string };
 type DirectMessageEvent = { conversation_id?: number; message?: DirectMessage };
+
+function browserNotify(title: string, body: string, tag: string): void {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  try {
+    new Notification(title, { body: body.slice(0, 160), tag });
+  } catch {
+    // Browser notification support can be revoked between the permission check
+    // and construction. Realtime messaging must remain usable in that case.
+  }
+}
 
 function modeFromLocation(location: string): MessageMode {
   const [pathname, query] = location.split("?");
@@ -175,6 +186,25 @@ export default function MessagesPage() {
   const [error, setError] = useState<string | null>(null);
   const [unreadCounts, setUnreadCounts] = useState<Counts>({ all: 0, direct: 0, requests: 0, hubs: 0 });
   const [realtimeState, setRealtimeState] = useState<WsConnectionState>(() => wsGetConnectionSnapshot().state);
+  const [liveConversationState, setLiveConversationState] = useState<ConversationState>(() => createConversationState());
+  const liveConversationStateRef = useRef(liveConversationState);
+  const [presenceByUser, setPresenceByUser] = useState<Record<number, string>>({});
+  const [typingByConversation, setTypingByConversation] = useState<Record<number, boolean>>({});
+
+  const applyLiveConversationEvent = useCallback((event: ConversationEvent): boolean => {
+    const result = applyConversationEvent(liveConversationStateRef.current, event);
+    if (!result.accepted) return false;
+    liveConversationStateRef.current = result.state;
+    setLiveConversationState(result.state);
+    return true;
+  }, []);
+
+  const markLiveConversationRead = useCallback((kind: ConversationEvent["kind"], sourceId: number) => {
+    const next = markConversationRead(liveConversationStateRef.current, kind, sourceId);
+    if (next === liveConversationStateRef.current) return;
+    liveConversationStateRef.current = next;
+    setLiveConversationState(next);
+  }, []);
 
   const selectedConversation = useMemo(
     () => directConversations.find((conversation) => conversation.id === selectedDirectId) ?? null,
@@ -223,7 +253,8 @@ export default function MessagesPage() {
     setDirectMessages(Array.isArray(data.messages) ? data.messages : []);
     setHighlightedMessageId(targetMessageId && targetMessageId > 0 ? targetMessageId : null);
     await fetch(`/api/messages/direct/conversations/${conversationId}/read`, { method: "POST", headers: authHeaders() });
-  }, []);
+    markLiveConversationRead("direct", conversationId);
+  }, [markLiveConversationRead]);
 
   const loadHubConversations = useCallback(async () => {
     const response = await fetch("/api/diaspora/hub-messages/conversations", { headers: authHeaders() });
@@ -328,7 +359,28 @@ export default function MessagesPage() {
         if (activeMode === "direct" && selectedDirectId) void loadDirectMessages(selectedDirectId).catch(() => {});
         return;
       }
-      if (event.type === "chat_message" || event.type === "request_updated" || event.type === "REQUEST_ACCEPTED" || event.type === "HELPER_MOVING" || event.type === "HELPER_ARRIVED" || event.type === "REQUEST_COMPLETED" || event.type === "hub_message" || event.type === "message_read") {
+      if (event.type === "presence_update") {
+        const payload = event.payload as { user_id?: number; status?: string };
+        if (payload.user_id) setPresenceByUser((current) => ({ ...current, [payload.user_id!]: payload.status ?? "OFFLINE" }));
+        return;
+      }
+      if (event.type === "typing") {
+        const payload = event.payload as { conversation_id?: number; is_typing?: boolean; status?: string };
+        if (payload.conversation_id) {
+          setTypingByConversation((current) => ({
+            ...current,
+            [payload.conversation_id!]: payload.is_typing ?? payload.status === "started",
+          }));
+        }
+        return;
+      }
+      if (event.type === "message_read") {
+        const payload = event.payload as { conversation_id?: number; message_id?: number };
+        if (payload.conversation_id) markLiveConversationRead("direct", payload.conversation_id);
+        void loadUnreadSummary().catch(() => {});
+        return;
+      }
+      if (event.type === "chat_message" || event.type === "request_updated" || event.type === "REQUEST_ACCEPTED" || event.type === "HELPER_MOVING" || event.type === "HELPER_ARRIVED" || event.type === "REQUEST_COMPLETED" || event.type === "hub_message") {
         void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(() => {});
         return;
       }
@@ -337,14 +389,36 @@ export default function MessagesPage() {
       const message = payload?.message;
       const conversationId = payload?.conversation_id ?? message?.conversation_id;
       if (!message || !conversationId) return;
+      const accepted = applyLiveConversationEvent({
+        type: "direct_message",
+        eventId: message.id,
+        conversationId,
+        kind: "direct",
+        senderId: message.sender_id,
+        currentUserId: currentUser?.id ?? null,
+        body: message.body,
+        createdAt: message.created_at,
+        title: message.sender_name,
+      });
+      if (!accepted) return;
       setDirectMessages((current) => conversationId === selectedDirectId ? mergeDirectMessage(current, message) : current);
       void Promise.all([loadDirectConversations(), loadUnreadSummary()]).catch(() => {});
       if (conversationId === selectedDirectId && message.sender_id !== currentUser?.id) {
+        markLiveConversationRead("direct", conversationId);
         void fetch(`/api/messages/direct/conversations/${conversationId}/read`, { method: "POST", headers: authHeaders() }).catch(() => {});
+      } else if (shouldNotifyConversation({
+        activeKey: selectedDirectId ? `direct:${selectedDirectId}` : null,
+        conversationKey: `direct:${conversationId}`,
+        documentVisible: document.visibilityState === "visible",
+        permission: typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+        senderId: message.sender_id,
+        currentUserId: currentUser?.id ?? null,
+      })) {
+        browserNotify(`${message.sender_name} sent you a message`, message.body, `direct:${conversationId}`);
       }
     });
     return () => { unsubscribeConnection(); unsubscribeEvents(); };
-  }, [activeMode, currentUser?.id, loadDirectConversations, loadDirectMessages, loadHubConversations, loadInbox, loadRequestConversations, loadUnreadSummary, selectedDirectId]);
+  }, [activeMode, applyLiveConversationEvent, currentUser?.id, loadDirectConversations, loadDirectMessages, loadHubConversations, loadInbox, loadRequestConversations, loadUnreadSummary, markLiveConversationRead, selectedDirectId]);
 
   useEffect(() => {
     const query = search.trim();
@@ -447,11 +521,22 @@ export default function MessagesPage() {
     const direct = directConversations.map((conversation) => directToUnified(conversation, currentUser?.id ?? null));
     const requests = requestConversations.map(requestToUnified);
     const hubs = hubConversations.map(hubToUnified);
-    if (activeMode === "direct") return sortUnified(direct);
-    if (activeMode === "requests") return sortUnified(requests);
-    if (activeMode === "hub") return sortUnified(hubs);
-    return sortUnified([...direct, ...requests, ...hubs]);
-  }, [activeMode, currentUser?.id, directConversations, hubConversations, requestConversations]);
+    const withLiveState = (items: UnifiedConversation[]) => items.map((item) => {
+      const live = liveConversationState.conversations[item.key];
+      if (!live) return item;
+      return {
+        ...item,
+        title: live.title || item.title,
+        lastMessage: live.lastMessage ?? item.lastMessage,
+        timestamp: live.timestamp ?? item.timestamp,
+        unreadCount: live.unreadCount,
+      };
+    });
+    if (activeMode === "direct") return sortUnified(withLiveState(direct));
+    if (activeMode === "requests") return sortUnified(withLiveState(requests));
+    if (activeMode === "hub") return sortUnified(withLiveState(hubs));
+    return sortUnified(withLiveState([...direct, ...requests, ...hubs]));
+  }, [activeMode, currentUser?.id, directConversations, hubConversations, liveConversationState, requestConversations]);
 
   const visibleItems = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -552,8 +637,8 @@ export default function MessagesPage() {
     <ConversationThread
       title={activeRecipient.name}
       avatarUrl={activeRecipient.avatar_url}
-      active={realtimeState === "connected"}
-      subtitle={realtimeState === "connected" ? "Active connection" : "Direct message"}
+      active={presenceByUser[activeRecipient.id] === "ONLINE"}
+      subtitle={typingByConversation[selectedDirectId ?? -1] ? "Typing…" : presenceByUser[activeRecipient.id] === "ONLINE" ? "Active now" : realtimeState === "connected" ? "Direct message" : "Reconnecting…"}
       messages={directMessages}
        highlightedMessageId={threadHighlightedMessageId}
       currentUserId={currentUser?.id ?? null}
