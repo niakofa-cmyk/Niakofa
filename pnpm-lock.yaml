@@ -587,6 +587,73 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
+  artifacts/nia-service:
+    dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.24.0
+        version: 0.24.3
+      cors:
+        specifier: ^2.8.5
+        version: 2.8.6
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.4.5
+      express:
+        specifier: ^5.0.0
+        version: 5.2.1(supports-color@8.1.1)
+      express-rate-limit:
+        specifier: ^8.5.2
+        version: 8.5.2(express@5.2.1(supports-color@8.1.1))
+      helmet:
+        specifier: ^8.2.0
+        version: 8.2.0
+      pg:
+        specifier: ^8.11.5
+        version: 8.21.0
+      pino:
+        specifier: ^9.2.0
+        version: 9.14.0
+      pino-pretty:
+        specifier: ^13.1.3
+        version: 13.1.3
+    devDependencies:
+      '@jest/globals':
+        specifier: ^30.4.1
+        version: 30.4.1(supports-color@8.1.1)
+      '@types/cors':
+        specifier: ^2.8.19
+        version: 2.8.19
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
+      '@types/jest':
+        specifier: ^30.0.0
+        version: 30.0.0
+      '@types/node':
+        specifier: ^25.3.3
+        version: 25.9.3
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      '@types/supertest':
+        specifier: ^7.2.0
+        version: 7.2.0
+      jest:
+        specifier: ^30.4.2
+        version: 30.4.2(@types/node@25.9.3)(supports-color@8.1.1)
+      supertest:
+        specifier: ^7.2.2
+        version: 7.2.2(supports-color@8.1.1)
+      ts-jest:
+        specifier: ^29.4.11
+        version: 29.4.11(@babel/core@7.29.7(supports-color@8.1.1))(@jest/transform@30.4.1(supports-color@8.1.1))(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(esbuild@0.27.3)(jest-util@30.4.1)(jest@30.4.2(@types/node@25.9.3)(supports-color@8.1.1))(typescript@5.9.3)
+      tsx:
+        specifier: ^4.23.12
+        version: 4.23.12
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
   lib/api-client-react:
     dependencies:
       '@tanstack/react-query':
@@ -5451,6 +5518,16 @@ packages:
 
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
+  dotenv@16.4.5:
+    resolution: {integrity: sha512-ZmdL2rui+eB2YwhsWzjInR8LldtZHGDoQ1ugH85ppHKwpUHL7j7rN0Ti9NCnGiQbhaZ11FpR+7ao1dNsmduNUg==}
+    engines: {node: '>=12'}
+
+  express-rate-limit@8.5.2:
+    resolution: {integrity: sha512-5Kb34ipNX694DH48vN9irak1Qx30nb0PLYHXfJgw4YEjiC3ZEmZJhwOp+VfiCYwFzvFTdB9QkArYS5kXa2cx2A==}
+    engines: {node: '>= 16'}
+    peerDependencies:
+      express: '>= 4.11'
 
 snapshots:
 
@@ -10742,3 +10819,9 @@ snapshots:
       zod: 3.25.76
 
   zod@3.25.76: {}
+
+  dotenv@16.4.5: {}
+
+  express-rate-limit@8.5.2(express@5.2.1(supports-color@8.1.1)):
+    dependencies:
+      express: 5.2.1(supports-color@8.1.1)
