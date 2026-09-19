@@ -7,8 +7,10 @@ import {
   usersTable,
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
-import { generalApiLimiter } from "../middlewares/rate-limit";
+import { generalApiLimiter, adminLimiter } from "../middlewares/rate-limit";
+import { requireAdmin } from "../middlewares/authz";
 import { getPresence, isUserOnline } from "../lib/ws-hub";
+import { messageActivityEventsTable } from "@workspace/db";
 
 const router = Router();
 const MAX_STORY_BODY = 1_000;
@@ -182,6 +184,41 @@ router.delete("/messages/stories/:id", requireAuth, requireApproved, generalApiL
   )).returning({ id: messageStoriesTable.id });
 
   return res.json({ deleted: deleted.length > 0 });
+});
+
+router.get("/messages/activity-evidence", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const rows = await db
+    .select({
+      event_type: messageActivityEventsTable.event_type,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(messageActivityEventsTable)
+    .where(sql`${messageActivityEventsTable.created_at} >= now() - interval '30 days'`)
+    .groupBy(messageActivityEventsTable.event_type)
+    .orderBy(desc(sql`count(*)`));
+
+  const recent = await db
+    .select({
+      id: messageActivityEventsTable.id,
+      user_id: messageActivityEventsTable.user_id,
+      event_type: messageActivityEventsTable.event_type,
+      entity_type: messageActivityEventsTable.entity_type,
+      entity_id: messageActivityEventsTable.entity_id,
+      metadata: messageActivityEventsTable.metadata,
+      created_at: messageActivityEventsTable.created_at,
+    })
+    .from(messageActivityEventsTable)
+    .orderBy(desc(messageActivityEventsTable.created_at))
+    .limit(100);
+
+  return res.json({
+    window_days: 30,
+    counts: rows.map((row) => ({ event_type: row.event_type, count: Number(row.count ?? 0) })),
+    recent: recent.map((row) => ({
+      ...row,
+      created_at: row.created_at.toISOString(),
+    })),
+  });
 });
 
 router.get("/messages/notifications", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
