@@ -69,6 +69,8 @@ type RequestConversation = {
   requester_name?: string | null;
   helper_name?: string | null;
   created_at?: string | null;
+  lat: number;
+  lng: number;
 };
 type Counts = { all: number; direct: number; requests: number; hubs: number };
 type ApiError = { error?: string };
@@ -125,7 +127,7 @@ function RequestThread({
       <ConversationHeader title={request.title} subtitle={`${request.status} · ${otherName}`} onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
         <RequestContextCard request={request} currentUserId={currentUserId} onOpen={onOpenRequest} />
-        <RequestLiveMapCard request={request as RequestConversation & { lat: number; lng: number }} currentUserId={currentUserId} />
+        <RequestLiveMapCard request={request} currentUserId={currentUserId} />
         <InAppChat
           requestId={request.id}
           currentUserId={currentUserId}
@@ -523,7 +525,6 @@ export default function MessagesPage() {
       {activeRecipient && selectedDirectId && currentUser && (
         <DirectCallPanel
           conversationId={selectedDirectId}
-          selfUserId={currentUser.id}
           peerId={activeRecipient.id}
           peerName={activeRecipient.name}
           autoStartMode={callMode}
