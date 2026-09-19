@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, MessageCircle, Menu, PenSquare, Search, UsersRound } from "lucide-react";
+import { ArrowLeft, Bell, MessageCircle, Menu, PenSquare, Search, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { authHeaders } from "@/lib/auth";
 import { MessengerAskNia } from "./MessengerAskNia";
@@ -62,6 +62,9 @@ export function MessengerMobileHome({
     stories: Array<{ id: number; body: string | null; media_url: string | null; media_type: string | null; created_at: string | null; expires_at: string | null }>;
   }>>([]);
   const [storyUser, setStoryUser] = useState<number | null>(null);
+  const [showStoryComposer, setShowStoryComposer] = useState(false);
+  const [storyBody, setStoryBody] = useState("");
+  const [storyWorking, setStoryWorking] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,7 +130,7 @@ export function MessengerMobileHome({
       {view === "chats" && (
         <section aria-label="Stories" className="overflow-x-auto px-4 pb-4 pt-5">
           <div className="flex w-max gap-4">
-            <button type="button" onClick={onCompose} className="flex w-16 flex-col items-center gap-1.5">
+            <button type="button" onClick={() => setShowStoryComposer(true)} className="flex w-16 flex-col items-center gap-1.5">
               <span className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-primary/60 bg-primary/10">
                 <span className="text-2xl font-light text-primary">+</span>
               </span>
@@ -185,6 +188,37 @@ export function MessengerMobileHome({
           ))
         )}
       </section>
+
+      {showStoryComposer && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center">
+          <div className="w-full max-w-md rounded-3xl bg-card p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-black">Create Story</h2>
+              <button type="button" onClick={() => setShowStoryComposer(false)} className="rounded-full p-2 hover:bg-muted" aria-label="Close Story composer"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Stories are stored for 24 hours and shown to approved Niakofa members.</p>
+            <textarea value={storyBody} onChange={(event) => setStoryBody(event.target.value)} maxLength={1000} rows={5} className="mt-4 w-full resize-none rounded-2xl border border-border bg-background p-3 text-sm outline-none focus:border-primary" placeholder="Share something with your community…" />
+            <button type="button" disabled={storyWorking || !storyBody.trim()} onClick={async () => {
+              setStoryWorking(true);
+              try {
+                const response = await fetch("/api/messages/stories", { method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ body: storyBody.trim() }) });
+                if (!response.ok) throw new Error("Could not publish Story.");
+                setStoryBody("");
+                setShowStoryComposer(false);
+                const refresh = await fetch("/api/messages/stories", { headers: authHeaders() });
+                if (refresh.ok) {
+                  const data = await refresh.json() as { people?: typeof stories };
+                  if (Array.isArray(data.people)) setStories(data.people);
+                }
+              } catch {
+                // Keep the composer open so the user can retry without losing the draft.
+              } finally {
+                setStoryWorking(false);
+              }
+            }} className="mt-4 w-full rounded-full bg-primary py-3 text-sm font-black text-primary-foreground disabled:opacity-50">{storyWorking ? "Publishing…" : "Share Story"}</button>
+          </div>
+        </div>
+      )}
 
       {storyUser !== null && (() => {
         const group = stories.find((item) => item.user_id === storyUser);
