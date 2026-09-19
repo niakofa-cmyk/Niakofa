@@ -15,6 +15,7 @@ import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { deleteAsset, putAsset, streamOrRedirectAsset } from "../lib/storage";
 import { sendToUsers } from "../lib/ws-hub";
+import { createMessageNotification } from "../lib/message-notifications";
 
 const router = Router();
 const MAX_BODY_LENGTH = 4_000;
@@ -675,6 +676,16 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
         conversation_id: result.conversationId,
         message,
       },
+    });
+
+    await createMessageNotification({
+      userId: recipientId,
+      actorUserId: senderId,
+      type: "chat",
+      title: sender?.name ? `New message from ${sender.name}` : "New message",
+      body: body || "Sent an attachment",
+      actionUrl: `/messages/direct/${result.conversationId}`,
+      metadata: { conversation_id: result.conversationId, message_id: result.message.id },
     });
 
     return res.status(201).json({
