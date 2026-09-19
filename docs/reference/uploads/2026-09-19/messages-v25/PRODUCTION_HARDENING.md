@@ -7,6 +7,7 @@ Implemented in main:
    - Approved/suspended filtering is server-side.
    - Online state comes from the authenticated WebSocket socket registry, not fabricated profile data.
    - Active people are sorted ahead of offline people.
+   - Mobile People indicators also update from live `presence_update` WebSocket events.
 
 2. **Durable Stories**
    - message_stories table + migration 0148_messages_social_hardening.sql.
@@ -20,7 +21,7 @@ Implemented in main:
    - Direct messages, direct-call token creation, and Hub messages create durable notifications.
    - Notification events are pushed through the existing authenticated WebSocket.
    - Notification drawer reads, marks read, and marks all read through durable APIs.
-   - Seed notifications remain only as a legacy fallback when the notification API cannot be reached.
+   - The Messages surface no longer injects seeded notifications; it loads the durable notification API directly.
 
 4. **Ask Nia**
    - MessengerAskNia calls the existing /api/nia/chat proxy.
