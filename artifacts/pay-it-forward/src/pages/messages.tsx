@@ -14,6 +14,9 @@ import { MessagesShell } from "@/components/messages/MessagesShell";
 import { MessagesSidebar } from "@/components/messages/MessagesSidebar";
 import { NewMessageDialog } from "@/components/messages/NewMessageDialog";
 import { RequestContextCard } from "@/components/messages/RequestContextCard";
+import { RequestLiveMapCard } from "@/components/messages/RequestLiveMapCard";
+import { SharedMediaPanel } from "@/components/messages/SharedMediaPanel";
+import { DirectCallPanel } from "@/components/messages/DirectCallPanel";
 import type { PendingAttachment } from "@/components/messages/MessageComposerWithAttachments";
 import type { MessageAttachmentData } from "@/components/messages/MessageAttachment";
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
@@ -114,11 +117,15 @@ function RequestThread({
   const otherName = request.requester_id === currentUserId
     ? request.helper_name || "Your helper"
     : request.requester_name || "Request owner";
+  useEffect(() => {
+    void fetch("/api/messages/requests/" + request.id + "/read", { method: "POST", headers: authHeaders() }).catch(() => {});
+  }, [request.id]);
   return (
     <section className="flex h-full min-h-0 flex-col">
       <ConversationHeader title={request.title} subtitle={`${request.status} · ${otherName}`} onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
         <RequestContextCard request={request} currentUserId={currentUserId} onOpen={onOpenRequest} />
+        <RequestLiveMapCard request={request as RequestConversation & { lat: number; lng: number }} currentUserId={currentUserId} />
         <InAppChat
           requestId={request.id}
           currentUserId={currentUserId}
@@ -148,6 +155,8 @@ export default function MessagesPage() {
   const [showReport, setShowReport] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [showSharedMedia, setShowSharedMedia] = useState(false);
+  const [callMode, setCallMode] = useState<"voice" | "video" | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -259,6 +268,10 @@ export default function MessagesPage() {
       if (event.type === "ws_reconnected") {
         void loadInbox();
         if (activeMode === "direct" && selectedDirectId) void loadDirectMessages(selectedDirectId).catch(() => {});
+        return;
+      }
+      if (event.type === "chat_message" || event.type === "request_updated" || event.type === "REQUEST_ACCEPTED" || event.type === "HELPER_MOVING" || event.type === "HELPER_ARRIVED" || event.type === "REQUEST_COMPLETED" || event.type === "hub_message" || event.type === "message_read") {
+        void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(() => {});
         return;
       }
       if (event.type !== "direct_message") return;
@@ -383,6 +396,8 @@ export default function MessagesPage() {
   const showThread = Boolean(activeRecipient || selectedRequest || selectedHub);
 
   function clearSelection() {
+    setCallMode(null);
+    setShowSharedMedia(false);
     setSelectedDirectId(null);
     setNewRecipient(null);
     setDirectMessages([]);
@@ -440,6 +455,8 @@ export default function MessagesPage() {
       working={working}
       onBack={clearSelection}
       onInfo={() => setShowInfo(true)}
+      onVoiceCall={() => setCallMode("voice")}
+      onVideoCall={() => setCallMode("video")}
       onBodyChange={setBody}
       onAttachmentsChange={setAttachments}
       onSend={() => void sendDirectMessage()}
@@ -476,6 +493,7 @@ export default function MessagesPage() {
                 active={realtimeState === "connected"}
                 sharedAttachments={sharedAttachments}
                 onViewProfile={() => navigate(`/helper/${activeRecipient.id}`)}
+                onViewSharedMedia={() => setShowSharedMedia(true)}
                 onBlock={() => void blockRecipient()}
                 onReport={() => setShowReport(true)}
                 onClose={() => setShowInfo(false)}
@@ -501,6 +519,20 @@ export default function MessagesPage() {
             ) : null
           }
         />
+      )}
+      {activeRecipient && selectedDirectId && currentUser && (
+        <DirectCallPanel
+          conversationId={selectedDirectId}
+          selfUserId={currentUser.id}
+          peerId={activeRecipient.id}
+          peerName={activeRecipient.name}
+          autoStartMode={callMode}
+          onAutoStartConsumed={() => setCallMode(null)}
+          onClose={() => setCallMode(null)}
+        />
+      )}
+      {showSharedMedia && activeRecipient && selectedDirectId && (
+        <SharedMediaPanel conversationId={selectedDirectId} onClose={() => setShowSharedMedia(false)} />
       )}
       {showReport && activeRecipient && selectedDirectId && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
