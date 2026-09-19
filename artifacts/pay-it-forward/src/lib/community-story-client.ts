@@ -46,7 +46,7 @@ export async function shareStory(storyId: number): Promise<void> {
 }
 
 export async function getStoryMetrics(storyId: number): Promise<StoryMetrics> {
-  return requestJson(`/api/community/stories/${storyId}/interactions`);
+  return requestJson(`/api/community/stories/${storyId}/metrics`);
 }
 
 export async function sendStoryContextMessage(input: {
