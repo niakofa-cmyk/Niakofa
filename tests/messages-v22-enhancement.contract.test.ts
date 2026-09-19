@@ -52,3 +52,20 @@ test("Messages v22 exposes authenticated Direct RTC", () => {
   assert.match(ws, /direct_call_accept/);
   assert.match(ws, /direct_call_end/);
 });
+
+
+test("Messages v23 has Messenger-style People + message search and global call listener", () => {
+  const route = read("artifacts/api-server/src/routes/direct-messages.ts");
+  const list = read("artifacts/pay-it-forward/src/components/messages/ConversationList.tsx");
+  const page = read("artifacts/pay-it-forward/src/pages/messages.tsx");
+  const panel = read("artifacts/pay-it-forward/src/components/messages/DirectCallPanel.tsx");
+  assert.match(route, /\/messages\/direct\/search/);
+  assert.match(route, /ilike\(directMessagesTable\.body/);
+  assert.match(list, /People/);
+  assert.match(list, /Messages/);
+  assert.match(list, /MessageAvatar/);
+  assert.match(page, /messageSearchResults/);
+  assert.match(page, /listenGlobally/);
+  assert.match(panel, /listenGlobally/);
+  assert.match(panel, /resolvePeer/);
+});
