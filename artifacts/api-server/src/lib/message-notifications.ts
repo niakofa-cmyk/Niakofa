@@ -1,4 +1,3 @@
-import { eq } from "drizzle-orm";
 import { db, messageNotificationsTable } from "@workspace/db";
 import { sendToUser } from "./ws-hub";
 
