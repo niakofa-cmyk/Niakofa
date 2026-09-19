@@ -12,7 +12,6 @@ import { generalApiLimiter } from "../middlewares/rate-limit";
 import { isValidLiveKitUrl } from "../lib/circleMediaConfig";
 import { logger } from "../lib/logger";
 import { createMessageNotification } from "../lib/message-notifications";
-import { sendToUser } from "../lib/ws-hub";
 
 const router = Router();
 const CALL_ID_RE = /^[A-Za-z0-9_-]{12,80}$/;
@@ -90,10 +89,6 @@ router.post(
         body: "Open Messages to answer the call.",
         actionUrl: `/messages/direct/${conversationId}`,
         metadata: { conversation_id: conversationId, call_id: callId, mode },
-      });
-      sendToUser(otherUserId, {
-        type: "direct_call_invite",
-        payload: { conversation_id: conversationId, from_user_id: userId, call_id: callId, mode },
       });
       return res.json({
         media_url: livekitUrl,
