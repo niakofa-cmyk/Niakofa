@@ -7,30 +7,65 @@ import { generalApiLimiter } from "../middlewares/rate-limit";
 const router = Router();
 
 /**
- * Counts unread Direct conversations using the same read_at semantics as the
- * Direct inbox. Requests and Hubs intentionally remain zero until those
- * products have durable per-user read state.
+ * Authoritative unread summary for the unified Messages inbox.
  *
- * This endpoint must use requireApproved: unread badges expose account-scoped
- * messaging state and should honor token revocation and approval boundaries.
+ * Direct keeps its existing message-level read_at semantics. Request and Hub
+ * use message_read_states cursors so unread state survives refreshes, tabs,
+ * reconnects, and devices without pretending that a conversation has only
+ * one reader.
  */
 router.get("/messages/unread-summary", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
-  const result = await db.execute<{ c: number | string }>(sql`
-    SELECT COUNT(DISTINCT message_rows.conversation_id)::int AS c
-    FROM direct_messages AS message_rows
-    INNER JOIN direct_conversation_members AS members
-      ON members.conversation_id = message_rows.conversation_id
+
+  const directResult = await db.execute<{ c: number | string }>(sql`
+    SELECT COUNT(DISTINCT m.conversation_id)::int AS c
+    FROM direct_messages m
+    INNER JOIN direct_conversation_members members
+      ON members.conversation_id = m.conversation_id
      AND members.user_id = ${userId}
-    INNER JOIN direct_conversations AS conversations
-      ON conversations.id = message_rows.conversation_id
-     AND conversations.status = 'active'
-    WHERE message_rows.sender_id <> ${userId}
-      AND message_rows.read_at IS NULL
+    INNER JOIN direct_conversations c
+      ON c.id = m.conversation_id
+     AND c.status = 'active'
+    WHERE m.sender_id <> ${userId}
+      AND m.read_at IS NULL
   `);
-  const direct = Number(result.rows[0]?.c ?? 0);
-  const requests = 0;
-  const hubs = 0;
+
+  const requestResult = await db.execute<{ c: number | string }>(sql`
+    SELECT COUNT(DISTINCT m.request_id)::int AS c
+    FROM chat_messages m
+    INNER JOIN help_requests r ON r.id = m.request_id
+    LEFT JOIN message_read_states rs
+      ON rs.user_id = ${userId}
+     AND rs.conversation_kind = 'request'
+     AND rs.conversation_id = m.request_id
+    WHERE (r.requester_id = ${userId} OR r.helper_id = ${userId})
+      AND m.sender_id <> ${userId}
+      AND m.id > COALESCE(rs.last_read_message_id, 0)
+  `);
+
+  const hubResult = await db.execute<{ c: number | string }>(sql`
+    SELECT COUNT(DISTINCT m.conversation_id)::int AS c
+    FROM diaspora_hub_messages m
+    INNER JOIN diaspora_hub_conversations c
+      ON c.id = m.conversation_id
+    LEFT JOIN message_read_states rs
+      ON rs.user_id = ${userId}
+     AND rs.conversation_kind = 'hub'
+     AND rs.conversation_id = m.conversation_id
+    WHERE m.sender_user_id <> ${userId}
+      AND m.id > COALESCE(rs.last_read_message_id, 0)
+      AND EXISTS (
+        SELECT 1
+        FROM diaspora_hub_memberships hm
+        WHERE hm.user_id = ${userId}
+          AND hm.hub_id IN (c.hub_a_id, c.hub_b_id)
+          AND COALESCE(hm.status, 'active') = 'active'
+      )
+  `);
+
+  const direct = Number(directResult.rows[0]?.c ?? 0);
+  const requests = Number(requestResult.rows[0]?.c ?? 0);
+  const hubs = Number(hubResult.rows[0]?.c ?? 0);
 
   res.setHeader("Cache-Control", "no-store");
   return res.json({
@@ -38,8 +73,7 @@ router.get("/messages/unread-summary", requireAuth, requireApproved, generalApiL
     direct,
     requests,
     hubs,
-    derived: true,
-    note: "Request and Hub unread counts require durable per-user read state.",
+    derived: false,
   });
 });
 
