@@ -492,15 +492,33 @@ export default function MessagesPage() {
     }
   }
 
-  function startDirectWithUser(user: DirectUser) {
+  function startDirectWithUser(user: DirectUser, initialBody = "") {
     setNewRecipient(user);
     setSelectedDirectId(null);
     setDirectMessages([]);
+    setBody(initialBody);
     setSearch("");
     setSearchResults([]);
     setShowInfo(false);
     navigate(messagesPath("direct"));
   }
+
+  useEffect(() => {
+    const recipientId = Number.parseInt(queryValue(location, "recipientId") ?? "", 10);
+    if (!Number.isSafeInteger(recipientId) || recipientId <= 0 || activeRecipient?.id === recipientId) return;
+    let cancelled = false;
+    const loadRecipient = async () => {
+      const response = await fetch(`/api/messages/direct/users?q=${recipientId}`, { headers: authHeaders() });
+      if (!response.ok || cancelled) return;
+      const data = await response.json() as { users?: DirectUser[] };
+      const recipient = data.users?.find((user) => user.id === recipientId);
+      if (recipient && !cancelled) {
+        startDirectWithUser(recipient, `Replying to ${recipient.name}'s Story`);
+      }
+    };
+    void loadRecipient();
+    return () => { cancelled = true; };
+  }, [activeRecipient?.id, location]);
 
   function selectSearchMessage(conversationId: number, messageId: number) {
     setThreadSearchOpen(false);

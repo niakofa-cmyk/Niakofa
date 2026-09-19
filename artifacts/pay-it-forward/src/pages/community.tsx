@@ -19,6 +19,7 @@ import { CommunityMessageEntry } from "@/components/CommunityMessageEntry";
 import RequestsCenter from "@/components/RequestsCenter";
 import { CommunitySpiralsTab } from "@/components/CommunitySpiralsTab";
 import HubCommunityFeedPanel from "@/components/community/HubCommunityFeedPanel";
+import { CommunityStoryRail } from "@/components/community/CommunityStoryRail";
 
 interface GratitudePost {
   id: number;
@@ -1003,6 +1004,7 @@ export default function CommunityScreen() {
         {/* FEED TAB */}
         {tab === "feed" && (
           <div className="space-y-4">
+            <CommunityStoryRail hubId={hubContextId} />
             {hubContextId !== null && <HubCommunityFeedPanel hubId={hubContextId} />}
             <CommunityMessageEntry />
             {/* Diaspora Globe pointer — the Globe now lives in Diaspora only,
