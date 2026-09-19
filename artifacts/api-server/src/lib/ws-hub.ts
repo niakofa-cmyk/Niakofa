@@ -17,8 +17,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage, Server as HttpServer } from "http";
 import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
-import { db, chatMessagesTable, requestsTable, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, chatMessagesTable, requestsTable, usersTable, directConversationMembersTable, directConversationsTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 import { buildWsOriginAllowlist, isWsOriginAllowed } from "./ws-origin";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
@@ -59,6 +59,10 @@ export type WsEventType =
   | "report_reviewed"
   | "chat_message"
    | "direct_message"
+  | "message_read"
+  | "direct_call_invite"
+  | "direct_call_accept"
+  | "direct_call_end"
   | "typing"
   | "help_chain_joined"
   | "help_chain_left"
@@ -758,6 +762,60 @@ export function initWebSocketServer(server: HttpServer): WebSocketServer {
               logger.warn({ err, senderId, request_id }, "WS chat_message: DB error");
             }
           })();
+          return;
+        }
+
+        if (
+          (msg as { type: string }).type === "direct_call_invite" ||
+          (msg as { type: string }).type === "direct_call_accept" ||
+          (msg as { type: string }).type === "direct_call_end"
+        ) {
+          if (registeredUserId === null || !authenticatedSockets.has(socket)) return;
+          const eventType = (msg as { type: string }).type as "direct_call_invite" | "direct_call_accept" | "direct_call_end";
+          const payload = msg.payload as {
+            conversation_id?: number;
+            to_user_id?: number;
+            call_id?: string;
+            mode?: "voice" | "video";
+          };
+          const conversationId = Number(payload.conversation_id);
+          const toUserId = Number(payload.to_user_id);
+          const callId = typeof payload.call_id === "string" ? payload.call_id : "";
+          const mode = payload.mode === "video" ? "video" : payload.mode === "voice" ? "voice" : null;
+          if (!Number.isSafeInteger(conversationId) || conversationId <= 0 || !Number.isSafeInteger(toUserId) || toUserId <= 0 || !/^[A-Za-z0-9_-]{12,80}$/.test(callId) || !mode || toUserId === registeredUserId) return;
+
+          const [conversation] = await db.select({ id: directConversationsTable.id })
+            .from(directConversationsTable)
+            .innerJoin(
+              directConversationMembersTable,
+              eq(directConversationMembersTable.conversation_id, directConversationsTable.id),
+            )
+            .where(and(
+              eq(directConversationsTable.id, conversationId),
+              eq(directConversationsTable.status, "active"),
+              eq(directConversationMembersTable.user_id, registeredUserId),
+            ))
+            .limit(1);
+          if (!conversation) return;
+
+          const [targetMember] = await db.select({ user_id: directConversationMembersTable.user_id })
+            .from(directConversationMembersTable)
+            .where(and(
+              eq(directConversationMembersTable.conversation_id, conversationId),
+              eq(directConversationMembersTable.user_id, toUserId),
+            ))
+            .limit(1);
+          if (!targetMember) return;
+
+          sendToUser(toUserId, {
+            type: eventType,
+            payload: {
+              conversation_id: conversationId,
+              from_user_id: registeredUserId,
+              call_id: callId,
+              mode,
+            },
+          });
           return;
         }
 
