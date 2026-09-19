@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Building2, Loader2, Search, Users } from "lucide-react";
+import { Building2, Loader2, Search } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { MessageAvatar } from "./MessageAvatar";
 
