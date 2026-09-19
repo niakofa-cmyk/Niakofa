@@ -35,7 +35,9 @@ Implemented in main:
    - Existing Community/Hub/Spirals navigation remains intact.
 
 6. **Production evidence**
-   - Durable notification rows provide a server-side audit trail for actual direct messages, calls initiated through the call-token boundary, and Hub messages.
+   - Durable notification rows provide delivery evidence for direct messages, call-token creation and Hub messages.
+   - `message_activity_events` now records successful Direct sends (including attachment counts), call-token issuance, Hub sends, Story creation, and Community post/media/comment/reaction actions.
+   - Admin evidence endpoint: `GET /api/messages/activity-evidence` (last 30 days + recent 100 events).
    - This is evidence infrastructure, not a claim that those interactions have already occurred in production.
 
 7. **Device certification**
