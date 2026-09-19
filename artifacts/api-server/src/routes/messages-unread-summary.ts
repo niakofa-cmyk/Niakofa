@@ -59,7 +59,7 @@ router.get("/messages/unread-summary", requireAuth, requireApproved, generalApiL
         FROM hub_memberships hm
         WHERE hm.user_id = ${userId}
           AND hm.hub_id IN (c.hub_a_id, c.hub_b_id)
-          AND COALESCE(hm.status, 'active') = 'active'
+          AND hm.status = 'approved'
       )
   `);
 
