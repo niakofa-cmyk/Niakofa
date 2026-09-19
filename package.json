@@ -3,9 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "packageManager": "pnpm@11.22.0",
-  "engines": {
-    "node": ">=22"
-  },
+  "engines": { "node": ">=22" },
   "scripts": {
     "preinstall": "echo ok",
     "postinstall": "node node_modules/esbuild/install.js 2>/dev/null || true && (test -e artifacts/api-server/node_modules/esbuild || ln -sf \"$PWD/node_modules/esbuild\" artifacts/api-server/node_modules/esbuild) 2>/dev/null || true",
@@ -45,19 +43,18 @@
   "private": true,
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@playwright/test": "^1.55.0",
     "eslint": "^9.0.0",
     "eslint-plugin-react-hooks": "^7.1.0",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "prettier": "^3.8.3",
+    "@playwright/test": "^1.55.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.0.0"
   },
   "dependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^26.3.0",
-    "autoprefixer": "^10.6.1",
     "livekit-client": "^2.22.0",
     "livekit-server-sdk": "^2.18.0",
     "pnpm": "^11.22.0",
