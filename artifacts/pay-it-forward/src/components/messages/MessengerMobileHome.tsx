@@ -1,4 +1,4 @@
-import { ArrowLeft, MessageCircle, Menu, PenSquare, Search, UsersRound } from "lucide-react";
+import { ArrowLeft, Bell, MessageCircle, Menu, PenSquare, Search, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { UnifiedConversation } from "@/lib/unifiedConversation";
 import { MessageAvatar } from "./MessageAvatar";
@@ -34,6 +34,8 @@ export function MessengerMobileHome({
   onCompose,
   onNotifications,
   onMenu,
+  onBackToApp,
+  onCommunity,
 }: {
   items: UnifiedConversation[];
   people: Person[];
