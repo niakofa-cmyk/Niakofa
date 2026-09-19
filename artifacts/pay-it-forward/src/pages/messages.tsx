@@ -11,7 +11,7 @@ import { ConversationThread } from "@/components/messages/ConversationThread";
 import { ConversationHeader } from "@/components/messages/ConversationHeader";
 import { MessageTypeTabs } from "@/components/messages/MessageTypeTabs";
 import { MessagesShell } from "@/components/messages/MessagesShell";
-import { MessagesSidebar } from "@/components/messages/MessagesSidebar";
+import { NewMessageRail } from "@/components/messages/NewMessageRail";
 import { NewMessageDialog } from "@/components/messages/NewMessageDialog";
 import { RequestContextCard } from "@/components/messages/RequestContextCard";
 import { RequestLiveMapCard } from "@/components/messages/RequestLiveMapCard";
@@ -565,8 +565,7 @@ export default function MessagesPage() {
           showThread={showThread}
           showInfo={showInfo}
           mobileTabs={<MessageTypeTabs active={activeMode} counts={unreadCounts} onChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} />}
-          sidebar={<MessagesSidebar activeMode={activeMode} counts={unreadCounts} people={searchResults} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} onCompose={() => setShowNewMessage(true)} onSelectPerson={startDirectWithUser} />}
-          list={<ConversationList items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} messageSearchResults={messageSearchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} onSelectMessageSearch={selectSearchMessage} onCompose={() => setShowNewMessage(true)} emptyLabel="No conversations yet." />}
+          list={<ConversationList activeMode={activeMode} counts={unreadCounts} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} messageSearchResults={messageSearchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} onSelectMessageSearch={selectSearchMessage} onCompose={() => setShowNewMessage(true)} emptyLabel="No conversations yet." />}
           thread={thread}
           info={
             activeRecipient ? (
@@ -600,6 +599,13 @@ export default function MessagesPage() {
                 onClose={() => setShowInfo(false)}
               />
             ) : null
+          }
+          rightRail={
+            <NewMessageRail
+              onSelectPerson={(person) => { startDirectWithUser(person); }}
+              onSelectHub={(sourceId, targetId) => { clearSelection(); navigate(messagesPath("hub", { sourceHub: sourceId, targetHub: targetId })); }}
+              onSelectCommunity={() => navigate("/community")}
+            />
           }
         />
       )}
