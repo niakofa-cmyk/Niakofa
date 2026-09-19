@@ -9,7 +9,6 @@ type CallPhase = "idle" | "outgoing" | "incoming" | "connecting" | "connected";
 
 type Props = {
   conversationId: number;
-  selfUserId: number;
   peerId: number;
   peerName: string;
   autoStartMode?: CallMode | null;
@@ -178,6 +177,8 @@ export function DirectCallPanel({
       setPhase("idle");
     });
   }, [callId, cleanupRoom, connect, conversationId, mode, remoteUserId]);
+
+  if (phase === "idle" && !autoStartMode) return null;
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label={mode === "video" ? "Video call" : "Voice call"}>
