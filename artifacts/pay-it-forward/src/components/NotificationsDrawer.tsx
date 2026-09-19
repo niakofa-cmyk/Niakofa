@@ -1,6 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
+import { authHeaders } from "@/lib/auth";
+import { wsSubscribe } from "@/lib/wsClient";
 import {
   X, Bell, BellOff, ShieldAlert, CheckCircle2,
   Heart, MapPin, DollarSign, Calendar, Users, MessageCircle, Radio,
@@ -67,7 +69,7 @@ const fallbackCfg: TypeCfg = {
 
 // ── NotificationItem ───────────────────────────────────────────────────────────
 
-function NotificationItem({ n, index, onNavigate }: { n: LiveNotification; index: number; onNavigate?: (url: string) => void }) {
+function NotificationItem({ n, index, onNavigate, onRead }: { n: LiveNotification; index: number; onNavigate?: (url: string) => void; onRead?: (id: string) => void }) {
   const cfg = TYPE_CFG[n.type] ?? fallbackCfg;
   const isClickable = !!n.actionUrl;
 
@@ -79,7 +81,7 @@ function NotificationItem({ n, index, onNavigate }: { n: LiveNotification; index
       exit={{ x: -40, opacity: 0 }}
       transition={{ type: "spring", damping: 24, stiffness: 260, delay: Math.min(index * 0.03, 0.25) }}
       className={`flex items-start gap-3 p-3.5 rounded-2xl border ${cfg.ringBg} ${cfg.cardBorder} ${isClickable ? "cursor-pointer active:scale-[0.98] transition-transform" : ""}`}
-      onClick={isClickable && onNavigate ? () => onNavigate(n.actionUrl!) : undefined}
+      onClick={() => { if (onRead) void onRead(n.id); if (isClickable && onNavigate) onNavigate(n.actionUrl!); }}
     >
       <div className={`w-9 h-9 rounded-full ${cfg.ringBg} border ${cfg.cardBorder} flex items-center justify-center shrink-0 mt-0.5`}>
         <cfg.Icon className={`w-[18px] h-[18px] ${cfg.iconColor}`} />
@@ -104,15 +106,59 @@ function NotificationItem({ n, index, onNavigate }: { n: LiveNotification; index
 interface Props {
   open: boolean;
   onClose: () => void;
-  notifications: LiveNotification[];
+  notifications?: LiveNotification[];
 }
 
-export function NotificationsDrawer({ open, onClose, notifications }: Props) {
+export function NotificationsDrawer({ open, onClose, notifications: seedNotifications = [] }: Props) {
   const [, setLocation] = useLocation();
+  const [notifications, setNotifications] = useState<LiveNotification[]>(seedNotifications);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const response = await fetch("/api/messages/notifications", { headers: authHeaders() });
+      if (!response.ok) return;
+      const data = await response.json() as { unread_count?: number; notifications?: Array<Omit<LiveNotification, "time"> & { time?: string | null }> };
+      const mapped = (data.notifications ?? []).map((item) => ({
+        ...item,
+        time: item.time ? new Date(item.time) : new Date(),
+      }));
+      setNotifications(mapped);
+      setUnreadCount(Number(data.unread_count ?? 0));
+    } catch {
+      // The durable notification center is additive; legacy seed data remains available if the API is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadNotifications();
+  }, [open, loadNotifications]);
+
+  useEffect(() => wsSubscribe((event) => {
+    if (event.type !== "message_notification") return;
+    const payload = event.payload as Omit<LiveNotification, "time"> & { time?: string | null };
+    setNotifications((current) => [{
+      ...payload,
+      time: payload.time ? new Date(payload.time) : new Date(),
+    }, ...current].slice(0, 50));
+    setUnreadCount((count) => count + 1);
+  }), []);
   const handleNavigate = useCallback((url: string) => {
     onClose();
     setLocation(url);
   }, [onClose, setLocation]);
+
+  const markRead = useCallback(async (id: string) => {
+    setNotifications((current) => current.map((item) => item.id === id ? { ...item } : item));
+    await fetch(`/api/messages/notifications/${encodeURIComponent(id)}/read`, { method: "POST", headers: authHeaders() }).catch(() => {});
+    setUnreadCount((count) => Math.max(0, count - 1));
+  }, []);
+
+  const markAllRead = useCallback(async () => {
+    await fetch("/api/messages/notifications/read-all", { method: "POST", headers: authHeaders() }).catch(() => {});
+    setUnreadCount(0);
+  }, []);
 
   return (
     <AnimatePresence>
@@ -163,6 +209,13 @@ export function NotificationsDrawer({ open, onClose, notifications }: Props) {
                   </span>
                 )}
               </div>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button type="button" onClick={() => void markAllRead()} className="text-[10px] font-bold text-primary">
+                    Mark all read
+                  </button>
+                )}
+              </div>
               <button
                 onClick={onClose}
                 aria-label="Close alerts"
@@ -190,7 +243,7 @@ export function NotificationsDrawer({ open, onClose, notifications }: Props) {
               ) : (
                 <AnimatePresence initial={false}>
                   {notifications.map((n, i) => (
-                    <NotificationItem key={n.id} n={n} index={i} onNavigate={handleNavigate} />
+                    <NotificationItem key={n.id} n={n} index={i} onNavigate={handleNavigate} onRead={markRead} />
                   ))}
                 </AnimatePresence>
               )}
