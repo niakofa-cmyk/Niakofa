@@ -56,7 +56,7 @@ router.get("/messages/unread-summary", requireAuth, requireApproved, generalApiL
       AND m.id > COALESCE(rs.last_read_message_id, 0)
       AND EXISTS (
         SELECT 1
-        FROM diaspora_hub_memberships hm
+        FROM hub_memberships hm
         WHERE hm.user_id = ${userId}
           AND hm.hub_id IN (c.hub_a_id, c.hub_b_id)
           AND COALESCE(hm.status, 'active') = 'active'
