@@ -108,6 +108,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const selectedAuthor = viewerIndex === null ? null : authors[viewerIndex] ?? null;
   const selectedFrame = selectedAuthor?.frames[mediaIndex] ?? null;
   const selectedStory = selectedFrame?.story ?? null;
+  const selectedStoryId = selectedStory?.id ?? null;
   const selectedMedia = selectedFrame?.media ?? null;
   const selectedFileUrl = files[0] ? URL.createObjectURL(files[0]) : null;
   const filter = effect === "warmth"
@@ -240,9 +241,9 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   }, [mention, tool]);
 
   useEffect(() => {
-    if (!selectedStory) return;
-    void fetch(`/api/community/stories/${selectedStory.id}/view`, { method: "POST", headers: authHeaders() }).catch(() => {});
-  }, [selectedStory?.id]);
+    if (selectedStoryId === null) return;
+    void fetch(`/api/community/stories/${selectedStoryId}/view`, { method: "POST", headers: authHeaders() }).catch(() => {});
+  }, [selectedStoryId]);
 
   const advanceFrame = (direction: 1 | -1) => {
     if (!selectedAuthor || viewerIndex === null) return;
