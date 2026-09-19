@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Building2, Loader2, MessageCircle, Radio, Send, Users } from "lucide-react";
+import { Building2, ExternalLink, Loader2, MessageCircle, Radio, Send, Users } from "lucide-react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { hubDisplayName, resolveHubReference } from "@/lib/diaspora/DiasporaHubContext";
@@ -46,6 +46,13 @@ type Props = {
   initialConversation?: string | null;
 };
 
+type HubFeed = {
+  hub: { id: number; name: string; display_name: string; region: string; country_code: string | null; subdivision_code: string | null };
+  counts: { members: number; open_requests: number; gratitude: number; posts: number };
+  actions: { community: string; messages: string; spirals: string };
+  context: { membership_is_not_inferred_from_location: true; spirals_are_curated: true };
+};
+
 async function readError(response: Response, fallback: string): Promise<string> {
   const data = await response.json().catch(() => ({})) as { error?: string };
   return data.error || fallback;
@@ -79,6 +86,7 @@ export default function HubMessagesPanel({
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [realtime, setRealtime] = useState(true);
+  const [hubFeed, setHubFeed] = useState<HubFeed | null>(null);
 
   const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null;
   const availableTargets = useMemo(
@@ -155,6 +163,26 @@ export default function HubMessagesPanel({
     const next = availableTargets[0];
     setTargetId(next ? String(next.id) : "");
   }, [availableTargets, sourceId, targetId]);
+
+  useEffect(() => {
+    if (!sourceId) {
+      setHubFeed(null);
+      return;
+    }
+    let cancelled = false;
+    void fetch(`/api/community/hubs/${sourceId}/feed`, { headers: authHeaders() })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Hub context is unavailable.");
+        return response.json() as Promise<HubFeed>;
+      })
+      .then((data) => {
+        if (!cancelled) setHubFeed(data);
+      })
+      .catch(() => {
+        if (!cancelled) setHubFeed(null);
+      });
+    return () => { cancelled = true; };
+  }, [sourceId]);
 
   useEffect(() => {
     const unsubscribe = wsSubscribe((event: WsEvent) => {
@@ -321,6 +349,30 @@ export default function HubMessagesPanel({
               </select>
             </label>
           </div>
+          {hubFeed && (
+            <div className="mt-3 rounded-2xl border border-primary/15 bg-primary/[0.04] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-primary">Hub context</p>
+                  <p className="mt-1 truncate text-sm font-black">{hubFeed.hub.display_name}</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">{hubFeed.hub.region} · {hubFeed.counts.members} members · {hubFeed.counts.open_requests} open requests</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <a href={hubFeed.actions.community} className="inline-flex min-h-9 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[10px] font-black hover:bg-muted">
+                    Community <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <a href={hubFeed.actions.spirals} className="inline-flex min-h-9 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[10px] font-black hover:bg-muted">
+                    Spirals <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[9px] font-bold text-muted-foreground">
+                <span className="rounded-full bg-background px-2 py-1">{hubFeed.counts.posts} posts</span>
+                <span className="rounded-full bg-background px-2 py-1">{hubFeed.counts.gratitude} gratitude</span>
+                <span className="rounded-full bg-background px-2 py-1">Curated Spirals</span>
+              </div>
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-between gap-3">
             <p className="text-[11px] text-muted-foreground">Membership authorizes the source identity; target membership is not required to receive or contact a Hub.</p>
             <button type="button" onClick={() => void openConversation()} disabled={working || !sourceId || !targetId}
