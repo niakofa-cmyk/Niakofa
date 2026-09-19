@@ -38,23 +38,31 @@ export function MessengerAskNia({ query, onClose }: { query: string; onClose: ()
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-        for (const frame of frames) {
+        const consumeFrame = (frame: string) => {
           const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
-          if (!dataLine) continue;
+          if (!dataLine) return;
+          const payload = dataLine.slice(5).trim();
+          if (!payload || payload === "[DONE]") return;
           try {
-            const event = JSON.parse(dataLine.slice(5).trim()) as { type?: string; text?: string; message?: string };
+            const event = JSON.parse(payload) as { type?: string; text?: string; message?: string };
             if (event.type === "delta" && event.text) setAnswer((current) => current + event.text);
             if (event.type === "error") setError(event.message ?? "Nia could not answer.");
           } catch {
-            // Ignore partial/non-JSON SSE frames.
+            // Ignore malformed SSE frames without interrupting the streamed answer.
           }
-        }
+        };
+
+      while (true) {
+        const { done, value } = await reader.read();
+          if (done) {
+            buffer += decoder.decode();
+            if (buffer.trim()) consumeFrame(buffer);
+            break;
+          }
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+          frames.forEach(consumeFrame);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nia could not answer.");

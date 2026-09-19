@@ -15,7 +15,6 @@ import { Link, useLocation } from "wouter";
 import { X, ChevronDown, LogOut } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { NotificationsDrawer } from "./NotificationsDrawer";
-import { SEED_NOTIFICATIONS } from "./BottomNav";
 import { getAppNavItems } from "@/lib/appNavItems";
 
 export function MobileNavDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -137,7 +136,6 @@ export function MobileNavDrawer({ open, onClose }: { open: boolean; onClose: () 
       <NotificationsDrawer
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
-        notifications={SEED_NOTIFICATIONS}
       />
     </>
   );

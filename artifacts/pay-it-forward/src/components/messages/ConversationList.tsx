@@ -3,6 +3,7 @@ import type { UnifiedConversation } from "@/lib/unifiedConversation";
 import { ConversationListItem } from "./ConversationListItem";
 import { MessageAvatar } from "./MessageAvatar";
 import { MessageTypeTabs } from "./MessageTypeTabs";
+import { MessengerAskNia } from "./MessengerAskNia";
 import type { MessageMode } from "@/lib/messageRoutes";
 
 type Person = { id: number; name: string; avatar_url: string | null };
@@ -58,6 +59,11 @@ export function ConversationList({
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <input data-testid="input-message-search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search conversations…" aria-label="Search messages or people" className="min-h-11 w-full rounded-2xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
         </label>
+        {search.trim().length >= 2 && (
+          <div className="mt-2">
+            <MessengerAskNia query={search} onClose={() => onSearchChange("")} />
+          </div>
+        )}
         {(searchResults.length > 0 || messageSearchResults.length > 0) && (
           <div className="mt-2 max-h-80 space-y-3 overflow-y-auto rounded-2xl border border-border bg-background p-2">
             {searchResults.length > 0 && onSelectPerson && (

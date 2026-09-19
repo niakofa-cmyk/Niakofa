@@ -15,7 +15,6 @@ import { Link, useLocation } from "wouter";
 import { ChevronDown, LogOut } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { NotificationsDrawer } from "./NotificationsDrawer";
-import { SEED_NOTIFICATIONS } from "./BottomNav";
 import { getAppNavItems } from "@/lib/appNavItems";
 
 export function DesktopSidebar() {
@@ -110,7 +109,6 @@ export function DesktopSidebar() {
       <NotificationsDrawer
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
-        notifications={SEED_NOTIFICATIONS}
       />
     </>
   );

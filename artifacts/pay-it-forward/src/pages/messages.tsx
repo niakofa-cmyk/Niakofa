@@ -611,10 +611,7 @@ export default function MessagesPage() {
                 onBackToApp={() => navigate("/")}
                 onCommunity={() => navigate("/community")}
               />
-              <NotificationsDrawer
-                open={showMobileNotifications}
-                onClose={() => setShowMobileNotifications(false)}
-              />
+              <NotificationsDrawer open={showMobileNotifications} onClose={() => setShowMobileNotifications(false)} />
               <MobileNavDrawer
                 open={showMobileMenu}
                 onClose={() => setShowMobileMenu(false)}

@@ -44,37 +44,6 @@ const HELPER_TABS: Tab[] = [
   { path: SPIRALS_PATHS.discovery, icon: Radio,      labelKey: "nav.circles" },
 ];
 
-export const SEED_NOTIFICATIONS: LiveNotification[] = [
-  {
-    id: "seed-1",
-    type: "emergency",
-    title: "🚨 Emergency nearby",
-    body: "Sarah Chen needs immediate help — power out, needs phone charge",
-    time: new Date(Date.now() - 2 * 60 * 1000),
-  },
-  {
-    id: "seed-2",
-    type: "completed",
-    title: "✅ Request completed",
-    body: "You helped DeShawn Moore with grocery pickup",
-    time: new Date(Date.now() - 60 * 60 * 1000),
-  },
-  {
-    id: "seed-3",
-    type: "pledge",
-    title: "💙 Niakofa received",
-    body: "Maria G. contributed $5 toward your help last week",
-    time: new Date(Date.now() - 3 * 60 * 60 * 1000),
-  },
-  {
-    id: "seed-4",
-    type: "nearby",
-    title: "📍 New request 0.3 mi away",
-    body: "Airport drop-off at 6am — transportation needed",
-    time: new Date(Date.now() - 5 * 60 * 60 * 1000),
-  },
-];
-
 export function BottomNav() {
   const { t } = useTranslation();
   const [location] = useLocation();
@@ -92,14 +61,12 @@ export function BottomNav() {
   const activeJobHref = activeRequestId ? `/request/${activeRequestId}` : "/";
   const [notifOpen, setNotifOpen] = useState(false);
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
-  const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
   const [unreadCount, setUnreadCount] = useState(0);
   const seenIds = useRef(new Set<string>());
 
   const addNotif = (n: LiveNotification) => {
     if (seenIds.current.has(n.id)) return;
     seenIds.current.add(n.id);
-    setNotifications(prev => [n, ...prev].slice(0, 50));
     setUnreadCount(prev => Math.min(prev + 1, 99));
   };
 
@@ -417,7 +384,7 @@ export function BottomNav() {
           </button>
         </div>
 
-        <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
+        <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
         <MobileNavDrawer open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)} />
       </>
     );
@@ -531,7 +498,7 @@ export function BottomNav() {
         </button>
       </nav>
 
-      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
+      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
       <MobileNavDrawer open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)} />
     </>
   );

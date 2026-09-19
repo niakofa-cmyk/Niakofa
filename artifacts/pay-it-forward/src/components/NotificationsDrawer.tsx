@@ -106,12 +106,11 @@ function NotificationItem({ n, index, onNavigate, onRead }: { n: LiveNotificatio
 interface Props {
   open: boolean;
   onClose: () => void;
-  notifications?: LiveNotification[];
 }
 
-export function NotificationsDrawer({ open, onClose, notifications: seedNotifications = [] }: Props) {
+export function NotificationsDrawer({ open, onClose }: Props) {
   const [, setLocation] = useLocation();
-  const [notifications, setNotifications] = useState<LiveNotification[]>(seedNotifications);
+  const [notifications, setNotifications] = useState<LiveNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const loadNotifications = useCallback(async () => {
@@ -126,7 +125,7 @@ export function NotificationsDrawer({ open, onClose, notifications: seedNotifica
       setNotifications(mapped);
       setUnreadCount(Number(data.unread_count ?? 0));
     } catch {
-      // The durable notification center is additive; legacy seed data remains available if the API is unavailable.
+      // Keep the drawer empty when the durable notification API is unavailable.
     }
   }, []);
 
