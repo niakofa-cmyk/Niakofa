@@ -78,7 +78,8 @@ jest.unstable_mockModule("@workspace/db", () => {
   };
 });
 
-jest.unstable_mockModule("drizzle-orm", () => ({\n  ...drizzleOrmActual,
+jest.unstable_mockModule("drizzle-orm", () => ({
+  ...drizzleOrmActual,
   eq: jest.fn(),
   and: jest.fn(),
   or: jest.fn(),
