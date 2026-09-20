@@ -11,10 +11,3 @@ export function createUnifiedEvent<T extends Record<string, unknown>>(input: Omi
 export async function persistUnifiedEvent(event: UnifiedEventEnvelope): Promise<void> {
   await db.execute(sql`INSERT INTO realtime_event_log (event_id,event_type,occurred_at,actor_id,conversation_kind,conversation_id,entity_id,audience_user_ids,idempotency_key,payload) VALUES (${event.event_id}::uuid,${event.event_type},${event.occurred_at}::timestamptz,${event.actor_id},${event.conversation_kind},${event.conversation_id},${event.entity_id},${JSON.stringify(event.audience_user_ids ?? [])}::integer[],${event.event_id},${JSON.stringify(event.payload)}::jsonb) ON CONFLICT (event_id) DO NOTHING`);
 }
-/** Durable-first publication boundary. Socket delivery is best-effort; replay recovers disconnects. */
-export async function publishUnifiedEvent(userIds:number[], event:UnifiedEventEnvelope):Promise<void> {
-  await persistUnifiedEvent(event);
-  for (const userId of [...new Set(userIds)].filter(id => Number.isInteger(id) && id > 0)) {
-    sendToUser(userId,{ type:"unified_event" as WsEvent["type"], payload:event });
-  }
-}
