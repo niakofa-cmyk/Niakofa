@@ -249,7 +249,7 @@ async function replayDurableEvents(): Promise<void> {
     for (const raw of data.events ?? []) {
       const event = raw as UnifiedRealtimeEvent;
       if (!event.event_id || state.seen.includes(event.event_id)) continue;
-      handlers.forEach((handler) => handler({ type: "unified_event", payload: event }));
+      handlers.forEach((handler) => handler({ type: "unified_event", payload: { ...event, replayed: true } }));
       rememberDurableEvent(state, event.event_id);
     }
   } catch {
