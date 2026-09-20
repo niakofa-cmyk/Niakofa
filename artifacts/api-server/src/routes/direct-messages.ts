@@ -9,6 +9,7 @@ import {
   directMessageBlocksTable,
   directMessageReportsTable,
   directMessagesTable,
+  mediaAssetsTable,
   usersTable,
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
@@ -18,6 +19,10 @@ import { sendToUser, sendToUsers } from "../lib/ws-hub";
 import { createMessageNotification } from "../lib/message-notifications";
 import { hasExpectedSignature } from "../lib/media-validation";
 import { communityStoriesTable } from "@workspace/db";
+import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
+import { mediaProcessingQueue } from "../lib/queue";
+import { logger } from "../lib/logger";
 
 const router = Router();
 const MAX_BODY_LENGTH = 4_000;
@@ -568,6 +573,13 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
   }
   const sender = await getApprovedUser(senderId);
   const storedKeys: string[] = [];
+  if (isMediaPlatformV21Enabled() && !mediaProcessingQueue) {
+    return res.status(503).json({
+      error: "Media processing is not available. Please try again shortly.",
+      error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+    });
+  }
+  const mediaAssetJobs: Array<{ id: number; mediaType: string }> = [];
 
   try {
     const result = await db.transaction(async (tx) => {
@@ -578,8 +590,40 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
           const storageKey = `direct-messages/${conversationId}/${randomUUID()}.${extension}`;
           await putAsset(storageKey, attachment.buffer, attachment.mimeType);
           storedKeys.push(storageKey);
+           let mediaAssetId: number | null = null;
+           if (isMediaPlatformV21Enabled()) {
+             const [asset] = await tx.insert(mediaAssetsTable).values({
+               owner_user_id: senderId,
+               context_kind: "direct",
+               context_id: conversationId,
+               media_type: attachment.mimeType.startsWith("image/")
+                 ? "photo"
+                 : attachment.mimeType.startsWith("video/")
+                 ? "video"
+                 : attachment.mimeType.startsWith("audio/")
+                 ? "audio"
+                 : "document",
+               mime_type: attachment.mimeType,
+               original_name: attachment.originalName,
+               original_key: storageKey,
+               byte_size: attachment.buffer.length,
+             }).returning({ id: mediaAssetsTable.id });
+             mediaAssetId = asset?.id ?? null;
+             if (!mediaAssetId) throw new Error("Media asset could not be created.");
+             mediaAssetJobs.push({
+               id: mediaAssetId,
+               mediaType: attachment.mimeType.startsWith("image/")
+                 ? "photo"
+                 : attachment.mimeType.startsWith("video/")
+                 ? "video"
+                 : attachment.mimeType.startsWith("audio/")
+                 ? "audio"
+                 : "document",
+             });
+           }
           const [row] = await tx.insert(directMessageAttachmentsTable).values({
             message_id: messageId,
+             media_asset_id: mediaAssetId,
             attachment_type: "file",
             storage_key: storageKey,
             mime_type: attachment.mimeType,
@@ -694,6 +738,18 @@ router.post("/messages/direct", requireAuth, requireApproved, generalApiLimiter,
       return createMessage(conversation.id);
     });
 
+    if (mediaAssetJobs.length) {
+      try {
+        await Promise.all(mediaAssetJobs.map((job) => enqueueMediaAssetProcessing(job.id, job.mediaType)));
+      } catch (error) {
+        logger.error({ err: error, conversationId: result.conversationId }, "media-processing: direct-message jobs could not be published");
+        return res.status(503).json({
+          error: "Message saved, but media processing is temporarily unavailable. Please refresh shortly.",
+          error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+        });
+      }
+    }
+
     const message = {
       ...result.message,
       sender_name: sender?.name ?? "Unknown",
@@ -739,18 +795,20 @@ router.get("/messages/direct/attachments/:attachmentId", requireAuth, requireApp
   const [row] = await db
     .select({
       storage_key: directMessageAttachmentsTable.storage_key,
+      variant_key: mediaAssetsTable.variant_key,
       conversation_id: directConversationsTable.id,
     })
     .from(directMessageAttachmentsTable)
     .innerJoin(directMessagesTable, eq(directMessagesTable.id, directMessageAttachmentsTable.message_id))
     .innerJoin(directConversationsTable, eq(directConversationsTable.id, directMessagesTable.conversation_id))
+    .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, directMessageAttachmentsTable.media_asset_id))
     .where(eq(directMessageAttachmentsTable.id, attachmentId))
     .limit(1);
   if (!row || !(await isConversationMember(userId, row.conversation_id))) {
     return res.status(404).json({ error: "Attachment not found." });
   }
 
-  return streamOrRedirectAsset(row.storage_key, res);
+  return streamOrRedirectAsset(row.variant_key ?? row.storage_key, res);
 });
 
 router.post("/messages/direct/conversations/:conversationId/read", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {

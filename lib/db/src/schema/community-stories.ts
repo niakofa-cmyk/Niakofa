@@ -13,6 +13,7 @@ import {
 import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
 import { diasporaHubsTable } from "./diaspora-hubs";
+import { mediaAssetsTable } from "./media-assets";
 
 /**
  * Ephemeral social Stories/Moments belong to Community, not Messages.
@@ -39,6 +40,7 @@ export const communityStoriesTable = pgTable("community_stories", {
 export const communityStoryMediaTable = pgTable("community_story_media", {
   id: serial("id").primaryKey(),
   story_id: integer("story_id").notNull().references(() => communityStoriesTable.id, { onDelete: "cascade" }),
+  media_asset_id: integer("media_asset_id").references(() => mediaAssetsTable.id, { onDelete: "set null" }),
   storage_key: text("storage_key").notNull(),
   thumbnail_storage_key: text("thumbnail_storage_key"),
   media_type: text("media_type").notNull(),

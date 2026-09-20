@@ -1,0 +1,59 @@
+import {
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
+
+export const mediaAssetsTable = pgTable("media_assets", {
+  id: serial("id").primaryKey(),
+  owner_user_id: integer("owner_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  context_kind: text("context_kind").notNull(),
+  context_id: integer("context_id").notNull(),
+  media_type: text("media_type").notNull(),
+  mime_type: text("mime_type").notNull(),
+  original_name: text("original_name"),
+  original_key: text("original_key").notNull(),
+  thumbnail_key: text("thumbnail_key"),
+  variant_key: text("variant_key"),
+  byte_size: integer("byte_size").notNull(),
+  width: integer("width"),
+  height: integer("height"),
+  duration_ms: integer("duration_ms"),
+  status: text("status").notNull().default("pending"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  failure_reason: text("failure_reason"),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("media_assets_original_key_uidx").on(table.original_key),
+  index("media_assets_context_idx").on(table.context_kind, table.context_id, table.created_at),
+  index("media_assets_owner_idx").on(table.owner_user_id, table.created_at),
+  index("media_assets_status_idx").on(table.status, table.updated_at),
+]);
+
+export const mediaProcessingJobsTable = pgTable("media_processing_jobs", {
+  id: serial("id").primaryKey(),
+  media_asset_id: integer("media_asset_id").notNull().references(() => mediaAssetsTable.id, { onDelete: "cascade" }),
+  job_type: text("job_type").notNull(),
+  status: text("status").notNull().default("queued"),
+  attempts: integer("attempts").notNull().default(0),
+  error: text("error"),
+  started_at: timestamp("started_at", { withTimezone: true }),
+  completed_at: timestamp("completed_at", { withTimezone: true }),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("media_processing_jobs_asset_type_uidx").on(table.media_asset_id, table.job_type),
+  index("media_processing_jobs_queue_idx").on(table.status, table.created_at),
+]);
+
+export type MediaAsset = typeof mediaAssetsTable.$inferSelect;
+export type NewMediaAsset = typeof mediaAssetsTable.$inferInsert;
+export type MediaProcessingJob = typeof mediaProcessingJobsTable.$inferSelect;
+export type MediaJobType = "probe" | "thumbnail" | "transcode" | "audio_mix";

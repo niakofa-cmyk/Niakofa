@@ -67,3 +67,4 @@ export * from "./diaspora-research";
 export * from "./geography";
 export * from "./audio-circles";
 export * from "./circle-recordings";
+export * from "./media-assets";

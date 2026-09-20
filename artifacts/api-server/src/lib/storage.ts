@@ -24,7 +24,7 @@
  *   streamOrRedirectAsset(key, res) → Promise<void>  (stream from S3 or sendFile locally)
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
 import path from "path";
 import type { Response } from "express";
 import { logger } from "./logger";
@@ -176,6 +176,26 @@ export async function assetExists(key: string): Promise<boolean> {
     }
   }
   return existsSync(path.resolve(UPLOADS_BASE, key));
+}
+
+/** Read an asset for trusted server-side processing. Callers must already
+ * have authorization for the database row that owns the key. */
+export async function getAssetBuffer(key: string): Promise<Buffer> {
+  if (isCloudStorageConfigured()) {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    const result = await client.send(new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"]!,
+      Key: key,
+    }));
+    if (!result.Body) throw new Error(`Storage object is empty: ${key}`);
+    const chunks: Buffer[] = [];
+    for await (const chunk of result.Body as AsyncIterable<Uint8Array>) {
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+  return fs.readFile(path.resolve(UPLOADS_BASE, key));
 }
 
 // ─── streamOrRedirectAsset ────────────────────────────────────────────────────

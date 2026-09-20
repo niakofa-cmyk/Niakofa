@@ -260,6 +260,7 @@ export const QUEUE = {
   REQUEST_CLEANUP:       "niakofa-request-cleanup",
   NOTIFICATIONS:         "niakofa-notifications",
   WALLET_CASHOUTS:       "niakofa-wallet-cashouts",
+  MEDIA_PROCESSING:      "niakofa-media-processing",
 } as const;
 
 // ── Default job options ───────────────────────────────────────────────────────
@@ -295,6 +296,10 @@ export const cleanupQueue       = createQueue(QUEUE.REQUEST_CLEANUP);
 export const notificationQueue  = createQueue(QUEUE.NOTIFICATIONS, {
   attempts: 3,
   backoff: { type: "fixed", delay: 30_000 },
+});
+export const mediaProcessingQueue = createQueue(QUEUE.MEDIA_PROCESSING, {
+  attempts: 4,
+  backoff: { type: "exponential", delay: 15_000 },
 });
 
 // ── Convenience: enqueue a payout retry ──────────────────────────────────────

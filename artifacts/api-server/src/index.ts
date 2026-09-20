@@ -29,6 +29,10 @@ import { startGriotTranscriptionWorker } from "./workers/griot-transcription-wor
 import { startNiaPushQueueWorker } from "./workers/nia-push-queue-worker";
 import { startPoolMinimumsWorker } from "./workers/pool-minimums-worker";
 import { startDailyKindnessWorker } from "./workers/daily-kindness-worker";
+import { startMediaProcessWorker } from "./workers/media-process-worker";
+import { isMediaPlatformV21Enabled } from "./lib/media-platform";
+import { isCloudStorageConfigured } from "./lib/storage";
+import { verifyMediaToolchain } from "./lib/mediaCapabilities";
 import { startPoolSettlementStatusWorker } from "./lib/advance-pool-settlement-status";
 import { processRecurringRequests } from "./routes/recurring";
 import { db } from "@workspace/db";
@@ -66,6 +70,16 @@ if (
 // appear healthy while payout, cashout, notification, and reconciliation jobs
 // are silently disabled.
 assertProductionRedisReady();
+if (isMediaPlatformV21Enabled()) {
+  if (process.env.NODE_ENV === "production" && !isCloudStorageConfigured()) {
+    throw new Error(
+      "MEDIA_PLATFORM_V21 requires cloud object storage in production. " +
+      "Set STORAGE_BUCKET before enabling universal media.",
+    );
+  }
+  await verifyMediaToolchain();
+  logger.info("media-processing: FFmpeg/FFprobe toolchain verified");
+}
 if (process.env.NODE_ENV === "production") {
   // Do not advertise a healthy production API until Redis has completed its
   // initial handshake. Workers then inherit a known-good connection and can
@@ -144,6 +158,9 @@ server.listen(port, async () => {
   registerWorker("payment-reminder",    "Payment Reminder",       false);
   registerWorker("community-story-cleanup", "Community Story Cleanup", false);
   registerWorker("pool-settlement",     "Pool Settlement Status",  false);
+  if (isMediaPlatformV21Enabled()) {
+    registerWorker("media-processing", "Universal Media Processing", true);
+  }
 
   if (isRedisConfigured()) {
     logger.info("redis: configured — starting BullMQ workers");
@@ -158,6 +175,11 @@ server.listen(port, async () => {
       logger.error({ err }, "cleanup-worker: failed to start");
       workerFailed("cleanup-worker", "Cleanup Worker", err);
     });
+     if (isMediaPlatformV21Enabled()) {
+       const mediaWorker = startMediaProcessWorker();
+       if (mediaWorker) workerStarted("media-processing", "Universal Media Processing", true);
+       else workerNoRedis("media-processing", "Universal Media Processing");
+     }
     logger.info("bullmq: all workers started");
   } else {
     logger.warn(
@@ -169,6 +191,9 @@ server.listen(port, async () => {
     workerNoRedis("notification-worker", "Notification Worker");
     workerNoRedis("pledge-worker",       "Pledge Reconciliation");
     workerNoRedis("cleanup-worker",      "Cleanup Worker");
+    if (isMediaPlatformV21Enabled()) {
+      workerNoRedis("media-processing", "Universal Media Processing");
+    }
     startScheduledPaymentReminder(); workerStarted("payment-reminder", "Payment Reminder", false);
     // Cleanup (request expiry + pre-expiry nudges) was previously BullMQ-only —
     // with no Redis configured it silently never ran at all. This interval-based

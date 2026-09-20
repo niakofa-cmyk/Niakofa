@@ -7,6 +7,7 @@ import {
   db,
   diasporaHubsTable,
   hubMembershipsTable,
+  mediaAssetsTable,
   usersTable,
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
@@ -18,6 +19,10 @@ import { broadcast } from "../lib/ws-hub";
 import { createMessageNotification } from "../lib/message-notifications";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
+import { mediaProcessingQueue } from "../lib/queue";
+import { logger } from "../lib/logger";
 
 const router = Router();
 const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
@@ -230,6 +235,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   const moderation = moderatePostText(caption ?? "");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const storedKeys: string[] = [];
+  if (isMediaPlatformV21Enabled() && !mediaProcessingQueue) {
+    return res.status(503).json({
+      error: "Media processing is not available. Please try again shortly.",
+      error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+    });
+  }
   try {
     const decodedMedia = await Promise.all(parsed.data.media.map(async (item) => {
       const decoded = decodeMediaDataUrl(item.data_url);
@@ -282,14 +293,34 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         expires_at: expiresAt,
       }).returning();
       if (!story) throw new Error("Story could not be saved.");
+      const mediaAssetJobs: Array<{ id: number; mediaType: string }> = [];
       for (const item of decodedMedia) {
         const decoded = item.decoded!;
         const extension = decoded.mimeType.split("/")[1].replace("jpeg", "jpg");
         const storageKey = `community-stories/${story.id}/${randomUUID()}.${extension}`;
         await putAsset(storageKey, decoded.buffer, decoded.mimeType);
         storedKeys.push(storageKey);
+        let mediaAssetId: number | null = null;
+        if (isMediaPlatformV21Enabled()) {
+          const [asset] = await tx.insert(mediaAssetsTable).values({
+            owner_user_id: userId,
+            context_kind: "story",
+            context_id: story.id,
+            media_type: item.media_type,
+            mime_type: decoded.mimeType,
+            original_key: storageKey,
+            byte_size: decoded.buffer.length,
+            width: item.metadata?.width ?? null,
+            height: item.metadata?.height ?? null,
+            duration_ms: item.metadata?.duration_ms ?? null,
+          }).returning({ id: mediaAssetsTable.id });
+          mediaAssetId = asset?.id ?? null;
+          if (!mediaAssetId) throw new Error("Media asset could not be created.");
+          mediaAssetJobs.push({ id: mediaAssetId, mediaType: item.media_type });
+        }
         await tx.insert(communityStoryMediaTable).values({
           story_id: story.id,
+          media_asset_id: mediaAssetId,
           storage_key: storageKey,
           media_type: item.media_type,
           mime_type: decoded.mimeType,
@@ -311,10 +342,23 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           z_index: element.z_index,
         })));
       }
-      return story;
+      return { story, mediaAssetJobs };
     });
-    if (result.status === "published") {
-      broadcast({ type: "community_story_created", payload: { story_id: result.id, author_user_id: userId, audience: result.audience, hub_id: result.hub_id } });
+    if (result.mediaAssetJobs.length) {
+      try {
+        await Promise.all(result.mediaAssetJobs.map((job) => enqueueMediaAssetProcessing(job.id, job.mediaType)));
+      } catch (error) {
+        // Keep the original object and durable pending rows. A retry/reconciler
+        // can republish deterministic BullMQ job ids without losing the upload.
+        logger.error({ err: error, storyId: result.story.id }, "media-processing: Story jobs could not be published");
+        return res.status(503).json({
+          error: "Story saved, but media processing is temporarily unavailable. Please refresh shortly.",
+          error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+        });
+      }
+    }
+    if (result.story.status === "published") {
+      broadcast({ type: "community_story_created", payload: { story_id: result.story.id, author_user_id: userId, audience: result.story.audience, hub_id: result.story.hub_id } });
       const [author] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
       await Promise.all(mentionUsers.filter((user) => user.id !== userId).map((user) => createMessageNotification({
         userId: user.id,
@@ -322,11 +366,11 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         type: "story_mention",
         title: "You were mentioned in a Story",
         body: `${author?.name ?? "A neighbor"} mentioned you in a Community Story.`,
-        actionUrl: `/community?storyId=${result.id}`,
-        metadata: { story_id: result.id, mention_user_id: user.id },
+         actionUrl: `/community?storyId=${result.story.id}`,
+         metadata: { story_id: result.story.id, mention_user_id: user.id },
       })));
     }
-    return res.status(201).json({ story: { id: result.id, status: result.status, expires_at: result.expires_at.toISOString() } });
+    return res.status(201).json({ story: { id: result.story.id, status: result.story.status, expires_at: result.story.expires_at.toISOString() } });
   } catch (error) {
     await Promise.all(storedKeys.map((key) => deleteAsset(key)));
     throw error;
@@ -338,6 +382,8 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
   if (!mediaId) return res.status(400).json({ error: "Invalid Story media id." });
   const [row] = await db.select({
     storage_key: communityStoryMediaTable.storage_key,
+    media_asset_id: communityStoryMediaTable.media_asset_id,
+    variant_key: mediaAssetsTable.variant_key,
     author_user_id: communityStoriesTable.author_user_id,
     hub_id: communityStoriesTable.hub_id,
     community_id: communityStoriesTable.community_id,
@@ -346,12 +392,13 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
     expires_at: communityStoriesTable.expires_at,
   }).from(communityStoryMediaTable)
     .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id))
+    .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
     .where(eq(communityStoryMediaTable.id, mediaId))
     .limit(1);
   if (!row || row.status !== "published" || row.expires_at <= new Date() || !(await viewerCanReadStory(req.authenticatedUserId!, row))) {
     return res.status(404).json({ error: "Story media not found." });
   }
-  return streamOrRedirectAsset(row.storage_key, res);
+  return streamOrRedirectAsset(row.variant_key ?? row.storage_key, res);
 });
 
 router.delete("/community/stories/:id", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
