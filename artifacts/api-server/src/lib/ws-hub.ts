@@ -298,6 +298,33 @@ export function getPresence(userId: number): PresenceStatus {
   return presenceMap.get(userId) ?? "OFFLINE";
 }
 
+const LEGACY_TO_UNIFIED: Record<string, import("./unified-events.js").UnifiedEventType | null> = {
+  direct_message:"message.created", chat_message:"message.created", hub_message:"message.created", message_read:"message.read",
+  typing:"typing.started", presence_update:"presence.changed", request_updated:"request.updated",
+  REQUEST_CREATED:"request.created", REQUEST_ACCEPTED:"request.status_changed", REQUEST_CANCELLED:"request.status_changed",
+  community_story_created:"story.created", community_story_reaction:"story.reaction", community_story_shared:"story.shared",
+  direct_call_invite:"call.invited", direct_call_accept:"call.accepted", direct_call_end:"call.ended",
+  nia_message:"nia.message", nia_typing:"nia.typing", nia_status:"nia.status",
+};
+async function persistUnifiedEventFromWs(event: WsEvent, audienceUserIds: number[] = []): Promise<void> {
+  const source = event.type === "unified_event" ? event.payload as { event_type?: import("./unified-events.js").UnifiedEventType; event_id?: string; occurred_at?: string; payload?: unknown; actor_id?: number|null; conversation_id?: number|null; conversation_kind?: string|null; entity_id?: string|null; audience_user_ids?: number[] } : null;
+  const eventType = source?.event_type ?? LEGACY_TO_UNIFIED[event.type] ?? null;
+  if (!eventType) return;
+  const payload = (source?.payload ?? event.payload ?? {}) as Record<string, unknown>;
+  const audience = audienceUserIds.length ? audienceUserIds : (source?.audience_user_ids ?? [payload.user_id,payload.recipient_id,payload.requester_id,payload.helper_id,payload.to_user_id].filter((id): id is number => typeof id === "number"));
+  await persistUnifiedEvent({
+    event_id: source?.event_id ?? randomUUID(),
+    event_type: eventType,
+    occurred_at: source?.occurred_at ?? new Date().toISOString(),
+    actor_id: source?.actor_id ?? (typeof payload.sender_id === "number" ? payload.sender_id : typeof payload.user_id === "number" ? payload.user_id : null),
+    conversation_id: source?.conversation_id ?? (typeof payload.conversation_id === "number" ? payload.conversation_id : typeof payload.request_id === "number" ? payload.request_id : typeof payload.hub_id === "number" ? payload.hub_id : null),
+    conversation_kind: source?.conversation_kind ?? (event.type === "hub_message" ? "hub" : event.type === "chat_message" ? "request" : event.type === "direct_message" || event.type === "message_read" ? "direct" : null),
+    entity_id: source?.entity_id ?? (payload.id != null ? String(payload.id) : null),
+    audience_user_ids: audience,
+    payload,
+  });
+}
+
 // ── Per-user socket registry ──────────────────────────────────────────────────
 const userSockets = new Map<number, Set<WebSocket>>();
 
