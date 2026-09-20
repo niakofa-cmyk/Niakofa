@@ -83,7 +83,8 @@ jest.unstable_mockModule("@workspace/db", () => ({
   civicInvoicesTable:      { id: "id", civic_need_id: "civic_need_id", amount: "amount", status: "status", due_date: "due_date" },
 }));
 
-jest.unstable_mockModule("drizzle-orm", () => ({\n  ...drizzleOrmActual,
+jest.unstable_mockModule("drizzle-orm", () => ({
+  ...drizzleOrmActual,
   eq:    jest.fn((a: unknown, b: unknown) => ({ _eq: [a, b] })),
   and:   jest.fn((...args: unknown[]) => ({ _and: args })),
   or:    jest.fn((...args: unknown[]) => ({ _or: args })),
