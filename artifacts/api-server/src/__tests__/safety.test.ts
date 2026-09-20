@@ -69,6 +69,9 @@ jest.unstable_mockModule("@workspace/db", () => {
     poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
     communitiesTable: { id: "id", name: "name", target_reserve_amount: "target_reserve_amount", created_at: "created_at" },
     ratingsTable: { id: "id", request_id: "request_id", rater_id: "rater_id", ratee_id: "ratee_id", stars: "stars", role: "role" },
+    mediaAssetsTable: { id: "id", owner_user_id: "owner_user_id", context_kind: "context_kind", context_id: "context_id", media_type: "media_type", mime_type: "mime_type", original_key: "original_key", status: "status", byte_size: "byte_size" },
+    mediaProcessingJobsTable: { id: "id", media_asset_id: "media_asset_id", job_type: "job_type", status: "status" },
+    requestMessageAttachmentsTable: { id: "id", message_id: "message_id", media_asset_id: "media_asset_id", storage_key: "storage_key", mime_type: "mime_type" },
     scheduledPaymentsTable: { id: "id", user_id: "user_id" },
     walletCashoutsTable: { id: "id", user_id: "user_id" },
   };
@@ -112,6 +115,7 @@ jest.unstable_mockModule("../lib/queue.js", () => ({
   getRedisConnection: jest.fn().mockReturnValue(null),
   isRedisConfigured: jest.fn().mockReturnValue(false),
   getRedisUrlStatus: jest.fn().mockReturnValue("not_set"),
+  mediaProcessingQueue: null,
 }));
 
 jest.unstable_mockModule("../routes/push.js", () => ({
