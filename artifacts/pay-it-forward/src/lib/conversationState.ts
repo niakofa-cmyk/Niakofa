@@ -144,8 +144,9 @@ export function applyUnifiedRealtimeEvent(
   event: UnifiedRealtimeEvent,
   currentUserId: number | null = null,
 ): { state: ConversationState; accepted: boolean } {
-  const kind = event.conversation_kind as ConversationKind | null;
-  if (!kind || event.conversation_id === null) return { state, accepted: true };
+  const kind = event.conversation_kind;
+  if (kind !== "direct" && kind !== "request" && kind !== "hub") return { state, accepted: true };
+  if (event.conversation_id === null) return { state, accepted: true };
   const payload = event.payload;
   const mappedType: ConversationEvent["type"] =
     event.event_type === "message.read" || event.event_type === "conversation.read"

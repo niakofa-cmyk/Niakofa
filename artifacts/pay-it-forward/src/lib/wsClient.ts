@@ -108,6 +108,8 @@ export type WsEventType =
 export interface WsEvent {
   type: WsEventType;
   payload: unknown;
+  event_id?: string;
+  occurred_at?: string;
 }
 
 export type WsConnectionState = "idle" | "connecting" | "connected" | "reconnecting" | "disconnected";
@@ -138,6 +140,7 @@ let attempt = 0;
 let registeredUserId: number | null = null;
 let registeredToken: string | null = null;
 let started = false;
+let replayInFlight = false;
 
 let connectionSnapshot: WsConnectionSnapshot = {
   state: "idle",
@@ -215,9 +218,19 @@ function connect(): void {
   socket.onmessage = (msg) => {
     try {
       const event = JSON.parse(msg.data as string) as WsEvent;
-      handlers.forEach((handler) => handler(event));
       const unified = normalizeRealtimeEvent(event);
-      if (unified) handlers.forEach((handler) => handler({ type: "unified_event", payload: unified }));
+      if (unified && registeredUserId !== null) {
+        const durableState = loadDurableRealtimeState(registeredUserId);
+        rememberDurableEvent(durableState, unified.event_id, registeredUserId);
+      }
+      handlers.forEach((handler) => handler(event));
+      // New servers send a canonical unified_event immediately after the
+      // legacy frame, both carrying the same durable ID. Older servers do not
+      // send that frame, so synthesize one only for legacy frames that lack
+      // the durable metadata.
+      if (unified && event.type !== "unified_event" && !event.event_id) {
+        handlers.forEach((handler) => handler({ type: "unified_event", payload: unified }));
+      }
     } catch {
       // Ignore malformed server frames.
     }
@@ -237,24 +250,43 @@ function connect(): void {
 
 
 async function replayDurableEvents(): Promise<void> {
-  if (typeof window === "undefined" || !registeredUserId) return;
+  if (typeof window === "undefined" || !registeredUserId || replayInFlight) return;
+  replayInFlight = true;
   const state = loadDurableRealtimeState(registeredUserId);
   const token = registeredToken ?? getToken();
-  if (!token) return;
+  if (!token) {
+    replayInFlight = false;
+    return;
+  }
   try {
-    const query = state.cursor ? `?after=${encodeURIComponent(state.cursor)}&limit=250` : "?limit=250";
-    const response = await fetch(`/api/realtime/events${query}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok) return;
-    const data = await response.json() as { events?: unknown[] };
+    let cursor = state.cursor;
     let cursorState = state;
-    for (const raw of data.events ?? []) {
-      const event = raw as UnifiedRealtimeEvent;
-      if (!event.event_id || state.seen.includes(event.event_id)) continue;
-      handlers.forEach((handler) => handler({ type: "unified_event", payload: { ...event, replayed: true } }));
-      cursorState = rememberDurableEvent(cursorState, event.event_id, registeredUserId);
+    for (let page = 0; page < 20; page += 1) {
+      const query = cursor ? `?after=${encodeURIComponent(cursor)}&limit=250` : "?limit=250";
+      const response = await fetch(`/api/realtime/events${query}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) break;
+      const data = await response.json() as { events?: unknown[]; next_cursor?: string | null; has_more?: boolean };
+      const events = Array.isArray(data.events) ? data.events : [];
+      if (!events.length) break;
+      for (const raw of events) {
+        const event = raw as UnifiedRealtimeEvent;
+        if (!event.event_id) continue;
+        if (!cursorState.seen.includes(event.event_id)) {
+          handlers.forEach((handler) => handler({ type: "unified_event", payload: { ...event, replayed: true } }));
+        }
+        cursorState = rememberDurableEvent(cursorState, event.event_id, registeredUserId);
+      }
+      cursor = typeof data.next_cursor === "string"
+        ? data.next_cursor
+        : typeof events.at(-1) === "object" && events.at(-1) && "event_id" in (events.at(-1) as Record<string, unknown>)
+          ? String((events.at(-1) as Record<string, unknown>).event_id)
+          : null;
+      if (!data.has_more || !cursor) break;
     }
   } catch {
     // Replay is recovery; live WebSocket delivery remains authoritative while connected.
+  } finally {
+    replayInFlight = false;
   }
 }
 
@@ -268,6 +300,7 @@ export function wsRegister(userId: number): void {
   registeredUserId = userId;
   registeredToken = getToken();
   send({ type: "register", payload: { userId, token: registeredToken } });
+  if (socket?.readyState === WebSocket.OPEN) void replayDurableEvents();
 }
 
 export function wsUnregister(): void {

@@ -14,14 +14,19 @@
  *   - Hub metrics for admin health endpoint
  */
 import { WebSocketServer, WebSocket } from "ws";
-import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server as HttpServer } from "http";
 import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
 import { db, chatMessagesTable, requestsTable, usersTable, directConversationMembersTable, directConversationsTable, directMessageBlocksTable } from "@workspace/db";
 import { and, eq, or } from "drizzle-orm";
 import { buildWsOriginAllowlist, isWsOriginAllowed } from "./ws-origin";
-import { persistUnifiedEvent } from "./unified-events.js";
+import {
+  createUnifiedEvent,
+  persistUnifiedEvent,
+  UNIFIED_EVENT_TYPES,
+  type UnifiedEventEnvelope,
+  type UnifiedEventType,
+} from "./unified-events.js";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
 export type WsEventType =
@@ -148,6 +153,9 @@ export type WsEventType =
 export interface WsEvent {
   type: WsEventType;
   payload: unknown;
+  /** Shared durable identity attached to live legacy frames. */
+  event_id?: string;
+  occurred_at?: string;
 }
 
 // ── Typed Payload Interfaces ──────────────────────────────────────────────────
@@ -298,31 +306,96 @@ export function getPresence(userId: number): PresenceStatus {
   return presenceMap.get(userId) ?? "OFFLINE";
 }
 
-const LEGACY_TO_UNIFIED: Record<string, import("./unified-events.js").UnifiedEventType | null> = {
+const LEGACY_TO_UNIFIED: Record<string, UnifiedEventType | null> = {
   direct_message:"message.created", chat_message:"message.created", hub_message:"message.created", message_read:"message.read",
-  typing:"typing.started", presence_update:"presence.changed", request_updated:"request.updated",
+  message_notification:"notification.created", typing:"typing.started", presence_update:"presence.changed", request_updated:"request.updated",
   REQUEST_CREATED:"request.created", REQUEST_ACCEPTED:"request.status_changed", REQUEST_CANCELLED:"request.status_changed",
-  community_story_created:"story.created", community_story_reaction:"story.reaction", community_story_shared:"story.shared",
+  community_story_created:"story.created", community_story_expired:"story.expired", community_story_viewed:"story.viewed",
+  community_story_reaction:"story.reaction", community_story_shared:"story.shared",
   direct_call_invite:"call.invited", direct_call_accept:"call.accepted", direct_call_end:"call.ended",
   nia_message:"nia.message", nia_typing:"nia.typing", nia_status:"nia.status",
 };
-async function persistUnifiedEventFromWs(event: WsEvent, audienceUserIds: number[] = []): Promise<void> {
-  const source = event.type === "unified_event" ? event.payload as { event_type?: import("./unified-events.js").UnifiedEventType; event_id?: string; occurred_at?: string; payload?: unknown; actor_id?: number|null; conversation_id?: number|null; conversation_kind?: string|null; entity_id?: string|null; audience_user_ids?: number[] } : null;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUnifiedEventType(value: unknown): value is UnifiedEventType {
+  return typeof value === "string" && (UNIFIED_EVENT_TYPES as readonly string[]).includes(value);
+}
+
+function createUnifiedEventFromWs(
+  event: WsEvent,
+  audienceUserIds: number[] = [],
+): UnifiedEventEnvelope | null {
+  const source = event.type === "unified_event" && isRecord(event.payload) ? event.payload : null;
   const eventType = source?.event_type ?? LEGACY_TO_UNIFIED[event.type] ?? null;
-  if (!eventType) return;
-  const payload = (source?.payload ?? event.payload ?? {}) as Record<string, unknown>;
-  const audience = audienceUserIds.length ? audienceUserIds : (source?.audience_user_ids ?? [payload.user_id,payload.recipient_id,payload.requester_id,payload.helper_id,payload.to_user_id].filter((id): id is number => typeof id === "number"));
-  await persistUnifiedEvent({
-    event_id: source?.event_id ?? randomUUID(),
+  if (!isUnifiedEventType(eventType)) return null;
+
+  const rawPayload = source?.payload ?? event.payload;
+  const payload = isRecord(rawPayload) ? rawPayload : {};
+  const message = isRecord(payload.message) ? payload.message : null;
+  // Keep the legacy envelope intact while making canonical message fields
+  // available to every consumer (direct, request, and Hub use different
+  // nested message shapes today).
+  const canonicalPayload = message ? { ...payload, ...message } : payload;
+  const audience = [...new Set(
+    audienceUserIds.length
+      ? audienceUserIds
+      : (Array.isArray(source?.audience_user_ids) ? source.audience_user_ids : [
+          canonicalPayload.user_id,
+          canonicalPayload.recipient_id,
+          canonicalPayload.requester_id,
+          canonicalPayload.helper_id,
+          canonicalPayload.to_user_id,
+        ]).filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0),
+  )];
+  const kind = (typeof source?.conversation_kind === "string" ? source.conversation_kind : null)
+    ?? (typeof canonicalPayload.kind === "string" ? canonicalPayload.kind : null)
+    ?? (event.type === "hub_message" ? "hub"
+      : event.type === "chat_message" ? "request"
+        : event.type === "direct_message" ? "direct" : null);
+  const conversationId = typeof source?.conversation_id === "number"
+    ? source.conversation_id
+    : typeof canonicalPayload.conversation_id === "number"
+      ? canonicalPayload.conversation_id
+      : typeof canonicalPayload.request_id === "number"
+        ? canonicalPayload.request_id
+        : typeof canonicalPayload.hub_id === "number" ? canonicalPayload.hub_id : null;
+  const actorId = typeof source?.actor_id === "number"
+    ? source.actor_id
+    : typeof canonicalPayload.sender_id === "number"
+      ? canonicalPayload.sender_id
+      : typeof canonicalPayload.sender_user_id === "number"
+        ? canonicalPayload.sender_user_id
+        : typeof canonicalPayload.user_id === "number" ? canonicalPayload.user_id : null;
+
+  return createUnifiedEvent({
+    event_id: typeof source?.event_id === "string" ? source.event_id : event.event_id,
+    occurred_at: typeof source?.occurred_at === "string" ? source.occurred_at : event.occurred_at,
     event_type: eventType,
-    occurred_at: source?.occurred_at ?? new Date().toISOString(),
-    actor_id: source?.actor_id ?? (typeof payload.sender_id === "number" ? payload.sender_id : typeof payload.user_id === "number" ? payload.user_id : null),
-    conversation_id: source?.conversation_id ?? (typeof payload.conversation_id === "number" ? payload.conversation_id : typeof payload.request_id === "number" ? payload.request_id : typeof payload.hub_id === "number" ? payload.hub_id : null),
-    conversation_kind: source?.conversation_kind ?? (event.type === "hub_message" ? "hub" : event.type === "chat_message" ? "request" : event.type === "direct_message" || event.type === "message_read" ? "direct" : null),
-    entity_id: source?.entity_id ?? (payload.id != null ? String(payload.id) : null),
+    actor_id: actorId,
+    conversation_id: conversationId,
+    conversation_kind: kind,
+    entity_id: source?.entity_id != null
+      ? String(source.entity_id)
+      : canonicalPayload.id != null ? String(canonicalPayload.id) : null,
     audience_user_ids: audience,
-    payload,
+    payload: canonicalPayload,
   });
+}
+
+function persistUnifiedEventFromWs(
+  event: WsEvent,
+  audienceUserIds: number[] = [],
+): UnifiedEventEnvelope | null {
+  const unified = createUnifiedEventFromWs(event, audienceUserIds);
+  if (unified) {
+    void persistUnifiedEvent(unified).catch((err) => {
+      logger.warn({ err, type: event.type }, "WS durable event persistence failed");
+    });
+  }
+  return unified;
 }
 
 // ── Per-user socket registry ──────────────────────────────────────────────────
@@ -360,19 +433,7 @@ export function isCircleParticipant(sessionId: number, userId: number): boolean 
  * No-ops silently if the user has no open sockets.
  */
 export function sendToUser(userId: number, event: WsEvent): void {
-  void persistUnifiedEventFromWs(event, [userId]).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
-  const sockets = userSockets.get(userId);
-  if (!sockets) return;
-  const msg = JSON.stringify(event);
-  sockets.forEach((sock) => {
-    if (sock.readyState === WebSocket.OPEN) {
-      try {
-        sock.send(msg);
-      } catch (err) {
-        logger.warn({ err, userId, type: event.type }, "WS sendToUser: send failed — client likely closed mid-send");
-      }
-    }
-  });
+  sendToUsers([userId], event);
 }
 
 /**
@@ -380,24 +441,61 @@ export function sendToUser(userId: number, event: WsEvent): void {
  * Deduplicates — if the same userId appears twice, the event is sent once.
  */
 export function sendToUsers(userIds: number[], event: WsEvent): void {
-  void persistUnifiedEventFromWs(event, userIds).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
+  const audience = [...new Set(userIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  const unified = persistUnifiedEventFromWs(event, audience);
+  const legacyFrame = unified
+    ? { ...event, event_id: unified.event_id, occurred_at: unified.occurred_at }
+    : event;
+  const frames = [JSON.stringify(legacyFrame)];
+  if (unified && event.type !== "unified_event") {
+    frames.push(JSON.stringify({ type: "unified_event", payload: unified }));
+  }
   const seen = new Set<number>();
-  const msg = JSON.stringify(event);
-  for (const userId of userIds) {
+  for (const userId of audience) {
     if (seen.has(userId)) continue;
     seen.add(userId);
     const sockets = userSockets.get(userId);
     if (!sockets) continue;
     sockets.forEach((sock) => {
-      if (sock.readyState === WebSocket.OPEN) {
-        try {
-          sock.send(msg);
-        } catch (err) {
-          logger.warn({ err, userId, type: event.type }, "WS sendToUsers: send failed — client likely closed mid-send");
-        }
+      if (sock.readyState !== WebSocket.OPEN) return;
+      try {
+        frames.forEach((frame) => sock.send(frame));
+      } catch (err) {
+        logger.warn({ err, userId, type: event.type }, "WS sendToUsers: send failed — client likely closed mid-send");
       }
     });
   }
+}
+
+function dispatchBroadcast(
+  event: WsEvent,
+  audienceUserIds: number[],
+  persist: boolean,
+  includeUnified: boolean,
+  unifiedOverride?: UnifiedEventEnvelope | null,
+): void {
+  const unified = unifiedOverride === undefined
+    ? createUnifiedEventFromWs(event, audienceUserIds)
+    : unifiedOverride;
+  if (persist && unified) {
+    void persistUnifiedEvent(unified).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
+  }
+  if (!wss) return;
+  const legacyFrame = unified
+    ? { ...event, event_id: unified.event_id, occurred_at: unified.occurred_at }
+    : event;
+  const frames = [JSON.stringify(legacyFrame)];
+  if (includeUnified && unified && event.type !== "unified_event") {
+    frames.push(JSON.stringify({ type: "unified_event", payload: unified }));
+  }
+  wss.clients.forEach((client) => {
+    if (client.readyState !== WebSocket.OPEN || !authenticatedSockets.has(client)) return;
+    try {
+      frames.forEach((frame) => client.send(frame));
+    } catch (err) {
+      logger.warn({ err, type: event.type }, "WS broadcast: send failed for one client — skipped");
+    }
+  });
 }
 
 /**
@@ -987,30 +1085,7 @@ export function stopHeartbeat(): void {
 // ── Broadcast ─────────────────────────────────────────────────────────────────
 
 export function broadcast(event: WsEvent): void {
-  void persistUnifiedEventFromWs(event).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
-  if (!wss) return;
-  const msg = JSON.stringify(event);
-  let sent = 0;
-  // SECURITY: only deliver to sockets that have completed a verified register
-  // handshake (token + userId confirmed). Unauthenticated sockets are tracked
-  // in the auth-timeout window and closed after AUTH_TIMEOUT_MS — skipping them
-  // here prevents silent data leakage to any client that connects and never
-  // authenticates. `broadcastToAuthenticated()` is an alias for the same policy
-  // and remains for call-site clarity.
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN && authenticatedSockets.has(client)) {
-      try {
-        client.send(msg);
-        sent++;
-      } catch (err) {
-        // One bad client must not abort the broadcast loop for everyone else.
-        // This can happen if the socket transitions to CLOSING between the
-        // readyState check and the send() call (torn-down race).
-        logger.warn({ err, type: event.type }, "WS broadcast: send failed for one client — skipped");
-      }
-    }
-  });
-  if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcast");
+  dispatchBroadcast(event, [], true, true);
 }
 
 /**
@@ -1026,21 +1101,7 @@ export function broadcast(event: WsEvent): void {
  * only verified sockets are reached.
  */
 export function broadcastToAuthenticated(event: WsEvent): void {
-  const msg = JSON.stringify(event);
-  let sent = 0;
-  for (const sockets of userSockets.values()) {
-    sockets.forEach((sock) => {
-      if (sock.readyState === WebSocket.OPEN) {
-        try {
-          sock.send(msg);
-          sent++;
-        } catch (err) {
-          logger.warn({ err, type: event.type }, "WS broadcastToAuthenticated: send failed for one client — skipped");
-        }
-      }
-    });
-  }
-  if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcastToAuthenticated");
+  dispatchBroadcast(event, getConnectedUserIds(), true, true);
 }
 
 /**
@@ -1055,9 +1116,11 @@ export function broadcastRequestEvent(
   legacyType: WsEventType,
   payload: unknown
 ): void {
-  broadcast({ type: standardType, payload });
+  const standardEvent = { type: standardType, payload };
+  const unified = createUnifiedEventFromWs(standardEvent, []);
+  dispatchBroadcast(standardEvent, [], true, true, unified);
   if (standardType !== legacyType) {
-    broadcast({ type: legacyType, payload });
+    dispatchBroadcast({ type: legacyType, payload }, [], false, false, unified);
   }
 }
 

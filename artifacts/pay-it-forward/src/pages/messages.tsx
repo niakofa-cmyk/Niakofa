@@ -24,8 +24,8 @@ import type { MessageAttachmentData } from "@/components/messages/MessageAttachm
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
 import { directToUnified, hubToUnified, requestToUnified, sortUnified, type UnifiedConversation } from "@/lib/unifiedConversation";
-import { applyConversationEvent, applyUnifiedRealtimeEvent, createConversationState, markConversationRead, shouldNotifyConversation, type ConversationEvent, type ConversationState } from "@/lib/conversationState";
-import { normalizeRealtimeEvent, type UnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
+import { applyUnifiedRealtimeEvent, createConversationState, markConversationRead, shouldNotifyConversation, type ConversationEvent, type ConversationState } from "@/lib/conversationState";
+import type { UnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
 
 type DirectUser = { id: number; name: string; avatar_url: string | null };
@@ -192,14 +192,6 @@ export default function MessagesPage() {
   const [presenceByUser, setPresenceByUser] = useState<Record<number, string>>({});
   const [typingByConversation, setTypingByConversation] = useState<Record<number, boolean>>({});
 
-  const applyLiveConversationEvent = useCallback((event: ConversationEvent): boolean => {
-    const result = applyConversationEvent(liveConversationStateRef.current, event);
-    if (!result.accepted) return false;
-    liveConversationStateRef.current = result.state;
-    setLiveConversationState(result.state);
-    return true;
-  }, []);
-
   const markLiveConversationRead = useCallback((kind: ConversationEvent["kind"], sourceId: number) => {
     const next = markConversationRead(liveConversationStateRef.current, kind, sourceId);
     if (next === liveConversationStateRef.current) return;
@@ -357,11 +349,71 @@ export default function MessagesPage() {
     const unsubscribeEvents = wsSubscribe((event: WsEvent) => {
       if (event.type === "unified_event") {
         const unified = event.payload as UnifiedRealtimeEvent;
-        if (!unified.replayed) return;
         const result = applyUnifiedRealtimeEvent(liveConversationStateRef.current, unified, currentUser?.id ?? null);
         if (result.accepted && result.state !== liveConversationStateRef.current) {
           liveConversationStateRef.current = result.state;
           setLiveConversationState(result.state);
+        }
+
+        const payload = unified.payload;
+        if (unified.event_type === "presence.changed") {
+          const userId = typeof payload.user_id === "number" ? payload.user_id : unified.actor_id;
+          if (userId) setPresenceByUser((current) => ({ ...current, [userId]: typeof payload.status === "string" ? payload.status : "OFFLINE" }));
+          return;
+        }
+        if (unified.event_type === "typing.started" || unified.event_type === "typing.stopped") {
+          if (unified.conversation_id) {
+            setTypingByConversation((current) => ({
+              ...current,
+              [unified.conversation_id!]: unified.event_type === "typing.started",
+            }));
+          }
+          return;
+        }
+        if (unified.event_type === "message.read" || unified.event_type === "conversation.read") {
+          if (unified.conversation_id && (unified.conversation_kind === "direct" || unified.conversation_kind === "request" || unified.conversation_kind === "hub")) {
+            markLiveConversationRead(unified.conversation_kind, unified.conversation_id);
+          }
+          void loadUnreadSummary().catch(() => {});
+          return;
+        }
+        if (unified.event_type === "message.created") {
+          const conversationId = unified.conversation_id;
+          const message = typeof payload.id === "number"
+            && typeof payload.sender_id === "number"
+            ? payload as unknown as DirectMessage
+            : null;
+          if (conversationId && unified.conversation_kind === "direct" && message) {
+            setDirectMessages((current) => conversationId === selectedDirectId ? mergeDirectMessage(current, message) : current);
+            void Promise.all([loadDirectConversations(), loadUnreadSummary()]).catch(() => {});
+            if (message.sender_id !== currentUser?.id && conversationId === selectedDirectId) {
+              markLiveConversationRead("direct", conversationId);
+              void fetch(`/api/messages/direct/conversations/${conversationId}/read`, { method: "POST", headers: authHeaders() }).catch(() => {});
+            } else if (shouldNotifyConversation({
+              activeKey: selectedDirectId ? `direct:${selectedDirectId}` : null,
+              conversationKey: `direct:${conversationId}`,
+              documentVisible: document.visibilityState === "visible",
+              permission: typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+              senderId: message.sender_id,
+              currentUserId: currentUser?.id ?? null,
+            })) {
+              browserNotify(`${message.sender_name} sent you a message`, message.body, `direct:${conversationId}`);
+            }
+          } else {
+            void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(() => {});
+          }
+          return;
+        }
+        if (
+          unified.event_type === "request.created"
+          || unified.event_type === "request.updated"
+          || unified.event_type === "request.status_changed"
+          || unified.event_type === "hub.created"
+          || unified.event_type === "hub.updated"
+          || unified.event_type === "hub.membership_changed"
+          || unified.event_type === "notification.created"
+        ) {
+          void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(() => {});
         }
         return;
       }
@@ -370,62 +422,19 @@ export default function MessagesPage() {
         if (activeMode === "direct" && selectedDirectId) void loadDirectMessages(selectedDirectId).catch(() => {});
         return;
       }
-      if (event.type === "presence_update") {
-        const payload = event.payload as { user_id?: number; status?: string };
-        if (payload.user_id) setPresenceByUser((current) => ({ ...current, [payload.user_id!]: payload.status ?? "OFFLINE" }));
-        return;
-      }
-      if (event.type === "typing") {
-        const payload = event.payload as { conversation_id?: number; is_typing?: boolean; status?: string };
-        if (payload.conversation_id) {
-          setTypingByConversation((current) => ({
-            ...current,
-            [payload.conversation_id!]: payload.is_typing ?? payload.status === "started",
-          }));
-        }
-        return;
-      }
-      if (event.type === "message_read") {
-        const payload = event.payload as { conversation_id?: number; message_id?: number };
-        if (payload.conversation_id) markLiveConversationRead("direct", payload.conversation_id);
-        void loadUnreadSummary().catch(() => {});
-        return;
-      }
-      if (event.type === "chat_message" || event.type === "request_updated" || event.type === "REQUEST_ACCEPTED" || event.type === "HELPER_MOVING" || event.type === "HELPER_ARRIVED" || event.type === "REQUEST_COMPLETED" || event.type === "hub_message") {
-        void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(() => {});
-        return;
-      }
       if (event.type !== "direct_message") return;
       const payload = event.payload as DirectMessageEvent | null;
       const message = payload?.message;
       const conversationId = payload?.conversation_id ?? message?.conversation_id;
       if (!message || !conversationId) return;
-      const unified = normalizeRealtimeEvent(event);
-      const result = unified ? applyUnifiedRealtimeEvent(liveConversationStateRef.current, unified, currentUser?.id ?? null) : applyLiveConversationEvent({ type: "direct_message", eventId: message.id, conversationId, kind: "direct", senderId: message.sender_id, currentUserId: currentUser?.id ?? null, body: message.body, createdAt: message.created_at, title: message.sender_name });
-      if (result.accepted && result.state !== liveConversationStateRef.current) {
-        liveConversationStateRef.current = result.state;
-        setLiveConversationState(result.state);
-      }
-      const accepted = result.accepted;
-      if (!accepted) return;
+      // Legacy frames remain available for older consumers, but the canonical
+      // unified_event frame owns state, unread, and notification transitions.
+      // Merge here only so the thread stays responsive if the canonical frame
+      // is delayed by the browser event queue.
       setDirectMessages((current) => conversationId === selectedDirectId ? mergeDirectMessage(current, message) : current);
-      void Promise.all([loadDirectConversations(), loadUnreadSummary()]).catch(() => {});
-      if (conversationId === selectedDirectId && message.sender_id !== currentUser?.id) {
-        markLiveConversationRead("direct", conversationId);
-        void fetch(`/api/messages/direct/conversations/${conversationId}/read`, { method: "POST", headers: authHeaders() }).catch(() => {});
-      } else if (shouldNotifyConversation({
-        activeKey: selectedDirectId ? `direct:${selectedDirectId}` : null,
-        conversationKey: `direct:${conversationId}`,
-        documentVisible: document.visibilityState === "visible",
-        permission: typeof Notification === "undefined" ? "unsupported" : Notification.permission,
-        senderId: message.sender_id,
-        currentUserId: currentUser?.id ?? null,
-      })) {
-        browserNotify(`${message.sender_name} sent you a message`, message.body, `direct:${conversationId}`);
-      }
     });
     return () => { unsubscribeConnection(); unsubscribeEvents(); };
-  }, [activeMode, applyLiveConversationEvent, currentUser?.id, loadDirectConversations, loadDirectMessages, loadHubConversations, loadInbox, loadRequestConversations, loadUnreadSummary, markLiveConversationRead, selectedDirectId]);
+  }, [activeMode, currentUser?.id, loadDirectConversations, loadDirectMessages, loadHubConversations, loadInbox, loadRequestConversations, loadUnreadSummary, markLiveConversationRead, selectedDirectId]);
 
   useEffect(() => {
     const query = search.trim();

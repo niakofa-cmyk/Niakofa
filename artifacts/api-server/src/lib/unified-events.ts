@@ -2,10 +2,57 @@ import { randomUUID } from "node:crypto";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
-export const UNIFIED_EVENT_TYPES = ["message.created","message.updated","message.read","message.deleted","conversation.created","conversation.updated","conversation.read","typing.started","typing.stopped","presence.changed","request.created","request.updated","request.status_changed","hub.created","hub.updated","hub.membership_changed","story.created","story.reaction","story.reply","story.shared","call.invited","call.accepted","call.rejected","call.ended","nia.message","nia.typing","nia.status"] as const;
+export const UNIFIED_EVENT_TYPES = [
+  "message.created",
+  "message.updated",
+  "message.read",
+  "message.deleted",
+  "conversation.created",
+  "conversation.updated",
+  "conversation.read",
+  "typing.started",
+  "typing.stopped",
+  "presence.changed",
+  "notification.created",
+  "request.created",
+  "request.updated",
+  "request.status_changed",
+  "hub.created",
+  "hub.updated",
+  "hub.membership_changed",
+  "story.created",
+  "story.updated",
+  "story.viewed",
+  "story.reaction",
+  "story.reply",
+  "story.shared",
+  "story.expired",
+  "call.invited",
+  "call.accepted",
+  "call.rejected",
+  "call.ended",
+  "nia.message",
+  "nia.typing",
+  "nia.status",
+] as const;
 export type UnifiedEventType = typeof UNIFIED_EVENT_TYPES[number];
-export type UnifiedEventEnvelope<T = Record<string, unknown>> = { event_id:string; event_type:UnifiedEventType; occurred_at:string; actor_id:number|null; conversation_id:number|null; conversation_kind:string|null; entity_id:string|null; payload:T; audience_user_ids?: number[]; };
-export function createUnifiedEvent<T extends Record<string, unknown>>(input: Omit<UnifiedEventEnvelope<T>,"event_id"|"occurred_at"> & {event_id?:string; occurred_at?:string;}): UnifiedEventEnvelope<T> {
+export type UnifiedEventEnvelope<T = Record<string, unknown>> = {
+  event_id: string;
+  event_type: UnifiedEventType;
+  occurred_at: string;
+  actor_id: number | null;
+  conversation_id: number | null;
+  conversation_kind: string | null;
+  entity_id: string | null;
+  payload: T;
+  audience_user_ids?: number[];
+};
+export function createUnifiedEvent<T extends Record<string, unknown>>(
+  input: Omit<UnifiedEventEnvelope<T>, "event_id" | "occurred_at"> & {
+    event_id?: string;
+    occurred_at?: string;
+  },
+): UnifiedEventEnvelope<T> {
   return { ...input, event_id: input.event_id ?? randomUUID(), occurred_at: input.occurred_at ?? new Date().toISOString() };
 }
 export async function persistUnifiedEvent(event: UnifiedEventEnvelope): Promise<void> {
