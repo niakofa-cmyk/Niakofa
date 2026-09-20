@@ -13,6 +13,7 @@
  * and everything that might transitively touch "@workspace/db" (including
  * dynamic imports that routes/requests.ts transitively performs).
  */
+import * as drizzleOrmActual from "drizzle-orm";
 import { jest, describe, it, expect, beforeAll } from "@jest/globals";
 
 // ── Minimal DB mock ───────────────────────────────────────────────────────────
@@ -60,7 +61,7 @@ jest.unstable_mockModule("@workspace/db", () => {
   };
 });
 
-jest.unstable_mockModule("drizzle-orm", () => ({
+jest.unstable_mockModule("drizzle-orm", () => ({\n  ...drizzleOrmActual,
   eq: jest.fn(),
   and: jest.fn(),
   or: jest.fn(),
