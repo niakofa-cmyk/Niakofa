@@ -333,7 +333,7 @@ export function isCircleParticipant(sessionId: number, userId: number): boolean 
  * No-ops silently if the user has no open sockets.
  */
 export function sendToUser(userId: number, event: WsEvent): void {
-  void persistUnifiedEventFromWs(event).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
+  void persistUnifiedEventFromWs(event, [userId]).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
   const sockets = userSockets.get(userId);
   if (!sockets) return;
   const msg = JSON.stringify(event);
@@ -353,7 +353,7 @@ export function sendToUser(userId: number, event: WsEvent): void {
  * Deduplicates — if the same userId appears twice, the event is sent once.
  */
 export function sendToUsers(userIds: number[], event: WsEvent): void {
-  void persistUnifiedEventFromWs(event).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
+  void persistUnifiedEventFromWs(event, userIds).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
   const seen = new Set<number>();
   const msg = JSON.stringify(event);
   for (const userId of userIds) {
