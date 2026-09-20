@@ -2,11 +2,10 @@
 /**
  * Certify the production media toolchain without enabling MEDIA_PLATFORM_V21.
  *
- * This performs a real synthetic media run: FFmpeg creates a tiny MP4 and
- * FFprobe reads its video metadata. Run it on the same image as the media
- * worker. It does not write to object storage or mutate application data.
+ * This performs explicit FFmpeg and FFprobe executable checks followed by a
+ * real synthetic media run: FFmpeg creates a tiny MP4 and FFprobe reads its
+ * video metadata. Run it on the same image as the media worker.
  */
-
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -14,14 +13,28 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
-const ffprobe = process.env.FFPROBE_PATH ?? "ffprobe";
+const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
+const ffprobe = process.env.FFPROBE_PATH?.trim() || "ffprobe";
+
+async function verifyExecutable(name, executable) {
+  try {
+    await execFileAsync(executable, ["-version"], { timeout: 10_000 });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${name} "${executable}" is not executable. Install the ffmpeg runtime package in the production image or set ${name === "FFmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"} to an executable binary. Original error: ${detail}`,
+    );
+  }
+}
 
 async function main() {
+  await verifyExecutable("FFmpeg", ffmpeg);
+  await verifyExecutable("FFprobe", ffprobe);
+
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-media-toolchain-"));
   const output = path.join(tempDir, "probe.mp4");
   try {
-    const ffmpegResult = await execFileAsync(
+    await execFileAsync(
       ffmpeg,
       [
         "-hide_banner",
@@ -61,16 +74,15 @@ async function main() {
       throw new Error("FFprobe did not return a usable video stream.");
     }
 
-    const [ffmpegVersion] = String(ffmpegResult.stderr || "").trim().split("\n");
     process.stdout.write(
       JSON.stringify(
         {
           ok: true,
           ffmpeg,
           ffprobe,
+          executable_checks: "ffmpeg-and-ffprobe-version",
           smoke_test: "ffmpeg-generated-mp4-to-ffprobe",
           dimensions: `${stream.width}x${stream.height}`,
-          ffmpeg_stderr: ffmpegVersion || null,
           media_platform_should_still_be_off: true,
         },
         null,
