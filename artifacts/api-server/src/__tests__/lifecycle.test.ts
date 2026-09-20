@@ -93,7 +93,8 @@ jest.unstable_mockModule("@workspace/db", () => {
 // community-pool.ts imports `asc`, which requests.ts pulls in indirectly).
 // So every drizzle-orm function used anywhere in the api-server import
 // graph (see `grep -rn 'from "drizzle-orm"' src`) must be listed here.
-jest.unstable_mockModule("drizzle-orm", () => ({\n  ...drizzleOrmActual,
+jest.unstable_mockModule("drizzle-orm", () => ({
+  ...drizzleOrmActual,
   eq: jest.fn(),
   and: jest.fn(),
   or: jest.fn(),
