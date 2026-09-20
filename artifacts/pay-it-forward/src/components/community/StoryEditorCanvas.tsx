@@ -1,5 +1,5 @@
 import { Redo2, RotateCw, Shrink, Trash2, Undo2, ZoomIn } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type EditableStoryElement = {
   id: string | number;
@@ -50,10 +50,12 @@ function elementLabel(element: EditableStoryElement) {
 export function StoryEditorCanvas({
   elements,
   onChange,
+  children,
   className,
 }: {
   elements: EditableStoryElement[];
   onChange: (elements: EditableStoryElement[]) => void;
+  children?: ReactNode;
   className?: string;
 }) {
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
@@ -156,7 +158,8 @@ export function StoryEditorCanvas({
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        event.shiftKey ? redo() : undo();
+        if (event.shiftKey) redo();
+        else undo();
         return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "y") {
@@ -185,6 +188,7 @@ export function StoryEditorCanvas({
         className="relative h-full w-full touch-none select-none overflow-hidden"
         onPointerDown={() => setSelectedId(null)}
       >
+        {children && <div className="pointer-events-none absolute inset-0 z-0">{children}</div>}
         {elements
           .filter((element) => EDITABLE_TYPES.has(element.type))
           .slice()

@@ -140,9 +140,15 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
         ? "grayscale(1)"
         : "none";
 
-  const updateEditorElement = (id: string, patch: Partial<EditableStoryElement>) => {
+  const updateEditorElement = (id: EditableStoryElement["id"], patch: Partial<EditableStoryElement>) => {
     setEditorElements((current) => current.map((element) => (
-      element.id === id ? { ...element, ...patch } : element
+      element.id === id
+        ? {
+            ...element,
+            ...patch,
+            payload: patch.payload ? { ...element.payload, ...patch.payload } : element.payload,
+          }
+        : element
     )));
   };
 
@@ -153,6 +159,24 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
       const next = current.slice();
       next[index] = { ...next[index], ...element, payload: { ...next[index].payload, ...element.payload } };
       return next;
+    });
+  };
+
+  const updateCaption = (value: string) => {
+    setCaption(value);
+    if (!value.trim()) {
+      setEditorElements((current) => current.filter((element) => element.id !== "caption"));
+      return;
+    }
+    upsertEditorElement({
+      id: "caption",
+      type: "text",
+      payload: { text: value, color: textColor, font_size: Number(textSize), align: textAlign },
+      position_x: 50,
+      position_y: 78,
+      scale: 1,
+      rotation: 0,
+      z_index: 10,
     });
   };
 
@@ -398,14 +422,19 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
               <button type="button" onClick={() => { resetComposer(); setComposerOpen(false); }} className="rounded-full p-2 hover:bg-muted" aria-label="Close Story creator"><X className="h-5 w-5" /></button>
             </header>
             <div className="overflow-y-auto p-4">
-               <div className={`relative flex min-h-80 items-center justify-center overflow-hidden rounded-3xl ${!selectedFileUrl ? "border border-dashed border-primary/30" : ""}`} style={!selectedFileUrl ? { background: textBackground } : undefined}>
-                {selectedFileUrl ? (
-                   selectedPreviewFile?.type.startsWith("video/") ? <video src={selectedFileUrl} controls playsInline className="max-h-[52dvh] w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Story preview" className="max-h-[52dvh] w-full object-contain" style={{ filter }} />
-                ) : (
-                   <div className="px-8 text-center text-white"><Type className="mx-auto h-10 w-10 text-white/70" /><p className="mt-3 font-black">{caption ? "Text Story preview" : "Add a photo or video"}</p><p className="mt-1 text-xs text-white/65">Use your camera, choose recent items, or create a text-only Story.</p></div>
-                )}
-                {caption && <div className="absolute bottom-5 left-4 right-4 rounded-xl bg-black/55 px-3 py-2 text-center text-sm font-bold text-white">{caption}</div>}
-              </div>
+                <StoryEditorCanvas
+                  elements={editorElements}
+                  onChange={setEditorElements}
+                  className={`relative flex min-h-80 items-center justify-center overflow-hidden rounded-3xl bg-black ${!selectedFileUrl ? "border border-dashed border-primary/30" : ""}`}
+                >
+                  <div className="relative flex h-full min-h-80 w-full items-center justify-center overflow-hidden" style={!selectedFileUrl ? { background: textBackground } : undefined}>
+                    {selectedFileUrl ? (
+                      selectedPreviewFile?.type.startsWith("video/") ? <video src={selectedFileUrl} muted playsInline className="max-h-[52dvh] max-w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Story preview" className="max-h-[52dvh] max-w-full object-contain" style={{ filter }} />
+                    ) : (
+                      <div className="px-8 text-center text-white"><Type className="mx-auto h-10 w-10 text-white/70" /><p className="mt-3 font-black">{caption ? "Text Story preview" : "Add a photo or video"}</p><p className="mt-1 text-xs text-white/65">Use your camera, choose recent items, or create a text-only Story.</p></div>
+                    )}
+                  </div>
+                </StoryEditorCanvas>
                {files.length > 0 && <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Story media sequence">
                  {files.map((file, index) => <button key={`${file.name}-${index}`} type="button" onClick={() => setPreviewFileIndex(index)} className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 ${previewFileIndex === index ? "border-primary" : "border-border"}`} aria-label={`Preview Story item ${index + 1}`}>
                    {previewUrls[index] ? (file.type.startsWith("video/") ? <video src={previewUrls[index]} muted playsInline className="h-full w-full object-cover" /> : <img src={previewUrls[index]} alt="" className="h-full w-full object-cover" />) : <span className="grid h-full place-items-center text-xs">{index + 1}</span>}
@@ -421,12 +450,12 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
               <div className="mt-4 flex justify-between gap-1 overflow-x-auto rounded-2xl border border-border bg-card p-2">
                 {toolButtons.map(({ key, label, icon: Icon }) => <button key={key} type="button" onClick={() => setTool(tool === key ? null : key)} className={`flex min-w-16 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-bold ${tool === key ? "bg-primary/15 text-primary" : "text-muted-foreground"}`}><Icon className="h-5 w-5" />{label}</button>)}
               </div>
-              {tool === "music" && <div className="mt-3 flex gap-2 overflow-x-auto">{["Original audio", "Sunrise", "Neighborhood pulse", "Quiet strength"].map((track) => <button key={track} type="button" onClick={() => setMusic(track)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold ${music === track ? "border-primary bg-primary/10 text-primary" : "border-border"}`}><Music2 className="mr-1 inline h-3 w-3" />{track}</button>)}</div>}
-              {tool === "stickers" && <div className="mt-3 flex gap-2 overflow-x-auto">{["💙", "🙏", "🤝", "🌍", "🙌", "✨", "📍"].map((item) => <button key={item} type="button" onClick={() => setSticker(item)} className={`h-11 w-11 shrink-0 rounded-xl border text-xl ${sticker === item ? "border-primary bg-primary/10" : "border-border"}`}>{item}</button>)}</div>}
+               {tool === "music" && <div className="mt-3 flex gap-2 overflow-x-auto">{["Original audio", "Sunrise", "Neighborhood pulse", "Quiet strength"].map((track) => <button key={track} type="button" onClick={() => { setMusic(track); upsertEditorElement({ id: "music", type: "music", payload: { track }, position_x: 50, position_y: 12, scale: 1, rotation: 0, z_index: 20 }); }} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold ${music === track ? "border-primary bg-primary/10 text-primary" : "border-border"}`}><Music2 className="mr-1 inline h-3 w-3" />{track}</button>)}</div>}
+               {tool === "stickers" && <div className="mt-3 flex gap-2 overflow-x-auto">{["💙", "🙏", "🤝", "🌍", "🙌", "✨", "📍"].map((item) => <button key={item} type="button" onClick={() => { setSticker(item); upsertEditorElement({ id: "sticker", type: "sticker", payload: { sticker: item }, position_x: 50, position_y: 50, scale: 1, rotation: 0, z_index: 15 }); }} className={`h-11 w-11 shrink-0 rounded-xl border text-xl ${sticker === item ? "border-primary bg-primary/10" : "border-border"}`}>{item}</button>)}</div>}
               {tool === "effects" && <div className="mt-3 flex gap-2 overflow-x-auto">{(["none", "warmth", "contrast", "grayscale", "vignette"] as Effect[]).map((item) => <button key={item} type="button" onClick={() => setEffect(item)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold capitalize ${effect === item ? "border-primary bg-primary/10 text-primary" : "border-border"}`}>{item}</button>)}</div>}
-               {tool === "mention" && <div className="mt-3 space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); }} className="min-h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-border"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
-                {tool === "text" && <div className="mt-3 grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-muted-foreground">Color<input type="color" value={textColor} onChange={(event) => setTextColor(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-card" /></label><label className="text-[10px] font-bold text-muted-foreground">Size<select value={textSize} onChange={(event) => setTextSize(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-muted-foreground">Align<select value={textAlign} onChange={(event) => setTextAlign(event.target.value as "left" | "center" | "right")} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-muted-foreground">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
-              <textarea value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={1000} rows={3} className="mt-4 w-full resize-none rounded-2xl border border-border bg-card p-3 text-sm outline-none focus:border-primary" placeholder="Add text to your Moment…" />
+                 {tool === "mention" && <div className="mt-3 space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); setEditorElements((current) => current.filter((element) => element.id !== "mention")); }} className="min-h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); upsertEditorElement({ id: "mention", type: "mention", payload: { display_name: candidate.name, mention_user_id: candidate.id }, position_x: 50, position_y: 65, scale: 1, rotation: 0, z_index: 18 }); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-border"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
+                {tool === "text" && <div className="mt-3 grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-muted-foreground">Color<input type="color" value={textColor} onChange={(event) => { const value = event.target.value; setTextColor(value); updateEditorElement("caption", { payload: { color: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-border bg-card" /></label><label className="text-[10px] font-bold text-muted-foreground">Size<select value={textSize} onChange={(event) => { const value = event.target.value; setTextSize(value); updateEditorElement("caption", { payload: { font_size: Number(value) } }); }} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-muted-foreground">Align<select value={textAlign} onChange={(event) => { const value = event.target.value as "left" | "center" | "right"; setTextAlign(value); updateEditorElement("caption", { payload: { align: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-muted-foreground">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
+               <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={3} className="mt-4 w-full resize-none rounded-2xl border border-border bg-card p-3 text-sm outline-none focus:border-primary" placeholder="Add text to your Moment…" />
               <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-3 py-2">
                 <div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><div><p className="text-xs font-black">Share with</p><p className="text-[10px] text-muted-foreground">{audience === "hub" ? "Selected Hub members" : "Your approved community"}</p></div></div>
                 <select value={audience} onChange={(event) => setAudience(event.target.value as "community" | "hub")} disabled={!hubId} className="rounded-lg border border-border bg-background px-2 py-2 text-xs font-bold"><option value="community">Community</option><option value="hub">This Hub</option></select>

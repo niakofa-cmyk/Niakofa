@@ -41,7 +41,8 @@ function imageDimensions(buffer: Buffer, mimeType: string): { width: number; hei
 function probeVideo(buffer: Buffer): Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null> {
   return new Promise((resolve) => {
     const child = spawn(process.env["FFPROBE_PATH"] || "ffprobe", [
-      "-v", "error", "-i", "pipe:0", "-show_entries", "stream=width,height,duration", "-of", "json",
+      "-v", "error", "-i", "pipe:0", "-select_streams", "v:0",
+      "-show_entries", "stream=width,height,duration", "-of", "json",
     ]);
     const chunks: Buffer[] = [];
     let stderr = "";
@@ -52,7 +53,12 @@ function probeVideo(buffer: Buffer): Promise<{ width: number | null; height: num
       if (code !== 0 || stderr || !chunks.length) return resolve(null);
       try {
         const parsed = JSON.parse(Buffer.concat(chunks).toString()) as { streams?: Array<{ width?: number; height?: number; duration?: string }> };
-        const stream = parsed.streams?.find((item) => item.width || item.height || item.duration);
+        const stream = parsed.streams?.find((item) => (
+          Number.isFinite(item.width) &&
+          Number.isFinite(item.height) &&
+          Number(item.width) > 0 &&
+          Number(item.height) > 0
+        ));
         if (!stream) return resolve(null);
         const duration = stream.duration ? Math.round(Number(stream.duration) * 1000) : null;
         resolve({

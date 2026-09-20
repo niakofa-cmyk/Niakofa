@@ -6,9 +6,17 @@ export function validateStoryFile(file: File): string | null {
   return result.ok ? null : result.error;
 }
 
+export function validateStoryFileCount(files: File[]): string | null {
+  return files.length > STORY_MEDIA_LIMITS.maxFiles
+    ? `Choose ${STORY_MEDIA_LIMITS.maxFiles} or fewer Story items.`
+    : null;
+}
+
 export function normalizeStoryFiles(files: File[]) {
   const errors: string[] = [];
   const accepted: File[] = [];
+  const countError = validateStoryFileCount(files);
+  if (countError) errors.push(countError);
   for (const file of files) {
     const error = validateStoryFile(file);
     if (error) errors.push(`${file.name}: ${error}`);

@@ -22,6 +22,7 @@ import { z } from "zod";
 const router = Router();
 const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
 const MAX_MEDIA_ITEMS = 6;
+const MAX_MEDIA_DIMENSION = 10_000;
 const ALLOWED_MEDIA = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm"]);
 const STORY_AUDIENCES = ["community", "hub"] as const;
 
@@ -242,6 +243,15 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     }
     if (decodedMedia.some((item) => item.media_type === "photo" && !item.metadata)) {
       return res.status(400).json({ error: "The image could not be inspected. Please choose another image." });
+    }
+    if (decodedMedia.some((item) => (
+      !item.metadata ||
+      !item.metadata.width ||
+      !item.metadata.height ||
+      item.metadata.width > MAX_MEDIA_DIMENSION ||
+      item.metadata.height > MAX_MEDIA_DIMENSION
+    ))) {
+      return res.status(400).json({ error: "Story media dimensions must be 10,000 pixels or smaller." });
     }
     if (decodedMedia.some((item) => item.media_type === "video" && (!item.metadata || !item.metadata.duration_ms))) {
       return res.status(503).json({ error: "Video processing is temporarily unavailable. Please try again shortly." });
