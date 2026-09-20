@@ -142,6 +142,7 @@ export function shouldNotifyConversation(input: NotificationPolicyInput): boolea
 export function applyUnifiedRealtimeEvent(
   state: ConversationState,
   event: UnifiedRealtimeEvent,
+  currentUserId: number | null = null,
 ): { state: ConversationState; accepted: boolean } {
   const kind = event.conversation_kind as ConversationKind | null;
   if (!kind || event.conversation_id === null) return { state, accepted: true };
@@ -158,7 +159,7 @@ export function applyUnifiedRealtimeEvent(
     conversationId: event.conversation_id,
     kind,
     senderId: typeof payload.sender_id === "number" ? payload.sender_id : event.actor_id,
-    currentUserId: typeof payload.current_user_id === "number" ? payload.current_user_id : null,
+    currentUserId: typeof payload.current_user_id === "number" ? payload.current_user_id : currentUserId,
     body: typeof payload.body === "string" ? payload.body : null,
     createdAt: typeof payload.created_at === "string" ? payload.created_at : event.occurred_at,
     title: typeof payload.title === "string" ? payload.title : null,
