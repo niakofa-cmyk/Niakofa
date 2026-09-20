@@ -43,7 +43,7 @@
 - [Stripe Accounts v2 recipient capability](stripe-v2-recipient-capability.md) — V1 transfers-active is insufficient; treat missing v2 recipient transfer capability as definitive.
 - [Release evidence commit boundary](release-evidence-commit-boundary.md) — keep deployed app SHAs separate from later documentation-only GitHub commits; avoid circular self-hashes.
 - [Deployed acceptance boundary](deployed-acceptance-boundary.md) — authenticated production E2E needs an approved disposable state, explicit API Bearer headers, and private temporary-file cleanup.
-- [GitHub exact-commit sync](github-exact-commit-sync.md) — Git Data API commit creation adds a terminal newline; match its raw commit bytes before advancing the branch ref.
+- [GitHub exact-commit sync](github-exact-commit-sync.md) — Git Data API commit bytes may differ from local Git despite identical metadata; compare raw objects before advancing the ref.
 - [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
 - [Authenticated Admin browser checks](admin-live-acceptance.md) — storage state authenticates navigation, but page.evaluate fetches still need explicit Bearer headers and exact role selectors.
 - [Globe-to-Hub acceptance prerequisite](globe-hub-acceptance-prerequisite.md) — production acceptance needs an approved Hub membership, not just an approved user or valid storage state.
