@@ -1,3 +1,5 @@
+- [Media activation gate](media-platform-activation.md) — keep the universal media flag off until durable storage, Redis, toolchain, and live variant checks pass.
+- [GitHub OAuth publishing](github-oauth-publishing.md) — connector-created commits omit the final message newline; compare GitHub main directly after publishing.
 - [Workspace hydration and preview limits](workspace-hydration-preview.md) — a healthy web preview does not certify missing API helpers, production parity, or physical devices.
 - [Workspace package-manager bootstrap](pnpm-bootstrap.md) — disable self-bootstrap when the declared pnpm version is unavailable; restore dependencies from the frozen lockfile.
 - [LiveKit media boundary](livekit-media-boundary.md) — production Circles/Spirals use LiveKit only; legacy TURN/ICE remains compatibility infrastructure.
