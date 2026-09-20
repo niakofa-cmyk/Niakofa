@@ -35,19 +35,25 @@ export const UPLOADS_BASE = path.resolve(process.cwd(), "uploads");
 
 // ─── Cloud config helpers ─────────────────────────────────────────────────────
 
-export function isCloudStorageConfigured(): boolean {
-  return !!(process.env["STORAGE_BUCKET"]);
+export function isCloudStorageConfigured(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(env["STORAGE_BUCKET"]?.trim());
 }
 
-export function getStorageBackend(): "s3" | "local" {
-  return isCloudStorageConfigured() ? "s3" : "local";
+export function getStorageBackend(
+  env: NodeJS.ProcessEnv = process.env,
+): "s3" | "local" {
+  return isCloudStorageConfigured(env) ? "s3" : "local";
 }
 
 /** Human-readable string for healthz / global-ops responses */
-export function getStorageDescription(): string {
-  if (!isCloudStorageConfigured()) return "local-disk";
-  const endpoint = process.env["STORAGE_ENDPOINT"];
-  const bucket   = process.env["STORAGE_BUCKET"]!;
+export function getStorageDescription(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  if (!isCloudStorageConfigured(env)) return "local-disk";
+  const endpoint = env["STORAGE_ENDPOINT"]?.trim();
+  const bucket = env["STORAGE_BUCKET"]!.trim();
   if (endpoint?.includes("r2.cloudflarestorage.com")) return `cloudflare-r2:${bucket}`;
   if (endpoint) return `s3-compatible:${bucket}`;
   return `aws-s3:${bucket}`;

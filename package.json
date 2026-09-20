@@ -16,6 +16,8 @@
     "audit:routes": "node scripts/src/audit-routes.mjs",
     "audit:admin": "node scripts/admin-surface-audit.mjs",
     "verify:livekit": "bash scripts/verify-livekit-env.sh",
+    "provision:storage": "pnpm --filter @workspace/api-server run provision:storage",
+    "verify:storage": "pnpm --filter @workspace/api-server run verify:storage",
     "release-smoke": "node scripts/src/release-smoke.mjs",
     "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js && node scripts/admin-surface-audit.mjs",
     "test:browser": "playwright test",

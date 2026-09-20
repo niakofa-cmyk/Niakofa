@@ -12,6 +12,7 @@ import { getHubMetrics } from "../lib/ws-hub";
 import { getSystemSetting } from "../lib/db-helpers";
 import { getNavigationCircuitBreakerStatus } from "./navigation";
 import { getStorageDescription } from "../lib/storage";
+import { getStorageReadiness } from "../lib/storageReadiness";
 import { isValidLiveKitUrl } from "../lib/circleMediaConfig";
 import { getNiaServiceUrl } from "../lib/nia-client";
 
@@ -130,6 +131,7 @@ router.get("/healthz", async (_req, res) => {
       started_at: PROCESS_STARTED_AT,
       db: "connected",
       storage: getStorageDescription(),
+      storage_readiness: getStorageReadiness(),
       mapbox_circuit_breaker: navCb,
     });
   } catch (err) {
@@ -142,6 +144,7 @@ router.get("/healthz", async (_req, res) => {
       started_at: PROCESS_STARTED_AT,
       db: "disconnected",
       storage: getStorageDescription(),
+      storage_readiness: getStorageReadiness(),
       error: "Database unavailable",
       mapbox_circuit_breaker: navCb,
     });
@@ -210,6 +213,7 @@ router.get("/readiness", async (req, res) => {
     Boolean(getStripeSecretKey()) &&
     Boolean(getStripeWebhookSecret());
   const livekit = getLiveKitReadiness();
+  const storageReadiness = getStorageReadiness();
   const dependencies = {
     database: {
       required: true,
@@ -239,6 +243,15 @@ router.get("/readiness", async (req, res) => {
             ? "not configured — legacy scheduler fallback"
             : "durable scheduler fallback",
     },
+    storage: {
+      required: storageReadiness.media_platform_flag,
+      status: storageReadiness.production_media_safe ? "ready" : "degraded",
+      detail: storageReadiness.production_media_safe
+        ? storageReadiness.cloud_configured
+          ? "cloud object storage configured"
+          : "media flag off; local-disk mode is fail-closed"
+        : `incomplete cloud object storage configuration: ${storageReadiness.missing.join(", ")}`,
+    },
     stripe: {
       required: paymentsScope,
       status: stripeConfigured ? "ready" : "degraded",
@@ -262,7 +275,8 @@ router.get("/readiness", async (req, res) => {
     schema === "ready" &&
     (!circlesScope || livekit.status === "ready") &&
     (!paymentsScope || stripeConfigured) &&
-    (!redisRequired || redisReady);
+    (!redisRequired || redisReady) &&
+    storageReadiness.production_media_safe;
   const degraded = Object.values(dependencies).some((dependency) => dependency.status === "degraded");
 
   res.status(ready ? 200 : 503).json({
@@ -272,6 +286,9 @@ router.get("/readiness", async (req, res) => {
       database: database === "ready" && schema === "ready",
       livekit: circlesScope ? livekit.status === "ready" : undefined,
       stripe: paymentsScope ? stripeConfigured : undefined,
+      storage: storageReadiness.media_platform_flag
+        ? storageReadiness.production_media_safe
+        : undefined,
     },
     scope: [circlesScope && "circles", paymentsScope && "payments"].filter(Boolean).join(",") || "platform",
     dependencies,

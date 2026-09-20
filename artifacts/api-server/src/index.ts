@@ -31,7 +31,7 @@ import { startPoolMinimumsWorker } from "./workers/pool-minimums-worker";
 import { startDailyKindnessWorker } from "./workers/daily-kindness-worker";
 import { startMediaProcessWorker } from "./workers/media-process-worker";
 import { isMediaPlatformV21Enabled } from "./lib/media-platform";
-import { isCloudStorageConfigured } from "./lib/storage";
+import { getStorageReadiness } from "./lib/storageReadiness";
 import { verifyMediaToolchain } from "./lib/mediaCapabilities";
 import { requeueStaleMediaAssets } from "./lib/mediaProcessingQueue";
 import { startPoolSettlementStatusWorker } from "./lib/advance-pool-settlement-status";
@@ -72,10 +72,11 @@ if (
 // are silently disabled.
 assertProductionRedisReady();
 if (isMediaPlatformV21Enabled()) {
-  if (process.env.NODE_ENV === "production" && !isCloudStorageConfigured()) {
+  const storageReadiness = getStorageReadiness();
+  if (process.env.NODE_ENV === "production" && !storageReadiness.production_media_safe) {
     throw new Error(
-      "MEDIA_PLATFORM_V21 requires cloud object storage in production. " +
-      "Set STORAGE_BUCKET before enabling universal media.",
+      "MEDIA_PLATFORM_V21 requires complete cloud object storage configuration in production. " +
+      `Missing: ${storageReadiness.missing.join(", ") || "storage probe"}.`,
     );
   }
   await verifyMediaToolchain();

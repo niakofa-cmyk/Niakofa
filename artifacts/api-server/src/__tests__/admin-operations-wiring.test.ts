@@ -70,6 +70,8 @@ jest.unstable_mockModule("../routes/navigation.js", () => ({
 }));
 jest.unstable_mockModule("../lib/storage.js", () => ({
   getStorageDescription: jest.fn(() => "local filesystem"),
+  getStorageBackend: jest.fn(() => "local"),
+  isCloudStorageConfigured: jest.fn(() => false),
 }));
 jest.unstable_mockModule("../lib/circleMediaConfig.js", () => ({
   isValidLiveKitUrl: jest.fn(() => true),
