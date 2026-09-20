@@ -1,4 +1,5 @@
 import type { ConversationKind } from "./unifiedConversation";
+import type { UnifiedRealtimeEvent } from "./unifiedRealtime";
 
 export type ConversationEvent = {
   type: "direct_message" | "chat_message" | "hub_message" | "message_read";
@@ -136,4 +137,31 @@ export function shouldNotifyConversation(input: NotificationPolicyInput): boolea
     return false;
   }
   return true;
+}
+
+export function applyUnifiedRealtimeEvent(
+  state: ConversationState,
+  event: UnifiedRealtimeEvent,
+): { state: ConversationState; accepted: boolean } {
+  const kind = event.conversation_kind as ConversationKind | null;
+  if (!kind || event.conversation_id === null) return { state, accepted: true };
+  const payload = event.payload;
+  const mappedType: ConversationEvent["type"] =
+    event.event_type === "message.read" || event.event_type === "conversation.read"
+      ? "message_read"
+      : event.event_type === "message.created"
+        ? kind === "direct" ? "direct_message" : kind === "request" ? "chat_message" : "hub_message"
+        : kind === "direct" ? "direct_message" : kind === "request" ? "chat_message" : "hub_message";
+  return applyConversationEvent(state, {
+    type: mappedType,
+    eventId: event.event_id,
+    conversationId: event.conversation_id,
+    kind,
+    senderId: typeof payload.sender_id === "number" ? payload.sender_id : event.actor_id,
+    currentUserId: typeof payload.current_user_id === "number" ? payload.current_user_id : null,
+    body: typeof payload.body === "string" ? payload.body : null,
+    createdAt: typeof payload.created_at === "string" ? payload.created_at : event.occurred_at,
+    title: typeof payload.title === "string" ? payload.title : null,
+    read: event.event_type === "message.read" || event.event_type === "conversation.read",
+  });
 }
