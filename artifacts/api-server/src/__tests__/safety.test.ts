@@ -12,6 +12,7 @@
  * before any dynamic import, native ESM only intercepts that (not
  * jest.mock()).
  */
+import * as drizzleOrmActual from "drizzle-orm";
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import type { Express } from "express";
@@ -77,7 +78,7 @@ jest.unstable_mockModule("@workspace/db", () => {
   };
 });
 
-jest.unstable_mockModule("drizzle-orm", () => ({
+jest.unstable_mockModule("drizzle-orm", () => ({\n  ...drizzleOrmActual,
   eq: jest.fn(),
   and: jest.fn(),
   or: jest.fn(),
