@@ -88,3 +88,14 @@ and forcing the ref creates a broken repository state.
 
 **How to apply:** treat the GitHub ref and deployed commit as authoritative,
 preserve the staged tree, and reconcile through an authenticated fetch later.
+
+After creating the local commit, build any publication manifest from the
+committed diff (`HEAD^..HEAD`), not the staging index; a successful `git commit`
+leaves `git diff --cached` empty.
+
+**Why:** using the empty index can produce an invalid empty Git Data API tree
+even though the local commit is complete.
+
+**How to apply:** capture changed paths and blob bytes before committing, or
+read them from the committed diff after committing, then verify the tree before
+creating or advancing the remote ref.
