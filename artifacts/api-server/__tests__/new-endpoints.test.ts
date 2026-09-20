@@ -60,6 +60,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   ratingsTable:            { id: "id" },
   reportsTable:            { id: "id" },
   chatMessagesTable:       { id: "id", request_id: "request_id", sender_id: "sender_id", content: "content", sent_at: "sent_at", read_at: "read_at" },
+  mediaAssetsTable:        { id: "id", owner_user_id: "owner_user_id", context_kind: "context_kind", context_id: "context_id", media_type: "media_type", mime_type: "mime_type", original_key: "original_key", status: "status", byte_size: "byte_size" },
   paymentTransactionsTable: { id: "id", request_id: "request_id", state: "state" },
   scheduledPaymentsTable:  { id: "id", user_id: "user_id" },
   walletCashoutsTable:     { id: "id", user_id: "user_id" },
