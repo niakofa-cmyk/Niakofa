@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { diasporaHubsTable } from "./diaspora-hubs";
+import { mediaAssetsTable } from "./media-assets";
 
 export const hubCommunityPostsTable = pgTable("hub_community_posts", {
   id: serial("id").primaryKey(),
@@ -27,6 +28,7 @@ export const hubCommunityPostsTable = pgTable("hub_community_posts", {
 export const hubCommunityPostMediaTable = pgTable("hub_community_post_media", {
   id: serial("id").primaryKey(),
   post_id: integer("post_id").notNull().references(() => hubCommunityPostsTable.id, { onDelete: "cascade" }),
+  media_asset_id: integer("media_asset_id").references(() => mediaAssetsTable.id, { onDelete: "set null" }),
   storage_key: text("storage_key").notNull(),
   mime_type: text("mime_type").notNull(),
   byte_size: integer("byte_size").notNull(),
@@ -34,6 +36,7 @@ export const hubCommunityPostMediaTable = pgTable("hub_community_post_media", {
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("hub_community_post_media_post_idx").on(t.post_id),
+  index("hub_community_post_media_asset_idx").on(t.media_asset_id),
 ]);
 
 export const hubCommunityPostCommentsTable = pgTable("hub_community_post_comments", {

@@ -17,16 +17,21 @@ import {
   hubCommunityPostsTable,
   gratitudePostsTable,
   hubMembershipsTable,
+  mediaAssetsTable,
   requestsTable,
   usersTable,
 } from "@workspace/db";
-import { requireAuth } from "../middlewares/auth";
-import { communityLikeLimiter, communityPostLimiter } from "../middlewares/rate-limit";
+import { requireApproved, requireAuth } from "../middlewares/auth";
+import { communityLikeLimiter, communityPostLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
-import { putAsset, streamOrRedirectAsset } from "../lib/storage";
+import { deleteAsset, putAsset, streamOrRedirectAsset } from "../lib/storage";
 import { broadcast } from "../lib/ws-hub";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
+import { mediaProcessingQueue } from "../lib/queue";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -244,7 +249,14 @@ router.get("/community/hubs/:hubId/feed", requireAuth, async (req, res) => {
     .limit(30);
 
   const postIds = communityPosts.map((post) => post.id);
-  type PostMediaRow = { id: number; post_id: number; mime_type: string; alt_text: string | null };
+  type PostMediaRow = {
+    id: number;
+    post_id: number;
+    mime_type: string;
+    alt_text: string | null;
+    media_asset_id: number | null;
+    media_status: string | null;
+  };
   type PostCommentRow = { id: number; post_id: number; body: string; author_name: string; author_avatar: string | null; created_at: Date };
   let postMedia: PostMediaRow[] = [];
   let postComments: PostCommentRow[] = [];
@@ -257,7 +269,11 @@ router.get("/community/hubs/:hubId/feed", requireAuth, async (req, res) => {
         post_id: hubCommunityPostMediaTable.post_id,
         mime_type: hubCommunityPostMediaTable.mime_type,
         alt_text: hubCommunityPostMediaTable.alt_text,
-      }).from(hubCommunityPostMediaTable).where(inArray(hubCommunityPostMediaTable.post_id, postIds)),
+        media_asset_id: hubCommunityPostMediaTable.media_asset_id,
+        media_status: mediaAssetsTable.status,
+      }).from(hubCommunityPostMediaTable)
+        .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, hubCommunityPostMediaTable.media_asset_id))
+        .where(inArray(hubCommunityPostMediaTable.post_id, postIds)),
       db.select({
         id: hubCommunityPostCommentsTable.id,
         post_id: hubCommunityPostCommentsTable.post_id,
@@ -309,6 +325,7 @@ router.get("/community/hubs/:hubId/feed", requireAuth, async (req, res) => {
     media: (mediaByPost.get(post.id) ?? []).map((media) => ({
       ...media,
       media_url: `/api/community/media/${media.id}`,
+      thumbnail_url: media.media_asset_id ? `/api/community/media/${media.id}?variant=thumbnail` : null,
     })),
     comments: commentsByPost.get(post.id) ?? [],
     reaction_count: reactionCounts.get(post.id) ?? 0,
@@ -422,46 +439,112 @@ router.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, community
   if (!decoded) {
     return res.status(400).json({ error: "Unsupported media type or file is larger than 5 MB." });
   }
+  if (isMediaPlatformV21Enabled() && !mediaProcessingQueue) {
+    return res.status(503).json({
+      error: "Media processing is not available. Please try again shortly.",
+      error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+    });
+  }
   const extension = decoded.mimeType.split("/")[1].replace("jpeg", "jpg");
   const storageKey = `hub-community/${hubId}/${postId}/${randomUUID()}.${extension}`;
-  await putAsset(storageKey, decoded.buffer, decoded.mimeType);
-  const [media] = await db.insert(hubCommunityPostMediaTable).values({
-    post_id: postId,
-    storage_key: storageKey,
-    mime_type: decoded.mimeType,
-    byte_size: decoded.buffer.length,
-    alt_text: parsed.data.alt_text ?? null,
-  }).returning();
-  return res.status(201).json({
-    media: media ? {
-      id: media.id,
-      post_id: media.post_id,
-      mime_type: media.mime_type,
-      alt_text: media.alt_text,
-      media_url: `/api/community/media/${media.id}`,
-    } : null,
-  });
+  let committed = false;
+  let mediaAssetJob: { id: number; mediaType: string } | null = null;
+  try {
+    await putAsset(storageKey, decoded.buffer, decoded.mimeType);
+    const result = await db.transaction(async (tx) => {
+      let mediaAssetId: number | null = null;
+      let processingJob: { id: number; mediaType: string } | null = null;
+      const mediaType = decoded.mimeType.startsWith("image/")
+        ? "photo"
+        : decoded.mimeType.startsWith("video/")
+        ? "video"
+        : decoded.mimeType.startsWith("audio/")
+        ? "audio"
+        : "document";
+      if (isMediaPlatformV21Enabled()) {
+        const [asset] = await tx.insert(mediaAssetsTable).values({
+          owner_user_id: req.authenticatedUserId!,
+          context_kind: "hub",
+          context_id: hubId,
+          media_type: mediaType,
+          mime_type: decoded.mimeType,
+          original_key: storageKey,
+          byte_size: decoded.buffer.length,
+        }).returning({ id: mediaAssetsTable.id });
+        mediaAssetId = asset?.id ?? null;
+        if (!mediaAssetId) throw new Error("Media asset could not be created.");
+        processingJob = { id: mediaAssetId, mediaType };
+      }
+      const [media] = await tx.insert(hubCommunityPostMediaTable).values({
+        post_id: postId,
+        media_asset_id: mediaAssetId,
+        storage_key: storageKey,
+        mime_type: decoded.mimeType,
+        byte_size: decoded.buffer.length,
+        alt_text: parsed.data.alt_text ?? null,
+      }).returning();
+      if (!media) throw new Error("Media could not be saved.");
+      return { media, mediaAssetId, processingJob };
+    });
+    committed = true;
+    if (result.processingJob) {
+      try {
+        await enqueueMediaAssetProcessing(result.processingJob.id, result.processingJob.mediaType);
+      } catch (error) {
+        logger.error({ err: error, hubId, postId }, "media-processing: Hub media job could not be published");
+        return res.status(503).json({
+          error: "Media saved, but processing is temporarily unavailable. Please refresh shortly.",
+          error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+        });
+      }
+    }
+    return res.status(201).json({
+      media: {
+        id: result.media.id,
+        post_id: result.media.post_id,
+        mime_type: result.media.mime_type,
+        alt_text: result.media.alt_text,
+        media_asset_id: result.mediaAssetId,
+        media_url: `/api/community/media/${result.media.id}`,
+        thumbnail_url: result.mediaAssetId ? `/api/community/media/${result.media.id}?variant=thumbnail` : null,
+      },
+    });
+  } catch (error) {
+    if (!committed) await deleteAsset(storageKey);
+    throw error;
+  }
 });
 
 // Media is attached only to an approved, moderated Hub post. The storage key
 // is UUID-based and the post-level visibility check prevents orphaned/private
 // objects from becoming a generic file browser. This route intentionally does
 // not require a bearer header so <img>, <video>, and <audio> elements work.
-router.get("/community/media/:mediaId", async (req, res) => {
+router.get("/community/media/:mediaId", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const mediaId = parseHubId(req.params.mediaId);
   if (!mediaId) return res.status(400).json({ error: "Invalid media id." });
   const [media] = await db.select({
     storage_key: hubCommunityPostMediaTable.storage_key,
+    media_asset_id: hubCommunityPostMediaTable.media_asset_id,
+    variant_key: mediaAssetsTable.variant_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
     hub_id: hubCommunityPostsTable.hub_id,
     moderation_status: hubCommunityPostsTable.moderation_status,
   }).from(hubCommunityPostMediaTable)
     .innerJoin(hubCommunityPostsTable, eq(hubCommunityPostsTable.id, hubCommunityPostMediaTable.post_id))
+    .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, hubCommunityPostMediaTable.media_asset_id))
     .where(eq(hubCommunityPostMediaTable.id, mediaId))
     .limit(1);
   if (!media || media.moderation_status !== "approved" || !(await canonicalHubExists(media.hub_id))) {
     return res.status(404).json({ error: "Media not found." });
   }
-  await streamOrRedirectAsset(media.storage_key, res);
+  if (!(await isApprovedHubMember(req.authenticatedUserId!, media.hub_id))) {
+    return res.status(404).json({ error: "Media not found." });
+  }
+  const key = String(req.query.variant ?? "") === "thumbnail"
+    ? media.thumbnail_key
+    : media.variant_key ?? media.storage_key;
+  if (!key) return res.status(409).json({ error: "Media variant is still processing." });
+  await streamOrRedirectAsset(key, res);
   return;
 });
 

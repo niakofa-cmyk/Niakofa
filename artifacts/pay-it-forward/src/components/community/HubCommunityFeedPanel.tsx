@@ -11,6 +11,7 @@ import {
 } from "@/lib/hubCommunityFeed";
 import { communitySpiralsPath, spiralsDiscoveryPath } from "@/lib/spirals";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { authHeaders } from "@/lib/auth";
 
 export default function HubCommunityFeedPanel({ hubId }: { hubId: number | string }) {
   const [, navigate] = useLocation();
@@ -204,11 +205,11 @@ export default function HubCommunityFeedPanel({ hubId }: { hubId: number | strin
               {item.post.media.length > 0 && (
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {item.post.media.map((media) => media.mime_type.startsWith("image/") ? (
-                    <img key={media.id} src={media.media_url} alt={media.alt_text ?? "Hub post media"} loading="lazy" className="max-h-64 w-full rounded-xl object-cover" />
+                    <HubMedia key={media.id} media={media} kind="image" />
                   ) : media.mime_type.startsWith("video/") ? (
-                    <video key={media.id} src={media.media_url} controls className="max-h-64 w-full rounded-xl" />
+                    <HubMedia key={media.id} media={media} kind="video" />
                   ) : (
-                    <audio key={media.id} src={media.media_url} controls className="w-full" />
+                    <HubMedia key={media.id} media={media} kind="audio" />
                   ))}
                 </div>
               )}
@@ -242,6 +243,47 @@ export default function HubCommunityFeedPanel({ hubId }: { hubId: number | strin
       </div>
     </section>
   );
+}
+
+function HubMedia({
+  media,
+  kind,
+}: {
+  media: HubCommunityFeed["posts"][number]["media"][number];
+  kind: "image" | "video" | "audio";
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    void fetch(media.media_url, { headers: authHeaders(), signal: controller.signal })
+      .then((response) => response.ok ? response.blob() : Promise.reject(new Error("media")))
+      .then((blob) => {
+        if (!active) return;
+        setObjectUrl(URL.createObjectURL(blob));
+      })
+      .catch(() => { if (active) setFailed(true); });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [media.media_url]);
+
+  if (failed) {
+    return <div className="rounded-xl border border-border bg-background/70 p-3 text-xs text-muted-foreground">Media unavailable.</div>;
+  }
+  if (!objectUrl) {
+    return <div className={`${kind === "image" ? "h-48" : "h-16"} animate-pulse rounded-xl bg-muted`} />;
+  }
+  if (kind === "image") {
+    return <img src={objectUrl} alt={media.alt_text ?? "Hub post media"} loading="lazy" className="max-h-64 w-full rounded-xl object-cover" />;
+  }
+  if (kind === "video") {
+    return <video src={objectUrl} controls playsInline className="max-h-64 w-full rounded-xl" />;
+  }
+  return <audio src={objectUrl} controls className="w-full" />;
 }
 
 function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {

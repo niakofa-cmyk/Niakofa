@@ -5,6 +5,7 @@ export * from "./request-helpers";
 export * from "./ratings";
 export * from "./transactions";
 export * from "./chat-messages";
+export * from "./request-message-attachments";
 export * from "./message-read-states";
 export * from "./message-notifications";
 export * from "./community-stories";

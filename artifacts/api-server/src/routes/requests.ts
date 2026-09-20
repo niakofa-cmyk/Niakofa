@@ -1,8 +1,9 @@
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable, hubCommunityLeadersTable, scheduledPaymentsTable, chatMessagesTable, reportsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable, hubCommunityLeadersTable, scheduledPaymentsTable, chatMessagesTable, reportsTable, mediaAssetsTable, requestMessageAttachmentsTable } from "@workspace/db";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -32,6 +33,11 @@ import { sendReceipt } from "../lib/mailer";
 import { moderateRequestText } from "../lib/post-moderation";
 import Stripe from "stripe";
 import type { repaymentPlansTable as RepaymentPlansTable } from "@workspace/db";
+import { deleteAsset, putAsset, streamOrRedirectAsset } from "../lib/storage";
+import { hasExpectedSignature } from "../lib/media-validation";
+import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
+import { mediaProcessingQueue } from "../lib/queue";
 
 // Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
 const _STRIPE_SK = getStripeSecretKey();
@@ -40,6 +46,73 @@ const _stripe = _STRIPE_SK
   : null;
 
 const router = Router();
+
+const MAX_REQUEST_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_REQUEST_ATTACHMENT_DATA_URL_LENGTH = 7_500_000;
+const REQUEST_ATTACHMENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "audio/mpeg",
+  "audio/ogg",
+  "audio/wav",
+  "application/pdf",
+]);
+const REQUEST_ATTACHMENT_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "audio/mpeg": "mp3",
+  "audio/ogg": "ogg",
+  "audio/wav": "wav",
+  "application/pdf": "pdf",
+};
+
+type DecodedRequestAttachment = {
+  buffer: Buffer;
+  mimeType: string;
+  originalName: string | null;
+  altText: string | null;
+};
+
+function parseRequestAttachment(value: unknown): DecodedRequestAttachment | { error: string } {
+  if (!value || typeof value !== "object") {
+    return { error: "An attachment object is required." };
+  }
+  const candidate = value as Record<string, unknown>;
+  const dataUrl = candidate.data_url;
+  if (typeof dataUrl !== "string" || dataUrl.length > MAX_REQUEST_ATTACHMENT_DATA_URL_LENGTH) {
+    return { error: "Attachment data is missing or too large." };
+  }
+  const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!match || !REQUEST_ATTACHMENT_TYPES.has(match[1])) {
+    return { error: "Unsupported attachment type." };
+  }
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length || buffer.length > MAX_REQUEST_ATTACHMENT_BYTES || !hasExpectedSignature(buffer, match[1])) {
+    return { error: "Attachment is empty, too large, or has invalid file contents." };
+  }
+  const originalName = typeof candidate.original_name === "string"
+    ? candidate.original_name.trim().slice(0, 255) || null
+    : null;
+  const altText = typeof candidate.alt_text === "string"
+    ? candidate.alt_text.trim().slice(0, 200) || null
+    : null;
+  return { buffer, mimeType: match[1], originalName, altText };
+}
+
+function requestAttachmentType(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "photo";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "document";
+}
 
 // ─── Pin-coordinate fuzzing ───────────────────────────────────────────────────
 // Browsing helpers see a ~100 m neighbourhood-level pin, not the requester's
@@ -2715,6 +2788,31 @@ router.get("/requests/:id/messages", requireAuth, async (req, res) => {
     .orderBy(desc(chatMessagesTable.sent_at))
     .limit(100);
 
+  const messageIds = rows.map((message) => message.id);
+  const attachmentRows = messageIds.length > 0
+    ? await db
+      .select({
+        id: requestMessageAttachmentsTable.id,
+        message_id: requestMessageAttachmentsTable.message_id,
+        attachment_type: requestMessageAttachmentsTable.attachment_type,
+        mime_type: requestMessageAttachmentsTable.mime_type,
+        byte_size: requestMessageAttachmentsTable.byte_size,
+        original_name: requestMessageAttachmentsTable.original_name,
+        alt_text: requestMessageAttachmentsTable.alt_text,
+        media_asset_id: requestMessageAttachmentsTable.media_asset_id,
+        variant_key: mediaAssetsTable.variant_key,
+      })
+      .from(requestMessageAttachmentsTable)
+      .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, requestMessageAttachmentsTable.media_asset_id))
+      .where(inArray(requestMessageAttachmentsTable.message_id, messageIds))
+    : [];
+  const attachmentsByMessage = new Map<number, typeof attachmentRows>();
+  for (const attachment of attachmentRows) {
+    const list = attachmentsByMessage.get(attachment.message_id) ?? [];
+    list.push(attachment);
+    attachmentsByMessage.set(attachment.message_id, list);
+  }
+
   // Reverse so client receives oldest-first (natural chat order).
   // Normalize to the canonical ChatMessage API shape (body + created_at) so the response
   // matches the OpenAPI spec and what InAppChat.tsx expects from both REST and WS paths.
@@ -2727,9 +2825,189 @@ router.get("/requests/:id/messages", requireAuth, async (req, res) => {
     body: m.content,
     created_at: m.sent_at?.toISOString() ?? new Date().toISOString(),
     read: m.read_at != null,
+    attachments: (attachmentsByMessage.get(m.id) ?? []).map((attachment) => ({
+      id: attachment.id,
+      attachment_type: attachment.attachment_type,
+      mime_type: attachment.mime_type,
+      byte_size: attachment.byte_size,
+      original_name: attachment.original_name,
+      alt_text: attachment.alt_text,
+      media_asset_id: attachment.media_asset_id,
+      media_url: `/api/requests/${requestId}/messages/attachments/${attachment.id}`,
+    })),
   }));
 
   return res.json({ messages });
+});
+
+// POST /requests/:id/messages/attachments — create a request chat message
+// with one validated attachment. This mirrors the Direct message attachment
+// flow while keeping the existing request chat table and WS event shape.
+router.post("/requests/:id/messages/attachments", requireAuth, async (req, res) => {
+  const requestId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const callerId = req.authenticatedUserId!;
+  const [request] = await db
+    .select({
+      requester_id: requestsTable.requester_id,
+      helper_id: requestsTable.helper_id,
+    })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+
+  const [caller] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, callerId))
+    .limit(1);
+  const isParticipant = request.requester_id === callerId || request.helper_id === callerId;
+  if (!isParticipant && !caller?.is_admin) {
+    return res.status(403).json({ error: "Not a participant of this request" });
+  }
+
+  const decoded = parseRequestAttachment(req.body?.attachment ?? req.body);
+  if ("error" in decoded) return res.status(400).json({ error: decoded.error });
+  const body = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+  if (body.length > 2_000) return res.status(400).json({ error: "Message content is too long." });
+  if (isMediaPlatformV21Enabled() && !mediaProcessingQueue) {
+    return res.status(503).json({
+      error: "Media processing is not available. Please try again shortly.",
+      error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+    });
+  }
+
+  const extension = REQUEST_ATTACHMENT_EXTENSIONS[decoded.mimeType] ?? "bin";
+  const storageKey = `request-messages/${requestId}/${randomUUID()}.${extension}`;
+  let committed = false;
+  let mediaAssetJob: { id: number; mediaType: string } | null = null;
+
+  try {
+    await putAsset(storageKey, decoded.buffer, decoded.mimeType);
+    const result = await db.transaction(async (tx) => {
+      const [saved] = await tx.insert(chatMessagesTable).values({
+        request_id: requestId,
+        sender_id: callerId,
+        content: body || "Sent an attachment",
+      }).returning();
+      if (!saved) throw new Error("Failed to save message");
+
+      let mediaAssetId: number | null = null;
+      let processingJob: { id: number; mediaType: string } | null = null;
+      const attachmentType = requestAttachmentType(decoded.mimeType);
+      if (isMediaPlatformV21Enabled()) {
+        const [asset] = await tx.insert(mediaAssetsTable).values({
+          owner_user_id: callerId,
+          context_kind: "request",
+          context_id: requestId,
+          media_type: attachmentType,
+          mime_type: decoded.mimeType,
+          original_name: decoded.originalName,
+          original_key: storageKey,
+          byte_size: decoded.buffer.length,
+        }).returning({ id: mediaAssetsTable.id });
+        mediaAssetId = asset?.id ?? null;
+        if (!mediaAssetId) throw new Error("Media asset could not be created.");
+        processingJob = { id: mediaAssetId, mediaType: attachmentType };
+      }
+
+      const [attachment] = await tx.insert(requestMessageAttachmentsTable).values({
+        message_id: saved.id,
+        media_asset_id: mediaAssetId,
+        storage_key: storageKey,
+        attachment_type: "file",
+        mime_type: decoded.mimeType,
+        byte_size: decoded.buffer.length,
+        original_name: decoded.originalName,
+        alt_text: decoded.altText,
+      }).returning();
+      if (!attachment) throw new Error("Attachment could not be saved.");
+      return { saved, attachment, mediaAssetId, processingJob };
+    });
+    committed = true;
+
+    if (result.processingJob) {
+      try {
+        await enqueueMediaAssetProcessing(result.processingJob.id, result.processingJob.mediaType);
+      } catch (error) {
+        logger.error({ err: error, requestId }, "media-processing: request attachment job could not be published");
+        return res.status(503).json({
+          error: "Message saved, but media processing is temporarily unavailable. Please refresh shortly.",
+          error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+        });
+      }
+    }
+
+    const [sender] = await db
+      .select({ name: usersTable.name, avatar_url: usersTable.avatar_url })
+      .from(usersTable)
+      .where(eq(usersTable.id, callerId))
+      .limit(1);
+    const messagePayload = {
+      id: String(result.saved.id),
+      request_id: requestId,
+      sender_id: callerId,
+      sender_name: sender?.name ?? "Unknown",
+      sender_avatar: sender?.avatar_url ?? null,
+      body: result.saved.content,
+      created_at: result.saved.sent_at?.toISOString() ?? new Date().toISOString(),
+      attachments: [{
+        id: result.attachment.id,
+        attachment_type: result.attachment.attachment_type,
+        mime_type: result.attachment.mime_type,
+        byte_size: result.attachment.byte_size,
+        original_name: result.attachment.original_name,
+        alt_text: result.attachment.alt_text,
+        media_asset_id: result.mediaAssetId,
+        media_url: `/api/requests/${requestId}/messages/attachments/${result.attachment.id}`,
+      }],
+    };
+    sendToRequestParticipants(request.requester_id, request.helper_id, {
+      type: "chat_message",
+      payload: { message: messagePayload, request_id: requestId },
+    });
+    return res.status(201).json({ message: messagePayload });
+  } catch (error) {
+    if (!committed) await deleteAsset(storageKey);
+    throw error;
+  }
+});
+
+router.get("/requests/:id/messages/attachments/:attachmentId", requireAuth, async (req, res) => {
+  const requestId = parseInt(String(req.params.id ?? ""), 10);
+  const attachmentId = parseInt(String(req.params.attachmentId ?? ""), 10);
+  if (isNaN(requestId) || isNaN(attachmentId)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+  const callerId = req.authenticatedUserId!;
+  const [row] = await db
+    .select({
+      storage_key: requestMessageAttachmentsTable.storage_key,
+      variant_key: mediaAssetsTable.variant_key,
+      requester_id: requestsTable.requester_id,
+      helper_id: requestsTable.helper_id,
+    })
+    .from(requestMessageAttachmentsTable)
+    .innerJoin(chatMessagesTable, eq(chatMessagesTable.id, requestMessageAttachmentsTable.message_id))
+    .innerJoin(requestsTable, eq(requestsTable.id, chatMessagesTable.request_id))
+    .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, requestMessageAttachmentsTable.media_asset_id))
+    .where(and(
+      eq(requestsTable.id, requestId),
+      eq(requestMessageAttachmentsTable.id, attachmentId),
+    ))
+    .limit(1);
+  if (!row) return res.status(404).json({ error: "Attachment not found." });
+  const [caller] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, callerId))
+    .limit(1);
+  if (row.requester_id !== callerId && row.helper_id !== callerId && !caller?.is_admin) {
+    return res.status(404).json({ error: "Attachment not found." });
+  }
+  return streamOrRedirectAsset(row.variant_key ?? row.storage_key, res);
 });
 
 // POST /requests/:id/safety-ping — passive safety check-in during an active session.

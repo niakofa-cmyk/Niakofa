@@ -37,7 +37,16 @@ export type HubCommunityFeed = {
     author_name: string | null;
     author_avatar: string | null;
     created_at: string;
-    media: Array<{ id: number; post_id: number; mime_type: string; alt_text: string | null; media_url: string }>;
+    media: Array<{
+      id: number;
+      post_id: number;
+      mime_type: string;
+      alt_text: string | null;
+      media_asset_id?: number | null;
+      media_status?: string | null;
+      media_url: string;
+      thumbnail_url?: string | null;
+    }>;
     comments: Array<{ id: number; post_id: number; body: string; author_name: string | null; author_avatar: string | null; created_at: string }>;
     reaction_count: number;
     viewer_reacted: boolean;
