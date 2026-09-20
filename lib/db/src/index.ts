@@ -33,3 +33,12 @@ export {
   communityStoryReactionsTable,
   communityStorySharesTable,
 } from "./schema/community-stories";
+
+// V21 Media Platform — same Jest/ESM stability pattern.
+// Without these, api-server tests fail at import of routes/requests with:
+//   The requested module '@workspace/db' does not provide an export named 'mediaAssetsTable'
+export {
+  mediaAssetsTable,
+  mediaProcessingJobsTable,
+} from "./schema/media-assets";
+export { requestMessageAttachmentsTable } from "./schema/request-message-attachments";
