@@ -1,4 +1,5 @@
 import { getToken } from "./auth";
+import { loadDurableRealtimeState, normalizeRealtimeEvent, rememberDurableEvent, type UnifiedRealtimeEvent } from "./unifiedRealtime";
 
 /**
  * Niakofa WebSocket Client — shared singleton
@@ -101,7 +102,8 @@ export type WsEventType =
   | "circle_heartbeat"
   | "connected"
   | "pong"
-  | "ping";
+  | "ping"
+  | "unified_event";
 
 export interface WsEvent {
   type: WsEventType;
@@ -197,6 +199,7 @@ function connect(): void {
     if (registeredUserId !== null) {
       const tok = registeredToken ?? getToken();
       send({ type: "register", payload: { userId: registeredUserId, token: tok } });
+      void replayDurableEvents();
     }
 
     if (pingTimer) clearInterval(pingTimer);
@@ -213,6 +216,8 @@ function connect(): void {
     try {
       const event = JSON.parse(msg.data as string) as WsEvent;
       handlers.forEach((handler) => handler(event));
+      const unified = normalizeRealtimeEvent(event);
+      if (unified) handlers.forEach((handler) => handler({ type: "unified_event", payload: unified }));
     } catch {
       // Ignore malformed server frames.
     }
@@ -228,6 +233,28 @@ function connect(): void {
   };
 
   socket.onerror = () => socket?.close();
+}
+
+
+async function replayDurableEvents(): Promise<void> {
+  if (typeof window === "undefined" || !registeredUserId) return;
+  const state = loadDurableRealtimeState();
+  const token = registeredToken ?? getToken();
+  if (!token) return;
+  try {
+    const query = state.cursor ? `?after=${encodeURIComponent(state.cursor)}&limit=250` : "?limit=250";
+    const response = await fetch(`/api/realtime/events${query}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) return;
+    const data = await response.json() as { events?: unknown[] };
+    for (const raw of data.events ?? []) {
+      const event = raw as UnifiedRealtimeEvent;
+      if (!event.event_id || state.seen.includes(event.event_id)) continue;
+      handlers.forEach((handler) => handler({ type: "unified_event", payload: event }));
+      rememberDurableEvent(state, event.event_id);
+    }
+  } catch {
+    // Replay is recovery; live WebSocket delivery remains authoritative while connected.
+  }
 }
 
 export function wsStart(): void {
