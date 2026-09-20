@@ -61,6 +61,7 @@ import communityStoriesRouter from "./community-stories";
 import communityStoryInteractionsRouter from "./community-story-interactions";
 import messageMediaRouter from "./message-media";
 import directCallRouter from "./direct-call";
+import realtimeEventsRouter from "./realtime-events";
 import { stampLocationUpdatedAt } from "../middlewares/stamp-location-updated-at";
 import { messageActivityAudit } from "../middlewares/message-activity-audit";
 
@@ -145,5 +146,6 @@ router.use(messagesUnreadSummaryRouter);
 router.use(messageMediaRouter);
 router.use(directCallRouter);
 router.use(directMessagesRouter);
+router.use(realtimeEventsRouter);
 
 export default router;
