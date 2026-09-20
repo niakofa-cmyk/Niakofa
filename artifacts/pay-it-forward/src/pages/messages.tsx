@@ -24,7 +24,7 @@ import type { MessageAttachmentData } from "@/components/messages/MessageAttachm
 import { directConversationPath, hubConversationPath, messagesPath, requestConversationPath, type MessageMode } from "@/lib/messageRoutes";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
 import { directToUnified, hubToUnified, requestToUnified, sortUnified, type UnifiedConversation } from "@/lib/unifiedConversation";
-import { applyConversationEvent, createConversationState, markConversationRead, shouldNotifyConversation, type ConversationEvent, type ConversationState } from "@/lib/conversationState";
+import { applyConversationEvent, applyUnifiedRealtimeEvent, createConversationState, markConversationRead, shouldNotifyConversation, type ConversationEvent, type ConversationState } from "@/lib/conversationState";
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
 
 type DirectUser = { id: number; name: string; avatar_url: string | null };
@@ -354,6 +354,15 @@ export default function MessagesPage() {
   useEffect(() => {
     const unsubscribeConnection = wsSubscribeConnection((snapshot) => setRealtimeState(snapshot.state));
     const unsubscribeEvents = wsSubscribe((event: WsEvent) => {
+      if (event.type === "unified_event") {
+        const unified = event.payload as import("@/lib/unifiedRealtime").UnifiedRealtimeEvent;
+        const result = applyUnifiedRealtimeEvent(liveConversationStateRef.current, unified);
+        if (result.accepted && result.state !== liveConversationStateRef.current) {
+          liveConversationStateRef.current = result.state;
+          setLiveConversationState(result.state);
+        }
+        return;
+      }
       if (event.type === "ws_reconnected") {
         void loadInbox();
         if (activeMode === "direct" && selectedDirectId) void loadDirectMessages(selectedDirectId).catch(() => {});
