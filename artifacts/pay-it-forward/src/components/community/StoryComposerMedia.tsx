@@ -1,25 +1,9 @@
 import { useEffect, useState } from "react";
-
-const MAX_FILES = 6;
-const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
-const MAX_VIDEO_DURATION_SECONDS = 60;
-const ACCEPTED_MEDIA_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "video/mp4",
-  "video/webm",
-]);
+import { STORY_MEDIA_LIMITS, validateStoryMedia } from "@/lib/storyMediaPipeline";
 
 export function validateStoryFile(file: File): string | null {
-  if (!ACCEPTED_MEDIA_TYPES.has(file.type)) {
-    return "Use a JPG, PNG, WebP, GIF, MP4, or WebM file for a Story.";
-  }
-  if (file.size > MAX_MEDIA_BYTES) {
-    return "That file is too large. Maximum is 12 MB.";
-  }
-  return null;
+  const result = validateStoryMedia(file);
+  return result.ok ? null : result.error;
 }
 
 export function normalizeStoryFiles(files: File[]) {
@@ -30,7 +14,7 @@ export function normalizeStoryFiles(files: File[]) {
     if (error) errors.push(`${file.name}: ${error}`);
     else accepted.push(file);
   }
-  return { files: accepted.slice(0, MAX_FILES), errors };
+  return { files: accepted.slice(0, STORY_MEDIA_LIMITS.maxFiles), errors };
 }
 
 function readVideoDuration(file: File): Promise<number | null> {
@@ -64,7 +48,7 @@ function readVideoDuration(file: File): Promise<number | null> {
  */
 export async function validateStoryFiles(files: File[]): Promise<string[]> {
   const errors: string[] = [];
-  for (const file of files.slice(0, MAX_FILES)) {
+  for (const file of files.slice(0, STORY_MEDIA_LIMITS.maxFiles)) {
     const typeError = validateStoryFile(file);
     if (typeError) {
       errors.push(`${file.name}: ${typeError}`);
@@ -74,7 +58,7 @@ export async function validateStoryFiles(files: File[]): Promise<string[]> {
     const duration = await readVideoDuration(file);
     if (duration === null) {
       errors.push(`${file.name}: The video could not be inspected. Please choose another clip.`);
-    } else if (duration > MAX_VIDEO_DURATION_SECONDS) {
+    } else if (duration > STORY_MEDIA_LIMITS.videoMaxSeconds) {
       errors.push(`${file.name}: Story videos must be 60 seconds or shorter.`);
     }
   }

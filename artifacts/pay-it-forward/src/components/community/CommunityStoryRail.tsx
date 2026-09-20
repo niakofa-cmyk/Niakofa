@@ -24,6 +24,8 @@ import { MessageAvatar } from "@/components/messages/MessageAvatar";
 import { StoryMediaPlayer } from "./StoryMediaPlayer";
 import { StoryShareSheet } from "./StoryShareSheet";
 import { normalizeStoryFiles, useObjectUrls, validateStoryFiles } from "./StoryComposerMedia";
+import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
+import { readStoryMediaMetadata } from "@/lib/storyMediaPipeline";
 import {
   getStoryMetrics,
   reactToStory,
@@ -116,6 +118,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const [textSize, setTextSize] = useState("18");
   const [textAlign, setTextAlign] = useState<"left" | "center" | "right">("center");
   const [textBackground, setTextBackground] = useState<string>(TEXT_STORY_BACKGROUNDS[0]);
+  const [editorElements, setEditorElements] = useState<EditableStoryElement[]>([]);
   const [publishing, setPublishing] = useState(false);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
@@ -136,6 +139,22 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
       : effect === "grayscale"
         ? "grayscale(1)"
         : "none";
+
+  const updateEditorElement = (id: string, patch: Partial<EditableStoryElement>) => {
+    setEditorElements((current) => current.map((element) => (
+      element.id === id ? { ...element, ...patch } : element
+    )));
+  };
+
+  const upsertEditorElement = (element: EditableStoryElement) => {
+    setEditorElements((current) => {
+      const index = current.findIndex((item) => item.id === element.id);
+      if (index < 0) return [...current, element];
+      const next = current.slice();
+      next[index] = { ...next[index], ...element, payload: { ...next[index].payload, ...element.payload } };
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -204,6 +223,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     setTextSize("18");
     setTextAlign("center");
     setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
+    setEditorElements([]);
     setAudience(hubId ? "hub" : "community");
   };
 
@@ -214,18 +234,33 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     try {
       const validationErrors = await validateStoryFiles(files);
       if (validationErrors.length) throw new Error(validationErrors[0]);
-      const media = await Promise.all(files.slice(0, 6).map(async (file) => ({
+      const selectedFiles = files.slice(0, 6);
+      const metadata = await Promise.all(selectedFiles.map((file) => readStoryMediaMetadata(file)));
+      const media = await Promise.all(selectedFiles.map(async (file, index) => ({
         data_url: await readFileAsDataUrl(file),
         media_type: file.type.startsWith("video/") ? "video" as const : "photo" as const,
         mime_type: file.type,
+        duration_ms: metadata[index].durationSeconds ? Math.round(metadata[index].durationSeconds * 1000) : null,
+        width: metadata[index].width ?? null,
+        height: metadata[index].height ?? null,
       })));
       const elements: Array<Record<string, unknown>> = [];
       if (!media.length) elements.push({ type: "background", payload: { color: textBackground }, position_x: 50, position_y: 50, z_index: 0 });
-      if (caption.trim()) elements.push({ type: "text", payload: { text: caption.trim(), color: textColor, font_size: Number(textSize), align: textAlign }, position_x: 50, position_y: 50, z_index: 10 });
-      if (tool === "music") elements.push({ type: "music", payload: { audio_source: "niakofa_library", track: music, volume: 1 }, position_x: 50, position_y: 12 });
-      if (tool === "stickers") elements.push({ type: "sticker", payload: { sticker }, position_x: 50, position_y: 50, scale: 1.2, z_index: 20 });
-      if (tool === "effects") elements.push({ type: "effect", payload: { effect }, position_x: 50, position_y: 50 });
-       if (tool === "mention" && mentionUserId) elements.push({ type: "mention", payload: { mention_user_id: mentionUserId, display_name: mention.trim() }, position_x: 50, position_y: 64, z_index: 20 });
+      const draftElements = editorElements.slice();
+      if (caption.trim() && !draftElements.some((element) => element.id === "caption")) {
+        draftElements.push({
+          id: "caption",
+          type: "text",
+          payload: { text: caption.trim(), color: textColor, font_size: Number(textSize), align: textAlign },
+          position_x: 50,
+          position_y: 50,
+          scale: 1,
+          rotation: 0,
+          z_index: 10,
+        });
+      }
+      elements.push(...draftElements.map(({ id: _id, ...element }) => element));
+      if (tool === "effects" || effect !== "none") elements.push({ type: "effect", payload: { effect }, position_x: 50, position_y: 50 });
       const response = await fetch("/api/community/stories", {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
