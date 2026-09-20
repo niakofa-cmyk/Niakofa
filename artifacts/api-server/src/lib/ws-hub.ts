@@ -14,6 +14,7 @@
  *   - Hub metrics for admin health endpoint
  */
 import { WebSocketServer, WebSocket } from "ws";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server as HttpServer } from "http";
 import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
