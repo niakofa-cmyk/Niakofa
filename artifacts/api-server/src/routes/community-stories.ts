@@ -9,6 +9,7 @@ import {
   hubMembershipsTable,
   mediaAssetsTable,
   usersTable,
+  type StoryCompositionManifest,
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { communityPostLimiter } from "../middlewares/rate-limit";
@@ -32,6 +33,7 @@ const ALLOWED_MEDIA = new Set(["image/jpeg", "image/png", "image/webp", "image/g
 const STORY_AUDIENCES = ["community", "hub"] as const;
 
 const storyElementSchema = z.object({
+  id: z.string().trim().min(1).max(100).optional(),
   type: z.string().trim().min(1).max(40),
   payload: z.record(z.string(), z.unknown()).default({}),
   position_x: z.number().min(0).max(100).default(50),
@@ -55,6 +57,25 @@ const createStorySchema = z.object({
     height: z.number().int().positive().max(10_000).nullable().optional(),
   })).min(0).max(MAX_MEDIA_ITEMS).default([]),
   elements: z.array(storyElementSchema).max(30).default([]),
+  composition_manifest: z.object({
+    version: z.literal(1),
+    canvas: z.object({
+      width: z.number().positive().max(10_000),
+      height: z.number().positive().max(10_000),
+      aspect: z.enum(["9:16", "1:1", "16:9"]),
+    }),
+    elements: z.array(storyElementSchema).max(30),
+    music: z.object({
+      track_id: z.string().trim().min(1).max(200).optional(),
+      track_key: z.string().trim().min(1).max(500).optional(),
+      title: z.string().trim().max(200).optional(),
+      start_ms: z.number().int().min(0).optional(),
+      end_ms: z.number().int().positive().optional(),
+      volume: z.number().min(0).max(2).optional(),
+      licensed: z.boolean().optional(),
+    }).nullable().optional(),
+    effects: z.array(z.enum(["grayscale", "sepia", "blur"])).max(6).optional(),
+  }).optional(),
 });
 
 function positiveId(value: unknown): number | null {
@@ -70,6 +91,29 @@ function cleanText(value: unknown, maxLength: number): string {
 
 function serializeDate(value: Date | null | undefined): string | null {
   return value instanceof Date ? value.toISOString() : null;
+}
+
+function normalizeCompositionManifest(
+  input: z.infer<typeof createStorySchema>["composition_manifest"],
+  fallbackElements: z.infer<typeof storyElementSchema>[],
+): StoryCompositionManifest {
+  const source = input?.elements ?? fallbackElements;
+  return {
+    version: 1,
+    canvas: input?.canvas ?? { width: 1080, height: 1920, aspect: "9:16" },
+    elements: source.map((element, index) => ({
+      id: element.id ?? `element-${index + 1}`,
+      type: element.type,
+      payload: element.payload,
+      position_x: element.position_x,
+      position_y: element.position_y,
+      scale: element.scale,
+      rotation: element.rotation,
+      z_index: element.z_index,
+    })),
+    music: input?.music ?? null,
+    effects: input?.effects ?? [],
+  };
 }
 
 function decodeMediaDataUrl(value: string): { buffer: Buffer; mimeType: string } | null {
@@ -128,6 +172,7 @@ function publicStory(row: {
   expires_at: Date;
   author_name: string;
   avatar_url: string | null;
+  composition_manifest: typeof communityStoriesTable.$inferSelect["composition_manifest"];
 }, media: Array<typeof communityStoryMediaTable.$inferSelect>, elements: Array<typeof communityStoryElementsTable.$inferSelect>) {
   return {
     id: row.id,
@@ -139,6 +184,7 @@ function publicStory(row: {
     reply_enabled: row.reply_enabled,
     created_at: serializeDate(row.created_at),
     expires_at: serializeDate(row.expires_at),
+    composition_manifest: row.composition_manifest,
     author: { id: row.author_user_id, name: row.author_name, avatar_url: row.avatar_url },
     media: media.map((item) => ({
       id: item.id,
@@ -188,6 +234,7 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
     reply_enabled: communityStoriesTable.reply_enabled,
     created_at: communityStoriesTable.created_at,
     expires_at: communityStoriesTable.expires_at,
+    composition_manifest: communityStoriesTable.composition_manifest,
     author_name: usersTable.name,
     avatar_url: usersTable.avatar_url,
   }).from(communityStoriesTable)
@@ -234,6 +281,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   const caption = cleanText(parsed.data.caption, 1000) || null;
   const moderation = moderatePostText(caption ?? "");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const compositionManifest = normalizeCompositionManifest(parsed.data.composition_manifest, parsed.data.elements);
   const storedKeys: string[] = [];
   if (isMediaPlatformV21Enabled() && !mediaProcessingQueue) {
     return res.status(503).json({
@@ -290,10 +338,11 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         audience: parsed.data.audience,
         status: moderation.status,
         reply_enabled: parsed.data.reply_enabled,
+        composition_manifest: compositionManifest,
         expires_at: expiresAt,
       }).returning();
       if (!story) throw new Error("Story could not be saved.");
-      const mediaAssetJobs: Array<{ id: number; mediaType: string }> = [];
+      const mediaAssetJobs: Array<{ id: number; mediaType: string; manifest: typeof compositionManifest }> = [];
       for (const item of decodedMedia) {
         const decoded = item.decoded!;
         const extension = decoded.mimeType.split("/")[1].replace("jpeg", "jpg");
@@ -313,10 +362,11 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
             width: item.metadata?.width ?? null,
             height: item.metadata?.height ?? null,
             duration_ms: item.metadata?.duration_ms ?? null,
+            composition_manifest: compositionManifest,
           }).returning({ id: mediaAssetsTable.id });
           mediaAssetId = asset?.id ?? null;
           if (!mediaAssetId) throw new Error("Media asset could not be created.");
-          mediaAssetJobs.push({ id: mediaAssetId, mediaType: item.media_type });
+          mediaAssetJobs.push({ id: mediaAssetId, mediaType: item.media_type, manifest: compositionManifest });
         }
         await tx.insert(communityStoryMediaTable).values({
           story_id: story.id,
@@ -346,7 +396,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     });
     if (result.mediaAssetJobs.length) {
       try {
-        await Promise.all(result.mediaAssetJobs.map((job) => enqueueMediaAssetProcessing(job.id, job.mediaType)));
+        await Promise.all(result.mediaAssetJobs.map((job) => enqueueMediaAssetProcessing(job.id, job.mediaType, job.manifest)));
       } catch (error) {
         // Keep the original object and durable pending rows. A retry/reconciler
         // can republish deterministic BullMQ job ids without losing the upload.

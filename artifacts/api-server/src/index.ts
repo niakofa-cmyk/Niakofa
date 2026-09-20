@@ -33,6 +33,7 @@ import { startMediaProcessWorker } from "./workers/media-process-worker";
 import { isMediaPlatformV21Enabled } from "./lib/media-platform";
 import { isCloudStorageConfigured } from "./lib/storage";
 import { verifyMediaToolchain } from "./lib/mediaCapabilities";
+import { requeueStaleMediaAssets } from "./lib/mediaProcessingQueue";
 import { startPoolSettlementStatusWorker } from "./lib/advance-pool-settlement-status";
 import { processRecurringRequests } from "./routes/recurring";
 import { db } from "@workspace/db";
@@ -177,7 +178,11 @@ server.listen(port, async () => {
     });
      if (isMediaPlatformV21Enabled()) {
        const mediaWorker = startMediaProcessWorker();
-       if (mediaWorker) workerStarted("media-processing", "Universal Media Processing", true);
+       if (mediaWorker) {
+         workerStarted("media-processing", "Universal Media Processing", true);
+         const republished = await requeueStaleMediaAssets();
+         if (republished > 0) logger.info({ republished }, "media-processing: stale assets republished");
+       }
        else workerNoRedis("media-processing", "Universal Media Processing");
      }
     logger.info("bullmq: all workers started");

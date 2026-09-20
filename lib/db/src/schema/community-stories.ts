@@ -13,7 +13,7 @@ import {
 import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
 import { diasporaHubsTable } from "./diaspora-hubs";
-import { mediaAssetsTable } from "./media-assets";
+import { mediaAssetsTable, type StoryCompositionManifest } from "./media-assets";
 
 /**
  * Ephemeral social Stories/Moments belong to Community, not Messages.
@@ -28,6 +28,7 @@ export const communityStoriesTable = pgTable("community_stories", {
   audience: text("audience").notNull().default("community"),
   status: text("status").notNull().default("published"),
   reply_enabled: boolean("reply_enabled").notNull().default(true),
+  composition_manifest: jsonb("composition_manifest").$type<StoryCompositionManifest | null>(),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
 }, (table) => [

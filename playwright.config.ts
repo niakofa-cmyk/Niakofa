@@ -18,6 +18,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["line"]] : "list",
   use: {
     baseURL: configuredBaseUrl,
+    storageState: process.env.USER_A_STATE || undefined,
     launchOptions: process.env.PLAYWRIGHT_EXECUTABLE_PATH
       ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH, args: ["--no-sandbox"] }
       : undefined,

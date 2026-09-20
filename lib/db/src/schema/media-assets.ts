@@ -10,6 +10,31 @@ import {
 } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
+export type StoryCompositionManifest = {
+  version: 1;
+  canvas: { width: number; height: number; aspect: "9:16" | "1:1" | "16:9" };
+  elements: Array<{
+    id: string;
+    type: string;
+    position_x: number;
+    position_y: number;
+    scale: number;
+    rotation: number;
+    z_index: number;
+    payload: Record<string, unknown>;
+  }>;
+  music?: {
+    track_id?: string;
+    track_key?: string;
+    title?: string;
+    start_ms?: number;
+    end_ms?: number;
+    volume?: number;
+    licensed?: boolean;
+  } | null;
+  effects?: string[];
+};
+
 export const mediaAssetsTable = pgTable("media_assets", {
   id: serial("id").primaryKey(),
   owner_user_id: integer("owner_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
@@ -27,6 +52,7 @@ export const mediaAssetsTable = pgTable("media_assets", {
   duration_ms: integer("duration_ms"),
   status: text("status").notNull().default("pending"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  composition_manifest: jsonb("composition_manifest").$type<StoryCompositionManifest | null>(),
   failure_reason: text("failure_reason"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

@@ -13,8 +13,12 @@ import {
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { streamOrRedirectAsset } from "../lib/storage";
+import { getAssetInfo, getAssetUploadUrl, putAsset, streamOrRedirectAsset } from "../lib/storage";
 import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
+import { mediaProcessingQueue } from "../lib/queue";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 const router = Router();
 const CONTEXT_KINDS = new Set(["story", "direct", "request", "hub"]);
@@ -120,12 +124,125 @@ async function canReadContext(userId: number, contextKind: string, contextId: nu
   return false;
 }
 
+async function canWriteContext(userId: number, contextKind: string, contextId: number): Promise<boolean> {
+  if (contextKind === "story") {
+    const [story] = await db.select({ author_user_id: communityStoriesTable.author_user_id })
+      .from(communityStoriesTable)
+      .where(eq(communityStoriesTable.id, contextId))
+      .limit(1);
+    return story?.author_user_id === userId;
+  }
+  return canReadContext(userId, contextKind, contextId);
+}
+
 function disabled(res: Response) {
   return res.status(404).json({
     error: "Universal media is not enabled in this environment.",
     error_code: "MEDIA_PLATFORM_DISABLED",
   });
 }
+
+const uploadRequestSchema = z.object({
+  contextKind: z.enum(["story", "direct", "request", "hub"]),
+  contextId: z.number().int().positive(),
+  mediaType: z.enum(["photo", "video", "audio", "document"]),
+  mimeType: z.string().trim().min(3).max(120),
+  originalName: z.string().trim().max(255).optional(),
+  byteSize: z.number().int().positive().max(500 * 1024 * 1024),
+});
+
+function extensionForMime(mimeType: string): string {
+  const value = mimeType.split("/")[1]?.replace(/[^a-z0-9]+/gi, "").toLowerCase();
+  return value === "jpeg" ? "jpg" : value || "bin";
+}
+
+router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const parsed = uploadRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid media upload metadata." });
+  const input = parsed.data;
+  if (!(await canWriteContext(req.authenticatedUserId!, input.contextKind, input.contextId))) {
+    return res.status(404).json({ error: "Media context not found." });
+  }
+  if (!mediaProcessingQueue) {
+    return res.status(503).json({
+      error: "Media processing is not available. Please try again shortly.",
+      error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+    });
+  }
+
+  const key = `media-assets/incoming/${req.authenticatedUserId}/${randomUUID()}.${extensionForMime(input.mimeType)}`;
+  const [asset] = await db.insert(mediaAssetsTable).values({
+    owner_user_id: req.authenticatedUserId!,
+    context_kind: input.contextKind,
+    context_id: input.contextId,
+    media_type: input.mediaType,
+    mime_type: input.mimeType,
+    original_name: input.originalName ?? null,
+    original_key: key,
+    byte_size: input.byteSize,
+  }).returning({ id: mediaAssetsTable.id });
+  if (!asset) return res.status(500).json({ error: "Media upload could not be initialized." });
+
+  try {
+    const signedUrl = await getAssetUploadUrl(key, input.mimeType);
+    return res.status(201).json({
+      media_asset_id: asset.id,
+      upload: {
+        method: "PUT",
+        url: signedUrl ?? `/api/media-assets/${asset.id}/upload`,
+        headers: { "Content-Type": input.mimeType },
+        expires_in_seconds: signedUrl ? 900 : null,
+      },
+      complete_url: `/api/media-assets/${asset.id}/complete`,
+    });
+  } catch (error) {
+    await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
+    return res.status(503).json({ error: "Object storage is not ready.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
+  }
+});
+
+router.put("/media-assets/:id/upload", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId(req.params.id);
+  if (!assetId || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: "A raw media body is required." });
+  const [asset] = await db.select().from(mediaAssetsTable)
+    .where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!)))
+    .limit(1);
+  if (!asset || asset.status !== "pending") return res.status(404).json({ error: "Upload session not found." });
+  if (req.body.length !== asset.byte_size) return res.status(409).json({ error: "Uploaded byte size does not match the declared size." });
+  await putAsset(asset.original_key, req.body, asset.mime_type);
+  return res.status(204).send();
+});
+
+router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId(req.params.id);
+  if (!assetId) return res.status(400).json({ error: "Invalid media asset id." });
+  const [asset] = await db.select().from(mediaAssetsTable)
+    .where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!)))
+    .limit(1);
+  if (!asset || !(await canWriteContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
+    return res.status(404).json({ error: "Upload session not found." });
+  }
+  if (asset.status !== "pending" && asset.status !== "failed") {
+    return res.json({ media_asset_id: asset.id, status: asset.status });
+  }
+  const info = await getAssetInfo(asset.original_key);
+  if (!info) return res.status(409).json({ error: "Uploaded object is not available yet." });
+  if (info.contentLength !== asset.byte_size) {
+    return res.status(409).json({ error: "Uploaded object size does not match the declared size." });
+  }
+  try {
+    const queued = await enqueueMediaAssetProcessing(asset.id, asset.media_type, asset.composition_manifest);
+    if (!queued) {
+      return res.status(503).json({ error: "Media processing is not available.", error_code: "MEDIA_PROCESSING_UNAVAILABLE" });
+    }
+    return res.status(202).json({ media_asset_id: asset.id, status: "processing" });
+  } catch (error) {
+    return res.status(503).json({ error: "Media processing could not be queued.", error_code: "MEDIA_PROCESSING_UNAVAILABLE" });
+  }
+});
 
 router.get("/media-assets/shared", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   if (!isMediaPlatformV21Enabled()) return disabled(res);

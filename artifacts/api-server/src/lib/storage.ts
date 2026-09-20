@@ -104,6 +104,47 @@ export async function putAsset(key: string, buffer: Buffer, mimeType: string): P
   }
 }
 
+export async function getAssetUploadUrl(key: string, mimeType: string, expiresInSeconds = 900): Promise<string | null> {
+  if (!isCloudStorageConfigured()) return null;
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  const client = await getS3Client();
+  return getSignedUrl(
+    client,
+    new PutObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"]!,
+      Key: key,
+      ContentType: mimeType,
+    }),
+    { expiresIn: expiresInSeconds },
+  );
+}
+
+export async function getAssetInfo(key: string): Promise<{ contentLength: number; contentType: string | null } | null> {
+  if (isCloudStorageConfigured()) {
+    try {
+      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getS3Client();
+      const result = await client.send(new HeadObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"]!,
+        Key: key,
+      }));
+      return {
+        contentLength: Number(result.ContentLength ?? 0),
+        contentType: result.ContentType ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const stat = await fs.stat(path.resolve(UPLOADS_BASE, key));
+    return { contentLength: stat.size, contentType: null };
+  } catch {
+    return null;
+  }
+}
+
 // ─── getAssetUrl ──────────────────────────────────────────────────────────────
 
 /**

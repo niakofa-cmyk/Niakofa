@@ -179,6 +179,10 @@ app.use(
   "/api/audio-spiral-sessions/:sessionId/recording/:recordingId/finalize",
   express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }),
 );
+app.use(
+  "/api/media-assets/:id/upload",
+  express.raw({ type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"], limit: "500mb" }),
+);
 
 // DNA exports are parsed in memory by the authenticated route. The raw bytes
 // must reach that route before express.json() and are never passed to storage.
