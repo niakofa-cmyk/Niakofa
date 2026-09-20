@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { requireAuth, requireApproved } from "../middleware/auth.js";
+import { requireAuth, requireApproved } from "../middlewares/auth";
 const router=Router();
 router.get("/realtime/events",requireAuth,requireApproved,async(req,res)=>{
  const userId=req.authenticatedUserId!; const after=typeof req.query.after==="string"?req.query.after:null;
