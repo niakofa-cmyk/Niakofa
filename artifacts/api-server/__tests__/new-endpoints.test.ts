@@ -229,6 +229,15 @@ jest.unstable_mockModule("@workspace/trust-tiers", () => ({
   getHubLeadershipTrustBonus: jest.fn().mockReturnValue(0),
 }));
 
+jest.unstable_mockModule("../src/lib/mediaProcessingQueue.js", () => ({
+  enqueueMediaAssetProcessing: jest.fn().mockResolvedValue(false),
+}));
+
+jest.unstable_mockModule("../src/lib/media-platform.js", () => ({
+  MEDIA_PLATFORM_FLAG: "MEDIA_PLATFORM_V21",
+  isMediaPlatformV21Enabled: jest.fn().mockReturnValue(false),
+}));
+
 jest.unstable_mockModule("../src/lib/queue.js", () => ({
   enqueuePayoutRetry:    jest.fn().mockResolvedValue(true),
   enqueueCashoutRetry:   jest.fn().mockResolvedValue(true),
@@ -238,6 +247,7 @@ jest.unstable_mockModule("../src/lib/queue.js", () => ({
   getRedisUrlStatus:     jest.fn().mockReturnValue("not_set"),
   parseRedisUrl:         jest.fn().mockReturnValue(undefined),
   QUEUE:                 {},
+  mediaProcessingQueue:  null,
 }));
 
 // ── Dynamic imports after mocks are registered ────────────────────────────────
