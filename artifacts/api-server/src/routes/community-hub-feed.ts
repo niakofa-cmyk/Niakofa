@@ -448,7 +448,6 @@ router.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, community
   const extension = decoded.mimeType.split("/")[1].replace("jpeg", "jpg");
   const storageKey = `hub-community/${hubId}/${postId}/${randomUUID()}.${extension}`;
   let committed = false;
-  let mediaAssetJob: { id: number; mediaType: string } | null = null;
   try {
     await putAsset(storageKey, decoded.buffer, decoded.mimeType);
     const result = await db.transaction(async (tx) => {
@@ -520,7 +519,8 @@ router.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, community
 // objects from becoming a generic file browser. This route intentionally does
 // not require a bearer header so <img>, <video>, and <audio> elements work.
 router.get("/community/media/:mediaId", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
-  const mediaId = parseHubId(req.params.mediaId);
+  const rawMediaId = Array.isArray(req.params.mediaId) ? req.params.mediaId[0] : req.params.mediaId;
+  const mediaId = parseHubId(rawMediaId);
   if (!mediaId) return res.status(400).json({ error: "Invalid media id." });
   const [media] = await db.select({
     storage_key: hubCommunityPostMediaTable.storage_key,
