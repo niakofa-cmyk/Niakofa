@@ -196,7 +196,7 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
       },
       complete_url: `/api/media-assets/${asset.id}/complete`,
     });
-  } catch (error) {
+  } catch {
     await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
     return res.status(503).json({ error: "Object storage is not ready.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
   }
@@ -239,7 +239,7 @@ router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalA
       return res.status(503).json({ error: "Media processing is not available.", error_code: "MEDIA_PROCESSING_UNAVAILABLE" });
     }
     return res.status(202).json({ media_asset_id: asset.id, status: "processing" });
-  } catch (error) {
+  } catch {
     return res.status(503).json({ error: "Media processing could not be queued.", error_code: "MEDIA_PROCESSING_UNAVAILABLE" });
   }
 });
