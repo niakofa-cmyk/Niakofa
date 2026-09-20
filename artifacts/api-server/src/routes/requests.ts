@@ -2882,7 +2882,6 @@ router.post("/requests/:id/messages/attachments", requireAuth, async (req, res) 
   const extension = REQUEST_ATTACHMENT_EXTENSIONS[decoded.mimeType] ?? "bin";
   const storageKey = `request-messages/${requestId}/${randomUUID()}.${extension}`;
   let committed = false;
-  let mediaAssetJob: { id: number; mediaType: string } | null = null;
 
   try {
     await putAsset(storageKey, decoded.buffer, decoded.mimeType);
