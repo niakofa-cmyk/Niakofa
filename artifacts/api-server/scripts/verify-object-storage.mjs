@@ -68,7 +68,7 @@ try {
   }
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 
-  console.log(
+  process.stdout.write(
     JSON.stringify(
       {
         ok: true,
@@ -81,7 +81,7 @@ try {
       },
       null,
       2,
-    ),
+    ) + "\\n",
   );
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error));
