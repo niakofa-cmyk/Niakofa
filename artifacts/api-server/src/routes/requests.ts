@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable, hubCommunityLeadersTable, scheduledPaymentsTable, chatMessagesTable, reportsTable, mediaAssetsTable, requestMessageAttachmentsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable, hubCommunityLeadersTable, chatMessagesTable, reportsTable } from "@workspace/db";
+import { scheduledPaymentsTable, mediaAssetsTable, requestMessageAttachmentsTable } from "@workspace/db/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
