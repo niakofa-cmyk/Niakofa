@@ -356,6 +356,7 @@ export default function MessagesPage() {
     const unsubscribeEvents = wsSubscribe((event: WsEvent) => {
       if (event.type === "unified_event") {
         const unified = event.payload as import("@/lib/unifiedRealtime").UnifiedRealtimeEvent;
+        if (!unified.replayed) return;
         const result = applyUnifiedRealtimeEvent(liveConversationStateRef.current, unified);
         if (result.accepted && result.state !== liveConversationStateRef.current) {
           liveConversationStateRef.current = result.state;
@@ -398,17 +399,13 @@ export default function MessagesPage() {
       const message = payload?.message;
       const conversationId = payload?.conversation_id ?? message?.conversation_id;
       if (!message || !conversationId) return;
-      const accepted = applyLiveConversationEvent({
-        type: "direct_message",
-        eventId: message.id,
-        conversationId,
-        kind: "direct",
-        senderId: message.sender_id,
-        currentUserId: currentUser?.id ?? null,
-        body: message.body,
-        createdAt: message.created_at,
-        title: message.sender_name,
-      });
+      const unified = normalizeRealtimeEvent(event);
+      const result = unified ? applyUnifiedRealtimeEvent(liveConversationStateRef.current, unified) : applyLiveConversationEvent({ type: "direct_message", eventId: message.id, conversationId, kind: "direct", senderId: message.sender_id, currentUserId: currentUser?.id ?? null, body: message.body, createdAt: message.created_at, title: message.sender_name });
+      if (result.accepted && result.state !== liveConversationStateRef.current) {
+        liveConversationStateRef.current = result.state;
+        setLiveConversationState(result.state);
+      }
+      const accepted = result.accepted;
       if (!accepted) return;
       setDirectMessages((current) => conversationId === selectedDirectId ? mergeDirectMessage(current, message) : current);
       void Promise.all([loadDirectConversations(), loadUnreadSummary()]).catch(() => {});
