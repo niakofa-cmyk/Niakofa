@@ -88,7 +88,8 @@ jest.unstable_mockModule("@workspace/db", () => {
 // in the api-server import graph (see `grep -rn 'from "drizzle-orm"' src`)
 // must be listed here, or transitively-imported modules throw
 // "does not provide an export named X" at import time.
-jest.unstable_mockModule("drizzle-orm", () => ({\n  ...drizzleOrmActual,
+jest.unstable_mockModule("drizzle-orm", () => ({
+  ...drizzleOrmActual,
   eq: jest.fn(),
   and: jest.fn(),
   or: jest.fn(),
