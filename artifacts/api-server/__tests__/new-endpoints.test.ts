@@ -11,6 +11,7 @@
  * Uses jest.unstable_mockModule() (not jest.mock()) because the project
  * runs under Jest's native ESM support (--experimental-vm-modules).
  */
+import * as drizzleOrmActual from "drizzle-orm";
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import express from "express";
@@ -82,7 +83,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   civicInvoicesTable:      { id: "id", civic_need_id: "civic_need_id", amount: "amount", status: "status", due_date: "due_date" },
 }));
 
-jest.unstable_mockModule("drizzle-orm", () => ({
+jest.unstable_mockModule("drizzle-orm", () => ({\n  ...drizzleOrmActual,
   eq:    jest.fn((a: unknown, b: unknown) => ({ _eq: [a, b] })),
   and:   jest.fn((...args: unknown[]) => ({ _and: args })),
   or:    jest.fn((...args: unknown[]) => ({ _or: args })),
