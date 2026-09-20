@@ -25,7 +25,7 @@ import { directConversationPath, hubConversationPath, messagesPath, requestConve
 import { getRequestNavigationPath } from "@/lib/request-navigation";
 import { directToUnified, hubToUnified, requestToUnified, sortUnified, type UnifiedConversation } from "@/lib/unifiedConversation";
 import { applyConversationEvent, applyUnifiedRealtimeEvent, createConversationState, markConversationRead, shouldNotifyConversation, type ConversationEvent, type ConversationState } from "@/lib/conversationState";
-import { normalizeRealtimeEvent } from "@/lib/unifiedRealtime";
+import { normalizeRealtimeEvent, type UnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { wsGetConnectionSnapshot, wsSubscribe, wsSubscribeConnection, type WsEvent, type WsConnectionState } from "@/lib/wsClient";
 
 type DirectUser = { id: number; name: string; avatar_url: string | null };
@@ -356,7 +356,7 @@ export default function MessagesPage() {
     const unsubscribeConnection = wsSubscribeConnection((snapshot) => setRealtimeState(snapshot.state));
     const unsubscribeEvents = wsSubscribe((event: WsEvent) => {
       if (event.type === "unified_event") {
-        const unified = event.payload as import("@/lib/unifiedRealtime").UnifiedRealtimeEvent;
+        const unified = event.payload as UnifiedRealtimeEvent;
         if (!unified.replayed) return;
         const result = applyUnifiedRealtimeEvent(liveConversationStateRef.current, unified, currentUser?.id ?? null);
         if (result.accepted && result.state !== liveConversationStateRef.current) {
