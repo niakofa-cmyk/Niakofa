@@ -23,7 +23,7 @@ import { authHeaders } from "@/lib/auth";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
 import { StoryMediaPlayer } from "./StoryMediaPlayer";
 import { StoryShareSheet } from "./StoryShareSheet";
-import { normalizeStoryFiles, useObjectUrl } from "./StoryComposerMedia";
+import { normalizeStoryFiles, useObjectUrls, validateStoryFiles } from "./StoryComposerMedia";
 import {
   getStoryMetrics,
   reactToStory,
@@ -60,6 +60,7 @@ type StoryFrame = { story: CommunityStory; media: StoryMedia | null };
 type StoryAuthor = { author_user_id: number; author: CommunityStory["author"]; frames: StoryFrame[] };
 type Tool = "music" | "stickers" | "text" | "effects" | "mention";
 type Effect = "none" | "warmth" | "contrast" | "grayscale" | "vignette";
+const TEXT_STORY_BACKGROUNDS = ["#172554", "#0f766e", "#7c2d12", "#701a75", "#111827"] as const;
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -95,7 +96,9 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [mediaIndex, setMediaIndex] = useState(0);
+  const [previewFileIndex, setPreviewFileIndex] = useState(0);
   const [mediaUrls, setMediaUrls] = useState<Record<number, string>>({});
+  const mediaObjectUrlsRef = useRef<Record<number, string>>({});
   const [shareStoryId, setShareStoryId] = useState<number | null>(null);
   const [reactedStoryIds, setReactedStoryIds] = useState<Record<number, boolean>>({});
   const [storyProgress, setStoryProgress] = useState(0);
@@ -112,6 +115,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const [textColor, setTextColor] = useState("#ffffff");
   const [textSize, setTextSize] = useState("18");
   const [textAlign, setTextAlign] = useState<"left" | "center" | "right">("center");
+  const [textBackground, setTextBackground] = useState<string>(TEXT_STORY_BACKGROUNDS[0]);
   const [publishing, setPublishing] = useState(false);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
@@ -122,7 +126,9 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
   const selectedStory = selectedFrame?.story ?? null;
   const selectedStoryId = selectedStory?.id ?? null;
   const selectedMedia = selectedFrame?.media ?? null;
-  const selectedFileUrl = useObjectUrl(files[0] ?? null);
+  const previewUrls = useObjectUrls(files);
+  const selectedPreviewFile = files[previewFileIndex] ?? files[0] ?? null;
+  const selectedFileUrl = previewUrls[previewFileIndex] ?? previewUrls[0] ?? null;
   const filter = effect === "warmth"
     ? "sepia(.25) saturate(1.25)"
     : effect === "contrast"
@@ -152,33 +158,40 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     return () => { cancelled = true; };
   }, [hubId]);
 
+  const loadMediaUrl = useCallback(async (media: StoryMedia) => {
+    if (mediaObjectUrlsRef.current[media.id]) return;
+    try {
+      const response = await fetch(media.media_url, { headers: authHeaders() });
+      if (!response.ok) return;
+      const url = URL.createObjectURL(await response.blob());
+      mediaObjectUrlsRef.current[media.id] = url;
+      setMediaUrls((current) => (current[media.id] ? current : { ...current, [media.id]: url }));
+    } catch {
+      // The player keeps its loading state and can be retried when the Story is reopened.
+    }
+  }, []);
+
   useEffect(() => {
-    let cancelled = false;
-    const urls: string[] = [];
-    const loadMedia = async () => {
-      const visible = stories.slice(0, 24).flatMap((story) => story.media);
-      const entries = await Promise.all(visible.map(async (media) => {
-        try {
-          const response = await fetch(media.media_url, { headers: authHeaders() });
-          if (!response.ok) return null;
-          const url = URL.createObjectURL(await response.blob());
-          urls.push(url);
-          return [media.id, url] as const;
-        } catch {
-          return null;
-        }
-      }));
-      if (!cancelled) setMediaUrls(Object.fromEntries(entries.filter((entry): entry is readonly [number, string] => Boolean(entry))));
-    };
-    void loadMedia();
+    const visible = stories.slice(0, 24).flatMap((story) => story.media);
+    void Promise.all(visible.map((media) => loadMediaUrl(media)));
     return () => {
-      cancelled = true;
-      urls.forEach((url) => URL.revokeObjectURL(url));
+      Object.values(mediaObjectUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
+      mediaObjectUrlsRef.current = {};
+      setMediaUrls({});
     };
-  }, [stories]);
+  }, [loadMediaUrl, stories]);
+
+  useEffect(() => {
+    if (selectedMedia) void loadMediaUrl(selectedMedia);
+  }, [loadMediaUrl, selectedMedia]);
+
+  useEffect(() => {
+    if (previewFileIndex >= files.length && files.length > 0) setPreviewFileIndex(0);
+  }, [files.length, previewFileIndex]);
 
   const resetComposer = () => {
     setFiles([]);
+    setPreviewFileIndex(0);
     setCaption("");
     setTool(null);
     setEffect("none");
@@ -190,6 +203,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     setTextColor("#ffffff");
     setTextSize("18");
     setTextAlign("center");
+    setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
     setAudience(hubId ? "hub" : "community");
   };
 
@@ -198,13 +212,16 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     setPublishing(true);
     setError(null);
     try {
+      const validationErrors = await validateStoryFiles(files);
+      if (validationErrors.length) throw new Error(validationErrors[0]);
       const media = await Promise.all(files.slice(0, 6).map(async (file) => ({
         data_url: await readFileAsDataUrl(file),
         media_type: file.type.startsWith("video/") ? "video" as const : "photo" as const,
         mime_type: file.type,
       })));
       const elements: Array<Record<string, unknown>> = [];
-       if (caption.trim()) elements.push({ type: "text", payload: { text: caption.trim(), color: textColor, font_size: Number(textSize), align: textAlign }, position_x: 50, position_y: 78, z_index: 10 });
+      if (!media.length) elements.push({ type: "background", payload: { color: textBackground }, position_x: 50, position_y: 50, z_index: 0 });
+      if (caption.trim()) elements.push({ type: "text", payload: { text: caption.trim(), color: textColor, font_size: Number(textSize), align: textAlign }, position_x: 50, position_y: 50, z_index: 10 });
       if (tool === "music") elements.push({ type: "music", payload: { audio_source: "niakofa_library", track: music, volume: 1 }, position_x: 50, position_y: 12 });
       if (tool === "stickers") elements.push({ type: "sticker", payload: { sticker }, position_x: 50, position_y: 50, scale: 1.2, z_index: 20 });
       if (tool === "effects") elements.push({ type: "effect", payload: { effect }, position_x: 50, position_y: 50 });
@@ -234,6 +251,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
     const { files: selected, errors } = normalizeStoryFiles(Array.from(event.target.files ?? []));
     if (errors.length) setError(errors[0]);
     setFiles(selected);
+    setPreviewFileIndex(0);
     event.target.value = "";
   };
 
@@ -345,14 +363,20 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
               <button type="button" onClick={() => { resetComposer(); setComposerOpen(false); }} className="rounded-full p-2 hover:bg-muted" aria-label="Close Story creator"><X className="h-5 w-5" /></button>
             </header>
             <div className="overflow-y-auto p-4">
-              <div className={`relative flex min-h-80 items-center justify-center overflow-hidden rounded-3xl bg-muted ${!selectedFileUrl ? "border border-dashed border-primary/30" : ""}`}>
+               <div className={`relative flex min-h-80 items-center justify-center overflow-hidden rounded-3xl ${!selectedFileUrl ? "border border-dashed border-primary/30" : ""}`} style={!selectedFileUrl ? { background: textBackground } : undefined}>
                 {selectedFileUrl ? (
-                  files[0]?.type.startsWith("video/") ? <video src={selectedFileUrl} controls playsInline className="max-h-[52dvh] w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Story preview" className="max-h-[52dvh] w-full object-contain" style={{ filter }} />
+                   selectedPreviewFile?.type.startsWith("video/") ? <video src={selectedFileUrl} controls playsInline className="max-h-[52dvh] w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Story preview" className="max-h-[52dvh] w-full object-contain" style={{ filter }} />
                 ) : (
-                  <div className="px-8 text-center"><Camera className="mx-auto h-10 w-10 text-primary/60" /><p className="mt-3 font-black">Add a photo or video</p><p className="mt-1 text-xs text-muted-foreground">Use your camera or choose up to six recent items.</p></div>
+                   <div className="px-8 text-center text-white"><Type className="mx-auto h-10 w-10 text-white/70" /><p className="mt-3 font-black">{caption ? "Text Story preview" : "Add a photo or video"}</p><p className="mt-1 text-xs text-white/65">Use your camera, choose recent items, or create a text-only Story.</p></div>
                 )}
                 {caption && <div className="absolute bottom-5 left-4 right-4 rounded-xl bg-black/55 px-3 py-2 text-center text-sm font-bold text-white">{caption}</div>}
               </div>
+               {files.length > 0 && <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Story media sequence">
+                 {files.map((file, index) => <button key={`${file.name}-${index}`} type="button" onClick={() => setPreviewFileIndex(index)} className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 ${previewFileIndex === index ? "border-primary" : "border-border"}`} aria-label={`Preview Story item ${index + 1}`}>
+                   {previewUrls[index] ? (file.type.startsWith("video/") ? <video src={previewUrls[index]} muted playsInline className="h-full w-full object-cover" /> : <img src={previewUrls[index]} alt="" className="h-full w-full object-cover" />) : <span className="grid h-full place-items-center text-xs">{index + 1}</span>}
+                   <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[9px] text-white">{index + 1}</span>
+                 </button>)}
+               </div>}
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => cameraInput.current?.click()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border text-xs font-black"><Camera className="h-4 w-4" /> Camera / video</button>
                 <button type="button" onClick={() => galleryInput.current?.click()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border text-xs font-black"><ImagePlus className="h-4 w-4" /> Gallery {files.length > 1 ? `(${files.length})` : ""}</button>
@@ -366,7 +390,7 @@ export function CommunityStoryRail({ hubId }: { hubId: number | null }) {
               {tool === "stickers" && <div className="mt-3 flex gap-2 overflow-x-auto">{["💙", "🙏", "🤝", "🌍", "🙌", "✨", "📍"].map((item) => <button key={item} type="button" onClick={() => setSticker(item)} className={`h-11 w-11 shrink-0 rounded-xl border text-xl ${sticker === item ? "border-primary bg-primary/10" : "border-border"}`}>{item}</button>)}</div>}
               {tool === "effects" && <div className="mt-3 flex gap-2 overflow-x-auto">{(["none", "warmth", "contrast", "grayscale", "vignette"] as Effect[]).map((item) => <button key={item} type="button" onClick={() => setEffect(item)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold capitalize ${effect === item ? "border-primary bg-primary/10 text-primary" : "border-border"}`}>{item}</button>)}</div>}
                {tool === "mention" && <div className="mt-3 space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); }} className="min-h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-border"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
-               {tool === "text" && <div className="mt-3 grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-muted-foreground">Color<input type="color" value={textColor} onChange={(event) => setTextColor(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-card" /></label><label className="text-[10px] font-bold text-muted-foreground">Size<select value={textSize} onChange={(event) => setTextSize(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-muted-foreground">Align<select value={textAlign} onChange={(event) => setTextAlign(event.target.value as "left" | "center" | "right")} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label></div>}
+                {tool === "text" && <div className="mt-3 grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-muted-foreground">Color<input type="color" value={textColor} onChange={(event) => setTextColor(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-card" /></label><label className="text-[10px] font-bold text-muted-foreground">Size<select value={textSize} onChange={(event) => setTextSize(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-muted-foreground">Align<select value={textAlign} onChange={(event) => setTextAlign(event.target.value as "left" | "center" | "right")} className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-muted-foreground">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
               <textarea value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={1000} rows={3} className="mt-4 w-full resize-none rounded-2xl border border-border bg-card p-3 text-sm outline-none focus:border-primary" placeholder="Add text to your Moment…" />
               <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-3 py-2">
                 <div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><div><p className="text-xs font-black">Share with</p><p className="text-[10px] text-muted-foreground">{audience === "hub" ? "Selected Hub members" : "Your approved community"}</p></div></div>

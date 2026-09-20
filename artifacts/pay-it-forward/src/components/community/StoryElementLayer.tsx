@@ -38,6 +38,25 @@ export function StoryElementLayer({
           const payload = element.payload ?? {};
           const style = positionStyle(element);
 
+          if (element.type === "background") {
+            const background = typeof payload.color === "string" && /^#[0-9a-f]{6}$/i.test(payload.color)
+              ? payload.color
+              : "#172554";
+            return (
+              <div
+                key={element.id}
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background,
+                  zIndex: element.z_index ?? 0,
+                  pointerEvents: "none",
+                }}
+              />
+            );
+          }
+
           if (element.type === "text") {
             const align = payload.align === "left" || payload.align === "right" ? payload.align : "center";
             return (

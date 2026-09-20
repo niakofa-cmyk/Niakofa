@@ -32,6 +32,7 @@ export function StoryMediaPlayer({
   );
   const filter = useMemo(() => storyEffectFilter(elements), [elements]);
   const hasVignette = elements.some((element) => element.type === "effect" && element.payload.effect === "vignette");
+  const hasPersistedText = elements.some((element) => element.type === "text" && typeof element.payload.text === "string" && element.payload.text.trim().length > 0);
 
   useEffect(() => {
     setLoaded(false);
@@ -67,7 +68,7 @@ export function StoryMediaPlayer({
   if (!media || !media.media_url) {
     return (
       <div className="relative grid h-full place-items-center overflow-hidden bg-black px-8 text-center text-2xl font-black text-white">
-        <span>{fallbackText || "Community Moment"}</span>
+        {!hasPersistedText && <span>{fallbackText || "Community Moment"}</span>}
         <StoryElementLayer elements={elements} />
       </div>
     );
