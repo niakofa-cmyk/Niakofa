@@ -238,7 +238,7 @@ function connect(): void {
 
 async function replayDurableEvents(): Promise<void> {
   if (typeof window === "undefined" || !registeredUserId) return;
-  const state = loadDurableRealtimeState();
+  const state = loadDurableRealtimeState(registeredUserId);
   const token = registeredToken ?? getToken();
   if (!token) return;
   try {
@@ -246,11 +246,12 @@ async function replayDurableEvents(): Promise<void> {
     const response = await fetch(`/api/realtime/events${query}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) return;
     const data = await response.json() as { events?: unknown[] };
+    let cursorState = state;
     for (const raw of data.events ?? []) {
       const event = raw as UnifiedRealtimeEvent;
       if (!event.event_id || state.seen.includes(event.event_id)) continue;
       handlers.forEach((handler) => handler({ type: "unified_event", payload: { ...event, replayed: true } }));
-      rememberDurableEvent(state, event.event_id);
+      cursorState = rememberDurableEvent(cursorState, event.event_id, registeredUserId);
     }
   } catch {
     // Replay is recovery; live WebSocket delivery remains authoritative while connected.
