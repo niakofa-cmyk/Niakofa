@@ -358,7 +358,7 @@ export default function MessagesPage() {
       if (event.type === "unified_event") {
         const unified = event.payload as import("@/lib/unifiedRealtime").UnifiedRealtimeEvent;
         if (!unified.replayed) return;
-        const result = applyUnifiedRealtimeEvent(liveConversationStateRef.current, unified);
+        const result = applyUnifiedRealtimeEvent(liveConversationStateRef.current, unified, currentUser?.id ?? null);
         if (result.accepted && result.state !== liveConversationStateRef.current) {
           liveConversationStateRef.current = result.state;
           setLiveConversationState(result.state);
