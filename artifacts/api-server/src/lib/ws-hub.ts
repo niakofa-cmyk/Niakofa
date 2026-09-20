@@ -20,6 +20,7 @@ import { verifyToken } from "../middlewares/auth";
 import { db, chatMessagesTable, requestsTable, usersTable, directConversationMembersTable, directConversationsTable, directMessageBlocksTable } from "@workspace/db";
 import { and, eq, or } from "drizzle-orm";
 import { buildWsOriginAllowlist, isWsOriginAllowed } from "./ws-origin";
+import { persistUnifiedEvent } from "./unified-events.js";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
 export type WsEventType =
@@ -140,7 +141,8 @@ export type WsEventType =
   | "circle_heartbeat"
   // WebRTC mesh signaling relay (offer/answer/ICE) between two specific
   // participants in the same session — see sendCircleSignal below.
-  | "circle_signal";
+  | "circle_signal"
+  | "unified_event";
 
 export interface WsEvent {
   type: WsEventType;
@@ -330,6 +332,7 @@ export function isCircleParticipant(sessionId: number, userId: number): boolean 
  * No-ops silently if the user has no open sockets.
  */
 export function sendToUser(userId: number, event: WsEvent): void {
+  void persistUnifiedEventFromWs(event).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
   const sockets = userSockets.get(userId);
   if (!sockets) return;
   const msg = JSON.stringify(event);
@@ -349,6 +352,7 @@ export function sendToUser(userId: number, event: WsEvent): void {
  * Deduplicates — if the same userId appears twice, the event is sent once.
  */
 export function sendToUsers(userIds: number[], event: WsEvent): void {
+  void persistUnifiedEventFromWs(event).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
   const seen = new Set<number>();
   const msg = JSON.stringify(event);
   for (const userId of userIds) {
@@ -955,6 +959,7 @@ export function stopHeartbeat(): void {
 // ── Broadcast ─────────────────────────────────────────────────────────────────
 
 export function broadcast(event: WsEvent): void {
+  void persistUnifiedEventFromWs(event).catch((err) => logger.warn({ err, type: event.type }, "WS durable event persistence failed"));
   if (!wss) return;
   const msg = JSON.stringify(event);
   let sent = 0;
