@@ -20,6 +20,9 @@ router.get("/realtime/events", requireAuth, requireApproved, async (req, res) =>
       )
     : { rows: [] as { occurred_at: string; event_id: string }[] };
   const cursor = cursorRows.rows[0];
+  if (after && !cursor) {
+    return res.status(410).json({ error: "The replay cursor is no longer available. Reconnect with a fresh cursor." });
+  }
   const cursorClause = cursor
     ? sql`AND (occurred_at,event_id) > (${cursor.occurred_at}::timestamptz,${cursor.event_id}::uuid)`
     : sql``;
@@ -34,6 +37,7 @@ router.get("/realtime/events", requireAuth, requireApproved, async (req, res) =>
   const rows = result.rows;
   const events = rows.slice(0, limit);
   const nextCursor = events.at(-1)?.event_id ?? (cursor?.event_id ?? null);
+  res.setHeader("Cache-Control", "no-store");
   return res.json({
     events,
     next_cursor: nextCursor,

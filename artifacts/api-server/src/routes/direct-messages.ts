@@ -14,7 +14,7 @@ import {
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { deleteAsset, putAsset, streamOrRedirectAsset } from "../lib/storage";
-import { sendToUsers } from "../lib/ws-hub";
+import { sendToUser, sendToUsers } from "../lib/ws-hub";
 import { createMessageNotification } from "../lib/message-notifications";
 import { hasExpectedSignature } from "../lib/media-validation";
 import { communityStoriesTable } from "@workspace/db";
@@ -495,6 +495,15 @@ router.get("/messages/direct/:conversationId", requireAuth, requireApproved, gen
     attachmentsByMessage.set(attachment.message_id, list);
   }
 
+  const [latestIncoming] = await db.select({ id: directMessagesTable.id })
+    .from(directMessagesTable)
+    .where(and(
+      eq(directMessagesTable.conversation_id, conversationId),
+      ne(directMessagesTable.sender_id, userId),
+    ))
+    .orderBy(desc(directMessagesTable.id))
+    .limit(1);
+
   await db
     .update(directMessagesTable)
     .set({ read_at: new Date() })
@@ -503,6 +512,16 @@ router.get("/messages/direct/:conversationId", requireAuth, requireApproved, gen
       ne(directMessagesTable.sender_id, userId),
       isNull(directMessagesTable.read_at),
     ));
+  await sendToUser(userId, {
+    type: "message_read",
+    idempotency_key: `conversation.read:${userId}:direct:${conversationId}:${latestIncoming?.id ?? 0}`,
+    payload: {
+      kind: "direct",
+      conversation_id: conversationId,
+      user_id: userId,
+      last_read_message_id: latestIncoming?.id ?? null,
+    },
+  });
 
   return res.json({
     conversation: {
@@ -741,11 +760,29 @@ router.post("/messages/direct/conversations/:conversationId/read", requireAuth, 
   if (!(await isConversationMember(userId, conversationId))) {
     return res.status(404).json({ error: "Conversation not found." });
   }
+  const [latestIncoming] = await db.select({ id: directMessagesTable.id })
+    .from(directMessagesTable)
+    .where(and(
+      eq(directMessagesTable.conversation_id, conversationId),
+      ne(directMessagesTable.sender_id, userId),
+    ))
+    .orderBy(desc(directMessagesTable.id))
+    .limit(1);
   await db.update(directMessagesTable).set({ read_at: new Date() }).where(and(
     eq(directMessagesTable.conversation_id, conversationId),
     ne(directMessagesTable.sender_id, userId),
     isNull(directMessagesTable.read_at),
   ));
+  await sendToUser(userId, {
+    type: "message_read",
+    idempotency_key: `conversation.read:${userId}:direct:${conversationId}:${latestIncoming?.id ?? 0}`,
+    payload: {
+      kind: "direct",
+      conversation_id: conversationId,
+      user_id: userId,
+      last_read_message_id: latestIncoming?.id ?? null,
+    },
+  });
   return res.json({ ok: true });
 });
 

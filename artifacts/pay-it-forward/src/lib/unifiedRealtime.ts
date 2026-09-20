@@ -51,6 +51,7 @@ type RealtimeFrame = {
   payload?: unknown;
   event_id?: string;
   occurred_at?: string;
+  idempotency_key?: string;
 };
 
 const legacyMap: Record<string, UnifiedEventType | null> = {

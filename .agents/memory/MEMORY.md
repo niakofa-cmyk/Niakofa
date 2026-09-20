@@ -54,3 +54,4 @@
 - [Direct-message attachment privacy](direct-message-attachments.md) — bearer-authenticated media must render through fetched object URLs, never public native media URLs.
 - [Mobile attachment acceptance](mobile-attachment-acceptance.md) — use pre-provisioned deployed states and open mobile threads from the inbox before asserting blob media.
 - [Live Messages acceptance](live-messages-acceptance.md) — local Messages/RTC checks are not production evidence without a published URL, served-commit parity, and approved disposable states.
+- [Canonical realtime authority](canonical-realtime-authority.md) — persist canonical events before delivery; replay, live frames, read summaries, and UI state must converge on durable server state.

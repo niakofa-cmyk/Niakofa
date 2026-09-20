@@ -141,6 +141,7 @@ let registeredUserId: number | null = null;
 let registeredToken: string | null = null;
 let started = false;
 let replayInFlight = false;
+let queuedLiveEvents: WsEvent[] = [];
 
 let connectionSnapshot: WsConnectionSnapshot = {
   state: "idle",
@@ -168,6 +169,37 @@ function setConnectionState(state: WsConnectionState, reconnectAttempt = attempt
 
 function send(data: object): void {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data));
+}
+
+function isDurableEventId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function dispatchIncoming(event: WsEvent): void {
+  const unified = normalizeRealtimeEvent(event);
+  const durableState = unified && registeredUserId !== null
+    ? loadDurableRealtimeState(registeredUserId)
+    : null;
+  const alreadySeen = Boolean(unified && durableState?.seen.includes(unified.event_id));
+  const isCanonicalFrame = event.type === "unified_event" || !event.event_id;
+
+  // The canonical frame is the only frame that advances the durable cursor.
+  // Legacy frames remain available to compatibility consumers, but a replay
+  // must not cause their side effects to run a second time.
+  if (event.type === "unified_event" && alreadySeen) return;
+  handlers.forEach((handler) => handler(event));
+  if (unified && registeredUserId !== null && isCanonicalFrame && !alreadySeen && isDurableEventId(unified.event_id)) {
+    rememberDurableEvent(durableState ?? loadDurableRealtimeState(registeredUserId), unified.event_id, registeredUserId);
+  }
+  if (unified && event.type !== "unified_event" && !event.event_id) {
+    handlers.forEach((handler) => handler({ type: "unified_event", payload: unified }));
+  }
+}
+
+function flushQueuedLiveEvents(): void {
+  const queued = queuedLiveEvents;
+  queuedLiveEvents = [];
+  queued.forEach(dispatchIncoming);
 }
 
 function scheduleReconnect(): void {
@@ -219,18 +251,11 @@ function connect(): void {
     try {
       const event = JSON.parse(msg.data as string) as WsEvent;
       const unified = normalizeRealtimeEvent(event);
-      if (unified && registeredUserId !== null) {
-        const durableState = loadDurableRealtimeState(registeredUserId);
-        rememberDurableEvent(durableState, unified.event_id, registeredUserId);
+      if (replayInFlight && unified) {
+        queuedLiveEvents.push(event);
+        return;
       }
-      handlers.forEach((handler) => handler(event));
-      // New servers send a canonical unified_event immediately after the
-      // legacy frame, both carrying the same durable ID. Older servers do not
-      // send that frame, so synthesize one only for legacy frames that lack
-      // the durable metadata.
-      if (unified && event.type !== "unified_event" && !event.event_id) {
-        handlers.forEach((handler) => handler({ type: "unified_event", payload: unified }));
-      }
+      dispatchIncoming(event);
     } catch {
       // Ignore malformed server frames.
     }
@@ -270,7 +295,7 @@ async function replayDurableEvents(): Promise<void> {
       if (!events.length) break;
       for (const raw of events) {
         const event = raw as UnifiedRealtimeEvent;
-        if (!event.event_id) continue;
+        if (!event.event_id || !isDurableEventId(event.event_id)) continue;
         if (!cursorState.seen.includes(event.event_id)) {
           handlers.forEach((handler) => handler({ type: "unified_event", payload: { ...event, replayed: true } }));
         }
@@ -287,6 +312,7 @@ async function replayDurableEvents(): Promise<void> {
     // Replay is recovery; live WebSocket delivery remains authoritative while connected.
   } finally {
     replayInFlight = false;
+    flushQueuedLiveEvents();
   }
 }
 
