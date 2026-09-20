@@ -16,6 +16,7 @@
  * the auth middleware and the requests router) is imported dynamically
  * inside beforeAll, after the mocks are in place.
  */
+import * as drizzleOrmActual from "drizzle-orm";
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import type { Express } from "express";
@@ -92,7 +93,7 @@ jest.unstable_mockModule("@workspace/db", () => {
 // community-pool.ts imports `asc`, which requests.ts pulls in indirectly).
 // So every drizzle-orm function used anywhere in the api-server import
 // graph (see `grep -rn 'from "drizzle-orm"' src`) must be listed here.
-jest.unstable_mockModule("drizzle-orm", () => ({
+jest.unstable_mockModule("drizzle-orm", () => ({\n  ...drizzleOrmActual,
   eq: jest.fn(),
   and: jest.fn(),
   or: jest.fn(),
