@@ -17,14 +17,18 @@ export function StoryMediaPlayer({
   fallbackText,
   onComplete,
   onProgress,
+  paused = false,
 }: {
   media: StoryPlayerMedia | null;
   elements: StoryElement[];
   fallbackText?: string;
   onComplete: () => void;
   onProgress?: (fraction: number) => void;
+  paused?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const photoElapsedRef = useRef(0);
+  const photoLastTimeRef = useRef<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const durationMs = useMemo(
     () => (media?.media_type === "video" && media.duration_ms ? Math.max(1_000, media.duration_ms) : DEFAULT_PHOTO_MS),
@@ -35,12 +39,21 @@ export function StoryMediaPlayer({
   const hasPersistedText = elements.some((element) => element.type === "text" && typeof element.payload.text === "string" && element.payload.text.trim().length > 0);
 
   useEffect(() => {
+    photoElapsedRef.current = 0;
+    photoLastTimeRef.current = null;
+  }, [media?.id]);
+
+  useEffect(() => {
     setLoaded(false);
     if (!media || media.media_type === "video" || !media.media_url) return;
-    const started = performance.now();
     let raf = 0;
     const tick = (now: number) => {
-      const fraction = Math.min(1, (now - started) / durationMs);
+      if (photoLastTimeRef.current === null) photoLastTimeRef.current = now;
+      if (!paused) {
+        photoElapsedRef.current += now - photoLastTimeRef.current;
+      }
+      photoLastTimeRef.current = now;
+      const fraction = Math.min(1, photoElapsedRef.current / durationMs);
       onProgress?.(fraction);
       if (fraction >= 1) {
         onComplete();
@@ -50,7 +63,19 @@ export function StoryMediaPlayer({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [media, durationMs, onComplete, onProgress]);
+  }, [media, durationMs, onComplete, onProgress, paused]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !media || media.media_type !== "video") return;
+    if (paused) {
+      video.pause();
+      return;
+    }
+    void video.play().catch(() => {
+      // Autoplay may be blocked until the viewer receives a user gesture.
+    });
+  }, [media, paused]);
 
   useEffect(() => {
     if (!media || media.media_type !== "video") return;

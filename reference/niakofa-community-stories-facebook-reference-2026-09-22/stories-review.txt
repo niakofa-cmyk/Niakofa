@@ -1,0 +1,441 @@
+Yes — but there is an important distinction: the screenshot you uploaded is a Facebook Reels surface, not Facebook Stories. The interaction model you are pointing to, however, is exactly the kind of immersive, full-screen media experience that Niakofa's Stories surface should use if you want it to feel like a modern Facebook/Instagram-style social product.
+
+Facebook currently treats Reels as a dedicated, full-screen video destination, while Stories remain a separate sharing/viewing surface. Meta has also explicitly moved Facebook's video experience toward a Reels-first model.
+
+What I found in the current Niakofa repo
+
+I checked the current main branch at:
+
+0d010da463b37b37b169fbe100f952bfcb73faa3
+
+The important finding is:
+
+The previous Community redesign has not fully landed in GitHub main
+
+The current CommunitySocialShell.tsx still has:
+
+6 primary tabs
+Home
+Stories
+People
+Hubs
+Notifications
+Profile
+A Create (+) button
+Search
+Messages
+Menu
+
+So the earlier five-icon redesign package exists separately, but the actual current repository still contains the older six-item shell.
+
+That explains why the Community can still feel much busier than the Facebook reference.
+
+Current Niakofa GitHub repository
+
+More importantly: your Stories implementation is already much closer than it looks
+
+This is actually good news.
+
+Niakofa already has substantial Story infrastructure.
+
+I found:
+
+Already implemented
+
+Story author rail
+
+User avatars
+Seen/unseen state
+"Your Story"
+horizontal scrolling
+
+Story creation
+
+Camera
+Gallery
+Photo
+Video
+Text
+Stickers
+Effects
+Mentions
+Music
+Captions
+Audience selection
+
+Story playback
+
+Full-screen Story viewer
+Progress bar
+Previous/next frame
+Automatic photo progression
+Video progression
+Story media player
+Overlay elements
+Story captions
+
+Story interaction
+
+Reactions
+Replies
+Share
+Story-to-message context
+Story view recording
+
+Authenticated media
+
+Story media is fetched through the authenticated media flow.
+
+So the backend/content foundation is not the primary missing piece.
+
+What is actually missing
+
+The problem is the surface/orchestration.
+
+Right now /community/stories effectively behaves like:
+
+Community
+   ↓
+Stories page
+   ↓
+Story rail
+   ↓
+Gratitude & Stories feed
+   ↓
+Click person
+   ↓
+Fullscreen Story viewer
+
+That is much more like a feature page than a social-media Story destination.
+
+The Facebook reference is closer to:
+
+Social navigation
+       ↓
+   Media surface
+       ↓
+ Fullscreen media
+       ↓
+ swipe / tap / auto advance
+       ↓
+ next story / next creator
+
+That difference is significant.
+
+I would change the Niakofa Stories tab to this
+1. The Stories tab becomes an immersive Stories surface
+
+Instead of:
+
+Stories
+Share what is happening now.
+[Create]
+[avatars]
+Gratitude & Stories
+
+make the primary Stories destination:
+
+┌───────────────────────────────┐
+│ ☰  Stories       🔍   ⋯       │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                               │
+│       FULL-SCREEN STORY       │
+│                               │
+│       PHOTO / VIDEO           │
+│                               │
+│                               │
+│                               │
+│                               │
+│                               │
+│                     ♡         │
+│                     ↗         │
+│                               │
+│  Avatar  Person Name          │
+│  Community / Hub              │
+│                               │
+│  [ Reply to Story... ]        │
+└───────────────────────────────┘
+
+The Story viewer becomes the destination, not merely a modal attached to a rail.
+
+2. Keep the Story rail — but use it as the selector
+
+The horizontal avatars should still exist.
+
+But they should become a compact Story selector rather than the entire page.
+
+For example:
+
+Your Story   Tommy   Aisha   Kwame   Maria   ...
+    +          ○       ○       ○       ○
+
+Selecting an avatar immediately launches that person's Story.
+
+No intermediate "Story page" needs to appear.
+
+3. The viewer needs true sequential Story navigation
+
+Your current implementation already has:
+
+Previous
+Next
+progress
+auto advance
+
+That's good.
+
+But I would enhance it to:
+
+Horizontal/tap behavior
+Tap left → previous frame
+Tap right → next frame
+Last frame → next person's Story
+First frame → previous person's Story
+Mobile gestures
+Swipe left → next creator
+Swipe right → previous creator
+Swipe down → close
+Press/hold → pause
+Release → resume
+
+That is the missing immersive Story behavior.
+
+4. Do not turn Stories into Reels by accident
+
+This is important.
+
+Your uploaded screenshot has:
+
+Like count
+Comment count
+Share count
+Save count
+Follow
+Creator identity
+Vertical video
+Continuous media consumption
+
+That's Reels behavior.
+
+Meta itself describes Reels as a dedicated video discovery experience where users can continuously browse video and interact with creators.
+
+Stories should instead emphasize:
+
+Who posted it
+Temporary moment
+Progress
+Reply
+Reaction
+Share
+Next Story
+
+So I would borrow the visual language, not duplicate the Reels product semantics.
+
+5. But Niakofa could support both eventually
+
+The clean architecture would be:
+
+COMMUNITY
+│
+├── HOME
+│    ├── Story rail
+│    ├── What's on your mind?
+│    └── Community feed
+│
+├── STORIES
+│    └── Immersive Story viewer
+│         ├── Photos
+│         ├── Videos
+│         ├── Text
+│         ├── Music
+│         ├── Reactions
+│         └── Replies
+│
+├── PEOPLE
+│
+├── HUBS
+│
+└── NOTIFICATIONS
+
+And later:
+
+MEDIA / REELS
+└── immersive public video discovery
+
+But I would not add Reels as another primary Community tab right now, because that would recreate the exact navigation clutter you're trying to eliminate.
+
+Facebook itself has been consolidating its video experience into Reels, which supports keeping the number of primary destinations small rather than creating a separate button for every media type.
+
+6. The current Story viewer is too constrained
+
+This is one of the biggest visual mismatches.
+
+The current CSS has:
+
+width: min(100%, 560px)
+
+and the viewer is inside:
+
+padding: 12px
+border-radius: 26px
+
+So on desktop it deliberately looks like a phone-shaped modal/card.
+
+Your screenshot is instead:
+
+full viewport
+       ↓
+black background
+       ↓
+media fills viewport
+       ↓
+controls float over media
+
+For mobile, I would change the Story destination to:
+
+position: fixed
+inset: 0
+width: 100vw
+height: 100dvh
+border-radius: 0
+padding: 0
+
+Then only constrain the media itself where appropriate.
+
+7. The current Stories page also contains the wrong secondary experience
+
+CommunityStoriesView.tsx currently adds:
+
+"Gratitude & Stories"
+
+with gratitude posts underneath the Story experience.
+
+That is one of the reasons the surface feels like a dashboard.
+
+I would separate those concepts:
+
+Stories tab
+
+Only:
+
+Story rail/selector
+Story viewer
+Story creation
+Community Home
+
+Can contain:
+
+Stories
+Gratitude
+Posts
+Requests
+Community activity
+
+This gives each surface a clear job.
+
+8. Nia AI should remain separate
+
+I would also preserve the separation you've been asking for between Nia AI and Niakofa.
+
+The Story system can expose:
+
+"Create with Nia"
+
+as an optional creation tool.
+
+But Nia should not become the Stories navigation or identity.
+
+The architecture should remain:
+
+Niakofa
+│
+├── Community
+│    └── Stories
+│         ├── native Story creation
+│         └── optional Nia assistance
+│
+└── Nia AI
+     └── separate AI system
+
+That's consistent with your broader Niakofa/Nia separation requirement.
+
+The navigation should ultimately look more like this
+
+Instead of the current:
+
+Home | Stories | People | Hubs | Notifications | Profile
+
+I would use:
+
+       Niakofa
+
+    Home   Stories   People   Hubs   Notifications
+
+with:
+
+Profile
+Requests
+Services
+Spirals
+Media
+Diaspora
+Settings
+
+behind one menu.
+
+Messages remains a single header action.
+
+And Create disappears from the global header.
+
+Creation happens contextually:
+
+Home → What's on your mind?
+Stories → Create Story
+Profile → Create/update profile content
+
+That is much closer to the social-network hierarchy you're trying to achieve.
+
+My implementation assessment
+Area	Current state	Needed
+Story backend	Present	Minor hardening
+Story media	Present	Keep
+Photo/video Stories	Present	Keep
+Story composer	Present	Polish
+Story editing	Present	Polish
+Story reactions	Present	Keep
+Story replies	Present	Keep
+Story sharing	Present	Keep
+Story progress	Present	Enhance
+Fullscreen viewer	Present	Make true immersive surface
+Sequential creator navigation	Partial	Implement
+Swipe navigation	Missing	Implement
+Hold-to-pause	Missing	Implement
+Swipe-down close	Missing	Implement
+Full viewport mobile	Partial	Implement
+Stories as primary destination	Partial	Redesign
+Stories page simplicity	No	Remove Gratitude feed
+Facebook-like media hierarchy	Partial	Redesign
+Reels-like immersive visual language	Partial	Add
+Actual Reels system	Not established	Don't add yet
+Current Community navigation	Still cluttered	Apply five-icon redesign
+Bottom line
+
+Yes — your instinct is correct about the interaction model, but I would call it an "immersive Stories viewer," not a Reels tab.
+
+The important discovery is that Niakofa already has most of the difficult Story technology. We don't need to rebuild Stories from scratch.
+
+We need to turn:
+
+Story rail + Story page + modal viewer
+
+into:
+
+Story destination → immersive full-screen viewer → continuous Story navigation
+
+while keeping the Story rail as the discovery/selection mechanism on Home.
+
+And the current GitHub inspection also confirms that the previous five-icon Community navigation redesign has not actually landed on main yet. The repo is still carrying the six-tab shell and global Create button.
+
+That means the next Community pass should address both together:
+
+Community shell simplification + immersive Facebook-style Stories destination, rather than adding another tab/button.

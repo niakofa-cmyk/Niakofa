@@ -18,15 +18,15 @@ describe("Community Social V4 architecture", () => {
   );
   const app = fs.readFileSync(path.join(__dirname, "../../App.tsx"), "utf8");
 
-  test("primary Community navigation is icon-first and limited to six destinations", () => {
-    assert.match(shellCss, /grid-template-columns: repeat\(6/);
-    assert.equal((shell.match(/key: "/g) || []).length >= 6, true);
+  test("primary Community navigation is icon-first and limited to five destinations", () => {
+    assert.match(shellCss, /grid-template-columns: repeat\(5/);
+    assert.equal((shell.match(/key: "/g) || []).length >= 5, true);
     assert.match(shell, /aria-label=\{item\.label\}/);
     assert.match(shell, /icon: BookOpen/);
     assert.match(shell, /icon: Users\b/);
     assert.match(shell, /icon: Globe2/);
     assert.match(shell, /icon: Bell/);
-    assert.match(shell, /icon: UserRound/);
+    assert.doesNotMatch(shell, /key: "profile" as const/);
   });
 
   test("there is no persistent Feed/Requests/More text-tab bar", () => {
@@ -43,11 +43,12 @@ describe("Community Social V4 architecture", () => {
     assert.match(shell, /\/community\/circles/);
     assert.match(shell, /\/community\/media/);
     assert.match(shell, /\/diaspora/);
-    assert.doesNotMatch(shell, /href: "\/profile"/);
+    assert.match(shell, /href: "\/profile"/);
   });
 
-  test("the unified Create surface includes gratitude", () => {
-    assert.match(fs.readFileSync(path.join(__dirname, "../../pages/community.tsx"), "utf8"), /Share Gratitude|Gratitude/);
+  test("Stories stays focused while gratitude remains a separate Community capability", () => {
+    const stories = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoriesView.tsx"), "utf8");
+    assert.doesNotMatch(stories, /gratitude|Gratitude/);
     assert.match(fs.readFileSync(path.join(__dirname, "../../components/community/CommunityGratitudeComposer.tsx"), "utf8"), /POST.*api\/gratitude|\/api\/gratitude/);
   });
 

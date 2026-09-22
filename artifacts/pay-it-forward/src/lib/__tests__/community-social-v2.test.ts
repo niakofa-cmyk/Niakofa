@@ -51,8 +51,10 @@ describe("Community Social legacy behavior coverage", () => {
   test("V4 owns the Community primary navigation and secondary menu", () => {
     assert.doesNotMatch(shellFile, /contentNavItems/);
     assert.match(shellFile, /const primaryNav =/);
-    assert.match(shellCss, /grid-template-columns: repeat\(6/);
+    assert.match(shellCss, /grid-template-columns: repeat\(5/);
     assert.match(shellFile, /menuItems/);
+    assert.match(shellFile, /href: "\/profile"/);
+    assert.doesNotMatch(shellFile, /key: "profile" as const/);
   });
 
   test("Home places compact Stories between its composer and feed", () => {
@@ -81,11 +83,10 @@ describe("Community Social legacy behavior coverage", () => {
     assert.match(feedFile, /socialHomeMode && homeInterstitial[\s\S]*?\{!feed \? \(/);
   });
 
-  test("Create sheet supports initial focus, Escape, focus trapping, and restoration", () => {
-    assert.match(communityFile, /createDialogCloseRef\.current\?\.focus/);
-    assert.match(communityFile, /event\.key === "Escape"/);
-    assert.match(communityFile, /event\.key !== "Tab"/);
-    assert.match(communityFile, /restoreTarget\?\.focus/);
+  test("Creation is contextual instead of a global Community header action", () => {
+    assert.doesNotMatch(shellFile, /aria-label="Create"/);
+    assert.doesNotMatch(communityFile, /createSheetOpen/);
+    assert.match(homeViewFile, /onOpenStoryComposer/);
   });
 
   test("Stories section includes CommunityStoriesExperience", () => {

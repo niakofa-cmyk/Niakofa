@@ -113,12 +113,12 @@ export function CommunityStoryRail({
   const [musicQuery, setMusicQuery] = useState("");
   const [musicTab, setMusicTab] = useState<"for-you" | "trending">("for-you");
   const [seenAuthorIds, setSeenAuthorIds] = useState<Set<number>>(() => new Set());
-  const [storySurface, setStorySurface] = useState<"stories" | "community">("stories");
   const [mediaUrls, setMediaUrls] = useState<Record<number, string>>({});
   const mediaObjectUrlsRef = useRef<Record<number, string>>({});
   const [shareStoryId, setShareStoryId] = useState<number | null>(null);
   const [reactedStoryIds, setReactedStoryIds] = useState<Record<number, boolean>>({});
   const [storyProgress, setStoryProgress] = useState(0);
+  const [storyPaused, setStoryPaused] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [caption, setCaption] = useState("");
   const [audience, setAudience] = useState<"community" | "hub">(hubId ? "hub" : "community");
@@ -136,6 +136,7 @@ export function CommunityStoryRail({
   const [publishing, setPublishing] = useState(false);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
+  const autoOpenedRef = useRef(false);
 
   const authors = useMemo(() => groupStories(stories), [stories]);
   const selectedAuthor = viewerIndex === null ? null : authors[viewerIndex] ?? null;
@@ -373,7 +374,14 @@ export function CommunityStoryRail({
     });
     setViewerIndex(index);
     setMediaIndex(0);
+    setStoryPaused(false);
   }, [authors]);
+
+  useEffect(() => {
+    if (compact || loading || autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+    if (authors.length > 0) openStory(0);
+  }, [authors, compact, loading, openStory]);
 
   const toggleGallerySelection = (index: number) => {
     setPreviewFileIndex(index);
@@ -419,13 +427,28 @@ export function CommunityStoryRail({
     }
   }, [authors, mediaIndex, selectedAuthor, viewerIndex]);
   const completeSelectedFrame = useCallback(() => advanceFrame(1), [advanceFrame]);
+  const moveToAuthor = useCallback((direction: 1 | -1) => {
+    if (viewerIndex === null) return;
+    const nextAuthorIndex = viewerIndex + direction;
+    if (nextAuthorIndex < 0 || nextAuthorIndex >= authors.length) {
+      if (direction > 0) setViewerIndex(null);
+      return;
+    }
+    setViewerIndex(nextAuthorIndex);
+    setMediaIndex(direction > 0 ? 0 : authors[nextAuthorIndex].frames.length - 1);
+    setStoryPaused(false);
+  }, [authors, viewerIndex]);
+  const closeViewer = useCallback(() => {
+    setViewerIndex(null);
+    setStoryPaused(false);
+  }, []);
 
   useEffect(() => {
     if (viewerIndex === null) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setViewerIndex(null);
+        closeViewer();
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
         advanceFrame(-1);
@@ -441,7 +464,7 @@ export function CommunityStoryRail({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [advanceFrame, viewerIndex]);
+  }, [advanceFrame, closeViewer, viewerIndex]);
 
   const selectedPlayerMedia = useMemo(() => {
     if (!selectedMedia) return null;
@@ -489,13 +512,6 @@ export function CommunityStoryRail({
           </button>
         </header>}
 
-        {!compact && <nav className="nia-community-stories-nav" aria-label="Community Story navigation">
-          <button type="button" className="active" aria-current="page" onClick={() => setStorySurface("stories")}>Stories</button>
-          <button type="button" onClick={() => { setStorySurface("community"); document.getElementById("nia-story-discovery")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>My Community</button>
-          <button type="button" onClick={() => navigate("/diaspora")}>Global</button>
-          <button type="button" onClick={() => navigate("/diaspora")}>Hubs</button>
-        </nav>}
-
         <StoryVisualRail
           authors={visualAuthors}
           loading={loading}
@@ -503,76 +519,6 @@ export function CommunityStoryRail({
           onOpen={openStory}
           emptyLabel="No Stories yet. Start the first Community Story."
         />
-
-        {!compact && <section id="nia-story-discovery" className="nia-story-discovery" aria-label="Story discovery">
-          <div className="nia-story-discovery__heading">
-            <div>
-              <p className="nia-story-kicker">{storySurface === "community" ? "My Community" : "Stories"}</p>
-              <h2>Moments from the community</h2>
-            </div>
-            <span>{authors.reduce((count, author) => count + author.frames.length, 0)} moments</span>
-          </div>
-
-          {loading ? (
-            <div className="nia-story-discovery__loading" role="status">Loading Stories…</div>
-          ) : authors.length ? (
-            <div className="nia-story-card-grid">
-              {authors.flatMap((author, authorIndex) =>
-                author.frames.slice(0, 4).map((frame, frameIndex) => {
-                  const media = frame.media;
-                  const mediaUrl = media ? mediaUrls[media.id] : null;
-                  const frameIndexForAuthor = author.frames.findIndex((candidate) => candidate === frame);
-                  return (
-                    <button
-                      key={`story-card-${frame.story.id}-${media?.id ?? frameIndex}`}
-                      type="button"
-                      className="nia-story-card"
-                      onClick={() => {
-                        setViewerIndex(authorIndex);
-                        setMediaIndex(Math.max(0, frameIndexForAuthor));
-                        setStoryProgress(0);
-                        setSeenAuthorIds((current) => new Set(current).add(author.author_user_id));
-                        if (frame.story.id) void recordStoryView(frame.story.id).catch(() => {});
-                      }}
-                      aria-label={`Open Story by ${author.author.name}`}
-                    >
-                      <div className="nia-story-card__media">
-                        {mediaUrl ? (
-                          media?.media_type === "video" ? (
-                            <video src={mediaUrl} muted playsInline preload="metadata" />
-                          ) : (
-                            <img src={mediaUrl} alt="" loading="lazy" />
-                          )
-                        ) : (
-                          <div className="nia-story-card__placeholder"><span>Niakofa</span></div>
-                        )}
-                        <span className="nia-story-card__scrim" aria-hidden="true" />
-                        <span className="nia-story-card__author">
-                          <span className="nia-story-card__avatar">
-                            {author.author.avatar_url ? <img src={author.author.avatar_url} alt="" /> : author.author.name.slice(0, 1)}
-                          </span>
-                          <span>
-                            <strong>{author.author.name}</strong>
-                            <small>{frame.story.hub_id ? "Hub Story" : "Community"}</small>
-                          </span>
-                        </span>
-                        {media?.media_type === "video" && <span className="nia-story-card__video">▶</span>}
-                        <span className="nia-story-card__caption">{frame.story.caption || "A Community Moment"}</span>
-                      </div>
-                    </button>
-                  );
-                }),
-              )}
-            </div>
-          ) : (
-            <div className="nia-story-discovery__empty">
-              <div className="nia-story-discovery__empty-icon">◎</div>
-              <strong>Your Community Story starts here.</strong>
-              <p>Capture a photo, video, or text moment and share it with your community.</p>
-              <button type="button" className="nia-story-pill" onClick={() => setComposerOpen(true)}>Create your Story</button>
-            </div>
-          )}
-        </section>}
       </section>
 
       {composerOpen && (
@@ -660,9 +606,17 @@ export function CommunityStoryRail({
             progress={storyProgress}
             onPrevious={() => advanceFrame(-1)}
             onNext={() => advanceFrame(1)}
-            onClose={() => setViewerIndex(null)}
+            onClose={closeViewer}
             onMore={() => setShareStoryId(selectedStory.id)}
             onReact={() => void toggleReaction()}
+            onSwipe={(direction) => {
+              if (direction === "close") {
+                closeViewer();
+                return;
+              }
+              moveToAuthor(direction === "next" ? 1 : -1);
+            }}
+            onHoldChange={setStoryPaused}
             onReply={(body) => {
               if (!selectedStory.reply_enabled) return;
               void sendStoryContextMessage({
@@ -686,6 +640,7 @@ export function CommunityStoryRail({
                 fallbackText={selectedMedia ? "Loading Story media…" : selectedStory.caption || "Community Moment"}
                 onComplete={completeSelectedFrame}
                 onProgress={setStoryProgress}
+                paused={storyPaused}
               />
               {selectedStory.caption && <p className="nia-story-viewer__caption">{selectedStory.caption}</p>}
             </div>

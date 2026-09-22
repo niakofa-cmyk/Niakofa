@@ -1,5 +1,5 @@
 .nk-community-v4 {
-  --nk-social-content-width: 760px;
+  --nk-social-content-width: 700px;
 }
 
 .nk-community-v4-header {
@@ -55,7 +55,7 @@
 
 .nk-community-v4-social-nav {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   width: 100%;
   max-width: var(--nk-social-content-width);
   height: 3.375rem;

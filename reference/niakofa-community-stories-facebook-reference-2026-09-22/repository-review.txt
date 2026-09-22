@@ -1,0 +1,83 @@
+Yes. I verified the current main repository and the latest Community implementation.
+
+Verification
+
+Niakofa GitHub repository
+
+The latest main commit is:
+
+0d010da463b37b37b169fbe100f952bfcb73faa3
+
+The current Railway-associated status for that commit is success.
+
+My audit found:
+
+Stories rail: present and properly integrated into Community.
+“What’s on your mind?” composer: present and functional.
+Hub-scoped Community feed: present.
+Posts/comments/reactions/sharing/media: present.
+The major remaining visual problem: Community still has too much application chrome around those good social surfaces.
+The existing shell had 6 primary destinations, plus Create, Search, Messages, Menu, and secondary feature navigation.
+Profile, Requests, Services, Spirals, Media and Diaspora were still competing visually with the social experience.
+That is why it still reads more like a Niakofa feature dashboard than the Facebook-style social network you are targeting.
+What I changed in the downloadable package
+
+The new V2 shell makes Community behave like a social network:
+
+Primary navigation — exactly 5 icons
+
+Home · Stories · People · Hubs · Notifications
+
+Header
+
+Niakofa · Search · Messages · Menu
+
+Removed from primary chrome:
+
+Create button
+Profile tab
+Requests tab
+Services tab
+Spirals tab
+Media tab
+Diaspora tab
+
+Those Niakofa-specific systems remain available, but are behind the single Menu instead of occupying the social-navigation hierarchy.
+
+The feed remains:
+
+Stories → What's on your mind? → Community Feed
+
+The main feed is also narrowed to approximately 700px, giving it a much more recognizable social-feed composition instead of an application-dashboard appearance.
+
+Importantly, this package does not alter:
+
+Hub APIs
+Community feed APIs
+Story APIs
+Messages
+Hub membership
+Requests
+Spirals
+Diaspora
+Nia
+realtime infrastructure
+database schema
+authentication
+
+I also verified the generated ZIP contents successfully.
+
+Download
+
+Download Niakofa Community Facebook Social V2 — Improved & Enhanced ZIP
+
+The ZIP contains:
+
+CommunitySocialShell.tsx — replacement implementation
+community-facebook-social-v2.patch — Git patch
+README.md — application instructions and design contract
+COMMUNITY_UI_ACCEPTANCE.md — acceptance criteria
+
+One limitation: the exact ZIP you referred to was not available as a current conversation attachment, so I could verify the actual GitHub main repository and the previously stored redesign evidence, but I could not byte-for-byte compare your claimed ZIP against main. The package above is therefore based on the verified current repository state rather than pretending I inspected a ZIP I could not access.
+
+Bottom line: the previous redesign landed technically, but it did not go far enough visually. This V2 addresses the actual remaining problem: Community should feel like a social network first, while Niakofa's deeper systems become contextual/secondary rather than becoming a wall of tabs and buttons.

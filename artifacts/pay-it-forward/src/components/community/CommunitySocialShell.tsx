@@ -8,7 +8,6 @@ import {
   Image as ImageIcon,
   Menu,
   MessageCircle,
-  Plus,
   Search,
   Users,
   UsersRound,
@@ -36,6 +35,7 @@ interface CommunitySocialShellProps {
   active: CommunityNavKey;
   onNavigate: (key: CommunityNavKey) => void;
   onRoute: (path: string) => void;
+  /** Retained for API compatibility; creation belongs to the feed and Story surfaces. */
   onCreate: () => void;
   onSearch: (value: string) => void;
   searchValue?: string;
@@ -48,13 +48,13 @@ const primaryNav = [
   { key: "people" as const, label: "People", icon: Users },
   { key: "hubs" as const, label: "Hubs", icon: Globe2 },
   { key: "notifications" as const, label: "Notifications", icon: Bell },
-  { key: "profile" as const, label: "Profile", icon: UserRound },
 ];
 
 const menuItems = [
+  { href: "/profile", label: "Profile", description: "Your Niakofa profile", icon: UserRound },
   { href: "/community/requests", label: "Requests", description: "Give or receive help", icon: BriefcaseBusiness },
   { href: "/community/services", label: "Services", description: "Skills and offers", icon: Wrench },
-  { href: "/community/circles", label: "Circles", description: "Live conversations", icon: UsersRound },
+  { href: "/community/circles", label: "Spirals", description: "Live community conversations", icon: UsersRound },
   { href: "/community/media", label: "Media", description: "Photos and shared moments", icon: ImageIcon },
   { href: "/diaspora", label: "Diaspora", description: "Global cultural communities", icon: Globe2 },
 ];
@@ -68,7 +68,6 @@ export function CommunitySocialShell({
   active,
   onNavigate,
   onRoute,
-  onCreate,
   onSearch,
   searchValue = "",
   children,
@@ -126,19 +125,9 @@ export function CommunitySocialShell({
   };
 
   return (
-    <div className="nk-community-v4 min-h-[100dvh] bg-muted/20 text-foreground">
+    <div className="nk-community-v4 min-h-[100dvh] bg-muted/10 text-foreground">
       <header className="sticky top-0 z-40 border-b border-border/80 bg-background/95 backdrop-blur-xl">
         <div className="nk-community-v4-header mx-auto">
-          <button
-            type="button"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open Community menu"
-            aria-expanded={menuOpen}
-            className="nk-community-v4-icon-button shrink-0"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-
           <button
             type="button"
             onClick={() => navigate("home")}
@@ -162,9 +151,6 @@ export function CommunitySocialShell({
           </div>
 
           <div className="nk-community-v4-actions">
-            <button type="button" onClick={onCreate} aria-label="Create" className="nk-community-v4-icon-button">
-              <Plus className="h-5 w-5" />
-            </button>
             <button
               type="button"
               onClick={() => setSearchOpen((value) => !value)}
@@ -176,6 +162,15 @@ export function CommunitySocialShell({
             </button>
             <button type="button" onClick={() => onRoute("/messages")} aria-label="Open Messages" className="nk-community-v4-icon-button">
               <MessageCircle className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open Community menu"
+              aria-expanded={menuOpen}
+              className="nk-community-v4-icon-button"
+            >
+              <Menu className="h-5 w-5" />
             </button>
           </div>
         </div>
@@ -196,10 +191,7 @@ export function CommunitySocialShell({
           </div>
         )}
 
-        <nav
-          aria-label="Community primary navigation"
-          className="nk-community-v4-social-nav"
-        >
+        <nav aria-label="Community primary navigation" className="nk-community-v4-social-nav">
           {primaryNav.map((item) => {
             const selected = active === item.key;
             return (
@@ -220,7 +212,7 @@ export function CommunitySocialShell({
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-[760px] min-w-0 px-0 sm:px-4 sm:py-3">
+      <main className="mx-auto w-full max-w-[700px] min-w-0 px-0 sm:px-4 sm:py-3">
         <div className="w-full min-w-0">{children}</div>
       </main>
 
@@ -243,10 +235,10 @@ export function CommunitySocialShell({
               </button>
             </div>
 
-             <p className="mt-4 px-2 pb-2 text-[11px] font-black uppercase tracking-[0.14em] text-muted-foreground">
-               Niakofa features
-             </p>
-             <div className="grid gap-1">
+            <p className="mt-4 px-2 pb-2 text-[11px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+              Niakofa features
+            </p>
+            <div className="grid gap-1">
               {menuItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -272,9 +264,9 @@ export function CommunitySocialShell({
             </div>
 
             <div className="mt-5 rounded-2xl border border-border bg-muted/40 p-4">
-              <p className="text-xs font-bold">Niakofa-specific systems stay connected.</p>
+              <p className="text-xs font-bold">Niakofa systems stay connected.</p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Services, Circles, Diaspora, Hub membership, Stories, Messages and realtime features remain available without crowding the social feed.
+                Requests, Services, Spirals, Media, Diaspora, Hub membership, Stories, Messages and realtime features remain available without becoming tabs.
               </p>
             </div>
           </aside>

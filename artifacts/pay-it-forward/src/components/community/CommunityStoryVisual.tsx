@@ -118,6 +118,8 @@ export function StoryViewerChrome({
   onReact,
   onReply,
   onShare,
+  onSwipe,
+  onHoldChange,
   children,
   replyPlaceholder = "Reply to this Story…",
   replyDisabled = false,
@@ -131,6 +133,8 @@ export function StoryViewerChrome({
   onReact: () => void;
   onReply: (value: string) => void;
   onShare: () => void;
+  onSwipe?: (direction: "next" | "previous" | "close") => void;
+  onHoldChange?: (paused: boolean) => void;
   children: ReactNode;
   replyPlaceholder?: string;
   replyDisabled?: boolean;
@@ -165,7 +169,51 @@ export function StoryViewerChrome({
       </header>
 
       <button className="nia-story-viewer__tap nia-story-viewer__tap--left" type="button" onClick={onPrevious} aria-label="Previous frame" />
-      <div className="nia-story-viewer__media">{children}</div>
+      <div
+        className="nia-story-viewer__media"
+        onPointerDown={(event) => {
+          if (!onSwipe && !onHoldChange) return;
+          const target = event.currentTarget;
+          const startX = event.clientX;
+          const startY = event.clientY;
+          let held = false;
+          const holdTimer = window.setTimeout(() => {
+            held = true;
+            onHoldChange?.(true);
+          }, 220);
+          const finish = (endX: number, endY: number) => {
+            window.clearTimeout(holdTimer);
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+            window.removeEventListener("pointercancel", cancel);
+            if (held) {
+              onHoldChange?.(false);
+              return;
+            }
+            const deltaX = endX - startX;
+            const deltaY = endY - startY;
+            if (Math.abs(deltaY) > Math.abs(deltaX) && deltaY > 70) {
+              onSwipe?.("close");
+            } else if (Math.abs(deltaX) > 70) {
+              onSwipe?.(deltaX < 0 ? "next" : "previous");
+            }
+          };
+          const move = (moveEvent: PointerEvent) => {
+            if (Math.abs(moveEvent.clientX - startX) > 12 || Math.abs(moveEvent.clientY - startY) > 12) {
+              window.clearTimeout(holdTimer);
+            }
+          };
+          const up = (upEvent: PointerEvent) => finish(upEvent.clientX, upEvent.clientY);
+          const cancel = () => finish(startX, startY);
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+          window.addEventListener("pointercancel", cancel);
+          target.setPointerCapture?.(event.pointerId);
+        }}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        {children}
+      </div>
       <button className="nia-story-viewer__tap nia-story-viewer__tap--right" type="button" onClick={onNext} aria-label="Next frame" />
 
       <div className="nia-story-viewer__scrim" aria-hidden="true" />
