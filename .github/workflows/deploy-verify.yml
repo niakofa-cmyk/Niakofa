@@ -3,6 +3,19 @@ name: Deploy Verification
 on:
   push:
     branches: [main]
+    # Documentation, reference material, and workflow-only changes do not
+    # produce a new Railway application revision. Keep the explicit
+    # workflow_dispatch path available when deployment verification is needed
+    # for one of those commits.
+    paths-ignore:
+      - "**.md"
+      - "**.mdx"
+      - "**.txt"
+      - ".agents/**"
+      - ".github/**"
+      - "attached_assets/**"
+      - "docs/**"
+      - "reference/**"
   workflow_dispatch:
 
 jobs:
