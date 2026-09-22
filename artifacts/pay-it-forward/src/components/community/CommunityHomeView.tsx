@@ -7,6 +7,7 @@ type CommunityHomeViewProps = {
   hubId: number | null;
   hubResolved: boolean;
   storyComposerSignal: number;
+  openStoryId: number | null;
   onOpenStoryComposer: () => void;
   searchQuery: string;
 };
@@ -15,6 +16,7 @@ export function CommunityHomeView({
   hubId,
   hubResolved,
   storyComposerSignal,
+  openStoryId,
   onOpenStoryComposer,
   searchQuery,
 }: CommunityHomeViewProps) {
@@ -37,6 +39,7 @@ export function CommunityHomeView({
         <CommunityStoriesExperience
           hubId={null}
           openComposerSignal={storyComposerSignal}
+          openStoryId={openStoryId}
           compact
         />
         <div className="border-y border-border bg-card p-6 text-center sm:rounded-2xl sm:border">
@@ -66,6 +69,7 @@ export function CommunityHomeView({
         homeInterstitial={(
           <CommunityStoriesExperience
             hubId={hubId}
+            openStoryId={openStoryId}
             openComposerSignal={storyComposerSignal}
             compact
           />

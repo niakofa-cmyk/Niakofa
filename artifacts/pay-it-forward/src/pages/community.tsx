@@ -43,6 +43,10 @@ export default function CommunityScreen() {
     const value = Number(new URLSearchParams(search).get("hubId"));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
   }, [search]);
+  const openStoryId = useMemo(() => {
+    const value = Number(new URLSearchParams(search).get("storyId"));
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }, [search]);
 
   const [defaultHubId, setDefaultHubId] = useState<number | null>(null);
   const [defaultHubResolved, setDefaultHubResolved] = useState(hubContextId !== null);
@@ -90,13 +94,14 @@ export default function CommunityScreen() {
             hubId={effectiveHubId}
             hubResolved={defaultHubResolved}
             storyComposerSignal={storyComposerSignal}
+            openStoryId={openStoryId}
             onOpenStoryComposer={() => setStoryComposerSignal((signal) => signal + 1)}
             searchQuery={communitySearch}
           />
         )}
         {normalizedSection === "people" && <CommunityPeopleView hubId={effectiveHubId} />}
         {normalizedSection === "hubs" && <CommunityHubsView hubId={effectiveHubId} />}
-        {normalizedSection === "stories" && <CommunityStoriesView hubId={effectiveHubId} />}
+        {normalizedSection === "stories" && <CommunityStoriesView hubId={effectiveHubId} openStoryId={openStoryId} />}
         {normalizedSection === "requests" && <CommunityRequestsView />}
         {normalizedSection === "circles" && <CommunitySpiralsTab />}
         {normalizedSection === "media" && <MediaDiscoveryView hubId={effectiveHubId} />}

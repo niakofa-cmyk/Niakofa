@@ -88,10 +88,12 @@ function groupStories(stories: CommunityStory[]): StoryAuthor[] {
 export function CommunityStoryRail({
   hubId,
   openComposerSignal,
+  openStoryId = null,
   compact = false,
 }: {
   hubId: number | null;
   openComposerSignal?: number;
+  openStoryId?: number | null;
   compact?: boolean;
 }) {
   const [, navigate] = useLocation();
@@ -137,6 +139,7 @@ export function CommunityStoryRail({
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const autoOpenedRef = useRef(false);
+  const deepLinkedStoryRef = useRef<number | null>(null);
 
   const authors = useMemo(() => groupStories(stories), [stories]);
   const selectedAuthor = viewerIndex === null ? null : authors[viewerIndex] ?? null;
@@ -378,10 +381,10 @@ export function CommunityStoryRail({
   }, [authors]);
 
   useEffect(() => {
-    if (compact || loading || autoOpenedRef.current) return;
+    if (compact || openStoryId !== null || loading || autoOpenedRef.current) return;
     autoOpenedRef.current = true;
     if (authors.length > 0) openStory(0);
-  }, [authors, compact, loading, openStory]);
+  }, [authors, compact, loading, openStory, openStoryId]);
 
   const toggleGallerySelection = (index: number) => {
     setPreviewFileIndex(index);
@@ -410,6 +413,16 @@ export function CommunityStoryRail({
       .then((metrics) => setReactedStoryIds((current) => ({ ...current, [selectedStoryId]: Boolean(metrics.viewer_reaction) })))
       .catch(() => {});
   }, [selectedStoryId]);
+
+  useEffect(() => {
+    if (openStoryId === null || loading || deepLinkedStoryRef.current === openStoryId) return;
+    const authorIndex = authors.findIndex((author) => author.frames.some((frame) => frame.story.id === openStoryId));
+    deepLinkedStoryRef.current = openStoryId;
+    if (authorIndex < 0) return;
+    const frameIndex = authors[authorIndex].frames.findIndex((frame) => frame.story.id === openStoryId);
+    openStory(authorIndex);
+    setMediaIndex(Math.max(0, frameIndex));
+  }, [authors, loading, openStoryId, openStory]);
 
   const advanceFrame = useCallback((direction: 1 | -1) => {
     if (!selectedAuthor || viewerIndex === null) return;

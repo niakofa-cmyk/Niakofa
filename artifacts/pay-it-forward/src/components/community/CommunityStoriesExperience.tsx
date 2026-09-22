@@ -10,10 +10,12 @@ import { CommunityStoryRail } from "./CommunityStoryRail";
 export function CommunityStoriesExperience({
   hubId,
   openComposerSignal,
+  openStoryId,
   compact = false,
 }: {
   hubId: number | null;
   openComposerSignal?: number;
+  openStoryId?: number | null;
   compact?: boolean;
 }) {
   return (
@@ -21,7 +23,12 @@ export function CommunityStoriesExperience({
       className="nia-community-stories-experience"
       aria-label="Niakofa Community Stories experience"
     >
-      <CommunityStoryRail hubId={hubId} openComposerSignal={openComposerSignal} compact={compact} />
+      <CommunityStoryRail
+        hubId={hubId}
+        openComposerSignal={openComposerSignal}
+        openStoryId={openStoryId}
+        compact={compact}
+      />
     </section>
   );
 }
