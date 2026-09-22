@@ -1,0 +1,341 @@
+import { Router } from "express";
+import { eq } from "drizzle-orm";
+import { requireAuth, requireApproved } from "../middlewares/auth";
+import { generalApiLimiter } from "../middlewares/rate-limit";
+import {
+  CircleStartLocationBody,
+  accuracyBucket,
+  buildHostSignal,
+  displayCityName,
+  normalizeCityKey,
+  reverseGeocodeCircleStart,
+  validateFreshAccurateLocation,
+  verifyCircleStartLocation,
+} from "../lib/circleLocationPolicy";
+import {
+  evaluateNeighborhoodGeofence,
+  getNeighborhoodGeometryStatus,
+} from "../lib/neighborhoodGeofence";
+import { db, audioCirclesTable, cityNeighborhoodsTable } from "@workspace/db";
+import { pickVerifiedLocalSpiral } from "../lib/circleLocationContext";
+
+const router = Router();
+
+/**
+ * Resolve the shared map GPS signal to the user's local Spiral without
+ * granting eligibility in the browser. This is intentionally separate from
+ * the per-Spiral check because the list needs one authoritative local match
+ * before it can promote a neighborhood.
+ *
+ * Host Signal Green requires:
+ *   fresh pinpoint GPS → inside promoted city_neighborhoods geometry
+ *   → matching neighborhood Spiral ordered #1 in discovery.
+ */
+router.post(
+  "/audio-circles/location-context",
+  requireAuth,
+  generalApiLimiter,
+  async (req, res) => {
+    const parsed = CircleStartLocationBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        ok: false,
+        status: "blocked",
+        code: "GPS_BODY_INVALID",
+        error: "A fresh GPS fix is required (latitude, longitude, accuracy_meters, captured_at).",
+      });
+    }
+
+    const freshness = validateFreshAccurateLocation(parsed.data);
+    if (!freshness.ok) {
+      return res.status(422).json({
+        ok: false,
+        status: "blocked",
+        code: freshness.code,
+        error: freshness.reason,
+        host_signal: { status: "blocked", message: freshness.reason },
+      });
+    }
+
+    // Location-independent Spirals: reverse geocode is disabled.
+    // Return a non-blocking context so legacy clients do not hang on GPS.
+    let resolved;
+    try {
+      resolved = await reverseGeocodeCircleStart(parsed.data);
+    } catch {
+      return res.json({
+        ok: true,
+        status: "location_ready",
+        city_key: null,
+        city_display: null,
+        county_display: null,
+        state_code: null,
+        accuracy_bucket: "not_applicable",
+        neighborhood_hint: null,
+        circle_id: null,
+        neighborhood_name: null,
+        neighborhood_emoji: null,
+        neighborhood_geofence_status: "no_geometry",
+        neighborhood_geometry_status: "unconfigured",
+        host_signal: {
+          status: "ready",
+          message: "Hosting does not require GPS. Choose any curated Spiral to host.",
+        },
+      });
+    }
+
+    const circles = await db
+      .select({
+        id: audioCirclesTable.id,
+        neighborhood_id: audioCirclesTable.neighborhood_id,
+        name: audioCirclesTable.name,
+        neighborhood_name: cityNeighborhoodsTable.name,
+        neighborhood_emoji: cityNeighborhoodsTable.emoji,
+        center_lat: cityNeighborhoodsTable.center_lat,
+        center_lng: cityNeighborhoodsTable.center_lng,
+        radius_meters: cityNeighborhoodsTable.radius_meters,
+        polygon_geojson: cityNeighborhoodsTable.polygon_geojson,
+        geometry_source: cityNeighborhoodsTable.geometry_source,
+        geometry_version: cityNeighborhoodsTable.geometry_version,
+        geometry_verified: cityNeighborhoodsTable.geometry_verified,
+        geometry_effective_at: cityNeighborhoodsTable.geometry_effective_at,
+        verified: cityNeighborhoodsTable.verified,
+        source_kind: cityNeighborhoodsTable.source_kind,
+        authority_level: cityNeighborhoodsTable.authority_level,
+      })
+      .from(audioCirclesTable)
+      .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
+      .where(eq(audioCirclesTable.city_key, normalizeCityKey(resolved.cityKey)));
+
+    const localResult = pickVerifiedLocalSpiral(
+      circles,
+      parsed.data.latitude,
+      parsed.data.longitude,
+      resolved.neighborhoodHint,
+    );
+    const localCircle = localResult.circle;
+    const geometryStatus = localCircle
+      ? getNeighborhoodGeometryStatus(localCircle)
+      : "unconfigured";
+    const hostGreen =
+      localCircle != null &&
+      localResult.neighborhoodGeofenceStatus === "inside" &&
+      geometryStatus === "verified";
+
+    const hintedCircle = circles.find(
+      (circle) =>
+        circle.neighborhood_id != null &&
+        circle.neighborhood_name != null &&
+        resolved.neighborhoodHint != null &&
+        circle.neighborhood_name.toLowerCase().includes(resolved.neighborhoodHint.toLowerCase()),
+    );
+    const hintedGeometryStatus = hintedCircle
+      ? getNeighborhoodGeometryStatus(hintedCircle)
+      : "unconfigured";
+
+    return res.json({
+      ok: true,
+      status: hostGreen ? "ready" : "location_ready",
+      city_key: resolved.cityKey,
+      city_display: resolved.cityDisplay,
+      county_display: resolved.countyDisplay,
+      state_code: resolved.stateCode,
+      accuracy_bucket: accuracyBucket(parsed.data.accuracy_meters),
+      neighborhood_hint: resolved.neighborhoodHint,
+      // Only promote a Spiral to #1 when Host Signal Green is true.
+      circle_id: hostGreen ? localCircle?.id ?? null : null,
+      neighborhood_name: hostGreen ? localCircle?.neighborhood_name ?? null : null,
+      neighborhood_emoji: hostGreen ? localCircle?.neighborhood_emoji ?? null : null,
+      neighborhood_geofence_status: localResult.neighborhoodGeofenceStatus,
+      neighborhood_geometry_status: localCircle ? geometryStatus : hintedGeometryStatus,
+      host_signal: {
+        status: hostGreen ? "green" : "location_ready",
+        message: hostGreen
+          ? `Host Signal Green · ${localCircle?.neighborhood_name} Spiral is first in your list.`
+          : localResult.neighborhoodGeofenceStatus === "outside"
+            ? `GPS is in ${resolved.cityDisplay}, but outside the reviewed boundary for ${resolved.neighborhoodHint ?? "this neighborhood"}.`
+            : `GPS verified in ${resolved.cityDisplay}; promote a reviewed neighborhood boundary to enable Host Signal Green.`,
+      },
+    });
+  },
+);
+
+router.post(
+  "/audio-circles/:id/location-check",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const circleId = Number(req.params.id);
+    if (!Number.isSafeInteger(circleId) || circleId <= 0) {
+      return res.status(400).json({
+        allowed: false,
+        can_host: false,
+        error: "Invalid id",
+        code: "CIRCLE_ID_INVALID",
+      });
+    }
+
+    const parsed = CircleStartLocationBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        allowed: false,
+        can_host: false,
+        error: "A fresh GPS fix is required (latitude, longitude, accuracy_meters, captured_at).",
+        code: "GPS_BODY_INVALID",
+      });
+    }
+
+    const [circle] = await db
+      .select({
+        id: audioCirclesTable.id,
+        city_key: audioCirclesTable.city_key,
+        city_display: audioCirclesTable.city_display,
+        neighborhood_id: audioCirclesTable.neighborhood_id,
+        name: audioCirclesTable.name,
+      })
+      .from(audioCirclesTable)
+      .where(eq(audioCirclesTable.id, circleId))
+      .limit(1);
+    if (!circle) {
+      return res.status(404).json({
+        allowed: false,
+        can_host: false,
+        error: "Spiral not found",
+        code: "CIRCLE_NOT_FOUND",
+      });
+    }
+
+    let neighborhoodName: string | null = null;
+    let neighborhoodRow: typeof cityNeighborhoodsTable.$inferSelect | null = null;
+    if (circle.neighborhood_id != null) {
+      const [neighborhood] = await db
+        .select()
+        .from(cityNeighborhoodsTable)
+        .where(eq(cityNeighborhoodsTable.id, circle.neighborhood_id))
+        .limit(1);
+      neighborhoodName = neighborhood?.name ?? null;
+      neighborhoodRow = neighborhood ?? null;
+    }
+
+    const result = await verifyCircleStartLocation(circle.city_key, parsed.data, {
+      userId: req.authenticatedUserId!,
+      circleId,
+    });
+
+    const spiralCityDisplay = circle.city_display ?? displayCityName(circle.city_key);
+    if (!result.ok) {
+      return res.status(403).json({
+        allowed: false,
+        can_host: false,
+        error: result.reason,
+        code: result.code,
+        spiral_city_key: result.spiralCityKey ?? circle.city_key,
+        spiral_city_display: spiralCityDisplay,
+        spiral_neighborhood: neighborhoodName,
+        spiral_name: circle.name,
+        resolved_city_key: result.resolvedCityKey ?? null,
+        resolved_city_display: result.resolvedCityDisplay ?? null,
+        resolved_neighborhood_hint: result.neighborhoodHint ?? null,
+        host_signal: buildHostSignal({
+          canHost: false,
+          spiralCityDisplay,
+          spiralNeighborhood: neighborhoodName,
+          resolvedCityDisplay: result.resolvedCityDisplay,
+          neighborhoodHint: result.neighborhoodHint,
+          code: result.code,
+          reason: result.reason,
+        }),
+      });
+    }
+
+    let neighborhoodGeofenceStatus: "inside" | "outside" | "no_geometry" | "invalid_geometry" =
+      "no_geometry";
+    if (neighborhoodRow) {
+      const geofence = evaluateNeighborhoodGeofence(
+        parsed.data.latitude,
+        parsed.data.longitude,
+        neighborhoodRow,
+      );
+
+      if (geofence.status === "outside") {
+        const reason = `You are in ${spiralCityDisplay}, but outside the verified boundary for the ${neighborhoodName ?? "this neighborhood"} Spiral. Move closer or host a different neighborhood Spiral.`;
+        return res.status(403).json({
+          allowed: false,
+          can_host: false,
+          error: reason,
+          code: "CIRCLE_START_OUTSIDE_NEIGHBORHOOD",
+          spiral_city_key: circle.city_key,
+          spiral_city_display: spiralCityDisplay,
+          spiral_neighborhood: neighborhoodName,
+          spiral_name: circle.name,
+          resolved_city_key: result.cityKey,
+          resolved_city_display: result.cityDisplay,
+          resolved_neighborhood_hint: result.neighborhoodHint,
+          neighborhood_geofence: geofence,
+          host_signal: buildHostSignal({
+            canHost: false,
+            spiralCityDisplay,
+            spiralNeighborhood: neighborhoodName,
+            neighborhoodHint: result.neighborhoodHint,
+            neighborhoodGeofenceStatus: "outside",
+            code: "CIRCLE_START_OUTSIDE_NEIGHBORHOOD",
+            reason,
+          }),
+        });
+      }
+
+      if (geofence.status === "invalid_geometry") {
+        const reason =
+          "Neighborhood boundary data is incomplete. Hosting is temporarily unavailable for this Spiral.";
+        return res.status(503).json({
+          allowed: false,
+          can_host: false,
+          error: reason,
+          code: "CIRCLE_START_NEIGHBORHOOD_GEOMETRY_INVALID",
+          spiral_city_key: circle.city_key,
+          spiral_city_display: spiralCityDisplay,
+          spiral_neighborhood: neighborhoodName,
+          spiral_name: circle.name,
+          neighborhood_geofence: geofence,
+          host_signal: buildHostSignal({
+            canHost: false,
+            spiralCityDisplay,
+            spiralNeighborhood: neighborhoodName,
+            neighborhoodGeofenceStatus: "invalid_geometry",
+            reason,
+          }),
+        });
+      }
+
+      neighborhoodGeofenceStatus = geofence.status === "inside" ? "inside" : "no_geometry";
+    }
+
+    return res.json({
+      allowed: true,
+      can_host: true,
+      city_key: result.cityKey,
+      city_display: result.cityDisplay,
+      county_display: result.countyDisplay,
+      state_code: result.stateCode,
+      accuracy_bucket: result.accuracyBucket,
+      spiral_city_key: circle.city_key,
+      spiral_city_display: spiralCityDisplay,
+      spiral_neighborhood: neighborhoodName,
+      spiral_name: circle.name,
+      resolved_city_key: result.cityKey,
+      resolved_city_display: result.cityDisplay,
+      resolved_neighborhood_hint: result.neighborhoodHint,
+      neighborhood_geofence_status: neighborhoodGeofenceStatus,
+      host_signal: buildHostSignal({
+        canHost: true,
+        spiralCityDisplay,
+        spiralNeighborhood: neighborhoodName,
+        neighborhoodHint: result.neighborhoodHint,
+        neighborhoodGeofenceStatus,
+      }),
+    });
+  },
+);
+
+export default router;

@@ -1,0 +1,238 @@
+Replacing Niakofa Circles Wth Niakofa Spirals
+
+
+🌍 In African traditions
+Across a number of African artistic and spiritual traditions, the spiral can relate to life, creation, movement, transformation, ancestry, regeneration, and cyclical time.
+For example:
+* Asante/Akan traditions: Spirals appear extensively in goldweights, regalia, architectural decoration, and other objects. One British Museum record specifically identifies elaborate spirals in Asante material culture as a symbol of birth, creation, and regeneration.
+* Kongo traditions: Spiral compositions can have a much deeper cosmological meaning. Smithsonian research describes Kongo spiral imagery as potentially referring to the journey of the dead to the ancestral realm and their return as newborns—essentially a cycle connecting life, death, ancestors, and rebirth.
+* Igbo/Nigerian visual systems: In nsibidi, a graphic communication system, the spiral has been interpreted as representing a journey, while also suggesting the sun and eternity.
+* Other Central African traditions: Spiral forms can occur in objects associated with healing, ritual, initiation, divination, and spiritual power. For instance, the Smithsonian documents spiral-form Yaka amulets used within healing traditions.
+So, in an African context, the spiral can be understood as a visual expression of:
+Birth → life → death → ancestors → renewal → life
+rather than simply being a decorative shape.
+🌀 Why the spiral is especially powerful
+The spiral has an interesting quality that a straight line doesn't: it moves while returning around a center.
+That makes it a natural visual metaphor for things such as:
+* Cycles of life
+* Generations
+* Ancestral connection
+* Birth and rebirth
+* Growth and evolution
+* Journeying
+* Movement between physical and spiritual worlds
+* Creation
+* Time
+* Transformation
+* Returning to one's center/source
+The center is particularly interesting. A spiral can be interpreted as movement outward from a source or movement inward toward a center.
+That makes it particularly useful as a symbol of origin and return.
+
+
+Remembering where we came from while continuing to evolve.
+It can represent the idea that history isn't simply behind you. The past, ancestors, present life, and future generations are connected.
+That interpretation is particularly compatible with the Kongo example, where the spiral was understood in relation to movement between the living and ancestral realms.
+
+
+
+“Spiral imagery has multiple meanings across African cultures, with documented associations including creation, regeneration, journey, cyclical existence, ancestry, and transformation.”
+
+I think “Niakofa Spirals” is potentially much stronger than “Niakofa Circles”—especially given the cultural meaning you’re considering.
+The distinction is meaningful:
+* Circles → unity, community, equality, wholeness, gathering, cycles.
+* Spirals → growth, evolution, movement, ancestry, regeneration, transformation, journey, returning to center.
+* Niakofa Spirals → suggests a community that is not merely connected, but continually growing and evolving.
+For a brand like Niakofa, Spirals also creates a more distinctive visual identity. A circle is ubiquitous; a spiral can become a recognizable Niakofa-specific symbol/system.
+My recommendation
+Don't simply rename the existing Circles feature. Re-conceptualize it.
+Think:
+Niakofa Circles → people gather around a shared center.
+Niakofa Spirals → people gather, connect, learn, grow, and move outward into increasingly meaningful relationships and experiences.
+That gives the product concept more depth.
+One potential concern: “spiral” can imply complexity, inwardness, or even instability in some contexts (“spiraling”), so the UX and visual language should make the intended meaning unmistakably growth + connection + progression.
+
+
+
+NIAKOFA FORENSIC ERROR REPORT
+Repository: niakofa-cmyk/Niakofa Baseline: latest main commit a16842afabbb7d3cfd6f80011b75a9693996457a — September 5, 2026. Reference: uploaded Circles desktop/mobile designs.
+P0 — CRITICAL
+* P0-01 — Nia/App boundary has enforcement gaps. Boundary checker validates import statements, but does not prove runtime HTTP traffic is exclusively through nia-proxy, does not inspect dynamic imports, aliases, generated JS, environment-level coupling, or network calls.
+* P0-02 — Circle recording completion invokes AI summarization from the App API layer. audio-circles.ts contains generateAiSummaryInBackground() and invokes it after recording; this creates an architectural coupling point that must remain strictly proxy-mediated and independently kill-switchable.
+* P0-03 — Nia memory/AI controls have historically had bypasses. Previous audit records identify memory endpoints bypassing the Nia kill-switch, demonstrating that the boundary has already experienced fail-closed gaps.
+P1 — HIGH
+* P1-01 — getActiveParticipants() has no database limit. Every active participant row is loaded for live-room operations. Large rooms can produce excessive DB, memory, serialization, and WebSocket workload.
+* P1-02 — /audio-circles contains an N+1 query pattern. Each circle independently performs live-session, follow, participant, and host queries inside Promise.all(). A city with many neighborhood Circles can generate a large burst of concurrent database queries.
+* P1-03 — Circle provisioning occurs during read requests. GET /audio-circles can create neighborhoods and Circle records before returning the response. This mixes read traffic with potentially expensive database writes and makes browse latency dependent on provisioning.
+* P1-04 — Circle provisioning intentionally swallows failures. ensureCirclesForCity() logs and suppresses errors, allowing partially provisioned city state to appear indistinguishable from legitimate empty/partial Circle data.
+* P1-05 — Host expiration is lazy. Abandoned sessions are not guaranteed to terminate at the 90-second boundary; expiration occurs when another request touches the session.
+* P1-06 — Host failover has a concurrency race surface. Multiple simultaneous requests can enter expiration/failover logic, select/promote participants, update the session, and broadcast transfer events concurrently.
+* P1-07 — In-memory WebSocket participant state is process-local. Circle signaling uses a Map<number, Set<number>>; multi-instance deployment requires shared presence/routing or guaranteed sticky topology.
+* P1-08 — Legacy mesh WebRTC implementation remains in the application. audioCircleWebRTC.ts still creates raw RTCPeerConnection objects while the newer architecture specifies LiveKit as the media plane.
+* P1-09 — Two media architectures increase regression risk. The repository simultaneously contains LiveKit media architecture and legacy mesh fallback. The documented fallback behavior must be made explicit and mutually exclusive at runtime.
+* P1-10 — LiveKit fallback requirements are not equivalent to production certification. The repository specification requires real-device tests for camera failure, permission denial, network transition, reconnect, and two-device operation, but repository inspection cannot establish that those scenarios currently pass in production.
+P1 — SECURITY / MODERATION
+* P1-11 — Participant retrieval lacks an explicit hard ceiling. The UI presents bounded speaker/audience experiences, but server participant retrieval can return the entire active population.
+* P1-12 — Moderation state depends on both DB state and in-memory WS state. Divergence between these sources can cause stale participant targeting, especially after process restart or multi-instance deployment.
+* P1-13 — Automatic co-host promotion needs atomicity. Role promotion and host_id replacement should occur in one transaction with a single-winner constraint.
+* P1-14 — Circle blocking/reporting requires cross-check testing against reconnect/rejoin flows. Block/report tables exist, but realtime authorization must remain synchronized with those persistent moderation records.
+P2 — PERFORMANCE
+* P2-01 — Circle list loading scales poorly with city size.
+* P2-02 — Participant queries repeatedly join the users table.
+* P2-03 — Host lookup is performed separately instead of being incorporated into the session query.
+* P2-04 — Follow-state lookup is performed separately for every Circle.
+* P2-05 — Promise.all() permits database query bursts rather than controlled concurrency.
+* P2-06 — Lazy expiration can cause stale live-room metadata between requests.
+* P2-07 — Background AI summary generation is fire-and-forget from the request lifecycle; retry/durability guarantees need to be explicit.
+P2 — UX / REFERENCE MISMATCH RISKS
+* P2-08 — The reference design is deeply Circle-specific. Renaming only visible labels to “Spirals” would leave routes, storage, APIs, types, tests, documentation, cache keys, and architecture named Circle.
+* P2-09 — audio-circles remains the dominant product/API namespace. A Circles → Spirals transition therefore requires a deliberate compatibility/migration strategy rather than a UI-only rename.
+* P2-10 — Reference speaker-limit choices and backend choices must remain identical. The repository exposes 4 / 8 / 12 / 18 / 24, with server enforcement documented separately.
+* P2-11 — Mobile reference separates the participant room experience from the moderation/control experience. Any implementation that simply stacks the desktop panels vertically will not satisfy the reference interaction model.
+* P2-12 — Reference hierarchy requires Host → Co-Host → Speakers → Audience. Backend role state must never permit UI-only role assumptions.
+P2 — NIA AI SEPARATION
+* P2-13 — Enforce Nia as a separate service boundary at runtime, not merely statically. Current architecture explicitly requires HTTP-only communication through nia-proxy.
+* P2-14 — Nia must never become a dependency of core Circle availability.
+* P2-15 — Circle recording must succeed even when Nia is disabled/unavailable.
+* P2-16 — AI summary failure must never corrupt recording state.
+* P2-17 — AI summary generation needs idempotency/retry protection.
+* P2-18 — Nia kill-switch must gate Circle-triggered AI work independently of Circle recording/moderation.
+* P2-19 — AI-generated Circle artifacts need explicit privacy/retention policy boundaries.
+* P2-20 — Existing Nia architecture already requires DB-backed, transactional, broadcast kill-switch behavior; Circle integrations must conform to that contract.
+REQUIRED REMEDIATION TASKS
+1. Replace participant-wide reads with bounded/aggregated queries.
+2. Eliminate Circle-list N+1 queries.
+3. Move Circle provisioning out of normal read-path execution.
+4. Add transactional, single-winner host failover.
+5. Add a real session-expiration worker/queue.
+6. Make WS participant state distributed-safe.
+7. Establish one authoritative production media path.
+8. Isolate mesh fallback behind an explicit capability/configuration boundary.
+9. Convert AI summarization into durable, retryable, idempotent background work.
+10. Route all App → Nia communication through the App's Nia proxy.
+11. Extend boundary tests to detect runtime/dynamic/generated cross-service coupling.
+12. Make Nia failure/disablement completely non-blocking to core Niakofa functionality.
+13. Add Circle-specific production E2E tests against the supplied desktop/mobile reference.
+14. Add multi-user/multi-device realtime tests.
+15. Add reconnect, host-loss, co-host promotion, network-switch, camera-denial, recording-failure, and LiveKit-unavailable tests.
+16. Do not rename Circles → Spirals until the product namespace, API contract, database terminology, cache keys, UI copy, tests, and architectural references are migrated coherently.
+17. Preserve backward compatibility for existing Circle sessions during any Spirals migration.
+18. Treat the uploaded reference screens as the visual acceptance baseline for the live-room experience.
+
+
+
+Yes — I still think “Niakofa Spirals” is the stronger long-term name, but I would not change it immediately as a simple rename.
+My recommendation:
+Keep “Circles” for the current implementation
+The reference experience is already architecturally built around Circles: the UI, APIs, database schema, realtime infrastructure, tests, and terminology all reinforce that concept.
+Rebrand the product concept to Niakofa Spirals
+The deeper meaning is stronger:
+* Circle → gathering, community, belonging
+* Spiral → gathering plus movement, growth, transformation, continuity, ancestry, and evolution
+* It gives Niakofa a more distinctive cultural/product identity.
+* It can represent people coming together repeatedly while the community moves forward rather than simply forming a closed loop.
+But make the transition intentional
+I would structure it as:
+Niakofa Spirals Community spaces where conversations, relationships, knowledge, and culture continue to grow.
+Then internally, migrate:
+Circles → Spirals audio-circles → audio-spirals audioCircleSessions → spiralSessions CircleType → SpiralType etc.
+But preserve compatibility with existing Circle sessions during the migration.
+One important distinction
+I wouldn't make the current screenshot literally look like a collection of geometric spirals everywhere.
+The spiral should become the underlying metaphor and brand system, not a decorative gimmick.
+The existing live-room UX can remain largely intact while the surrounding discovery, creation, identity, animations, transitions, and community language evolve around the Spiral concept.
+Verdict: YES — move toward “Niakofa Spirals,” but do it as a product-concept migration, not a label replacement.
+
+
+
+Repo check (niakofa-cmyk/Niakofa)
+Main still centers Circles as the product namespace:
+* Routes / modules: audio-circles, audio_circle_sessions, audioCircleWebRTC / LiveKit transport
+* Lifecycle: permanent channel + live sessions, WS signaling, host failover
+* Media direction: LiveKit-first (mesh still appears in older paths — forensic risk)
+* Spirals is not implemented as a coherent rename in the repo yet
+So the right move is an intentional product migration, not a global string replace.
+
+Circles vs Spirals (product)
+Circles	Spirals
+Unity, gathering, equality, wholeness	Those plus growth, evolution, ancestry, regeneration, journey
+People around a shared center	Gather → connect → grow → move outward, still returning to center
+Common metaphor	Distinctive Niakofa system
+
+Grounded in documented African associations (Asante/Akan creation/regeneration, Kongo life–ancestor–rebirth cycle, nsibidi journey/eternity, etc.) as a product metaphor, not ritual decoration.
+UX rule: spiral = brand and language; do not wallpaper the live room with geometric spirals. Keep Host → Co-Host → Speakers → Audience and LiveKit behavior clear.
+
+Recommendation (aligned with your note)
+Yes — move to Niakofa Spirals, but:
+1. Stabilize Circles first (forensic P0/P1: bounded participants, no list N+1, provisioning off GET, atomic failover, expiration worker, LiveKit-only prod, Nia non-blocking).
+2. Phase dual support (/api/audio-spirals + /api/audio-circles, spiral_* + circle_* WS events).
+3. Then canonical Spirals namespace and sunset Circles terminology.
+4. Preserve existing sessions and clients the whole way.
+
+Forensic note
+Renaming does not fix P0–P1. Shipping “Spirals” on unbounded participant loads, mesh+LiveKit dual paths, or App→Nia coupling would make the rebrand fragile. Phase 0 in the package lists those remediations as prerequisites for GA.
+
+Download
+
+Include	Role
+docs/SPIRALS_PRODUCT_CONCEPT.md	Cultural + product framing
+docs/MIGRATION_PLAN.md	Phases 0–4, naming map
+docs/FORENSIC_ALIGNMENT.md	P0/P1 checklist vs Spirals
+docs/APPLY.md	Wire-up steps
+lib/spirals-branding.ts	Feature-flagged copy (“Spiral(s)”)
+api-server/spirals-route-aliases.ts	Mount /api/audio-spirals on same router
+api-server/ws-spiral-aliases.ts	Dual WS event names
+pay-it-forward/spiralApiPaths.ts	Client paths + fallback
+ui/SpiralMark.tsx	Minimal spiral mark
+scripts/rename-inventory.sh	Inventory before mass rename
+
+Apply order: Phase 0 stabilizations → branding flag + route/WS aliases → UI copy → later schema/code canonical rename → sunset Circles.
+That yields Niakofa Spirals as growth + continuity + center, without breaking live sessions or treating the spiral as a cosmetic sticker.
+
+
+
+
+I independently re-verified the forensic claims against the real source (not trusting the pasted "prior session" text) and confirmed:
+* No .limit() on getActiveParticipants() — real
+* N+1 pattern in GET /audio-circles — real
+* Provisioning runs inline on the read path, errors swallowed — real
+* No db.transaction() anywhere in the host-failover code — real
+* generateAiSummaryInBackground() calls Anthropic directly with its own key, never checks isNiaEnabled() — real, and this is the most serious one (P0-02, a live Nia kill-switch bypass)
+* One correction: speaker limits in code are actually [4, 8, 12, 13, 18, 24], not [4, 8, 12, 18, 24] as stated — small discrepancy worth flagging.
+I then implemented real fixes, not just a plan:
+* Bounded participant reads + a bulk count helper
+* Batched the N+1 into 4 fixed queries regardless of city size
+* Provisioning moved off the read path (fire-and-forget with cooldown, failures no longer silently swallowed)
+* Host failover rewritten as a single db.transaction() with an advisory lock + optimistic-concurrency guard (matches this codebase's own existing lock pattern in community-pool.ts)
+* Moved the Anthropic call out of audio-circles.ts into a new gated nia-service route (POST /internal/circle-summary), behind the same x-internal-secret + isNiaEnabled() fail-closed pattern /chat uses
+Verified against the real toolchain, not just by reading: pnpm install succeeded, and both api-server and nia-service typecheck clean with zero new errors.
+Where I actually stopped: running the existing Jest suite, I found my change broke audio-circles.test.ts (60/60 failing) because the test's hand-rolled ESM mock of @workspace/db and ../lib/ws-hub doesn't include exports my new code transitively needs (sendNiaEventToUser, systemSettingsTable). I fixed the first one; the systemSettingsTable mock gap is still open, and I haven't confirmed the mock db object supports db.transaction() for the failover-race test cases — that's a real risk I flagged for myself but haven't closed.
+I ran out of tool calls before finishing the test-mock fixes, packaging the diff, and writing you a CHANGES.md. Want me to continue and finish that in the next message?
+Continue
+
+
+Done. This is real, verified work against your live repo — not a plan.
+What's in the zip:
+* CHANGES.md — full writeup of what was checked, what was fixed, and what's honestly still open
+* forensic-fixes.patch — a git apply-able unified diff
+* changed-files/ — the actual patched files, same paths as your repo
+Fixed for real, verified by tsc + jest against your actual codebase:
+* P0-02 (most serious): the Anthropic call is now fully inside nia-service behind the same fail-closed x-internal-secret + isNiaEnabled() gate /chat uses — Circle AI summaries can no longer bypass the Nia kill-switch
+* P1-01/P1-11: bounded participant reads + a bulk count helper
+* P1-02/P2-01–05: N+1 replaced with 4 fixed bulk queries regardless of city size
+* P1-03/P1-04: provisioning off the read path, fire-and-forget with cooldown, failures no longer swallowed
+* P1-05/06/13: host failover now a single db.transaction() with an advisory lock + optimistic-concurrency guard, matching the lock pattern already used elsewhere in your codebase
+Proof it's safe: pnpm install succeeded on your real monorepo, both touched packages typecheck clean, and the full api-server suite runs 40/40 suites, 354/354 tests passing (plus nia-service's 37/37) — zero regressions. Getting to zero took real work: my first pass broke 60 tests because the hand-rolled ESM mocks didn't cover the new code paths, which I then fixed properly rather than papering over.
+Left undone on purpose: P1-08/09 (dead mesh code — flagged, not removed, to keep this patch focused), and the Circles→Spirals rename itself, which your own migration plan correctly sequences after this stabilization.
+One small thing worth knowing: the report says speaker limits are [4,8,12,18,24], but the actual code has [4,8,12,13,18,24] — a stray 13 the report missed. Noted in CHANGES.md, not changed since it wasn't flagged as a bug.
+
+I verified the current GitHub main rather than relying on the uploaded report.
+* Current main: a16842afabbb7d3cfd6f80011b75a9693996457a
+* Latest commit: “feat: complete diaspora and county hardening”
+* The repo is active and accessible with write permissions.
+* I searched the current repository for the proposed Spirals implementation and found no SpiralMark, spirals-branding, or audio-spirals implementation currently on main.
+* Therefore, the uploaded Spirals package is not yet reflected in GitHub main.
+So the previous package should be treated as a migration package, not as proof that the repository has already been converted.
+The forensic report itself correctly says that a coherent migration must cover the product namespace, APIs, database terminology, cache keys, UI, tests, and architecture, while retaining backward compatibility for existing Circle sessions.
+Current status:
+Niakofa main = stabilized Circles implementation. Niakofa Spirals = proposed/enhanced migration package, not yet implemented on main.
+I would not do a blind global rename. The next implementation should create a proper Circles → Spirals compatibility migration on a branch, then run the repository's complete CI before proposing it for merge.

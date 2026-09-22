@@ -1,0 +1,63 @@
+- [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
+- [Media activation gate](media-platform-activation.md) — keep the universal media flag off until durable storage, Redis, toolchain, and live variant checks pass.
+- [GitHub OAuth publishing](github-oauth-publishing.md) — connector-created commits omit the final message newline; compare GitHub main directly after publishing.
+- [Workspace hydration and preview limits](workspace-hydration-preview.md) — a healthy web preview does not certify missing API helpers, production parity, or physical devices.
+- [Workspace package-manager bootstrap](pnpm-bootstrap.md) — disable self-bootstrap when the declared pnpm version is unavailable; restore dependencies from the frozen lockfile.
+- [LiveKit media boundary](livekit-media-boundary.md) — production Circles/Spirals use LiveKit only; legacy TURN/ICE remains compatibility infrastructure.
+- [API preview database gate](api-preview-database-gate.md) — migration-first API previews must fail closed when the development database is unreachable.
+- [Local PostgreSQL preview](local-postgres-preview.md) — isolated dev Postgres uses Haversine fallback when the standard module lacks PostGIS.
+- [Pool History accounting](pool-history-accounting.md) — Pool History is a linked projection: show gross, retain settlement details, and update corrections in place.
+- [Backend test wiring](backend-test-wiring.md) — API Jest uses serialized ESM runners and pins external service URLs to local test boundaries.
+- [Orval Zod generation](orval-zod-generation.md) — pin generated Zod output to the workspace’s installed major; newer Orval auto-detection can emit incompatible helpers.
+- [Circle media hardening](circle-media-hardening.md) — preserve LiveKit-only media, independent mic/camera lifecycles, bounded recovery, and real-device certification as the release gate.
+- [Fresh development database readiness](fresh-development-db-readiness.md) — connectivity can succeed while the schema is empty; run the canonical dev migration flow before diagnosing API readiness.
+- [Civic Census coverage](civic-census-coverage.md) — Census may return non-JSON missing-key HTML; keep verified offline county fallback explicit and use an optional key for full refresh.
+- [Civic seed sequence repair](civic-seed-sequence-repair.md) — idempotent civic imports must realign serial IDs before inserting rows.
+- [Census ACS geography endpoint](census-acs-endpoint.md) — use available ACS5 geography data; normalize ACS state suffixes and do not assume PEP paths exist.
+- [Provider release gates](provider-release-gates.md) — secret presence is not certification; require readiness, authenticated smoke, and served-commit parity.
+- [Production host verification](production-host-verification.md) — verify the canonical domain and served commit; stale Railway service domains can return fallback 404s.
+- [Circles release certification](niakofa-release-certification.md) — automated smoke checks and real-browser WebRTC evidence are separate release gates.
+- [Platform deployment boundary](platform-deployment-boundary.md) — deployment smoke checks cover Niakofa SPA/API contracts, never retired gameplay artifacts.
+- [ESLint hook warning policy](eslint-hook-warning-policy.md) — preserve intentional effect lifecycles with narrow, explained dependency exceptions only when real dependencies are unsafe.
+- [Package manager bootstrap](package-manager-bootstrap.md) — temporary pnpm version override can be needed for constrained local validation; restore it before commits.
+- [Workspace validation](workspace-validation.md) — use the available pnpm binary and the workflow-assigned preview port for local validation.
+- [Community V4 visual evidence](community-v4-evidence-browser.md) — local authenticated captures need system Chromium and shared storage state across viewport contexts.
+- [Mapbox Directions request format](mapbox-directions-format.md) — `depart_at` must use second precision; ISO timestamps with milliseconds are rejected.
+- [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes use GITHUB_PERSONAL_ACCESS_TOKEN in remote URL (token auth, not password).
+- [GitHub workflow sync boundary](github-workflow-sync-boundary.md) — the current OAuth grant lacks workflow scope; .github/workflows writes need a separate operator gate.
+- [Legacy type declaration boundary](legacy-type-declaration-boundary.md) — all Window extensions (openNia, webkitAudioContext, SpeechRecognition) live in one file: src/speech-recognition.d.ts; never split again.
+- [Niakofa Canonical Source](niakofa-canonical-source.md) — artifacts/ is canonical; niakofa-repo/ is stale archived mirror with CANONICAL_SOURCE.md; never edit niakofa-repo/artifacts/.
+- [Feature 4 Journal Persistence](feature-4-journal-persistence.md) — DemoJournalEntry canonical in demo-state.ts; all journal writes inside setState+persist; never use local journalEntries state.
+- [Railway Python Detection Trap](railway-python-detection-trap.md) — committing main.py/pyproject.toml/uv.lock to repo root breaks Railway; railpack.json now locks provider:node + exclude list.
+- [Managed artifact preview ports](managed-artifact-preview-ports.md) — managed web artifacts may use assigned preview ports; verify with the workflow's actual port instead of overriding them.
+- [Preview workflow toolchain](niakofa-preview-workflow-toolchain.md) — managed workflows must avoid pnpm's cross-version bootstrap; invoke installed artifact binaries directly.
+- [Database worker readiness](niakofa-db-worker-readiness.md) — API workers require both a reachable Postgres connection and the migrated help_requests schema before startup.
+- [Production fail-closed boundaries](niakofa-production-fail-closed.md) — production CORS and migration startup must fail closed; development may retain explicit fallbacks.
+- [Production queue boundary](niakofa-production-queues.md) — durable Redis-backed workers are required before production API startup; interval fallbacks remain development-only.
+- [Railway production database boundary](railway-production-db-boundary.md) — Railway production data is not available through Replit's production database pane; use an approved read-only operator path.
+- [Uploaded reference security](uploaded-reference-security.md) — scan imported archives for credential-shaped values before staging or syncing them.
+- [Workspace dependency linking](niakofa-workspace-dependency-linking.md) — this checkout can lose pnpm worker/bin links during managed installs; standalone checks may need isolated cached Node tooling.
+- [OpenAPI contract codegen](niakofa-openapi-codegen.md) — refresh generated server/client types in the same commit whenever the contract source changes.
+- [Circles media state](niakofa-circles-lifecycle.md) — media-connected status must come from the WebRTC session, with bounded ICE recovery, not REST presence alone.
+- [Spirals compatibility boundary](niakofa-spirals-compatibility.md) — Spirals is canonical in product UX while Circle-era storage, APIs, events, and links remain compatible.
+- [Civic jurisdiction matching](civic-jurisdiction-matching.md) — normalize external geocoder metadata before matching canonical civic coverage, and version caches when matching changes.
+- [Neighborhood geometry validation](neighborhood-geometry-validation.md) — reviewed geofences must reject malformed vertices instead of silently filtering them.
+- [Payout operation boundary](payout-operation-boundary.md) — helper payouts use a separate durable operation ledger and one shared Stripe reconciliation protocol.
+- [App-to-Nia HTTP boundary](niakofa-app-nia-http-boundary.md) — provider access and feature-service calls stay behind the authenticated Nia client.
+- [Stripe Accounts v2 recipient capability](stripe-v2-recipient-capability.md) — V1 transfers-active is insufficient; treat missing v2 recipient transfer capability as definitive.
+- [Release evidence commit boundary](release-evidence-commit-boundary.md) — keep deployed app SHAs separate from later documentation-only GitHub commits; avoid circular self-hashes.
+- [Deployed acceptance boundary](deployed-acceptance-boundary.md) — authenticated production E2E needs an approved disposable state, explicit API Bearer headers, and private temporary-file cleanup.
+- [GitHub exact-commit sync](github-exact-commit-sync.md) — Git Data API commit bytes may differ from local Git despite identical metadata; compare raw objects before advancing the ref.
+- [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
+- [Authenticated Admin browser checks](admin-live-acceptance.md) — storage state authenticates navigation, but page.evaluate fetches still need explicit Bearer headers and exact role selectors.
+- [Globe-to-Hub acceptance prerequisite](globe-hub-acceptance-prerequisite.md) — production acceptance needs an approved Hub membership, not just an approved user or valid storage state.
+- [Spiral catalog location boundary](spiral-catalog-location-boundary.md) — curated discovery is independent from GIS verification and legacy inactive-city sentinels.
+- [Diaspora Hub messaging](diaspora-hub-messaging.md) — direct Hub threads use canonical pairs and server-side approved-membership checks.
+- [CI contract validation](ci-contract-validation.md) — isolate fallback tests from ambient services and keep canonical-route assertions separate from compatibility coverage.
+- [Unified messaging boundaries](unified-messaging-boundaries.md) — direct DMs stay approved-account-only while request and Hub conversations keep separate authorization models.
+- [Authenticated media privacy](direct-message-attachments.md) — bearer-protected media uses same-origin API streaming plus fetched object URLs, never storage redirects.
+- [Mobile attachment acceptance](mobile-attachment-acceptance.md) — use pre-provisioned deployed states and open mobile threads from the inbox before asserting blob media.
+- [Live Messages acceptance](live-messages-acceptance.md) — local Messages/RTC checks are not production evidence without a published URL, served-commit parity, and approved disposable states.
+- [Canonical realtime authority](canonical-realtime-authority.md) — persist canonical events before delivery; replay, live frames, read summaries, and UI state must converge on durable server state.
+- [Unlicensed reference recreation boundary](unlicensed-reference-recreation.md) — unlicensed ZIPs/repositories are reference-only; recreate behavior independently in Niakofa and never copy source, assets, credentials, schemas, auth, or backend configuration.
+- [TypeScript incremental CI state](typescript-incremental-ci-state.md) — never track tsbuildinfo without its emitted declarations; clean CI can skip required builds and fail with TS6305.

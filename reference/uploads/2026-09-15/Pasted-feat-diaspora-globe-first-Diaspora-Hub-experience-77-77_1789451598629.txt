@@ -1,0 +1,137 @@
+feat(diaspora): globe-first Diaspora Hub experience- #77
+#77
+Open
+niakofa-cmyk
+wants to merge 19 commits into
+main
+from
+feature/diaspora-globe-first-hubs
++558
+-71
+Lines changed: 558 additions & 71 deletions
+Conversation1 (1)
+Commits19 (19)
+Checks4 (4)
+Files changed9 (9)
+Conversation
+@niakofa-cmyk
+niakofa-cmyk
+commented
+yesterday
+• 
+Owner
+Diaspora Globe-first redesign
+This PR implements the recommended top-level architecture:
+
+Diaspora → Globe → Hub → Action
+
+Implemented
+Replaces the crowded /diaspora landing dashboard with a Globe-first doorway.
+Adds reusable DiasporaGlobeFirst with live Hub markers, search, compact Hub details, and mobile-friendly actions.
+Globe markers represent durable Diaspora Hubs, not individual members.
+Adds canonical Hub geography metadata: hub_scope, country_code, subdivision_code, display_name, and anchor_city.
+Non-U.S. seed Hubs are now presented as country-level Hubs (Ghana, Nigeria, Brazil, Jamaica, Dominican Republic, United Kingdom, France, Canada).
+U.S. seed Hubs are presented at state level (Texas, Georgia, California, New York).
+Existing city anchor names/coordinates remain intact internally so neighborhood, Spiral, story, and presence aggregation does not lose its existing geographic relationship.
+Hub search works across public Hub name, anchor name, region, country/state codes, and Hub type.
+Hub selection exposes compact actions for Community, Connect, Spirals, Stories, and Community Pool.
+Existing family, oral-history, Legacy, and full Globe routes remain underneath the new doorway.
+Raw GPS continues to stay server-side because the page consumes the canonical authenticated /api/griot/village-pulse aggregate.
+Architecture decision
+The landing page is intentionally no longer a feature directory. Live presence, family memory, stories, research, Legacy, Spirals and Pool remain capabilities of a selected Hub or the user's family context.
+
+Messaging / financial boundary
+The Connect action is a navigation contract into the existing Community surface. This PR does not invent a parallel Hub messaging or money ledger. Dedicated Hub-to-Hub conversations and cross-pool transfers should be implemented against the existing audited conversation/ledger models rather than introducing a second source of truth.
+
+Database
+Adds migration 0063_diaspora_hub_geography.sql. Existing Hub primary keys are preserved, so existing stories/community relationships remain valid.
+
+Validation
+Normal repository release/typecheck/browser gates should be run before merge. Railway production remains on the known-good main deployment until this PR is validated and intentionally deployed.
+
+niakofa-cmyk added 18 commits yesterday
+@niakofa-cmyk
+feat(diaspora): add globe-first hub explorer
+d2ac0ba
+@niakofa-cmyk
+refactor(diaspora): make Globe the primary doorway
+b517dce
+@niakofa-cmyk
+fix(diaspora): keep globe map interactive
+e36f792
+@niakofa-cmyk
+feat(diaspora): model country and state hub scope
+9ccf25a
+@niakofa-cmyk
+feat(diaspora): migrate hubs to country and U.S. state geography
+b72884a
+@niakofa-cmyk
+feat(diaspora): retain hub anchor cities for local metrics
+0b9ee88
+@niakofa-cmyk
+fix(diaspora): correct hub schema field definition
+8f4781b
+@niakofa-cmyk
+fix(diaspora): restore foreign-key declaration shape
+7dd2e22
+@niakofa-cmyk
+feat(diaspora): separate public hub label from anchor identity
+ba3b744
+@niakofa-cmyk
+feat(diaspora): preserve anchor names while adding public geography l… 
+30ea4bd
+@niakofa-cmyk
+feat(diaspora): render canonical country and state hub labels
+cf706f7
+@niakofa-cmyk
+fix(diaspora): pass canonical Hub geography metadata to globe
+7db08b5
+@niakofa-cmyk
+fix(diaspora): repair hub geography migration seed arity
+8350a3d
+@niakofa-cmyk
+test(diaspora): align experience contract with Globe-first Hub doorway
+5a32633
+@niakofa-cmyk
+fix(diaspora): restore Curated heritage catalog caption; merge Brazil… 
+d4b5837
+@niakofa-cmyk
+fix(diaspora): apply mergeHubsForGlobeDisplay in village-pulse and Hu… 
+22f1821
+@niakofa-cmyk
+perf(diaspora): harden globe hub merge and child indexing
+a57f145
+@niakofa-cmyk
+feat(diaspora): make merged local hubs searchable and clearer
+b3271f5
+@niakofa-cmykChatGPT Codex Connector
+niakofa-cmyk
+commented
+yesterday
+Owner
+Author
+Forensic hardening pass completed on top of 22f1821: (1) confirmed the latest CI run 34808364392 is fully green — Typecheck + Tests, ESLint, App/AI Boundary Check, and Release Validation all passed; (2) optimized mergeHubsForGlobeDisplay to index children by primary_hub_id instead of repeatedly scanning the full hub list; retained fail-safe behavior for dangling primary IDs; (3) made merged/local Hub names searchable from the Globe, so searches such as Recife still resolve to the canonical Brazil marker; (4) improved the local-community drill-down presentation. No Railway production deployment was made. Production remains on the known-good main deployment.
+
+@niakofa-cmyk
+fix(diaspora): resolve Globe hub merge typecheck failure
+fd78c0a
+This branch has not been deployed
+No deployments
+Merge info
+Some checks were not successful
+1 failing, 1 skipped, 2 successful checks
+
+
+failing checks
+CI / Typecheck + Tests (pull_request)
+CI / Typecheck + Tests (pull_request)Failing after 1m
+skipped checks
+CI / Release Validation (pull_request)
+CI / Release Validation (pull_request)Skipped yesterday
+successful checks
+CI / App/AI Boundary Check (pull_request)
+CI / App/AI Boundary Check (pull_request)Successful in 4s
+CI / ESLint (pull_request)
+CI / ESLint (pull_request)Successful in 41s
+No conflicts with base branch
+Merging can be performed automatically.

@@ -1,0 +1,19 @@
+.nk-community-v3 .nk-icon-button {
+  display: flex;
+  height: 40px;
+  width: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--muted);
+  color: var(--foreground);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.nk-community-v3 .nk-icon-button:hover {
+  filter: brightness(0.96);
+}
+
+.nk-community-v3 .nk-icon-button:active {
+  transform: scale(0.97);
+}

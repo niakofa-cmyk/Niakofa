@@ -1,0 +1,65 @@
+Implemented the Messages V22 enhancement package against the latest main at commit d2308103, covering all six requested areas. The supplied review specifically identified these six remaining gaps.
+
+Included
+Durable Request / Hub unread state
+New message_read_states persistence
+Request read endpoint
+Hub read endpoint
+Authoritative All / Direct / Requests / Hubs unread aggregation
+Cross-device realtime read synchronization
+Live Request / Map context inside Messages
+Embedded Mapbox map
+Live helper location
+Route geometry
+ETA + distance
+Request status context
+Route refresh throttling
+Proper Hub conversation redesign
+First-class Hub ↔ Hub conversation workspace
+Source Hub identity
+Target Hub identity
+Hub-specific message bubbles
+Live Hub message stream
+Realtime reconnect handling
+Durable Hub read state
+Real Shared Media gallery
+Authenticated media endpoint
+Photos
+Videos
+Audio
+Files
+Links / Location framework
+Full gallery from actual stored attachments
+Unified Request / Hub realtime
+hub_message
+Request chat events
+Request lifecycle events
+Read-state events
+Messages workspace refresh/reconciliation
+Hub realtime broadcasting to approved members
+Actual Direct voice / video RTC
+LiveKit-backed one-to-one rooms
+Authenticated short-lived call tokens
+Voice calling
+Video calling
+Incoming-call UI
+Accept / decline / end
+Mic mute
+Camera toggle
+Direct-conversation authorization
+Block enforcement
+Realtime call signaling
+
+LiveKit's current JS SDK supports the room connection, local track creation, track publication/subscription, and media attachment patterns used by this implementation.
+
+GitHub branch
+
+Open the complete Messages V22 enhancement branch
+
+Download the complete branch as ZIP
+
+Download Messages V22 — complete repository ZIP
+
+GitHub supports branch-specific ZIP archives directly.
+
+The branch is 29 commits ahead of main and 0 behind, with the implementation changes isolated to the Messages/API/database areas. I did not merge it into main. GitHub reported no status checks for this branch, so the implementation is not CI/runtime-verified from this session.

@@ -1,0 +1,210 @@
+How do we prove 60 minutes works?
+This is the part I would implement immediately.
+Don't just say:
+"It worked when I tested it."
+Build a Circle endurance test.
+60-MINUTE CIRCLE TEST
+Test topology
+Minimum:
+
+
+1 host
+2 speakers
+10 listeners
+
+Then:
+
+
+1 host
+5 speakers
+25 listeners
+
+Eventually:
+
+
+1 host
+10 speakers
+100+ listeners
+
+
+9. Test continuously for 60 minutes
+Every 5–10 seconds collect:
+
+
+timestamp
+participant
+circle
+session
+audio state
+video state
+WebRTC state
+ICE state
+packet loss
+jitter
+RTT
+bitrate
+frames received
+frames dropped
+track state
+CPU
+memory
+reconnect count
+
+You want a timeline like:
+
+
+00:00  🟢 connected
+05:00  🟢 connected
+10:00  🟢 connected
+15:00  🟢 connected
+20:00  🟢 connected
+25:00  🟡 network degradation
+25:04  🔄 reconnecting
+25:07  🟢 recovered
+30:00  🟢 connected
+...
+60:00  🟢 connected
+
+That's vastly more meaningful than a screenshot saying "Live."
+
+10. Test hostile conditions
+The 60-minute test shouldn't be conducted on perfect Wi-Fi.
+Inject:
+Network
+
+
+Wi-Fi → cellular
+cellular → Wi-Fi
+500ms latency
+packet loss
+bandwidth reduction
+temporary disconnect
+
+Device
+
+
+Bluetooth headphones
+USB microphone
+camera switch
+mic switch
+laptop sleep/wake
+browser tab backgrounding
+
+Application
+
+
+React rerender
+chat activity
+speaker promotion
+speaker demotion
+camera toggle
+mute/unmute
+host disconnect
+participant disconnect
+participant rejoin
+
+8. How do we prove 60 minutes works?
+This is the part I would implement immediately.
+Don't just say:
+"It worked when I tested it."
+Build a Circle endurance test.
+60-MINUTE CIRCLE TEST
+Test topology
+Minimum:
+
+
+1 host
+2 speakers
+10 listeners
+
+Then:
+
+
+1 host
+5 speakers
+25 listeners
+
+Eventually:
+
+
+1 host
+10 speakers
+100+ listeners
+
+
+9. Test continuously for 60 minutes
+Every 5–10 seconds collect:
+
+
+timestamp
+participant
+circle
+session
+audio state
+video state
+WebRTC state
+ICE state
+packet loss
+jitter
+RTT
+bitrate
+frames received
+frames dropped
+track state
+CPU
+memory
+reconnect count
+
+You want a timeline like:
+
+
+00:00  🟢 connected
+05:00  🟢 connected
+10:00  🟢 connected
+15:00  🟢 connected
+20:00  🟢 connected
+25:00  🟡 network degradation
+25:04  🔄 reconnecting
+25:07  🟢 recovered
+30:00  🟢 connected
+...
+60:00  🟢 connected
+
+That's vastly more meaningful than a screenshot saying "Live."
+
+10. Test hostile conditions
+The 60-minute test shouldn't be conducted on perfect Wi-Fi.
+Inject:
+Network
+
+
+Wi-Fi → cellular
+cellular → Wi-Fi
+500ms latency
+packet loss
+bandwidth reduction
+temporary disconnect
+
+Device
+
+
+Bluetooth headphones
+USB microphone
+camera switch
+mic switch
+laptop sleep/wake
+browser tab backgrounding
+
+Application
+
+
+React rerender
+chat activity
+speaker promotion
+speaker demotion
+camera toggle
+mute/unmute
+host disconnect
+participant disconnect
+participant rejoin
+

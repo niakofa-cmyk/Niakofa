@@ -1,0 +1,100 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "tQ4TUGddnX8ZYBklAnQnb"
+uri = "file://screenshots/niakofa-census-verification-landing-2026-08-31.jpg"
+type = "image"
+title = "Niakofa landing preview"
+description = "Verified 1280×720 landing screen captured from the running web workflow after Census coverage updates."
+logical_id = "3f1a3e51-df94-4c88-95a6-dfef6b654cf1"
+content_hash = "sha256:9bd261e7006c9b71b7fac9e46d95bd86a814c8e5ac36a83b886dc0755ff90783"
+size = 32276
+mtime_ms = 1788205191634
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:60f6808a-b80f-4d05-9a92-ce5c4955e3ff/3f1a3e51-df94-4c88-95a6-dfef6b654cf1/2e00079d-a82a-4364-9eac-62ef00bba704"
+storage_version_token = "1788205834810533"
+content_type = "image/jpeg"
+
+[[outputs]]
+id = "CVeq3A2YLwWv6nHAJAfqD"
+uri = "file://screenshots/production-diaspora-2026-09-17.png"
+type = "image"
+title = "Niakofa production Diaspora reference capture"
+description = "Canonical production capture saved with the 2026-09-17 release evidence."
+logical_id = "a42360c2-3631-4181-aad4-a0028dd1f4d0"
+content_hash = "sha256:ed8ca1913e575723b26450f4c3351ed20b239173fc82023070dca8e2fc14124e"
+size = 70320
+mtime_ms = 1789654544474
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:f4344a14-6de0-4c39-8834-1df8352b7563/a42360c2-3631-4181-aad4-a0028dd1f4d0/c788c486-e5df-4979-9740-9ab5ad09dd41"
+storage_version_token = "1789655343960528"
+content_type = "image/png"
+
+[[outputs]]
+id = "JjBr6ggg2Zt7jPRlXaXb8"
+uri = "file://reference/niakofa-production-release-evidence-2026-09-17.md"
+type = "text"
+title = "Niakofa production release evidence"
+description = "Production health, build, GitHub parity, visual reference, and authenticated acceptance gate record."
+logical_id = "41c4d105-d460-4fb0-872a-d55edd700b9a"
+content_hash = "sha256:2cc67a937054504019e8b6fa7c39dda2a2e2d7d7994cf084b6bf5bbc78d26041"
+size = 3292
+mtime_ms = 1789654906942
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:f4344a14-6de0-4c39-8834-1df8352b7563/41c4d105-d460-4fb0-872a-d55edd700b9a/a0a3c4d7-5a30-4c54-9c1d-6bc27cbc8f90"
+storage_version_token = "1789655344541355"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "EYKlbo4EHkPe1JK_erjVE"
+uri = "file://.local/outputs/niakofa-messages-v18-integrated.tar.gz"
+type = "unspecified"
+title = "Niakofa Messages V18 integrated package"
+description = "Downloadable archive of the integrated Messages V18 shell, API unread-summary route, focused contract test, and reference documentation from verified commit 4044a8582844174385a1af0223597317c9e19689."
+logical_id = "9f3233e1-35f3-4840-aa4f-4822fba788d3"
+content_hash = "sha256:405db1cb59222b94d39cb8c88d0193b284afa82951dbd0d8c3305c1ea4d08a9b"
+size = 16235
+mtime_ms = 1789758767799
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:f4344a14-6de0-4c39-8834-1df8352b7563/9f3233e1-35f3-4840-aa4f-4822fba788d3/eff4f964-4674-43f3-a468-986a97be38da"
+storage_version_token = "1789758857582505"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "taN_mylLdOWUsZhIl3Lb_"
+uri = "file://.agents/outputs/niakofa-community-social-home-46a9260c.zip"
+type = "unspecified"
+title = "Niakofa Community social-home source archive"
+description = "Final tracked repository snapshot for GitHub commit 46a9260c, including the Community feed, Stories/Create flow, API hardening, and reference documentation."
+logical_id = "ca03b8ad-4e15-4927-8a54-12482dce9bfa"
+content_hash = "sha256:174b37cb65d0e22c9ce11a86b74210e7863d0351a335394229275f1d6b1c860d"
+size = 45655779
+mtime_ms = 1790043899548
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a1134a74-212d-4bd3-a9ec-e5343c28feea/ca03b8ad-4e15-4927-8a54-12482dce9bfa/8647a1ab-bd0d-496b-807d-3fbf378bdea8"
+storage_version_token = "1790043912661043"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "XFhzgl0MSAOmnlnoP8HJm"
+uri = "file://.agents/outputs/niakofa-community-social-home-46a9260c.patch"
+type = "unspecified"
+title = "Niakofa Community social-home patch"
+description = "Patch for the final GitHub commit 46a9260c, including the product changes and durable release-memory update."
+logical_id = "6c465c4c-1d91-4a01-bdab-c9d6fb6915c3"
+content_hash = "sha256:51bf518d771ede7903d628eb52aa7e4f5b99c82a3ce8592d689ca3784105c547"
+size = 2267
+mtime_ms = 1790043899556
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a1134a74-212d-4bd3-a9ec-e5343c28feea/6c465c4c-1d91-4a01-bdab-c9d6fb6915c3/b30e6387-0f8e-4862-be81-631b0a8c1565"
+storage_version_token = "1790043913313511"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "WLO-hIwCkLgs_LSkjcy91"
+uri = "file://deliverables/niakofa-community-social-redesign.zip"
+type = "unspecified"
+title = "Niakofa Community Social Redesign"
+description = "Verified frontend source package with the slim header, compact composer, Stories rail, focused feed, restored app navigation, and Community architecture test."
+logical_id = "6808fa0f-d9c2-4da9-957a-24bec3b2f153"
+content_hash = "sha256:e24d8202cff64edfa82b3376f1231d3e3421a26d79aa7f8c61fbaf0a94bc9d6b"
+size = 32704
+mtime_ms = 1790075103542
+storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:d8f64858-48c7-4469-a8b4-c094849dccfe/6808fa0f-d9c2-4da9-957a-24bec3b2f153/0114c781-f0dd-4c7d-b75c-d575e18c7701"
+storage_version_token = "1790075109935463"
+content_type = "application/octet-stream"

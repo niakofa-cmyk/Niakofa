@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SANKOFA BIRD — Official SVG Asset Pipeline</title>
+<style>
+  :root {
+    --teal-bright:  hsl(190,100%,72%);
+    --teal-mid:     hsl(190,100%,55%);
+    --teal-deep:    hsl(190, 90%,38%);
+    --teal-dark:    hsl(190, 80%,22%);
+    --navy:         #041218;
+    --navy-2:       #061c26;
+    --navy-3:       #0a2435;
+    --card:         #0d2e40;
+    --border:       rgba(0,212,255,0.15);
+    --text:         #c8f0f8;
+    --text-dim:     #587a88;
+    --gold:         #f0b800;
+    --amber:        hsl(32,85%,52%);
+    --font:         'Courier New', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--navy); color: var(--text); font-family: var(--font); font-size: 11px; padding: 16px; min-width: 1080px; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--teal-deep); padding-bottom: 10px; margin-bottom: 14px; }
+  .title-block h1 { font-size: 18px; color: var(--teal-bright); letter-spacing: 1px; }
+  .title-block p  { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .meta-block { text-align: right; font-size: 9px; color: var(--text-dim); line-height: 1.6; }
+  .meta-block span { color: var(--teal-mid); }
+
+  /* Section labels */
+  .section-label { font-size: 10px; color: var(--teal-mid); letter-spacing: 1.5px; text-transform: uppercase; margin: 12px 0 6px; border-left: 2px solid var(--teal-deep); padding-left: 6px; }
+
+  /* Bird grid */
+  .bird-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-bottom: 10px; }
+  .bird-grid-2 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 10px; }
+  .bird-panel { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 6px 4px 4px; display: flex; flex-direction: column; align-items: center; }
+  .bird-panel .label { font-size: 8px; color: var(--text-dim); text-align: center; margin-top: 4px; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.3; }
+  .bird-panel svg { display: block; }
+
+  /* Turn sequence */
+  .turn-seq { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; margin-bottom: 10px; }
+  .turn-panel { background: var(--card); border: 1px solid var(--border); border-radius: 3px; padding: 4px 2px 2px; display: flex; flex-direction: column; align-items: center; }
+  .turn-panel .label { font-size: 7px; color: var(--text-dim); text-align: center; margin-top: 2px; }
+  .step-num { font-size: 8px; color: var(--teal-mid); font-weight: bold; align-self: flex-start; padding-left: 2px; }
+
+  /* Deformation row */
+  .deform-row { display: grid; gap: 6px; margin-bottom: 10px; }
+  .deform-5 { grid-template-columns: repeat(5, 1fr); }
+  .deform-4 { grid-template-columns: repeat(4, 1fr); }
+  .deform-panel { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 6px 4px 4px; display: flex; flex-direction: column; align-items: center; }
+  .deform-panel .label { font-size: 9px; color: var(--teal-mid); text-align: center; margin-top: 4px; font-weight: bold; }
+  .deform-panel .sublabel { font-size: 7px; color: var(--text-dim); }
+
+  /* Bottom panels */
+  .bottom-grid { display: grid; grid-template-columns: 200px 1fr 200px 220px; gap: 10px; margin-top: 12px; }
+  .info-panel { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 10px; }
+  .info-panel h3 { font-size: 10px; color: var(--teal-bright); margin-bottom: 8px; letter-spacing: 1px; }
+  .info-panel p, .info-panel li { font-size: 9px; color: var(--text-dim); line-height: 1.6; }
+  .info-panel li { list-style: none; padding-left: 10px; }
+  .info-panel li::before { content: "— "; color: var(--teal-deep); }
+
+  .swatch-row { display: flex; gap: 4px; margin-bottom: 4px; }
+  .swatch { width: 28px; height: 28px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.1); }
+  .swatch-label { font-size: 8px; color: var(--text-dim); margin-top: 1px; }
+
+  .hierarchy { font-size: 9px; line-height: 1.8; color: var(--text-dim); }
+  .hierarchy .hi { color: var(--teal-bright); }
+  .hierarchy .hm { color: var(--teal-mid); }
+  .hierarchy .hl { color: var(--teal-deep); }
+
+  .compat-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .compat-badge { background: var(--navy-3); border: 1px solid var(--teal-deep); border-radius: 3px; padding: 3px 8px; font-size: 9px; color: var(--teal-mid); }
+  .compat-badge .check { color: #00ff88; }
+
+  .pivot-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+  .pivot-item { font-size: 8px; }
+  .pivot-item .pname { color: var(--teal-mid); }
+  .pivot-item .pcoord { color: var(--text-dim); }
+
+  .footer { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; display: flex; justify-content: space-between; font-size: 8px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<div class="header">
+  <div class="title-block">
+    <h1>SANKOFA BIRD — OFFICIAL SVG ASSET PIPELINE <span style="font-size:11px;color:var(--text-dim)">(From App Source)</span></h1>
+    <p>Built from SankofaBirdSvg.tsx · Master Vector (React SVG) · Current Build: <span style="color:var(--gold)">Phase 19</span></p>
+  </div>
+  <div class="meta-block">
+    ASSET TYPE: <span>Vector (SVG)</span><br/>
+    STYLE: <span>Layered Gradient Vector</span><br/>
+    RENDER: <span>SVG / Rive / Lottie / Canvas</span><br/>
+    COORDINATE SYSTEM: <span>Center Origin</span><br/>
+    DEFAULT VIEWPORT: <span>1024 × 1024</span><br/>
+    PIVOT (0,0): <span>Body Center</span>
+  </div>
+</div>
+
+<!-- ═══ ROW 1: 8 DIRECTIONAL VIEWS ═══ -->
+<div class="section-label">Directional Views — Row 1 (Front → Back)</div>
+<div class="bird-grid" id="row1"></div>
+
+<!-- ═══ ROW 2: 6 PERSPECTIVE + CROSS ═══ -->
+<div class="section-label">Directional Views — Row 2 (Up / Down / Diagonal / Cross)</div>
+<div class="bird-grid-2" id="row2"></div>
+
+<!-- ═══ TURN SEQUENCE ═══ -->
+<div class="section-label">Turn Sequence (Illusion Perspective — 12 Step)</div>
+<div class="turn-seq" id="turnSeq"></div>
+
+<!-- ═══ WING DEFORMATION ═══ -->
+<div class="section-label">Wing Deformation Examples</div>
+<div class="deform-row deform-5" id="wingDeform"></div>
+
+<!-- ═══ TAIL DEFORMATION ═══ -->
+<div class="section-label">Tail Deformation Examples</div>
+<div class="deform-row deform-4" id="tailDeform"></div>
+
+<!-- ═══ BOTTOM INFO PANELS ═══ -->
+<div class="bottom-grid">
+  <!-- Feather Layer Map -->
+  <div class="info-panel">
+    <h3>Feather Layer Map (Depth &amp; Overlap)</h3>
+    <div style="position:relative;width:100%;height:120px;margin-bottom:8px;">
+      <svg width="100%" viewBox="0 0 180 110" style="display:block;">
+        <defs>
+          <linearGradient id="lmGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="hsl(190,100%,62%)" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="hsl(190,80%,35%)"/>
+          </linearGradient>
+        </defs>
+        <!-- Feather layer circles -->
+        <g transform="translate(40,55) scale(1.5)">
+          <!-- Layer 1: Primary Feathers Top -->
+          <path d="M0 -5 C-8 -12 -18 -14 -22 -10 C-18 -5 -10 0 0 -5 Z" fill="hsl(184,100%,78%)" opacity="0.85"/>
+          <path d="M0 -5 C8 -12 18 -14 22 -10 C18 -5 10 0 0 -5 Z" fill="hsl(184,100%,78%)" opacity="0.85"/>
+          <!-- Layer 2: Secondary Feathers -->
+          <path d="M0 -3 C-6 -8 -14 -10 -16 -7 C-12 -3 -6 0 0 -3 Z" fill="hsl(185,100%,52%)" opacity="0.7"/>
+          <path d="M0 -3 C6 -8 14 -10 16 -7 C12 -3 6 0 0 -3 Z" fill="hsl(185,100%,52%)" opacity="0.7"/>
+          <!-- Layer 3: Coverts -->
+          <path d="M0 -1 C-4 -5 -8 -6 -9 -4 C-6 -1 -3 1 0 -1 Z" fill="hsl(183,100%,44%)" opacity="0.6"/>
+          <path d="M0 -1 C4 -5 8 -6 9 -4 C6 -1 3 1 0 -1 Z" fill="hsl(183,100%,44%)" opacity="0.6"/>
+          <!-- Layer 4: Body Feathers -->
+          <ellipse cx="0" cy="3" rx="5" ry="7" fill="hsl(190,100%,55%)" opacity="0.8"/>
+          <!-- Layer 5: Tail Feathers Top -->
+          <path d="M-3 9 C-5 14 -4 18 -3 20 C-2 18 -1 14 0 9 C1 14 2 18 3 20 C4 14 5 14 3 9 Z" fill="hsl(190,90%,40%)" opacity="0.9"/>
+          <!-- Layer 6: Tail Feathers Under -->
+          <path d="M-2.5 9 C-4 13 -3 17 -2.5 19 C-1.5 17 -0.5 13 0 9 Z" fill="hsl(190,80%,55%)" opacity="0.45"/>
+          <!-- Head / Beak / Claws marker -->
+          <circle cx="-7" cy="-3" r="2.5" fill="hsl(190,100%,52%)" stroke="white" stroke-width="0.3"/>
+          <path d="M-9 -3 L-11.5 -2.8 L-9 -2.3 Z" fill="#1a2733"/>
+        </g>
+        <!-- Labels -->
+        <text x="90" y="12" fill="hsl(190,100%,72%)" font-size="7" font-family="Courier New">① Primary Feathers (Top)</text>
+        <text x="90" y="22" fill="hsl(185,100%,52%)" font-size="7" font-family="Courier New">② Secondary Feathers (Top)</text>
+        <text x="90" y="32" fill="hsl(183,100%,44%)" font-size="7" font-family="Courier New">③ Coverts (Top)</text>
+        <text x="90" y="42" fill="hsl(190,100%,55%)" font-size="7" font-family="Courier New">④ Body Feathers</text>
+        <text x="90" y="52" fill="hsl(190,90%,40%)" font-size="7" font-family="Courier New">⑤ Tail Feathers (Top)</text>
+        <text x="90" y="62" fill="hsl(190,80%,55%)" font-size="7" font-family="Courier New">⑥ Tail Feathers (Under)</text>
+        <text x="90" y="72" fill="#8af0ff" font-size="7" font-family="Courier New">⑦ Primary Feathers (Btm)</text>
+        <text x="90" y="82" fill="#72e0f0" font-size="7" font-family="Courier New">⑧ Secondary Feathers (Btm)</text>
+        <text x="90" y="92" fill="#2b6380" font-size="7" font-family="Courier New">⑨ Coverts (Bottom)</text>
+        <!-- Egg highlight note -->
+        <text x="90" y="104" fill="hsl(32,85%,52%)" font-size="7" font-family="Courier New">★ Egg remains in beak</text>
+      </svg>
+    </div>
+    <ul>
+      <li>All views from same vector topology</li>
+      <li>Feather deformation via path morphing</li>
+      <li>Egg always occluded by head group</li>
+    </ul>
+  </div>
+
+  <!-- Color Palette + Gradient System -->
+  <div class="info-panel">
+    <h3>Color Palette &amp; Gradient System</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div>
+        <div style="font-size:9px;color:var(--text-dim);margin-bottom:6px;">COLOR PALETTE (From SVG Gradients)</div>
+        <div class="swatch-row">
+          <div><div class="swatch" style="background:#0FE5D4;"></div><div class="swatch-label">#0FE5D4</div></div>
+          <div><div class="swatch" style="background:#2B83AB;"></div><div class="swatch-label">#2B83AB</div></div>
+          <div><div class="swatch" style="background:#0D77AA;"></div><div class="swatch-label">#0D77AA</div></div>
+          <div><div class="swatch" style="background:#095E5A;"></div><div class="swatch-label">#095E5A</div></div>
+          <div><div class="swatch" style="background:#062E2E;"></div><div class="swatch-label">#062E2E</div></div>
+        </div>
+        <div class="swatch-row" style="margin-top:6px;">
+          <div><div class="swatch" style="background:#041B19;"></div><div class="swatch-label">Beak/Claw</div></div>
+          <div><div class="swatch" style="background:#D4AF12;"></div><div class="swatch-label">Egg High.</div></div>
+        </div>
+        <div style="font-size:9px;color:var(--text-dim);margin:10px 0 4px;">MAJOR FEATHER GRADIENT</div>
+        <div style="height:18px;width:100%;border-radius:3px;background:linear-gradient(to right, #0FE5D4, #2B83AB, #0D77AA, #095E5A, #062E2E);border:1px solid rgba(255,255,255,0.1);"></div>
+        <div style="display:flex;justify-content:space-between;font-size:7px;color:var(--text-dim);margin-top:2px;">
+          <span>#0FE5D4</span><span>#2B83AB</span><span>#0D77AA</span><span>#095E5A</span><span>#062E2E</span>
+        </div>
+        <div style="font-size:9px;color:var(--text-dim);margin:8px 0 4px;">BODY GRADIENT</div>
+        <div style="height:18px;width:100%;border-radius:3px;background:radial-gradient(circle at 28% 22%, hsl(190,100%,80%), hsl(190,100%,55%) 30%, hsl(190,90%,40%) 70%, hsl(190,80%,28%));border:1px solid rgba(255,255,255,0.1);"></div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--text-dim);margin-bottom:6px;">ANIMATION SYSTEM</div>
+        <ul style="list-style:none;font-size:8px;color:var(--text-dim);line-height:2;">
+          <li>📐 <span style="color:var(--teal-mid)">19 CSS Phases</span></li>
+          <li>⚡ 100+ @keyframes</li>
+          <li>🎨 CSS Custom Props (--var)</li>
+          <li>👁 8-dir gaze system</li>
+          <li>🔄 data-* attribute driven</li>
+          <li>📱 iOS/Android GPU hints</li>
+          <li>♿ prefers-reduced-motion</li>
+          <li>🔋 Battery-saver mode</li>
+          <li>🌙 Night-mode plumage</li>
+          <li>🧭 Upright-heading (P19)</li>
+        </ul>
+        <div style="font-size:9px;color:var(--text-dim);margin:8px 0 4px;">EXPORT GUIDELINES</div>
+        <ul style="list-style:none;font-size:8px;color:var(--text-dim);line-height:1.9;">
+          <li>• viewBox 0 0 40 40</li>
+          <li>• Center origin (20,20)</li>
+          <li>• Enable Responsive=false</li>
+          <li>• FloatPrecision: 3</li>
+          <li>• Heads-up: egg at (3.4, 15.6)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer Hierarchy -->
+  <div class="info-panel">
+    <h3>Layer Hierarchy</h3>
+    <div class="hierarchy">
+      <span class="hi">SankofaBird</span><br/>
+      &nbsp;├─ <span class="hi">Root (Group)</span><br/>
+      &nbsp;│&nbsp;&nbsp;├─ Defs (Gradients, Masks)<br/>
+      &nbsp;│&nbsp;&nbsp;├─ Shadow (ellipse)<br/>
+      &nbsp;│&nbsp;&nbsp;├─ Glow Layer (ambient)<br/>
+      &nbsp;│&nbsp;&nbsp;├─ <span class="hm">Tail</span><br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Tail Center<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;└─ Outer × 4, Far × 2<br/>
+      &nbsp;│&nbsp;&nbsp;├─ <span class="hm">Wings (L + R)</span><br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Wing Body (gradient)<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Wing Bottom (underside)<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Primaries × 6 (l/r0-5)<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Secondaries × 3<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;└─ Coverts + Covert Band<br/>
+      &nbsp;│&nbsp;&nbsp;├─ Wing Joints + Scaps<br/>
+      &nbsp;│&nbsp;&nbsp;├─ <span class="hm">Body</span><br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Chest (breathing)<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Back (dorsal)<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Belly (ventral)<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;└─ Body Feathers × 11<br/>
+      &nbsp;│&nbsp;&nbsp;├─ <span class="hm">Head (group)</span><br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Neck + Neck Segs<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Head Circle<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Crown × 5<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Eye (iris/pupil/lids)<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;├─ Beak (upper/lower)<br/>
+      &nbsp;│&nbsp;&nbsp;│&nbsp;&nbsp;└─ Egg (counter-rotated)<br/>
+      &nbsp;│&nbsp;&nbsp;└─ <span class="hm">Legs (group)</span><br/>
+      &nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Left Leg + Toes<br/>
+      &nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Right Leg + Toes<br/>
+    </div>
+  </div>
+
+  <!-- Pivots + Pipeline Compat -->
+  <div class="info-panel">
+    <h3>Pivot Locations (SVG Coords)</h3>
+    <div class="pivot-list" style="margin-bottom:10px;">
+      <div class="pivot-item"><span class="pname">Body Center</span><br/><span class="pcoord">(20, 22)</span></div>
+      <div class="pivot-item"><span class="pname">Head Center</span><br/><span class="pcoord">(8, 13)</span></div>
+      <div class="pivot-item"><span class="pname">Neck Base</span><br/><span class="pcoord">(18, 16)</span></div>
+      <div class="pivot-item"><span class="pname">Left Wing</span><br/><span class="pcoord">(20, 17)</span></div>
+      <div class="pivot-item"><span class="pname">Right Wing</span><br/><span class="pcoord">(20, 17)</span></div>
+      <div class="pivot-item"><span class="pname">Tail Base</span><br/><span class="pcoord">(20, 24)</span></div>
+      <div class="pivot-item"><span class="pname">Left Leg</span><br/><span class="pcoord">(18.5, 29.5)</span></div>
+      <div class="pivot-item"><span class="pname">Right Leg</span><br/><span class="pcoord">(21.5, 29.5)</span></div>
+      <div class="pivot-item"><span class="pname">Egg Center</span><br/><span class="pcoord">(3.4, 15.6)</span></div>
+      <div class="pivot-item"><span class="pname">Beak Tip</span><br/><span class="pcoord">(2.2, 14.25)</span></div>
+      <div class="pivot-item"><span class="pname">Eye Center</span><br/><span class="pcoord">(7.1, 12.2)</span></div>
+      <div class="pivot-item"><span class="pname">Rig Bank Piv.</span><br/><span class="pcoord">(50%, 62%)</span></div>
+    </div>
+    <h3 style="margin-bottom:6px;">Pipeline Compatibility</h3>
+    <div class="compat-row">
+      <div class="compat-badge"><span class="check">✓</span> SVG (Web)</div>
+      <div class="compat-badge"><span class="check">✓</span> Rive</div>
+      <div class="compat-badge"><span class="check">✓</span> Lottie</div>
+      <div class="compat-badge"><span class="check">✓</span> Spine 2D</div>
+      <div class="compat-badge"><span class="check">✓</span> Canvas/PixiJS</div>
+    </div>
+    <div style="margin-top:10px;font-size:8px;color:var(--text-dim);line-height:1.8;">
+      <div style="color:var(--teal-mid);margin-bottom:3px;">ANIMATION RECOMMENDATIONS</div>
+      Use turn sequence for idle / look-around.<br/>
+      Wing deformations for flight cycle.<br/>
+      Tail deformations for speed / braking.<br/>
+      Add slight head bob for natural motion.<br/>
+      Egg counter-rotates to bank angle.<br/>
+      Crown feathers: idle opacity 0 → CSS drives.
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <span>© Niakofa — SankofaBirdSvg.tsx · Phase 19 · July 21, 2026</span>
+  <span>viewBox 0 0 40 40 · 100+ @keyframes · 19 CSS phases · Split: sankofa-bird-css/</span>
+  <span>Reference: /public/SANKOFA_BIRD_PIPELINE_REF.png</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// Bird SVG builder — actual path data from SankofaBirdSvg.tsx
+// ═══════════════════════════════════════════════════════════════
+
+const COLORS = {
+  body: 'url(#bG)',
+  wingL: 'url(#wL)',
+  wingR: 'url(#wR)',
+  egg: 'url(#eG)',
+  teal55: 'hsl(190,100%,55%)',
+  teal52: 'hsl(190,100%,52%)',
+  teal48: 'hsl(190,100%,48%)',
+  teal40: 'hsl(190,90%,40%)',
+  teal36: 'hsl(190,70%,36%)',
+  tealW: 'hsl(190,100%,82%)',
+  f78: 'hsl(184,100%,78%)',
+  f68: 'hsl(190,100%,68%)',
+  f62: 'hsl(190,100%,62%)',
+  f58: 'hsl(190,100%,58%)',
+  f54: 'hsl(190,100%,54%)',
+  f52: 'hsl(185,100%,52%)',
+  f50: 'hsl(190,100%,50%)',
+  f44: 'hsl(186,95%,44%)',
+  f42: 'hsl(186,90%,42%)',
+  back: 'hsl(190,85%,32%)',
+  belly: 'hsl(195,55%,72%)',
+  eye: '#04121a',
+  beak1: '#1a2733',
+  beak2: '#121e29',
+  leg: 'hsl(190,70%,36%)',
+};
+
+function defs(id) {
+  return `<defs>
+    <radialGradient id="bG${id}" cx="28%" cy="22%" r="78%" fx="20%" fy="15%">
+      <stop offset="0%" stop-color="hsl(190,100%,80%)"/>
+      <stop offset="30%" stop-color="hsl(190,100%,55%)"/>
+      <stop offset="70%" stop-color="hsl(190,90%,40%)"/>
+      <stop offset="100%" stop-color="hsl(190,80%,28%)"/>
+    </radialGradient>
+    <radialGradient id="eG${id}" cx="38%" cy="28%" r="68%" fx="32%" fy="22%">
+      <stop offset="0%" stop-color="hsl(190,100%,90%)"/>
+      <stop offset="35%" stop-color="hsl(190,100%,70%)"/>
+      <stop offset="100%" stop-color="hsl(190,85%,42%)"/>
+    </radialGradient>
+    <linearGradient id="wL${id}" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="hsl(190,100%,62%)" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="hsl(190,100%,48%)"/>
+      <stop offset="100%" stop-color="hsl(190,80%,35%)"/>
+    </linearGradient>
+    <linearGradient id="wR${id}" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="hsl(190,100%,62%)" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="hsl(190,100%,44%)"/>
+      <stop offset="100%" stop-color="hsl(190,80%,32%)"/>
+    </linearGradient>
+  </defs>`;
+}
+
+function tail(opts={}) {
+  const op = opts.fold ?? 1, fan = opts.fan ?? 1, narrow = opts.narrow ?? 1;
+  return `<g class="g-tail">
+    <path d="M20 ${20+4*fan} C${18-fan} ${25+5*fan} ${15-fan} ${28+6*fan} ${11-fan} ${33+4*fan} C${15} ${32} ${19} ${31} 20 ${30+fan} C21 ${31} ${25} ${32} ${29+fan} ${33+4*fan} C${25+fan} ${28+6*fan} ${22+fan} ${25+5*fan} 20 ${20+4*fan} Z" fill="${COLORS.teal40}" opacity="${0.9*op}"/>
+    <path d="M16.5 ${29+fan*4} C15.5 ${31+fan*4} 14.5 ${33+fan*3} 13.5 ${34+fan*3} C15 ${33+fan*3} 16.5 ${31+fan*4} 17 ${29+fan*4} Z" fill="${COLORS.f50}" opacity="${0.75*op}"/>
+    <path d="M23.5 ${29+fan*4} C24.5 ${31+fan*4} 25.5 ${33+fan*3} 26.5 ${34+fan*3} C25 ${33+fan*3} 23.5 ${31+fan*4} 23 ${29+fan*4} Z" fill="${COLORS.f50}" opacity="${0.75*op}"/>
+    <path d="M${13-fan} ${30+fan*4} C${11-fan} ${31+fan*4} ${10-fan} ${32+fan*3} ${9-fan} ${33+fan*3} C${10.5-fan} ${32+fan*3} ${12.5-fan} ${30+fan*4} ${14-fan} ${30+fan*4} Z" fill="${COLORS.f44}" opacity="${0.62*op*fan}"/>
+    <path d="M${27+fan} ${30+fan*4} C${29+fan} ${31+fan*4} ${30+fan} ${32+fan*3} ${31+fan} ${33+fan*3} C${29.5+fan} ${32+fan*3} ${27.5+fan} ${30+fan*4} ${26+fan} ${30+fan*4} Z" fill="${COLORS.f44}" opacity="${0.62*op*fan}"/>
+  </g>`;
+}
+
+function wings(opts={}) {
+  const spread = opts.spread ?? 1;
+  const leftOp = opts.leftOp ?? 1, rightOp = opts.rightOp ?? 1;
+  const leftScaleX = opts.leftScaleX ?? 1, rightScaleX = opts.rightScaleX ?? 1;
+  return `<g class="g-wings">
+    <!-- Right Wing -->
+    <g opacity="${rightOp}" transform="scale(${rightScaleX},1) translate(${(1-rightScaleX)*20},0)">
+      <path d="M20 17 C26 ${15-spread} 33 ${12-spread} ${37+spread*1.5} ${7-spread} C${35+spread} ${14+spread*0.3} 31 19 25 22 C22.5 21 20.5 19 20 17 Z" fill="url(#wR${opts.id||0})"/>
+      <path d="M${39.5+spread} ${4.5-spread} C${40.8+spread} ${2.5-spread} ${40.5+spread} ${0.8-spread} ${39.3+spread} ${0.2-spread} C${38.4+spread} ${1.6-spread} ${37.4+spread} ${3.4-spread} ${37+spread} ${5.2-spread} Z" fill="${COLORS.f78}" opacity="0.7"/>
+      <path d="M${38+spread*0.8} ${6-spread*0.8} C${39.5+spread*0.8} ${3.8-spread*0.8} ${39.8+spread*0.8} 2.0 ${38.6+spread*0.8} 1.2 C${37.6+spread*0.8} 2.6 ${36+spread*0.8} 4.8 ${34.8+spread*0.8} 7.0 Z" fill="${COLORS.f68}" opacity="0.85"/>
+      <path d="M${36+spread*0.5} ${8-spread*0.5} C${37.5+spread*0.5} ${5.5-spread*0.5} ${38.5+spread*0.5} 4 ${37.5+spread*0.5} 3 C${36.5+spread*0.5} 4.5 ${34.5+spread*0.5} 6.5 ${33+spread*0.5} 8.5 Z" fill="${COLORS.f62}" opacity="0.8"/>
+      <path d="M30 10 C31.5 7.5 32 5.5 31 4.5 C30 6 28 8.5 26.5 10.5 Z" fill="${COLORS.f58}" opacity="0.75"/>
+      <path d="M25 13 C26.5 10.5 26.5 8.5 25.5 7.5 C24.5 9 22.5 11.5 21.5 13.5 Z" fill="${COLORS.f54}" opacity="0.7"/>
+      <path d="M21 17.5 C25 15.5 30 14 33.5 11.5 C31 14 27.5 17 23.5 18.5 Z" fill="${COLORS.tealW}" opacity="0.35"/>
+    </g>
+    <!-- Left Wing -->
+    <g opacity="${leftOp}" transform="scale(${leftScaleX},1) translate(${(1-leftScaleX)*20},0)">
+      <path d="M20 17 C14 ${15-spread} 7 ${12-spread} ${3-spread*1.5} ${7-spread} C${5-spread} ${14+spread*0.3} 9 19 15 22 C17.5 21 19.5 19 20 17 Z" fill="url(#wL${opts.id||0})"/>
+      <path d="M${0.5-spread} ${4.5-spread} C${-0.8-spread} ${2.5-spread} ${-0.5-spread} ${0.8-spread} ${0.7-spread} ${0.2-spread} C${1.6-spread} ${1.6-spread} ${2.6-spread} ${3.4-spread} ${3-spread} ${5.2-spread} Z" fill="${COLORS.f78}" opacity="0.7"/>
+      <path d="M${1.8-spread*0.8} ${6-spread*0.8} C${0.5-spread*0.8} ${3.8-spread*0.8} ${0.2-spread*0.8} 2.0 ${1.4-spread*0.8} 1.2 C${2.4-spread*0.8} 2.6 ${4-spread*0.8} 4.8 ${5.2-spread*0.8} 7.0 Z" fill="${COLORS.f68}" opacity="0.85"/>
+      <path d="M${4-spread*0.5} ${8-spread*0.5} C${2.5-spread*0.5} ${5.5-spread*0.5} ${1.5-spread*0.5} 4 ${2.5-spread*0.5} 3 C${3.5-spread*0.5} 4.5 ${5.5-spread*0.5} 6.5 ${7-spread*0.5} 8.5 Z" fill="${COLORS.f62}" opacity="0.8"/>
+      <path d="M10 10 C8.5 7.5 8 5.5 9 4.5 C10 6 12 8.5 13.5 10.5 Z" fill="${COLORS.f58}" opacity="0.75"/>
+      <path d="M15 13 C13.5 10.5 13.5 8.5 14.5 7.5 C15.5 9 17.5 11.5 18.5 13.5 Z" fill="${COLORS.f54}" opacity="0.7"/>
+      <path d="M19 17.5 C15 15.5 10 14 6.5 11.5 C9 14 12.5 17 16.5 18.5 Z" fill="${COLORS.tealW}" opacity="0.35"/>
+    </g>
+  </g>`;
+}
+
+function body(opts={}) {
+  const backOp = opts.backOp ?? 0, bellyOp = opts.bellyOp ?? 0;
+  return `<g class="g-body">
+    <ellipse cx="20" cy="22" rx="6" ry="8" fill="url(#bG${opts.id||0})" stroke="hsl(190,60%,75%)" stroke-width="0.35" stroke-opacity="0.5"/>
+    <path d="M 14.5 22 A 5.5 7.5 0 0 1 25.5 22 C 24 16.5 16 16.5 14.5 22 Z" fill="${COLORS.back}" opacity="${backOp}"/>
+    <path d="M 14.5 22 A 5.5 7.5 0 0 0 25.5 22 C 24 27.5 16 27.5 14.5 22 Z" fill="${COLORS.belly}" opacity="${bellyOp}"/>
+  </g>`;
+}
+
+function head(opts={}) {
+  const eyeOp = opts.eyeOp ?? 1, beakOp = opts.beakOp ?? 1, eggOp = opts.eggOp ?? 1;
+  const crownOp = opts.crownOp ?? 0.8;
+  const neckD = opts.neckD || 'M18 16 C15 13 12 12 9 13.5';
+  const hx = opts.hx ?? 8, hy = opts.hy ?? 13;
+  return `<g class="g-head">
+    <path d="${neckD}" fill="none" stroke="${COLORS.teal52}" stroke-width="3.4" stroke-linecap="round"/>
+    <circle cx="${hx}" cy="${hy}" r="3.4" fill="${COLORS.teal55}" stroke="white" stroke-width="0.5"/>
+    <path d="M${hx-1.2} ${hy-3} C${hx-1.4} ${hy-3.8} ${hx-1} ${hy-4.6} ${hx-0.4} ${hy-5} C${hx-0.4} ${hy-4.2} ${hx-0.7} ${hy-3.3} ${hx-0.9} ${hy-2.5} Z" fill="${COLORS.f58}" opacity="${crownOp*0.8}"/>
+    <path d="M${hx-0.2} ${hy-3.4} C${hx-0.1} ${hy-4.3} ${hx+0.4} ${hy-5} ${hx+1} ${hy-5.3} C${hx+0.8} ${hy-4.5} ${hx+0.5} ${hy-3.6} ${hx+0.3} ${hy-2.8} Z" fill="${COLORS.f68}" opacity="${crownOp}"/>
+    <path d="M${hx+1} ${hy-2.9} C${hx+1.4} ${hy-3.8} ${hx+1.9} ${hy-4.5} ${hx+2.4} ${hy-4.7} C${hx+2.1} ${hy-3.9} ${hx+1.7} ${hy-3} ${hx+1.4} ${hy-2.3} Z" fill="${COLORS.f62}" opacity="${crownOp*0.8}"/>
+    <circle cx="${hx+0.9}" cy="${hy-0.8}" r="0.85" fill="hsl(32,85%,42%)" opacity="${0.88*eyeOp}"/>
+    <circle cx="${hx+0.9}" cy="${hy-0.8}" r="0.55" fill="${COLORS.eye}" opacity="${eyeOp}"/>
+    <circle cx="${hx+1.2}" cy="${hy-1.05}" r="0.2" fill="white" opacity="${0.9*eyeOp}"/>
+    <path d="M${hx-2.7} ${hy+0.4} L${hx-5.8} ${hy+1.25} L${hx-2.55} ${hy+1.2} Z" fill="${COLORS.beak1}" opacity="${beakOp}"/>
+    <path d="M${hx-2.55} ${hy+1.2} L${hx-5.8} ${hy+1.25} L${hx-2.4} ${hy+2.1} Z" fill="${COLORS.beak2}" opacity="${beakOp}"/>
+    <circle cx="${hx-4.6}" cy="${hy+2.6}" r="1.45" fill="url(#eG${opts.id||0})" stroke="hsl(190,80%,50%)" stroke-width="0.35" opacity="${eggOp}"/>
+    <circle cx="${hx-5.15}" cy="${hy+1.95}" r="0.45" fill="white" opacity="${0.75*eggOp}"/>
+  </g>`;
+}
+
+function legs(opts={}) {
+  const op = opts.op ?? 1;
+  return `<g class="g-legs" opacity="${op}">
+    <line x1="18.5" y1="29.5" x2="16.5" y2="34" stroke="${COLORS.leg}" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="16.5" y1="34" x2="14.5" y2="35.5" stroke="${COLORS.leg}" stroke-width="0.8" stroke-linecap="round"/>
+    <line x1="16.5" y1="34" x2="16.2" y2="36" stroke="${COLORS.leg}" stroke-width="0.8" stroke-linecap="round"/>
+    <line x1="21.5" y1="29.5" x2="23.5" y2="34" stroke="${COLORS.leg}" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="23.5" y1="34" x2="25.5" y2="35.5" stroke="${COLORS.leg}" stroke-width="0.8" stroke-linecap="round"/>
+    <line x1="23.5" y1="34" x2="23.8" y2="36" stroke="${COLORS.leg}" stroke-width="0.8" stroke-linecap="round"/>
+  </g>`;
+}
+
+// Build a complete bird SVG with given options + transform
+function bird(id, opts={}) {
+  const w = opts.w || 70, h = opts.h || 80;
+  const transform = opts.transform || '';
+  // viewBox base is 0 0 44 44 (with overflow)
+  return `<svg width="${w}" height="${h}" viewBox="-2 0 44 44" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+    ${defs(id)}
+    <g transform="${transform}">
+      ${tail(opts)}
+      ${wings({...opts, id})}
+      ${body({...opts, id})}
+      ${head({...opts, id})}
+      ${legs(opts)}
+    </g>
+  </svg>`;
+}
+
+// ═══ ROW 1: 8 DIRECTIONAL VIEWS ═══
+const row1Views = [
+  {
+    label: 'FRONT',
+    opts: { spread: 2, crownOp: 0.8 },
+    transform: '',
+  },
+  {
+    label: 'FRONT 3/4\n(RIGHT)',
+    opts: { spread: 2.5, leftScaleX: 0.55, crownOp: 0.7 },
+    transform: 'matrix(0.88,0,0.12,1,-1,0)',
+  },
+  {
+    label: 'FRONT 3/4\n(LEFT)',
+    opts: { spread: 2.5, rightScaleX: 0.55, crownOp: 0.7 },
+    transform: 'matrix(0.88,0,-0.12,1,3,0)',
+  },
+  {
+    label: 'LEFT SIDE',
+    opts: { spread: 1.5, leftScaleX: 1.4, rightScaleX: 0.08, crownOp: 0.6, eggOp: 0.9 },
+    transform: 'matrix(0.22,0,-0.3,1,25,0)',
+  },
+  {
+    label: 'RIGHT SIDE',
+    opts: { spread: 1.5, rightScaleX: 1.4, leftScaleX: 0.08, crownOp: 0.6, eggOp: 0.9 },
+    transform: 'matrix(0.22,0,0.3,1,-3,0)',
+  },
+  {
+    label: 'BACK 3/4\n(LEFT)',
+    opts: { spread: 2, backOp: 0.6, eyeOp: 0.3, beakOp: 0.2, eggOp: 0.15, crownOp: 0.5, leftScaleX: 0.6 },
+    transform: 'matrix(-0.88,0,0.12,1,43,0)',
+  },
+  {
+    label: 'BACK 3/4\n(RIGHT)',
+    opts: { spread: 2, backOp: 0.6, eyeOp: 0.3, beakOp: 0.2, eggOp: 0.15, crownOp: 0.5, rightScaleX: 0.6 },
+    transform: 'matrix(-0.88,0,-0.12,1,41,-0)',
+  },
+  {
+    label: 'BACK',
+    opts: { spread: 2.5, backOp: 0.8, eyeOp: 0.05, beakOp: 0.05, eggOp: 0.05, crownOp: 0.7 },
+    transform: 'matrix(-1,0,0,1,40,0)',
+  },
+];
+
+const row1El = document.getElementById('row1');
+row1Views.forEach((v, i) => {
+  const panel = document.createElement('div');
+  panel.className = 'bird-panel';
+  panel.innerHTML = bird(i, {...v.opts, transform: v.transform, w:80, h:90}) +
+    `<div class="label">${v.label.replace(/\n/,'<br/>')}</div>`;
+  row1El.appendChild(panel);
+});
+
+// ═══ ROW 2: UP / DOWN / DIAGONAL / CROSS ═══
+const row2Views = [
+  {
+    label: 'UP VIEW\n(TOP)',
+    opts: { spread: 3.5, bellyOp: 0 },
+    transform: 'matrix(1,0,0,0.28,0,17)',
+  },
+  {
+    label: 'DOWN VIEW\n(BOTTOM)',
+    opts: { spread: 3.5, bellyOp: 0.85, eyeOp: 0.1, beakOp: 0.1, eggOp: 0.1 },
+    transform: 'matrix(1,0,0,-0.28,0,28)',
+  },
+  {
+    label: 'DIAGONAL\nUP (LEFT)',
+    opts: { spread: 2.5, rightScaleX: 1.2, leftScaleX: 0.4, crownOp: 0.8, backOp: 0.2 },
+    transform: 'matrix(0.82,-0.28,0,0.72,4,10)',
+  },
+  {
+    label: 'DIAGONAL\nUP (RIGHT)',
+    opts: { spread: 2.5, leftScaleX: 1.2, rightScaleX: 0.4, crownOp: 0.8, backOp: 0.2 },
+    transform: 'matrix(-0.82,-0.28,0,0.72,36,10)',
+  },
+  {
+    label: 'DIAGONAL\nDOWN (LEFT)',
+    opts: { spread: 2, rightScaleX: 1.1, leftScaleX: 0.5, eyeOp: 0.7, backOp: 0.1 },
+    transform: 'matrix(0.82,0.25,0,0.75,4,-2)',
+  },
+  {
+    label: 'DIAGONAL\nDOWN (RIGHT)',
+    opts: { spread: 2, leftScaleX: 1.1, rightScaleX: 0.5, eyeOp: 0.7, backOp: 0.1 },
+    transform: 'matrix(-0.82,0.25,0,0.75,36,-2)',
+  },
+  {
+    label: 'CROSS VIEW\n(SKELETON)',
+    opts: { spread: 2.5, crownOp: 0.4 },
+    transform: '',
+    cross: true,
+  },
+];
+
+const row2El = document.getElementById('row2');
+row2Views.forEach((v, i) => {
+  const id = 100 + i;
+  let svg;
+  if (v.cross) {
+    // Wireframe / skeleton view
+    svg = `<svg width="90" height="90" viewBox="-2 0 44 44" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+      ${defs(id)}
+      <g fill="none" stroke="hsl(190,100%,55%)" stroke-width="0.4" opacity="0.9">
+        <!-- Tail skeleton -->
+        <path d="M20 24 C17 30 15 34 12 37" stroke-width="0.5"/>
+        <path d="M20 24 C23 30 25 34 28 37" stroke-width="0.5"/>
+        <!-- Body ellipse -->
+        <ellipse cx="20" cy="22" rx="6" ry="8" stroke-width="0.5"/>
+        <!-- Body center line -->
+        <line x1="20" y1="14" x2="20" y2="30" stroke-dasharray="0.8,0.8" stroke-width="0.3"/>
+        <!-- Wing lines -->
+        <path d="M20 17 C14 14 7 12 3 7" stroke-dasharray="0.8,0.8"/>
+        <path d="M20 17 C26 14 33 12 37 7" stroke-dasharray="0.8,0.8"/>
+        <!-- Neck line -->
+        <path d="M18 16 C15 13 12 12 9 13.5" stroke-width="0.6"/>
+        <!-- Head circle -->
+        <circle cx="8" cy="13" r="3.4" stroke-width="0.5"/>
+        <!-- Eye -->
+        <circle cx="7.1" cy="12.2" r="0.85" stroke="hsl(32,85%,52%)"/>
+        <!-- Beak line -->
+        <path d="M5.45 14.2 L2.2 14.25" stroke-width="0.6"/>
+        <!-- Tail base line -->
+        <line x1="12" y1="24" x2="28" y2="24" stroke-dasharray="0.8,0.8" stroke-width="0.3"/>
+        <!-- Wing attachment -->
+        <circle cx="20" cy="17" r="0.8" fill="hsl(190,100%,55%)" stroke="none"/>
+        <!-- Leg lines -->
+        <line x1="18.5" y1="29.5" x2="16.5" y2="34" stroke-width="0.5"/>
+        <line x1="21.5" y1="29.5" x2="23.5" y2="34" stroke-width="0.5"/>
+        <!-- Pivot points -->
+        <circle cx="20" cy="22" r="0.6" fill="hsl(190,100%,55%)" stroke="none"/>
+        <circle cx="8" cy="13" r="0.5" fill="hsl(190,100%,55%)" stroke="none"/>
+        <circle cx="20" cy="24" r="0.4" fill="hsl(190,100%,55%)" stroke="none"/>
+        <circle cx="18.5" cy="29.5" r="0.4" fill="hsl(190,100%,55%)" stroke="none"/>
+        <circle cx="21.5" cy="29.5" r="0.4" fill="hsl(190,100%,55%)" stroke="none"/>
+        <circle cx="3.4" cy="15.6" r="0.5" fill="hsl(32,85%,52%)" stroke="none"/>
+        <!-- Egg marker -->
+        <circle cx="3.4" cy="15.6" r="1.45" stroke="hsl(32,85%,52%)" stroke-dasharray="0.6,0.6"/>
+        <!-- Dimension lines -->
+        <line x1="-1" y1="0" x2="-1" y2="40" stroke-width="0.25" stroke="hsl(190,60%,40%)" stroke-dasharray="1,1"/>
+        <line x1="0" y1="41" x2="40" y2="41" stroke-width="0.25" stroke="hsl(190,60%,40%)" stroke-dasharray="1,1"/>
+      </g>
+      <text x="-0.5" y="43" font-size="2.5" fill="hsl(190,60%,40%)" font-family="Courier New">0</text>
+      <text x="38" y="43" font-size="2.5" fill="hsl(190,60%,40%)" font-family="Courier New">40</text>
+    </svg>`;
+  } else {
+    svg = bird(id, {...v.opts, transform: v.transform, w:90, h:90});
+  }
+  const panel = document.createElement('div');
+  panel.className = 'bird-panel';
+  panel.innerHTML = svg + `<div class="label">${v.label.replace(/\n/,'<br/>')}</div>`;
+  row2El.appendChild(panel);
+});
+
+// ═══ TURN SEQUENCE (12 STEPS) ═══
+const turnSeqEl = document.getElementById('turnSeq');
+const turnSteps = [
+  { label: 'FRONT',        sx: 1,    skewX: 0,    spread: 1.8, leftScaleX: 1,    rightScaleX: 1 },
+  { label: 'FRONT 3/4 R', sx: 0.92, skewX: 4,    spread: 2,   leftScaleX: 0.75, rightScaleX: 1.05 },
+  { label: 'RIGHT SIDE',  sx: 0.22, skewX: 12,   spread: 1.5, leftScaleX: 0.05, rightScaleX: 1.6 },
+  { label: 'BACK 3/4 R',  sx:-0.88, skewX:-4,    spread: 2,   leftScaleX: 0.7,  rightScaleX: 0.6, backOp:0.55, eyeOp:0.2, beakOp:0.1, eggOp:0.1 },
+  { label: 'BACK',        sx:-1,    skewX: 0,    spread: 2.2, leftScaleX: 1,    rightScaleX: 1,   backOp:0.7,  eyeOp:0.05, beakOp:0.05, eggOp:0.05 },
+  { label: 'LEFT SIDE',   sx: 0.22, skewX:-12,   spread: 1.5, leftScaleX: 1.6,  rightScaleX: 0.05 },
+  { label: 'FRONT 3/4 L', sx: 0.92, skewX:-4,    spread: 2,   leftScaleX: 1.05, rightScaleX: 0.75 },
+  { label: 'DIAG UP R',   sx:-0.82, skewX:-3,    spread: 2.3, leftScaleX: 1.1,  rightScaleX: 0.5, backOp:0.2 },
+  { label: 'DIAG DOWN R', sx:-0.82, skewX: 3,    spread: 1.8, leftScaleX: 1.1,  rightScaleX: 0.5, backOp:0.15 },
+  { label: 'DIAG UP L',   sx: 0.82, skewX: 3,    spread: 2.3, leftScaleX: 0.5,  rightScaleX: 1.1, backOp:0.2 },
+  { label: 'DIAG DOWN L', sx: 0.82, skewX:-3,    spread: 1.8, leftScaleX: 0.5,  rightScaleX: 1.1, backOp:0.15 },
+  { label: 'FRONT',       sx: 1,    skewX: 0,    spread: 1.8, leftScaleX: 1,    rightScaleX: 1 },
+];
+
+turnSteps.forEach((step, i) => {
+  const id = 200 + i;
+  const tx = step.sx < 0 ? `${40*(1+step.sx)}` : '0';
+  const transform = `matrix(${step.sx},0,${(step.skewX/40)},1,${tx},0)`;
+  const panel = document.createElement('div');
+  panel.className = 'turn-panel';
+  panel.innerHTML = `<div class="step-num">${i===11?'12':i+1}</div>` +
+    bird(id, {...step, transform, w:58, h:68}) +
+    `<div class="label">${step.label}</div>`;
+  turnSeqEl.appendChild(panel);
+});
+
+// ═══ WING DEFORMATION ═══
+const wingDeformEl = document.getElementById('wingDeform');
+const wingStates = [
+  { label: 'WINGS UP', sublabel: '(HIGH STRETCH)', spread: -1.5, wingRotL: -30, wingRotR: -30 },
+  { label: 'WINGS MID', sublabel: '(RELAXED)', spread: 2 },
+  { label: 'WINGS DOWN', sublabel: '(POWER STROKE)', spread: 4.5 },
+  { label: 'WINGS FORWARD', sublabel: '(BRAKING)', spread: 1, braking: true },
+  { label: 'WINGS BACK', sublabel: '(GLIDE)', spread: 0.5, glide: true },
+];
+
+wingStates.forEach((state, i) => {
+  const id = 300 + i;
+  let wingSvg;
+  if (state.braking) {
+    // Wings swept forward: adjust wing paths
+    wingSvg = `<svg width="90" height="80" viewBox="-2 0 44 40" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+      ${defs(id)}
+      ${tail({...state, id})}
+      <g class="g-wings">
+        <path d="M20 18 C16 12 10 8 5 8 C7 15 12 20 18 22 C19 21 19.5 19.5 20 18 Z" fill="url(#wL${id})"/>
+        <path d="M20 18 C24 12 30 8 35 8 C33 15 28 20 22 22 C21 21 20.5 19.5 20 18 Z" fill="url(#wR${id})"/>
+        <path d="M5 8 C3 6 1 4 -1 3 C0.5 5 2 7 4 8.5 Z" fill="hsl(190,100%,62%)" opacity="0.8"/>
+        <path d="M35 8 C37 6 39 4 41 3 C39.5 5 38 7 36 8.5 Z" fill="hsl(190,100%,62%)" opacity="0.8"/>
+      </g>
+      ${body({...state, id})}
+      ${head({...state, id})}
+      ${legs(state)}
+    </svg>`;
+  } else if (state.glide) {
+    // Wings swept back in glide
+    wingSvg = `<svg width="90" height="80" viewBox="-2 0 44 40" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+      ${defs(id)}
+      ${tail({...state, id, fan: 0.5})}
+      <g class="g-wings">
+        <path d="M20 19 C18 17 14 18 8 22 C10 20 14 20 18 21 C18.8 21 19.5 20 20 19 Z" fill="url(#wL${id})"/>
+        <path d="M20 19 C22 17 26 18 32 22 C30 20 26 20 22 21 C21.2 21 20.5 20 20 19 Z" fill="url(#wR${id})"/>
+        <path d="M8 22 C5 23 3 24.5 1 26 C3 24 5.5 22.5 8 22 Z" fill="hsl(190,100%,58%)" opacity="0.7"/>
+        <path d="M32 22 C35 23 37 24.5 39 26 C37 24 34.5 22.5 32 22 Z" fill="hsl(190,100%,58%)" opacity="0.7"/>
+      </g>
+      ${body({...state, id})}
+      ${head({...state, id, neckD:'M18 16 C16 14 13 13 10 14'})}
+      ${legs(state)}
+    </svg>`;
+  } else {
+    wingSvg = bird(id, {...state, transform:'', w:90, h:80});
+  }
+  const panel = document.createElement('div');
+  panel.className = 'deform-panel';
+  panel.innerHTML = wingSvg + `<div class="label">${state.label}</div><div class="sublabel">${state.sublabel}</div>`;
+  wingDeformEl.appendChild(panel);
+});
+
+// ═══ TAIL DEFORMATION ═══
+const tailDeformEl = document.getElementById('tailDeform');
+const tailStates = [
+  { label: 'TAIL FLARE', sublabel: '(WIDE)', fan: 2.2 },
+  { label: 'TAIL NARROW', sublabel: '(SPEED)', fan: 0.2, fold: 0.3 },
+  { label: 'TAIL FOLDED', sublabel: '(BRAKING)', fold: 0.7, fan: 0.4, raise: true },
+  { label: 'TAIL STREAM', sublabel: '(GLIDE)', fan: 0.35, fold: 0.8 },
+];
+
+tailStates.forEach((state, i) => {
+  const id = 400 + i;
+  const panel = document.createElement('div');
+  panel.className = 'deform-panel';
+  let svg;
+  if (state.raise) {
+    // Tail raised (braking) — fan up rather than down
+    svg = `<svg width="100" height="90" viewBox="-2 0 44 44" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+      ${defs(id)}
+      <g class="g-tail" transform="translate(0,-2) scale(1,0.7)">
+        <path d="M20 22 C16 26 13 28 10 30 C14 29 18 28 20 27 C22 28 26 29 30 30 C27 28 24 26 20 22 Z" fill="hsl(190,90%,40%)" opacity="0.9"/>
+        <path d="M20 26 C19 28 19.5 29.5 19.5 31 C20.5 29.5 20.5 28 20 26 Z" fill="hsl(190,100%,55%)" opacity="0.85"/>
+      </g>
+      ${wings({spread:2, id})}
+      ${body({id})}
+      ${head({id})}
+      ${legs(state)}
+    </svg>`;
+  } else {
+    svg = bird(id, {...state, spread:2, transform:'', w:100, h:90});
+  }
+  panel.innerHTML = svg + `<div class="label">${state.label}</div><div class="sublabel">${state.sublabel}</div>`;
+  tailDeformEl.appendChild(panel);
+});
+</script>
+</body>
+</html>

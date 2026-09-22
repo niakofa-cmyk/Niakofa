@@ -1,0 +1,48 @@
+Implemented and committed the Niakofa Circles RTC improvements locally.
+Completed
+* Read the uploaded reference document completely.
+* Read every file in the ZIP completely.
+* Verified the checkout against origin/main before editing.
+* Added:
+    * CircleMediaTransport abstraction.
+    * MeshCircleTransport adapter around the existing mesh.
+    * Explicit LiveKit/SFU boundary adapter.
+    * Browser-side WebRTC endurance collector.
+    * JSON diagnostics export from the Circle room header.
+    * getPeers() access on AudioCircleMesh.
+    * RTC architecture and certification documentation at docs/NIAKOFA_CIRCLES_RTC_FOUNDATION.md.
+* Preserved the existing REST/WS lifecycle, moderation, recording, TURN lookup, ICE recovery, and mesh behavior.
+* Strictly compiled all new RTC modules with TypeScript.
+* Ran git diff --check successfully.
+* Created local commit:
+4eb4207d feat(circles): add RTC transport seam and endurance diagnostics
+Blockers
+* The configured GitHub credential was rejected as invalid by GitHub. The push did not land, and I did not expose or repeatedly retry the credential.
+* The workflows could not start because the checkout lacks installed workspace dependencies:
+    * Vite binary missing.
+    * esbuild missing.
+    * API workflow failed while importing esbuild.
+* Because of those environment blockers, I could not truthfully verify the live preview or independently confirm GitHub’s main matches local main.
+Current state:
+* Local main: 4eb4207d
+* GitHub origin/main: 159f4a64
+* Local working tree: clean
+* Remote push: not completed
+* Live preview verification: blocked by missing dependencies
+
+
+Some checks were not successful
+4 successful, 1 failing, and 1 skipped checks
+*  
+* ￼
+*  CI / Typecheck + Tests (push) Failing after 1m Details  
+* ￼
+*  CI / App/AI Boundary Check (push) Successful in 14s Details  
+* ￼
+*  CI / ESLint (push) Successful in 48s Details  
+* ￼
+*  CI / Release Validation (push) Skipped Details  
+* ￼
+*  Deploy Verification / Verify Production Deployment (push) Successful in 2m Details  
+* ￼
+*  precious-abundance - zesty-ambition - Success - niakofa.com

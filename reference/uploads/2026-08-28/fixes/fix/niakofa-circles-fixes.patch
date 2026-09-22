@@ -1,0 +1,147 @@
+diff --git a/artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.test.ts b/artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.test.ts
+index b145f31..6dce7e5 100644
+--- a/artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.test.ts
++++ b/artifacts/pay-it-forward/src/lib/__tests__/circleRealtimeSessionManager.test.ts
+@@ -31,7 +31,13 @@ class FakeTransport implements CircleMediaTransport {
+   }
+ 
+   async addVideoTrack(): Promise<MediaStream> {
+-    if (this.failCamera) throw new Error("camera permission denied");
++    if (this.failCamera) {
++      // Match the real browser contract: getUserMedia rejects with a
++      // DOMException whose `name` drives classifyMediaError(). A plain
++      // Error here would only ever exercise the "unknown" fallback path,
++      // not the permission_denied path production code actually hits.
++      throw new DOMException("Permission denied", "NotAllowedError");
++    }
+     this.cameraEnabled = true;
+     return {} as MediaStream;
+   }
+@@ -91,7 +97,7 @@ test("camera failure preserves microphone and reports a camera error", async ()
+ 
+   assert.equal(manager.isMicrophoneLive(), true);
+   assert.equal(manager.isCameraLive(), false);
+-  assert.deepEqual(errors, [{ device: "camera", code: "unknown" }]);
++  assert.deepEqual(errors, [{ device: "camera", code: "permission_denied" }]);
+   manager.destroy();
+ });
+ 
+diff --git a/artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts b/artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts
+index 471d12f..d795f9e 100644
+--- a/artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts
++++ b/artifacts/pay-it-forward/src/lib/circleRealtimeSessionManager.ts
+@@ -11,7 +11,50 @@ import type {
+   MediaTransportCallbacks,
+ } from "./circleMediaTransport";
+ import { LiveKitCircleTransport } from "./livekitCircleTransport";
+-import { classifyMediaError } from "./circleMediaReadiness";
++import { classifyMediaError, type MediaReadinessCode } from "./circleMediaReadiness";
++
++/**
++ * UI-actionable reason a media-token request failed for good (i.e. after any
++ * 429/5xx retries were exhausted or didn't apply). Each maps to a distinct
++ * on-screen action rather than one generic "connection failed" message.
++ */
++export type MediaTokenErrorCode =
++  | "reauthenticate" // 401 — session expired, send the user through auth again
++  | "not_authorized" // 403 — not (or no longer) allowed in this Circle
++  | "session_ended" // 404 — Circle isn't live anymore
++  | "state_conflict" // 409 — Circle state changed under us, re-fetch and retry
++  | "rate_limited" // 429 that survived retries — back off longer
++  | "server_error" // 5xx that survived retries — infrastructure issue
++  | "unknown";
++
++export class MediaTokenError extends Error {
++  constructor(
++    message: string,
++    readonly code: MediaTokenErrorCode,
++    readonly status: number,
++    readonly retryAfterSeconds?: number,
++  ) {
++    super(message);
++    this.name = "MediaTokenError";
++  }
++}
++
++function classifyMediaTokenStatus(status: number): MediaTokenErrorCode {
++  switch (status) {
++    case 401:
++      return "reauthenticate";
++    case 403:
++      return "not_authorized";
++    case 404:
++      return "session_ended";
++    case 409:
++      return "state_conflict";
++    case 429:
++      return "rate_limited";
++    default:
++      return status >= 500 ? "server_error" : "unknown";
++  }
++}
+ 
+ export type ContinuityState =
+   | "idle"
+@@ -197,9 +240,33 @@ export class CircleRealtimeSessionManager {
+     this.transport?.setMicEnabled(enabled);
+   }
+ 
+-  setVideoEnabled(enabled: boolean): void {
+-    if (enabled) void this.enableCamera().catch(() => {});
+-    else this.disableCamera();
++  /**
++   * Turns the camera on or off. Returns a typed result rather than a bare
++   * Promise<void> so the caller can't accidentally "fire and forget" past a
++   * real failure: a rejected enableCamera() used to be swallowed here with
++   * `.catch(() => {})`, so the UI only ever found out about a camera problem
++   * if it happened to be subscribed to the separate onMediaError callback.
++   * Now the outcome — and the exact classified reason on failure — comes
++   * back on the call itself.
++   */
++  async setVideoEnabled(
++    enabled: boolean,
++  ): Promise<{ ok: true } | { ok: false; code: MediaReadinessCode; message: string }> {
++    if (!enabled) {
++      this.disableCamera();
++      return { ok: true };
++    }
++    try {
++      await this.enableCamera();
++      return { ok: true };
++    } catch (error) {
++      // enableCamera() already ran classifyMediaError() and fired
++      // onMediaError() before rethrowing; classify again here only so this
++      // call site can hand the caller the same code/message without a
++      // second onMediaError side channel to wire up.
++      const classified = classifyMediaError(error, "camera");
++      return { ok: false, code: classified.code, message: classified.message };
++    }
+   }
+ 
+   async switchAudioDevice(deviceId: string): Promise<MediaStream> {
+@@ -424,13 +491,21 @@ export class CircleRealtimeSessionManager {
+       }
+ 
+       const body = await response.json().catch(() => ({}));
+-      const retryAfter = response.headers.get("Retry-After");
+-      const suffix = retryAfter ? ` Retry after ${retryAfter} seconds.` : "";
+-      throw new Error(
++      const retryAfterHeader = response.headers.get("Retry-After");
++      const retryAfterMs = parseRetryAfter(retryAfterHeader);
++      const suffix = retryAfterHeader ? ` Retry after ${retryAfterHeader} seconds.` : "";
++      throw new MediaTokenError(
+         `${(body as { error?: string }).error ?? `Media token failed (${response.status})`}${suffix}`,
++        classifyMediaTokenStatus(response.status),
++        response.status,
++        retryAfterMs != null ? Math.round(retryAfterMs / 1000) : undefined,
+       );
+     }
+-    throw new Error("Media token request exhausted retries");
++    throw new MediaTokenError(
++      "Media token request exhausted retries",
++      "server_error",
++      0,
++    );
+   }
+ 
+   private scheduleTokenRefresh(): void {

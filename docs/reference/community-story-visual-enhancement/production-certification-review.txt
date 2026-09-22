@@ -1,0 +1,294 @@
+I checked the updated main branch and the current Railway production deployment. The implementation is substantially closer to the architecture we envisioned, but the final production media gate is still correctly blocked.
+
+Current production state
+Current deployed commit: 903d3ebe29fdd6a1134e6b2a299dc7f4f2c13962
+Deployment: SUCCESS
+Railway production API: /api/healthz → 200
+/api/health → 200
+/api/readiness → 200
+Redis connected and ready.
+FFmpeg/FFprobe infrastructure has already been installed in the production image.
+MEDIA_PLATFORM_V21 is not evidenced as active in the current runtime; importantly, the media-processing worker is not appearing in the production startup logs.
+
+The latest commit is specifically:
+
+test(media): add gated production certification flow
+
+That is a meaningful improvement over the previous state.
+
+How well the recommendations were implemented
+1. Production object-storage certification — implemented
+
+The repo now has a real S3-compatible I/O probe:
+
+PUT → HEAD → byte-size verification → DELETE
+
+It uses a unique _probe namespace and bounded cleanup retries. It also deliberately reports that V21 should remain off. storageProbe.ts
+
+The production probe you already ran passed:
+
+ok: true
+backend: s3-compatible
+probe: put-head-delete
+deleted: true
+
+So this prerequisite is actually certified, not merely implemented.
+
+One remaining hardening item: the probe doesn't perform a final HEAD after DELETE to prove the object is no longer retrievable. That's not a release blocker given the successful DELETE result, but adding post-delete verification would make the certification stronger.
+
+2. Production FFmpeg/FFprobe gate — implemented and certified
+
+The production image now explicitly installs:
+
+ffmpeg
+
+through railpack.json.
+
+The runtime verifier checks:
+
+FFmpeg executable
+FFprobe executable
+FFmpeg-generated MP4
+FFprobe reading the generated MP4
+
+railpack.json
+
+And your actual production result was:
+
+ffmpeg: /usr/bin/ffmpeg
+ffprobe: /usr/bin/ffprobe
+
+smoke_test: ffmpeg-generated-mp4-to-ffprobe
+dimensions: 16x16
+ok: true
+
+So this gate is PASS.
+
+3. Fail-closed V21 activation — very well implemented
+
+This is one of the strongest parts now.
+
+When V21 is enabled, production startup requires:
+
+cloud storage configuration
+storage readiness
+FFmpeg
+FFprobe
+actual FFmpeg → FFprobe smoke test
+
+before the server proceeds normally.
+
+The media worker itself is only registered/started when V21 is enabled. api-server index.ts
+
+That gives you the desired architecture:
+
+Production
+   │
+   ├── Storage configured? ── NO ──> STOP
+   │
+   ├── FFmpeg/FFprobe usable? ── NO ──> STOP
+   │
+   ├── Media smoke test? ── NO ──> STOP
+   │
+   └── V21 enabled ──> media worker starts
+
+That is much safer than simply turning the flag on and discovering infrastructure problems afterward.
+
+4. Authenticated photo/video acceptance — implemented
+
+This is now much closer to what we envisioned.
+
+The new Playwright acceptance test exercises the real chain:
+
+Authenticated user
+       ↓
+Initialize media upload
+       ↓
+Upload actual object
+       ↓
+Finalize upload
+       ↓
+Queue processing
+       ↓
+Media worker
+       ↓
+FFmpeg processing
+       ↓
+Variant/thumbnail persistence
+       ↓
+Authenticated retrieval
+       ↓
+Playback/content verification
+
+It tests both photo and video.
+
+The photo path verifies:
+
+asset becomes ready
+thumbnail exists
+original retrieval succeeds
+thumbnail retrieval succeeds
+content types are correct
+
+The video path verifies:
+
+asset becomes ready
+variant is ready
+video retrieval succeeds
+MP4 content type is correct
+
+It also has a second-account authorization check when USER_B_STATE is supplied.
+
+media-platform-authenticated.spec.ts
+
+This is essentially the acceptance test we wanted.
+
+5. Authentication-state security — implemented well
+
+The new state validation is considerably safer than simply accepting a Playwright JSON file.
+
+It requires:
+
+regular file
+no symlink
+0600 permissions
+outside repository
+not tracked by Git
+valid origin
+exactly one Niakofa token
+exactly one user object
+valid user ID
+no password/secret/reset-code fields
+
+validate-user-a-state.mjs
+
+And the generator verifies the authenticated account is actually:
+
+approval_status === "approved"
+
+before writing the state.
+
+That is exactly the right direction.
+
+The important remaining problems
+
+There are two things I would fix before calling the release gate complete.
+
+A. The authenticated production test has not actually passed
+
+This remains the primary blocker.
+
+The repository contains the test, but a test existing is not the same as production acceptance passing.
+
+We still need an approved disposable authenticated state:
+
+USER_A_STATE
+
+The previous production login attempt returned:
+
+HTTP 401
+
+So there is currently no valid authenticated production session available to execute the real acceptance.
+
+Therefore:
+
+Photo E2E: NOT CERTIFIED
+
+Video E2E: NOT CERTIFIED
+
+Authenticated retrieval authorization: NOT CERTIFIED
+
+V21: MUST REMAIN OFF
+
+B. run-deployed-acceptance.sh does not yet orchestrate the media acceptance
+
+This is an important architectural gap I found.
+
+The wrapper currently runs:
+
+diaspora-journeys-staging.spec.ts
+diaspora-final-wiring-live.spec.ts
+county-travel-live.spec.ts
+
+but it does not invoke:
+
+e2e/media-platform-authenticated.spec.ts
+
+So you have created the correct media acceptance test, but the general production acceptance wrapper does not yet include it.
+
+That means the release process currently has two separate concepts:
+
+general deployed acceptance
+        +
+separate media production acceptance
+
+I would change that to:
+
+production acceptance
+        │
+        ├── infrastructure preflight
+        ├── authenticated account validation
+        ├── existing application acceptance
+        └── media V21 acceptance
+              ├── photo
+              └── video
+
+But only execute the media section when the explicit V21 production-gate confirmation is supplied.
+
+How close are we?
+
+I'd characterize the current state as:
+
+Area	State
+Object-storage architecture	Implemented
+Real bucket I/O	PASS
+FFmpeg production installation	Implemented
+FFmpeg/FFprobe smoke test	PASS
+Fail-closed V21 startup	Implemented
+Media worker gating	Implemented
+Authenticated photo acceptance	Implemented, not executed
+Authenticated video acceptance	Implemented, not executed
+Authenticated retrieval authorization	Implemented, not executed
+Disposable-account safety	Implemented
+Production acceptance orchestration	Needs media test wired in
+V21 release certification	BLOCKED
+
+So the engineering implementation is very close. The remaining distance isn't primarily missing architecture anymore; it's production proof.
+
+What I would do next
+
+Do not enable MEDIA_PLATFORM_V21 yet.
+
+The correct sequence now is:
+
+1. Obtain/identify an approved disposable production account
+                 ↓
+2. Generate USER_A_STATE locally
+                 ↓
+3. Validate USER_A_STATE
+                 ↓
+4. Confirm deployed commit 903d3ebe...
+                 ↓
+5. Run authenticated production media test
+                 ↓
+6. Photo upload → processing → retrieval PASS
+                 ↓
+7. Video upload → FFmpeg → variant → retrieval PASS
+                 ↓
+8. Optional USER_B authorization test PASS
+                 ↓
+9. Record production acceptance
+                 ↓
+10. Only then enable MEDIA_PLATFORM_V21
+
+And importantly, the real bucket probe and toolchain smoke test are already behind us successfully. We do not need to repeat those merely because the authenticated E2E is still pending.
+
+Bottom line
+
+We are no longer at the “build the media platform” stage. We are at the “prove the production media platform” stage.
+
+The implementation now has the right safety gates, actual object-storage certification, an actual production toolchain certification, and a real authenticated photo/video E2E test.
+
+The release remains intentionally blocked until that last authenticated production test produces a real PASS. I would not bypass that gate or enable V21 with only the synthetic/infrastructure tests.
+
+Proceed with the last authenticated production test produces a real PASS.

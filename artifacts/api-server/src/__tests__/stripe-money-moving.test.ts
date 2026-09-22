@@ -1,0 +1,817 @@
+/**
+ * High-risk Stripe route regressions.
+ *
+ * These tests deliberately stay offline: Stripe and the database are mocked,
+ * while the Express middleware and route state guards are exercised end to
+ * end.
+ */
+import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
+import express from "express";
+import request from "supertest";
+
+const db: unknown = {
+  select: jest.fn().mockReturnThis(),
+  from: jest.fn().mockReturnThis(),
+  where: jest.fn().mockReturnThis(),
+  limit: jest.fn(),
+  update: jest.fn().mockReturnThis(),
+  set: jest.fn().mockReturnThis(),
+  returning: jest.fn(),
+  insert: jest.fn().mockReturnThis(),
+  execute: jest.fn(),
+  transaction: jest.fn(),
+};
+
+const stripeConstructEvent = jest.fn();
+const stripeChargeRetrieve = jest.fn();
+const stripePaymentIntentCreate = jest.fn();
+const stripePaymentIntentList = jest.fn();
+const stripePaymentIntentRetrieve = jest.fn();
+const stripePaymentIntentCancel = jest.fn();
+const stripeBalanceTransactionRetrieve = jest.fn();
+const stripeAccountsRetrieve = jest.fn();
+const stripeTransferCreate = jest.fn();
+const executeHelperPayout = jest.fn();
+const recordPoolContribution = jest.fn();
+const recordPoolContributionSettlement = jest.fn();
+const reversePoolContributionOnRefund = jest.fn();
+const wasRequestFronted = jest.fn();
+const drizzleEq = jest.fn();
+
+jest.unstable_mockModule("@workspace/db", () => ({
+  db,
+  stripeAccountsTable: { user_id: "user_id", stripe_account_id: "stripe_account_id" },
+  paymentTransactionsTable: {
+    stripe_payment_intent_id: "stripe_payment_intent_id",
+    stripe_transfer_id: "stripe_transfer_id",
+    request_id: "request_id",
+    state: "state",
+    id: "id",
+    amount_refunded: "amount_refunded",
+  },
+  requestsTable: {
+    id: "id",
+    title: "title",
+    status: "status",
+    helper_id: "helper_id",
+    payment_type: "payment_type",
+    pay_it_forward_amount: "pay_it_forward_amount",
+    pledge_paid: "pledge_paid",
+  },
+  usersTable: { id: "id", community_id: "community_id", benevolence_wallet: "benevolence_wallet" },
+  transactionsTable: {},
+  communityPoolLedgerTable: {},
+  communityPoolFinancialEventsTable: {},
+  poolPendingMinimumsTable: {},
+  walletCashoutsTable: { id: "id", state: "state" },
+  systemSettingsTable: { key: "key", value: "value" },
+  diasporaHubsTable: { id: "id" },
+  diasporaHubPledgesTable: { id: "id" },
+}));
+
+jest.unstable_mockModule("drizzle-orm", () => ({
+  and: jest.fn(),
+  desc: jest.fn(),
+  eq: drizzleEq,
+  inArray: jest.fn(),
+  sql: jest.fn(),
+}));
+
+jest.unstable_mockModule("stripe", () => ({
+  default: class StripeMock {
+    webhooks = { constructEvent: stripeConstructEvent };
+    charges = { retrieve: stripeChargeRetrieve };
+    paymentIntents = {
+      create: stripePaymentIntentCreate,
+      list: stripePaymentIntentList,
+      retrieve: stripePaymentIntentRetrieve,
+      cancel: stripePaymentIntentCancel,
+    };
+    transfers = { create: stripeTransferCreate };
+    balanceTransactions = { retrieve: stripeBalanceTransactionRetrieve };
+    accounts = { retrieve: stripeAccountsRetrieve };
+  },
+}));
+
+jest.unstable_mockModule("../middlewares/auth", () => ({
+  requireAuth: (req: unknown, _res: unknown, next: unknown) => {
+    req.authenticatedUserId = 42;
+    req.authenticatedTokenVersion = 0;
+    next();
+  },
+  requireApproved: jest.fn((req: unknown, _res: unknown, next: unknown) => next()),
+}));
+
+jest.unstable_mockModule("../middlewares/authz", () => ({
+  requireOwnership: (_field: string) => (_req: unknown, _res: unknown, next: unknown) => next(),
+  requireAdmin: () => (_req: unknown, _res: unknown, next: unknown) => next(),
+}));
+
+jest.unstable_mockModule("../middlewares/rate-limit", () => ({
+  paymentLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  generalApiLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+  adminLimiter: (_req: unknown, _res: unknown, next: unknown) => next(),
+}));
+
+jest.unstable_mockModule("../lib/ws-hub", () => ({
+  broadcast: jest.fn(),
+}));
+
+jest.unstable_mockModule("../routes/push", () => ({
+  sendPushToUser: jest.fn(),
+}));
+
+jest.unstable_mockModule("../lib/community-pool", () => ({
+  wasRequestFronted,
+  recordPoolContribution,
+  recordPoolContributionSettlement,
+  getPoolBalance: jest.fn(),
+  getGuaranteedMinimum: jest.fn(),
+  getHourlyMinimumRate: jest.fn(),
+  getPoolReservePolicy: jest.fn().mockResolvedValue({
+    helpersCovered: 10,
+    guaranteedHours: 4,
+    safetyMultiplier: 1.25,
+  }),
+  roundMoney: jest.fn((amount: number) => Math.round(amount * 100) / 100),
+  isPoolEnabled: jest.fn(),
+  processPendingMinimums: jest.fn(),
+  syncHubReservedBalance: jest.fn(),
+}));
+
+jest.unstable_mockModule("../lib/pool-contribution-refund", () => ({
+  reversePoolContributionOnRefund,
+}));
+
+jest.unstable_mockModule("../lib/logger", () => ({
+  logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
+}));
+
+jest.unstable_mockModule("../lib/payout-service", () => ({
+  executeHelperPayout,
+}));
+
+let app: express.Express;
+let requireApproved: jest.Mock;
+let canRecordPoolContributionWithoutStripe: (nodeEnv?: string) => boolean;
+
+beforeAll(async () => {
+  process.env.STRIPE_SECRET_KEY = "offline-test-key";
+  process.env.STRIPE_WEBHOOK_SECRET = "offline-webhook-secret";
+  const auth = await import("../middlewares/auth");
+  requireApproved = auth.requireApproved as unknown as jest.Mock;
+  const { default: stripeRouter } = await import("../routes/stripe");
+  const { default: walletRouter } = await import("../routes/wallet");
+  const pool = await import("../routes/pool");
+  const { default: poolStripeReconciliationRouter } = await import("../routes/pool-stripe-reconciliation");
+  canRecordPoolContributionWithoutStripe = pool.canRecordPoolContributionWithoutStripe;
+  app = express();
+  app.use(express.json());
+  app.use("/api", stripeRouter);
+  app.use("/api", walletRouter);
+  app.use("/api", pool.default);
+  app.use("/api", poolStripeReconciliationRouter);
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  db.limit.mockReset();
+  db.returning.mockReset();
+  db.insert.mockReset();
+  db.values = jest.fn();
+  db.onConflictDoNothing = jest.fn();
+  db.update.mockReturnThis();
+  db.set.mockReturnThis();
+  db.where.mockReturnThis();
+  db.select.mockReturnThis();
+  db.from.mockReturnThis();
+  db.execute.mockResolvedValue({ rows: [] });
+  db.transaction.mockImplementation(async (callback: (tx: typeof db) => unknown) => callback(db));
+  db.limit.mockResolvedValue([]);
+  db.returning.mockResolvedValue([]);
+  db.insert.mockReturnThis();
+  db.values.mockReturnThis();
+  db.onConflictDoNothing.mockReturnThis();
+  wasRequestFronted.mockResolvedValue(false);
+  reversePoolContributionOnRefund.mockResolvedValue({
+    reversed: false,
+    alreadyReversed: false,
+    netReversedDollars: 0,
+  });
+  stripePaymentIntentCreate.mockResolvedValue({
+    id: "pi_pool_test",
+    client_secret: "pi_pool_test_secret",
+  });
+  stripePaymentIntentList.mockResolvedValue({ data: [], has_more: false });
+  stripePaymentIntentRetrieve.mockResolvedValue({
+    id: "pi_pool_test",
+    amount: 500,
+    amount_received: 500,
+    currency: "usd",
+    livemode: true,
+    status: "succeeded",
+    latest_charge: "ch_pool_test",
+    metadata: { pool_contribution: "true", user_id: "42", community_id: "7" },
+  });
+  stripeChargeRetrieve.mockResolvedValue({
+    id: "ch_pool_test",
+    balance_transaction: "txn_pool_test",
+  });
+  stripeBalanceTransactionRetrieve.mockImplementation(async (id: string) => id === "txn_climate"
+    ? {
+        id,
+        currency: "usd",
+        fee: 0,
+        net: -5,
+        status: "available",
+        available_on: 1_756_000_000,
+      }
+    : {
+        id,
+        amount: 500,
+        currency: "usd",
+        fee: 45,
+        net: 455,
+        status: "available",
+        available_on: 1_756_000_000,
+      });
+  stripeAccountsRetrieve.mockResolvedValue({ id: "acct_test" });
+  executeHelperPayout.mockResolvedValue({
+    id: "tr_once",
+    amount: 950,
+    destination: "acct_helper",
+  });
+});
+
+describe("POST /api/stripe/payment-intent", () => {
+  it("runs the approval gate before creating a charge", async () => {
+    requireApproved.mockImplementationOnce((_req: unknown, res: unknown) =>
+      res.status(403).json({ error: "Account suspended — contact support" }),
+    );
+    const response = await request(app)
+      .post("/api/stripe/payment-intent")
+      .send({ requestId: 1, amount: 10 });
+
+    expect(response.status).toBe(403);
+    expect(requireApproved).toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed payment inputs before reading the request or calling Stripe", async () => {
+    const response = await request(app)
+      .post("/api/stripe/payment-intent")
+      .send({ requestId: "1", amount: 10, paymentType: "unknown" });
+
+    expect(response.status).toBe(400);
+    expect(db.select).not.toHaveBeenCalled();
+    expect(stripePaymentIntentCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps immediate payments on the platform for one completion payout", async () => {
+    db.limit.mockResolvedValueOnce([{
+      id: 1,
+      helper_id: 7,
+      requester_id: 42,
+      payment_type: "immediate",
+      pay_it_forward_amount: 10,
+      status: "open",
+    }]);
+    db.returning.mockResolvedValueOnce([{ id: 99 }]);
+
+    const response = await request(app)
+      .post("/api/stripe/payment-intent")
+      .send({ requestId: 1, helperId: 7, amount: 10, paymentType: "immediate" });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ transfer_data: expect.anything() }),
+      expect.anything(),
+    );
+  });
+
+  it("allows a partial Pay It Forward repayment and gives the attempt a stable Stripe key", async () => {
+    db.limit.mockResolvedValueOnce([{
+      id: 1,
+      helper_id: 7,
+      requester_id: 42,
+      payment_type: "pay_it_forward",
+      pay_it_forward_amount: 10,
+      pledge_paid: 2,
+      status: "completed",
+    }]);
+    db.returning.mockResolvedValueOnce([{ id: 100 }]);
+    const operationId = "11111111-1111-4111-8111-111111111111";
+
+    const response = await request(app)
+      .post("/api/stripe/payment-intent")
+      .send({
+        requestId: 1,
+        amount: 5,
+        paymentType: "pay_it_forward",
+        operationId,
+      });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 500,
+        metadata: expect.objectContaining({
+          paymentType: "pay_it_forward",
+          helperId: "7",
+        }),
+      }),
+      expect.objectContaining({
+        idempotencyKey: "payment-intent-pif-1-42-200",
+      }),
+    );
+  });
+
+  it("rejects a Pay It Forward payment directed at anyone except the assigned helper", async () => {
+    db.limit.mockResolvedValueOnce([{
+      id: 1,
+      helper_id: 7,
+      payment_type: "pay_it_forward",
+      pay_it_forward_amount: 10,
+      pledge_paid: 0,
+      status: "completed",
+    }]);
+
+    const response = await request(app)
+      .post("/api/stripe/payment-intent")
+      .send({ requestId: 1, helperId: 8, amount: 5, paymentType: "pay_it_forward" });
+
+    expect(response.status).toBe(400);
+    expect(stripePaymentIntentCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/stripe/payout", () => {
+  it("delegates every payout attempt to the durable payout protocol", async () => {
+    const requestRow = {
+      id: 1,
+      helper_id: 7,
+      requester_id: 42,
+      payment_type: "immediate",
+      pay_it_forward_amount: 10,
+      status: "completed",
+      title: "Carry groceries",
+    };
+    const accountRow = {
+      stripe_account_id: "acct_helper",
+      payouts_enabled: true,
+    };
+    db.limit
+      .mockResolvedValueOnce([requestRow])
+      .mockResolvedValueOnce([accountRow])
+      .mockResolvedValueOnce([requestRow])
+      .mockResolvedValueOnce([accountRow]);
+
+    const first = await request(app)
+      .post("/api/stripe/payout")
+      .send({ helperId: 7, requestId: 1, amount: 9.5 });
+    const second = await request(app)
+      .post("/api/stripe/payout")
+      .send({ helperId: 7, requestId: 1, amount: 9.5 });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(executeHelperPayout).toHaveBeenCalledTimes(2);
+    expect(executeHelperPayout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request_id: 1,
+        helper_id: 7,
+        amount_cents: 1000,
+        platform_fee_cents: 50,
+        stripe_account_id: "acct_helper",
+      }),
+      1,
+      expect.anything(),
+    );
+  });
+});
+
+describe("POST /api/pool/contribute", () => {
+  it("uses a distinct Stripe idempotency key for each unkeyed payment attempt", async () => {
+    db.limit.mockResolvedValue([{ community_id: 7 }]);
+    const first = await request(app)
+      .post("/api/pool/contribute")
+      .send({ amount: 25 });
+    const second = await request(app)
+      .post("/api/pool/contribute")
+      .send({ amount: 25 });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledTimes(2);
+
+    const firstOptions = stripePaymentIntentCreate.mock.calls[0][1] as { idempotencyKey: string };
+    const secondOptions = stripePaymentIntentCreate.mock.calls[1][1] as { idempotencyKey: string };
+    expect(firstOptions.idempotencyKey).toEqual(expect.any(String));
+    expect(secondOptions.idempotencyKey).toEqual(expect.any(String));
+    expect(firstOptions.idempotencyKey).not.toBe(secondOptions.idempotencyKey);
+  });
+
+  it("attaches the contributor's community to the Stripe PaymentIntent", async () => {
+    db.limit.mockResolvedValueOnce([{ community_id: 7 }]);
+
+    const response = await request(app)
+      .post("/api/pool/contribute")
+      .send({ amount: 25 });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          pool_contribution: "true",
+          user_id: "42",
+          community_id: "7",
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("preserves the caller's idempotency key for safe retries", async () => {
+    db.limit.mockResolvedValueOnce([{ community_id: 7 }]);
+    const response = await request(app)
+      .post("/api/pool/contribute")
+      .set("Idempotency-Key", "pool-attempt-123")
+      .send({ amount: 25 });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ amount: 2500 }),
+      { idempotencyKey: "pool-attempt-123" },
+    );
+  });
+
+  it("fails closed when the contributor has no assigned community", async () => {
+    db.limit.mockResolvedValueOnce([{ community_id: null }]);
+
+    const response = await request(app)
+      .post("/api/pool/contribute")
+      .send({ amount: 25 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/explicit community/i);
+    expect(stripePaymentIntentCreate).not.toHaveBeenCalled();
+  });
+
+  it("marks anonymous donations for the Niakofa General Fund", async () => {
+    const response = await request(app)
+      .post("/api/pool/donate")
+      .send({ amount: 25 });
+
+    expect(response.status).toBe(200);
+    expect(stripePaymentIntentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          pool_contribution: "true",
+          anonymous_donation: "true",
+          pool_destination: "general",
+          destination_label: "Niakofa General Fund",
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("allows direct recording only outside production", () => {
+    expect(canRecordPoolContributionWithoutStripe("development")).toBe(true);
+    expect(canRecordPoolContributionWithoutStripe("test")).toBe(true);
+    expect(canRecordPoolContributionWithoutStripe("production")).toBe(false);
+  });
+});
+
+describe("GET /api/pool/stripe/reconciliation", () => {
+  it("bounds paginated Stripe scans and reports when the result is truncated", async () => {
+    stripePaymentIntentList.mockImplementation(async (params: { starting_after?: string }) => ({
+      data: [{ id: `pi_page_${params.starting_after ?? "first"}`, status: "requires_payment_method", metadata: {} }],
+      has_more: true,
+    }));
+    stripeAccountsRetrieve.mockResolvedValue({ id: "acct_test" });
+
+    const response = await request(app)
+      .get("/api/pool/stripe/reconciliation?days=90");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      pages_scanned: 5,
+      truncated: true,
+      stripe_account_id: "acct_test",
+      missing_ledger_count: 0,
+    });
+    expect(stripePaymentIntentList).toHaveBeenCalledTimes(5);
+    expect(stripePaymentIntentList.mock.calls[1][0]).toEqual(expect.objectContaining({
+      starting_after: "pi_page_first",
+    }));
+  });
+});
+
+describe("POST /api/stripe/webhook", () => {
+  it("does not acknowledge a success webhook that arrives before its transaction row", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_success_before_insert",
+      livemode: true,
+      type: "payment_intent.succeeded",
+      data: { object: { id: "pi_before_insert", amount: 1000, metadata: { requestId: "12" } } },
+    });
+    db.limit.mockResolvedValueOnce([]);
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_success_before_insert", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(500);
+    expect(response.body.received).toBe(false);
+    // Receipt, failed-status, and the later Stripe retry make this race
+    // recoverable rather than acknowledging and losing the settlement.
+    expect(db.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("records authoritative gross, Stripe fee, Climate deduction, and net pool funds", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_pool_settlement",
+      livemode: true,
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_pool_settlement",
+          amount: 500,
+          metadata: {
+            pool_contribution: "true",
+            user_id: "42",
+            community_id: "7",
+            climate_contribution_cents: "5",
+            stripe_climate_transaction_id: "txn_climate",
+          },
+        },
+      },
+    });
+    stripePaymentIntentRetrieve.mockResolvedValue({
+      id: "pi_pool_settlement",
+      amount: 500,
+      amount_received: 500,
+      currency: "usd",
+      livemode: true,
+      status: "succeeded",
+      latest_charge: "ch_pool_settlement",
+      metadata: {
+        pool_contribution: "true",
+        user_id: "42",
+        climate_contribution_cents: "5",
+        stripe_climate_transaction_id: "txn_climate",
+      },
+    });
+    stripeChargeRetrieve.mockResolvedValue({
+      id: "ch_pool_settlement",
+      balance_transaction: "txn_pool_settlement",
+    });
+    stripeBalanceTransactionRetrieve.mockImplementation(async (id: string) => id === "txn_climate"
+      ? {
+          id,
+          currency: "usd",
+          fee: 0,
+          net: -5,
+          status: "available",
+          available_on: 1_756_000_000,
+        }
+      : {
+          id,
+          amount: 500,
+          currency: "usd",
+          fee: 45,
+          net: 455,
+          status: "available",
+          available_on: 1_756_000_000,
+        });
+    recordPoolContributionSettlement.mockResolvedValueOnce({
+      recorded: true,
+      alreadyRecorded: false,
+      ledgerId: 1,
+    });
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_pool_settlement", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(200);
+    expect(recordPoolContributionSettlement).toHaveBeenCalledWith(expect.objectContaining({
+      settlement: expect.objectContaining({
+        grossAmountCents: 500,
+        stripeFeeCents: 45,
+        climateContributionCents: 5,
+        netAmountCents: 450,
+        stripeBalanceTransactionId: "txn_pool_settlement",
+        stripeClimateTransactionId: "txn_climate",
+        settlementStatus: "available",
+      }),
+    }));
+  });
+
+  it("returns 500 when financial processing fails so Stripe retries", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_processing_failure",
+      livemode: true,
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_pool_failure",
+          amount: 500,
+          metadata: { pool_contribution: "true", user_id: "42", community_id: "7" },
+        },
+      },
+    });
+    recordPoolContributionSettlement.mockRejectedValueOnce(new Error("ledger unavailable"));
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_processing_failure", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({
+      received: false,
+      error: "Webhook processing failed; Stripe should retry.",
+    });
+    expect(db.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("reverses a pool contribution refund even without a payment transaction row", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_pool_refund",
+      livemode: true,
+      type: "charge.refunded",
+      data: {
+        object: {
+          id: "ch_pool_refund",
+          payment_intent: "pi_pool_refund",
+          amount: 1000,
+          amount_refunded: 500,
+        },
+      },
+    });
+    reversePoolContributionOnRefund.mockResolvedValueOnce({
+      reversed: true,
+      alreadyReversed: false,
+      netReversedDollars: 4.55,
+    });
+    db.returning.mockResolvedValueOnce([]);
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_pool_refund", type: "charge.refunded" }));
+
+    expect(response.status).toBe(200);
+    expect(reversePoolContributionOnRefund).toHaveBeenCalledWith({
+      stripePaymentIntentId: "pi_pool_refund",
+      amountRefundedCents: 500,
+      chargeAmountCents: 1000,
+      refundIdempotencyKey: "refund:ch_pool_refund:500",
+    });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("reverses a helper wallet credit by the new partial-refund delta", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_wallet_refund",
+      livemode: true,
+      type: "charge.refunded",
+      data: {
+        object: {
+          id: "ch_wallet_refund",
+          payment_intent: "pi_wallet_refund",
+          amount: 1000,
+          amount_refunded: 500,
+        },
+      },
+    });
+    const existing = {
+      id: 9,
+      request_id: 3,
+      requester_id: 42,
+      helper_id: 7,
+      payment_type: "tip",
+      amount: 10,
+      amount_refunded: 0,
+    };
+    db.limit.mockResolvedValueOnce([existing]).mockResolvedValueOnce([]);
+    db.returning.mockResolvedValueOnce([{ ...existing, amount_refunded: 5, state: "disputed" }]);
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_wallet_refund", type: "charge.refunded" }));
+
+    expect(response.status).toBe(200);
+    expect(db.set).toHaveBeenCalledWith(expect.objectContaining({
+      amount_refunded: 5,
+      state: "disputed",
+    }));
+    expect(db.insert).toHaveBeenCalledTimes(1);
+    expect(db.values).toHaveBeenCalledWith(expect.objectContaining({
+      type: "tip_refunded",
+      amount: -5,
+      idempotency_key: "stripe-refund:pi_wallet_refund:500",
+    }));
+  });
+
+  it("keeps invalid signatures as 400 and does not record an unverified event", async () => {
+    stripeConstructEvent.mockImplementationOnce(() => {
+      throw new Error("signature mismatch");
+    });
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "invalid-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_invalid_signature", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(400);
+    expect(response.text).toContain("signature mismatch");
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("skips all money side effects when payment intent was already completed", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_1",
+      livemode: true,
+      type: "payment_intent.succeeded",
+      data: { object: { id: "pi_already_done", amount: 1000, metadata: {} } },
+    });
+    db.limit.mockResolvedValueOnce([{
+      id: 9,
+      state: "completed",
+      request_id: 1,
+      payment_type: "pay_it_forward",
+    }]);
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_1", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ received: true });
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.update).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("links an early transfer.created event through its source charge", async () => {
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_transfer",
+      livemode: true,
+      type: "transfer.created",
+      data: {
+        object: {
+          id: "tr_early",
+          destination: "acct_helper",
+          source_transaction: "ch_source",
+          metadata: {},
+        },
+      },
+    });
+    stripeChargeRetrieve.mockResolvedValue({ payment_intent: "pi_source" });
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_transfer", type: "transfer.created" }));
+
+    expect(response.status).toBe(200);
+    expect(stripeChargeRetrieve).toHaveBeenCalledWith("ch_source");
+    expect(drizzleEq).toHaveBeenCalledWith("stripe_payment_intent_id", "pi_source");
+    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(db.where).toHaveBeenCalled();
+    expect(db.set).toHaveBeenCalledWith(expect.not.objectContaining({ state: "completed" }));
+  });
+});
+
+describe("POST /api/wallet/cashout", () => {
+  it("surfaces refund debt and blocks another cashout", async () => {
+    db.execute.mockResolvedValueOnce([{ id: 42, benevolence_wallet: -3.25, is_helper: true }]);
+
+    const response = await request(app)
+      .post("/api/wallet/cashout")
+      .send({ amount: 1 });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      code: "wallet_refund_debt",
+      balance: -3.25,
+      debt: 3.25,
+    });
+    expect(stripeTransferCreate).not.toHaveBeenCalled();
+  });
+});

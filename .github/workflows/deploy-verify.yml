@@ -1,0 +1,101 @@
+name: Deploy Verification
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-deployment:
+    name: Verify Production Deployment
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_URL: https://zesty-ambition-production-f6a1.up.railway.app
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Wait for deployment
+        run: sleep 45
+
+      - name: Check required API health endpoints
+        run: |
+          set -euo pipefail
+          for path in /api/healthz /api/status; do
+            echo "Checking ${path}..."
+            for attempt in $(seq 1 6); do
+              if curl --fail --silent --show-error --max-time 15 "${PRODUCTION_URL}${path}" | tee "/tmp/health-${attempt}.json"; then
+                echo
+                break
+              fi
+              if [ "$attempt" -eq 6 ]; then
+                echo "Health check failed for ${path}"
+                exit 1
+              fi
+              echo "Retrying ${path}..."
+              sleep 10
+            done
+          done
+
+      - name: Confirm Railway serves this commit
+        run: |
+          set -euo pipefail
+          expected_commit="${GITHUB_SHA}"
+          # Railway can take several minutes to build, roll out, and switch
+          # the public service even after the health endpoint remains available
+          # on the previous revision. Keep the check bounded, but allow a
+          # normal production rollout to converge before declaring it stale.
+          for attempt in $(seq 1 30); do
+            actual_commit="$(
+              curl --fail --silent --show-error --max-time 15 \
+                "${PRODUCTION_URL}/api/healthz" \
+                | jq -r '.commit // empty'
+            )"
+            echo "Attempt ${attempt}: expected ${expected_commit}, served ${actual_commit:-unknown}"
+            if [ "${actual_commit}" = "${expected_commit}" ]; then
+              echo "Railway is serving the commit that triggered this workflow."
+              exit 0
+            fi
+            if [ "${attempt}" -lt 30 ]; then
+              sleep 10
+            fi
+          done
+          echo "Railway did not converge to ${expected_commit} within the verification window."
+          exit 1
+
+      - name: Inspect bounded Nia compatibility health
+        run: |
+          set -euo pipefail
+          # /api/health reports optional Nia availability and may return 503
+          # when Nia is intentionally disabled or its child process is down.
+          # Validate that it responds with the documented bounded JSON contract
+          # without making optional AI availability a deployment gate.
+          curl --silent --show-error --max-time 10 "${PRODUCTION_URL}/api/health" \
+            | jq -e '(.status == "ok" or .status == "degraded") and .service == "api-server" and (.nia_service.status == "ok" or .nia_service.status == "unavailable")'
+
+      - name: Verify dependency readiness contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 10 "${PRODUCTION_URL}/api/readiness" \
+            | jq -e '(.status == "ready" or .status == "degraded") and .ready == true and .required.database == true and (.dependencies | has("nia") and has("redis") and has("stripe") and has("mapbox"))'
+
+      - name: Verify public Niakofa platform asset graph
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 6); do
+            if PRODUCTION_URL="${PRODUCTION_URL}" node scripts/src/verify-platform-deployment.mjs; then
+              echo "Niakofa platform verification passed."
+              exit 0
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "Niakofa platform asset graph verification failed after $attempt attempts."
+              exit 1
+            fi
+            echo "Niakofa platform verification attempt $attempt failed — waiting for rollout convergence..."
+            sleep 10
+          done

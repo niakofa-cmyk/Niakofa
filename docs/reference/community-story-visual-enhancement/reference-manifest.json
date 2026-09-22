@@ -1,0 +1,23 @@
+{
+  "package": "Niakofa Community Story Visual Enhancement",
+  "date": "2026-09-21",
+  "basis": "Current niakofa-cmyk/Niakofa main branch plus five user-supplied Meta Story screenshots",
+  "architecture": "Community \u2192 Story \u2192 media/elements \u2192 durable interactions \u2192 Messages",
+  "backend_changes": false,
+  "database_changes": false,
+  "media_platform_v21_change": false,
+  "reference_images": [
+    "references/meta-story-reference-01.jpg",
+    "references/meta-story-reference-02.jpg",
+    "references/meta-story-reference-03.jpg",
+    "references/meta-story-reference-04.jpg",
+    "references/meta-story-reference-05.jpg"
+  ],
+  "components": [
+    "StoryVisualRail",
+    "StoryViewerChrome",
+    "StoryComposerChrome",
+    "StoryGalleryChrome",
+    "StoryMusicChrome"
+  ]
+}

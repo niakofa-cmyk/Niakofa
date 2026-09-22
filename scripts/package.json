@@ -1,0 +1,36 @@
+{
+  "name": "@workspace/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "hello": "tsx ./src/hello.ts",
+    "seed": "tsx ./src/seed-fort-worth.ts",
+    "seed-if-empty": "tsx ./src/seed-if-empty.ts",
+    "seed-civic-coverage": "tsx ./src/run-civic-coverage.ts",
+    "test:census": "node --import tsx --test ./src/census-coverage.test.ts",
+    "test:civic-seed": "node --import tsx --test ./src/civic-seed-sequence.test.ts",
+    "verify:census": "tsx ./src/verify-census.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "seed-crisis": "tsx ./src/seed-regional-crisis.ts",
+    "seed-businesses": "tsx ./src/seed-businesses.ts",
+    "seed-test-accounts": "tsx ./src/seed-test-accounts.ts",
+    "test:seed-guard": "node --test ./src/seed-test-accounts.test.mjs",
+    "ingest:neighborhood-boundaries": "tsx ./src/ingest-neighborhood-boundaries.ts",
+    "ingest:neighborhoods:all": "tsx ./src/ingest-authoritative-neighborhoods.ts",
+    "verify:neighborhood-boundaries": "tsx ./src/verify-neighborhood-boundaries.ts",
+    "test:neighborhood-ingestion": "node --import tsx --test ./src/neighborhood-ingestion.test.ts"
+  },
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "bcryptjs": "^3.0.3",
+    "drizzle-orm": "catalog:",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
+    "@types/node": "catalog:",
+    "@types/pg": "^8.20.0",
+    "tsx": "catalog:"
+  }
+}

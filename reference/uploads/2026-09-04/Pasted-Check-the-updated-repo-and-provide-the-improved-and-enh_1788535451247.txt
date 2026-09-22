@@ -1,0 +1,55 @@
+Check the updated repo and provide the improved and enhanced code for me to download.
+
+
+Ran a command
+Good — that checks out exactly. Let me verify the rest of the document's claims (CI status, evidence types, DNA boundary, deployment) against the live repo before doing anything else.
+Ran 2 commands
+That matches the document's file listing exactly — good. Now let's rebase my prior fix onto the current main and finish the wiring, since that's the concrete ask I can actually deliver.
+Ran 12 commands
+These check out too — the file exists and the commit message matches what the document claims. Now let me be straight with you about where things actually stand.
+What I verified against the live repo (not the pasted document)
+* main is really at b8a2316..., and its commit message really is "lock curated Heritage metric to catalog" — matches.
+* e2e/diaspora-final-wiring-live.spec.ts and the Heritage-catalog files really exist.
+* Bonus finding: your GPS/community-pool fix from last turn is already merged — commit 9a1064a ("GPS, Pool") landed my isUnresolvedCommunityAssignment / resolveCommunityFromFreshLocation functions plus the registration, Google-auth, and location-ping wiring I said was still outstanding, and even added lat/lng to the OpenAPI spec. I reset a clean checkout to that exact commit and re-ran the full community-pool suite against it: 6 suites, 33 tests, all green.
+What I can't verify, and won't fake
+Same limitation the document itself is honest about, and I have it too: no browser tool, no USER_A_STATE, no login to your Railway deployment. I can't run the authenticated Chromium journey, the disposable Family Space mutation suite, or the DNA opt-in/revoke flow. Anything claiming those passed would be fabricated — so I'm not going to produce a "PASS" for them.
+About "provide the improved and enhanced code"
+Here's the snag: the GPS/community-pool code is already merged and verified — there's nothing pending to hand you there. The Diaspora acceptance zip is mostly runbooks and a results template for a human/CI operator to execute against your live deployment, not code I'd rewrite. I did spot one real, scoped reliability gap while re-reading the merged code: resolveCommunityIdForCoords can't tell "Mapbox timed out" apart from "no community matches here" — both collapse to null. On the PATCH /location path that means a transient Mapbox outage can silently knock an already-correctly-assigned user back to the unscoped bucket.
+What should I actually build/download for you right now?
+Fix the transient-failure vs no-match ambiguity I found in the GPS resolver
+
+Ran a command
+
+
+
+
+Ran 12 commands, viewed 9 files
+Now let's implement the fix. First, civic.ts — surface the geocoder outcome instead of collapsing it to a bare null:
+Edited 6 files
+
+
+
+
+Ran 10 commands
+Now I have the full picture — including the exact test that currently codifies the ambiguity (reverseGeocode timeout → same "community_unresolved" outcome as a real no-match). Let me implement the fix.
+Edited 9 files, ran 5 commands
+
+Fixing error handling in a geocoding function.
+
+
+
+
+
+
+Investigating caching behavior around a fallback error case.
+
+Now the community-pool.ts changes:
+
+
+
+
+
+
+
+
+Auditing other reverseGeocode callers for missed edge cases.

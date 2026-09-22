@@ -1,0 +1,62 @@
+Spirals GPS host-fencing — root cause, fix, and Host Signal
+
+Verified against the live public repo niakofa-cmyk/Niakofa, freshly cloned this session at HEAD 50f725458887aa9707e06fcb049f4d9688bbfd94 ("Merge pull request #34 from niakofa-cmyk/fix/spirals-gps-wiring-2026-09-05"). Note: partway through this session the repo briefly returned 404 from both github.com and codeload.github.com — I flagged that honestly rather than guess, then it came back and I re-verified everything below against the real source.
+
+How to apply
+git apply spirals-gps-host-signal-fix.patch
+
+or copy the files under changed-files/ over the same paths in your checkout. Then:
+
+cd artifacts/api-server && pnpm run typecheck && pnpm test
+
+Typechecks clean (0 errors) and the full suite passes: 44 suites, 375 tests, 0 failures (5 pre-existing skips unrelated to this change).
+
+The frontend (artifacts/pay-it-forward) has 102 pre-existing typecheck errors unrelated to this change (mostly a stale lib/api-client-react build-output reference and unrelated implicit-any params) — confirmed via git stash/git stash pop that the count is identical before and after this patch. Neither audio-circles.tsx nor the new SpiralHostSignal.tsx appears in that error list.
+
+Root cause of "You can only start a spiral from inside Fort Worth"
+
+verifyCircleStartLocation() in circleLocationPolicy.ts compared the Mapbox-resolved city against the Spiral's city with strict string equality: resolved.cityKey !== expectedKey. Zero tolerance.
+
+Fort Worth has several genuine enclave/exclave municipalities — Westworth Village, River Oaks, Westover Hills — that are legally separate incorporated cities but are completely surrounded by Fort Worth. A GPS fix at an address physically inside Fort Worth can reverse-geocode to one of these enclave names rather than "Fort Worth" itself, and the old exact-match check denied it outright, indistinguishable from someone genuinely in a different city.
+
+On top of that, the denial response carried no information about what city GPS actually resolved to — { ok: false, reason, code } and nothing else — so there was no way for the UI to ever show "your GPS shows X, this Spiral needs Y."
+
+What was fixed
+
+circleLocationPolicy.ts:
+
+Added citiesMatchForHost() — exact match still passes first; falls back to a narrow, explicitly-documented enclave alias table (currently just Fort Worth's three enclaves). This does not weaken city-level host fencing between genuinely different cities — Dallas GPS still cannot host a Fort Worth Spiral, verified by a dedicated test.
+Both the allow and deny results now carry spiralCityKey/ spiralCityDisplay and, once a fix is resolved, resolvedCityKey/ resolvedCityDisplay/neighborhoodHint — so the UI can always render "GPS shows X, Spiral needs Y."
+Added displayCityName() so denial copy says "Fort Worth", not "fort worth".
+reverseGeocodeCircleStart() now also extracts a best-effort neighborhood hint from Mapbox's own neighborhood context feature.
+
+circle-location.ts (POST /audio-circles/:id/location-check): now returns resolved_city_key/resolved_city_display/neighborhood_hint and a ready-to-render host_signal string on both allow and deny.
+
+audio-circles.ts (POST /audio-circles/:id/start): the 403 response now also includes spiral_city_display/resolved_city_display, so even the actual submit-time denial (not just the preview check) can show the same "GPS shows X" context if the frontend chooses to surface it later.
+
+On your neighborhood-GPS question
+
+I checked the schema directly: city_neighborhoods (the table backing Downtown, East Fort Worth, etc.) has no lat/lng or geofence columns at all — it's a table of named content rows (name, emoji, description) scoped to a city_key, not real geographic boundaries. So a genuinely verified per-neighborhood host gate isn't something that exists to turn on — building one would mean authoring real boundary polygons per neighborhood, which nobody has done yet. I'm not going to claim to have built neighborhood-level geofencing that isn't backed by real data.
+
+What I built instead, honestly scoped: a best-effort neighborhood hint surfaced from Mapbox's own reverse-geocode response, clearly presented as a hint ("near Downtown") rather than a verified gate. The actual host boundary — the thing that's enforced and tested — stays at the city level, which is the only geography Niakofa has real, verified data for today.
+
+New: Verified GPS Host Signal (SpiralHostSignal.tsx)
+
+The real UX bug I found that the uploaded package didn't mention: the "Host a Spiral" modal closes and submits before any location check runs — startRoom() calls setHostModal(null) immediately, then does the GPS capture and POST. So a user could fill out the whole form (title, topic, speaker limit, recording toggle) and only find out they're denied after submitting, via a generic toast.
+
+SpiralHostSignal.tsx is a small on-demand widget wired into both:
+
+The discovery page, right below the city search box — one check applies to the whole browsed city, since eligibility isn't per-Spiral.
+The Host modal itself, so it's visible before filling out the form.
+
+It deliberately does not auto-run on page load — requesting a fresh, high-accuracy GPS fix (enableHighAccuracy, maximumAge: 0) automatically would either force a permission prompt before the user asked for one, or silently do nothing for anyone who hasn't granted location yet. It shows a "Check if I can host in {city}" button; tapping it reuses the same server-authoritative /location-check route (never decides eligibility client-side) and renders the server's host_signal copy:
+
+✅ "Verified: you can host in Fort Worth (near Near Southside)."
+🔒 "Hosting unlocked in Fort Worth only. GPS shows Kansas City. You can still join."
+Small note, not touched
+
+While reading audio-circles.tsx I noticed the frontend's SPEAKER_LIMIT_OPTIONS is [4, 8, 12, 18, 24] — missing the 13 that appears server-side as the default max_speakers value. That's a pre-existing UI/backend default mismatch I flagged in an earlier session too; still not something this patch touches, since it wasn't part of what was asked here.
+
+What I still can't do
+
+Same as before: no Railway or GitHub write access in this session, so I can't confirm MAPBOX_TOKEN is actually set on the production service, or redeploy this. You'll need to verify the env var and merge/deploy this yourself (or through whichever tooling has that access).

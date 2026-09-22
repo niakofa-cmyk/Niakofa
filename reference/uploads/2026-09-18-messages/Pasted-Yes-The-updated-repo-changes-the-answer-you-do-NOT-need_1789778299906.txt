@@ -1,0 +1,336 @@
+Yes. The updated repo changes the answer: you do NOT need to merge my previous PR #78. The current main already contains the equivalent Helper → Requester routing fix.
+
+I checked the newest GitHub state and Railway deployment again.
+
+What changed since my previous review
+
+The latest GitHub history is now:
+
+3f589583 — test invocation documentation
+1c4c105a — Fix requester tracking and helper navigation flows
+1c75215d — attachment boundary documentation
+be585a06 — private Direct Message attachments
+
+The important one is 1c4c105a. It already added:
+
+role-aware Request Center routing
+requester → /request/:id/track
+helper → /request/:id
+observer/open request → /request/:id/view
+centralized getRequestNavigationPath()
+ETA parsing
+request-navigation tests
+safer coordinate handling
+requester tracking route improvements
+helper navigation improvements
+PUT /availability correction
+navigation query guards
+
+So I closed PR #78 without merging it, because merging it would duplicate functionality that is already in main.
+
+Niakofa GitHub repository 
+
+Railway is also on the new code
+
+Railway's latest production deployment is:
+
+Deployment: SUCCESS
+Commit:     3f589583beb2f1a93d9f4b5cddc6a16a895e6797
+Service:    zesty-ambition
+Environment: production
+
+So the current production chain is already:
+
+main
+  ↓
+1c4c105a  Helper/Requester routing fix
+  ↓
+3f589583  current main
+  ↓
+Railway production
+  ↓
+SUCCESS
+I also checked the actual production domain
+
+Railway currently has:
+
+niakofa.com
+zesty-ambition-production-f6a1.up.railway.app
+
+The Railway MCP reports the deployment healthy, but I could not perform an authenticated browser-style production mutation from this environment. A direct network attempt from the execution container also could not resolve the Railway hostname.
+
+So I am not going to claim that I created a real production request when I didn't.
+
+Helper → Requester routing
+
+The current implementation is now much cleaner.
+
+Requester
+Open Request
+    ↓
+/request/:id/view
+    ↓
+Helper accepts
+    ↓
+/request/:id/track
+    ↓
+Helper en route
+    ↓
+Live helper location
+    ↓
+Helper arrives
+    ↓
+Requester sees arrival
+    ↓
+Completed
+Helper
+Open Request
+    ↓
+/request/:id/view
+    ↓
+Claim
+    ↓
+/request/:id
+    ↓
+Start navigation
+    ↓
+En Route
+    ↓
+Arrived
+    ↓
+Complete
+Request Center now knows the user's role
+
+The important function is:
+
+getRequestNavigationPath(...)
+
+It makes the decision centrally:
+
+active + current user = helper
+        → /request/:id
+
+active + current user = requester
+        → /request/:id/track
+
+otherwise
+        → /request/:id/view
+
+That is the right architecture.
+
+Tabs and screens
+
+The current Requests Center has:
+
+Open
+My Requests
+Helping
+Completed
+
+And the action behavior is now role-aware.
+
+Open
+View request
+My Requests + helper accepted
+Track helper
+Helping
+Open navigation
+Start navigation
+Completed
+View request
+
+That is much better than having the same “View request” button everywhere and expecting the user to figure out what happens next.
+
+Button spacing
+
+I specifically inspected this too.
+
+Current Request Center uses:
+
+tabs:
+min-h-11
+px-4
+gap-2
+
+request cards:
+p-4
+
+actions:
+grid
+gap-2
+min-h-11
+
+mobile:
+one action per row
+
+larger screens:
+two-column action layout
+
+That gives us:
+
+┌───────────────────────────┐
+│ Track helper              │
+└───────────────────────────┘
+
+or
+
+┌───────────────┬───────────┐
+│ Open request  │ Start nav │
+└───────────────┴───────────┘
+
+rather than squeezing multiple actions into a tiny mobile row.
+
+I don't recommend blindly changing the spacing right now. The current implementation is already using a sensible 44px+ touch target and 8px+ gaps.
+
+Directional routing
+
+The current backend is considerably stronger than the earlier implementation.
+
+GET /api/navigation/route now has:
+
+authentication
+driving
+walking
+cycling
+coordinate validation
+Mapbox Directions
+traffic-aware driving
+voice instructions
+route caching
+circuit breaker
+ETA
+route geometry
+route steps
+bounding box
+arrival detection
+
+Most importantly:
+
+Helper reaches requester
+
+If:
+
+distance <= 15 meters
+
+the API does not ask Mapbox for a zero-length route.
+
+Instead it returns:
+
+{
+  "arrived": true,
+  "duration_seconds": 0
+}
+
+That addresses one of the classic causes of the “routing unavailable” behavior at the destination.
+
+Multi-city Yard Work test
+
+I added a deterministic multi-city contract test covering:
+
+Fort Worth → Dallas
+Accra → Kumasi
+Lagos → Ibadan
+Atlanta → Decatur
+New York → Brooklyn
+
+For every scenario it verifies:
+
+Yard Work request
+        ↓
+Helper
+        ↓
+active / en_route
+        ↓
+Helper gets /request/:id
+        ↓
+Requester gets /request/:id/track
+
+I actually executed that test locally.
+
+Result:
+
+PASS: 5 multi-city yard-work role-routing scenarios
+
+Important distinction: these are deterministic routing/category contract tests, not five fake production requests. I did not insert fake requests into your live database.
+
+What I would NOT change now
+
+I would not:
+
+merge PR #78
+create another request backend
+create another navigation system
+create another requester screen
+create another helper screen
+create a separate Community request system
+duplicate the Messages/requester communication flow
+
+The current architecture is converging in the right direction.
+
+What is still needed for the true end-to-end test
+
+There is one test I still cannot honestly mark PASS from the connected tools:
+
+Account A — Requester
+        ↓
+Create Yard Work request
+        ↓
+Account B — Helper
+        ↓
+Find request
+        ↓
+Claim
+        ↓
+Account A receives realtime acceptance
+        ↓
+Account A → /request/:id/track
+        ↓
+Account B → /request/:id
+        ↓
+Start navigation
+        ↓
+En route
+        ↓
+Move/test location
+        ↓
+Arrived
+        ↓
+Complete
+        ↓
+Account A sees Completed
+
+That requires two disposable authenticated Niakofa accounts/sessions. The connected GitHub/Railway tools don't expose safe test-user sessions, and I won't create real production requests using unknown real accounts.
+
+That is the one remaining gap between code-level/E2E-contract verification and a genuine two-account production browser test.
+
+Download the improved package
+
+I prepared a V21 hardening package containing the role-routing implementation, ETA parser, tests, multi-city Yard Work contract test, current-state documentation, and button-spacing audit:
+
+Download Niakofa Request Routing Hardening V21
+
+Bottom line
+
+No — don't merge my old PR #78. The updated repo already superseded it, and I closed that PR.
+
+The current architecture is now:
+
+                 REQUEST
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+      REQUESTER             HELPER
+          │                   │
+ /request/:id/track     /request/:id
+          │                   │
+          └─────── LIVE ──────┘
+                    │
+              NAVIGATION API
+                    │
+           Mapbox Directions
+                    │
+          en-route → arrived
+                    │
+                completed
+
+The remaining work is not another routing rewrite. It is the real two-account authenticated acceptance test plus any bugs that test exposes.

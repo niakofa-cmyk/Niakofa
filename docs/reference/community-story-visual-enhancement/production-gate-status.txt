@@ -1,0 +1,44 @@
+I reached the production certification gate, and I will not falsely mark the real E2E path as passed.
+
+Current certification state
+Gate	Result
+Production deployment	✅ PASS
+FFmpeg executable	✅ PASS
+FFprobe executable	✅ PASS
+FFmpeg → MP4 → FFprobe smoke test	✅ PASS
+Production S3-compatible PUT/HEAD/DELETE	✅ PASS
+Redis production dependency	✅ PASS
+Production health/readiness	✅ PASS
+MEDIA_PLATFORM_V21	⚠️ OFF
+Authenticated production upload	⏸️ NOT RUN
+MediaAsset creation → upload	⏸️ NOT RUN
+Completion → BullMQ	⏸️ NOT RUN
+Worker → FFmpeg processing	⏸️ NOT RUN
+Thumbnail/variant persistence	⏸️ NOT RUN
+Authenticated media retrieval/playback	⏸️ NOT RUN
+
+The repository already contains the intended authenticated Playwright certification at e2e/media-platform-authenticated.spec.ts. It specifically exercises:
+
+authenticated user → POST /api/media-assets/uploads → real PNG upload → /complete → processing poll → authenticated /api/media-assets/:id retrieval.
+
+The production environment currently does not contain MEDIA_PLATFORM_V21, so the media endpoints intentionally return the disabled response. I also do not have an authenticated USER_A_STATE session available to the Railway/GitHub connectors. The repository's own acceptance tooling requires that credential rather than permitting an unauthenticated production mutation.
+
+What is required to actually execute it
+
+The production acceptance runner needs:
+
+BASE_URL=https://niakofa.com \
+USER_A_STATE=/path/to/disposable-approved-user-state.json \
+MEDIA_PLATFORM_V21_BROWSER_SMOKE=1 \
+MEDIA_SMOKE_CONTEXT_KIND=<approved-context-kind> \
+MEDIA_SMOKE_CONTEXT_ID=<approved-context-id> \
+npx playwright test e2e/media-platform-authenticated.spec.ts
+
+There is one additional production change required: temporarily enabling MEDIA_PLATFORM_V21=1. That causes a production deployment/restart and starts the actual media worker. I have not changed that variable, because doing so would activate the production media platform rather than merely observe it.
+
+So the honest result right now is:
+
+Production media infrastructure certification: PASS.
+Real authenticated production media E2E certification: BLOCKED pending an approved authenticated disposable session/context and explicit activation of the V21 production gate.
+
+Once those two runtime prerequisites are supplied/authorized, the remaining certification is a concrete end-to-end test—not another source review.

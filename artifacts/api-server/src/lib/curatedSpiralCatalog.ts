@@ -1,0 +1,537 @@
+/**
+ * Product-owned Spiral neighborhoods.
+ *
+ * This catalog is intentionally separate from GIS imports and Nia-generated
+ * suggestions. A city appears in the user-facing Spiral catalog because
+ * Niakofa selected these neighborhoods, not because a boundary or model
+ * response happened to exist in the database.
+ *
+ * Cities are added deliberately over time. Each configured city has exactly
+ * nine curated neighborhood Spirals plus one City-wide Spiral supplied by
+ * the Spiral catalog flow.
+ */
+
+export type CuratedSpiralNeighborhood = {
+  neighborhood_id: string;
+  name: string;
+  emoji: string;
+  description: string;
+};
+
+export type CuratedSpiralCity = {
+  city_display: string;
+  neighborhoods: readonly CuratedSpiralNeighborhood[];
+};
+
+const n = (neighborhood_id: string, name: string, emoji: string, description: string): CuratedSpiralNeighborhood => ({ neighborhood_id, name, emoji, description });
+
+export const CURATED_SPIRAL_CATALOG: Readonly<Record<string, CuratedSpiralCity>> = {
+  fort_worth: {
+    city_display: "Fort Worth",
+    neighborhoods: [
+      n("southside", "Southside", "🏘️", "Historic community south of downtown"),
+      n("near_southside", "Near Southside", "🌳", "Creative district near Magnolia Avenue"),
+      n("polytechnic", "Polytechnic", "🎓", "Home of Texas Wesleyan University"),
+      n("riverside", "Riverside", "🌊", "Community along the Trinity River"),
+      n("downtown", "Downtown", "🏙️", "The urban core of Fort Worth"),
+      n("east_fort_worth", "East Fort Worth", "🌅", "Working-class roots and tight-knit community"),
+      n("north_fort_worth", "North Fort Worth", "🤠", "Stockyards district and growing neighborhoods"),
+      n("stop_six", "Stop Six", "✊", "Resilient community with deep history"),
+      n("wedgwood", "Wedgwood", "🏡", "Family-friendly southwest Fort Worth"),
+    ],
+  },
+  dallas: {
+    city_display: "Dallas",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "The center of Dallas civic and cultural life"),
+      n("deep_ellum", "Deep Ellum", "🎶", "Music, art, and small-business community"),
+      n("bishop_arts", "Bishop Arts", "🎨", "Independent shops, restaurants, and galleries"),
+      n("oak_lawn", "Oak Lawn", "🌳", "A connected neighborhood near central Dallas"),
+      n("uptown", "Uptown", "🏢", "Walkable homes, businesses, and local gathering places"),
+      n("oak_cliff", "Oak Cliff", "🌿", "Historic neighborhoods south of the Trinity"),
+      n("east_dallas", "East Dallas", "🏘️", "Tree-lined neighborhoods and local community life"),
+      n("pleasant_grove", "Pleasant Grove", "🤝", "A welcoming southeast Dallas community"),
+      n("lake_highlands", "Lake Highlands", "🌊", "North Dallas neighborhoods around White Rock Lake"),
+    ],
+  },
+  houston: {
+    city_display: "Houston",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Houston's civic, business, and arts center"),
+      n("midtown", "Midtown", "🚇", "Central Houston community close to transit and parks"),
+      n("montrose", "Montrose", "🎨", "Creative, walkable neighborhood with deep local culture"),
+      n("third_ward", "Third Ward", "✊", "Historic community with strong cultural roots"),
+      n("east_end", "East End", "🌅", "Arts, food, and family life east of downtown"),
+      n("the_heights", "The Heights", "🏡", "Distinctive homes, businesses, and neighborhood events"),
+      n("river_oaks", "River Oaks", "🌳", "Central Houston neighborhood near major destinations"),
+      n("museum_district", "Museum District", "🏛️", "Museums, gardens, and civic gathering spaces"),
+      n("gulfton", "Gulfton", "🌎", "A vibrant, globally connected southwest community"),
+    ],
+  },
+  san_antonio: {
+    city_display: "San Antonio",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "The River Walk, civic center, and historic core"),
+      n("pearl", "Pearl", "✨", "Food, culture, and community along the river"),
+      n("southtown", "Southtown", "🎨", "Arts, local businesses, and historic homes"),
+      n("king_william", "King William", "🏘️", "Historic neighborhood south of downtown"),
+      n("alamo_heights", "Alamo Heights", "🌳", "Established central San Antonio community"),
+      n("monte_vista", "Monte Vista", "🏡", "Historic homes and neighborhood connections"),
+      n("west_side", "West Side", "✊", "Deep cultural roots and family networks"),
+      n("south_side", "South Side", "🤝", "Growing community south of the city center"),
+      n("medical_center", "Medical Center", "🩺", "A major west-side community and employment hub"),
+    ],
+  },
+  austin: {
+    city_display: "Austin",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Austin's civic, arts, and business center"),
+      n("east_austin", "East Austin", "🎶", "Historic community with vibrant local culture"),
+      n("south_congress", "South Congress", "🌵", "Walkable local businesses and gathering places"),
+      n("zilker", "Zilker", "🌿", "Parks, trails, and west-central community life"),
+      n("hyde_park", "Hyde Park", "🏡", "Historic north-central Austin neighborhood"),
+      n("mueller", "Mueller", "🌳", "Planned neighborhood with parks and public spaces"),
+      n("north_loop", "North Loop", "☕", "Independent businesses and neighborhood connections"),
+      n("barton_hills", "Barton Hills", "💧", "Central Austin community near green space"),
+      n("west_campus", "West Campus", "🎓", "Campus-adjacent community in central Austin"),
+    ],
+  },
+  el_paso: {
+    city_display: "El Paso",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "The historic civic and cultural center"),
+      n("segundo_barrio", "Segundo Barrio", "✊", "Historic border community with deep cultural roots"),
+      n("sunset_heights", "Sunset Heights", "🌄", "Historic west-side neighborhood and local businesses"),
+      n("kern_place", "Kern Place", "🏘️", "Established central neighborhood near UTEP"),
+      n("mission_hills", "Mission Hills", "🌳", "Central El Paso neighborhood near parks and schools"),
+      n("lower_valley", "Lower Valley", "🌵", "Family-centered communities along the Rio Grande"),
+      n("upper_valley", "Upper Valley", "🌿", "West-side communities and agricultural heritage"),
+      n("east_side", "East Side", "🤝", "Growing neighborhoods and community networks"),
+      n("northeast", "Northeast", "🏡", "North-eastern El Paso neighborhoods and families"),
+    ],
+  },
+  laredo: {
+    city_display: "Laredo",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Historic center of Laredo community life"),
+      n("san_agustin", "San Agustin", "🏘️", "Historic neighborhood in the heart of Laredo"),
+      n("heights", "The Heights", "🌳", "Established north-central Laredo community"),
+      n("del_mar", "Del Mar", "🏡", "Family neighborhoods and local gathering places"),
+      n("shiloh", "Shiloh", "🤝", "Growing north Laredo community"),
+      n("lakeside", "Lakeside", "💧", "Neighborhoods near Laredo's lakes and parks"),
+      n("las_cruces", "Las Cruces", "🌵", "South Laredo community with strong local ties"),
+      n("mines_road", "Mines Road", "🌎", "A globally connected corridor and community"),
+      n("north_central", "North Central", "✨", "North Laredo homes, schools, and businesses"),
+    ],
+  },
+  kansas_city: {
+    city_display: "Kansas City",
+    neighborhoods: [
+      n("eighteenth_and_vine", "18th & Vine", "🎷", "Historic jazz district and Black cultural heart of Kansas City"),
+      n("downtown", "Downtown", "🏙️", "Kansas City's civic and business center"),
+      n("midtown", "Midtown", "🏘️", "Central neighborhoods linking downtown and the Plaza"),
+      n("westport", "Westport", "🍽️", "Historic district with restaurants, nightlife, and gathering places"),
+      n("plaza", "Country Club Plaza", "🌳", "Iconic shopping district and surrounding south KC community"),
+      n("northeast", "Northeast", "🤝", "Historic Northeast with deep neighborhood roots"),
+      n("blue_hills", "Blue Hills", "✊", "East-side community with strong cultural identity"),
+      n("brookside", "Brookside", "🏡", "Tree-lined south KC neighborhood and local businesses"),
+      n("waldo", "Waldo", "✨", "South Kansas City neighborhood with independent shops and cafes"),
+    ],
+  },
+  newark: {
+    city_display: "Newark, New Jersey",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Newark's civic, business, and cultural center"),
+      n("central_ward", "Central Ward", "✊", "Historic central Newark community"),
+      n("ironbound", "Ironbound", "🌎", "Dense, globally connected neighborhood east of downtown"),
+      n("north_ward", "North Ward", "🏘️", "Historic neighborhoods north of downtown"),
+      n("university_heights", "University Heights", "🎓", "Major university and student-centered district"),
+      n("weequahic", "Weequahic", "🌳", "South Newark community surrounding Weequahic Park"),
+      n("south_ward", "South Ward", "🤝", "Large residential community south of downtown"),
+      n("west_ward", "West Ward", "🏡", "Residential neighborhoods west of the city center"),
+      n("fairmount", "Fairmount", "🎨", "Historic west-central Newark neighborhood"),
+    ],
+  },
+  hampton: {
+    city_display: "Hampton, Virginia",
+    neighborhoods: [
+      n("downtown_hampton", "Downtown Hampton", "🏙️", "Historic waterfront center of Hampton"),
+      n("phoebus", "Phoebus", "🏘️", "Historic neighborhood near Fort Monroe"),
+      n("wythe", "Wythe", "🌊", "Waterfront community along Hampton Roads"),
+      n("buckroe", "Buckroe", "🏖️", "Beachside community on the Chesapeake Bay"),
+      n("northampton", "Northampton", "🏡", "Established residential community"),
+      n("fox_hill", "Fox Hill", "🌳", "Historic north Hampton community"),
+      n("shell", "Shell", "🤝", "Central residential neighborhood"),
+      n("coliseum_central", "Coliseum Central", "✨", "Shopping, entertainment, and community hub"),
+      n("lasalle", "LaSalle", "🎓", "Established neighborhood near Hampton University area"),
+    ],
+  },
+  cleveland: {
+    city_display: "Cleveland, Ohio",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Cleveland's civic and business center"),
+      n("ohio_city", "Ohio City", "🍽️", "Historic west-side district with local businesses"),
+      n("tremont", "Tremont", "🎨", "Historic neighborhood known for arts and local culture"),
+      n("university_circle", "University Circle", "🎓", "Major cultural, educational, and medical district"),
+      n("shaker_square", "Shaker Square", "🚇", "Transit-connected historic community"),
+      n("collinwood", "Collinwood", "🌊", "East-side community near Lake Erie"),
+      n("hough", "Hough", "✊", "Historic central-east Cleveland community"),
+      n("fairfax", "Fairfax", "🤝", "Historic African American cultural community"),
+      n("slavic_village", "Slavic Village", "🏘️", "Historic southeast-side neighborhood"),
+    ],
+  },
+  trenton: {
+    city_display: "Trenton, New Jersey",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Trenton's government and business center"),
+      n("chambersburg", "Chambersburg", "🍽️", "Historic south-side neighborhood and commercial corridor"),
+      n("south_trenton", "South Trenton", "🤝", "Dense residential community south of downtown"),
+      n("hilcrest", "Hillcrest", "🏡", "Residential neighborhood north of the city center"),
+      n("whittaker_avenue", "Whittaker Avenue", "🏘️", "North Trenton residential community"),
+      n("cadwalader_heights", "Cadwalader Heights", "🌳", "Historic residential neighborhood near the park"),
+      n("mill_hill", "Mill Hill", "🎨", "Historic neighborhood near downtown"),
+      n("chambersburg_north", "North Chambersburg", "🤝", "South Trenton community and local businesses"),
+      n("west_ward", "West Ward", "✨", "West Trenton residential neighborhoods"),
+    ],
+  },
+  savannah: {
+    city_display: "Savannah, Georgia",
+    neighborhoods: [
+      n("historic_district", "Historic District", "🏛️", "Savannah's iconic squares and historic core"),
+      n("victorian_district", "Victorian District", "🏘️", "Historic residential neighborhood south of downtown"),
+      n("starland", "Starland District", "🎨", "Creative district with local businesses and arts"),
+      n("thunderbolt", "Thunderbolt", "🌊", "Waterfront community east of Savannah"),
+      n("midtown", "Midtown", "🏡", "Central Savannah residential and shopping area"),
+      n("aroh", "Ardsley Park", "🌳", "Tree-lined historic residential neighborhood"),
+      n("west_savannah", "West Savannah", "✊", "Historic west-side community"),
+      n("garden_city", "Garden City", "🤝", "Working community west of Savannah"),
+      n("eastside", "Eastside", "🌅", "Historic east-side Savannah community"),
+    ],
+  },
+  portsmouth: {
+    city_display: "Portsmouth, Virginia",
+    neighborhoods: [
+      n("old_town", "Olde Towne", "🏛️", "Historic waterfront center of Portsmouth"),
+      n("park_view", "Park View", "🏘️", "Historic residential neighborhood near the waterfront"),
+      n("prentiss_park", "Prentiss Park", "🌳", "Established residential community"),
+      n("simonsdale", "Simonsdale", "🏡", "Residential neighborhood in western Portsmouth"),
+      n("churchland", "Churchland", "🤝", "Large western Portsmouth community"),
+      n("berkeley", "Berkley", "✊", "Historic community across the Elizabeth River"),
+      n("brighton", "Brighton", "🏘️", "Northern Portsmouth residential community"),
+      n("midtown", "Midtown", "✨", "Central Portsmouth community and services"),
+      n("cradock", "Cradock", "🌊", "Historic planned neighborhood near the river"),
+    ],
+  },
+  baton_rouge: {
+    city_display: "Baton Rouge, Louisiana",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Baton Rouge's civic and riverfront center"),
+      n("spanish_town", "Spanish Town", "🎨", "Historic neighborhood near downtown"),
+      n("garden_district", "Garden District", "🌳", "Historic residential district south of downtown"),
+      n("mid_city", "Mid City", "🤝", "Central neighborhood with local businesses and culture"),
+      n("southdowns", "Southdowns", "🏡", "Established south Baton Rouge neighborhood"),
+      n("capital_heights", "Capital Heights", "🏘️", "Historic central Baton Rouge neighborhood"),
+      n("highlands_perkins", "Highlands/Perkins", "🎓", "University-area community and cultural corridor"),
+      n("north_baton_rouge", "North Baton Rouge", "✊", "Historic north-side African American community"),
+      n("edenwood", "Edenwood", "🌿", "Established south Baton Rouge community"),
+    ],
+  },
+  mobile: {
+    city_display: "Mobile, Alabama",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Mobile's historic civic and cultural center"),
+      n("midtown", "Midtown", "🏘️", "Historic central Mobile neighborhoods"),
+      n("oakleigh", "Oakleigh Garden District", "🌳", "Historic homes and neighborhood culture"),
+      n("detonti_square", "De Tonti Square", "🏛️", "Historic downtown residential district"),
+      n("spring_hill", "Spring Hill", "🎓", "Established community near the University of Mobile area"),
+      n("downtown_mobile", "Lower Dauphin", "🎨", "Entertainment and small-business district"),
+      n("frill", "Frill", "🤝", "Historic neighborhood west of downtown"),
+      n("plateau", "Plateau", "✊", "Historic African American community"),
+      n("prichard", "Prichard", "🏡", "Independent neighboring community in the Mobile metro"),
+    ],
+  },
+  augusta: {
+    city_display: "Augusta, Georgia",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Augusta's historic and civic center"),
+      n("summerville", "Summerville", "🌳", "Historic hilltop neighborhood"),
+      n("west_end", "West End", "✊", "Historic African American neighborhood"),
+      n("harrisburg", "Harrisburg", "🏘️", "Historic west Augusta community"),
+      n("laney_walker", "Laney Walker", "🤝", "Historic African American cultural community"),
+      n("bethlehem", "Bethlehem", "🏡", "Historic central Augusta neighborhood"),
+      n("forest_hills", "Forest Hills", "🌿", "Established residential neighborhood"),
+      n("old_towne", "Olde Town", "🎨", "Historic neighborhood north of downtown"),
+      n("south_augusta", "South Augusta", "✨", "Large south-side residential community"),
+    ],
+  },
+  macon: {
+    city_display: "Macon, Georgia",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Macon's historic civic and cultural center"),
+      n("in_town", "InTown", "🎨", "Historic central neighborhoods and local businesses"),
+      n("vineville", "Vineville", "🌳", "Historic residential neighborhood"),
+      n("beall_hill", "Beall's Hill", "🏘️", "Revitalized historic neighborhood near downtown"),
+      n("pleasant_hill", "Pleasant Hill", "✊", "Historic African American community"),
+      n("huguenin_heights", "Huguenin Heights", "🏡", "Established residential neighborhood"),
+      n("north_highlands", "North Highlands", "🤝", "North Macon residential community"),
+      n("south_macon", "South Macon", "🌅", "South-side Macon community"),
+      n("west_macon", "West Macon", "✨", "West-side neighborhoods and businesses"),
+    ],
+  },
+  flint: {
+    city_display: "Flint, Michigan",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Flint's civic and cultural center"),
+      n("carriage_town", "Carriage Town", "🎨", "Historic neighborhood north of downtown"),
+      n("eastside", "Eastside", "✊", "Historic east Flint community"),
+      n("northside", "Northside", "🤝", "Historic north Flint neighborhood"),
+      n("southeast_flint", "Southeast Flint", "🏘️", "Large residential community south and east of downtown"),
+      n("college_cultural", "College Cultural", "🎓", "Arts, education, and residential district"),
+      n("flushing_road", "Flushing Road", "🏡", "West-side residential and commercial corridor"),
+      n("mott_park", "Mott Park", "🌳", "Historic neighborhood near Mott Park"),
+      n("grand_traverse", "Grand Traverse", "🌿", "Northwest Flint residential community"),
+    ],
+  },
+  mount_vernon: {
+    city_display: "Mount Vernon, New York",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Mount Vernon's civic and commercial center"),
+      n("south_side", "South Side", "✊", "Historic African American community"),
+      n("north_side", "North Side", "🏘️", "Established residential community"),
+      n("fleetwood", "Fleetwood", "🚇", "Transit-connected neighborhood near the Bronxville border"),
+      n("chester_heights", "Chester Heights", "🏡", "Residential neighborhood east of downtown"),
+      n("washingtonville", "Washingtonville", "🤝", "Central residential community"),
+      n("gramatan", "Gramatan", "🌳", "Historic neighborhood near Fleetwood"),
+      n("woodlawn", "Woodlawn", "🌿", "Northern Mount Vernon neighborhood"),
+      n("eastchester_heights", "Eastchester Heights", "✨", "East-side residential community"),
+    ],
+  },
+  new_orleans: {
+    city_display: "New Orleans, Louisiana",
+    neighborhoods: [
+      n("french_quarter", "French Quarter", "🎺", "Historic heart of New Orleans"),
+      n("tremé", "Tremé", "✊", "Historic African American cultural community"),
+      n("marigny", "Marigny", "🎶", "Music, culture, and historic homes near the French Quarter"),
+      n("bywater", "Bywater", "🎨", "Creative neighborhood along the Mississippi"),
+      n("garden_district", "Garden District", "🌳", "Historic homes and tree-lined streets"),
+      n("uptown", "Uptown", "🏡", "Historic neighborhoods along St. Charles Avenue"),
+      n("mid_city", "Mid-City", "🤝", "Central neighborhood near City Park"),
+      n("central_city", "Central City", "🏘️", "Historic African American community south of downtown"),
+      n("gentilly", "Gentilly", "🌿", "Large residential community east of City Park"),
+    ],
+  },
+  shreveport: {
+    city_display: "Shreveport, Louisiana",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Shreveport's civic, arts, and riverfront center"),
+      n("south_highlands", "South Highlands", "🌳", "Historic residential neighborhood"),
+      n("highland", "Highland", "🏘️", "Historic central Shreveport community"),
+      n("allendale", "Allendale", "✊", "Historic west-side community"),
+      n("queensborough", "Queensborough", "🤝", "Historic neighborhood west of downtown"),
+      n("west_shreveport", "West Shreveport", "🏡", "Large west-side residential community"),
+      n("broadmoor", "Broadmoor", "🌿", "Established south-central neighborhood"),
+      n("springlake", "Springlake", "✨", "Established southeast Shreveport community"),
+      n("cedar_grove", "Cedar Grove", "🌅", "East Shreveport residential community"),
+    ],
+  },
+  baltimore: {
+    city_display: "Baltimore, Maryland",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Baltimore's civic, business, and Inner Harbor center"),
+      n("fellspoint", "Fells Point", "⚓", "Historic waterfront neighborhood"),
+      n("federal_hill", "Federal Hill", "🌳", "Historic neighborhood south of the harbor"),
+      n("mount_vernon", "Mount Vernon", "🏛️", "Historic cultural district near downtown"),
+      n("harlem_park", "Harlem Park", "✊", "Historic west Baltimore community"),
+      n("sandtown_winchester", "Sandtown-Winchester", "🤝", "Historic west Baltimore neighborhood"),
+      n("charles_village", "Charles Village", "🎓", "University-adjacent arts and residential community"),
+      n("hampden", "Hampden", "🎨", "Popular north Baltimore neighborhood"),
+      n("druid_hill", "Druid Hill", "🌿", "Historic northwest Baltimore community"),
+    ],
+  },
+  miami_gardens: {
+    city_display: "Miami Gardens, Florida",
+    neighborhoods: [
+      n("carol_city", "Carol City", "✊", "Historic northwest Miami Gardens community"),
+      n("norwood", "Norwood", "🏘️", "Established residential community"),
+      n("andover", "Andover", "🏡", "Residential neighborhood near major corridors"),
+      n("bunch_park", "Bunche Park", "🤝", "Historic African American community"),
+      n("scott_lake", "Scott Lake", "🌊", "South Miami Gardens residential community"),
+      n("leslie_estates", "Leslie Estates", "🌳", "Established family neighborhood"),
+      n("myrtle_grove", "Myrtle Grove", "🌿", "Central Miami Gardens community"),
+      n("sky_lake", "Sky Lake", "✨", "Northeast Miami Gardens residential area"),
+      n("country_club", "Country Club", "🏘️", "Established north Miami Gardens community"),
+    ],
+  },
+  memphis: {
+    city_display: "Memphis, Tennessee",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Memphis's riverfront civic and entertainment center"),
+      n("beale_street", "Beale Street", "🎸", "Historic center of Memphis blues culture"),
+      n("south_main", "South Main", "🎨", "Historic arts and entertainment district"),
+      n("cooper_young", "Cooper-Young", "🎶", "Popular eclectic neighborhood with local businesses"),
+      n("midtown", "Midtown", "🏘️", "Central Memphis neighborhood with diverse local culture"),
+      n("orange_mound", "Orange Mound", "✊", "Historic African American community"),
+      n("soulsville", "Soulsville", "🎵", "Historic music and African American cultural district"),
+      n("uptown", "Uptown", "🌳", "North Memphis riverfront community"),
+      n("broad_avenue", "Broad Avenue", "✨", "Creative corridor in Binghampton"),
+    ],
+  },
+  montgomery: {
+    city_display: "Montgomery, Alabama",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Montgomery's historic civic and riverfront center"),
+      n("capitol_hill", "Capitol Hill", "🏛️", "Historic neighborhood around the state capitol"),
+      n("cloverdale", "Cloverdale", "🌳", "Historic neighborhood with local shops and homes"),
+      n("old_alabama_town", "Old Alabama Town", "🏘️", "Historic district near downtown"),
+      n("west_montgomery", "West Montgomery", "✊", "Historic African American community"),
+      n("north_hills", "North Hills", "🏡", "Established north Montgomery neighborhood"),
+      n("garden_district", "Garden District", "🌿", "Historic residential community"),
+      n("halcyon", "Halcyon", "✨", "Growing east Montgomery community"),
+      n("south_hull", "South Hull", "🤝", "Residential neighborhood south of downtown"),
+    ],
+  },
+  southfield: {
+    city_display: "Southfield, Michigan",
+    neighborhoods: [
+      n("downtown_southfield", "Downtown Southfield", "🏙️", "Business and civic center of Southfield"),
+      n("beverly_hills", "Beverly Hills", "🏡", "Established residential community"),
+      n("northland", "Northland", "🏘️", "Central Southfield community around Northland"),
+      n("franklin", "Franklin", "🌳", "Historic community near Southfield"),
+      n("goldengate", "Golden Gate", "🤝", "Residential community in central Southfield"),
+      n("riveria", "Riveria", "🌿", "Established residential neighborhood"),
+      n("lochs", "The Lochs", "✨", "Northwest Southfield residential area"),
+      n("civic_center", "Civic Center", "🏛️", "Southfield municipal and community district"),
+      n("southfield_village", "Southfield Village", "✊", "Family-centered Southfield community"),
+    ],
+  },
+  birmingham: {
+    city_display: "Birmingham, Alabama",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Birmingham's civic, business, and entertainment center"),
+      n("ensley", "Ensley", "✊", "Historic west Birmingham community"),
+      n("avondale", "Avondale", "🎨", "Popular east Birmingham neighborhood"),
+      n("highland_park", "Highland Park", "🌳", "Historic central Birmingham neighborhood"),
+      n("five_points_south", "Five Points South", "🎓", "University and entertainment district"),
+      n("north_birmingham", "North Birmingham", "🤝", "Historic north-side community"),
+      n("east_lake", "East Lake", "🏘️", "Historic east Birmingham neighborhood"),
+      n("west_end", "West End", "🏡", "Historic southwest Birmingham community"),
+      n("smithfield", "Smithfield", "🌿", "Historic African American neighborhood"),
+    ],
+  },
+  albany: {
+    city_display: "Albany, Georgia",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Albany's historic civic and riverfront center"),
+      n("flintside", "Flintside", "✊", "Historic African American community"),
+      n("west_overlook", "Westover", "🏡", "Established west Albany residential community"),
+      n("east_albany", "East Albany", "🤝", "Large east-side residential community"),
+      n("northside", "Northside", "🌳", "North Albany residential neighborhood"),
+      n("palmyra", "Palmyra", "🏘️", "Historic neighborhood north of downtown"),
+      n("monroe", "Monroe", "✨", "Established Albany community"),
+      n("putney", "Putney", "🌿", "Southwest Albany-area community"),
+      n("rawson_park", "Rawson Park", "🌅", "Residential community near downtown"),
+    ],
+  },
+  detroit: {
+    city_display: "Detroit, Michigan",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Detroit's civic, business, and entertainment center"),
+      n("midtown", "Midtown", "🎓", "Cultural and educational district"),
+      n("corktown", "Corktown", "🏘️", "Historic neighborhood west of downtown"),
+      n("north_end", "North End", "🎨", "Historic neighborhood north of Midtown"),
+      n("black_bottom", "Black Bottom", "✊", "Historic African American cultural district"),
+      n("east_english_village", "East English Village", "🏡", "Established east-side residential neighborhood"),
+      n("jefferson_chalmers", "Jefferson Chalmers", "🌊", "East-side waterfront community"),
+      n("mexicantown", "Mexicantown", "🌎", "West-side cultural and commercial district"),
+      n("west_village", "West Village", "🌳", "Popular east-side residential neighborhood"),
+    ],
+  },
+  lauderhill: {
+    city_display: "Lauderhill, Florida",
+    neighborhoods: [
+      n("city_center", "City Center", "🏙️", "Civic and commercial heart of Lauderhill"),
+      n("inverrary", "Inverrary", "🌳", "Large established community in western Lauderhill"),
+      n("east_lauderhill", "East Lauderhill", "🏘️", "Central-east residential community"),
+      n("west_lauderhill", "West Lauderhill", "🏡", "Western residential neighborhoods"),
+      n("lauderhill_east", "Lauderhill East", "🤝", "Family-centered east-side community"),
+      n("boulevard_gardens", "Boulevard Gardens", "✊", "Historic nearby community and cultural corridor"),
+      n("spring_lake", "Spring Lake", "🌊", "Residential neighborhood around local lakes"),
+      n("sunrise", "Sunrise", "✨", "Neighboring west Broward community"),
+      n("central_lauderhill", "Central Lauderhill", "🌿", "Central residential and business district"),
+    ],
+  },
+  east_orange: {
+    city_display: "East Orange, New Jersey",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "East Orange's civic and commercial center"),
+      n("brick_church", "Brick Church", "🚇", "Transit-centered neighborhood and business district"),
+      n("ampere", "Ampere", "🏘️", "Historic neighborhood around the former station district"),
+      n("hawthorne", "Hawthorne", "🌳", "Established residential community"),
+      n("golden_triangle", "Golden Triangle", "🤝", "Central East Orange neighborhood"),
+      n("eighth_avenue", "Eighth Avenue", "✊", "Historic residential and commercial community"),
+      n("vailsburg", "Vailsburg", "🏡", "West-side neighborhood near Newark"),
+      n("doddtown", "Doddtown", "✨", "Historic East Orange community"),
+      n("central_avenue", "Central Avenue", "🌿", "Major east-west neighborhood corridor"),
+    ],
+  },
+  jackson: {
+    city_display: "Jackson, Mississippi",
+    neighborhoods: [
+      n("downtown", "Downtown", "🏙️", "Jackson's civic, cultural, and business center"),
+      n("fondren", "Fondren", "🎨", "Popular arts, dining, and small-business district"),
+      n("belhaven", "Belhaven", "🏡", "Historic neighborhood near downtown"),
+      n("mid_city", "Mid City", "🤝", "Central Jackson neighborhood with local businesses"),
+      n("farish_street", "Farish Street", "✊", "Historic African American cultural district"),
+      n("west_jackson", "West Jackson", "🏘️", "Historic west-side African American community"),
+      n("south_jackson", "South Jackson", "🌳", "Large south-side residential community"),
+      n("north_jackson", "North Jackson", "🌿", "Large north-side residential and business area"),
+      n("midtown_jackson", "Midtown Jackson", "✨", "Central residential and commercial community"),
+    ],
+  },
+};
+
+const CURATED_CITY_ALIASES: Readonly<Record<string, string>> = {
+  fort_worth_tx: "fort_worth",
+  dallas_tx: "dallas",
+  houston_tx: "houston",
+  san_antonio_tx: "san_antonio",
+  austin_tx: "austin",
+  el_paso_tx: "el_paso",
+  laredo_tx: "laredo",
+  kansas_city_mo: "kansas_city",
+  kansas_city_missouri: "kansas_city",
+  kansas_city_missouri_mo: "kansas_city",
+  newark_nj: "newark",
+  hampton_va: "hampton",
+  cleveland_oh: "cleveland",
+  trenton_nj: "trenton",
+  savannah_ga: "savannah",
+  portsmouth_va: "portsmouth",
+  baton_rouge_la: "baton_rouge",
+  mobile_al: "mobile",
+  augusta_ga: "augusta",
+  macon_ga: "macon",
+  flint_mi: "flint",
+  mount_vernon_ny: "mount_vernon",
+  new_orleans_la: "new_orleans",
+  shreveport_la: "shreveport",
+  baltimore_md: "baltimore",
+  miami_gardens_fl: "miami_gardens",
+  memphis_tn: "memphis",
+  montgomery_al: "montgomery",
+  southfield_mi: "southfield",
+  birmingham_al: "birmingham",
+  albany_ga: "albany",
+  detroit_mi: "detroit",
+  lauderhill_fl: "lauderhill",
+  east_orange_nj: "east_orange",
+  jackson_ms: "jackson",
+};
+
+export function canonicalizeCuratedCityKey(cityKey: string): string {
+  return CURATED_CITY_ALIASES[cityKey] ?? cityKey;
+}
+
+export function getCuratedSpiralCity(cityKey: string): CuratedSpiralCity | null {
+  return CURATED_SPIRAL_CATALOG[canonicalizeCuratedCityKey(cityKey)] ?? null;
+}
