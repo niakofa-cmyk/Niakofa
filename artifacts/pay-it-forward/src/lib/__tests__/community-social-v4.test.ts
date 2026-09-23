@@ -12,6 +12,7 @@ const feed = fs.readFileSync(path.join(__dirname, "../../components/community/Hu
 const storyVisual = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoryVisual.tsx"), "utf8");
 const storyStyles = fs.readFileSync(path.join(__dirname, "../../components/community/community-story-visual.css"), "utf8");
 const profile = fs.readFileSync(path.join(__dirname, "../../pages/profile.tsx"), "utf8");
+const localeUtils = fs.readFileSync(path.join(__dirname, "../locale-utils.ts"), "utf8");
 
 describe("Community Social V4 view boundaries", () => {
   test("Community routes delegate primary destinations to dedicated views", () => {
@@ -82,6 +83,13 @@ describe("Community Social V4 view boundaries", () => {
       profile,
       /fetch\(`\$\{base\}\/api\/requests\?requester_id=\$\{userId\}&status=completed&limit=6`,\s*\{\s*headers: authHeaders\(\),\s*\}\)/,
     );
+  });
+
+  test("IP locale fallback uses a CORS-capable provider and accepts zero coordinates", () => {
+    assert.match(localeUtils, /https:\/\/ipwho\.is\//);
+    assert.doesNotMatch(localeUtils, /https:\/\/ipapi\.co\//);
+    assert.match(localeUtils, /Number\.isFinite\(json\.latitude\)/);
+    assert.match(localeUtils, /Number\.isFinite\(json\.longitude\)/);
   });
 
   test("Story gallery previews uploaded video files as video thumbnails", () => {

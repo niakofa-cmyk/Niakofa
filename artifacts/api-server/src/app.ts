@@ -67,7 +67,7 @@ app.use(
           "https://maps.googleapis.com",
           "https://oauth2.googleapis.com",
           "https://accounts.google.com",
-          "https://ipapi.co",
+          "https://ipwho.is",
           new URL(getNiaServiceUrl()).origin,
         ].filter(Boolean),
         frameSrc: [

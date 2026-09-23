@@ -152,7 +152,7 @@ export interface IpLocation {
 }
 
 /**
- * Get approximate user location from IP address using ipapi.co (free, no key).
+ * Get approximate user location from IP address using ipwho.is (free, no key).
  * Caches result for 24 hours. Times out after 3 s.
  * Returns null if unavailable.
  */
@@ -172,7 +172,7 @@ export async function getIpLocation(): Promise<IpLocation | null> {
   try {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch("https://ipapi.co/json/", { signal: controller.signal });
+    const res = await fetch("https://ipwho.is/", { signal: controller.signal });
     clearTimeout(tid);
     if (!res.ok) return null;
 
@@ -182,14 +182,22 @@ export async function getIpLocation(): Promise<IpLocation | null> {
       city?: string;
       country_name?: string;
       country_code?: string;
-      error?: boolean;
+      success?: boolean;
     };
 
-    if (json.error || !json.latitude || !json.longitude) return null;
+    const latitude = json.latitude;
+    const longitude = json.longitude;
+    if (
+      json.success === false
+      || typeof latitude !== "number"
+      || typeof longitude !== "number"
+      || !Number.isFinite(latitude)
+      || !Number.isFinite(longitude)
+    ) return null;
 
     const data: IpLocation = {
-      lat: json.latitude,
-      lng: json.longitude,
+      lat: latitude,
+      lng: longitude,
       city: json.city,
       country: json.country_name,
       countryCode: json.country_code,
