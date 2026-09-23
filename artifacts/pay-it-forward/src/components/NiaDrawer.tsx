@@ -797,6 +797,10 @@ export function NiaDrawer({
 
   // Fetch live community context
   useEffect(() => {
+    // Do not probe the context endpoint while the shared Nia kill-switch is
+    // disabled or still resolving. The API intentionally returns 503 in that
+    // state, and Community should not emit noisy optional-feature failures.
+    if (niaEnabled !== true) return;
     const coords = userCoords ?? userLocation;
     if (!coords || contextFetchedRef.current) return;
     contextFetchedRef.current = true;
@@ -807,7 +811,7 @@ export function NiaDrawer({
       .then((r) => r.ok ? r.json() : null)
       .then((data: NiaContext | null) => { if (data) setLiveContext(data); })
       .catch(() => {});
-  }, [userCoords, userLocation]);
+  }, [niaEnabled, userCoords, userLocation]);
 
   useEffect(() => { contextFetchedRef.current = false; }, [userCoords]);
 
@@ -1120,6 +1124,7 @@ export function NiaDrawer({
       });
     } finally {
       setLoading(false);
+      if (niaEnabled !== true) return;
       const coords2 = userCoords ?? userLocation;
       if (coords2) {
         const lat = coords2.lat;
@@ -1132,7 +1137,7 @@ export function NiaDrawer({
         }
       }
     }
-  }, [loading, sessionId, userCoords, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext, userLang, speakNiaResponse, resolvedCity, resolvedCounty, resolvedState]);
+  }, [loading, sessionId, userCoords, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext, userLang, speakNiaResponse, resolvedCity, resolvedCounty, resolvedState, niaEnabled]);
 
   const handleReset = () => {
     localStorage.removeItem("nia_session_id");
