@@ -1,16 +1,16 @@
-import { BookOpen, BriefcaseBusiness, Globe2, Image as ImageIcon, UserRound, Users, UsersRound, Wrench } from "lucide-react";
+import { BookOpen, BriefcaseBusiness, Globe2, Image as ImageIcon, UserRound, UsersRound, Wrench } from "lucide-react";
 import { Link } from "wouter";
 
 export function CommunityMoreDirectory() {
   const items = [
-    { href: "/community/people", label: "People", description: "Neighbors active in your Hub", icon: Users },
     { href: "/community/hubs", label: "Hubs", description: "Your local and diaspora communities", icon: Globe2 },
-    { href: "/community/stories", label: "Stories", description: "Moments shared by the community", icon: BookOpen },
     { href: "/community/requests", label: "Requests", description: "Give or receive help", icon: BriefcaseBusiness },
     { href: "/community/services", label: "Services", description: "Skills and offers", icon: Wrench },
-    { href: "/community/circles", label: "Circles", description: "Live conversations", icon: UsersRound },
+    { href: "/community/circles", label: "Spirals", description: "Live conversations", icon: UsersRound },
     { href: "/community/media", label: "Media", description: "Photos and shared moments", icon: ImageIcon },
     { href: "/diaspora", label: "Diaspora", description: "Global cultural communities", icon: Globe2 },
+    { href: "/diaspora/family", label: "Family", description: "Family spaces and memories", icon: UsersRound },
+    { href: "/diaspora/timeline", label: "Legacy", description: "Preserve stories across generations", icon: BookOpen },
     { href: "/profile", label: "Profile", description: "Your identity, activity, and settings", icon: UserRound },
   ];
 

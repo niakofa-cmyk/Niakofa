@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const page = fs.readFileSync(path.join(__dirname, "../../pages/community.tsx"), "utf8");
+const shell = fs.readFileSync(path.join(__dirname, "../../components/community/CommunitySocialShell.tsx"), "utf8");
+const more = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityMoreDirectory.tsx"), "utf8");
 
 describe("Community Social V4 view boundaries", () => {
   test("Community routes delegate primary destinations to dedicated views", () => {
@@ -21,6 +23,38 @@ describe("Community Social V4 view boundaries", () => {
     assert.doesNotMatch(page, /<RequestsCenter embedded/);
     assert.match(page, /CommunityMoreDirectory/);
     assert.match(page, /CommunitySpiralsTab/);
+  });
+
+  test("focused social navigation promotes Messages and keeps systems secondary", () => {
+    assert.match(shell, /key: "messages" as const, label: "Messages", icon: MessageCircle/);
+    assert.match(shell, /if \(key === "messages"\) \{\s+onRoute\("\/messages"\)/);
+    assert.doesNotMatch(shell, /key: "hubs" as const, label: "Hubs"/);
+    for (const path of [
+      "/community/hubs",
+      "/community/requests",
+      "/community/services",
+      "/community/circles",
+      "/community/media",
+      "/diaspora",
+      "/diaspora/family",
+      "/diaspora/timeline",
+    ]) {
+      assert.match(shell, new RegExp(`href: "${path.replaceAll("/", "\\/")}"`));
+    }
+  });
+
+  test("secondary directory excludes the focused primary destinations", () => {
+    assert.match(more, /label: "Hubs"/);
+    assert.match(more, /label: "Spirals"/);
+    assert.match(more, /label: "Family"/);
+    assert.match(more, /label: "Legacy"/);
+    assert.doesNotMatch(more, /href: "\/community\/people"/);
+    assert.doesNotMatch(more, /href: "\/community\/stories"/);
+  });
+
+  test("legacy Community Messages path normalizes to the canonical Messages route", () => {
+    assert.match(page, /if \(requestedSection === "messages"\) \{\s+setLocation\("\/messages"\)/);
+    assert.match(page, /const compatibleSection = requestedSection === "spirals" \? "circles" : requestedSection/);
   });
 
   test("shared Community posts preserve a deep link to the conversation card", () => {

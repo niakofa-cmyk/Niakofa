@@ -23,6 +23,7 @@ export type CommunityNavKey =
   | "people"
   | "hubs"
   | "stories"
+  | "messages"
   | "notifications"
   | "profile"
   | "more"
@@ -46,17 +47,20 @@ const primaryNav = [
   { key: "home" as const, label: "Home", icon: House },
   { key: "stories" as const, label: "Stories", icon: BookOpen },
   { key: "people" as const, label: "People", icon: Users },
-  { key: "hubs" as const, label: "Hubs", icon: Globe2 },
+  { key: "messages" as const, label: "Messages", icon: MessageCircle },
   { key: "notifications" as const, label: "Notifications", icon: Bell },
 ];
 
 const menuItems = [
+  { href: "/community/hubs", label: "Hubs", description: "Your local and diaspora communities", icon: Globe2 },
   { href: "/profile", label: "Profile", description: "Your Niakofa profile", icon: UserRound },
   { href: "/community/requests", label: "Requests", description: "Give or receive help", icon: BriefcaseBusiness },
   { href: "/community/services", label: "Services", description: "Skills and offers", icon: Wrench },
   { href: "/community/circles", label: "Spirals", description: "Live community conversations", icon: UsersRound },
   { href: "/community/media", label: "Media", description: "Photos and shared moments", icon: ImageIcon },
   { href: "/diaspora", label: "Diaspora", description: "Global cultural communities", icon: Globe2 },
+  { href: "/diaspora/family", label: "Family", description: "Family spaces and memories", icon: UsersRound },
+  { href: "/diaspora/timeline", label: "Legacy", description: "Preserve stories across generations", icon: BookOpen },
 ];
 
 function NavIcon({ item }: { item: (typeof primaryNav)[number] }) {
@@ -114,6 +118,10 @@ export function CommunitySocialShell({
   const navigate = (key: CommunityNavKey) => {
     if (key === "notifications") {
       setNotificationsOpen(true);
+      return;
+    }
+    if (key === "messages") {
+      onRoute("/messages");
       return;
     }
     if (key === "profile") {

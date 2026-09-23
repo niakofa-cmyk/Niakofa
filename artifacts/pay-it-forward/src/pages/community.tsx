@@ -34,6 +34,12 @@ export default function CommunityScreen() {
     ? compatibleSection as CommunityNavKey
     : "home";
 
+  useEffect(() => {
+    if (requestedSection === "messages") {
+      setLocation("/messages");
+    }
+  }, [requestedSection, setLocation]);
+
   const [storyComposerSignal, setStoryComposerSignal] = useState(0);
 
   const [communitySearch, setCommunitySearch] = useState("");
