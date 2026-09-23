@@ -59,26 +59,31 @@ jobs:
         run: |
           set -euo pipefail
           expected_commit="${GITHUB_SHA}"
-          # Railway can take several minutes to build, roll out, and switch
-          # the public service even after the health endpoint remains available
-          # on the previous revision. Keep the check bounded, but allow a
-          # normal production rollout to converge before declaring it stale.
-          for attempt in $(seq 1 30); do
+          # Railway builds for this application can take several minutes before
+          # the new revision starts serving traffic. The previous revision may
+          # remain healthy throughout that build window, so a short fixed poll
+          # can produce a false failure even though Railway eventually deploys
+          # the exact triggering commit.
+          #
+          # Allow up to 20 minutes of convergence (120 x 10s), while still
+          # failing deterministically if the expected revision never appears.
+          max_attempts=120
+          for attempt in $(seq 1 ${max_attempts}); do
             actual_commit="$(
               curl --fail --silent --show-error --max-time 15 \
                 "${PRODUCTION_URL}/api/healthz" \
                 | jq -r '.commit // empty'
             )"
-            echo "Attempt ${attempt}: expected ${expected_commit}, served ${actual_commit:-unknown}"
+            echo "Attempt ${attempt}/${max_attempts}: expected ${expected_commit}, served ${actual_commit:-unknown}"
             if [ "${actual_commit}" = "${expected_commit}" ]; then
               echo "Railway is serving the commit that triggered this workflow."
               exit 0
             fi
-            if [ "${attempt}" -lt 30 ]; then
+            if [ "${attempt}" -lt "${max_attempts}" ]; then
               sleep 10
             fi
           done
-          echo "Railway did not converge to ${expected_commit} within the verification window."
+          echo "Railway did not converge to ${expected_commit} within the 20-minute verification window."
           exit 1
 
       - name: Inspect bounded Nia compatibility health
