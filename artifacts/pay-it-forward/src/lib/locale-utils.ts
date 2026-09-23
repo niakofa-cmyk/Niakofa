@@ -185,19 +185,18 @@ export async function getIpLocation(): Promise<IpLocation | null> {
       success?: boolean;
     };
 
-    const latitude = json.latitude;
-    const longitude = json.longitude;
     if (
       json.success === false
-      || typeof latitude !== "number"
-      || typeof longitude !== "number"
-      || !Number.isFinite(latitude)
-      || !Number.isFinite(longitude)
+      || typeof json.latitude !== "number"
+      || typeof json.longitude !== "number"
+      || !Number.isFinite(json.latitude)
+      || !Number.isFinite(json.longitude)
     ) return null;
 
+    // Keep zero as a valid coordinate (e.g. 0° latitude/longitude).
     const data: IpLocation = {
-      lat: latitude,
-      lng: longitude,
+      lat: json.latitude,
+      lng: json.longitude,
       city: json.city,
       country: json.country_name,
       countryCode: json.country_code,
