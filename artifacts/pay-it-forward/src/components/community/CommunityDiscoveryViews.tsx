@@ -19,6 +19,21 @@ import {
   type VisualDiscoveryItem,
   type VisualDiscoveryKind,
 } from "@/lib/communityVisualDiscovery";
+import { trackCommunityMedia } from "@/lib/communityMediaAnalytics";
+
+function mediaKindFromMime(mimeType: string): Exclude<VisualDiscoveryKind, "all"> {
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "photo";
+}
+
+function kindCounts(items: VisualDiscoveryItem[]): Partial<Record<Exclude<VisualDiscoveryKind, "all">, number>> {
+  return items.reduce<Partial<Record<Exclude<VisualDiscoveryKind, "all">, number>>>((counts, item) => {
+    const mediaKind = mediaKindFromMime(item.mime_type);
+    counts[mediaKind] = (counts[mediaKind] ?? 0) + 1;
+    return counts;
+  }, {});
+}
 
 function useHubFeed(hubId: number | null) {
   const [feed, setFeed] = useState<HubCommunityFeed | null>(null);
@@ -211,6 +226,7 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const pageNumberRef = useRef(0);
 
   useEffect(() => {
     if (!hubId) return;
@@ -220,6 +236,7 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
     setItems([]);
     setCursor(null);
     setHasMore(true);
+    pageNumberRef.current = 0;
 
     fetchCommunityVisualDiscovery(hubId, { query, kind })
       .then((page) => {
@@ -227,6 +244,17 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
         setItems(page.items);
         setCursor(page.next_cursor);
         setHasMore(page.has_more);
+        pageNumberRef.current = 1;
+        trackCommunityMedia("community_media_gallery_viewed", {
+          hub_id: hubId,
+          requested_kind: kind,
+          media_ids: page.items.map((item) => item.id),
+          result_count: page.items.length,
+          result_kind_counts: kindCounts(page.items),
+          has_more: page.has_more,
+          has_query: Boolean(query.trim()),
+          page_number: pageNumberRef.current,
+        });
       })
       .catch((reason: unknown) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load Community Media.");
@@ -248,6 +276,17 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
       setItems((current) => [...current, ...page.items]);
       setCursor(page.next_cursor);
       setHasMore(page.has_more);
+      pageNumberRef.current += 1;
+      trackCommunityMedia("community_media_pagination_loaded", {
+        hub_id: hubId,
+        requested_kind: kind,
+        media_ids: page.items.map((item) => item.id),
+        result_count: page.items.length,
+        result_kind_counts: kindCounts(page.items),
+        has_more: page.has_more,
+        has_query: Boolean(query.trim()),
+        page_number: pageNumberRef.current,
+      });
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Could not load more Community Media.");
     } finally {
@@ -303,7 +342,14 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
             <button
               key={value}
               type="button"
-              onClick={() => setKind(value)}
+              onClick={() => {
+                trackCommunityMedia("community_media_filter_changed", {
+                  hub_id: hubId,
+                  requested_kind: value,
+                  has_query: Boolean(query.trim()),
+                });
+                setKind(value);
+              }}
               aria-pressed={kind === value}
               className={`flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-bold transition sm:px-3 ${kind === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
             >
@@ -339,7 +385,17 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
         <div className="columns-2 gap-3 sm:columns-3">
           {items.map((item) => (
             <article key={item.id} className="group mb-3 break-inside-avoid overflow-hidden rounded-2xl border border-border/80 bg-background shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              <Link href={item.context.href} className="block" aria-label={`Open community context for ${item.alt_text || "shared media"}`}>
+              <Link
+                href={item.context.href}
+                className="block"
+                aria-label={`Open community context for ${item.alt_text || "shared media"}`}
+                onClick={() => trackCommunityMedia("community_media_context_opened", {
+                  hub_id: hubId,
+                  media_id: item.id,
+                  media_kind: mediaKindFromMime(item.mime_type),
+                  context_type: "hub_post",
+                })}
+              >
                 <div className={`relative overflow-hidden bg-muted ${item.mime_type.startsWith("audio/") ? "min-h-36" : "aspect-[4/3]"}`}>
                   <AuthenticatedMediaAsset item={item} />
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/60 to-transparent p-3 pt-10 opacity-0 transition-opacity group-hover:opacity-100">
