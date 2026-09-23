@@ -376,7 +376,11 @@ export function StoryGalleryChrome({
               onClick={() => onSelect(item.id)}
               aria-label={`${isSelected ? "Remove" : "Select"} media`}
             >
-              <img src={item.src} alt="" />
+              {item.type === "video" ? (
+                <video src={item.src} muted playsInline preload="metadata" aria-hidden="true" />
+              ) : (
+                <img src={item.src} alt="" />
+              )}
               {item.type === "video" && <span className="nia-story-gallery__video"><Play size={13} fill="currentColor" /></span>}
               {isSelected && <span className="nia-story-gallery__selected">{index + 1}</span>}
             </button>

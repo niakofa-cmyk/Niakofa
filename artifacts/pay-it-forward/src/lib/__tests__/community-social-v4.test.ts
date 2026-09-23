@@ -8,6 +8,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const page = fs.readFileSync(path.join(__dirname, "../../pages/community.tsx"), "utf8");
 const shell = fs.readFileSync(path.join(__dirname, "../../components/community/CommunitySocialShell.tsx"), "utf8");
 const more = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityMoreDirectory.tsx"), "utf8");
+const feed = fs.readFileSync(path.join(__dirname, "../../components/community/HubCommunityFeedPanel.tsx"), "utf8");
+const storyVisual = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoryVisual.tsx"), "utf8");
+const storyStyles = fs.readFileSync(path.join(__dirname, "../../components/community/community-story-visual.css"), "utf8");
 
 describe("Community Social V4 view boundaries", () => {
   test("Community routes delegate primary destinations to dedicated views", () => {
@@ -59,10 +62,23 @@ describe("Community Social V4 view boundaries", () => {
 
   test("shared Community posts preserve a deep link to the conversation card", () => {
     const home = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityHomeView.tsx"), "utf8");
-    const feed = fs.readFileSync(path.join(__dirname, "../../components/community/HubCommunityFeedPanel.tsx"), "utf8");
     assert.match(page, /postId/);
     assert.match(home, /openPostId/);
     assert.match(feed, /searchParams\.set\("postId"/);
     assert.match(feed, /community-post-\$\{item\.id\}/);
+  });
+
+  test("Community feed videos use viewport-aware autoplay without bypassing authenticated media", () => {
+    assert.match(feed, /IntersectionObserver/);
+    assert.match(feed, /prefers-reduced-motion/);
+    assert.match(feed, /video\.play\(\)/);
+    assert.match(feed, /video\.pause\(\)/);
+    assert.match(feed, /headers: authHeaders\(\)/);
+  });
+
+  test("Story gallery previews uploaded video files as video thumbnails", () => {
+    assert.match(storyVisual, /item\.type === "video" \? \(/);
+    assert.match(storyVisual, /<video src=\{item\.src\} muted playsInline preload="metadata"/);
+    assert.match(storyStyles, /\.nia-story-gallery__item img, \.nia-story-gallery__item video/);
   });
 });

@@ -491,6 +491,8 @@ function HubMedia({
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaFrameRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -511,6 +513,33 @@ function HubMedia({
     };
   }, [media.media_url]);
 
+  useEffect(() => {
+    if (kind !== "video" || !objectUrl || !mediaFrameRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    const frame = mediaFrameRef.current;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion || !("IntersectionObserver" in window)) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.65) {
+          video.muted = true;
+          void video.play().catch(() => {
+            // Browsers may still reject autoplay; controls remain available.
+          });
+        } else {
+          video.pause();
+        }
+      },
+      { threshold: [0, 0.65, 1] },
+    );
+    observer.observe(frame);
+    return () => {
+      observer.disconnect();
+      video.pause();
+    };
+  }, [kind, objectUrl]);
+
   if (failed) {
     return <div className="rounded-xl border border-border bg-background/70 p-3 text-xs text-muted-foreground">Media unavailable.</div>;
   }
@@ -521,7 +550,21 @@ function HubMedia({
     return <img src={objectUrl} alt={media.alt_text ?? "Hub post media"} loading="lazy" className="max-h-80 w-full object-cover" />;
   }
   if (kind === "video") {
-    return <video src={objectUrl} controls playsInline className="max-h-80 w-full bg-black" />;
+    return (
+      <div ref={mediaFrameRef} className="bg-black">
+        <video
+          ref={videoRef}
+          src={objectUrl}
+          controls
+          muted
+          playsInline
+          loop
+          preload="metadata"
+          aria-label={media.alt_text ?? "Hub post video"}
+          className="max-h-80 w-full"
+        />
+      </div>
+    );
   }
   return <audio src={objectUrl} controls className="w-full mt-2" />;
 }
