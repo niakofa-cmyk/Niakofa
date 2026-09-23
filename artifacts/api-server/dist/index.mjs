@@ -107934,6 +107934,7 @@ var init_ws_hub = __esm({
       community_story_viewed: "story.viewed",
       community_story_reaction: "story.reaction",
       community_story_shared: "story.shared",
+      hub_community_post_updated: "hub.updated",
       direct_call_invite: "call.invited",
       direct_call_accept: "call.accepted",
       direct_call_end: "call.ended",
@@ -147208,7 +147209,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "dfade24b47dab2f58f46697747483641247f0b75";
+var GIT_COMMIT = "867ca9c179926761be5e42fc15f53647bde7736e";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -155447,6 +155448,10 @@ router12.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, communi
         });
       }
     }
+    void broadcast({
+      type: "hub_community_post_updated",
+      payload: { hub_id: hubId, post_id: postId, change: "media" }
+    });
     return res.status(201).json({
       media: {
         id: result.media.id,
@@ -155510,6 +155515,12 @@ router12.post("/community/hubs/:hubId/posts/:postId/comments", requireAuth, comm
     moderation_reason: moderation.reason
   }).returning();
   if (!comment) return res.status(500).json({ error: "Comment could not be saved." });
+  if (comment.moderation_status === "approved") {
+    void broadcast({
+      type: "hub_community_post_updated",
+      payload: { hub_id: hubId, post_id: postId, change: "comment" }
+    });
+  }
   return res.status(201).json({ comment });
 });
 router12.post("/community/hubs/:hubId/posts/:postId/reactions", requireAuth, communityLikeLimiter, async (req, res) => {
@@ -155538,6 +155549,16 @@ router12.post("/community/hubs/:hubId/posts/:postId/reactions", requireAuth, com
     }).onConflictDoNothing();
   }
   const [count2] = await db.select({ count: sql`count(*)::int` }).from(hubCommunityPostReactionsTable).where(eq(hubCommunityPostReactionsTable.post_id, postId));
+  void broadcast({
+    type: "hub_community_post_updated",
+    payload: {
+      hub_id: hubId,
+      post_id: postId,
+      change: "reaction",
+      reaction: parsed.data.reaction,
+      reaction_count: Number(count2?.count ?? 0)
+    }
+  });
   return res.json({ post_id: postId, reaction: parsed.data.reaction, reaction_count: Number(count2?.count ?? 0), reacted: !existing[0] });
 });
 var community_hub_feed_default = router12;

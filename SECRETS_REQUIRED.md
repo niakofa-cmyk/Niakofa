@@ -39,7 +39,8 @@ not create or update Railway variables automatically.
 |---|---|
 | `NIAKOFA_API_ORIGIN` | HTTPS origin of the deployed Niakofa API used by the gate |
 
-Run the gate only after setting all required values:
+Run the gate only after setting the required value. `BASE_URL` remains
+backwards-compatible as an optional same-origin override:
 
 ```bash
 NIAKOFA_API_ORIGIN=https://<niakofa-api-origin> pnpm run production-gate

@@ -37,7 +37,7 @@ function runAsync(overrides = {}) {
 test("missing origins fail closed", () => {
   const r = run({ BASE_URL: undefined, NIAKOFA_API_ORIGIN: undefined });
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /Missing required environment variable/);
+  assert.match(r.stderr, /Missing required environment variable: NIAKOFA_API_ORIGIN/);
 });
 
 test("non-http origins fail closed", () => {
@@ -88,7 +88,7 @@ test("valid timeout boundaries are accepted by configuration validation", () => 
 test("a healthy API response passes the network gate", async () => {
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ status: "ok" }));
+    response.end(JSON.stringify({ status: "ok", db: "connected" }));
   });
 
   await new Promise((resolveServer) => server.listen(0, "127.0.0.1", resolveServer));
@@ -98,6 +98,29 @@ test("a healthy API response passes the network gate", async () => {
     const origin = `http://127.0.0.1:${address.port}`;
     const r = await runAsync({
       BASE_URL: origin,
+      NIAKOFA_API_ORIGIN: origin,
+      GATE_TIMEOUT_MS: "1000",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Production gate network check passed/);
+  } finally {
+    await new Promise((resolveServer, rejectServer) => server.close((error) => error ? rejectServer(error) : resolveServer()));
+  }
+});
+
+test("NIAKOFA_API_ORIGIN is sufficient when BASE_URL is not set", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ status: "ok", db: "connected" }));
+  });
+
+  await new Promise((resolveServer) => server.listen(0, "127.0.0.1", resolveServer));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const origin = `http://127.0.0.1:${address.port}`;
+    const r = await runAsync({
+      BASE_URL: undefined,
       NIAKOFA_API_ORIGIN: origin,
       GATE_TIMEOUT_MS: "1000",
     });

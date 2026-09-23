@@ -2,6 +2,11 @@
 set -euo pipefail
 
 # ── Niakofa Railway Start Script ──────────────────────────────────────────────
+# Railway is the production runtime for this script. Keep an explicitly supplied
+# NODE_ENV for trusted local diagnostics, but default to production so deploy
+# safety gates cannot be bypassed by an omitted platform variable.
+export NODE_ENV="${NODE_ENV:-production}"
+
 # 1. Runs database migrations (blocks deploy on failure).
 # 2. Starts nia-service on port 3001 with a bounded-backoff restart supervisor.
 # 3. Starts api-server in the foreground (primary process).
@@ -10,6 +15,8 @@ set -euo pipefail
 # Nia is an optional dependency of the public API. A transient Nia crash must
 # not take down api-server, but the supervisor must keep trying so /health can
 # recover without requiring a full Railway redeploy.
+
+echo "[start] NODE_ENV=${NODE_ENV}"
 
 NIA_PID_FILE="$(mktemp /tmp/nia-service-pid.XXXXXX)"
 trap 'rm -f "$NIA_PID_FILE"' EXIT

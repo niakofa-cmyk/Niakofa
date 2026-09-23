@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 
-const required = ["BASE_URL", "NIAKOFA_API_ORIGIN"];
+const required = ["NIAKOFA_API_ORIGIN"];
 const timeoutMs = Number(process.env.GATE_TIMEOUT_MS ?? 10000);
 
 if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
@@ -16,9 +16,9 @@ for (const key of required) {
   }
 }
 
-function parseOrigin(name) {
+function parseOrigin(name, value = process.env[name]) {
   try {
-    const origin = new URL(process.env[name]);
+    const origin = new URL(value);
     if (!["http:", "https:"].includes(origin.protocol)) {
       throw new Error("unsupported_protocol");
     }
@@ -33,15 +33,15 @@ function parseOrigin(name) {
 }
 
 const apiOrigin = parseOrigin("NIAKOFA_API_ORIGIN");
-const baseUrl = parseOrigin("BASE_URL");
-if (baseUrl.origin !== apiOrigin.origin) {
+const baseUrl = process.env.BASE_URL ? parseOrigin("BASE_URL") : apiOrigin;
+if (process.env.BASE_URL && baseUrl.origin !== apiOrigin.origin) {
   console.error("BASE_URL and NIAKOFA_API_ORIGIN must have the same origin.");
   process.exit(2);
 }
 
 const checks = [];
 
-async function check(name, url, options = {}, validate = () => ({ ok: true })) {
+async function check(name, url, options = {}, validate = async () => ({ ok: true })) {
   const started = Date.now();
 
   try {
@@ -55,7 +55,7 @@ async function check(name, url, options = {}, validate = () => ({ ok: true })) {
     let error;
 
     try {
-      const validation = validate(response);
+      const validation = await validate(response);
       ok = ok && validation.ok;
       error = validation.error;
     } catch (validationError) {
@@ -81,7 +81,16 @@ async function check(name, url, options = {}, validate = () => ({ ok: true })) {
   }
 }
 
-await check("Niakofa API reachable", new URL("/api/health", apiOrigin));
+await check("Niakofa deploy health", new URL("/api/healthz", apiOrigin), {}, async (response) => {
+  const body = await response.json().catch(() => null);
+  const healthy = response.ok && body?.status === "ok" && body?.db === "connected";
+  return {
+    ok: healthy,
+    error: healthy
+      ? undefined
+      : `expected /api/healthz status=ok and db=connected; received status=${String(body?.status ?? "unknown")}, db=${String(body?.db ?? "unknown")}`,
+  };
+});
 
 console.table(checks);
 
