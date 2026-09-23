@@ -8,6 +8,7 @@ type CommunityHomeViewProps = {
   hubResolved: boolean;
   storyComposerSignal: number;
   openStoryId: number | null;
+  openPostId: number | null;
   onOpenStoryComposer: () => void;
   searchQuery: string;
 };
@@ -17,6 +18,7 @@ export function CommunityHomeView({
   hubResolved,
   storyComposerSignal,
   openStoryId,
+  openPostId,
   onOpenStoryComposer,
   searchQuery,
 }: CommunityHomeViewProps) {
@@ -64,6 +66,7 @@ export function CommunityHomeView({
       <HubCommunityFeedPanel
         hubId={hubId}
         socialHomeMode
+        openPostId={openPostId}
         onOpenStoryComposer={onOpenStoryComposer}
         searchQuery={searchQuery}
         homeInterstitial={(

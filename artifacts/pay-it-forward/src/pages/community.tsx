@@ -47,6 +47,10 @@ export default function CommunityScreen() {
     const value = Number(new URLSearchParams(search).get("storyId"));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
   }, [search]);
+  const openPostId = useMemo(() => {
+    const value = Number(new URLSearchParams(search).get("postId"));
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }, [search]);
 
   const [defaultHubId, setDefaultHubId] = useState<number | null>(null);
   const [defaultHubResolved, setDefaultHubResolved] = useState(hubContextId !== null);
@@ -95,6 +99,7 @@ export default function CommunityScreen() {
             hubResolved={defaultHubResolved}
             storyComposerSignal={storyComposerSignal}
             openStoryId={openStoryId}
+            openPostId={openPostId}
             onOpenStoryComposer={() => setStoryComposerSignal((signal) => signal + 1)}
             searchQuery={communitySearch}
           />

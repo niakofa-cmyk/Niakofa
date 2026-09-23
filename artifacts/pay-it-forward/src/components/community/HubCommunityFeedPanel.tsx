@@ -17,12 +17,14 @@ import { useAppContext } from "@/lib/AppContext";
 export default function HubCommunityFeedPanel({
   hubId,
   socialHomeMode = false,
+  openPostId = null,
   onOpenStoryComposer,
   homeInterstitial,
   searchQuery = "",
 }: {
   hubId: number | string;
   socialHomeMode?: boolean;
+  openPostId?: number | null;
   onOpenStoryComposer?: () => void;
   homeInterstitial?: ReactNode;
   searchQuery?: string;
@@ -39,6 +41,7 @@ export default function HubCommunityFeedPanel({
   const [commentingPostId, setCommentingPostId] = useState<number | null>(null);
   const [reactingPostId, setReactingPostId] = useState<number | null>(null);
   const [copiedPostId, setCopiedPostId] = useState<number | null>(null);
+  const [highlightedPostId, setHighlightedPostId] = useState<number | null>(null);
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async () => {
@@ -51,6 +54,22 @@ export default function HubCommunityFeedPanel({
   }, [hubId]);
 
   useEffect(() => { void reload(); }, [reload]);
+
+  useEffect(() => {
+    if (!feed || openPostId === null) return;
+    let highlightTimeout: number | null = null;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`community-post-${openPostId}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedPostId(openPostId);
+      highlightTimeout = window.setTimeout(() => setHighlightedPostId(null), 2400);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (highlightTimeout !== null) window.clearTimeout(highlightTimeout);
+    };
+  }, [feed, openPostId]);
 
   useWebSocket("hub_community_post_created", useCallback((event) => {
     const payload = event.payload as { hub_id?: number };
@@ -165,7 +184,10 @@ export default function HubCommunityFeedPanel({
 
   const sharePost = async (postId: number, body: string) => {
     if (!feed) return;
-    const url = `${window.location.origin}/community?hubId=${feed.hub.id}`;
+    const shareUrl = new URL("/community", window.location.origin);
+    shareUrl.searchParams.set("hubId", String(feed.hub.id));
+    shareUrl.searchParams.set("postId", String(postId));
+    const url = shareUrl.toString();
     const text = body.length > 140 ? `${body.slice(0, 140)}…` : body;
     if (navigator.share) {
       try {
@@ -374,7 +396,11 @@ export default function HubCommunityFeedPanel({
               {item.meta && <p className="mt-2 text-[11px] text-muted-foreground">{item.meta}</p>}
             </article>
           ) : item.kind === "post" ? (
-            <article key={`post-${item.id}`} className={socialHomeMode ? "border-y border-border bg-card p-4 sm:rounded-2xl sm:border" : "rounded-2xl border border-border bg-card p-3.5 sm:p-4"}>
+            <article
+              key={`post-${item.id}`}
+              id={`community-post-${item.id}`}
+              className={`${socialHomeMode ? "border-y border-border bg-card p-4 sm:rounded-2xl sm:border" : "rounded-2xl border border-border bg-card p-3.5 sm:p-4"} ${highlightedPostId === item.id ? "ring-2 ring-primary/70 ring-offset-2 ring-offset-background" : ""}`}
+            >
               <div className="flex items-start gap-3">
                 <PostAvatar name={item.post.author_name} avatarUrl={item.post.author_avatar} />
                 <div className="min-w-0 flex-1">

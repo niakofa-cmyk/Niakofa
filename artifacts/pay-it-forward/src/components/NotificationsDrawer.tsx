@@ -5,7 +5,7 @@ import { authHeaders } from "@/lib/auth";
 import { wsSubscribe } from "@/lib/wsClient";
 import {
   X, Bell, BellOff, ShieldAlert, CheckCircle2,
-  Heart, MapPin, DollarSign, Calendar, Users, MessageCircle, Radio,
+  Heart, MapPin, DollarSign, Calendar, Users, MessageCircle, Radio, Share2,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -21,12 +21,21 @@ export interface LiveNotification {
     | "helper_accepted"
     | "pledge_scheduled"
     | "chat"
+    | "call"
+    | "hub_message"
+    | "story"
+    | "story_reaction"
+    | "story_share"
+    | "story_mention"
+    | "community"
+    | "system"
     | "circle_went_live";
   title: string;
   body: string;
   time: Date;
   /** Optional navigation target — clicking this notification navigates there */
   actionUrl?: string;
+  read_at?: string | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -57,6 +66,14 @@ const TYPE_CFG: Record<LiveNotification["type"], TypeCfg> = {
   helper_accepted:  { Icon: Users,          iconColor: "text-green-400",    ringBg: "bg-green-500/10",     cardBorder: "border-green-500/20"   },
   pledge_scheduled: { Icon: Calendar,       iconColor: "text-purple-400",   ringBg: "bg-purple-500/10",    cardBorder: "border-purple-500/20"  },
   chat:             { Icon: MessageCircle,  iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
+  call:             { Icon: MessageCircle,  iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
+  hub_message:      { Icon: Users,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
+  story:            { Icon: Radio,          iconColor: "text-purple-400",   ringBg: "bg-purple-500/10",    cardBorder: "border-purple-500/20"  },
+  story_reaction:   { Icon: Heart,          iconColor: "text-rose-400",     ringBg: "bg-rose-500/10",      cardBorder: "border-rose-500/20"    },
+  story_share:      { Icon: Share2,         iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
+  story_mention:   { Icon: Users,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
+  community:       { Icon: Users,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
+  system:          { Icon: Bell,           iconColor: "text-muted-foreground", ringBg: "bg-muted",       cardBorder: "border-border"             },
   circle_went_live: { Icon: Radio,          iconColor: "text-red-400",      ringBg: "bg-red-500/10",       cardBorder: "border-red-500/30"     },
 };
 
@@ -72,6 +89,7 @@ const fallbackCfg: TypeCfg = {
 function NotificationItem({ n, index, onNavigate, onRead }: { n: LiveNotification; index: number; onNavigate?: (url: string) => void; onRead?: (id: string) => void }) {
   const cfg = TYPE_CFG[n.type] ?? fallbackCfg;
   const isClickable = !!n.actionUrl;
+  const isUnread = !n.read_at;
 
   return (
     <motion.div
@@ -80,8 +98,17 @@ function NotificationItem({ n, index, onNavigate, onRead }: { n: LiveNotificatio
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: -40, opacity: 0 }}
       transition={{ type: "spring", damping: 24, stiffness: 260, delay: Math.min(index * 0.03, 0.25) }}
-      className={`flex items-start gap-3 p-3.5 rounded-2xl border ${cfg.ringBg} ${cfg.cardBorder} ${isClickable ? "cursor-pointer active:scale-[0.98] transition-transform" : ""}`}
+      className={`flex items-start gap-3 p-3.5 rounded-2xl border ${cfg.ringBg} ${cfg.cardBorder} ${isUnread ? "shadow-[inset_3px_0_0_hsl(var(--primary))]" : "opacity-75"} ${isClickable ? "cursor-pointer active:scale-[0.98] transition-transform" : ""}`}
+      role={isClickable ? "button" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      aria-label={isClickable ? `${n.title}: open notification` : undefined}
       onClick={() => { if (onRead) void onRead(n.id); if (isClickable && onNavigate) onNavigate(n.actionUrl!); }}
+      onKeyDown={(event) => {
+        if (!isClickable || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        if (onRead) void onRead(n.id);
+        if (onNavigate) onNavigate(n.actionUrl!);
+      }}
     >
       <div className={`w-9 h-9 rounded-full ${cfg.ringBg} border ${cfg.cardBorder} flex items-center justify-center shrink-0 mt-0.5`}>
         <cfg.Icon className={`w-[18px] h-[18px] ${cfg.iconColor}`} />
@@ -93,7 +120,7 @@ function NotificationItem({ n, index, onNavigate, onRead }: { n: LiveNotificatio
         <div className="flex items-center gap-2 mt-1">
           <div className="text-[10px] text-muted-foreground/50 tabular-nums">{timeAgo(n.time)}</div>
           {isClickable && (
-            <div className={`text-[10px] font-bold ${cfg.iconColor}`}>Tap to join →</div>
+              <div className={`text-[10px] font-bold ${cfg.iconColor}`}>Open notification →</div>
           )}
         </div>
       </div>
@@ -149,13 +176,18 @@ export function NotificationsDrawer({ open, onClose }: Props) {
   }, [onClose, setLocation]);
 
   const markRead = useCallback(async (id: string) => {
-    setNotifications((current) => current.map((item) => item.id === id ? { ...item } : item));
+    const item = notifications.find((notification) => notification.id === id);
+    if (!item || item.read_at) return;
+    setNotifications((current) => current.map((notification) => notification.id === id
+      ? { ...notification, read_at: new Date().toISOString() }
+      : notification));
     await fetch(`/api/messages/notifications/${encodeURIComponent(id)}/read`, { method: "POST", headers: authHeaders() }).catch(() => {});
     setUnreadCount((count) => Math.max(0, count - 1));
-  }, []);
+  }, [notifications]);
 
   const markAllRead = useCallback(async () => {
     await fetch("/api/messages/notifications/read-all", { method: "POST", headers: authHeaders() }).catch(() => {});
+    setNotifications((current) => current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })));
     setUnreadCount(0);
   }, []);
 

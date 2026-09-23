@@ -22,4 +22,13 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(page, /CommunityMoreDirectory/);
     assert.match(page, /CommunitySpiralsTab/);
   });
+
+  test("shared Community posts preserve a deep link to the conversation card", () => {
+    const home = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityHomeView.tsx"), "utf8");
+    const feed = fs.readFileSync(path.join(__dirname, "../../components/community/HubCommunityFeedPanel.tsx"), "utf8");
+    assert.match(page, /postId/);
+    assert.match(home, /openPostId/);
+    assert.match(feed, /searchParams\.set\("postId"/);
+    assert.match(feed, /community-post-\$\{item\.id\}/);
+  });
 });
