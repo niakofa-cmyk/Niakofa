@@ -110,3 +110,16 @@ even though the local commit is complete.
 **How to apply:** capture changed paths and blob bytes before committing, or
 read them from the committed diff after committing, then verify the tree before
 creating or advancing the remote ref.
+
+After any connector-backed write attempt, re-read the remote ref before retrying.
+A transport or intermediate validation report may be incomplete even when the
+branch has advanced, so the remote ref and complete tree verification are
+authoritative.
+
+**Why:** An exact-sync attempt returned an intermediate blob-stage report while
+the subsequent read showed the expected commit already on `main`; retrying
+blindly could create an unnecessary duplicate commit.
+
+**How to apply:** Treat every write attempt as potentially committed, compare the
+remote ref to the intended local HEAD, and only resume from the first missing
+gate.
