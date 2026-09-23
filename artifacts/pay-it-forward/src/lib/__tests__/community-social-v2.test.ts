@@ -57,12 +57,13 @@ describe("Community Social legacy behavior coverage", () => {
     assert.doesNotMatch(shellFile, /key: "profile" as const/);
   });
 
-  test("Home places compact Stories between its composer and feed", () => {
+  test("Home places compact Stories before its composer and feed", () => {
     assert.match(homeViewFile, /<HubCommunityFeedPanel/);
     assert.match(homeViewFile, /socialHomeMode/);
     assert.match(homeViewFile, /homeInterstitial={\(/);
     assert.match(homeViewFile, /<CommunityStoriesExperience[\s\S]*?compact/);
     assert.match(feedFile, /socialHomeMode && homeInterstitial/);
+    assert.match(feedFile, /socialHomeMode && homeInterstitial[\s\S]*?hub-post-composer/);
   });
 
   test("Home composer starts as a dedicated collapsed social bar", () => {
@@ -76,6 +77,11 @@ describe("Community Social legacy behavior coverage", () => {
     assert.match(feedFile, /const visibleItems = useMemo/);
     assert.match(feedFile, /visibleItems\.map/);
     assert.match(feedFile, /No Hub posts, gratitude, or requests match this search/);
+  });
+
+  test("Hub feed refreshes when a connected member changes a post", () => {
+    assert.match(feedFile, /hub_community_post_updated/);
+    assert.match(feedFile, /handleFeedRealtime/);
   });
 
   test("Compact Stories remain mounted while the Hub feed loads or fails", () => {

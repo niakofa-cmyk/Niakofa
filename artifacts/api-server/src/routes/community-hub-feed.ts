@@ -522,6 +522,10 @@ router.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, community
         });
       }
     }
+    void broadcast({
+      type: "hub_community_post_updated",
+      payload: { hub_id: hubId, post_id: postId, change: "media" },
+    });
     return res.status(201).json({
       media: {
         id: result.media.id,
@@ -600,6 +604,12 @@ router.post("/community/hubs/:hubId/posts/:postId/comments", requireAuth, commun
     moderation_reason: moderation.reason,
   }).returning();
   if (!comment) return res.status(500).json({ error: "Comment could not be saved." });
+  if (comment.moderation_status === "approved") {
+    void broadcast({
+      type: "hub_community_post_updated",
+      payload: { hub_id: hubId, post_id: postId, change: "comment" },
+    });
+  }
   return res.status(201).json({ comment });
 });
 
@@ -637,6 +647,16 @@ router.post("/community/hubs/:hubId/posts/:postId/reactions", requireAuth, commu
   const [count] = await db.select({ count: sql<number>`count(*)::int` })
     .from(hubCommunityPostReactionsTable)
     .where(eq(hubCommunityPostReactionsTable.post_id, postId));
+  void broadcast({
+    type: "hub_community_post_updated",
+    payload: {
+      hub_id: hubId,
+      post_id: postId,
+      change: "reaction",
+      reaction: parsed.data.reaction,
+      reaction_count: Number(count?.count ?? 0),
+    },
+  });
   return res.json({ post_id: postId, reaction: parsed.data.reaction, reaction_count: Number(count?.count ?? 0), reacted: !existing[0] });
 });
 

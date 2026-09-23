@@ -71,10 +71,13 @@ export default function HubCommunityFeedPanel({
     };
   }, [feed, openPostId]);
 
-  useWebSocket("hub_community_post_created", useCallback((event) => {
+  const handleFeedRealtime = useCallback((event: { payload: unknown }) => {
     const payload = event.payload as { hub_id?: number };
     if (Number(payload.hub_id) === Number(hubId)) void reload();
-  }, [hubId, reload]));
+  }, [hubId, reload]);
+
+  useWebSocket("hub_community_post_created", handleFeedRealtime);
+  useWebSocket("hub_community_post_updated", handleFeedRealtime);
 
   type FeedItem =
     | { kind: "gratitude"; id: number; createdAt: string | null; text: string; authorName: string | null; authorAvatar: string | null; meta: string }
@@ -244,6 +247,8 @@ export default function HubCommunityFeedPanel({
         </>
       )}
 
+      {socialHomeMode && homeInterstitial}
+
       {feed?.permissions.can_post && socialHomeMode && (
         <div id="hub-post-composer" className="mb-3 border-y border-border bg-card px-4 py-3 sm:rounded-2xl sm:border">
           <div className="flex items-center gap-3">
@@ -355,8 +360,6 @@ export default function HubCommunityFeedPanel({
           <p className="mt-2 text-[10px] text-muted-foreground">Media is stored securely with this post. Files up to 5 MB are supported.</p>
         </div>
       )}
-
-      {socialHomeMode && homeInterstitial}
 
       {error && <div role="alert" className="mb-3 rounded-2xl border border-rose-300/20 bg-rose-300/5 p-4 text-sm text-rose-100">{error}</div>}
 

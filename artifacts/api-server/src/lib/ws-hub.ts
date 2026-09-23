@@ -51,6 +51,7 @@ export type WsEventType =
   | "new_gratitude_prompt"
   | "gratitude_liked"
   | "hub_community_post_created"
+  | "hub_community_post_updated"
   | "crisis_update"
   | "payment_completed"
   | "payouts_enabled"
@@ -314,6 +315,7 @@ const LEGACY_TO_UNIFIED: Record<string, UnifiedEventType | null> = {
   REQUEST_CREATED:"request.created", REQUEST_ACCEPTED:"request.status_changed", REQUEST_CANCELLED:"request.status_changed",
   community_story_created:"story.created", community_story_expired:"story.expired", community_story_viewed:"story.viewed",
   community_story_reaction:"story.reaction", community_story_shared:"story.shared",
+  hub_community_post_updated:"hub.updated",
   direct_call_invite:"call.invited", direct_call_accept:"call.accepted", direct_call_end:"call.ended",
   nia_message:"nia.message", nia_typing:"nia.typing", nia_status:"nia.status",
 };

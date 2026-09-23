@@ -29,6 +29,13 @@ describe("Community Social V4 architecture", () => {
     assert.doesNotMatch(shell, /key: "profile" as const/);
   });
 
+  test("Hub post updates remain on the canonical realtime contract", () => {
+    const wsClient = fs.readFileSync(path.join(__dirname, "../wsClient.ts"), "utf8");
+    const feed = fs.readFileSync(path.join(__dirname, "../../components/community/HubCommunityFeedPanel.tsx"), "utf8");
+    assert.match(feed, /hub_community_post_updated/);
+    assert.match(wsClient, /hub_community_post_updated/);
+  });
+
   test("there is no persistent Feed/Requests/More text-tab bar", () => {
     assert.doesNotMatch(shell, /contentNavItems/);
     assert.doesNotMatch(shell, /label: "Feed"/);
