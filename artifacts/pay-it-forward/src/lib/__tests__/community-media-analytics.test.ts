@@ -9,6 +9,7 @@ describe("Community Media analytics", () => {
   test("keeps the event payload bounded and free of search or profile content", () => {
     const properties: CommunityMediaAnalyticsProperties = {
       hub_id: 42,
+      media_id: 101,
       requested_kind: "photo",
       media_ids: [101, 102],
       result_count: 2,

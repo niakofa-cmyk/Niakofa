@@ -13,6 +13,7 @@ export type CommunityMediaAnalyticsEvent =
 
 export type CommunityMediaAnalyticsProperties = {
   hub_id?: number;
+  media_id?: number;
   requested_kind?: VisualDiscoveryKind;
   media_kind?: Exclude<VisualDiscoveryKind, "all">;
   media_ids?: number[];
