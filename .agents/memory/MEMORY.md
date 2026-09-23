@@ -62,3 +62,4 @@
 - [Canonical realtime authority](canonical-realtime-authority.md) — persist canonical events before delivery; replay, live frames, read summaries, and UI state must converge on durable server state.
 - [Unlicensed reference recreation boundary](unlicensed-reference-recreation.md) — unlicensed ZIPs/repositories are reference-only; recreate behavior independently in Niakofa and never copy source, assets, credentials, schemas, auth, or backend configuration.
 - [TypeScript incremental CI state](typescript-incremental-ci-state.md) — never track tsbuildinfo without its emitted declarations; clean CI can skip required builds and fail with TS6305.
+- [Nia optional-feature gating](nia-context-killswitch.md) — wait for the shared Nia kill-switch before issuing optional context probes.
