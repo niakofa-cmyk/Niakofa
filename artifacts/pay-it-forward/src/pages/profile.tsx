@@ -922,7 +922,9 @@ function RecentHelpersSection({
     // Only show spinner if we've never loaded data for this user yet
     if (!hasLoadedRef.current) setLoading(true);
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/requests?requester_id=${userId}&status=completed&limit=6`)
+    fetch(`${base}/api/requests?requester_id=${userId}&status=completed&limit=6`, {
+      headers: authHeaders(),
+    })
       .then(r => (r.ok ? r.json() : []))
       .then((rows: CompletedRequest[]) => {
         // Deduplicate by helper_id, only include rows where a helper completed the job

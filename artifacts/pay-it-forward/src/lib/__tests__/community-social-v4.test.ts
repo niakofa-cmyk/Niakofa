@@ -11,6 +11,7 @@ const more = fs.readFileSync(path.join(__dirname, "../../components/community/Co
 const feed = fs.readFileSync(path.join(__dirname, "../../components/community/HubCommunityFeedPanel.tsx"), "utf8");
 const storyVisual = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoryVisual.tsx"), "utf8");
 const storyStyles = fs.readFileSync(path.join(__dirname, "../../components/community/community-story-visual.css"), "utf8");
+const profile = fs.readFileSync(path.join(__dirname, "../../pages/profile.tsx"), "utf8");
 
 describe("Community Social V4 view boundaries", () => {
   test("Community routes delegate primary destinations to dedicated views", () => {
@@ -74,6 +75,13 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(feed, /video\.play\(\)/);
     assert.match(feed, /video\.pause\(\)/);
     assert.match(feed, /headers: authHeaders\(\)/);
+  });
+
+  test("authenticated profile activity fetches do not create background auth failures", () => {
+    assert.match(
+      profile,
+      /fetch\(`\$\{base\}\/api\/requests\?requester_id=\$\{userId\}&status=completed&limit=6`,\s*\{\s*headers: authHeaders\(\),\s*\}\)/,
+    );
   });
 
   test("Story gallery previews uploaded video files as video thumbnails", () => {
