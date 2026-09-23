@@ -147208,7 +147208,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "faacbd884fb16ddd694c841e18929fd84110491c";
+var GIT_COMMIT = "dfade24b47dab2f58f46697747483641247f0b75";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
