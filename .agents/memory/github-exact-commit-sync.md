@@ -44,6 +44,17 @@ when base64-encoded, so GitHub created a valid but truncated orphan commit.
 large files, prefer the supported Git push path or another transport that
 preserves the full blob; never advance `main` after a partial upload.
 
+Shell output returned through the durable execution bridge can normalize tabs,
+carriage returns, and multi-line payload boundaries. Use separate commands for
+critical ref/tree metadata, or a NUL-safe encoded payload, rather than relying
+on tab-delimited combined output.
+
+**Why:** Combined manifest parsing produced false local-metadata failures even
+though the Git objects and remote publication were intact.
+
+**How to apply:** Keep the publication gate unchanged, but isolate metadata
+reads from large tree exports and validate each parsed value before comparison.
+
 The GitHub connector may return `429` for parallel Git Data API blob creation
 even when the account rate limit is healthy. Upload changed blobs sequentially
 with backoff, then create and verify the tree before advancing the ref.
