@@ -17,6 +17,8 @@ import { getToken } from "@/lib/auth";
 import { parseEtaSeconds } from "@/lib/eta";
 import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
+import { ArrivalState } from "@/components/request/ArrivalState";
+import { NavigationContext } from "@/components/request/NavigationContext";
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -331,6 +333,16 @@ export default function RequesterTrackingScreen() {
         </div>
 
         <div className="px-5 py-4 space-y-3">
+          <ArrivalState
+            status={isCompleted ? "completed" : isArrived ? "arrived" : request.status}
+            personName={request.helper_name}
+            role="requester"
+          />
+          <NavigationContext
+            route={routeData}
+            status={request.status}
+            role="requester"
+          />
           {/* Helper info */}
           {hasHelper && (
             <div className="flex items-center gap-3">

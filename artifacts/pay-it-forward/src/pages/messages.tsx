@@ -12,8 +12,7 @@ import { ConversationHeader } from "@/components/messages/ConversationHeader";
 import { MessagesShell } from "@/components/messages/MessagesShell";
 import { NewMessageRail } from "@/components/messages/NewMessageRail";
 import { NewMessageDialog } from "@/components/messages/NewMessageDialog";
-import { RequestContextCard } from "@/components/messages/RequestContextCard";
-import { RequestLiveMapCard } from "@/components/messages/RequestLiveMapCard";
+import { RequestConversationContext } from "@/components/request/RequestConversationContext";
 import { SharedMediaPanel } from "@/components/messages/SharedMediaPanel";
 import { DirectCallPanel } from "@/components/messages/DirectCallPanel";
 import { MessengerMobileHome } from "@/components/messages/MessengerMobileHome";
@@ -142,8 +141,7 @@ function RequestThread({
     <section className="flex h-full min-h-0 flex-col">
       <ConversationHeader title={request.title} subtitle={`${request.status} · ${otherName}`} onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-        <RequestContextCard request={request} currentUserId={currentUserId} onOpen={onOpenRequest} />
-        <RequestLiveMapCard request={request} currentUserId={currentUserId} />
+        <RequestConversationContext request={request} currentUserId={currentUserId} onOpen={onOpenRequest} />
         <InAppChat
           requestId={request.id}
           currentUserId={currentUserId}

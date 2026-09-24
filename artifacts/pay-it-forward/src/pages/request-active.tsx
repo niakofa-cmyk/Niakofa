@@ -39,6 +39,9 @@ import { readCompletionError } from "@/lib/readCompletionError";
 import { parseEtaSeconds } from "@/lib/eta";
 import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
+import { ArrivalState } from "@/components/request/ArrivalState";
+import { HelperContextCard } from "@/components/request/HelperContextCard";
+import { NavigationContext } from "@/components/request/NavigationContext";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -1008,26 +1011,46 @@ export default function ActiveRequestScreen() {
 
       {/* Bottom action card */}
       <div className="absolute bottom-0 left-0 right-0 z-20 bg-card border-t border-border rounded-t-3xl shadow-[0_-20px_50px_rgba(0,0,0,0.5)] p-5 pb-safe">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-border shrink-0">
-            {request.requester_avatar ? (
-              <img src={request.requester_avatar} alt="Requester" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-lg font-bold">{request.requester_name?.[0] || "U"}</span>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-base font-bold truncate">{request.title}</h2>
-            <p className="text-muted-foreground text-sm">{request.requester_name}</p>
-          </div>
-          <div className="text-right shrink-0">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Status</div>
-            <div className={`text-xs font-black uppercase ${isArrived ? "text-green-500" : isOffRoute ? "text-orange-400" : "text-primary"}`}>
-              {isArrived ? "Arrived" : isOffRoute ? "Rerouting" : request.status.replace("_", " ")}
+        {isHelper ? (
+          <HelperContextCard
+            request={request}
+            onOpen={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          />
+        ) : (
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-border shrink-0">
+              {request.requester_avatar ? (
+                <img src={request.requester_avatar} alt="Requester" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-lg font-bold">{request.requester_name?.[0] || "U"}</span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-bold truncate">{request.title}</h2>
+              <p className="text-muted-foreground text-sm">{request.requester_name}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Status</div>
+              <div className={`text-xs font-black uppercase ${isArrived ? "text-green-500" : isOffRoute ? "text-orange-400" : "text-primary"}`}>
+                {isArrived ? "Arrived" : isOffRoute ? "Rerouting" : request.status.replace("_", " ")}
+              </div>
             </div>
           </div>
-        </div>
+        )}
         <RequestLifecycleTimeline status={request.status} compact className="mb-4" />
+        <NavigationContext
+          route={routeData}
+          status={request.status}
+          role={isHelper ? "helper" : "requester"}
+          currentStep={currentStep}
+        />
+        <div className="mb-3" />
+        <ArrivalState
+          status={isCompleted ? "completed" : isArrived ? "arrived" : request.status}
+          personName={isHelper ? request.requester_name : request.helper_name}
+          role={isHelper ? "helper" : "requester"}
+          onComplete={isHelper && isArrived ? handleComplete : undefined}
+        />
 
         {routeData?.steps && routeData.steps.length > 0 && !isArrived && (
           <div className="mb-3">
@@ -1078,7 +1101,7 @@ export default function ActiveRequestScreen() {
           </div>
         )}
 
-        <Button
+        {isHelper && !isArrived && !isCompleted && <Button
           className={`w-full h-12 text-base font-black uppercase tracking-widest gap-2 ${
             isCompleted ? "bg-muted text-muted-foreground" : isArrived ? "bg-green-500 hover:bg-green-600 text-white" : ""
           }`}
@@ -1086,7 +1109,7 @@ export default function ActiveRequestScreen() {
           disabled={completionPending || isCompleted}
         >
           {completionPending ? "Processing..." : isCompleted ? "✓ Completed" : isArrived ? "✓ Mark Complete" : "I'm Here — Complete"}
-        </Button>
+        </Button>}
 
         {request.payment_type === "immediate" && earnAmount && (
           <p className="text-center text-xs text-green-400 font-bold mt-2">

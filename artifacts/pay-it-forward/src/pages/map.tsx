@@ -57,7 +57,7 @@ import { computeMapStatus } from "@/lib/mapStatus";
 import { haversineDistanceMiles, haversineMeters, isNearbyUser } from "@/lib/geo-utils";
 import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
-import { requestLifecycleLabel } from "@/components/RequestLifecycleTimeline";
+import { ActiveHelpCard } from "@/components/request/ActiveHelpCard";
 
 // Module-level: resolved once at import time, not on every render.
 // Detecting a missing token here (rather than inside the component) means
@@ -1369,24 +1369,26 @@ export default function MapScreen() {
             </button>
           )}
           {mapStatus.kind === "active-job" && (
-            <button
-              onClick={() => setLocation(activeJobPath)}
-              style={{ touchAction: "manipulation" }}
-              className="flex items-center gap-2 bg-primary/15 backdrop-blur-md border border-primary/40 text-primary px-3 py-2 rounded-xl shadow-lg active:scale-95 transition-transform pointer-events-auto"
-            >
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" />
-              <span className="text-[11px] font-bold leading-tight text-left">
-                {activeJobRequest ? `${requestLifecycleLabel(activeJobRequest.status)}: ${(activeJobRequest as HelpRequest).title}` : "Active help in progress"} · tap to return
-              </span>
-              <span
-                role="button"
-                aria-label="Dismiss job in progress reminder"
-                onClick={(e) => { e.stopPropagation(); setActiveJobBannerDismissed(activeRequestId); }}
-                className="ml-1 text-primary/60 font-black px-1"
+            activeJobRequest && currentUser ? (
+              <ActiveHelpCard
+                request={activeJobRequest}
+                currentUserId={currentUser.id}
+                onOpen={() => setLocation(activeJobPath)}
+                onDismiss={(e) => {
+                  e.stopPropagation();
+                  setActiveJobBannerDismissed(activeRequestId);
+                }}
+              />
+            ) : (
+              <button
+                onClick={() => setLocation(activeJobPath)}
+                style={{ touchAction: "manipulation" }}
+                className="pointer-events-auto flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-3 py-2 text-primary shadow-lg backdrop-blur-md transition-transform active:scale-95"
               >
-                ×
-              </span>
-            </button>
+                <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
+                <span className="text-left text-[11px] font-bold leading-tight">Active help in progress · tap to return</span>
+              </button>
+            )
           )}
           {mapStatus.kind === "coverage-outside" && (
             <div className="flex items-center gap-2 bg-amber-500/15 backdrop-blur-md border border-amber-500/40 px-3 py-2 rounded-xl shadow-lg">

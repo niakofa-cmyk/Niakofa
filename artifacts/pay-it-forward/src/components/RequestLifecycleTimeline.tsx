@@ -20,7 +20,7 @@ const STATUS_INDEX: Record<string, number> = {
   claimed: 1,
   en_route: 2,
   helping: 4,
-  arrived: 4,
+  arrived: 3,
   completed: 5,
 };
 
@@ -29,7 +29,7 @@ const STATUS_SUMMARY: Record<string, string> = {
   claimed: "Helper matched",
   en_route: "Helper is on the way",
   helping: "Helping now",
-  arrived: "Helping now",
+  arrived: "Helper arrived",
   completed: "Request completed",
   cancelled: "Request cancelled",
 };
