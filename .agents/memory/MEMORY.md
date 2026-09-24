@@ -1,3 +1,4 @@
+- [CI package working directories](ci-working-directory.md) — API source-contract Jest tests must run from their package directory; root invocation can create false path failures.
 - [Workspace package manager](toolchain-install.md) — use the repository-pinned pnpm through npm exec when the system pnpm shim self-manages and stalls.
 - [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
 - [Media activation gate](media-platform-activation.md) — keep the universal media flag off until durable storage, Redis, toolchain, and live variant checks pass.
