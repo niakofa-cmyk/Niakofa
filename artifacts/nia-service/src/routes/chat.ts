@@ -451,8 +451,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     }
 
     const durationMs = Date.now() - streamStartTime;
-    // Estimate cost: Claude Sonnet 4.5 = $3/1M input tokens, $15/1M output tokens
-    const estimatedCostUsd = (inputTokens * 0.000003) + (outputTokens * 0.000015);
+    // Claude Sonnet 5 pricing: $2 / 1M input tokens, $10 / 1M output tokens.
+    const estimatedCostUsd = (inputTokens * 0.000002) + (outputTokens * 0.00001);
 
     clearTimeout(timeoutHandle);
     pipelineContext.output = fullResponse;
