@@ -125,11 +125,14 @@ function getQuickPrompts(lang: CulturalLanguage) {
   return QUICK_PROMPTS_BY_LANG[lang] ?? QUICK_PROMPTS_EN;
 }
 
-function getSessionId(): string {
-  let id = localStorage.getItem("nia_session_id");
+function getSessionId(userId: number | null): string {
+  const scope = userId === null ? "anon" : String(userId);
+  const storageKey = `nia_session_id_${scope}`;
+  let id = localStorage.getItem(storageKey);
   if (!id) {
-    id = `nia_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    localStorage.setItem("nia_session_id", id);
+    const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    id = userId === null ? `anon-${nonce}` : `${userId}-${nonce}`;
+    localStorage.setItem(storageKey, id);
   }
   return id;
 }
@@ -719,7 +722,7 @@ export function NiaDrawer({
   open,
   onClose,
   initialMessage,
-  userId: _userId = null,
+  userId = null,
   userName = null,
   userLocation = null,
   userCity = null,
@@ -754,7 +757,7 @@ export function NiaDrawer({
   const [liveContext, setLiveContext] = useState<NiaContext | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const sessionId = getSessionId();
+  const sessionId = useMemo(() => getSessionId(userId), [userId]);
   const isFirstOpen = useRef(!sessionStorage.getItem("nia_has_opened"));
   const contextFetchedRef = useRef(false);
 
@@ -815,6 +818,12 @@ export function NiaDrawer({
 
   useEffect(() => { contextFetchedRef.current = false; }, [userCoords]);
 
+  // Account changes must switch Nia history scopes and force a fresh restore.
+  useEffect(() => {
+    setHistoryLoaded(false);
+    setMessages([]);
+  }, [userId]);
+
   useEffect(() => {
     if (!open || historyLoaded) return;
     if (isFirstOpen.current) {
@@ -823,13 +832,29 @@ export function NiaDrawer({
       isFirstOpen.current = false;
     }
     fetch(`${API_BASE}/api/nia/history/${sessionId}`, { headers: authHeaders() })
-      .then((r) => r.json())
-      .then((rows: { userMessage: string; niaResponse: string }[]) => {
+      .then(async (res) => {
+        if (!res.ok) {
+          let detail = "Unable to restore Nia conversation history.";
+          try {
+            const body = await res.json() as { error?: string };
+            if (body?.error) detail = body.error;
+          } catch {}
+          throw new Error(detail);
+        }
+        return res.json() as Promise<{
+          userMessage: string;
+          niaResponse: string;
+          createdAt: string | Date;
+        }[]>;
+      })
+      .then((rows) => {
         if (rows.length > 0) {
           const restored: Message[] = [];
           for (const row of rows) {
-            restored.push({ role: "user", content: row.userMessage, timestamp: new Date() });
-            restored.push({ role: "nia", content: row.niaResponse, timestamp: new Date() });
+            const timestamp = new Date(row.createdAt);
+            const safeTimestamp = Number.isNaN(timestamp.getTime()) ? new Date() : timestamp;
+            restored.push({ role: "user", content: row.userMessage, timestamp: safeTimestamp });
+            restored.push({ role: "nia", content: row.niaResponse, timestamp: safeTimestamp });
           }
           setMessages(restored);
         } else {
@@ -843,11 +868,15 @@ export function NiaDrawer({
         }
         setHistoryLoaded(true);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        const detail = err instanceof Error && err.message
+          ? err.message
+          : "Unable to restore Nia conversation history. Please try again.";
         setMessages([{
           role: "nia",
-          content: `Sawubona — I see you. Akwaaba, you are welcome here.\n\nI am Nia. How can I support you today?`,
+          content: `I’m here, but I couldn’t restore our previous conversation. ${detail} You can continue chatting, and your new messages will still be saved.`,
           timestamp: new Date(),
+          lang: userLang,
         }]);
         setHistoryLoaded(true);
       });
@@ -932,7 +961,7 @@ export function NiaDrawer({
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = "en-US";
+    recognition.lang = userLang === "pcm" ? "en-NG" : userLang;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognitionRef.current = recognition;
@@ -1016,7 +1045,7 @@ export function NiaDrawer({
           activeRequestId: activeRequestId ?? null,
           accountType: accountType ?? null,
           liveContext: liveContext ?? undefined,
-          preferredLanguage: userLang,
+          language: userLang,
           ...(coords ?? {}),
           city: resolvedCity ?? undefined,
           county: resolvedCounty ?? undefined,
