@@ -16,10 +16,15 @@ export function RequestConversationContext({
   currentUserId: number;
   onOpen: () => void;
 }) {
+  const normalizedRequest = {
+    ...request,
+    helper_id: request.helper_id ?? null,
+  };
+
   return (
     <div className="space-y-3" data-testid={`context-request-conversation-${request.id}`}>
-      <RequestContextCard request={request} currentUserId={currentUserId} onOpen={onOpen} />
-      <RequestMapContext request={request} currentUserId={currentUserId} />
+      <RequestContextCard request={normalizedRequest} currentUserId={currentUserId} onOpen={onOpen} />
+      <RequestMapContext request={normalizedRequest} currentUserId={currentUserId} />
     </div>
   );
 }

@@ -3,7 +3,7 @@ export type RequestInteractionSummary = {
   title: string;
   status: string;
   requester_id: number;
-  helper_id: number | null;
+  helper_id?: number | null;
   requester_name?: string | null;
   helper_name?: string | null;
   requester_avatar?: string | null;
