@@ -53,7 +53,7 @@ function verifyInternalSecret(req: Request, res: Response, next: NextFunction): 
     return;
   }
   if (secret !== INTERNAL_SECRET) {
-    logger.warn({ headerSecret: secret?.toString().slice(0, 4) + "..." }, "checkin: invalid internal secret");
+    logger.warn("checkin: invalid internal secret");
     res.status(403).json({ error: "Invalid internal secret" });
     return;
   }
