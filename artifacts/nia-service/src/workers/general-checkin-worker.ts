@@ -147,27 +147,35 @@ async function runGeneralCheckin(): Promise<void> {
 
     for (const req of requests) {
       try {
-        // 1. Mark as sent first — idempotent guard prevents double check-ins
-        //    if the worker fires twice in the same window
-        const updateResult = await pool.query(
-          `UPDATE help_requests
-           SET nia_checkin_sent_at = NOW()
-           WHERE id = $1
-             AND nia_checkin_sent_at IS NULL
-           RETURNING id`,
+        // Coordinate with api-server's check-in worker using the same
+        // PostgreSQL advisory lock. Do not mark the request sent until the
+        // conversation has been durably written.
+        const lockResult = await pool.query(
+          `SELECT pg_try_advisory_lock(hashtext('nia-checkin:' || $1::text)) AS locked`,
           [req.request_id]
         );
-
-        // Another worker instance already processed this one — skip
-        if ((updateResult.rowCount ?? 0) === 0) {
+        if (!lockResult.rows[0]?.locked) {
           logger.info(
             { requestId: req.request_id },
-            "general-checkin-worker: already processed, skipping"
+            "general-checkin-worker: another worker owns request, skipping"
           );
           continue;
         }
 
-        // 2. Build the Nia message — a resident of a hub currently flagged
+        try {
+          const state = await pool.query(
+            `SELECT nia_checkin_sent_at FROM help_requests WHERE id = $1 LIMIT 1`,
+            [req.request_id]
+          );
+          if (state.rows[0]?.nia_checkin_sent_at) {
+            logger.info(
+              { requestId: req.request_id },
+              "general-checkin-worker: already processed, skipping"
+            );
+            continue;
+          }
+
+          // 1. Build the Nia message — a resident of a hub currently flagged
         //    in crisis gets crisis-aware framing (and is flagged is_crisis=TRUE
         //    below) instead of the generic "hope it went smoothly" nudge, so
         //    crisis-followup-worker's is_crisis-based selection picks them up
@@ -233,11 +241,39 @@ async function runGeneralCheckin(): Promise<void> {
           );
         }
 
-        totalProcessed++;
-        logger.info(
-          { userId: req.user_id, requestId: req.request_id },
-          "general-checkin-worker: sent check-in"
-        );
+          // 3. Mark as sent only after the conversation was durably saved.
+          const updateResult = await pool.query(
+            `UPDATE help_requests
+             SET nia_checkin_sent_at = NOW()
+             WHERE id = $1
+               AND nia_checkin_sent_at IS NULL
+             RETURNING id`,
+            [req.request_id]
+          );
+          if ((updateResult.rowCount ?? 0) === 0) {
+            logger.info(
+              { requestId: req.request_id },
+              "general-checkin-worker: completion lost race"
+            );
+            continue;
+          }
+
+          totalProcessed++;
+          logger.info(
+            { userId: req.user_id, requestId: req.request_id },
+            "general-checkin-worker: sent check-in"
+          );
+        } finally {
+          await pool.query(
+            `SELECT pg_advisory_unlock(hashtext('nia-checkin:' || $1::text))`,
+            [req.request_id]
+          ).catch((unlockErr) =>
+            logger.warn(
+              { unlockErr, requestId: req.request_id },
+              "general-checkin-worker: advisory unlock failed"
+            )
+          );
+        }
       } catch (err) {
         logger.error(
           { err, requestId: req.request_id },
