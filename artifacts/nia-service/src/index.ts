@@ -36,7 +36,9 @@ app.use(cors({
     ? allowedOrigin.split(",").map(s => s.trim())
     : false,
 }));
-app.use(express.json({ limit: "256kb" }));
+// Image analysis accepts up to 5MB raw images encoded as base64; allow headroom
+// for the JSON envelope and base64 expansion while keeping an explicit ceiling.
+app.use(express.json({ limit: "10mb" }));
 
 const networkLimiter = rateLimit({
   windowMs: 60 * 1000,
