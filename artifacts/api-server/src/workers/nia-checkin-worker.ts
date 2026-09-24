@@ -21,6 +21,7 @@
  * marks the request sent after Nia has successfully persisted the check-in.
  * Failed Nia generation leaves nia_checkin_sent_at NULL so a later run can
  * retry.
+ */
 
 import { db, systemSettingsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
