@@ -10,6 +10,7 @@ import { toast } from "@/hooks/use-toast";
 import { isSensitiveCategory, getRequesterTier, REQUESTER_TIER_LABEL, REQUESTER_TIER_EMOJI } from "@workspace/trust-tiers";
 import { TipModal } from "@/components/TipModal";
 import { newOperationKey } from "@/lib/retryableMutation";
+import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
 
 const URGENCY_CONFIG = {
   emergency: { label: "Emergency", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/30", icon: AlertTriangle },
@@ -146,6 +147,7 @@ export default function RequestDetailScreen() {
             <div className="text-xs text-muted-foreground">Posted {fmtDate(request.created_at)}</div>
           </div>
         </div>
+        <RequestLifecycleTimeline status={request.status} />
 
         {/* Details grid */}
         {isSensitiveCategory(request.category) && (

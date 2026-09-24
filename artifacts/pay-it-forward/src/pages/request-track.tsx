@@ -16,6 +16,7 @@ import { InAppChat } from "@/components/InAppChat";
 import { getToken } from "@/lib/auth";
 import { parseEtaSeconds } from "@/lib/eta";
 import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
+import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -24,16 +25,6 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
   const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-
-const STATUS_STEPS = [
-  { key: "open",      label: "Posted",      icon: MapPin },
-  { key: "claimed",   label: "Matched",     icon: CheckCircle2 },
-  { key: "en_route",  label: "On the way",  icon: Navigation2 },
-  { key: "arrived",   label: "Arrived",     icon: CheckCircle2 },
-  { key: "completed", label: "Completed",   icon: CheckCircle2 },
-];
-
-const STATUS_ORDER = ["open", "claimed", "en_route", "arrived", "completed"];
 
 export default function RequesterTrackingScreen() {
   const [, params] = useRoute("/request/:id/track");
@@ -174,7 +165,6 @@ export default function RequesterTrackingScreen() {
     );
   }
 
-  const currentStatusIdx = STATUS_ORDER.indexOf(request.status);
   const isCompleted = request.status === "completed";
   const isArrived = request.status === "arrived" || request.status === "completed";
   const hasHelper = !!request.helper_id;
@@ -336,39 +326,8 @@ export default function RequesterTrackingScreen() {
       <div className="absolute bottom-0 left-0 right-0 z-20 bg-card border-t border-border rounded-t-3xl shadow-[0_-20px_50px_rgba(0,0,0,0.5)]"
         style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
       >
-        {/* Status progress bar */}
-        <div className="px-5 pt-4 pb-3 border-b border-border">
-          {/* Status steps with inline connectors — flex-based, no hardcoded % math */}
-          <div className="flex items-start">
-            {STATUS_STEPS.map((step, i) => {
-              const done = i <= currentStatusIdx;
-              const active = i === currentStatusIdx;
-              const isLast = i === STATUS_STEPS.length - 1;
-              return (
-                <div key={step.key} className="flex items-start flex-1">
-                  {/* Step dot + label */}
-                  <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
-                      done
-                        ? "bg-primary border-primary"
-                        : "bg-muted border-border"
-                    } ${active ? "shadow-[0_0_10px_rgba(0,212,255,0.5)]" : ""}`}>
-                      <step.icon className={`w-3 h-3 ${done ? "text-primary-foreground" : "text-muted-foreground"}`} />
-                    </div>
-                    <span className={`text-[10px] font-bold text-center leading-tight w-12 ${done ? "text-primary" : "text-muted-foreground"}`}>
-                      {step.label}
-                    </span>
-                  </div>
-                  {/* Connector line between steps */}
-                  {!isLast && (
-                    <div className={`flex-1 h-0.5 mt-3 mx-0.5 transition-all rounded-full ${
-                      i < currentStatusIdx ? "bg-primary" : "bg-border"
-                    }`} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        <div className="border-b border-border px-5 pt-4 pb-3">
+          <RequestLifecycleTimeline status={request.status} />
         </div>
 
         <div className="px-5 py-4 space-y-3">

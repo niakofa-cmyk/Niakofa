@@ -1,5 +1,6 @@
 import { MapPinned, Navigation2, Route } from "lucide-react";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
+import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
 
 type RequestContext = {
   id: number;
@@ -49,7 +50,8 @@ export function RequestContextCard({
         <div><p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Role</p><p className="mt-1 font-bold">{isRequester ? "Requester" : isHelper ? "Helper" : "Observer"}</p></div>
         <div><p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">With</p><p className="mt-1 truncate font-bold">{otherPerson}</p></div>
       </div>
-      <div className="mx-4 mb-3 rounded-2xl border border-border/80 bg-background/60 p-3">
+       <RequestLifecycleTimeline status={request.status} className="mx-4 mb-3" />
+       <div className="mx-4 mb-3 rounded-2xl border border-border/80 bg-background/60 p-3">
         <div className="flex items-center gap-3">
           <div className="relative flex flex-1 items-center gap-2">
             <span className="h-3 w-3 rounded-full border-2 border-primary bg-background" />

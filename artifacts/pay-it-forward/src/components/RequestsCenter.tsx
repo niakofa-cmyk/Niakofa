@@ -4,6 +4,7 @@ import { useLocation, useSearch } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
+import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
 
 type RequestStatus = "open" | "claimed" | "en_route" | "arrived" | "completed" | "cancelled" | string;
 
@@ -261,6 +262,7 @@ export default function RequestsCenter({ embedded = false }: RequestsCenterProps
                       {row.requester_name && <span className="text-muted-foreground">Requester: {row.requester_name}</span>}
                       {row.helper_name && <span className="text-muted-foreground">Helper: {row.helper_name}</span>}
                     </div>
+                    <RequestLifecycleTimeline status={row.status} compact className="mt-3" />
                   </div>
                   <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
                 </div>

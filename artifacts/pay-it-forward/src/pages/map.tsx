@@ -57,6 +57,7 @@ import { computeMapStatus } from "@/lib/mapStatus";
 import { haversineDistanceMiles, haversineMeters, isNearbyUser } from "@/lib/geo-utils";
 import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
+import { requestLifecycleLabel } from "@/components/RequestLifecycleTimeline";
 
 // Module-level: resolved once at import time, not on every render.
 // Detecting a missing token here (rather than inside the component) means
@@ -1375,7 +1376,7 @@ export default function MapScreen() {
             >
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" />
               <span className="text-[11px] font-bold leading-tight text-left">
-                Job in progress{activeJobRequest ? `: ${(activeJobRequest as HelpRequest).title}` : ""} · tap to return
+                {activeJobRequest ? `${requestLifecycleLabel(activeJobRequest.status)}: ${(activeJobRequest as HelpRequest).title}` : "Active help in progress"} · tap to return
               </span>
               <span
                 role="button"

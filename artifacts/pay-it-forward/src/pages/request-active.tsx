@@ -38,6 +38,7 @@ import { newOperationKey, retryableMutation } from "@/lib/retryableMutation";
 import { readCompletionError } from "@/lib/readCompletionError";
 import { parseEtaSeconds } from "@/lib/eta";
 import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
+import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -1026,6 +1027,7 @@ export default function ActiveRequestScreen() {
             </div>
           </div>
         </div>
+        <RequestLifecycleTimeline status={request.status} compact className="mb-4" />
 
         {routeData?.steps && routeData.steps.length > 0 && !isArrived && (
           <div className="mb-3">

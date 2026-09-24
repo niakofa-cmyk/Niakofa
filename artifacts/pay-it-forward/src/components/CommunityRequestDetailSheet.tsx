@@ -2,6 +2,7 @@ import { ArrowUpRight, HeartHandshake, MapPin, X } from "lucide-react";
 import { useLocation } from "wouter";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
 
 interface CommunityRequestDetailSheetProps {
   request: HelpRequest | null;
@@ -63,6 +64,7 @@ export function CommunityRequestDetailSheet({ request, onClose }: CommunityReque
                   {request.category.replace(/_/g, " ")}
                 </span>
               </div>
+              <RequestLifecycleTimeline status={request.status} compact />
 
               {request.description && (
                 <p className="text-sm leading-relaxed text-foreground/90">{request.description}</p>
