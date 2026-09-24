@@ -86,6 +86,7 @@ export * from './getOnlineHelpersParams';
 export * from './getPoolLedgerParams';
 export * from './getReportsParams';
 export * from './getReportsStatus';
+export * from './getRequestsCategory';
 export * from './getRequestsParams';
 export * from './getRequestsStatus';
 export * from './getRouteParams';

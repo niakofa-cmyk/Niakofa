@@ -526,6 +526,7 @@ export const RegisterUserResponse = zod.object({
  */
 export const GetRequestsQueryParams = zod.object({
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']).optional(),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services', 'legal_aid', 'financial_coaching', 'job_assistance', 'language_help', 'mental_health_peer', 'technology_help']).optional().describe('Filter requests by the help category.'),
   "lat": zod.coerce.number().optional(),
   "lng": zod.coerce.number().optional(),
   "radius_miles": zod.coerce.number().optional()

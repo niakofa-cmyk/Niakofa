@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Wrench, Award, Globe, Truck, Stethoscope, Zap, Hammer, Monitor, Car, Utensils, Baby } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Link } from "wouter";
 
 const SKILLS_DIRECTORY = [
   { id: "bilingual",            label: "Bilingual",    Icon: Globe,       desc: "Spanish, Vietnamese, or other language support", cats: ["groceries","errands","medical"] },
@@ -78,14 +79,26 @@ export function SkillsMarketplaceTab() {
               <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Helps With</div>
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {skill.cats.map(cat => (
-                  <span key={cat} className="text-[10px] font-bold bg-muted border border-border px-2 py-1 rounded-full">
+                  <Link
+                    key={cat}
+                    href={`/community/requests?category=${encodeURIComponent(cat)}`}
+                    className="text-[10px] font-bold bg-muted border border-border px-2 py-1 rounded-full transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                  >
                     {CAT_LABELS[cat] ?? cat}
-                  </span>
+                  </Link>
                 ))}
               </div>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Add this skill in Profile → Settings to get matched with relevant requests automatically.
-              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Add this skill in Profile → Settings to get matched automatically.
+                </p>
+                <Link
+                  href={`/community/requests?category=${encodeURIComponent(skill.cats[0])}`}
+                  className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-xl bg-primary px-3 text-[11px] font-black text-primary-foreground transition hover:bg-primary/90"
+                >
+                  Find open requests
+                </Link>
+              </div>
             </motion.div>
           );
         })()}

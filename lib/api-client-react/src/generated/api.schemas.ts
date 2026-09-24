@@ -1727,6 +1727,10 @@ export type RegisterUserHint200 = {
 
 export type GetRequestsParams = {
 status?: GetRequestsStatus;
+/**
+ * Filter requests by the help category.
+ */
+category?: GetRequestsCategory;
 lat?: number;
 lng?: number;
 radius_miles?: number;
@@ -1744,6 +1748,41 @@ export const GetRequestsStatus = {
   pay_it_forward_pending: 'pay_it_forward_pending',
   pending_owner_approval: 'pending_owner_approval',
   cancelled: 'cancelled',
+} as const;
+
+export type GetRequestsCategory = typeof GetRequestsCategory[keyof typeof GetRequestsCategory];
+
+
+export const GetRequestsCategory = {
+  groceries: 'groceries',
+  transportation: 'transportation',
+  errands: 'errands',
+  home_repair: 'home_repair',
+  medical: 'medical',
+  emergency: 'emergency',
+  other: 'other',
+  stock_shelves: 'stock_shelves',
+  event_setup: 'event_setup',
+  delivery_run: 'delivery_run',
+  tech_support: 'tech_support',
+  local_farm: 'local_farm',
+  food_pantry: 'food_pantry',
+  moving_labor: 'moving_labor',
+  pet_care: 'pet_care',
+  childcare: 'childcare',
+  senior_care: 'senior_care',
+  yard_work: 'yard_work',
+  tutoring: 'tutoring',
+  cleaning: 'cleaning',
+  meal_prep: 'meal_prep',
+  paperwork: 'paperwork',
+  business_services: 'business_services',
+  legal_aid: 'legal_aid',
+  financial_coaching: 'financial_coaching',
+  job_assistance: 'job_assistance',
+  language_help: 'language_help',
+  mental_health_peer: 'mental_health_peer',
+  technology_help: 'technology_help',
 } as const;
 
 export type GetNearbyRequestsParams = {

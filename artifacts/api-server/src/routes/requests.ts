@@ -319,6 +319,7 @@ router.get("/requests", requireAuth, async (req, res) => {
 
   const params = GetRequestsQueryParams.safeParse({
     status: req.query.status,
+    category: req.query.category,
     lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
     lng: req.query.lng ? parseFloat(req.query.lng as string) : undefined,
     radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles as string) : undefined,
@@ -345,6 +346,9 @@ router.get("/requests", requireAuth, async (req, res) => {
   const conditions = [];
   if (params.success && params.data.status) {
     conditions.push(eq(requestsTable.status, params.data.status));
+  }
+  if (params.success && params.data.category) {
+    conditions.push(eq(requestsTable.category, params.data.category));
   }
   if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
   if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));

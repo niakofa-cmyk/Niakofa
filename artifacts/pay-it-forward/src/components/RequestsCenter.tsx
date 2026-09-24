@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronRight, ClipboardList, Loader2, MapPin, Navigation2, RefreshCw, Route, Sparkles } from "lucide-react";
-import { useLocation } from "wouter";
+import { CheckCircle2, ChevronRight, ClipboardList, Loader2, MapPin, Navigation2, RefreshCw, Route, Sparkles, X } from "lucide-react";
+import { useLocation, useSearch } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
@@ -28,6 +28,13 @@ type RequestsCenterProps = {
 type CenterTab = "open" | "mine" | "helping" | "completed";
 
 const ACTIVE_STATUSES = ["claimed", "en_route", "arrived"] as const;
+const REQUEST_CATEGORIES = new Set([
+  "groceries", "transportation", "errands", "home_repair", "medical", "emergency", "other",
+  "stock_shelves", "event_setup", "delivery_run", "tech_support", "local_farm", "food_pantry",
+  "moving_labor", "pet_care", "childcare", "senior_care", "yard_work", "tutoring", "cleaning",
+  "meal_prep", "paperwork", "business_services", "legal_aid", "financial_coaching", "job_assistance",
+  "language_help", "mental_health_peer", "technology_help",
+]);
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 function labelStatus(status: string) {
@@ -55,7 +62,13 @@ function isActive(status: string): boolean {
 export default function RequestsCenter({ embedded = false }: RequestsCenterProps) {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
+  const search = useSearch();
   const [tab, setTab] = useState<CenterTab>("open");
+  const requestedCategory = useMemo(() => {
+    const value = new URLSearchParams(search).get("category")?.trim().toLowerCase() ?? "";
+    return REQUEST_CATEGORIES.has(value) ? value : null;
+  }, [search]);
+  const [category, setCategory] = useState<string | null>(requestedCategory);
   const [rows, setRows] = useState<HelpRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,20 +98,24 @@ export default function RequestsCenter({ embedded = false }: RequestsCenterProps
       };
 
       if (nextTab === "open") {
-        setRows(await get("status=open&limit=100"));
+        const categoryQuery = category ? `&category=${encodeURIComponent(category)}` : "";
+        setRows(await get(`status=open${categoryQuery}&limit=100`));
       } else if (nextTab === "mine") {
-        setRows(await get(`requester_id=${encodeURIComponent(String(userId))}&limit=100`));
+        const categoryQuery = category ? `&category=${encodeURIComponent(category)}` : "";
+        setRows(await get(`requester_id=${encodeURIComponent(String(userId))}${categoryQuery}&limit=100`));
       } else if (nextTab === "helping") {
+        const categoryQuery = category ? `&category=${encodeURIComponent(category)}` : "";
         const active = await Promise.all(
           ACTIVE_STATUSES.map(status =>
-            get(`helper_id=${encodeURIComponent(String(userId))}&status=${status}&limit=100`)
+            get(`helper_id=${encodeURIComponent(String(userId))}&status=${status}${categoryQuery}&limit=100`)
           ),
         );
         setRows(mergeUnique(active.flat()));
       } else {
+        const categoryQuery = category ? `&category=${encodeURIComponent(category)}` : "";
         const [requested, helped] = await Promise.all([
-          get(`requester_id=${encodeURIComponent(String(userId))}&status=completed&limit=100`),
-          get(`helper_id=${encodeURIComponent(String(userId))}&status=completed&limit=100`),
+          get(`requester_id=${encodeURIComponent(String(userId))}&status=completed${categoryQuery}&limit=100`),
+          get(`helper_id=${encodeURIComponent(String(userId))}&status=completed${categoryQuery}&limit=100`),
         ]);
         setRows(mergeUnique([...requested, ...helped]));
       }
@@ -109,7 +126,11 @@ export default function RequestsCenter({ embedded = false }: RequestsCenterProps
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userId]);
+  }, [category, userId]);
+
+  useEffect(() => {
+    setCategory(requestedCategory);
+  }, [requestedCategory]);
 
   useEffect(() => {
     void fetchRows(tab);
@@ -155,9 +176,20 @@ export default function RequestsCenter({ embedded = false }: RequestsCenterProps
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          {rows.length} {rows.length === 1 ? "request" : "requests"}
-        </p>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>{rows.length} {rows.length === 1 ? "request" : "requests"}</span>
+          {category && (
+            <button
+              type="button"
+              onClick={() => setCategory(null)}
+              className="inline-flex min-h-8 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 font-bold capitalize text-primary transition hover:bg-primary/15"
+              aria-label={`Clear ${category.replace(/_/g, " ")} category filter`}
+            >
+              {category.replace(/_/g, " ")}
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => void fetchRows(tab, true)}
@@ -182,7 +214,8 @@ export default function RequestsCenter({ embedded = false }: RequestsCenterProps
         <div className="rounded-3xl border border-dashed border-border bg-card/50 px-6 py-12 text-center">
           <ClipboardList className="mx-auto h-8 w-8 text-muted-foreground/40" />
           <p className="mt-3 text-sm font-bold">
-            {tab === "open" ? "No open requests right now." :
+            {tab === "open" && category ? `No open ${category.replace(/_/g, " ")} requests right now.` :
+             tab === "open" ? "No open requests right now." :
              tab === "mine" ? "You have not posted a request yet." :
              tab === "helping" ? "You are not helping on an active request." :
              "No completed requests yet."}

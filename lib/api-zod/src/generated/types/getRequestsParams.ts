@@ -5,10 +5,15 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+import type { GetRequestsCategory } from './getRequestsCategory';
 import type { GetRequestsStatus } from './getRequestsStatus';
 
 export type GetRequestsParams = {
 status?: GetRequestsStatus;
+/**
+ * Filter requests by the help category.
+ */
+category?: GetRequestsCategory;
 lat?: number;
 lng?: number;
 radius_miles?: number;
