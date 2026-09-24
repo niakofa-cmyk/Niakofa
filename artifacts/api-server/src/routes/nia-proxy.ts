@@ -14,7 +14,7 @@
  * Falls back to localhost:3001 for local development.
  */
 import { Router, type Request, type Response } from "express";
-import { parseAuth, requireAuth } from "../middlewares/auth";
+import { parseAuth, parseOptionalAuth, requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { crisisAwareChatLimiter, niaChatHistoryLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
