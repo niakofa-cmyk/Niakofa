@@ -4,6 +4,7 @@ import {
   loadDurableRealtimeState,
   normalizeRealtimeEvent,
   rememberDurableEvent,
+  unwrapUnifiedRealtimeEvent,
 } from "../unifiedRealtime";
 
 function createStorage() {
@@ -49,6 +50,32 @@ test("normalizes typing stop events without inventing a second event identity", 
   assert.equal(event?.event_type, "typing.stopped");
   assert.equal(event?.conversation_id, 9);
   assert.equal(event?.actor_id, 12);
+});
+
+test("normalizes helper lifecycle frames as durable request status changes", () => {
+  const event = normalizeRealtimeEvent({
+    type: "HELPER_ARRIVED",
+    event_id: "00000000-0000-4000-8000-000000000003",
+    payload: { id: 44, request_id: 9, status: "arrived", helper_id: 12 },
+  });
+
+  assert.equal(event?.event_type, "request.status_changed");
+  assert.equal(event?.conversation_id, 9);
+  assert.equal(event?.payload.status, "arrived");
+});
+
+test("unwraps replayed unified request events for legacy screen consumers", () => {
+  const event = unwrapUnifiedRealtimeEvent({
+    type: "unified_event",
+    payload: {
+      event_type: "request.status_changed",
+      payload: { id: 9, status: "completed" },
+    },
+  });
+
+  assert.equal(event?.eventType, "request.status_changed");
+  assert.equal(event?.payload.id, 9);
+  assert.equal(event?.payload.status, "completed");
 });
 
 test("durable cursor advances even when the event is already in the seen set", () => {
