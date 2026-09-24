@@ -25,16 +25,30 @@ export function ArrivalState({
       role="status"
       aria-live="polite"
       data-testid={`state-arrival-${status}`}
+      data-arrival-role={role}
     >
-      <div className="flex items-start gap-3">
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-          completed ? "bg-primary/15 text-primary" : "bg-green-500/15 text-green-400"
-        }`}>
-          {completed ? <CheckCircle2 className="h-5 w-5" /> : <HeartHandshake className="h-5 w-5" />}
+      <div
+        className="flex items-start gap-3"
+        data-testid={`state-arrival-${status}-${role}`}
+      >
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+            completed ? "bg-primary/15 text-primary" : "bg-green-500/15 text-green-400"
+          }`}
+        >
+          {completed ? (
+            <CheckCircle2 className="h-5 w-5" />
+          ) : (
+            <HeartHandshake className="h-5 w-5" />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black">
-            {completed ? "Help completed" : role === "helper" ? "You’ve arrived" : "Your helper has arrived"}
+            {completed
+              ? "Help completed"
+              : role === "helper"
+                ? "You’ve arrived"
+                : "Your helper has arrived"}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             {completed
@@ -46,8 +60,13 @@ export function ArrivalState({
         </div>
       </div>
       {role === "helper" && arrived && onComplete && (
-        <button type="button" onClick={onComplete} className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-green-500 px-3 text-xs font-black text-white hover:bg-green-600">
-          <Navigation2 className="h-3.5 w-3.5" aria-hidden="true" /> Mark help complete
+        <button
+          type="button"
+          onClick={onComplete}
+          className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-green-500 px-3 text-xs font-black text-white hover:bg-green-600"
+        >
+          <Navigation2 className="h-3.5 w-3.5" aria-hidden="true" />
+          Mark help complete
         </button>
       )}
     </section>
