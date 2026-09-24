@@ -123,3 +123,9 @@ blindly could create an unnecessary duplicate commit.
 **How to apply:** Treat every write attempt as potentially committed, compare the
 remote ref to the intended local HEAD, and only resume from the first missing
 gate.
+
+The bound GitHub connector can truncate Git Data API blob requests for larger generated files (observed above roughly 60 KB); its SDK uses the same transport, and gzip request bodies are rejected. Never create a tree or advance a ref after a blob SHA mismatch.
+
+**Why:** A successful 201 response is not proof that the full blob arrived; a truncated generated contract file produces a different SHA while leaving the remote branch untouched.
+
+**How to apply:** Upload sequentially, compare every returned blob SHA, and stop at the first mismatch. Use a transport with full Git object support for large generated artifacts rather than publishing a partial tree.
