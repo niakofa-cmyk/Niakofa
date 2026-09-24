@@ -58638,6 +58638,27 @@ var init_circle_recordings = __esm({
   }
 });
 
+// ../../lib/db/src/schema/community-media-saves.ts
+var communityMediaSavesTable;
+var init_community_media_saves = __esm({
+  "../../lib/db/src/schema/community-media-saves.ts"() {
+    "use strict";
+    init_pg_core();
+    init_users();
+    init_hub_community();
+    communityMediaSavesTable = pgTable("community_media_saves", {
+      id: serial("id").primaryKey(),
+      user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+      media_id: integer("media_id").notNull().references(() => hubCommunityPostMediaTable.id, { onDelete: "cascade" }),
+      created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+    }, (table) => [
+      uniqueIndex("community_media_saves_user_media_uidx").on(table.user_id, table.media_id),
+      index("community_media_saves_user_created_idx").on(table.user_id, table.created_at, table.id),
+      index("community_media_saves_media_idx").on(table.media_id)
+    ]);
+  }
+});
+
 // ../../lib/db/src/schema/index.ts
 var schema_exports = {};
 __export(schema_exports, {
@@ -58665,6 +58686,7 @@ __export(schema_exports, {
   civicResourcesTable: () => civicResourcesTable,
   civicSuggestionsTable: () => civicSuggestionsTable,
   communitiesTable: () => communitiesTable,
+  communityMediaSavesTable: () => communityMediaSavesTable,
   communityPoolFinancialAuditEventsTable: () => communityPoolFinancialAuditEventsTable,
   communityPoolFinancialEventsTable: () => communityPoolFinancialEventsTable,
   communityPoolLedgerTable: () => communityPoolLedgerTable,
@@ -58857,6 +58879,7 @@ var init_schema2 = __esm({
     init_audio_circles();
     init_circle_recordings();
     init_media_assets();
+    init_community_media_saves();
   }
 });
 
@@ -58887,6 +58910,7 @@ __export(src_exports, {
   civicResourcesTable: () => civicResourcesTable,
   civicSuggestionsTable: () => civicSuggestionsTable,
   communitiesTable: () => communitiesTable,
+  communityMediaSavesTable: () => communityMediaSavesTable,
   communityPoolFinancialAuditEventsTable: () => communityPoolFinancialAuditEventsTable,
   communityPoolFinancialEventsTable: () => communityPoolFinancialEventsTable,
   communityPoolLedgerTable: () => communityPoolLedgerTable,
@@ -112065,13 +112089,135 @@ var init_zod = __esm({
 });
 
 // ../../lib/api-zod/src/generated/api.ts
-var HealthCheckResponse, GetUserParams, getUserResponseNoShowCountDefault, GetUserResponse, UpdateUserParams, UpdateUserBody, updateUserResponseNoShowCountDefault, UpdateUserResponse, DeleteUserParams, DeleteUserResponse, UpdateUserLocationParams, UpdateUserLocationBody, updateUserLocationResponseNoShowCountDefault, UpdateUserLocationResponse, UpdateHelperModeParams, UpdateHelperModeBody, updateHelperModeResponseNoShowCountDefault, UpdateHelperModeResponse, MakePledgePaymentParams, makePledgePaymentBodyAmountMin, MakePledgePaymentBody, makePledgePaymentResponsePledgePaidDefault, MakePledgePaymentResponse, ChangePasswordParams, changePasswordBodyNewPasswordMin, ChangePasswordBody, changePasswordResponseUserNoShowCountDefault, ChangePasswordResponse, RegisterUserHintResponse, registerUserBodyPasswordMin, registerUserBodyAccountTypeDefault, RegisterUserBody, registerUserResponseNoShowCountDefault, RegisterUserResponse, GetRequestsQueryParams, getRequestsResponsePledgePaidDefault, GetRequestsResponseItem, GetRequestsResponse, CreateRequestBody, createRequestResponsePledgePaidDefault, CreateRequestResponse, getNearbyRequestsQueryRadiusMilesDefault, GetNearbyRequestsQueryParams, getNearbyRequestsResponsePledgePaidDefault, GetNearbyRequestsResponseItem, GetNearbyRequestsResponse, GetRequestStatsResponse, GetRequestParams, getRequestResponsePledgePaidDefault, GetRequestResponse, UpdateRequestParams, UpdateRequestBody, updateRequestResponsePledgePaidDefault, UpdateRequestResponse, ClaimRequestParams, ClaimRequestBody, claimRequestResponsePledgePaidDefault, ClaimRequestResponse, MarkEnRouteParams, MarkEnRouteBody, markEnRouteResponsePledgePaidDefault, MarkEnRouteResponse, MarkArrivedParams, MarkArrivedBody, markArrivedResponsePledgePaidDefault, MarkArrivedResponse, CompleteRequestParams, CompleteRequestBody, completeRequestResponsePledgePaidDefault, CompleteRequestResponse, GetUserTransactionsParams, GetUserTransactionsResponseItem, GetUserTransactionsResponse, CreateScheduledPaymentParams, CreateScheduledPaymentBody, CreateScheduledPaymentResponse, GetScheduledPaymentsParams, GetScheduledPaymentsResponseItem, GetScheduledPaymentsResponse, GetUserOutstandingPledgesParams, getUserOutstandingPledgesResponsePledgePaidDefault, GetUserOutstandingPledgesResponseItem, GetUserOutstandingPledgesResponse, getOnlineHelpersQueryRadiusMilesDefault, GetOnlineHelpersQueryParams, GetOnlineHelpersResponseItem, GetOnlineHelpersResponse, getRouteQueryProfileDefault, getRouteQueryUnitsDefault, GetRouteQueryParams, GetRouteResponse, GetCivicResourcesQueryParams, GetCivicResourcesResponse, getCivicResourcesNearbyQueryRadiusMilesDefault, GetCivicResourcesNearbyQueryParams, GetCivicResourcesNearbyResponseItem, GetCivicResourcesNearbyResponse, getCivicNeedsNearbyQueryRadiusMilesDefault, GetCivicNeedsNearbyQueryParams, GetCivicNeedsNearbyResponseItem, GetCivicNeedsNearbyResponse, createReportBodyDescriptionMin, createReportBodyDescriptionMax, CreateReportBody, CreateReportResponse, GetReportsQueryParams, GetReportsResponseItem, GetReportsResponse, GetReportParams, GetReportResponse, ReviewReportParams, ReviewReportBody, ReviewReportResponse, GetGriotStoryReportsQueryParams, GetGriotStoryReportsResponseItem, GetGriotStoryReportsResponse, GetUserReportsParams, GetUserReportsResponseItem, GetUserReportsResponse, LoginUserBody, loginUserResponseUserNoShowCountDefault, LoginUserResponse, RequestPasswordResetBody, RequestPasswordResetResponse, setInitialPasswordBodyNewPasswordMin, SetInitialPasswordBody, setInitialPasswordResponseUserNoShowCountDefault, SetInitialPasswordResponse, DeleteScheduledPaymentParams, DeleteScheduledPaymentResponse, UpdateUserAvatarParams, UpdateUserAvatarBody, updateUserAvatarResponseNoShowCountDefault, UpdateUserAvatarResponse, GetUserSettingsParams, GetUserSettingsResponse, UpdateUserSettingsParams, UpdateUserSettingsBody, UpdateUserSettingsResponse, UpdatePanicContactsParams, updatePanicContactsBodyContactsMax, UpdatePanicContactsBody, UpdatePanicContactsResponse, GetHelperAvailabilityParams, getHelperAvailabilityResponseDayOfWeekMin, getHelperAvailabilityResponseDayOfWeekMax, getHelperAvailabilityResponseStartMinMin, getHelperAvailabilityResponseStartMinMax, getHelperAvailabilityResponseEndMinMax, GetHelperAvailabilityResponseItem, GetHelperAvailabilityResponse, UpdateHelperAvailabilityParams, updateHelperAvailabilityBodyWindowsItemDayOfWeekMin, updateHelperAvailabilityBodyWindowsItemDayOfWeekMax, updateHelperAvailabilityBodyWindowsItemStartMinMin, updateHelperAvailabilityBodyWindowsItemStartMinMax, updateHelperAvailabilityBodyWindowsItemEndMinMax, UpdateHelperAvailabilityBody, UpdateHelperAvailabilityResponse, LogoutUserParams, LogoutUserResponse, ListUsersResponseItem, ListUsersResponse, ModerateUserParams, ModerateUserBody, ModerateUserResponse, UpdateHelperApplicationParams, UpdateHelperApplicationBody, updateHelperApplicationResponseNoShowCountDefault, UpdateHelperApplicationResponse, getPoolStatsResponsePoolHealthPctMin, getPoolStatsResponsePoolHealthPctMax, GetPoolStatsResponse, getPoolLedgerQueryLimitMax, GetPoolLedgerQueryParams, GetPoolLedgerResponse, getMyPoolStatsResponsePoolPctMin, getMyPoolStatsResponsePoolPctMax, getMyPoolStatsResponsePoolHealthPctMin, getMyPoolStatsResponsePoolHealthPctMax, GetMyPoolStatsResponse, getMyPoolLedgerQueryLimitMax, GetMyPoolLedgerQueryParams, GetMyPoolLedgerResponse, contributeToPoolBodyAmountMax, ContributeToPoolBody, ContributeToPoolResponse, CreateBusinessBody, CreateBusinessResponse, GetMyBusinessesResponseItem, GetMyBusinessesResponse, GetBusinessParams, GetBusinessResponse, UpdateBusinessParams, UpdateBusinessBody, UpdateBusinessResponse, GetBusinessMembersParams, GetBusinessMembersResponseItem, GetBusinessMembersResponse, InviteBusinessMemberParams, InviteBusinessMemberBody, InviteBusinessMemberResponse, RemoveBusinessMemberParams, RemoveBusinessMemberResponse, GetBusinessRequestsParams, GetBusinessRequestsResponseItem, GetBusinessRequestsResponse, SetBusinessMemberCapParams, SetBusinessMemberCapBody, SetBusinessMemberCapResponse, GetBusinessPendingRequestsParams, GetBusinessPendingRequestsResponseItem, GetBusinessPendingRequestsResponse, ApproveBusinessRequestParams, ApproveBusinessRequestBody, ApproveBusinessRequestResponse, CreatePaymentIntentBody, CreatePaymentIntentResponse, StartStripeConnectOnboardingBody, StartStripeConnectOnboardingResponse, GetStripeConnectStatusParams, GetStripeConnectStatusResponse, StripeConnectReturnResponse, StripeConnectRefreshResponse, CreateRepaymentPlanParams, CreateRepaymentPlanBody, CreateRepaymentPlanResponse, GetChatMessagesParams, GetChatMessagesResponse, SendChatMessageParams, sendChatMessageBodyContentMax, SendChatMessageBody, SendChatMessageResponse, StripeWebhookResponse, StartIdentityVerificationBody, StartIdentityVerificationResponse, IdentityVerificationWebhookResponse, SafetyCheckinParams, SafetyCheckinResponse, TriggerSosBody, TriggerSosResponse, GetBackgroundCheckStatusResponse, InitiateBackgroundCheckBody, InitiateBackgroundCheckResponse, BackgroundCheckWebhookResponse, AdminSetBackgroundCheckStatusParams, AdminSetBackgroundCheckStatusBody, AdminSetBackgroundCheckStatusResponse, GetAdminAnalyticsResponse, ListAdminAccountsQueryParams, ListAdminAccountsResponseItem, ListAdminAccountsResponse, ListHelperApplicationsQueryParams, ListHelperApplicationsResponseItem, ListHelperApplicationsResponse, VerifyAdminSecretBody, VerifyAdminSecretResponse, SuspendUserParams, SuspendUserBody, suspendUserResponseUserNoShowCountDefault, SuspendUserResponse, UnsuspendUserParams, unsuspendUserResponseUserNoShowCountDefault, UnsuspendUserResponse, ListSuspendedUsersResponseItem, ListSuspendedUsersResponse, GetNiaStatusResponse, ToggleNiaBody, ToggleNiaResponse, GetNiaAuditLogResponse, GetNiaCostsQueryParams, GetNiaCostsResponse, GetNiaCostAlertResponse, GetAdminStatsResponse, GetNiaMemoryStatsResponse, SetAccountApprovalParams, SetAccountApprovalBody, setAccountApprovalResponseNoShowCountDefault, SetAccountApprovalResponse, BootstrapAdminBody, BootstrapAdminResponse, ListCommunitiesResponse, CreateCommunityBody, CreateCommunityResponse, UpdateCommunityParams, UpdateCommunityBody, UpdateCommunityResponse, SetDefaultCommunityParams, SetDefaultCommunityResponse, GetHubSummaryParams, GetHubSummaryResponse, ReassignUserCommunityParams, ReassignUserCommunityBody, ReassignUserCommunityResponse;
+var HealthCheckResponse, GetCommunityHubMediaParams, getCommunityHubMediaQueryQMax, getCommunityHubMediaQueryLimitDefault, getCommunityHubMediaQueryLimitMin, getCommunityHubMediaQueryLimitMax, GetCommunityHubMediaQueryParams, GetCommunityHubMediaResponse, GetSavedCommunityHubMediaParams, getSavedCommunityHubMediaQueryQMax, getSavedCommunityHubMediaQueryLimitDefault, getSavedCommunityHubMediaQueryLimitMin, getSavedCommunityHubMediaQueryLimitMax, GetSavedCommunityHubMediaQueryParams, GetSavedCommunityHubMediaResponse, SaveCommunityMediaParams, SaveCommunityMediaResponse, UnsaveCommunityMediaParams, UnsaveCommunityMediaResponse, GetCommunityStoryInteractionsParams, getCommunityStoryInteractionsResponseViewsMin, getCommunityStoryInteractionsResponseReactionsMin, getCommunityStoryInteractionsResponseSharesMin, getCommunityStoryInteractionsResponseViewerReactionMax, GetCommunityStoryInteractionsResponse, GetUserParams, getUserResponseNoShowCountDefault, GetUserResponse, UpdateUserParams, UpdateUserBody, updateUserResponseNoShowCountDefault, UpdateUserResponse, DeleteUserParams, DeleteUserResponse, UpdateUserLocationParams, UpdateUserLocationBody, updateUserLocationResponseNoShowCountDefault, UpdateUserLocationResponse, UpdateHelperModeParams, UpdateHelperModeBody, updateHelperModeResponseNoShowCountDefault, UpdateHelperModeResponse, MakePledgePaymentParams, makePledgePaymentBodyAmountMin, MakePledgePaymentBody, makePledgePaymentResponsePledgePaidDefault, MakePledgePaymentResponse, ChangePasswordParams, changePasswordBodyNewPasswordMin, ChangePasswordBody, changePasswordResponseUserNoShowCountDefault, ChangePasswordResponse, RegisterUserHintResponse, registerUserBodyPasswordMin, registerUserBodyAccountTypeDefault, RegisterUserBody, registerUserResponseNoShowCountDefault, RegisterUserResponse, GetRequestsQueryParams, getRequestsResponsePledgePaidDefault, GetRequestsResponseItem, GetRequestsResponse, CreateRequestBody, createRequestResponsePledgePaidDefault, CreateRequestResponse, getNearbyRequestsQueryRadiusMilesDefault, GetNearbyRequestsQueryParams, getNearbyRequestsResponsePledgePaidDefault, GetNearbyRequestsResponseItem, GetNearbyRequestsResponse, GetRequestStatsResponse, GetRequestParams, getRequestResponsePledgePaidDefault, GetRequestResponse, UpdateRequestParams, UpdateRequestBody, updateRequestResponsePledgePaidDefault, UpdateRequestResponse, ClaimRequestParams, ClaimRequestBody, claimRequestResponsePledgePaidDefault, ClaimRequestResponse, MarkEnRouteParams, MarkEnRouteBody, markEnRouteResponsePledgePaidDefault, MarkEnRouteResponse, MarkArrivedParams, MarkArrivedBody, markArrivedResponsePledgePaidDefault, MarkArrivedResponse, CompleteRequestParams, CompleteRequestBody, completeRequestResponsePledgePaidDefault, CompleteRequestResponse, GetUserTransactionsParams, GetUserTransactionsResponseItem, GetUserTransactionsResponse, CreateScheduledPaymentParams, CreateScheduledPaymentBody, CreateScheduledPaymentResponse, GetScheduledPaymentsParams, GetScheduledPaymentsResponseItem, GetScheduledPaymentsResponse, GetUserOutstandingPledgesParams, getUserOutstandingPledgesResponsePledgePaidDefault, GetUserOutstandingPledgesResponseItem, GetUserOutstandingPledgesResponse, getOnlineHelpersQueryRadiusMilesDefault, GetOnlineHelpersQueryParams, GetOnlineHelpersResponseItem, GetOnlineHelpersResponse, getRouteQueryProfileDefault, getRouteQueryUnitsDefault, GetRouteQueryParams, GetRouteResponse, GetCivicResourcesQueryParams, GetCivicResourcesResponse, getCivicResourcesNearbyQueryRadiusMilesDefault, GetCivicResourcesNearbyQueryParams, GetCivicResourcesNearbyResponseItem, GetCivicResourcesNearbyResponse, getCivicNeedsNearbyQueryRadiusMilesDefault, GetCivicNeedsNearbyQueryParams, GetCivicNeedsNearbyResponseItem, GetCivicNeedsNearbyResponse, createReportBodyDescriptionMin, createReportBodyDescriptionMax, CreateReportBody, CreateReportResponse, GetReportsQueryParams, GetReportsResponseItem, GetReportsResponse, GetReportParams, GetReportResponse, ReviewReportParams, ReviewReportBody, ReviewReportResponse, GetGriotStoryReportsQueryParams, GetGriotStoryReportsResponseItem, GetGriotStoryReportsResponse, GetUserReportsParams, GetUserReportsResponseItem, GetUserReportsResponse, LoginUserBody, loginUserResponseUserNoShowCountDefault, LoginUserResponse, RequestPasswordResetBody, RequestPasswordResetResponse, setInitialPasswordBodyNewPasswordMin, SetInitialPasswordBody, setInitialPasswordResponseUserNoShowCountDefault, SetInitialPasswordResponse, DeleteScheduledPaymentParams, DeleteScheduledPaymentResponse, UpdateUserAvatarParams, UpdateUserAvatarBody, updateUserAvatarResponseNoShowCountDefault, UpdateUserAvatarResponse, GetUserSettingsParams, GetUserSettingsResponse, UpdateUserSettingsParams, UpdateUserSettingsBody, UpdateUserSettingsResponse, UpdatePanicContactsParams, updatePanicContactsBodyContactsMax, UpdatePanicContactsBody, UpdatePanicContactsResponse, GetHelperAvailabilityParams, getHelperAvailabilityResponseDayOfWeekMin, getHelperAvailabilityResponseDayOfWeekMax, getHelperAvailabilityResponseStartMinMin, getHelperAvailabilityResponseStartMinMax, getHelperAvailabilityResponseEndMinMax, GetHelperAvailabilityResponseItem, GetHelperAvailabilityResponse, UpdateHelperAvailabilityParams, updateHelperAvailabilityBodyWindowsItemDayOfWeekMin, updateHelperAvailabilityBodyWindowsItemDayOfWeekMax, updateHelperAvailabilityBodyWindowsItemStartMinMin, updateHelperAvailabilityBodyWindowsItemStartMinMax, updateHelperAvailabilityBodyWindowsItemEndMinMax, UpdateHelperAvailabilityBody, UpdateHelperAvailabilityResponse, LogoutUserParams, LogoutUserResponse, ListUsersResponseItem, ListUsersResponse, ModerateUserParams, ModerateUserBody, ModerateUserResponse, UpdateHelperApplicationParams, UpdateHelperApplicationBody, updateHelperApplicationResponseNoShowCountDefault, UpdateHelperApplicationResponse, getPoolStatsResponsePoolHealthPctMin, getPoolStatsResponsePoolHealthPctMax, GetPoolStatsResponse, getPoolLedgerQueryLimitMax, GetPoolLedgerQueryParams, GetPoolLedgerResponse, getMyPoolStatsResponsePoolPctMin, getMyPoolStatsResponsePoolPctMax, getMyPoolStatsResponsePoolHealthPctMin, getMyPoolStatsResponsePoolHealthPctMax, GetMyPoolStatsResponse, getMyPoolLedgerQueryLimitMax, GetMyPoolLedgerQueryParams, GetMyPoolLedgerResponse, contributeToPoolBodyAmountMax, ContributeToPoolBody, ContributeToPoolResponse, CreateBusinessBody, CreateBusinessResponse, GetMyBusinessesResponseItem, GetMyBusinessesResponse, GetBusinessParams, GetBusinessResponse, UpdateBusinessParams, UpdateBusinessBody, UpdateBusinessResponse, GetBusinessMembersParams, GetBusinessMembersResponseItem, GetBusinessMembersResponse, InviteBusinessMemberParams, InviteBusinessMemberBody, InviteBusinessMemberResponse, RemoveBusinessMemberParams, RemoveBusinessMemberResponse, GetBusinessRequestsParams, GetBusinessRequestsResponseItem, GetBusinessRequestsResponse, SetBusinessMemberCapParams, SetBusinessMemberCapBody, SetBusinessMemberCapResponse, GetBusinessPendingRequestsParams, GetBusinessPendingRequestsResponseItem, GetBusinessPendingRequestsResponse, ApproveBusinessRequestParams, ApproveBusinessRequestBody, ApproveBusinessRequestResponse, CreatePaymentIntentBody, CreatePaymentIntentResponse, StartStripeConnectOnboardingBody, StartStripeConnectOnboardingResponse, GetStripeConnectStatusParams, GetStripeConnectStatusResponse, StripeConnectReturnResponse, StripeConnectRefreshResponse, CreateRepaymentPlanParams, CreateRepaymentPlanBody, CreateRepaymentPlanResponse, GetChatMessagesParams, GetChatMessagesResponse, SendChatMessageParams, sendChatMessageBodyContentMax, SendChatMessageBody, SendChatMessageResponse, StripeWebhookResponse, StartIdentityVerificationBody, StartIdentityVerificationResponse, IdentityVerificationWebhookResponse, SafetyCheckinParams, SafetyCheckinResponse, TriggerSosBody, TriggerSosResponse, GetBackgroundCheckStatusResponse, InitiateBackgroundCheckBody, InitiateBackgroundCheckResponse, BackgroundCheckWebhookResponse, AdminSetBackgroundCheckStatusParams, AdminSetBackgroundCheckStatusBody, AdminSetBackgroundCheckStatusResponse, GetAdminAnalyticsResponse, ListAdminAccountsQueryParams, ListAdminAccountsResponseItem, ListAdminAccountsResponse, ListHelperApplicationsQueryParams, ListHelperApplicationsResponseItem, ListHelperApplicationsResponse, VerifyAdminSecretBody, VerifyAdminSecretResponse, SuspendUserParams, SuspendUserBody, suspendUserResponseUserNoShowCountDefault, SuspendUserResponse, UnsuspendUserParams, unsuspendUserResponseUserNoShowCountDefault, UnsuspendUserResponse, ListSuspendedUsersResponseItem, ListSuspendedUsersResponse, GetNiaStatusResponse, ToggleNiaBody, ToggleNiaResponse, GetNiaAuditLogResponse, GetNiaCostsQueryParams, GetNiaCostsResponse, GetNiaCostAlertResponse, GetAdminStatsResponse, GetNiaMemoryStatsResponse, SetAccountApprovalParams, SetAccountApprovalBody, setAccountApprovalResponseNoShowCountDefault, SetAccountApprovalResponse, BootstrapAdminBody, BootstrapAdminResponse, ListCommunitiesResponse, CreateCommunityBody, CreateCommunityResponse, UpdateCommunityParams, UpdateCommunityBody, UpdateCommunityResponse, SetDefaultCommunityParams, SetDefaultCommunityResponse, GetHubSummaryParams, GetHubSummaryResponse, ReassignUserCommunityParams, ReassignUserCommunityBody, ReassignUserCommunityResponse;
 var init_api2 = __esm({
   "../../lib/api-zod/src/generated/api.ts"() {
     "use strict";
     init_zod();
     HealthCheckResponse = objectType({
       "status": stringType()
+    });
+    GetCommunityHubMediaParams = objectType({
+      "hubId": coerce.number().int().min(1)
+    });
+    getCommunityHubMediaQueryQMax = 120;
+    getCommunityHubMediaQueryLimitDefault = 18;
+    getCommunityHubMediaQueryLimitMin = 6;
+    getCommunityHubMediaQueryLimitMax = 30;
+    GetCommunityHubMediaQueryParams = objectType({
+      "cursor": coerce.string().optional(),
+      "q": coerce.string().max(getCommunityHubMediaQueryQMax).optional(),
+      "kind": enumType(["photo", "video", "audio"]).optional(),
+      "limit": coerce.number().int().min(getCommunityHubMediaQueryLimitMin).max(getCommunityHubMediaQueryLimitMax).default(getCommunityHubMediaQueryLimitDefault)
+    });
+    GetCommunityHubMediaResponse = objectType({
+      "hub": objectType({
+        "id": numberType().int(),
+        "name": stringType(),
+        "display_name": stringType(),
+        "region": stringType().nullable()
+      }),
+      "items": arrayType(objectType({
+        "id": numberType().int(),
+        "post_id": numberType().int(),
+        "mime_type": stringType(),
+        "alt_text": stringType().nullable(),
+        "media_asset_id": numberType().int().nullable(),
+        "media_status": stringType().nullable(),
+        "viewer_saved": booleanType().describe("Whether the authenticated caller privately saved this item."),
+        "body": stringType(),
+        "author_name": stringType().nullable(),
+        "author_avatar": stringType().nullable(),
+        "created_at": coerce.date(),
+        "media_url": stringType(),
+        "thumbnail_url": stringType().nullable(),
+        "context": objectType({
+          "label": stringType(),
+          "href": stringType()
+        })
+      })),
+      "next_cursor": stringType().nullable(),
+      "has_more": booleanType(),
+      "filters": objectType({
+        "q": stringType(),
+        "kind": enumType(["all", "photo", "video", "audio"])
+      })
+    });
+    GetSavedCommunityHubMediaParams = objectType({
+      "hubId": coerce.number().int().min(1)
+    });
+    getSavedCommunityHubMediaQueryQMax = 120;
+    getSavedCommunityHubMediaQueryLimitDefault = 18;
+    getSavedCommunityHubMediaQueryLimitMin = 6;
+    getSavedCommunityHubMediaQueryLimitMax = 30;
+    GetSavedCommunityHubMediaQueryParams = objectType({
+      "cursor": coerce.string().optional(),
+      "q": coerce.string().max(getSavedCommunityHubMediaQueryQMax).optional(),
+      "kind": enumType(["photo", "video", "audio"]).optional(),
+      "limit": coerce.number().int().min(getSavedCommunityHubMediaQueryLimitMin).max(getSavedCommunityHubMediaQueryLimitMax).default(getSavedCommunityHubMediaQueryLimitDefault)
+    });
+    GetSavedCommunityHubMediaResponse = objectType({
+      "hub": objectType({
+        "id": numberType().int(),
+        "name": stringType(),
+        "display_name": stringType(),
+        "region": stringType().nullable()
+      }),
+      "items": arrayType(objectType({
+        "id": numberType().int(),
+        "post_id": numberType().int(),
+        "mime_type": stringType(),
+        "alt_text": stringType().nullable(),
+        "media_asset_id": numberType().int().nullable(),
+        "media_status": stringType().nullable(),
+        "viewer_saved": booleanType().describe("Whether the authenticated caller privately saved this item."),
+        "body": stringType(),
+        "author_name": stringType().nullable(),
+        "author_avatar": stringType().nullable(),
+        "created_at": coerce.date(),
+        "media_url": stringType(),
+        "thumbnail_url": stringType().nullable(),
+        "context": objectType({
+          "label": stringType(),
+          "href": stringType()
+        })
+      })),
+      "next_cursor": stringType().nullable(),
+      "has_more": booleanType(),
+      "filters": objectType({
+        "q": stringType(),
+        "kind": enumType(["all", "photo", "video", "audio"])
+      })
+    });
+    SaveCommunityMediaParams = objectType({
+      "mediaId": coerce.number().int().min(1)
+    });
+    SaveCommunityMediaResponse = objectType({
+      "media_id": numberType().int(),
+      "saved": booleanType(),
+      "private": literalType(true)
+    });
+    UnsaveCommunityMediaParams = objectType({
+      "mediaId": coerce.number().int().min(1)
+    });
+    UnsaveCommunityMediaResponse = objectType({
+      "media_id": numberType().int(),
+      "saved": booleanType(),
+      "private": literalType(true)
+    });
+    GetCommunityStoryInteractionsParams = objectType({
+      "id": coerce.number().int().min(1)
+    });
+    getCommunityStoryInteractionsResponseViewsMin = 0;
+    getCommunityStoryInteractionsResponseReactionsMin = 0;
+    getCommunityStoryInteractionsResponseSharesMin = 0;
+    getCommunityStoryInteractionsResponseViewerReactionMax = 16;
+    GetCommunityStoryInteractionsResponse = objectType({
+      "story_id": numberType().int().min(1),
+      "views": numberType().int().min(getCommunityStoryInteractionsResponseViewsMin),
+      "reactions": numberType().int().min(getCommunityStoryInteractionsResponseReactionsMin),
+      "shares": numberType().int().min(getCommunityStoryInteractionsResponseSharesMin),
+      "viewer_reaction": stringType().max(getCommunityStoryInteractionsResponseViewerReactionMax).nullable()
     });
     GetUserParams = objectType({
       "id": coerce.number().int()
@@ -112323,6 +112469,7 @@ var init_api2 = __esm({
     });
     GetRequestsQueryParams = objectType({
       "status": enumType(["open", "claimed", "en_route", "arrived", "completed", "pay_it_forward_pending", "pending_owner_approval", "cancelled"]).optional(),
+      "category": enumType(["groceries", "transportation", "errands", "home_repair", "medical", "emergency", "other", "stock_shelves", "event_setup", "delivery_run", "tech_support", "local_farm", "food_pantry", "moving_labor", "pet_care", "childcare", "senior_care", "yard_work", "tutoring", "cleaning", "meal_prep", "paperwork", "business_services", "legal_aid", "financial_coaching", "job_assistance", "language_help", "mental_health_peer", "technology_help"]).optional().describe("Filter requests by the help category."),
       "lat": coerce.number().optional(),
       "lng": coerce.number().optional(),
       "radius_miles": coerce.number().optional()
@@ -114219,6 +114366,62 @@ var init_claimInput = __esm({
   }
 });
 
+// ../../lib/api-zod/src/generated/types/communityMediaItem.ts
+var init_communityMediaItem = __esm({
+  "../../lib/api-zod/src/generated/types/communityMediaItem.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/communityMediaItemContext.ts
+var init_communityMediaItemContext = __esm({
+  "../../lib/api-zod/src/generated/types/communityMediaItemContext.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/communityMediaPage.ts
+var init_communityMediaPage = __esm({
+  "../../lib/api-zod/src/generated/types/communityMediaPage.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/communityMediaPageFilters.ts
+var init_communityMediaPageFilters = __esm({
+  "../../lib/api-zod/src/generated/types/communityMediaPageFilters.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/communityMediaPageFiltersKind.ts
+var init_communityMediaPageFiltersKind = __esm({
+  "../../lib/api-zod/src/generated/types/communityMediaPageFiltersKind.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/communityMediaPageHub.ts
+var init_communityMediaPageHub = __esm({
+  "../../lib/api-zod/src/generated/types/communityMediaPageHub.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/communityMediaSaveResponse.ts
+var init_communityMediaSaveResponse = __esm({
+  "../../lib/api-zod/src/generated/types/communityMediaSaveResponse.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/communityStoryInteractions.ts
+var init_communityStoryInteractions = __esm({
+  "../../lib/api-zod/src/generated/types/communityStoryInteractions.ts"() {
+    "use strict";
+  }
+});
+
 // ../../lib/api-zod/src/generated/types/completeInput.ts
 var init_completeInput = __esm({
   "../../lib/api-zod/src/generated/types/completeInput.ts"() {
@@ -114306,6 +114509,20 @@ var init_getCivicResourcesNearbyParams = __esm({
 // ../../lib/api-zod/src/generated/types/getCivicResourcesParams.ts
 var init_getCivicResourcesParams = __esm({
   "../../lib/api-zod/src/generated/types/getCivicResourcesParams.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/getCommunityHubMediaKind.ts
+var init_getCommunityHubMediaKind = __esm({
+  "../../lib/api-zod/src/generated/types/getCommunityHubMediaKind.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/getCommunityHubMediaParams.ts
+var init_getCommunityHubMediaParams = __esm({
+  "../../lib/api-zod/src/generated/types/getCommunityHubMediaParams.ts"() {
     "use strict";
   }
 });
@@ -114443,6 +114660,13 @@ var init_getReportsStatus = __esm({
   }
 });
 
+// ../../lib/api-zod/src/generated/types/getRequestsCategory.ts
+var init_getRequestsCategory = __esm({
+  "../../lib/api-zod/src/generated/types/getRequestsCategory.ts"() {
+    "use strict";
+  }
+});
+
 // ../../lib/api-zod/src/generated/types/getRequestsParams.ts
 var init_getRequestsParams = __esm({
   "../../lib/api-zod/src/generated/types/getRequestsParams.ts"() {
@@ -114474,6 +114698,20 @@ var init_getRouteProfile = __esm({
 // ../../lib/api-zod/src/generated/types/getRouteUnits.ts
 var init_getRouteUnits = __esm({
   "../../lib/api-zod/src/generated/types/getRouteUnits.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/getSavedCommunityHubMediaKind.ts
+var init_getSavedCommunityHubMediaKind = __esm({
+  "../../lib/api-zod/src/generated/types/getSavedCommunityHubMediaKind.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/getSavedCommunityHubMediaParams.ts
+var init_getSavedCommunityHubMediaParams = __esm({
+  "../../lib/api-zod/src/generated/types/getSavedCommunityHubMediaParams.ts"() {
     "use strict";
   }
 });
@@ -115339,6 +115577,14 @@ var init_types2 = __esm({
     init_civicResourcesResponse();
     init_civicResourcesResponseMatchLevel();
     init_claimInput();
+    init_communityMediaItem();
+    init_communityMediaItemContext();
+    init_communityMediaPage();
+    init_communityMediaPageFilters();
+    init_communityMediaPageFiltersKind();
+    init_communityMediaPageHub();
+    init_communityMediaSaveResponse();
+    init_communityStoryInteractions();
     init_completeInput();
     init_createCommunityInput();
     init_createPaymentIntent200();
@@ -115352,6 +115598,8 @@ var init_types2 = __esm({
     init_getCivicNeedsNearbyParams();
     init_getCivicResourcesNearbyParams();
     init_getCivicResourcesParams();
+    init_getCommunityHubMediaKind();
+    init_getCommunityHubMediaParams();
     init_getGriotStoryReportsParams();
     init_getGriotStoryReportsStatus();
     init_getHubSummary200();
@@ -115371,11 +115619,14 @@ var init_types2 = __esm({
     init_getPoolLedgerParams();
     init_getReportsParams();
     init_getReportsStatus();
+    init_getRequestsCategory();
     init_getRequestsParams();
     init_getRequestsStatus();
     init_getRouteParams();
     init_getRouteProfile();
     init_getRouteUnits();
+    init_getSavedCommunityHubMediaKind();
+    init_getSavedCommunityHubMediaParams();
     init_getStripeConnectStatus200();
     init_griotStoryReport();
     init_griotStoryReportStoryStatus();
@@ -147209,7 +147460,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "867ca9c179926761be5e42fc15f53647bde7736e";
+var GIT_COMMIT = "c071c0bdb6907eb52cb6bd21dd5c8b67e18a43a6";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -151831,6 +152082,7 @@ router8.get("/requests", requireAuth, async (req, res) => {
   const callerIsAdmin = callerRow?.is_admin === true;
   const params = GetRequestsQueryParams.safeParse({
     status: req.query.status,
+    category: req.query.category,
     lat: req.query.lat ? parseFloat(req.query.lat) : void 0,
     lng: req.query.lng ? parseFloat(req.query.lng) : void 0,
     radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles) : void 0
@@ -151851,6 +152103,9 @@ router8.get("/requests", requireAuth, async (req, res) => {
   const conditions = [];
   if (params.success && params.data.status) {
     conditions.push(eq(requestsTable.status, params.data.status));
+  }
+  if (params.success && params.data.category) {
+    conditions.push(eq(requestsTable.category, params.data.category));
   }
   if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
   if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));
@@ -155142,6 +155397,19 @@ var approvedVisibleUser = and(
   eq(usersTable.approval_status, "approved"),
   eq(usersTable.is_suspended, false)
 );
+async function visibleCommunityMediaForViewer(mediaId, userId) {
+  const [media] = await db.select({
+    id: hubCommunityPostMediaTable.id,
+    hub_id: hubCommunityPostsTable.hub_id
+  }).from(hubCommunityPostMediaTable).innerJoin(hubCommunityPostsTable, eq(hubCommunityPostsTable.id, hubCommunityPostMediaTable.post_id)).innerJoin(usersTable, eq(usersTable.id, hubCommunityPostsTable.author_id)).where(and(
+    eq(hubCommunityPostMediaTable.id, mediaId),
+    eq(hubCommunityPostsTable.moderation_status, "approved"),
+    approvedVisibleUser
+  )).limit(1);
+  if (!media || !await canonicalHubExists(media.hub_id)) return null;
+  if (!await isApprovedHubMember(userId, media.hub_id)) return null;
+  return media;
+}
 router12.get("/community/my-hub", requireAuth, async (req, res) => {
   const callerId = req.authenticatedUserId;
   const [row] = await db.select({ diaspora_hub_id: usersTable.diaspora_hub_id }).from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
@@ -155340,6 +155608,176 @@ router12.get("/community/hubs/:hubId/feed", requireAuth, async (req, res) => {
     }
   });
 });
+router12.get("/community/hubs/:hubId/media", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const rawHubId = Array.isArray(req.params.hubId) ? req.params.hubId[0] : req.params.hubId;
+  const hubId = parseHubId(rawHubId);
+  if (!hubId) return res.status(400).json({ error: "hubId must be a positive integer." });
+  const [hub] = await db.select({
+    id: diasporaHubsTable.id,
+    name: diasporaHubsTable.name,
+    display_name: diasporaHubsTable.display_name,
+    region: diasporaHubsTable.region_label
+  }).from(diasporaHubsTable).where(and(
+    eq(diasporaHubsTable.id, hubId),
+    eq(diasporaHubsTable.status, "approved"),
+    isNull(diasporaHubsTable.primary_hub_id)
+  )).limit(1);
+  if (!hub) return res.status(404).json({ error: "Canonical Hub not found." });
+  if (!await isApprovedHubMember(req.authenticatedUserId, hubId)) {
+    return res.status(403).json({ error: "Approved Hub membership is required to view Hub media." });
+  }
+  const rawCursor = typeof req.query.cursor === "string" ? req.query.cursor : void 0;
+  const cursor = rawCursor ? parseHubId(rawCursor) : null;
+  if (rawCursor && !cursor) return res.status(400).json({ error: "cursor must be a positive integer." });
+  const rawLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : 18;
+  const limit = Number.isSafeInteger(rawLimit) ? Math.min(Math.max(rawLimit, 6), 30) : 18;
+  const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 120) : "";
+  const kind = typeof req.query.kind === "string" && ["photo", "video", "audio"].includes(req.query.kind) ? req.query.kind : "all";
+  const kindPattern = kind === "photo" ? "image/%" : kind === "video" ? "video/%" : kind === "audio" ? "audio/%" : null;
+  const conditions = [
+    eq(hubCommunityPostsTable.hub_id, hubId),
+    eq(hubCommunityPostsTable.moderation_status, "approved"),
+    approvedVisibleUser,
+    ...cursor ? [lt(hubCommunityPostMediaTable.id, cursor)] : [],
+    ...query ? [ilike(hubCommunityPostsTable.body, `%${query}%`)] : [],
+    ...kindPattern ? [sql`${hubCommunityPostMediaTable.mime_type} LIKE ${kindPattern}`] : []
+  ];
+  const rows = await db.select({
+    id: hubCommunityPostMediaTable.id,
+    post_id: hubCommunityPostMediaTable.post_id,
+    mime_type: hubCommunityPostMediaTable.mime_type,
+    alt_text: hubCommunityPostMediaTable.alt_text,
+    media_asset_id: hubCommunityPostMediaTable.media_asset_id,
+    media_status: mediaAssetsTable.status,
+    viewer_save_id: communityMediaSavesTable.id,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key,
+    body: hubCommunityPostsTable.body,
+    author_name: usersTable.name,
+    author_avatar: usersTable.avatar_url,
+    created_at: hubCommunityPostsTable.created_at
+  }).from(hubCommunityPostMediaTable).innerJoin(hubCommunityPostsTable, eq(hubCommunityPostsTable.id, hubCommunityPostMediaTable.post_id)).innerJoin(usersTable, eq(usersTable.id, hubCommunityPostsTable.author_id)).leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, hubCommunityPostMediaTable.media_asset_id)).leftJoin(communityMediaSavesTable, and(
+    eq(communityMediaSavesTable.media_id, hubCommunityPostMediaTable.id),
+    eq(communityMediaSavesTable.user_id, req.authenticatedUserId)
+  )).where(and(...conditions)).orderBy(desc(hubCommunityPostMediaTable.id)).limit(limit + 1);
+  const hasMore = rows.length > limit;
+  const visibleRows = hasMore ? rows.slice(0, limit) : rows;
+  const items = visibleRows.map((row) => ({
+    id: row.id,
+    post_id: row.post_id,
+    mime_type: row.mime_type,
+    alt_text: row.alt_text,
+    media_asset_id: row.media_asset_id,
+    media_status: row.media_status,
+    viewer_saved: Boolean(row.viewer_save_id),
+    body: row.body,
+    author_name: row.author_name,
+    author_avatar: row.author_avatar,
+    created_at: row.created_at,
+    media_url: `/api/community/media/${row.id}`,
+    thumbnail_url: row.thumbnail_key ? `/api/community/media/${row.id}?variant=thumbnail` : null,
+    context: {
+      label: "Shared in the community",
+      href: `/community?hubId=${hubId}&postId=${row.post_id}`
+    }
+  }));
+  return res.json({
+    hub: {
+      id: hub.id,
+      name: hub.name,
+      display_name: hub.display_name ?? hub.name,
+      region: hub.region
+    },
+    items,
+    next_cursor: hasMore && items.length > 0 ? String(items[items.length - 1].id) : null,
+    has_more: hasMore,
+    filters: { q: query, kind }
+  });
+});
+router12.get("/community/hubs/:hubId/saved-media", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const rawHubId = Array.isArray(req.params.hubId) ? req.params.hubId[0] : req.params.hubId;
+  const hubId = parseHubId(rawHubId);
+  if (!hubId) return res.status(400).json({ error: "hubId must be a positive integer." });
+  const [hub] = await db.select({
+    id: diasporaHubsTable.id,
+    name: diasporaHubsTable.name,
+    display_name: diasporaHubsTable.display_name,
+    region: diasporaHubsTable.region_label
+  }).from(diasporaHubsTable).where(and(
+    eq(diasporaHubsTable.id, hubId),
+    eq(diasporaHubsTable.status, "approved"),
+    isNull(diasporaHubsTable.primary_hub_id)
+  )).limit(1);
+  if (!hub) return res.status(404).json({ error: "Canonical Hub not found." });
+  if (!await isApprovedHubMember(req.authenticatedUserId, hubId)) {
+    return res.status(403).json({ error: "Approved Hub membership is required to view saved media." });
+  }
+  const rawCursor = typeof req.query.cursor === "string" ? req.query.cursor : void 0;
+  const cursor = rawCursor ? parseHubId(rawCursor) : null;
+  if (rawCursor && !cursor) return res.status(400).json({ error: "cursor must be a positive integer." });
+  const rawLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : 18;
+  const limit = Number.isSafeInteger(rawLimit) ? Math.min(Math.max(rawLimit, 6), 30) : 18;
+  const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 120) : "";
+  const kind = typeof req.query.kind === "string" && ["photo", "video", "audio"].includes(req.query.kind) ? req.query.kind : "all";
+  const kindPattern = kind === "photo" ? "image/%" : kind === "video" ? "video/%" : kind === "audio" ? "audio/%" : null;
+  const conditions = [
+    eq(communityMediaSavesTable.user_id, req.authenticatedUserId),
+    eq(hubCommunityPostsTable.hub_id, hubId),
+    eq(hubCommunityPostsTable.moderation_status, "approved"),
+    approvedVisibleUser,
+    ...cursor ? [lt(communityMediaSavesTable.id, cursor)] : [],
+    ...query ? [ilike(hubCommunityPostsTable.body, `%${query}%`)] : [],
+    ...kindPattern ? [sql`${hubCommunityPostMediaTable.mime_type} LIKE ${kindPattern}`] : []
+  ];
+  const rows = await db.select({
+    save_id: communityMediaSavesTable.id,
+    id: hubCommunityPostMediaTable.id,
+    post_id: hubCommunityPostMediaTable.post_id,
+    mime_type: hubCommunityPostMediaTable.mime_type,
+    alt_text: hubCommunityPostMediaTable.alt_text,
+    media_asset_id: hubCommunityPostMediaTable.media_asset_id,
+    media_status: mediaAssetsTable.status,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key,
+    body: hubCommunityPostsTable.body,
+    author_name: usersTable.name,
+    author_avatar: usersTable.avatar_url,
+    created_at: hubCommunityPostsTable.created_at
+  }).from(communityMediaSavesTable).innerJoin(hubCommunityPostMediaTable, eq(hubCommunityPostMediaTable.id, communityMediaSavesTable.media_id)).innerJoin(hubCommunityPostsTable, eq(hubCommunityPostsTable.id, hubCommunityPostMediaTable.post_id)).innerJoin(usersTable, eq(usersTable.id, hubCommunityPostsTable.author_id)).leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, hubCommunityPostMediaTable.media_asset_id)).where(and(...conditions)).orderBy(desc(communityMediaSavesTable.id)).limit(limit + 1);
+  const hasMore = rows.length > limit;
+  const visibleRows = hasMore ? rows.slice(0, limit) : rows;
+  const items = visibleRows.map((row) => ({
+    id: row.id,
+    post_id: row.post_id,
+    mime_type: row.mime_type,
+    alt_text: row.alt_text,
+    media_asset_id: row.media_asset_id,
+    media_status: row.media_status,
+    viewer_saved: true,
+    body: row.body,
+    author_name: row.author_name,
+    author_avatar: row.author_avatar,
+    created_at: row.created_at,
+    media_url: `/api/community/media/${row.id}`,
+    thumbnail_url: row.thumbnail_key ? `/api/community/media/${row.id}?variant=thumbnail` : null,
+    context: {
+      label: "Saved from this Hub",
+      href: `/community?hubId=${hubId}&postId=${row.post_id}`
+    }
+  }));
+  return res.json({
+    hub: {
+      id: hub.id,
+      name: hub.name,
+      display_name: hub.display_name ?? hub.name,
+      region: hub.region
+    },
+    items,
+    next_cursor: hasMore && items.length > 0 ? String(visibleRows[visibleRows.length - 1].save_id) : null,
+    has_more: hasMore,
+    filters: { q: query, kind }
+  });
+});
 router12.post("/community/hubs/:hubId/posts", requireAuth, communityPostLimiter, async (req, res) => {
   const hubId = parseHubId(Array.isArray(req.params.hubId) ? req.params.hubId[0] : req.params.hubId);
   if (!hubId) return res.status(400).json({ error: "hubId must be a positive integer." });
@@ -155490,6 +155928,30 @@ router12.get("/community/media/:mediaId", requireAuth, requireApproved, generalA
   if (!key) return res.status(409).json({ error: "Media variant is still processing." });
   await streamOrRedirectAsset(key, res);
   return;
+});
+router12.post("/community/media/:mediaId/save", requireAuth, requireApproved, communityLikeLimiter, async (req, res) => {
+  const rawMediaId = Array.isArray(req.params.mediaId) ? req.params.mediaId[0] : req.params.mediaId;
+  const mediaId = parseHubId(rawMediaId);
+  if (!mediaId) return res.status(400).json({ error: "Invalid media id." });
+  const media = await visibleCommunityMediaForViewer(mediaId, req.authenticatedUserId);
+  if (!media) return res.status(404).json({ error: "Media not found." });
+  await db.insert(communityMediaSavesTable).values({
+    user_id: req.authenticatedUserId,
+    media_id: mediaId
+  }).onConflictDoNothing();
+  return res.status(201).json({ media_id: mediaId, saved: true, private: true });
+});
+router12.delete("/community/media/:mediaId/save", requireAuth, requireApproved, communityLikeLimiter, async (req, res) => {
+  const rawMediaId = Array.isArray(req.params.mediaId) ? req.params.mediaId[0] : req.params.mediaId;
+  const mediaId = parseHubId(rawMediaId);
+  if (!mediaId) return res.status(400).json({ error: "Invalid media id." });
+  const media = await visibleCommunityMediaForViewer(mediaId, req.authenticatedUserId);
+  if (!media) return res.status(404).json({ error: "Media not found." });
+  await db.delete(communityMediaSavesTable).where(and(
+    eq(communityMediaSavesTable.user_id, req.authenticatedUserId),
+    eq(communityMediaSavesTable.media_id, mediaId)
+  ));
+  return res.json({ media_id: mediaId, saved: false, private: true });
 });
 router12.post("/community/hubs/:hubId/posts/:postId/comments", requireAuth, communityPostLimiter, async (req, res) => {
   const hubId = parseHubId(Array.isArray(req.params.hubId) ? req.params.hubId[0] : req.params.hubId);
@@ -181824,7 +182286,7 @@ app.use(
           "https://maps.googleapis.com",
           "https://oauth2.googleapis.com",
           "https://accounts.google.com",
-          "https://ipapi.co",
+          "https://ipwho.is",
           new URL(getNiaServiceUrl()).origin
         ].filter(Boolean),
         frameSrc: [
