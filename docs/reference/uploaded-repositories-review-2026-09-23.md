@@ -44,6 +44,34 @@ inspired by them must be independently implemented against Niakofa’s existing
 contracts and reviewed for licensing, credential, privacy, authorization, and
 production-readiness boundaries before release.
 
+## Reconciliation with the uploaded strategic assessment
+
+The assessment's architecture and boundary recommendations are supported with
+two qualifications:
+
+- PostgreSQL has an optional PostGIS capability with an explicit Haversine
+  fallback for development environments that do not provide the extension.
+- Redis/BullMQ is required for production workers; development-only scheduler
+  fallbacks are not production substitutes.
+
+The current product already implements the assessment's core community-help
+loop: Hub-scoped posts and media, Stories, comments/reactions/sharing, curated
+Spirals, help requests, helper matching, completion, Stripe/Pay It Forward
+settlement, and trust/reputation updates. The Skills Directory now links to
+server-filtered request categories without introducing a new discovery stack.
+
+The assessment also names future product directions rather than defects:
+personalized recommendations, community boards/collections, topic follows,
+cross-Hub search, community events, and a restaurant-style storefront/cart
+flow. Those remain explicitly deferred. Existing business accounts, helper
+profiles, request/payment choices, and responsive UI are adjacent Niakofa
+capabilities, not a restaurant storefront implementation.
+
+The repository does not claim the assessment's live Railway SUCCESS/resource
+state from source alone. Production status requires external deployment
+evidence: the canonical host, served commit, readiness checks, and an approved
+authenticated acceptance state.
+
 ## Pixora, Postnisin, and Photobooth follow-up audit
 
 **Reviewed:** 2026-09-24

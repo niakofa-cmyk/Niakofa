@@ -1,6 +1,7 @@
 {
-  "name": "workspace",
+  "name": "@workspace/circles-visual-reference",
   "version": "0.0.0",
+  "description": "Non-production visual reference artifact; excluded from product and deployment builds.",
   "license": "MIT",
   "engines": {
     "node": ">=22"

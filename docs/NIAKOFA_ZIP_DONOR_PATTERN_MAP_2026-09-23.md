@@ -22,8 +22,11 @@ not part of the repository.
 4. Niakofa remains the system of record for Hubs, Requests, Helpers, Circles,
    Stories, Messages, Diaspora, Family, media authorization, and realtime.
 5. Any future feature must be independently implemented through the existing
-   React/Vite + Express/OpenAPI/Zod + Drizzle/PostgreSQL/PostGIS +
-   object-storage/Redis/BullMQ/LiveKit boundaries.
+   React/Vite + Express/OpenAPI/Zod + Drizzle/PostgreSQL boundary, with
+   PostGIS used when available and the explicit Haversine fallback preserved,
+   plus the object-storage/Redis/BullMQ/LiveKit boundaries. Redis/BullMQ is
+   required for production workers; development-only scheduler fallbacks are
+   explicit and are not production substitutes.
 
 ## Existing Niakofa foundation
 
@@ -167,6 +170,24 @@ Before implementing any candidate from this map:
       authenticated playback gates when media is involved.
 - [ ] Recheck archive licensing before reusing any asset or source fragment.
 - [ ] Verify the served commit and production acceptance path before release.
+
+## Assessment reconciliation
+
+The uploaded assessment is a useful product-direction review, not a claim that
+every donor pattern is already a Niakofa requirement. The current status is:
+
+| Assessment area | Current status | Boundary |
+| --- | --- | --- |
+| React/Vite/TypeScript, Express, typed OpenAPI/Zod, PostgreSQL, media, Redis/BullMQ, LiveKit, and Playwright | **Implemented** | PostgreSQL may run without PostGIS through the tested Haversine fallback; Redis/BullMQ is a production gate and development has explicit degraded paths. |
+| Social home, Stories, Hub posts, comments, reactions, authenticated media, sharing, search, and curated Spirals | **Implemented** | These remain Hub/member-scoped Niakofa surfaces, not a copied Pinterest/Netscapes application. |
+| Category-based help discovery from the Skills Directory | **Implemented** | The existing request contract now accepts category filtering and Requests Center preserves/clears category context. |
+| Personalized recommendations, creator/topic follows, boards/collections, cross-Hub search, and community events | **Deferred product candidates** | No source or schema from the reference archives is imported. Implement only after a specific user need, privacy model, and bounded API contract are approved. |
+| Public restaurant storefront, catalog, modifiers, cart, reservations, and restaurant checkout | **Not part of the current product surface** | Existing business accounts, helper services, requests, and Stripe/Pay It Forward rails are adjacent primitives. Do not introduce a second storefront architecture without a separate product decision. |
+| Railway deployment/resource names and live SUCCESS state | **External evidence only** | Repository source proves deployment configuration, not current Railway health or resource state. Verify the canonical deployed host and served commit through the production release gate. |
+
+The `artifacts/circles-visual-reference/` package is explicitly marked as
+non-production, uses mock state, has a reference-only build, and remains
+excluded from the root product build.
 
 ## Source and boundary notes
 
