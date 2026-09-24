@@ -9,7 +9,8 @@ export type CommunityMediaAnalyticsEvent =
   | "community_media_gallery_viewed"
   | "community_media_filter_changed"
   | "community_media_pagination_loaded"
-  | "community_media_context_opened";
+  | "community_media_context_opened"
+  | "community_media_save_changed";
 
 export type CommunityMediaAnalyticsProperties = {
   hub_id?: number;
@@ -23,6 +24,7 @@ export type CommunityMediaAnalyticsProperties = {
   has_query?: boolean;
   page_number?: number;
   context_type?: "hub_post";
+  saved?: boolean;
 };
 
 type CommunityMediaEventPayload = {

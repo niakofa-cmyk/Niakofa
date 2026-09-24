@@ -5,6 +5,73 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+export type CommunityMediaItemContext = {
+  label: string;
+  href: string;
+};
+
+export interface CommunityMediaItem {
+  id: number;
+  post_id: number;
+  mime_type: string;
+  /** @nullable */
+  alt_text: string | null;
+  /** @nullable */
+  media_asset_id: number | null;
+  /** @nullable */
+  media_status: string | null;
+  /** Whether the authenticated caller privately saved this item. */
+  viewer_saved: boolean;
+  body: string;
+  /** @nullable */
+  author_name: string | null;
+  /** @nullable */
+  author_avatar: string | null;
+  created_at: string;
+  media_url: string;
+  /** @nullable */
+  thumbnail_url: string | null;
+  context: CommunityMediaItemContext;
+}
+
+export type CommunityMediaPageHub = {
+  id: number;
+  name: string;
+  display_name: string;
+  /** @nullable */
+  region: string | null;
+};
+
+export type CommunityMediaPageFiltersKind = typeof CommunityMediaPageFiltersKind[keyof typeof CommunityMediaPageFiltersKind];
+
+
+export const CommunityMediaPageFiltersKind = {
+  all: 'all',
+  photo: 'photo',
+  video: 'video',
+  audio: 'audio',
+} as const;
+
+export type CommunityMediaPageFilters = {
+  q: string;
+  kind: CommunityMediaPageFiltersKind;
+};
+
+export interface CommunityMediaPage {
+  hub: CommunityMediaPageHub;
+  items: CommunityMediaItem[];
+  /** @nullable */
+  next_cursor: string | null;
+  has_more: boolean;
+  filters: CommunityMediaPageFilters;
+}
+
+export interface CommunityMediaSaveResponse {
+  media_id: number;
+  saved: boolean;
+  private: true;
+}
+
 /**
  * healthy = reserve fully covered; low = 40-99%; critical = below 40%.
  */
@@ -1581,6 +1648,52 @@ export interface SendChatMessageInput {
   /** @maxLength 2000 */
   content: string;
 }
+
+export type GetCommunityHubMediaParams = {
+cursor?: string;
+/**
+ * @maxLength 120
+ */
+q?: string;
+kind?: GetCommunityHubMediaKind;
+/**
+ * @minimum 6
+ * @maximum 30
+ */
+limit?: number;
+};
+
+export type GetCommunityHubMediaKind = typeof GetCommunityHubMediaKind[keyof typeof GetCommunityHubMediaKind];
+
+
+export const GetCommunityHubMediaKind = {
+  photo: 'photo',
+  video: 'video',
+  audio: 'audio',
+} as const;
+
+export type GetSavedCommunityHubMediaParams = {
+cursor?: string;
+/**
+ * @maxLength 120
+ */
+q?: string;
+kind?: GetSavedCommunityHubMediaKind;
+/**
+ * @minimum 6
+ * @maximum 30
+ */
+limit?: number;
+};
+
+export type GetSavedCommunityHubMediaKind = typeof GetSavedCommunityHubMediaKind[keyof typeof GetSavedCommunityHubMediaKind];
+
+
+export const GetSavedCommunityHubMediaKind = {
+  photo: 'photo',
+  video: 'video',
+  audio: 'audio',
+} as const;
 
 export type DeleteUser200 = {
   ok?: boolean;

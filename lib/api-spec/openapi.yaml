@@ -33,6 +33,8 @@ tags:
     description: Admin-only platform operations (analytics, moderation, Nia controls, communities)
   - name: griot
     description: Griot Globe diaspora hub stories, leaders, crisis status, and cross-hub pledges
+  - name: community
+    description: Authenticated Hub community feeds and private media saves
 
 paths:
   /healthz:
@@ -47,6 +49,146 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /community/hubs/{hubId}/media:
+    get:
+      operationId: getCommunityHubMedia
+      tags: [community]
+      summary: List authenticated Community Media for a Hub
+      parameters:
+        - name: hubId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [photo, video, audio]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 6
+            maximum: 30
+            default: 18
+      responses:
+        "200":
+          description: Hub media page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMediaPage"
+        "400":
+          description: Invalid Hub or cursor
+        "403":
+          description: Approved Hub membership required
+        "404":
+          description: Hub not found
+
+  /community/hubs/{hubId}/saved-media:
+    get:
+      operationId: getSavedCommunityHubMedia
+      tags: [community]
+      summary: List the authenticated user's private saved Community Media
+      parameters:
+        - name: hubId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [photo, video, audio]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 6
+            maximum: 30
+            default: 18
+      responses:
+        "200":
+          description: Private saved media page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMediaPage"
+        "400":
+          description: Invalid Hub or cursor
+        "403":
+          description: Approved Hub membership required
+        "404":
+          description: Hub not found
+
+  /community/media/{mediaId}/save:
+    post:
+      operationId: saveCommunityMedia
+      tags: [community]
+      summary: Privately save an approved Community Media item
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "201":
+          description: Media saved privately
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMediaSaveResponse"
+        "400":
+          description: Invalid media id
+        "404":
+          description: Media not found or not visible to the caller
+    delete:
+      operationId: unsaveCommunityMedia
+      tags: [community]
+      summary: Remove a private Community Media save
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Media removed from private saves
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMediaSaveResponse"
+        "400":
+          description: Invalid media id
+        "404":
+          description: Media not found or not visible to the caller
 
   /users/{id}:
     get:
@@ -2497,6 +2639,93 @@ components:
       scheme: bearer
       bearerFormat: NiakofaHmacToken
   schemas:
+    CommunityMediaItem:
+      type: object
+      required: [id, post_id, mime_type, alt_text, media_asset_id, media_status, viewer_saved, body, author_name, author_avatar, created_at, media_url, thumbnail_url, context]
+      properties:
+        id:
+          type: integer
+        post_id:
+          type: integer
+        mime_type:
+          type: string
+        alt_text:
+          type: ["string", "null"]
+        media_asset_id:
+          type: ["integer", "null"]
+        media_status:
+          type: ["string", "null"]
+        viewer_saved:
+          type: boolean
+          description: Whether the authenticated caller privately saved this item.
+        body:
+          type: string
+        author_name:
+          type: ["string", "null"]
+        author_avatar:
+          type: ["string", "null"]
+        created_at:
+          type: string
+          format: date-time
+        media_url:
+          type: string
+        thumbnail_url:
+          type: ["string", "null"]
+        context:
+          type: object
+          required: [label, href]
+          properties:
+            label:
+              type: string
+            href:
+              type: string
+
+    CommunityMediaPage:
+      type: object
+      required: [hub, items, next_cursor, has_more, filters]
+      properties:
+        hub:
+          type: object
+          required: [id, name, display_name, region]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            display_name:
+              type: string
+            region:
+              type: ["string", "null"]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityMediaItem"
+        next_cursor:
+          type: ["string", "null"]
+        has_more:
+          type: boolean
+        filters:
+          type: object
+          required: [q, kind]
+          properties:
+            q:
+              type: string
+            kind:
+              type: string
+              enum: [all, photo, video, audio]
+
+    CommunityMediaSaveResponse:
+      type: object
+      required: [media_id, saved, private]
+      properties:
+        media_id:
+          type: integer
+        saved:
+          type: boolean
+        private:
+          type: boolean
+          const: true
+
     PoolStats:
       type: object
       required: [enabled, guaranteed_minimum, balance, total_contributed, total_fronted, total_repaid, total_minimums, helpers_fronted, sponsor_count, pending_minimums_count, pending_minimums_total, net_contributed, stripe_fees, climate_contributions]

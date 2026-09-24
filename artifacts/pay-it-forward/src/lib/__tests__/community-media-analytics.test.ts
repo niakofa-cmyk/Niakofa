@@ -36,13 +36,14 @@ describe("Community Media analytics", () => {
     assert.equal("author_name" in payload.properties, false);
   });
 
-  test("uses only the four approved Community Media events", () => {
+  test("uses only the approved bounded Community Media events", () => {
     const source = [
       "community_media_gallery_viewed",
       "community_media_filter_changed",
       "community_media_pagination_loaded",
       "community_media_context_opened",
+      "community_media_save_changed",
     ];
-    assert.equal(new Set(source).size, 4);
+    assert.equal(new Set(source).size, 5);
   });
 });

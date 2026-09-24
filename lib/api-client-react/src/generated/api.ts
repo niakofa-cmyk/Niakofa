@@ -43,6 +43,8 @@ import type {
   CivicResourceNearby,
   CivicResourcesResponse,
   ClaimInput,
+  CommunityMediaPage,
+  CommunityMediaSaveResponse,
   CompleteInput,
   CreateCommunityInput,
   CreatePaymentIntent200,
@@ -54,6 +56,7 @@ import type {
   GetCivicNeedsNearbyParams,
   GetCivicResourcesNearbyParams,
   GetCivicResourcesParams,
+  GetCommunityHubMediaParams,
   GetGriotStoryReportsParams,
   GetHubSummary200,
   GetMyPoolLedgerParams,
@@ -68,6 +71,7 @@ import type {
   GetReportsParams,
   GetRequestsParams,
   GetRouteParams,
+  GetSavedCommunityHubMediaParams,
   GetStripeConnectStatus200,
   GriotStoryReport,
   HealthStatus,
@@ -246,6 +250,332 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
+
+export const getGetCommunityHubMediaUrl = (hubId: number,
+    params?: GetCommunityHubMediaParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/community/hubs/${hubId}/media?${stringifiedParams}` : `/api/community/hubs/${hubId}/media`
+}
+
+/**
+ * @summary List authenticated Community Media for a Hub
+ */
+export const getCommunityHubMedia = async (hubId: number,
+    params?: GetCommunityHubMediaParams, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMediaPage> => {
+
+  return customFetch<CommunityMediaPage>(getGetCommunityHubMediaUrl(hubId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCommunityHubMediaQueryKey = (hubId: number,
+    params?: GetCommunityHubMediaParams,) => {
+    return [
+    `/api/community/hubs/${hubId}/media`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCommunityHubMediaQueryOptions = <TData = Awaited<ReturnType<typeof getCommunityHubMedia>>, TError = ErrorType<void>>(hubId: number,
+    params?: GetCommunityHubMediaParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityHubMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCommunityHubMediaQueryKey(hubId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommunityHubMedia>>> = ({ signal }) => getCommunityHubMedia(hubId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: hubId !== null && hubId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCommunityHubMedia>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCommunityHubMediaQueryResult = NonNullable<Awaited<ReturnType<typeof getCommunityHubMedia>>>
+export type GetCommunityHubMediaQueryError = ErrorType<void>
+
+
+/**
+ * @summary List authenticated Community Media for a Hub
+ */
+
+export function useGetCommunityHubMedia<TData = Awaited<ReturnType<typeof getCommunityHubMedia>>, TError = ErrorType<void>>(
+ hubId: number,
+    params?: GetCommunityHubMediaParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityHubMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCommunityHubMediaQueryOptions(hubId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSavedCommunityHubMediaUrl = (hubId: number,
+    params?: GetSavedCommunityHubMediaParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/community/hubs/${hubId}/saved-media?${stringifiedParams}` : `/api/community/hubs/${hubId}/saved-media`
+}
+
+/**
+ * @summary List the authenticated user's private saved Community Media
+ */
+export const getSavedCommunityHubMedia = async (hubId: number,
+    params?: GetSavedCommunityHubMediaParams, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMediaPage> => {
+
+  return customFetch<CommunityMediaPage>(getGetSavedCommunityHubMediaUrl(hubId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSavedCommunityHubMediaQueryKey = (hubId: number,
+    params?: GetSavedCommunityHubMediaParams,) => {
+    return [
+    `/api/community/hubs/${hubId}/saved-media`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSavedCommunityHubMediaQueryOptions = <TData = Awaited<ReturnType<typeof getSavedCommunityHubMedia>>, TError = ErrorType<void>>(hubId: number,
+    params?: GetSavedCommunityHubMediaParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSavedCommunityHubMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSavedCommunityHubMediaQueryKey(hubId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSavedCommunityHubMedia>>> = ({ signal }) => getSavedCommunityHubMedia(hubId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: hubId !== null && hubId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSavedCommunityHubMedia>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSavedCommunityHubMediaQueryResult = NonNullable<Awaited<ReturnType<typeof getSavedCommunityHubMedia>>>
+export type GetSavedCommunityHubMediaQueryError = ErrorType<void>
+
+
+/**
+ * @summary List the authenticated user's private saved Community Media
+ */
+
+export function useGetSavedCommunityHubMedia<TData = Awaited<ReturnType<typeof getSavedCommunityHubMedia>>, TError = ErrorType<void>>(
+ hubId: number,
+    params?: GetSavedCommunityHubMediaParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSavedCommunityHubMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSavedCommunityHubMediaQueryOptions(hubId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveCommunityMediaUrl = (mediaId: number,) => {
+
+
+
+
+  return `/api/community/media/${mediaId}/save`
+}
+
+/**
+ * @summary Privately save an approved Community Media item
+ */
+export const saveCommunityMedia = async (mediaId: number, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMediaSaveResponse> => {
+
+  return customFetch<CommunityMediaSaveResponse>(getSaveCommunityMediaUrl(mediaId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSaveCommunityMediaMutationKey = () => ['saveCommunityMedia'] as const;
+
+export const getSaveCommunityMediaMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveCommunityMedia>>, TError,SaveCommunityMediaMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveCommunityMedia>>, TError,SaveCommunityMediaMutationVariables, TContext> => {
+
+const mutationKey = getSaveCommunityMediaMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveCommunityMedia>>, SaveCommunityMediaMutationVariables> = (props) => {
+          const {mediaId} = props ?? {};
+
+          return  saveCommunityMedia(mediaId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveCommunityMediaMutationResult = NonNullable<Awaited<ReturnType<typeof saveCommunityMedia>>>
+
+    export type SaveCommunityMediaMutationError = ErrorType<void>
+    export type SaveCommunityMediaMutationVariables = {mediaId: number}
+
+    /**
+ * @summary Privately save an approved Community Media item
+ */
+export const useSaveCommunityMedia = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveCommunityMedia>>, TError,SaveCommunityMediaMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveCommunityMedia>>,
+        TError,
+        SaveCommunityMediaMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveCommunityMediaMutationOptions(options));
+    }
+
+export const getUnsaveCommunityMediaUrl = (mediaId: number,) => {
+
+
+
+
+  return `/api/community/media/${mediaId}/save`
+}
+
+/**
+ * @summary Remove a private Community Media save
+ */
+export const unsaveCommunityMedia = async (mediaId: number, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMediaSaveResponse> => {
+
+  return customFetch<CommunityMediaSaveResponse>(getUnsaveCommunityMediaUrl(mediaId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnsaveCommunityMediaMutationKey = () => ['unsaveCommunityMedia'] as const;
+
+export const getUnsaveCommunityMediaMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unsaveCommunityMedia>>, TError,UnsaveCommunityMediaMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unsaveCommunityMedia>>, TError,UnsaveCommunityMediaMutationVariables, TContext> => {
+
+const mutationKey = getUnsaveCommunityMediaMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unsaveCommunityMedia>>, UnsaveCommunityMediaMutationVariables> = (props) => {
+          const {mediaId} = props ?? {};
+
+          return  unsaveCommunityMedia(mediaId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnsaveCommunityMediaMutationResult = NonNullable<Awaited<ReturnType<typeof unsaveCommunityMedia>>>
+
+    export type UnsaveCommunityMediaMutationError = ErrorType<void>
+    export type UnsaveCommunityMediaMutationVariables = {mediaId: number}
+
+    /**
+ * @summary Remove a private Community Media save
+ */
+export const useUnsaveCommunityMedia = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unsaveCommunityMedia>>, TError,UnsaveCommunityMediaMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unsaveCommunityMedia>>,
+        TError,
+        UnsaveCommunityMediaMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUnsaveCommunityMediaMutationOptions(options));
+    }
 
 export const getGetUserUrl = (id: number,) => {
 

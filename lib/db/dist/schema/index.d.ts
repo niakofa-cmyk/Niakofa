@@ -69,4 +69,5 @@ export * from "./geography";
 export * from "./audio-circles";
 export * from "./circle-recordings";
 export * from "./media-assets";
+export * from "./community-media-saves";
 //# sourceMappingURL=index.d.ts.map

@@ -17,6 +17,160 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary List authenticated Community Media for a Hub
+ */
+
+
+
+export const GetCommunityHubMediaParams = zod.object({
+  "hubId": zod.coerce.number().int().min(1)
+})
+
+export const getCommunityHubMediaQueryQMax = 120;
+
+export const getCommunityHubMediaQueryLimitDefault = 18;
+export const getCommunityHubMediaQueryLimitMin = 6;
+export const getCommunityHubMediaQueryLimitMax = 30;
+
+
+
+export const GetCommunityHubMediaQueryParams = zod.object({
+  "cursor": zod.coerce.string().optional(),
+  "q": zod.coerce.string().max(getCommunityHubMediaQueryQMax).optional(),
+  "kind": zod.enum(['photo', 'video', 'audio']).optional(),
+  "limit": zod.coerce.number().int().min(getCommunityHubMediaQueryLimitMin).max(getCommunityHubMediaQueryLimitMax).default(getCommunityHubMediaQueryLimitDefault)
+})
+
+export const GetCommunityHubMediaResponse = zod.object({
+  "hub": zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "display_name": zod.string(),
+  "region": zod.string().nullable()
+}),
+  "items": zod.array(zod.object({
+  "id": zod.number().int(),
+  "post_id": zod.number().int(),
+  "mime_type": zod.string(),
+  "alt_text": zod.string().nullable(),
+  "media_asset_id": zod.number().int().nullable(),
+  "media_status": zod.string().nullable(),
+  "viewer_saved": zod.boolean().describe('Whether the authenticated caller privately saved this item.'),
+  "body": zod.string(),
+  "author_name": zod.string().nullable(),
+  "author_avatar": zod.string().nullable(),
+  "created_at": zod.coerce.date(),
+  "media_url": zod.string(),
+  "thumbnail_url": zod.string().nullable(),
+  "context": zod.object({
+  "label": zod.string(),
+  "href": zod.string()
+})
+})),
+  "next_cursor": zod.string().nullable(),
+  "has_more": zod.boolean(),
+  "filters": zod.object({
+  "q": zod.string(),
+  "kind": zod.enum(['all', 'photo', 'video', 'audio'])
+})
+})
+
+
+/**
+ * @summary List the authenticated user's private saved Community Media
+ */
+
+
+
+export const GetSavedCommunityHubMediaParams = zod.object({
+  "hubId": zod.coerce.number().int().min(1)
+})
+
+export const getSavedCommunityHubMediaQueryQMax = 120;
+
+export const getSavedCommunityHubMediaQueryLimitDefault = 18;
+export const getSavedCommunityHubMediaQueryLimitMin = 6;
+export const getSavedCommunityHubMediaQueryLimitMax = 30;
+
+
+
+export const GetSavedCommunityHubMediaQueryParams = zod.object({
+  "cursor": zod.coerce.string().optional(),
+  "q": zod.coerce.string().max(getSavedCommunityHubMediaQueryQMax).optional(),
+  "kind": zod.enum(['photo', 'video', 'audio']).optional(),
+  "limit": zod.coerce.number().int().min(getSavedCommunityHubMediaQueryLimitMin).max(getSavedCommunityHubMediaQueryLimitMax).default(getSavedCommunityHubMediaQueryLimitDefault)
+})
+
+export const GetSavedCommunityHubMediaResponse = zod.object({
+  "hub": zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "display_name": zod.string(),
+  "region": zod.string().nullable()
+}),
+  "items": zod.array(zod.object({
+  "id": zod.number().int(),
+  "post_id": zod.number().int(),
+  "mime_type": zod.string(),
+  "alt_text": zod.string().nullable(),
+  "media_asset_id": zod.number().int().nullable(),
+  "media_status": zod.string().nullable(),
+  "viewer_saved": zod.boolean().describe('Whether the authenticated caller privately saved this item.'),
+  "body": zod.string(),
+  "author_name": zod.string().nullable(),
+  "author_avatar": zod.string().nullable(),
+  "created_at": zod.coerce.date(),
+  "media_url": zod.string(),
+  "thumbnail_url": zod.string().nullable(),
+  "context": zod.object({
+  "label": zod.string(),
+  "href": zod.string()
+})
+})),
+  "next_cursor": zod.string().nullable(),
+  "has_more": zod.boolean(),
+  "filters": zod.object({
+  "q": zod.string(),
+  "kind": zod.enum(['all', 'photo', 'video', 'audio'])
+})
+})
+
+
+/**
+ * @summary Privately save an approved Community Media item
+ */
+
+
+
+export const SaveCommunityMediaParams = zod.object({
+  "mediaId": zod.coerce.number().int().min(1)
+})
+
+export const SaveCommunityMediaResponse = zod.object({
+  "media_id": zod.number().int(),
+  "saved": zod.boolean(),
+  "private": zod.literal(true)
+})
+
+
+/**
+ * @summary Remove a private Community Media save
+ */
+
+
+
+export const UnsaveCommunityMediaParams = zod.object({
+  "mediaId": zod.coerce.number().int().min(1)
+})
+
+export const UnsaveCommunityMediaResponse = zod.object({
+  "media_id": zod.number().int(),
+  "saved": zod.boolean(),
+  "private": zod.literal(true)
+})
+
+
+/**
  * @summary Get user profile
  */
 export const GetUserParams = zod.object({

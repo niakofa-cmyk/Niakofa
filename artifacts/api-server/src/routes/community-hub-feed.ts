@@ -14,6 +14,7 @@ import {
   hubCommunityPostCommentsTable,
   hubCommunityPostMediaTable,
   hubCommunityPostReactionsTable,
+  communityMediaSavesTable,
   hubCommunityPostsTable,
   gratitudePostsTable,
   hubMembershipsTable,
@@ -112,6 +113,26 @@ const approvedVisibleUser = and(
   eq(usersTable.approval_status, "approved"),
   eq(usersTable.is_suspended, false),
 );
+
+async function visibleCommunityMediaForViewer(mediaId: number, userId: number): Promise<{ id: number; hub_id: number } | null> {
+  const [media] = await db
+    .select({
+      id: hubCommunityPostMediaTable.id,
+      hub_id: hubCommunityPostsTable.hub_id,
+    })
+    .from(hubCommunityPostMediaTable)
+    .innerJoin(hubCommunityPostsTable, eq(hubCommunityPostsTable.id, hubCommunityPostMediaTable.post_id))
+    .innerJoin(usersTable, eq(usersTable.id, hubCommunityPostsTable.author_id))
+    .where(and(
+      eq(hubCommunityPostMediaTable.id, mediaId),
+      eq(hubCommunityPostsTable.moderation_status, "approved"),
+      approvedVisibleUser,
+    ))
+    .limit(1);
+  if (!media || !(await canonicalHubExists(media.hub_id))) return null;
+  if (!(await isApprovedHubMember(userId, media.hub_id))) return null;
+  return media;
+}
 
 router.get("/community/my-hub", requireAuth, async (req, res) => {
   const callerId = req.authenticatedUserId!;
@@ -454,6 +475,7 @@ router.get("/community/hubs/:hubId/media", requireAuth, requireApproved, general
       alt_text: hubCommunityPostMediaTable.alt_text,
       media_asset_id: hubCommunityPostMediaTable.media_asset_id,
       media_status: mediaAssetsTable.status,
+      viewer_save_id: communityMediaSavesTable.id,
       thumbnail_key: mediaAssetsTable.thumbnail_key,
       variant_key: mediaAssetsTable.variant_key,
       body: hubCommunityPostsTable.body,
@@ -465,6 +487,10 @@ router.get("/community/hubs/:hubId/media", requireAuth, requireApproved, general
     .innerJoin(hubCommunityPostsTable, eq(hubCommunityPostsTable.id, hubCommunityPostMediaTable.post_id))
     .innerJoin(usersTable, eq(usersTable.id, hubCommunityPostsTable.author_id))
     .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, hubCommunityPostMediaTable.media_asset_id))
+    .leftJoin(communityMediaSavesTable, and(
+      eq(communityMediaSavesTable.media_id, hubCommunityPostMediaTable.id),
+      eq(communityMediaSavesTable.user_id, req.authenticatedUserId!),
+    ))
     .where(and(...conditions))
     .orderBy(desc(hubCommunityPostMediaTable.id))
     .limit(limit + 1);
@@ -478,6 +504,7 @@ router.get("/community/hubs/:hubId/media", requireAuth, requireApproved, general
     alt_text: row.alt_text,
     media_asset_id: row.media_asset_id,
     media_status: row.media_status,
+     viewer_saved: Boolean(row.viewer_save_id),
     body: row.body,
     author_name: row.author_name,
     author_avatar: row.author_avatar,
@@ -499,6 +526,114 @@ router.get("/community/hubs/:hubId/media", requireAuth, requireApproved, general
     },
     items,
     next_cursor: hasMore && items.length > 0 ? String(items[items.length - 1].id) : null,
+    has_more: hasMore,
+    filters: { q: query, kind },
+  });
+});
+
+router.get("/community/hubs/:hubId/saved-media", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const rawHubId = Array.isArray(req.params.hubId) ? req.params.hubId[0] : req.params.hubId;
+  const hubId = parseHubId(rawHubId);
+  if (!hubId) return res.status(400).json({ error: "hubId must be a positive integer." });
+
+  const [hub] = await db
+    .select({
+      id: diasporaHubsTable.id,
+      name: diasporaHubsTable.name,
+      display_name: diasporaHubsTable.display_name,
+      region: diasporaHubsTable.region_label,
+    })
+    .from(diasporaHubsTable)
+    .where(and(
+      eq(diasporaHubsTable.id, hubId),
+      eq(diasporaHubsTable.status, "approved"),
+      isNull(diasporaHubsTable.primary_hub_id),
+    ))
+    .limit(1);
+
+  if (!hub) return res.status(404).json({ error: "Canonical Hub not found." });
+  if (!(await isApprovedHubMember(req.authenticatedUserId!, hubId))) {
+    return res.status(403).json({ error: "Approved Hub membership is required to view saved media." });
+  }
+
+  const rawCursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+  const cursor = rawCursor ? parseHubId(rawCursor) : null;
+  if (rawCursor && !cursor) return res.status(400).json({ error: "cursor must be a positive integer." });
+
+  const rawLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : 18;
+  const limit = Number.isSafeInteger(rawLimit) ? Math.min(Math.max(rawLimit, 6), 30) : 18;
+  const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 120) : "";
+  const kind = typeof req.query.kind === "string" && ["photo", "video", "audio"].includes(req.query.kind)
+    ? req.query.kind
+    : "all";
+  const kindPattern = kind === "photo" ? "image/%" : kind === "video" ? "video/%" : kind === "audio" ? "audio/%" : null;
+
+  const conditions = [
+    eq(communityMediaSavesTable.user_id, req.authenticatedUserId!),
+    eq(hubCommunityPostsTable.hub_id, hubId),
+    eq(hubCommunityPostsTable.moderation_status, "approved"),
+    approvedVisibleUser,
+    ...(cursor ? [lt(communityMediaSavesTable.id, cursor)] : []),
+    ...(query ? [ilike(hubCommunityPostsTable.body, `%${query}%`)] : []),
+    ...(kindPattern ? [sql`${hubCommunityPostMediaTable.mime_type} LIKE ${kindPattern}`] : []),
+  ];
+
+  const rows = await db
+    .select({
+      save_id: communityMediaSavesTable.id,
+      id: hubCommunityPostMediaTable.id,
+      post_id: hubCommunityPostMediaTable.post_id,
+      mime_type: hubCommunityPostMediaTable.mime_type,
+      alt_text: hubCommunityPostMediaTable.alt_text,
+      media_asset_id: hubCommunityPostMediaTable.media_asset_id,
+      media_status: mediaAssetsTable.status,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+      body: hubCommunityPostsTable.body,
+      author_name: usersTable.name,
+      author_avatar: usersTable.avatar_url,
+      created_at: hubCommunityPostsTable.created_at,
+    })
+    .from(communityMediaSavesTable)
+    .innerJoin(hubCommunityPostMediaTable, eq(hubCommunityPostMediaTable.id, communityMediaSavesTable.media_id))
+    .innerJoin(hubCommunityPostsTable, eq(hubCommunityPostsTable.id, hubCommunityPostMediaTable.post_id))
+    .innerJoin(usersTable, eq(usersTable.id, hubCommunityPostsTable.author_id))
+    .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, hubCommunityPostMediaTable.media_asset_id))
+    .where(and(...conditions))
+    .orderBy(desc(communityMediaSavesTable.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const visibleRows = hasMore ? rows.slice(0, limit) : rows;
+  const items = visibleRows.map((row) => ({
+    id: row.id,
+    post_id: row.post_id,
+    mime_type: row.mime_type,
+    alt_text: row.alt_text,
+    media_asset_id: row.media_asset_id,
+    media_status: row.media_status,
+    viewer_saved: true,
+    body: row.body,
+    author_name: row.author_name,
+    author_avatar: row.author_avatar,
+    created_at: row.created_at,
+    media_url: `/api/community/media/${row.id}`,
+    thumbnail_url: row.thumbnail_key ? `/api/community/media/${row.id}?variant=thumbnail` : null,
+    context: {
+      label: "Saved from this Hub",
+      href: `/community?hubId=${hubId}&postId=${row.post_id}`,
+    },
+  }));
+
+  return res.json({
+    hub: {
+      id: hub.id,
+      name: hub.name,
+      display_name: hub.display_name ?? hub.name,
+      region: hub.region,
+    },
+    items,
+    next_cursor: hasMore && items.length > 0 ? String(visibleRows[visibleRows.length - 1]!.save_id) : null,
     has_more: hasMore,
     filters: { q: query, kind },
   });
@@ -684,6 +819,38 @@ router.get("/community/media/:mediaId", requireAuth, requireApproved, generalApi
   if (!key) return res.status(409).json({ error: "Media variant is still processing." });
   await streamOrRedirectAsset(key, res);
   return;
+});
+
+router.post("/community/media/:mediaId/save", requireAuth, requireApproved, communityLikeLimiter, async (req, res) => {
+  const rawMediaId = Array.isArray(req.params.mediaId) ? req.params.mediaId[0] : req.params.mediaId;
+  const mediaId = parseHubId(rawMediaId);
+  if (!mediaId) return res.status(400).json({ error: "Invalid media id." });
+
+  const media = await visibleCommunityMediaForViewer(mediaId, req.authenticatedUserId!);
+  if (!media) return res.status(404).json({ error: "Media not found." });
+
+  await db.insert(communityMediaSavesTable).values({
+    user_id: req.authenticatedUserId!,
+    media_id: mediaId,
+  }).onConflictDoNothing();
+
+  return res.status(201).json({ media_id: mediaId, saved: true, private: true });
+});
+
+router.delete("/community/media/:mediaId/save", requireAuth, requireApproved, communityLikeLimiter, async (req, res) => {
+  const rawMediaId = Array.isArray(req.params.mediaId) ? req.params.mediaId[0] : req.params.mediaId;
+  const mediaId = parseHubId(rawMediaId);
+  if (!mediaId) return res.status(400).json({ error: "Invalid media id." });
+
+  const media = await visibleCommunityMediaForViewer(mediaId, req.authenticatedUserId!);
+  if (!media) return res.status(404).json({ error: "Media not found." });
+
+  await db.delete(communityMediaSavesTable).where(and(
+    eq(communityMediaSavesTable.user_id, req.authenticatedUserId!),
+    eq(communityMediaSavesTable.media_id, mediaId),
+  ));
+
+  return res.json({ media_id: mediaId, saved: false, private: true });
 });
 
 router.post("/community/hubs/:hubId/posts/:postId/comments", requireAuth, communityPostLimiter, async (req, res) => {

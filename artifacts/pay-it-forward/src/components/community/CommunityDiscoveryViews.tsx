@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   ArrowUpRight,
+  Bookmark,
   Film,
   Globe2,
   Headphones,
@@ -16,6 +17,8 @@ import { fetchHubCommunityFeed } from "@/lib/hubCommunityFeed";
 import { authHeaders } from "@/lib/auth";
 import {
   fetchCommunityVisualDiscovery,
+  fetchSavedCommunityVisualDiscovery,
+  setCommunityMediaSaved,
   type VisualDiscoveryItem,
   type VisualDiscoveryKind,
 } from "@/lib/communityVisualDiscovery";
@@ -220,11 +223,13 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
   const [items, setItems] = useState<VisualDiscoveryItem[]>([]);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<VisualDiscoveryKind>("all");
+  const [savedOnly, setSavedOnly] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const pageNumberRef = useRef(0);
 
@@ -238,7 +243,8 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
     setHasMore(true);
     pageNumberRef.current = 0;
 
-    fetchCommunityVisualDiscovery(hubId, { query, kind })
+    const load = savedOnly ? fetchSavedCommunityVisualDiscovery : fetchCommunityVisualDiscovery;
+    load(hubId, { query, kind })
       .then((page) => {
         if (cancelled) return;
         setItems(page.items);
@@ -266,13 +272,14 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
     return () => {
       cancelled = true;
     };
-  }, [hubId, query, kind]);
+  }, [hubId, query, kind, savedOnly]);
 
   const loadMore = useCallback(async () => {
     if (!hubId || !cursor || !hasMore || loading || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await fetchCommunityVisualDiscovery(hubId, { cursor, query, kind });
+      const load = savedOnly ? fetchSavedCommunityVisualDiscovery : fetchCommunityVisualDiscovery;
+      const page = await load(hubId, { cursor, query, kind });
       setItems((current) => [...current, ...page.items]);
       setCursor(page.next_cursor);
       setHasMore(page.has_more);
@@ -292,7 +299,35 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
     } finally {
       setLoadingMore(false);
     }
-  }, [cursor, hasMore, hubId, kind, loading, loadingMore, query]);
+  }, [cursor, hasMore, hubId, kind, loading, loadingMore, query, savedOnly]);
+
+  const toggleSave = useCallback(async (item: VisualDiscoveryItem) => {
+    if (savingIds.has(item.id)) return;
+    const nextSaved = !item.viewer_saved;
+    setSavingIds((current) => new Set(current).add(item.id));
+    try {
+      const result = await setCommunityMediaSaved(item.id, nextSaved);
+      setItems((current) => savedOnly && !result.saved
+        ? current.filter((currentItem) => currentItem.id !== item.id)
+        : current.map((currentItem) => currentItem.id === item.id
+          ? { ...currentItem, viewer_saved: result.saved }
+          : currentItem));
+      trackCommunityMedia("community_media_save_changed", {
+        hub_id: hubId ?? undefined,
+        media_id: item.id,
+        media_kind: mediaKindFromMime(item.mime_type),
+        saved: result.saved,
+      });
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Could not update this saved item.");
+    } finally {
+      setSavingIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }, [hubId, savedOnly, savingIds]);
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -333,6 +368,15 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
           />
         </label>
         <div className="flex gap-1 rounded-xl border border-border bg-background p-1" role="group" aria-label="Filter community media">
+          <button
+            type="button"
+            onClick={() => setSavedOnly((current) => !current)}
+            aria-pressed={savedOnly}
+            className={`flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-bold transition sm:px-3 ${savedOnly ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+          >
+            <Bookmark className={`h-3.5 w-3.5 ${savedOnly ? "fill-current" : ""}`} />
+            <span className="hidden sm:inline">Saved</span>
+          </button>
           {([
             ["all", "All", ImageIcon],
             ["photo", "Photos", ImageIcon],
@@ -376,9 +420,11 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
       ) : items.length === 0 ? (
         <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-background/50 px-6 text-center">
           <ImageIcon className="mb-3 h-9 w-9 text-muted-foreground/35" />
-          <h3 className="font-black">No shared moments yet</h3>
+          <h3 className="font-black">{savedOnly ? "No saved moments yet" : "No shared moments yet"}</h3>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            {query ? "Try another search, or clear the search to see the full Hub gallery." : "When neighbors share a photo, project, or oral-history moment, it will appear here with its community context."}
+            {savedOnly
+              ? "Save a photo, video, or audio memory and it will stay private to you for a later return."
+              : query ? "Try another search, or clear the search to see the full Hub gallery." : "When neighbors share a photo, project, or oral-history moment, it will appear here with its community context."}
           </p>
         </div>
       ) : (
@@ -406,9 +452,21 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
               </Link>
               <div className="p-3">
                 <p className="line-clamp-2 text-sm font-semibold leading-snug">{item.body}</p>
-                <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                  <span className="truncate">{item.context.label}</span>
-                  {item.mime_type.startsWith("video/") ? <Film className="h-3.5 w-3.5 shrink-0" /> : item.mime_type.startsWith("audio/") ? <Headphones className="h-3.5 w-3.5 shrink-0" /> : <ImageIcon className="h-3.5 w-3.5 shrink-0" />}
+                 <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                   <span className="truncate">{item.context.label}</span>
+                   <div className="flex items-center gap-2">
+                     {item.mime_type.startsWith("video/") ? <Film className="h-3.5 w-3.5 shrink-0" /> : item.mime_type.startsWith("audio/") ? <Headphones className="h-3.5 w-3.5 shrink-0" /> : <ImageIcon className="h-3.5 w-3.5 shrink-0" />}
+                     <button
+                       type="button"
+                       onClick={() => void toggleSave(item)}
+                       disabled={savingIds.has(item.id)}
+                       aria-label={item.viewer_saved ? "Remove from saved media" : "Save media for later"}
+                       aria-pressed={item.viewer_saved}
+                       className={`rounded-lg p-1 transition hover:bg-primary/10 hover:text-primary disabled:cursor-wait disabled:opacity-50 ${item.viewer_saved ? "text-primary" : ""}`}
+                     >
+                       <Bookmark className={`h-4 w-4 ${item.viewer_saved ? "fill-current" : ""}`} />
+                     </button>
+                   </div>
                 </div>
               </div>
             </article>
