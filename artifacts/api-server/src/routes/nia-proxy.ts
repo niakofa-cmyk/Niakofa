@@ -101,7 +101,7 @@ function sanitizeSessionId(raw: unknown): string | null {
 // ── POST /api/nia/chat ────────────────────────────────────────────────────────
 router.post(
   "/nia/chat",
-  requireAuth,
+  parseOptionalAuth,
   crisisAwareChatLimiter,
   async (req: Request, res: Response) => {
     if (!(await isNiaEnabled())) {
@@ -306,10 +306,18 @@ router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (r
         ? { authorization: req.headers.authorization }
         : {},
     });
-    if (!upstream.ok) return res.json([]);
+    if (!upstream.ok) {
+      const body = await upstream.text().catch(() => "");
+      return res.status(upstream.status).json({
+        error: "Unable to load Nia conversation history.",
+        upstreamStatus: upstream.status,
+        detail: body.slice(0, 300) || undefined,
+      });
+    }
     return res.json(await upstream.json());
-  } catch {
-    return res.json([]);
+  } catch (err) {
+    logger.warn({ err, sessionId }, "nia history: upstream unavailable");
+    return res.status(502).json({ error: "Nia conversation history is temporarily unavailable." });
   }
 });
 
