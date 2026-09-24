@@ -123,6 +123,17 @@ GitHub blob if not stopped before tree creation.
 compare every returned blob SHA, and keep the remote ref unchanged on any
 size or hash mismatch.
 
+Do not parse blob IDs from shell-transported `git ls-tree` output; the bridge can
+remove the tab separator and make a path's first hexadecimal character look like
+part of the SHA. Use `git rev-parse <commit>:<path>` for exact blob IDs.
+
+**Why:** a 40-character Git blob SHA can become a 41-character false value
+without an obvious command failure, causing a valid upload to be rejected as a
+hash mismatch.
+
+**How to apply:** require `/^[0-9a-f]{40}$/` before upload, then compare the
+connector's returned SHA and the complete tree SHA.
+
 After any connector-backed write attempt, re-read the remote ref before retrying.
 A transport or intermediate validation report may be incomplete even when the
 branch has advanced, so the remote ref and complete tree verification are
