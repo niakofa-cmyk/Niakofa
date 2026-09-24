@@ -215,9 +215,12 @@ async function runGeneralCheckin(): Promise<void> {
           );
         } catch (convErr) {
           logger.warn(
-            { convErr, userId: req.user_id },
+            { convErr, userId: req.user_id, requestId: req.request_id },
             "general-checkin-worker: could not save conversation message"
           );
+          // Persistence is the Nia success condition. Do not send a push or
+          // mark the request complete when the conversation was not saved.
+          throw convErr;
         }
 
         // 4. Queue push notification — non-fatal if push_notification_queue missing
