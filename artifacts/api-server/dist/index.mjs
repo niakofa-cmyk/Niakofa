@@ -107953,6 +107953,9 @@ var init_ws_hub = __esm({
       REQUEST_CREATED: "request.created",
       REQUEST_ACCEPTED: "request.status_changed",
       REQUEST_CANCELLED: "request.status_changed",
+      HELPER_MOVING: "request.status_changed",
+      HELPER_ARRIVED: "request.status_changed",
+      REQUEST_COMPLETED: "request.status_changed",
       community_story_created: "story.created",
       community_story_expired: "story.expired",
       community_story_viewed: "story.viewed",
@@ -147460,7 +147463,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "a03e0f0cc6e6f2edb35787aef35be4ea586ec9fd";
+var GIT_COMMIT = "e914db8768fcd2a7d0212cc7130a48b6e4f181e5";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
