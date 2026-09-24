@@ -55,6 +55,7 @@ import { haptic } from "@/lib/haptics";
 import { Z_CHROME, Z_TOPBAR, Z_SEARCH } from "@/lib/zLayers";
 import { computeMapStatus } from "@/lib/mapStatus";
 import { haversineDistanceMiles, haversineMeters, isNearbyUser } from "@/lib/geo-utils";
+import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 
 // Module-level: resolved once at import time, not on every render.
 // Detecting a missing token here (rather than inside the component) means
@@ -502,7 +503,10 @@ export default function MapScreen() {
   const [activeHelperRoute, setActiveHelperRoute] = useState<{ helperId: number; requestId: number } | null>(null);
 
   useWebSocket(useCallback((event) => {
-    if (event.type === "connected") {
+    const unified = unwrapUnifiedRealtimeEvent(event);
+    const eventType = unified?.eventType ?? event.type;
+    const payload = unified?.payload ?? event.payload;
+    if (eventType === "connected") {
       setWsConnected(true);
       // Missed WS events during a disconnect (however brief) are gone for
       // good — deltas like REQUEST_CREATED/REQUEST_COMPLETED that fired while
@@ -517,8 +521,8 @@ export default function MapScreen() {
           queryKey: getGetOnlineHelpersQueryKey({ lat: loc.lat, lng: loc.lng, radius_miles: radiusMiles }),
         });
       }
-    } else if (event.type === "REQUEST_CREATED" || event.type === "new_request") {
-      const req = event.payload as HelpRequest;
+    } else if (eventType === "REQUEST_CREATED" || eventType === "new_request") {
+      const req = payload as HelpRequest;
       setLiveRequests(prev => {
         if (prev.find(r => r.id === req.id)) return prev;
         if (req.urgency === "emergency") {
@@ -533,8 +537,17 @@ export default function MapScreen() {
       setBirdNewNotification(true);
       setTimeout(() => setBirdNewNotification(false), 2400);
       queryClient.invalidateQueries({ queryKey: getGetRequestStatsQueryKey() });
-    } else if (event.type === "REQUEST_ACCEPTED" || event.type === "HELPER_MOVING" || event.type === "HELPER_ARRIVED" || event.type === "REQUEST_COMPLETED" || event.type === "REQUEST_CANCELLED" || event.type === "request_updated") {
-      const req = event.payload as HelpRequest & { requester_id?: number };
+    } else if (
+      eventType === "REQUEST_ACCEPTED"
+      || eventType === "HELPER_MOVING"
+      || eventType === "HELPER_ARRIVED"
+      || eventType === "REQUEST_COMPLETED"
+      || eventType === "REQUEST_CANCELLED"
+      || eventType === "request_updated"
+      || eventType === "request.updated"
+      || eventType === "request.status_changed"
+    ) {
+      const req = payload as HelpRequest & { requester_id?: number };
       // Auto-navigate requester to tracking screen when their request gets claimed.
       // This ensures the requester doesn't stay on the idle map after a helper accepts.
       if (
@@ -586,25 +599,25 @@ export default function MapScreen() {
         return filtered;
       });
       queryClient.invalidateQueries({ queryKey: getGetRequestStatsQueryKey() });
-    } else if (event.type === "pledge_paid" || event.type === "payment_completed") {
+    } else if (eventType === "pledge_paid" || eventType === "payment_completed") {
       // Micro-reaction: donation completed — golden sparkle + egg glow.
       // Distinct from the teal "celebrating" reaction used for request completion.
       // Fires on pledge repayment and direct community-pool contributions.
       setBirdDonated(true);
       setTimeout(() => setBirdDonated(false), 2800);
-    } else if (event.type === "helper_location") {
-      const loc = event.payload as { id: number; lat: number; lng: number; heading?: number };
+    } else if (eventType === "helper_location") {
+      const loc = payload as { id: number; lat: number; lng: number; heading?: number };
       if (loc.id === currentUser?.id) return;
       setLiveHelpers(prev => {
         const exists = prev.find(h => h.id === loc.id);
         if (!exists) return prev;
         return prev.map(h => h.id === loc.id ? { ...h, lat: loc.lat, lng: loc.lng, heading: loc.heading ?? h.heading } : h);
       });
-    } else if (event.type === "helper_online") {
+    } else if (eventType === "helper_online") {
       // Backend broadcasts { id, name, lat, lng } — add/refresh the helper's
       // dot immediately so the map reflects the real online set without waiting
       // for the next GET /helpers/online poll.
-      const newHelper = event.payload as HelperLocation;
+      const newHelper = payload as HelperLocation;
       if (newHelper?.id != null && newHelper.lat != null && newHelper.lng != null) {
         setLiveHelpers(prev => {
           if (prev.find(h => h.id === newHelper.id)) {
@@ -613,8 +626,8 @@ export default function MapScreen() {
           return [...prev, newHelper];
         });
       }
-    } else if (event.type === "helper_offline") {
-      const loc = event.payload as { id: number };
+    } else if (eventType === "helper_offline") {
+      const loc = payload as { id: number };
       setLiveHelpers(prev => prev.filter(h => h.id !== loc.id));
     }
   }, [currentUser?.id, queryClient, radiusMiles, setLocation, highlightedRequestId]));

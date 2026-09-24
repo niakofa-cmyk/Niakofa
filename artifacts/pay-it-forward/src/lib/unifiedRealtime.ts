@@ -66,6 +66,9 @@ const legacyMap: Record<string, UnifiedEventType | null> = {
   REQUEST_CREATED: "request.created",
   REQUEST_ACCEPTED: "request.status_changed",
   REQUEST_CANCELLED: "request.status_changed",
+  HELPER_MOVING: "request.status_changed",
+  HELPER_ARRIVED: "request.status_changed",
+  REQUEST_COMPLETED: "request.status_changed",
   community_story_created: "story.created",
   community_story_expired: "story.expired",
   community_story_viewed: "story.viewed",
@@ -142,6 +145,22 @@ export function normalizeRealtimeEvent(event: RealtimeFrame): UnifiedRealtimeEve
         : null,
     payload: canonicalPayload,
   };
+}
+
+/**
+ * Replayed events arrive as a `unified_event` envelope while live delivery
+ * keeps the legacy frame types for compatibility. Consumers that care about a
+ * request lifecycle can use this helper to read both shapes without knowing
+ * which delivery path produced the event.
+ */
+export function unwrapUnifiedRealtimeEvent(
+  event: RealtimeFrame,
+): { eventType: UnifiedEventType; payload: Record<string, unknown> } | null {
+  if (event.type !== "unified_event" || !isRecord(event.payload)) return null;
+  const eventType = event.payload.event_type;
+  if (!isUnifiedEventType(eventType)) return null;
+  const payload = event.payload.payload;
+  return { eventType, payload: isRecord(payload) ? payload : {} };
 }
 
 export type DurableRealtimeState = {

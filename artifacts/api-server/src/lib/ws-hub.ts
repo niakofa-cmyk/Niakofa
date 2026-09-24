@@ -313,6 +313,7 @@ const LEGACY_TO_UNIFIED: Record<string, UnifiedEventType | null> = {
   direct_message:"message.created", chat_message:"message.created", hub_message:"message.created", message_read:"message.read",
   message_notification:"notification.created", typing:"typing.started", presence_update:"presence.changed", request_updated:"request.updated",
   REQUEST_CREATED:"request.created", REQUEST_ACCEPTED:"request.status_changed", REQUEST_CANCELLED:"request.status_changed",
+  HELPER_MOVING:"request.status_changed", HELPER_ARRIVED:"request.status_changed", REQUEST_COMPLETED:"request.status_changed",
   community_story_created:"story.created", community_story_expired:"story.expired", community_story_viewed:"story.viewed",
   community_story_reaction:"story.reaction", community_story_shared:"story.shared",
   hub_community_post_updated:"hub.updated",

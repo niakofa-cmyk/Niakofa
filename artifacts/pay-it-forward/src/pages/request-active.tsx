@@ -37,6 +37,7 @@ import { haversineMeters, isNearbyUser } from "@/lib/geo-utils";
 import { newOperationKey, retryableMutation } from "@/lib/retryableMutation";
 import { readCompletionError } from "@/lib/readCompletionError";
 import { parseEtaSeconds } from "@/lib/eta";
+import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -510,18 +511,29 @@ export default function ActiveRequestScreen() {
 
   // WebSocket updates
   useWebSocket(useCallback((event) => {
-    if (event.type === "request_updated") {
-      const req = event.payload as { id: number };
+    const unified = unwrapUnifiedRealtimeEvent(event);
+    const eventType = unified?.eventType ?? event.type;
+    const payload = unified?.payload ?? event.payload;
+    if (
+      eventType === "request.updated"
+      || eventType === "request.status_changed"
+      || eventType === "REQUEST_ACCEPTED"
+      || eventType === "HELPER_MOVING"
+      || eventType === "HELPER_ARRIVED"
+      || eventType === "REQUEST_COMPLETED"
+      || eventType === "REQUEST_CANCELLED"
+    ) {
+      const req = payload as { id: number };
       if (req.id === requestId) {
         queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
       }
-    } else if (event.type === "pledge_paid" || event.type === "payment_completed") {
+    } else if (eventType === "pledge_paid" || eventType === "payment_completed") {
       // Micro-reaction: golden sparkle + egg glow when a pledge is repaid or a
       // community-pool contribution completes. Distinct from the teal celebrating
       // reaction used for request completion.
       setBirdDonated(true);
       setTimeout(() => setBirdDonated(false), 2800);
-    } else if (event.type === "REQUEST_CREATED" || event.type === "new_request") {
+    } else if (eventType === "REQUEST_CREATED" || eventType === "new_request") {
       // Micro-reaction: head-tilt + wing flick when a new help request appears
       // nearby while the helper is already en route to another one.
       setBirdNewNotification(true);

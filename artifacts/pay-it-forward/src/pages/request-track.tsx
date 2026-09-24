@@ -15,6 +15,7 @@ import { toast } from "@/hooks/use-toast";
 import { InAppChat } from "@/components/InAppChat";
 import { getToken } from "@/lib/auth";
 import { parseEtaSeconds } from "@/lib/eta";
+import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -118,13 +119,25 @@ export default function RequesterTrackingScreen() {
 
   // WebSocket — live helper location + request status updates
   useWebSocket(useCallback((event) => {
-    if (event.type === "helper_location") {
-      const loc = event.payload as { id: number; lat: number; lng: number; heading?: number };
+    const unified = unwrapUnifiedRealtimeEvent(event);
+    const eventType = unified?.eventType ?? event.type;
+    const payload = unified?.payload ?? event.payload;
+    if (eventType === "helper_location") {
+      const loc = payload as { id: number; lat: number; lng: number; heading?: number };
       if (request?.helper_id && loc.id === request.helper_id) {
         setHelperLocation({ lat: loc.lat, lng: loc.lng, heading: loc.heading });
       }
-    } else if (event.type === "HELPER_MOVING" || event.type === "request_updated" || event.type === "HELPER_ARRIVED" || event.type === "REQUEST_COMPLETED") {
-      const req = event.payload as { id: number };
+    } else if (
+      eventType === "request.updated"
+      || eventType === "request.status_changed"
+      || eventType === "REQUEST_ACCEPTED"
+      || eventType === "HELPER_MOVING"
+      || eventType === "request_updated"
+      || eventType === "HELPER_ARRIVED"
+      || eventType === "REQUEST_COMPLETED"
+      || eventType === "REQUEST_CANCELLED"
+    ) {
+      const req = payload as { id: number };
       if (req.id === requestId) {
         queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
       }
