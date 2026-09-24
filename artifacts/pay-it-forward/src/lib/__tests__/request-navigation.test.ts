@@ -25,4 +25,9 @@ describe("getRequestNavigationPath", () => {
   it("keeps open requests on the detail screen", () => {
     expect(getRequestNavigationPath({ ...base, status: "open", currentUserId: 7 })).toBe("/request/42/view");
   });
+
+  it("does not send a requester to helper navigation when a job is already active", () => {
+    expect(getRequestNavigationPath({ ...base, status: "claimed", currentUserId: 7 })).toBe("/request/42/track");
+    expect(getRequestNavigationPath({ ...base, status: "claimed", currentUserId: 9 })).toBe("/request/42");
+  });
 });

@@ -56,6 +56,7 @@ import { Z_CHROME, Z_TOPBAR, Z_SEARCH } from "@/lib/zLayers";
 import { computeMapStatus } from "@/lib/mapStatus";
 import { haversineDistanceMiles, haversineMeters, isNearbyUser } from "@/lib/geo-utils";
 import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
+import { getRequestNavigationPath } from "@/lib/request-navigation";
 
 // Module-level: resolved once at import time, not on every render.
 // Detecting a missing token here (rather than inside the component) means
@@ -1159,6 +1160,24 @@ export default function MapScreen() {
   // eventually tested) on its own. See that file for the full priority
   // rationale.
   const showActiveJobBanner = activeRequestId != null && activeJobBannerDismissed !== activeRequestId;
+  // Keep the persistent job reminder role-aware. Helpers need the action and
+  // navigation screen; requesters need the live tracker. The fallback keeps
+  // the banner useful for the short window before the request query resolves,
+  // while the canonical helper uses the request's server-owned role fields as
+  // soon as they are available.
+  const activeJobPath = activeRequestId != null
+    ? activeJobRequest && currentUser
+      ? getRequestNavigationPath({
+          id: activeJobRequest.id,
+          status: activeJobRequest.status,
+          requesterId: activeJobRequest.requester_id,
+          helperId: activeJobRequest.helper_id ?? null,
+          currentUserId: currentUser.id,
+        })
+      : helperModeActive
+        ? `/request/${activeRequestId}`
+        : `/request/${activeRequestId}/track`
+    : "/";
   const mapStatus = computeMapStatus({
     mapError: !!mapError,
     orientMode,
@@ -1350,7 +1369,7 @@ export default function MapScreen() {
           )}
           {mapStatus.kind === "active-job" && (
             <button
-              onClick={() => setLocation(`/request/${activeRequestId}/track`)}
+              onClick={() => setLocation(activeJobPath)}
               style={{ touchAction: "manipulation" }}
               className="flex items-center gap-2 bg-primary/15 backdrop-blur-md border border-primary/40 text-primary px-3 py-2 rounded-xl shadow-lg active:scale-95 transition-transform pointer-events-auto"
             >

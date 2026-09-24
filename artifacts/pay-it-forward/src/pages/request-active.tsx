@@ -344,15 +344,15 @@ export default function ActiveRequestScreen() {
 
   // Mark en_route once
   useEffect(() => {
-    if (request?.status === "claimed" && currentUser && !enRouteRef.current && !enRouteMutation.isPending) {
+    if (isHelper && request?.status === "claimed" && currentUser && !enRouteRef.current && !enRouteMutation.isPending) {
       enRouteRef.current = true;
       enRouteMutation.mutate({ id: requestId, data: { helper_id: currentUser.id } });
     }
-  }, [request?.status, currentUser, enRouteMutation, requestId]);
+  }, [isHelper, request?.status, currentUser, enRouteMutation, requestId]);
 
   // Auto-detect arrival
   useEffect(() => {
-    if (!myLocation || !request || autoArrived) return;
+    if (!isHelper || !myLocation || !request || autoArrived) return;
     if (request.status === "completed" || request.status === "arrived") return;
     const dist = haversineMeters(myLocation.lat, myLocation.lng, request.lat, request.lng);
     if (dist <= ARRIVAL_THRESHOLD_METERS && currentUser) {
@@ -367,7 +367,7 @@ export default function ActiveRequestScreen() {
         }
       );
     }
-  }, [myLocation, request, autoArrived, currentUser, arrivedMutation, queryClient, requestId, operationKey]);
+  }, [isHelper, myLocation, request, autoArrived, currentUser, arrivedMutation, queryClient, requestId, operationKey]);
 
   // Off-route detection
   useEffect(() => {
