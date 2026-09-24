@@ -1,15 +1,17 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
-import { MapPin, HeartHandshake, Building2, Landmark, Clock } from "lucide-react";
-import type { HelperLocation, CivicNeedNearby, CivicResourceNearby } from "@workspace/api-client-react";
+import { MapPin, HeartHandshake, Building2, Landmark, Clock, TriangleAlert } from "lucide-react";
+import type { HelpRequest, HelperLocation, CivicNeedNearby, CivicResourceNearby } from "@workspace/api-client-react";
 
 type Row =
+  | { kind: "request"; distance: number; request: HelpRequest }
   | { kind: "helper"; distance: number; helper: HelperLocation }
   | { kind: "need"; distance: number; need: CivicNeedNearby }
   | { kind: "resource"; distance: number; resource: CivicResourceNearby };
 
 interface CommunityListViewProps {
   helpers: HelperLocation[];
+  requests: HelpRequest[];
   needs: CivicNeedNearby[];
   resources: CivicResourceNearby[];
   onSelectResource: (resource: CivicResourceNearby) => void;
@@ -19,20 +21,21 @@ interface CommunityListViewProps {
 // mode's mixed helper/need/resource data. No sort picker — with only
 // distance as a meaningful axis here (no urgency, no pay), a single
 // closest-first order is simpler than pretending there's a choice to make.
-export function CommunityListView({ helpers, needs, resources, onSelectResource }: CommunityListViewProps) {
+export function CommunityListView({ helpers, requests, needs, resources, onSelectResource }: CommunityListViewProps) {
   const [, setLocation] = useLocation();
 
   const rows: Row[] = useMemo(() => {
     const helperRows: Row[] = helpers.map(h => ({ kind: "helper", distance: (h as HelperLocation & { distance_miles?: number }).distance_miles ?? 99, helper: h }));
+    const requestRows: Row[] = requests.map(request => ({ kind: "request", distance: request.distance_miles ?? 99, request }));
     const needRows: Row[] = needs.map(n => ({ kind: "need", distance: n.distance_miles ?? 99, need: n }));
     const resourceRows: Row[] = resources.map(r => ({ kind: "resource", distance: r.distance_miles ?? 99, resource: r }));
-    return [...helperRows, ...needRows, ...resourceRows].sort((a, b) => a.distance - b.distance);
-  }, [helpers, needs, resources]);
+    return [...requestRows, ...helperRows, ...needRows, ...resourceRows].sort((a, b) => a.distance - b.distance);
+  }, [helpers, requests, needs, resources]);
 
   return (
-    <div className="absolute inset-0 top-0 z-10 bg-background overflow-y-auto pt-24 pb-24 px-4" role="region" aria-label="Helpers and civic needs, list view">
+    <div className="absolute inset-0 top-0 z-10 bg-background overflow-y-auto pt-24 pb-24 px-4" role="region" aria-label="Community nearby, list view">
       <div aria-live="polite" className="sr-only">
-        {rows.length} nearby helper{rows.length !== 1 ? "s" : ""}, civic need{rows.length !== 1 ? "s" : ""}, and resources.
+        {rows.length} nearby community item{rows.length !== 1 ? "s" : ""}, including neighbor requests, helpers, civic needs, and resources.
       </div>
 
       {rows.length === 0 ? (
@@ -43,6 +46,34 @@ export function CommunityListView({ helpers, needs, resources, onSelectResource 
       ) : (
         <div className="flex flex-col gap-3 mt-2">
           {rows.map((row) => {
+            if (row.kind === "request") {
+              const request = row.request;
+              return (
+                <button
+                  key={`request-${request.id}`}
+                  onClick={() => setLocation(`/request/${request.id}/view`)}
+                  className="flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/25 text-left active:scale-[0.98] transition-transform"
+                >
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    request.urgency === "emergency"
+                      ? "bg-destructive/15 border border-destructive/40"
+                      : "bg-primary/15 border border-primary/30"
+                  }`}>
+                    {request.urgency === "emergency"
+                      ? <TriangleAlert className="w-4.5 h-4.5 text-destructive" />
+                      : <HeartHandshake className="w-4.5 h-4.5 text-primary" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold truncate">{request.title}</p>
+                    <p className="text-xs text-muted-foreground truncate capitalize">
+                      Neighbor request · {request.category.replace(/_/g, " ")}
+                      {request.distance_miles != null ? ` · ${request.distance_miles.toFixed(1)} mi` : " · nearby"}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-primary shrink-0">View</span>
+                </button>
+              );
+            }
             if (row.kind === "helper") {
               const h = row.helper as HelperLocation & { distance_miles?: number; languages?: string[]; skills?: string[] };
               return (

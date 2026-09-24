@@ -72,6 +72,46 @@ state from source alone. Production status requires external deployment
 evidence: the canonical host, served commit, readiness checks, and an approved
 authenticated acceptance state.
 
+## DoorDash, Sushi, and Bsetec follow-up audit
+
+**Reviewed:** 2026-09-24
+**Temporary review directory:** `/tmp/niakofa-reference-audit-20260924b/`
+
+The three newly supplied ZIPs were path-checked and extracted only to the
+temporary review directory. The original archives remain untracked attachment
+inputs and are not part of the repository, GitHub, or Railway.
+
+| Archive | Evidence reviewed | Selective Niakofa use | Do not import |
+| --- | --- | --- | --- |
+| `doordash-clone-main.zip` | README, three branded PNGs, and a one-byte image file; no application source, backend, database, or API | conceptual dispatch, status, helper availability, and communication patterns | DoorDash branding, restaurant/order/driver economics, marketing assets, or clone architecture |
+| `sushi-restaurant-storefront-master.zip` | Next.js/React storefront with responsive sheets/drawers, menu/detail panels, modifiers, counters, loading/error/empty states, and cart/sidebar interaction; README marks the CraveUp SDK legacy/reference-only | responsive sheet composition, progressive detail, option-style forms, persistent action trays, and accessible feedback states | Next.js/App Router, CraveUp SDK, SWR/Zustand state model, restaurant/cart semantics, credentials, assets, or deployment setup |
+| `bsetec-main.zip` | Netlify Next.js starter with edge rewrites, Blob examples, image CDN, server actions, forms, markdown, and demo assets | only media/CDN/edge behavior when a concrete Niakofa need justifies it | Netlify Blobs, provider-backed demo APIs, alternate forms/auth, Next.js shell, package/deployment configuration, and bundled assets |
+
+The Sushi archive was the only serious implementation reference. Its useful
+interaction patterns were independently recreated with Niakofa's React/Vite
+components and existing contracts. The three archives remain behavior
+references only; no source, assets, providers, credentials, schemas, auth, or
+deployment system was copied.
+
+## Independent enhancement applied
+
+Community map mode now includes the existing nearby open help requests as a
+fourth “Neighbor requests” surface:
+
+- privacy-safe request markers use the already-fuzzed nearby coordinates;
+- a marker opens a contextual request sheet with urgency, category, distance,
+  description, and support type;
+- the sheet, Community panel, and accessible list hand off to the canonical
+  `/request/:id/view` route;
+- helper-only claim controls and exact-coordinate behavior remain outside this
+  browsing surface.
+
+This preserves Niakofa's map-first loop—neighbor → need → helper → trust →
+completion → pay-it-forward—without changing the request API or importing a
+restaurant storefront model. The flow is covered by frontend source-contract
+tests and the nearby-map privacy suite now also covers emergency-coordinate
+behavior.
+
 ## Pixora, Postnisin, and Photobooth follow-up audit
 
 **Reviewed:** 2026-09-24

@@ -201,6 +201,21 @@ excluded from the root product build.
 - The archives were used to compare behavior and architecture only. No archive
   file is a Niakofa source dependency.
 
+## 2026-09-24 storefront-reference update
+
+The newly reviewed DoorDash, Sushi, and Bsetec archives remain reference-only.
+Sushi is the useful interaction donor: responsive sheets, progressive detail,
+option-style forms, persistent action trays, and explicit loading/error/empty
+states. DoorDash contributes only conceptual dispatch/status language, while
+Bsetec is limited to media/CDN/edge review ideas.
+
+Niakofa's independent implementation is the community-map request flow:
+nearby open requests now appear as privacy-safe Neighbor request markers,
+contextual detail-sheet previews, panel rows, and accessible list rows. Each
+surface hands off to `/request/:id/view`; no alternate provider, cart,
+restaurant model, credential, asset, storage system, or deployment boundary
+was introduced.
+
 ## 2026-09-24 media/social reference update
 
 - **Pixora:** primary behavior reference for media upload/publish steps,

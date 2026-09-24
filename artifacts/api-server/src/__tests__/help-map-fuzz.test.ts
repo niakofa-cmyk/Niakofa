@@ -136,7 +136,12 @@ jest.unstable_mockModule("../lib/logger.js", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-let fuzzCoordinates: (lat: number, lng: number) => { lat: number; lng: number };
+let fuzzCoordinates: (
+  lat: number,
+  lng: number,
+  requestId: number,
+  urgency: string,
+) => { lat: number; lng: number };
 
 beforeAll(async () => {
   ({ fuzzCoordinates } = await import("../routes/requests"));
@@ -147,7 +152,7 @@ describe("fuzzCoordinates — help-map privacy", () => {
     const lat = 32.7767;
     const lng = -96.797;
     for (let i = 0; i < 50; i++) {
-      const out = fuzzCoordinates(lat, lng);
+      const out = fuzzCoordinates(lat, lng, i + 1, "low");
       expect(Math.abs(out.lat - lat)).toBeLessThanOrEqual(0.0015);
       expect(Math.abs(out.lng - lng)).toBeLessThanOrEqual(0.0015);
     }
@@ -158,7 +163,7 @@ describe("fuzzCoordinates — help-map privacy", () => {
     const lng = -74.006;
     let anyDifferent = false;
     for (let i = 0; i < 20; i++) {
-      const out = fuzzCoordinates(lat, lng);
+      const out = fuzzCoordinates(lat, lng, i + 1, "low");
       if (out.lat !== lat || out.lng !== lng) {
         anyDifferent = true;
         break;
@@ -168,8 +173,14 @@ describe("fuzzCoordinates — help-map privacy", () => {
   });
 
   it("preserves hemisphere signs", () => {
-    const out = fuzzCoordinates(-33.8688, 151.2093);
+    const out = fuzzCoordinates(-33.8688, 151.2093, 42, "low");
     expect(out.lat).toBeLessThan(0);
     expect(out.lng).toBeGreaterThan(0);
+  });
+
+  it("preserves exact coordinates for emergency requests", () => {
+    const lat = 32.7767;
+    const lng = -96.797;
+    expect(fuzzCoordinates(lat, lng, 42, "emergency")).toEqual({ lat, lng });
   });
 });

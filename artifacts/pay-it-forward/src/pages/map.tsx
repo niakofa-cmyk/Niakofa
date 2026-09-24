@@ -21,6 +21,8 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { CommunityTopPanel } from "@/components/CommunityTopPanel";
 import { CommunityListView } from "@/components/CommunityListView";
 import { ResourceDetailSheet } from "@/components/ResourceDetailSheet";
+import { CommunityRequestDetailSheet } from "@/components/CommunityRequestDetailSheet";
+import { CommunityRequestMarker } from "@/components/CommunityRequestMarker";
 import { RequestMarker } from "@/components/RequestMarker";
  import { SpiritAnimalAvatar } from "@/components/SpiritAnimal/SpiritAnimalAvatar";
 import { useSolarTier } from "@/hooks/useTimeOfDay";
@@ -222,6 +224,9 @@ export default function MapScreen() {
   const [communityCategoryFilter, setCommunityCategoryFilter] = useState<string | null>(null);
   // Tap-to-detail surface for a resource pin/row — phone/hours/directions.
   const [selectedResource, setSelectedResource] = useState<CivicResourceNearby | null>(null);
+  // Community-mode request taps stay contextual in a lightweight sheet; the
+  // canonical request route remains the authority for role-specific actions.
+  const [selectedCommunityRequest, setSelectedCommunityRequest] = useState<HelpRequest | null>(null);
   // Consolidated control row — previously 4 separately-positioned buttons
   // (Traffic, Heat, Language, Category/Urgency) each at a hardcoded pixel
   // offset (left-4/left-24/left-44/left-[188px]), 2 of which opened their
@@ -1025,6 +1030,10 @@ export default function MapScreen() {
     () => communityCategoryFilter ? civicResources.filter(r => r.category === communityCategoryFilter) : civicResources,
     [civicResources, communityCategoryFilter],
   );
+  // Nearby open requests are already privacy-fuzzed by the public endpoint.
+  // Community mode shows the same safe request set without applying helper
+  // filters, which are a separate browsing concern.
+  const communityRequests = openRequestsAll;
 
   // Dispatch Intelligence — Best Match card
   const bestMatch = helperModeActive ? pickBestMatch(openRequests) : null;
@@ -1177,6 +1186,7 @@ export default function MapScreen() {
           open={communityPanelOpen}
           onClose={() => setCommunityPanelOpen(false)}
           helpers={displayHelpers}
+           requests={communityRequests}
           needs={communityNeeds}
           resources={communityResources}
           onSelectResource={setSelectedResource}
@@ -1271,6 +1281,7 @@ export default function MapScreen() {
       {viewMode === "list" && !helperModeActive && (
         <CommunityListView
           helpers={displayHelpers}
+           requests={communityRequests}
           needs={communityNeeds}
           resources={communityResources}
           onSelectResource={setSelectedResource}
@@ -1580,6 +1591,7 @@ export default function MapScreen() {
             <div className="w-full max-w-sm flex-1 min-h-0 mt-2 overflow-hidden rounded-xl border border-border relative" style={{ height: "50vh" }}>
               <CommunityListView
                 helpers={displayHelpers}
+                requests={communityRequests}
                 needs={communityNeeds}
                 resources={communityResources}
                 onSelectResource={setSelectedResource}
@@ -1850,6 +1862,11 @@ export default function MapScreen() {
             <CivicResourceMarker resource={r} onSelect={setSelectedResource} />
           </Marker>
         ))}
+        {!helperModeActive && communityRequests.filter(r => r.lat != null && r.lng != null).map(r => (
+          <Marker key={`community-request-${r.id}`} longitude={r.lng!} latitude={r.lat!} anchor="center">
+            <CommunityRequestMarker request={r} onSelect={setSelectedCommunityRequest} />
+          </Marker>
+        ))}
 
         {/* ── Live route line ──────────────────────────────────────────────── */}
         {activeHelperRouteData?.geometry && (
@@ -1967,6 +1984,10 @@ export default function MapScreen() {
       {/* Resource tap-to-detail sheet — shared by the map pin, bottom sheet
           row, and list-view row, all of which call setSelectedResource. */}
       <ResourceDetailSheet resource={selectedResource} onClose={() => setSelectedResource(null)} />
+      <CommunityRequestDetailSheet
+        request={selectedCommunityRequest}
+        onClose={() => setSelectedCommunityRequest(null)}
+      />
 
       {/* "Request Help" FAB — requester-mode only.
           In a *working* Map view this is superseded by MapControlsPanel's

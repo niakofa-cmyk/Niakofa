@@ -9,14 +9,15 @@
  */
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation } from "wouter";
-import { X, HeartHandshake, Building2, Landmark, Clock, List, Map as MapIcon } from "lucide-react";
-import type { HelperLocation, CivicNeedNearby, CivicResourceNearby } from "@workspace/api-client-react";
+import { X, HeartHandshake, Building2, Landmark, Clock, List, Map as MapIcon, TriangleAlert } from "lucide-react";
+import type { HelpRequest, HelperLocation, CivicNeedNearby, CivicResourceNearby } from "@workspace/api-client-react";
 import { Z_SHEET } from "@/lib/zLayers";
 
 interface CommunityTopPanelProps {
   open: boolean;
   onClose: () => void;
   helpers: HelperLocation[];
+  requests: HelpRequest[];
   needs: CivicNeedNearby[];
   resources: CivicResourceNearby[];
   onSelectResource: (r: CivicResourceNearby) => void;
@@ -29,11 +30,11 @@ interface CommunityTopPanelProps {
 }
 
 export function CommunityTopPanel({
-  open, onClose, helpers, needs, resources, onSelectResource, viewMode, onToggleView,
+  open, onClose, helpers, requests, needs, resources, onSelectResource, viewMode, onToggleView,
 }: CommunityTopPanelProps) {
   const [, setLocation] = useLocation();
 
-  const totalCount = helpers.length + needs.length + resources.length;
+  const totalCount = helpers.length + requests.length + needs.length + resources.length;
 
   return (
     <AnimatePresence>
@@ -62,7 +63,7 @@ export function CommunityTopPanel({
             {/* Header */}
             <div className="flex items-center justify-between px-5 pt-14 pb-3 border-b border-border/60 shrink-0">
               <div>
-                <h2 className="font-black text-[15px]">Helpers &amp; Civic Needs</h2>
+                <h2 className="font-black text-[15px]">Community nearby</h2>
                 <p className="text-[11px] text-muted-foreground mt-0.5">{totalCount} nearby</p>
               </div>
               <div className="flex items-center gap-2">
@@ -93,6 +94,41 @@ export function CommunityTopPanel({
                 <p className="text-sm text-muted-foreground text-center py-10">Nothing nearby right now.</p>
               ) : (
                 <>
+                  {requests.length > 0 && (
+                    <section aria-labelledby="community-neighbor-requests">
+                      <h3 id="community-neighbor-requests" className="px-1 pb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                        Neighbor requests
+                      </h3>
+                      {requests.map(request => (
+                        <button
+                          key={`request-${request.id}`}
+                          onClick={() => { setLocation(`/request/${request.id}/view`); onClose(); }}
+                          className="w-full flex items-center gap-3 p-3 rounded-2xl bg-primary/5 border border-primary/20 text-left active:scale-[0.98] transition-transform"
+                        >
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            request.urgency === "emergency"
+                              ? "bg-destructive/15 border border-destructive/40"
+                              : "bg-primary/15 border border-primary/30"
+                          }`}>
+                            {request.urgency === "emergency"
+                              ? <TriangleAlert className="w-4 h-4 text-destructive" />
+                              : <HeartHandshake className="w-4 h-4 text-primary" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold truncate">{request.title}</p>
+                            <p className="text-[11px] text-muted-foreground truncate capitalize">
+                              {request.category.replace(/_/g, " ")}
+                              {request.distance_miles != null ? ` · ${request.distance_miles.toFixed(1)} mi` : " · nearby"}
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-bold text-primary shrink-0 bg-primary/10 px-2 py-0.5 rounded-full">
+                            {request.urgency === "emergency" ? "Urgent" : "Help"}
+                          </span>
+                        </button>
+                      ))}
+                    </section>
+                  )}
+
                   {helpers.map(h => {
                     const hx = h as HelperLocation & { distance_miles?: number; languages?: string[]; skills?: string[] };
                     return (
