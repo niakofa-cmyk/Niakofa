@@ -14,7 +14,7 @@
  * Falls back to localhost:3001 for local development.
  */
 import { Router, type Request, type Response } from "express";
-import { parseAuth, parseOptionalAuth, requireAuth } from "../middlewares/auth";
+import { parseAuth, requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { crisisAwareChatLimiter, niaChatHistoryLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
@@ -101,7 +101,7 @@ function sanitizeSessionId(raw: unknown): string | null {
 // ── POST /api/nia/chat ────────────────────────────────────────────────────────
 router.post(
   "/nia/chat",
-  parseOptionalAuth,
+  parseAuth,
   crisisAwareChatLimiter,
   async (req: Request, res: Response) => {
     if (!(await isNiaEnabled())) {
