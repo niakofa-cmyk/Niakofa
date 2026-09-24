@@ -111,6 +111,18 @@ even though the local commit is complete.
 read them from the committed diff after committing, then verify the tree before
 creating or advancing the remote ref.
 
+For exact blob publication, do not rely on the durable shell bridge for large
+file contents; read workspace files directly, verify their byte counts against
+`git cat-file -s`, and only then upload sequentially.
+
+**Why:** a shell command can report a successful read while the durable output
+payload is truncated well below the file size, which would create a mismatched
+GitHub blob if not stopped before tree creation.
+
+**How to apply:** use the workspace file reader for committed text payloads,
+compare every returned blob SHA, and keep the remote ref unchanged on any
+size or hash mismatch.
+
 After any connector-backed write attempt, re-read the remote ref before retrying.
 A transport or intermediate validation report may be incomplete even when the
 branch has advanced, so the remote ref and complete tree verification are
