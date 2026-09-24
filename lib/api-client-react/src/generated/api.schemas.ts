@@ -72,6 +72,22 @@ export interface CommunityMediaSaveResponse {
   private: true;
 }
 
+export interface CommunityStoryInteractions {
+  /** @minimum 1 */
+  story_id: number;
+  /** @minimum 0 */
+  views: number;
+  /** @minimum 0 */
+  reactions: number;
+  /** @minimum 0 */
+  shares: number;
+  /**
+     * @maxLength 16
+     * @nullable
+     */
+  viewer_reaction: string | null;
+}
+
 /**
  * healthy = reserve fully covered; low = 40-99%; critical = below 40%.
  */

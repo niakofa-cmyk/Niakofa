@@ -190,6 +190,30 @@ paths:
         "404":
           description: Media not found or not visible to the caller
 
+  /community/stories/{id}/interactions:
+    get:
+      operationId: getCommunityStoryInteractions
+      tags: [community]
+      summary: Get authenticated Community Story interaction metrics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Story interaction metrics and the authenticated viewer's reaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityStoryInteractions"
+        "400":
+          description: Invalid Story id
+        "404":
+          description: Story not found or not visible to the caller
+
   /users/{id}:
     get:
       operationId: getUser
@@ -2725,6 +2749,26 @@ components:
         private:
           type: boolean
           const: true
+
+    CommunityStoryInteractions:
+      type: object
+      required: [story_id, views, reactions, shares, viewer_reaction]
+      properties:
+        story_id:
+          type: integer
+          minimum: 1
+        views:
+          type: integer
+          minimum: 0
+        reactions:
+          type: integer
+          minimum: 0
+        shares:
+          type: integer
+          minimum: 0
+        viewer_reaction:
+          type: ["string", "null"]
+          maxLength: 16
 
     PoolStats:
       type: object

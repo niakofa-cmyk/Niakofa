@@ -51,6 +51,7 @@ export * from './communityMediaPageFilters';
 export * from './communityMediaPageFiltersKind';
 export * from './communityMediaPageHub';
 export * from './communityMediaSaveResponse';
+export * from './communityStoryInteractions';
 export * from './completeInput';
 export * from './createCommunityInput';
 export * from './createPaymentIntent200';

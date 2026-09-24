@@ -45,6 +45,7 @@ import type {
   ClaimInput,
   CommunityMediaPage,
   CommunityMediaSaveResponse,
+  CommunityStoryInteractions,
   CompleteInput,
   CreateCommunityInput,
   CreatePaymentIntent200,
@@ -576,6 +577,83 @@ export const useUnsaveCommunityMedia = <TError = ErrorType<void>,
       > => {
       return useMutation(getUnsaveCommunityMediaMutationOptions(options));
     }
+
+export const getGetCommunityStoryInteractionsUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/stories/${id}/interactions`
+}
+
+/**
+ * @summary Get authenticated Community Story interaction metrics
+ */
+export const getCommunityStoryInteractions = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<CommunityStoryInteractions> => {
+
+  return customFetch<CommunityStoryInteractions>(getGetCommunityStoryInteractionsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCommunityStoryInteractionsQueryKey = (id: number,) => {
+    return [
+    `/api/community/stories/${id}/interactions`
+    ] as const;
+    }
+
+
+export const getGetCommunityStoryInteractionsQueryOptions = <TData = Awaited<ReturnType<typeof getCommunityStoryInteractions>>, TError = ErrorType<void>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryInteractions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCommunityStoryInteractionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommunityStoryInteractions>>> = ({ signal }) => getCommunityStoryInteractions(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryInteractions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCommunityStoryInteractionsQueryResult = NonNullable<Awaited<ReturnType<typeof getCommunityStoryInteractions>>>
+export type GetCommunityStoryInteractionsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get authenticated Community Story interaction metrics
+ */
+
+export function useGetCommunityStoryInteractions<TData = Awaited<ReturnType<typeof getCommunityStoryInteractions>>, TError = ErrorType<void>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryInteractions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCommunityStoryInteractionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetUserUrl = (id: number,) => {
 

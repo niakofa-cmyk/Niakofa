@@ -9,6 +9,7 @@ const interactions = fs.readFileSync("artifacts/api-server/src/routes/community-
 const storyRoutes = fs.readFileSync("artifacts/api-server/src/routes/community-stories.ts", "utf8");
 const messages = fs.readFileSync("artifacts/api-server/src/routes/direct-messages.ts", "utf8");
 const scheduler = fs.readFileSync("artifacts/api-server/src/lib/scheduler.ts", "utf8");
+const openapi = fs.readFileSync("lib/api-spec/openapi.yaml", "utf8");
 
 assert.match(rail, /StoryMediaPlayer/);
 assert.match(rail, /StoryShareSheet/);
@@ -19,9 +20,13 @@ assert.doesNotMatch(communityPage, /<CommunityStoryRail/);
 assert.match(rail, /sendStoryContextMessage/);
 assert.match(rail, /storyId: selectedStory\.id/);
 assert.match(interactionClient, /story_id: input\.storyId/);
+assert.match(interactionClient, /community\/stories\/\$\{storyId\}\/interactions/);
+assert.doesNotMatch(interactionClient, /community\/stories\/\$\{storyId\}\/metrics/);
 assert.match(interactions, /communityStoryViewsTable/);
 assert.match(interactions, /communityStoryReactionsTable/);
 assert.match(interactions, /communityStorySharesTable/);
+assert.match(openapi, /\/community\/stories\/\{id\}\/interactions:/);
+assert.match(openapi, /CommunityStoryInteractions:/);
 assert.match(storyRoutes, /moderation\.status === "approved" \? "published" : "pending"/);
 assert.match(storyRoutes, /streamAssetSameOrigin\(row\.variant_key \?\? row\.storage_key, res\)/);
 assert.match(messages, /application\/x-niakofa-story\+json/);

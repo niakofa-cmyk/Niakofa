@@ -171,6 +171,36 @@ export const UnsaveCommunityMediaResponse = zod.object({
 
 
 /**
+ * @summary Get authenticated Community Story interaction metrics
+ */
+
+
+
+export const GetCommunityStoryInteractionsParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+
+export const getCommunityStoryInteractionsResponseViewsMin = 0;
+
+export const getCommunityStoryInteractionsResponseReactionsMin = 0;
+
+export const getCommunityStoryInteractionsResponseSharesMin = 0;
+
+export const getCommunityStoryInteractionsResponseViewerReactionMax = 16;
+
+
+
+export const GetCommunityStoryInteractionsResponse = zod.object({
+  "story_id": zod.number().int().min(1),
+  "views": zod.number().int().min(getCommunityStoryInteractionsResponseViewsMin),
+  "reactions": zod.number().int().min(getCommunityStoryInteractionsResponseReactionsMin),
+  "shares": zod.number().int().min(getCommunityStoryInteractionsResponseSharesMin),
+  "viewer_reaction": zod.string().max(getCommunityStoryInteractionsResponseViewerReactionMax).nullable()
+})
+
+
+/**
  * @summary Get user profile
  */
 export const GetUserParams = zod.object({
