@@ -13,7 +13,6 @@ import { readFileSync } from "node:fs";
 import {
   expect,
   test,
-  type APIRequestContext,
   type APIResponse,
   type BrowserContext,
 } from "@playwright/test";
