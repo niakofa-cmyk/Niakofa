@@ -147,6 +147,17 @@ blindly could create an unnecessary duplicate commit.
 remote ref to the intended local HEAD, and only resume from the first missing
 gate.
 
+The workspace GitHub sync can advance the remote branch to the locally created
+commit while a separate Git Data API commit candidate is still being prepared.
+
+**Why:** A second connector-created commit may have the right tree but a
+different message-terminal byte, while the branch already points to the
+workspace-synced object with identical source content.
+
+**How to apply:** Re-read the remote ref after every write attempt. If it
+already points to the same-parent, same-tree local commit object, align local
+tracking refs to that published SHA instead of force-updating the branch.
+
 The bound GitHub connector can truncate Git Data API blob requests for larger generated files (observed above roughly 60 KB); its SDK uses the same transport, and gzip request bodies are rejected. Never create a tree or advance a ref after a blob SHA mismatch.
 
 **Why:** A successful 201 response is not proof that the full blob arrived; a truncated generated contract file produces a different SHA while leaving the remote branch untouched.
