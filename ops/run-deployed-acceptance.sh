@@ -159,6 +159,17 @@ corepack pnpm exec playwright test e2e/diaspora-final-wiring-live.spec.ts --repo
 echo "Running explicitly permitted county-travel acceptance..."
 corepack pnpm exec playwright test e2e/county-travel-live.spec.ts --reporter=line
 
+if [[ "${ALLOW_REQUEST_ARRIVAL_E2E:-}" == "1" ]]; then
+  if [[ -z "${USER_B_STATE:-}" ]]; then
+    echo "Refusing request-arrival acceptance: USER_B_STATE is required for the distinct helper account." >&2
+    exit 2
+  fi
+  echo "Running explicitly permitted requester/helper arrival acceptance..."
+  corepack pnpm exec playwright test e2e/request-arrival-live.spec.ts --reporter=line
+else
+  echo "Skipping requester/helper arrival acceptance; set ALLOW_REQUEST_ARRIVAL_E2E=1 for the deliberate disposable lifecycle gate."
+fi
+
 if [[ "${CONFIRM_MEDIA_PLATFORM_V21_PRODUCTION_GATE:-}" == "1" ]]; then
   echo "Running explicitly permitted authenticated production media certification..."
   bash ops/run-media-production-certification.sh
