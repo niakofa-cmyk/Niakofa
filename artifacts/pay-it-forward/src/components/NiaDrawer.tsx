@@ -979,7 +979,7 @@ export function NiaDrawer({
       }
     };
     recognition.start();
-  }, [micListening]);
+  }, [micListening, userLang]);
 
   const micSupported = useMemo(() => {
     return typeof window !== "undefined" && (
@@ -1169,7 +1169,7 @@ export function NiaDrawer({
   }, [loading, sessionId, userCoords, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext, userLang, speakNiaResponse, resolvedCity, resolvedCounty, resolvedState, niaEnabled]);
 
   const handleReset = () => {
-    localStorage.removeItem("nia_session_id");
+    localStorage.removeItem(`nia_session_id_${userId === null ? "anon" : String(userId)}`);
     setHistoryLoaded(false);
     setMessages([]);
     contextFetchedRef.current = false;
