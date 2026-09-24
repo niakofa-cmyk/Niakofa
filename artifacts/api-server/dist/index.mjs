@@ -147460,7 +147460,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "c071c0bdb6907eb52cb6bd21dd5c8b67e18a43a6";
+var GIT_COMMIT = "a03e0f0cc6e6f2edb35787aef35be4ea586ec9fd";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -155945,8 +155945,6 @@ router12.delete("/community/media/:mediaId/save", requireAuth, requireApproved, 
   const rawMediaId = Array.isArray(req.params.mediaId) ? req.params.mediaId[0] : req.params.mediaId;
   const mediaId = parseHubId(rawMediaId);
   if (!mediaId) return res.status(400).json({ error: "Invalid media id." });
-  const media = await visibleCommunityMediaForViewer(mediaId, req.authenticatedUserId);
-  if (!media) return res.status(404).json({ error: "Media not found." });
   await db.delete(communityMediaSavesTable).where(and(
     eq(communityMediaSavesTable.user_id, req.authenticatedUserId),
     eq(communityMediaSavesTable.media_id, mediaId)

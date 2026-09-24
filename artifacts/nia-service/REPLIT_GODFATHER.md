@@ -957,3 +957,34 @@ boundaries:
 coherent, not that production RTC or media works. Treat published-URL,
 served-commit, provider-readiness, approved-identity, and authenticated
 browser/API evidence as separate gates before calling Messages live-ready.
+
+---
+
+### Session: September 23, 2026 — Community Media fixture, save privacy, and release-gate hardening
+
+The Community Media acceptance surface was reviewed against the canonical
+source and verified with two approved disposable Hub members:
+
+- A synthetic PNG fixture is preserved under
+  `docs/reference/niakofa-community-media-fixture.md` and
+  `docs/reference/assets/niakofa-community-media-test-fixture.png`. It is
+  reference-only and contains no customer or donor-archive content.
+- Account A saved the Hub fixture and saw it in the private Saved view;
+  Account B did not see Account A's save. Both authenticated browser Saved
+  filters activated successfully, and Account A's prior save state was
+  restored.
+- Community Media delivery remains bearer-authenticated. The UI fetches the
+  protected response with authorization and renders an object URL; the
+  authorization boundary was intentionally preserved.
+- The unsave route is now owner-scoped rather than visibility-scoped. A user
+  can remove their own private save after moderation or membership changes
+  make the media unavailable to read.
+- `release-validate.js` now typechecks the Nia service explicitly. Its header
+  now matches the checks it actually performs instead of claiming undocumented
+  environment and provenance checks.
+- Root `replit.md` and root `REPLIT_GODFATHER.md` are pointer stubs again; the
+  artifact Godfather document is the single canonical project reference.
+
+**Release lesson:** a clean preview does not prove private-media isolation or
+Nia-service type safety. Keep synthetic fixture evidence, authenticated
+two-account checks, and every service's typecheck in the release boundary.

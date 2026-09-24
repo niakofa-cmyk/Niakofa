@@ -842,9 +842,9 @@ router.delete("/community/media/:mediaId/save", requireAuth, requireApproved, co
   const mediaId = parseHubId(rawMediaId);
   if (!mediaId) return res.status(400).json({ error: "Invalid media id." });
 
-  const media = await visibleCommunityMediaForViewer(mediaId, req.authenticatedUserId!);
-  if (!media) return res.status(404).json({ error: "Media not found." });
-
+  // Unsave is intentionally owner-scoped rather than visibility-scoped. A
+  // user's private save must remain removable after membership or moderation
+  // changes make the underlying media unavailable to read.
   await db.delete(communityMediaSavesTable).where(and(
     eq(communityMediaSavesTable.user_id, req.authenticatedUserId!),
     eq(communityMediaSavesTable.media_id, mediaId),

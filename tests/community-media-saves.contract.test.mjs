@@ -21,16 +21,24 @@ describe("private Community Media saves", () => {
     assert.match(migration, /ON DELETE CASCADE/);
   });
 
-  it("rechecks approved Hub visibility for reads and mutations", () => {
+  it("rechecks approved Hub visibility for reads and save mutations", () => {
     const route = read("artifacts/api-server/src/routes/community-hub-feed.ts");
+    const saveStart = route.indexOf('router.post("/community/media/:mediaId/save"');
+    const unsaveStart = route.indexOf('router.delete("/community/media/:mediaId/save"');
+    const commentsStart = route.indexOf('router.post("/community/hubs/:hubId/posts/:postId/comments"');
+    assert.ok(saveStart >= 0 && unsaveStart > saveStart && commentsStart > unsaveStart);
+    const saveRoute = route.slice(saveStart, unsaveStart);
+    const unsaveRoute = route.slice(unsaveStart, commentsStart);
 
     assert.match(route, /\/community\/hubs\/:hubId\/saved-media/);
     assert.match(route, /\/community\/media\/:mediaId\/save/);
     assert.match(route, /requireAuth, requireApproved, generalApiLimiter/);
-    assert.match(route, /visibleCommunityMediaForViewer/);
+    assert.match(saveRoute, /visibleCommunityMediaForViewer/);
+    assert.doesNotMatch(unsaveRoute, /visibleCommunityMediaForViewer/);
     assert.match(route, /isApprovedHubMember\(userId, media\.hub_id\)/);
     assert.match(route, /communityMediaSavesTable\.user_id/);
     assert.match(route, /onConflictDoNothing\(\)/);
+    assert.match(unsaveRoute, /db\.delete\(communityMediaSavesTable\)/);
     assert.match(route, /private: true/);
   });
 

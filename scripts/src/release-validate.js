@@ -5,12 +5,11 @@
  * Runs pre-deployment checks before any release goes to production:
  *   1. TypeScript typecheck passes
  *   2. No `any` types in source (excluding tests/generated)
- *   3. Legacy asset provenance boundary passes
- *   4. App/AI boundary check passes
- *   5. No console.log in production source
- *   6. All required environment variables are documented
- *   7. No TODO/FIXME/HACK markers in critical paths
- *   8. Frontend route/page contract is intact
+ *   3. App/AI boundary check passes
+ *   4. No console.log in production source
+ *   5. No TODO/FIXME/HACK markers in critical paths
+ *   6. Frontend route/page contract is intact
+ *   7. TypeScript strict mode is enabled
  *
  * Run: node scripts/src/release-validate.js
  * Exit 0 = ready for release, exit 1 = blocking issues found.
@@ -54,6 +53,7 @@ try {
     ["--build", "--pretty", "false"],
     ["-p", "artifacts/api-server/tsconfig.json", "--noEmit", "--pretty", "false"],
     ["-p", "artifacts/pay-it-forward/tsconfig.json", "--noEmit", "--pretty", "false"],
+    ["-p", "artifacts/nia-service/tsconfig.json", "--noEmit", "--pretty", "false"],
     ["-p", "scripts/tsconfig.json", "--noEmit", "--pretty", "false"],
   ];
   for (const args of typecheckProjects) {
