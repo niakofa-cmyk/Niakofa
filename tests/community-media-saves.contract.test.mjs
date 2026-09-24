@@ -46,7 +46,11 @@ describe("private Community Media saves", () => {
     assert.match(view, /savedOnly/);
     assert.match(view, /Save media for later/);
     assert.match(view, /item\.viewer_saved/);
+    assert.match(view, /variant="preview"/);
+    assert.match(view, /Quick view/);
+    assert.match(view, /Open Hub post/);
     assert.match(analytics, /community_media_save_changed/);
+    assert.match(analytics, /community_media_quick_view_opened/);
     assert.doesNotMatch(analytics, /author_name|profile/);
   });
 });

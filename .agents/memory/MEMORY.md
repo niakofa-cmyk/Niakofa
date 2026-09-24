@@ -61,5 +61,6 @@
 - [Live Messages acceptance](live-messages-acceptance.md) — local Messages/RTC checks are not production evidence without a published URL, served-commit parity, and approved disposable states.
 - [Canonical realtime authority](canonical-realtime-authority.md) — persist canonical events before delivery; replay, live frames, read summaries, and UI state must converge on durable server state.
 - [Unlicensed reference recreation boundary](unlicensed-reference-recreation.md) — unlicensed ZIPs/repositories are reference-only; recreate behavior independently in Niakofa and never copy source, assets, credentials, schemas, auth, or backend configuration.
+- [Pixora/Postnisin/Photobooth disposition](niakofa-media-reference-disposition.md) — Pixora leads media/collections, Postnisin leads social UX, and Photobooth informs gallery presentation; all remain reference-only.
 - [TypeScript incremental CI state](typescript-incremental-ci-state.md) — never track tsbuildinfo without its emitted declarations; clean CI can skip required builds and fail with TS6305.
 - [Nia optional-feature gating](nia-context-killswitch.md) — wait for the shared Nia kill-switch before issuing optional context probes.

@@ -43,3 +43,31 @@ These archives informed behavior-level decisions only. Any future feature
 inspired by them must be independently implemented against Niakofa’s existing
 contracts and reviewed for licensing, credential, privacy, authorization, and
 production-readiness boundaries before release.
+
+## Pixora, Postnisin, and Photobooth follow-up audit
+
+**Reviewed:** 2026-09-24
+**Temporary review directory:** `/tmp/niakofa-reference-audit-20260924/`
+
+The three newly supplied ZIPs were path-checked and extracted only to the
+temporary review directory. The original archives remain untracked attachment
+inputs and are not part of the repository, GitHub, or Railway.
+
+| Archive | Evidence reviewed | Selective Niakofa use | Do not import |
+| --- | --- | --- | --- |
+| Pixora-main | 233 archive files; Next.js frontend; Express/Mongoose backend; image, collection, follow, like, favorite, comment, notification, search, profile, upload, and moderation surfaces | media-card hierarchy, upload/publish steps, metadata/collection concepts, responsive discovery, thumbnail-first presentation | MongoDB/Mongoose, Cloudinary, JWT/NextAuth, alternate user model, backend routes, bundled images, and deployment configuration |
+| postnisin-socialmedia-master | 61 archive files; Apache-2.0 license; React/Tailwind masonry feed, pin detail, comments, profiles, search, and Sanity studio/client | post composition flow, detail-to-related-content flow, masonry interaction language, accessible save/detail affordances | Sanity, Sanity schemas/client/tokens, Google/Sanity auth, asset storage, and its application shell |
+| photobooth-master | 39 archive files; Next.js/Pexels gallery, search results, infinite loading, masonry, modal preview, and image-card hover behavior; no license file present in the archive | visual rhythm for galleries, progressive discovery, quick preview, loading/empty states | Pexels API dependency/key, Next.js shell, external image retrieval model, and bundled assets |
+
+Credential-shaped values and provider references were scanned without copying
+their values into the repository or chat. Because license coverage is
+incomplete or asset-specific, all three remain behavior references even where
+the source repository includes a license file.
+
+## Independent enhancement applied
+
+Community Media now uses Niakofa's existing authenticated thumbnail variant for
+gallery cards and provides an accessible quick-view dialog with previous/next
+navigation, save state, and a link back to the originating Hub post. This is a
+new Niakofa implementation: it adds no new provider, database, auth, storage,
+realtime, or deployment boundary.

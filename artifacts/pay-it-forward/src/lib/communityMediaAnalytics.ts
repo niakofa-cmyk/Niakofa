@@ -10,6 +10,7 @@ export type CommunityMediaAnalyticsEvent =
   | "community_media_filter_changed"
   | "community_media_pagination_loaded"
   | "community_media_context_opened"
+  | "community_media_quick_view_opened"
   | "community_media_save_changed";
 
 export type CommunityMediaAnalyticsProperties = {

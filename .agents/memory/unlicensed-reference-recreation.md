@@ -18,6 +18,9 @@ Niakofa must then recreate the desired behavior independently, using Niakofa's o
 - fb-clone-main
 - sociobook-main
 - WigsStar-main
+- Pixora-main
+- postnisin-socialmedia-master
+- photobooth-master
 
 Unless a source is separately verified to have an applicable license, treat these as unlicensed reference material.
 

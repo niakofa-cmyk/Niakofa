@@ -179,3 +179,16 @@ Before implementing any candidate from this map:
   `reference/niakofa-social-reference-review-2026-09-23.md`
 - The archives were used to compare behavior and architecture only. No archive
   file is a Niakofa source dependency.
+
+## 2026-09-24 media/social reference update
+
+- **Pixora:** primary behavior reference for media upload/publish steps,
+  metadata, collections, cards, search, and moderation-aware discovery.
+- **Postnisin Social Media:** primary behavior reference for social composition,
+  masonry feed presentation, post detail, comments, profiles, and related
+  content. Its Sanity architecture is explicitly rejected.
+- **Photobooth:** visual-only reference for masonry rhythm, progressive loading,
+  search, and quick preview. Its Pexels dependency is explicitly rejected.
+- **Implemented independently:** Community Media uses the existing authenticated
+  thumbnail route for cards and an accessible quick-view dialog that keeps the
+  originating Hub context and private save behavior.

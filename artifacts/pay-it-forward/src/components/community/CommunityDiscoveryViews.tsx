@@ -3,15 +3,26 @@ import { Link } from "wouter";
 import {
   ArrowUpRight,
   Bookmark,
+  ChevronLeft,
+  ChevronRight,
   Film,
   Globe2,
   Headphones,
   ImageIcon,
   Loader2,
+  Maximize2,
   Search,
   Users,
   Video,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { HubCommunityFeed } from "@/lib/hubCommunityFeed";
 import { fetchHubCommunityFeed } from "@/lib/hubCommunityFeed";
 import { authHeaders } from "@/lib/auth";
@@ -167,7 +178,15 @@ export function HubsDiscoveryView({ hubId }: { hubId: number | null }) {
   );
 }
 
-function AuthenticatedMediaAsset({ item }: { item: VisualDiscoveryItem }) {
+function AuthenticatedMediaAsset({
+  item,
+  variant = "full",
+  className,
+}: {
+  item: VisualDiscoveryItem;
+  variant?: "preview" | "full";
+  className?: string;
+}) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -177,7 +196,9 @@ function AuthenticatedMediaAsset({ item }: { item: VisualDiscoveryItem }) {
     let createdUrl: string | null = null;
     setObjectUrl(null);
     setFailed(false);
-    const url = item.media_url;
+    const url = variant === "preview" && item.thumbnail_url && !item.mime_type.startsWith("audio/")
+      ? item.thumbnail_url
+      : item.media_url;
     fetch(url, { headers: authHeaders(), signal: controller.signal })
       .then(r => r.ok ? r.blob() : Promise.reject(new Error("fetch failed")))
       .then(blob => {
@@ -194,7 +215,7 @@ function AuthenticatedMediaAsset({ item }: { item: VisualDiscoveryItem }) {
       controller.abort();
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
-  }, [item.media_url]);
+  }, [item.media_url, item.mime_type, item.thumbnail_url, variant]);
 
   if (failed) {
     return (
@@ -206,15 +227,19 @@ function AuthenticatedMediaAsset({ item }: { item: VisualDiscoveryItem }) {
   }
   if (!objectUrl) return <div className="h-full min-h-32 w-full animate-pulse bg-muted" aria-label="Loading media" />;
 
+  if (variant === "preview" && item.thumbnail_url && !item.mime_type.startsWith("audio/")) {
+    return <img src={objectUrl} alt={item.alt_text ?? ""} loading="lazy" className={className ?? "h-full w-full object-cover"} />;
+  }
+
   return (
     item.mime_type.startsWith("video/") ? (
-      <video src={objectUrl} controls playsInline preload="metadata" className="h-full w-full object-cover" aria-label={item.alt_text ?? "Community video"} />
+      <video src={objectUrl} controls playsInline preload="metadata" className={className ?? "h-full w-full object-cover"} aria-label={item.alt_text ?? "Community video"} />
     ) : item.mime_type.startsWith("audio/") ? (
       <div className="flex h-full min-h-32 items-center justify-center bg-gradient-to-br from-primary/15 via-background to-muted p-4">
         <audio src={objectUrl} controls className="w-full" aria-label={item.alt_text ?? "Community audio"} />
       </div>
     ) : (
-      <img src={objectUrl} alt={item.alt_text ?? ""} loading="lazy" className="h-full w-full object-cover" />
+      <img src={objectUrl} alt={item.alt_text ?? ""} loading="lazy" className={className ?? "h-full w-full object-cover"} />
     )
   );
 }
@@ -232,6 +257,13 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const pageNumberRef = useRef(0);
+  const [quickViewId, setQuickViewId] = useState<number | null>(null);
+
+  const quickViewItem = useMemo(
+    () => items.find((item) => item.id === quickViewId) ?? null,
+    [items, quickViewId],
+  );
+  const quickViewIndex = quickViewItem ? items.findIndex((item) => item.id === quickViewItem.id) : -1;
 
   useEffect(() => {
     if (!hubId) return;
@@ -328,6 +360,31 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
       });
     }
   }, [hubId, savedOnly, savingIds]);
+
+  const openQuickView = useCallback((item: VisualDiscoveryItem) => {
+    setQuickViewId(item.id);
+    trackCommunityMedia("community_media_quick_view_opened", {
+      hub_id: hubId ?? undefined,
+      media_id: item.id,
+      media_kind: mediaKindFromMime(item.mime_type),
+    });
+  }, [hubId]);
+
+  const moveQuickView = useCallback((direction: -1 | 1) => {
+    const nextIndex = quickViewIndex + direction;
+    const nextItem = items[nextIndex];
+    if (nextItem) setQuickViewId(nextItem.id);
+  }, [items, quickViewIndex]);
+
+  useEffect(() => {
+    if (quickViewId === null) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") moveQuickView(-1);
+      if (event.key === "ArrowRight") moveQuickView(1);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [moveQuickView, quickViewId]);
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -430,7 +487,7 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
       ) : (
         <div className="columns-2 gap-3 sm:columns-3">
           {items.map((item) => (
-            <article key={item.id} className="group mb-3 break-inside-avoid overflow-hidden rounded-2xl border border-border/80 bg-background shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <article key={item.id} className="group relative mb-3 break-inside-avoid overflow-hidden rounded-2xl border border-border/80 bg-background shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
               <Link
                 href={item.context.href}
                 className="block"
@@ -443,13 +500,21 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
                 })}
               >
                 <div className={`relative overflow-hidden bg-muted ${item.mime_type.startsWith("audio/") ? "min-h-36" : "aspect-[4/3]"}`}>
-                  <AuthenticatedMediaAsset item={item} />
+                  <AuthenticatedMediaAsset item={item} variant="preview" />
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/60 to-transparent p-3 pt-10 opacity-0 transition-opacity group-hover:opacity-100">
                     <span className="truncate text-[11px] font-bold text-white">{item.author_name ? `By ${item.author_name}` : "Community member"}</span>
                     <ArrowUpRight className="h-4 w-4 shrink-0 text-white" />
                   </div>
                 </div>
               </Link>
+              <button
+                type="button"
+                onClick={() => openQuickView(item)}
+                aria-label={`Quick view ${item.alt_text || "shared media"}`}
+                className="absolute right-3 top-3 z-10 rounded-full bg-black/60 p-2 text-white opacity-100 shadow-sm backdrop-blur transition hover:bg-black/80 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:opacity-0 sm:group-hover:opacity-100"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
               <div className="p-3">
                 <p className="line-clamp-2 text-sm font-semibold leading-snug">{item.body}</p>
                  <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
@@ -479,6 +544,85 @@ export function MediaDiscoveryView({ hubId }: { hubId: number | null }) {
         {!loading && !loadingMore && hasMore && <span className="text-xs text-muted-foreground">Loading more community moments…</span>}
         {!loading && !loadingMore && !hasMore && items.length > 0 && <span className="text-xs text-muted-foreground">You’ve reached the end of this Hub gallery.</span>}
       </div>
+
+      <Dialog
+        open={Boolean(quickViewItem)}
+        onOpenChange={(open) => {
+          if (!open) setQuickViewId(null);
+        }}
+      >
+        {quickViewItem && (
+          <DialogContent className="max-w-4xl overflow-hidden p-0 sm:rounded-2xl">
+            <div className="grid max-h-[86vh] overflow-y-auto md:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.75fr)]">
+              <div className="relative flex min-h-72 items-center justify-center bg-black/95 p-3 sm:min-h-[30rem]">
+                <AuthenticatedMediaAsset
+                  item={quickViewItem}
+                  variant="full"
+                  className="max-h-[62vh] w-full object-contain"
+                />
+                {quickViewIndex > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => moveQuickView(-1)}
+                    aria-label="Previous community media"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                )}
+                {quickViewIndex >= 0 && quickViewIndex < items.length - 1 && (
+                  <button
+                    type="button"
+                    onClick={() => moveQuickView(1)}
+                    aria-label="Next community media"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col p-5 sm:p-6">
+                <DialogHeader className="text-left">
+                  <DialogTitle className="pr-8 text-xl font-black">
+                    {quickViewItem.alt_text || "Community memory"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {quickViewItem.author_name ? `Shared by ${quickViewItem.author_name}` : "Shared by a community member"} · {quickViewItem.context.label}
+                  </DialogDescription>
+                </DialogHeader>
+                <p className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-foreground/85">
+                  {quickViewItem.body}
+                </p>
+                <DialogFooter className="mt-auto flex-col gap-2 pt-8 sm:flex-col sm:space-x-0">
+                  <button
+                    type="button"
+                    onClick={() => void toggleSave(quickViewItem)}
+                    disabled={savingIds.has(quickViewItem.id)}
+                    aria-pressed={quickViewItem.viewer_saved}
+                    className={`flex min-h-10 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition hover:bg-primary/10 disabled:cursor-wait disabled:opacity-50 ${quickViewItem.viewer_saved ? "border-primary/40 text-primary" : "border-border"}`}
+                  >
+                    <Bookmark className={`h-4 w-4 ${quickViewItem.viewer_saved ? "fill-current" : ""}`} />
+                    {quickViewItem.viewer_saved ? "Saved privately" : "Save for later"}
+                  </button>
+                  <Link
+                    href={quickViewItem.context.href}
+                    onClick={() => trackCommunityMedia("community_media_context_opened", {
+                      hub_id: hubId,
+                      media_id: quickViewItem.id,
+                      media_kind: mediaKindFromMime(quickViewItem.mime_type),
+                      context_type: "hub_post",
+                    })}
+                    className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground transition hover:bg-primary/90"
+                  >
+                    Open Hub post
+                    <ArrowUpRight className="h-4 w-4" />
+                  </Link>
+                </DialogFooter>
+              </div>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }
