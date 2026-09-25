@@ -1,0 +1,115 @@
+feat(community): introduce Niakofa Exchange and six-tab navigation- #83
+#83
+Draft
+niakofa-cmyk
+wants to merge 20 commits into
+main
+from
+feature/niakofa-exchange-six-tab-community
++139
+-18
+Lines changed: 139 additions & 18 deletions
+Conversation0 (0)
+Commits20 (20)
+Checks4 (4)
+Files changed9 (9)
+Conversation
+@niakofa-cmyk
+niakofa-cmyk
+commented
+1 hour ago
+Summary
+Introduce the six primary Community destinations: Home, Moments, People, Exchange, Notifications, and Profile.
+Add the Exchange landing surface, connecting to existing skills and mutual-aid request flows without fabricating marketplace inventory.
+Clearly mark peer-to-peer goods listings and checkout as planned, not live.
+Update canonical navigation and Community contract tests for Exchange.
+Align product vocabulary assertions with the canonical CommunityExperienceContract.
+Review notes
+This is a first-stage Exchange surface, not a complete transactional marketplace. Listings, seller profiles, payments/escrow, shipping/pickup workflows, buyer/seller protections, and moderation are not implemented by this PR.
+Existing Stories/Circles compatibility routes and Story persistence remain unchanged.
+Validation
+Requested CI via draft pull request. Awaiting GitHub Actions results.
+niakofa-cmyk added 20 commits 1 hour ago
+@niakofa-cmyk
+feat(community): add Exchange and profile to primary navigation
+d529cff
+@niakofa-cmyk
+feat(exchange): add community marketplace landing surface
+5f5e927
+@niakofa-cmyk
+feat(exchange): wire Exchange destination into Community
+c796d80
+@niakofa-cmyk
+feat(community): define six-tab Exchange navigation contract
+c10ea15
+@niakofa-cmyk
+style(community): fit six primary destinations
+7d3ce41
+@niakofa-cmyk
+test(community): assert six-tab Exchange navigation
+ba67c6e
+@niakofa-cmyk
+test(exchange): cover Exchange destination and six-tab contract
+2261803
+@niakofa-cmyk
+test(exchange): update V14 contract for six-tab navigation
+c9855c8
+@niakofa-cmyk
+test(community): read product vocabulary from canonical contract
+55cee67
+@niakofa-cmyk
+fix(exchange): mark peer listings as planned, not available
+8209a09
+@niakofa-cmyk
+style(community): use Reels-style icon for Moments
+baf1b34
+@niakofa-cmyk
+test(community): align legacy shell assertions with six tabs
+d909dfe
+@niakofa-cmyk
+test(community): align legacy shell assertions with six tabs
+088d547
+@niakofa-cmyk
+test(community): update v3 contract for six-tab navigation
+38d4467
+@niakofa-cmyk
+test(community): update legacy v2 navigation contract
+6cb4749
+@niakofa-cmyk
+fix(community): remove duplicate primary tabs from menu
+b99750f
+@niakofa-cmyk
+test(community): assert primary tabs stay out of secondary menu
+8077702
+@niakofa-cmyk
+test(community): align V2 CSS grid assertion with six-tab navigation
+68a9e4b
+@niakofa-cmyk
+test(community): align V3 CSS grid and Profile assertions with six-ta…
+bc41868
+@niakofa-cmyk
+test(community): fix V2 profile assertion to match primary tab routing
+e2e7a18
+This branch has not been deployed
+No deployments
+Merge info
+Some checks were not successful
+1 failing, 1 skipped, 2 successful checks
+
+
+failing checks
+CI / Typecheck + Tests (pull_request)
+CI / Typecheck + Tests (pull_request)Failing after 2m
+skipped checks
+CI / Release Validation (pull_request)
+CI / Release Validation (pull_request)Skipped 42 minutes ago
+successful checks
+CI / App/AI Boundary Check (pull_request)
+CI / App/AI Boundary Check (pull_request)Successful in 11s
+CI / ESLint (pull_request)
+CI / ESLint (pull_request)Successful in 52s
+No conflicts with base branch
+Merging can be performed automatically.
+
+This pull request is still a work in progress
+Draft pull requests cannot be merged.

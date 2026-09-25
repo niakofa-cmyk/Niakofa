@@ -6,6 +6,7 @@ sessions can review the original material without re-creating it.
 
 ## Current review set
 
+- `niakofa-exchange-six-tab-community-2026-09-25/` — original Exchange/navigation review notes, improvement ZIP, and six mobile interaction-reference screenshots; references only, not copied product assets.
 - `attached_assets/` — pasted checkpoint notes supplied for the current review.
 - `attached_assets/fb-clone-main_1790031621743.zip`,
   `attached_assets/sociobook-main_1790031632562.zip`, and

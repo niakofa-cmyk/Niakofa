@@ -1,0 +1,242 @@
+I reviewed the current head of feature/niakofa-exchange-six-tab-community directly against the repository architecture. The branch currently points to commit 55cee6727ac01a0b80423579433160108576e96c.
+
+Open the Niakofa Exchange feature branch
+
+Evaluation
+
+The branch is moving in the right architectural direction, but I found several issues that should be fixed before merging.
+
+1. Six-tab architecture is correctly represented
+
+The current CommunitySocialShell now defines:
+
+Home
+Moments
+People
+Exchange
+Notifications
+Profile
+
+That matches the new Niakofa Community direction.
+
+The routing behavior is also sensible:
+
+Notifications → notification drawer
+Profile → /profile
+Home → /community
+Moments → /community/moments
+People → /community/people
+Exchange → /community/exchange
+2. There is still a stale CI contract
+
+This is the biggest technical problem I found.
+
+tests/diaspora-community-v14.contract.test.mjs still expects the old navigation:
+
+while the actual contract now says:
+
+Therefore the branch's contract suite is internally inconsistent.
+
+This needs to be corrected before merge.
+
+3. The latest branch commit fixed one test correctly
+
+The latest branch commit:
+
+55cee6727ac01a0b80423579433160108576e96c
+
+correctly moved the Moments/Sparks vocabulary assertions from the migration adapter into the canonical CommunityExperienceContract.
+
+That is the right architectural direction.
+
+The canonical contract should own product vocabulary.
+
+4. Exchange is currently a doorway — not yet a true Marketplace
+
+This is important.
+
+CommunityExchangeView.tsx currently provides:
+
+Goods & essentials
+Local services
+Give or receive help
+Skills Directory
+
+But it does not yet implement a true marketplace system.
+
+There is currently no first-class:
+
+Listing entity
+Seller profile
+Buyer flow
+Listing creation
+Listing edit/delete
+Product images
+Price
+Category
+Location
+Search
+Filters
+Favorites
+Seller messaging
+Transaction/order state
+Offer negotiation
+Availability
+Marketplace moderation
+Listing reporting
+Transaction history
+
+So I would define the current implementation as:
+
+Niakofa Exchange — Marketplace foundation / gateway
+
+rather than pretending it is already a complete Facebook Marketplace-style system.
+
+That's actually a good architectural choice because the existing Niakofa Requests/Skills infrastructure can remain intact while Exchange becomes the commerce/discovery layer.
+
+5. Secondary navigation currently duplicates primary destinations
+
+The branch's secondary menu contains Exchange and Profile even though both are now primary navigation destinations.
+
+That creates unnecessary duplication.
+
+I recommend:
+
+Primary
+
+Secondary
+
+This gives the six tabs a much clearer purpose.
+
+6. Facebook reference interaction model should be carried further
+
+Your screenshots establish a useful interaction hierarchy:
+
+Home
+
+Stories/Moments rail
+composer
+feed
+reactions
+comments
+sharing
+
+Moments
+
+full-screen vertical short-form viewer
+creator identity
+reactions
+comments
+share
+save
+follow
+
+People
+
+friends/discovery
+people search
+suggested connections
+profiles
+
+Exchange
+
+Marketplace-style discovery
+local items
+services
+community needs
+categories
+search
+location
+selling/offering
+
+Notifications
+
+activity center
+
+Profile
+
+identity
+posts
+Moments
+Exchange listings
+services
+community activity
+
+The current branch has the first three layers substantially closer to this model, but Exchange needs the largest next development pass.
+
+Recommended architecture
+
+I would now lock the Community shell around this model:
+
+And retain the deeper systems behind the six tabs:
+
+The most important product distinction
+
+I would keep these concepts separate:
+
+Spark
+
+Short-form expression.
+
+Moment
+
+The immersive short-form viewing experience.
+
+Story
+
+Durable narrative.
+
+Spiral
+
+Community/group context.
+
+Exchange
+
+Economic/community exchange layer.
+
+Legacy
+
+Preserved memory.
+
+That gives Niakofa a much cleaner information architecture.
+
+Code improvements identified
+
+I prepared a review package containing the immediate branch fixes:
+
+Remove Exchange/Profile duplication from the secondary menu.
+Update the V14 contract to the six-tab architecture.
+Add Exchange route/view contract assertions.
+Document that Exchange is currently a marketplace foundation rather than a completed transactional marketplace.
+Preserve the existing Requests/Services infrastructure rather than duplicating it.
+
+Download the Niakofa Exchange improvement package
+
+CI status
+
+I also checked GitHub Actions for the feature branch.
+
+At the time of review, there were no workflow runs associated with feature/niakofa-exchange-six-tab-community, so I cannot truthfully mark the branch CI-green.
+
+That is important because the stale V14 assertion means the branch should not be considered merge-ready yet.
+
+Current assessment
+Area	Assessment
+Six-tab navigation	✅ Implemented
+Moments architecture	✅ Strong
+Sparks migration	✅ Strong
+People destination	✅ Implemented
+Profile destination	✅ Implemented
+Exchange route	✅ Implemented
+Exchange UI foundation	🟡 Implemented
+True Marketplace backend	🔴 Not implemented
+Secondary navigation hierarchy	🟡 Needs cleanup
+V14 contract tests	🔴 Stale
+Branch CI verification	⚪ No run available
+Existing Story infrastructure	✅ Preserved
+Nia AI separation	✅ Preserved
+Migration architecture	✅ Good
+
+My recommendation for the branch is to fix the contract-test mismatch first, clean up the duplicate secondary navigation, then build Exchange as a real first-class marketplace domain rather than simply expanding the existing Skills/Requests screen.
+
+One limitation: the GitHub connection available to me in this review is currently read-only, so I could inspect the branch and prepare the exact improvement package, but I could not push these additional fixes back into the GitHub branch from this turn.
