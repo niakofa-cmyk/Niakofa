@@ -57,9 +57,7 @@ const primaryNav = [
 ];
 
 const menuItems = [
-  { href: "/community/exchange", label: "Exchange", description: "Community marketplace and local offers", icon: ShoppingBag },
   { href: "/community/hubs", label: "Hubs", description: "Your local and diaspora communities", icon: Globe2 },
-  { href: "/profile", label: "Profile", description: "Your Niakofa profile", icon: UserRound },
   { href: "/community/requests", label: "Requests", description: "Give or receive help", icon: BriefcaseBusiness },
   { href: "/community/services", label: "Services", description: "Skills and offers", icon: Wrench },
   { href: "/community/spirals", label: "Spirals", description: "Live community conversations", icon: UsersRound },
