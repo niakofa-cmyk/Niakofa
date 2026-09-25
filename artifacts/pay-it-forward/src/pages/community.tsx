@@ -12,9 +12,8 @@ import { CommunityHubsView } from "@/components/community/CommunityHubsView";
 import { CommunityMomentsView } from "@/components/community/CommunityMomentsView";
 import { CommunityRequestsView } from "@/components/community/CommunityRequestsView";
 import {
-  MOMENTS_ROUTE,
+  canonicalCommunitySectionRoute,
   normalizeCommunitySection,
-  SPIRALS_ROUTE,
 } from "@/components/community/CommunityMomentsMigration";
 
 const COMMUNITY_SECTIONS = new Set<CommunityNavKey>([
@@ -47,7 +46,7 @@ export default function CommunityScreen() {
       return;
     }
     if (requestedSection === "stories" || requestedSection === "circles") {
-      const canonicalRoute = requestedSection === "stories" ? MOMENTS_ROUTE : SPIRALS_ROUTE;
+      const canonicalRoute = canonicalCommunitySectionRoute(requestedSection);
       const query = new URLSearchParams(search).toString();
       setLocation(`${canonicalRoute}${query ? `?${query}` : ""}`);
     }
