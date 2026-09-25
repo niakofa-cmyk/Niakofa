@@ -25,6 +25,23 @@ const profile = fs.readFileSync(path.join(__dirname, "../../pages/profile.tsx"),
 const localeUtils = fs.readFileSync(path.join(__dirname, "../locale-utils.ts"), "utf8");
 
 describe("Community Social V4 view boundaries", () => {
+  test("canonical Community experience contract preserves the migration architecture", () => {
+    const contract = fs.readFileSync(
+      path.join(__dirname, "../../components/community/CommunityExperienceContract.ts"),
+      "utf8",
+    );
+    assert.match(contract, /destination: "Moments"/);
+    assert.match(contract, /itemSingular: "Spark"/);
+    assert.match(contract, /community: "Spirals"/);
+    assert.match(contract, /durableNarrative: "Stories"/);
+    assert.match(contract, /preservedMemory: "Legacy"/);
+    assert.match(contract, /preserveStoryApi: true/);
+    assert.match(contract, /preserveAuthenticatedMedia: true/);
+    assert.match(contract, /preserveDeepLinks: true/);
+    assert.match(contract, /separateNiaAi: true/);
+    assert.match(migration, /COMMUNITY_EXPERIENCE/);
+  });
+
   test("Community routes delegate primary destinations to dedicated views", () => {
     assert.match(page, /<CommunityHomeView/);
     assert.match(page, /<CommunityPeopleView/);
