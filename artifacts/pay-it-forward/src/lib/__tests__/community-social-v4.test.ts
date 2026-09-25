@@ -104,9 +104,13 @@ describe("Community Social V4 view boundaries", () => {
   });
 
   test("short-form display language is Sparks inside the Moments destination", () => {
-    assert.match(migration, /destination: "Moments"/);
-    assert.match(migration, /itemSingular: "Spark"/);
-    assert.match(migration, /durableNarrative: "Stories"/);
+    const contract = fs.readFileSync(
+      path.join(__dirname, "../../components/community/CommunityExperienceContract.ts"),
+      "utf8",
+    );
+    assert.match(contract, /destination: "Moments"/);
+    assert.match(contract, /itemSingular: "Spark"/);
+    assert.match(contract, /durableNarrative: "Stories"/);
     assert.match(feed, /Create a Spark/);
     assert.match(storyVisual, /Create a Spark/);
     assert.match(storyVisual, /Post Spark/);
