@@ -12,9 +12,9 @@ const EXCHANGE_DESTINATIONS = [
     title: "Goods & essentials",
     description: "Explore community-shared items and practical resources as listings roll out.",
     icon: Package,
-    href: "/community/requests",
-    action: "Explore community requests",
-    status: "Marketplace listings are a planned next phase",
+    href: null,
+    action: "Coming soon",
+    status: "Planned — peer-to-peer listings and exchange checkout are not live yet",
   },
   {
     title: "Local services",
@@ -64,13 +64,19 @@ export function CommunityExchangeView() {
               <h2 className="mt-3 font-black">{item.title}</h2>
               <p className="mt-1 flex-1 text-sm leading-relaxed text-muted-foreground">{item.description}</p>
               <p className="mt-3 text-[11px] font-semibold text-muted-foreground">{item.status}</p>
-              <Link
-                href={item.href}
-                className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground transition hover:bg-primary/90"
-              >
-                {item.action}
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
+              {item.href ? (
+                <Link
+                  href={item.href}
+                  className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground transition hover:bg-primary/90"
+                >
+                  {item.action}
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              ) : (
+                <span className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-dashed border-border bg-muted/50 px-3 py-2 text-sm font-bold text-muted-foreground" aria-disabled="true">
+                  {item.action}
+                </span>
+              )}
             </article>
           );
         })}
