@@ -53,7 +53,7 @@ describe("Community Social legacy behavior coverage", () => {
     assert.match(shellFile, /const primaryNav =/);
     assert.match(shellCss, /grid-template-columns: repeat\(6/);
     assert.match(shellFile, /menuItems/);
-    assert.match(shellFile, /href: "\/profile"/);
+    assert.match(shellFile, /onRoute\("\/profile"\)/);
     assert.match(shellFile, /key: "profile" as const/);
     assert.match(shellFile, /key: "exchange" as const/);
   });
