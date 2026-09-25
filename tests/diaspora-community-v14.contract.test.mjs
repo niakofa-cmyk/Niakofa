@@ -14,6 +14,7 @@ const communityHome = await source("artifacts/pay-it-forward/src/components/comm
 const communityStories = await source("artifacts/pay-it-forward/src/components/community/CommunityStoriesView.tsx");
 const communityContract = await source("artifacts/pay-it-forward/src/components/community/CommunityExperienceContract.ts");
 const communityMigration = await source("artifacts/pay-it-forward/src/components/community/CommunityMomentsMigration.ts");
+const communityExchange = await source("artifacts/pay-it-forward/src/components/community/CommunityExchangeView.tsx");
 const communityStoryRail = await source("artifacts/pay-it-forward/src/components/community/CommunityStoryRail.tsx");
 const gratitudeComposer = await source("artifacts/pay-it-forward/src/components/community/CommunityGratitudeComposer.tsx");
 const messageTabs = await source("artifacts/pay-it-forward/src/components/messages/MessageTypeTabs.tsx");
