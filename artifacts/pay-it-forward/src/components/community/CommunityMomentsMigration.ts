@@ -4,7 +4,11 @@
  * The existing community-story API and records remain the persistence
  * boundary; these names describe the user-facing experience only.
  */
-import { COMMUNITY_EXPERIENCE, normalizeCommunityRoute } from "./CommunityExperienceContract";
+import {
+  COMMUNITY_EXPERIENCE,
+  canonicalCommunityRoute,
+  normalizeCommunityRoute,
+} from "./CommunityExperienceContract";
 
 export const COMMUNITY_CONTENT_LANGUAGE = COMMUNITY_EXPERIENCE.vocabulary;
 
@@ -15,4 +19,8 @@ export const LEGACY_SPIRALS_ROUTE = COMMUNITY_EXPERIENCE.legacyRoutes.circles;
 
 export function normalizeCommunitySection(section: string): string {
   return normalizeCommunityRoute(section);
+}
+
+export function canonicalCommunitySectionRoute(section: string): string {
+  return canonicalCommunityRoute(section);
 }
