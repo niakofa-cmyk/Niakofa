@@ -9,6 +9,7 @@ import {
   Menu,
   MessageCircle,
   Search,
+  ShoppingBag,
   Users,
   UsersRound,
   UserRound,
@@ -25,6 +26,7 @@ export type CommunityNavKey =
   | "hubs"
   | "spirals"
   | "stories"
+  | "exchange"
   | "notifications"
   | "profile"
   | "more"
@@ -47,12 +49,14 @@ interface CommunitySocialShellProps {
 const primaryNav = [
   { key: "home" as const, label: "Home", icon: House },
   { key: "moments" as const, label: "Moments", icon: ImageIcon },
-  { key: "spirals" as const, label: "Spirals", icon: UsersRound },
   { key: "people" as const, label: "People", icon: Users },
+  { key: "exchange" as const, label: "Exchange", icon: ShoppingBag },
   { key: "notifications" as const, label: "Notifications", icon: Bell },
+  { key: "profile" as const, label: "Profile", icon: UserRound },
 ];
 
 const menuItems = [
+  { href: "/community/exchange", label: "Exchange", description: "Community marketplace and local offers", icon: ShoppingBag },
   { href: "/community/hubs", label: "Hubs", description: "Your local and diaspora communities", icon: Globe2 },
   { href: "/profile", label: "Profile", description: "Your Niakofa profile", icon: UserRound },
   { href: "/community/requests", label: "Requests", description: "Give or receive help", icon: BriefcaseBusiness },
