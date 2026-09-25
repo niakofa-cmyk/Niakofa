@@ -1,25 +1,25 @@
 import { Globe2, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import HubCommunityFeedPanel from "@/components/community/HubCommunityFeedPanel";
-import { CommunityStoriesExperience } from "@/components/community/CommunityStoriesExperience";
+import { CommunityMomentsExperience } from "@/components/community/CommunityMomentsExperience";
 
 type CommunityHomeViewProps = {
   hubId: number | null;
   hubResolved: boolean;
-  storyComposerSignal: number;
-  openStoryId: number | null;
+  sparkComposerSignal: number;
+  openSparkId: number | null;
   openPostId: number | null;
-  onOpenStoryComposer: () => void;
+  onOpenSparkComposer: () => void;
   searchQuery: string;
 };
 
 export function CommunityHomeView({
   hubId,
   hubResolved,
-  storyComposerSignal,
-  openStoryId,
+  sparkComposerSignal,
+  openSparkId,
   openPostId,
-  onOpenStoryComposer,
+  onOpenSparkComposer,
   searchQuery,
 }: CommunityHomeViewProps) {
   if (!hubResolved) {
@@ -38,10 +38,10 @@ export function CommunityHomeView({
   if (hubId === null) {
     return (
       <section className="space-y-3" aria-label="Community home">
-        <CommunityStoriesExperience
+        <CommunityMomentsExperience
           hubId={null}
-          openComposerSignal={storyComposerSignal}
-          openStoryId={openStoryId}
+          openComposerSignal={sparkComposerSignal}
+          openSparkId={openSparkId}
           compact
         />
         <div className="border-y border-border bg-card p-6 text-center sm:rounded-2xl sm:border">
@@ -67,13 +67,13 @@ export function CommunityHomeView({
         hubId={hubId}
         socialHomeMode
         openPostId={openPostId}
-        onOpenStoryComposer={onOpenStoryComposer}
+        onOpenStoryComposer={onOpenSparkComposer}
         searchQuery={searchQuery}
         homeInterstitial={(
-          <CommunityStoriesExperience
+          <CommunityMomentsExperience
             hubId={hubId}
-            openStoryId={openStoryId}
-            openComposerSignal={storyComposerSignal}
+            openSparkId={openSparkId}
+            openComposerSignal={sparkComposerSignal}
             compact
           />
         )}

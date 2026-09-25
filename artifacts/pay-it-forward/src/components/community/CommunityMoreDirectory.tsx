@@ -6,7 +6,7 @@ export function CommunityMoreDirectory() {
     { href: "/community/hubs", label: "Hubs", description: "Your local and diaspora communities", icon: Globe2 },
     { href: "/community/requests", label: "Requests", description: "Give or receive help", icon: BriefcaseBusiness },
     { href: "/community/services", label: "Services", description: "Skills and offers", icon: Wrench },
-    { href: "/community/circles", label: "Spirals", description: "Live conversations", icon: UsersRound },
+    { href: "/community/spirals", label: "Spirals", description: "Live conversations", icon: UsersRound },
     { href: "/community/media", label: "Media", description: "Photos and shared moments", icon: ImageIcon },
     { href: "/diaspora", label: "Diaspora", description: "Global cultural communities", icon: Globe2 },
     { href: "/diaspora/family", label: "Family", description: "Family spaces and memories", icon: UsersRound },

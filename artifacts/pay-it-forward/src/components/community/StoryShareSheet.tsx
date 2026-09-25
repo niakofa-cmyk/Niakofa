@@ -3,6 +3,7 @@ import { Loader2, Search, Send, X } from "lucide-react";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
 import { authHeaders } from "@/lib/auth";
 import { sendStoryContextMessage, shareStory } from "@/lib/community-story-client";
+import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 
 type Person = { id: number; name: string; avatar_url: string | null };
 
@@ -57,23 +58,24 @@ export function StoryShareSheet({
     try {
       await sendStoryContextMessage({ recipientId: person.id, storyId, body: message });
       await shareStory(storyId);
+      trackCommunityContent("community_spark_shared", { spark_id: storyId });
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not share the Story.");
+      setError(reason instanceof Error ? reason.message : "Could not share the Spark.");
     } finally {
       setSendingTo(null);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Send Story">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Send Spark">
       <div className="w-full max-w-md rounded-3xl border border-border bg-background p-4 shadow-2xl">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Community Story</p>
-            <h2 className="mt-1 font-black">Send this Story</h2>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Community Spark</p>
+            <h2 className="mt-1 font-black">Share this Spark</h2>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Close Story share sheet">
+          <button type="button" onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Close Spark share sheet">
             <X className="h-5 w-5" />
           </button>
         </div>

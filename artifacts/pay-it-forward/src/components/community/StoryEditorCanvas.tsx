@@ -182,7 +182,7 @@ export function StoryEditorCanvas({
     <div
       className={className ?? "relative aspect-[9/16] w-full overflow-hidden rounded-3xl bg-black"}
       data-testid="story-editor"
-      aria-label="Story editor"
+      aria-label="Spark editor"
     >
       <div
         className="relative h-full w-full touch-none select-none overflow-hidden"
@@ -234,23 +234,23 @@ export function StoryEditorCanvas({
           onPointerDown={(event) => event.stopPropagation()}
           aria-label={`Controls for ${selected.type}`}
         >
-          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ scale: clamp(selected.scale - 0.1, 0.5, 3) })} aria-label="Shrink Story element">
+          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ scale: clamp(selected.scale - 0.1, 0.5, 3) })} aria-label="Shrink Spark element">
             <Shrink className="h-4 w-4" />
           </button>
-          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ scale: clamp(selected.scale + 0.1, 0.5, 3) })} aria-label="Grow Story element">
+          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ scale: clamp(selected.scale + 0.1, 0.5, 3) })} aria-label="Grow Spark element">
             <ZoomIn className="h-4 w-4" />
           </button>
-          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ rotation: ((selected.rotation + 15 + 180) % 360) - 180 })} aria-label="Rotate Story element">
+          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ rotation: ((selected.rotation + 15 + 180) % 360) - 180 })} aria-label="Rotate Spark element">
             <RotateCw className="h-4 w-4" />
           </button>
-          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => { commit(elements.filter((element) => element.id !== selected.id)); setSelectedId(null); }} aria-label="Delete Story element">
+          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => { commit(elements.filter((element) => element.id !== selected.id)); setSelectedId(null); }} aria-label="Delete Spark element">
             <Trash2 className="h-4 w-4" />
           </button>
           <span className="mx-1 h-6 w-px bg-white/10" />
-          <button type="button" disabled={!past.length} className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10 disabled:opacity-30" onClick={undo} aria-label="Undo Story edit">
+          <button type="button" disabled={!past.length} className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10 disabled:opacity-30" onClick={undo} aria-label="Undo Spark edit">
             <Undo2 className="h-4 w-4" />
           </button>
-          <button type="button" disabled={!future.length} className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10 disabled:opacity-30" onClick={redo} aria-label="Redo Story edit">
+          <button type="button" disabled={!future.length} className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10 disabled:opacity-30" onClick={redo} aria-label="Redo Spark edit">
             <Redo2 className="h-4 w-4" />
           </button>
         </div>

@@ -57,11 +57,11 @@ describe("Community Social legacy behavior coverage", () => {
     assert.doesNotMatch(shellFile, /key: "profile" as const/);
   });
 
-  test("Home places compact Stories before its composer and feed", () => {
+  test("Home places compact Moments before its composer and feed", () => {
     assert.match(homeViewFile, /<HubCommunityFeedPanel/);
     assert.match(homeViewFile, /socialHomeMode/);
     assert.match(homeViewFile, /homeInterstitial={\(/);
-    assert.match(homeViewFile, /<CommunityStoriesExperience[\s\S]*?compact/);
+    assert.match(homeViewFile, /<CommunityMomentsExperience[\s\S]*?compact/);
     assert.match(feedFile, /socialHomeMode && homeInterstitial/);
     assert.match(feedFile, /socialHomeMode && homeInterstitial[\s\S]*?hub-post-composer/);
   });
@@ -84,7 +84,7 @@ describe("Community Social legacy behavior coverage", () => {
     assert.match(feedFile, /handleFeedRealtime/);
   });
 
-  test("Compact Stories remain mounted while the Hub feed loads or fails", () => {
+  test("Compact Moments remain mounted while the Hub feed loads or fails", () => {
     assert.doesNotMatch(feedFile, /if \(error\) return/);
     assert.match(feedFile, /socialHomeMode && homeInterstitial[\s\S]*?\{!feed \? \(/);
   });
@@ -92,12 +92,12 @@ describe("Community Social legacy behavior coverage", () => {
   test("Creation is contextual instead of a global Community header action", () => {
     assert.doesNotMatch(shellFile, /aria-label="Create"/);
     assert.doesNotMatch(communityFile, /createSheetOpen/);
-    assert.match(homeViewFile, /onOpenStoryComposer/);
+    assert.match(homeViewFile, /onOpenSparkComposer/);
   });
 
-  test("Stories section includes CommunityStoriesExperience", () => {
-    assert.match(communityFile, /<CommunityStoriesView/);
-    assert.match(homeViewFile, /<CommunityStoriesExperience[\s\S]*?compact/);
+  test("Moments section and Home use the shared Moments experience", () => {
+    assert.match(communityFile, /<CommunityMomentsView/);
+    assert.match(homeViewFile, /<CommunityMomentsExperience[\s\S]*?compact/);
   });
 
   test("More directory does not contain fake links like /impact or /civic-resources", () => {

@@ -1,4 +1,4 @@
-import { CommunityStoriesExperience } from "@/components/community/CommunityStoriesExperience";
+import { CommunityMomentsView } from "@/components/community/CommunityMomentsView";
 
 export function CommunityStoriesView({
   hubId,
@@ -9,7 +9,7 @@ export function CommunityStoriesView({
 }) {
   return (
     <div className="space-y-3">
-      <CommunityStoriesExperience hubId={hubId} openStoryId={openStoryId} />
+      <CommunityMomentsView hubId={hubId} openSparkId={openStoryId} />
     </div>
   );
 }

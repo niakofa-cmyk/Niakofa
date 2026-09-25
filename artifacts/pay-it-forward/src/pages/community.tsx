@@ -9,11 +9,18 @@ import { SkillsMarketplaceTab } from "@/components/community/SkillsMarketplaceTa
 import { CommunityHomeView } from "@/components/community/CommunityHomeView";
 import { CommunityPeopleView } from "@/components/community/CommunityPeopleView";
 import { CommunityHubsView } from "@/components/community/CommunityHubsView";
-import { CommunityStoriesView } from "@/components/community/CommunityStoriesView";
+import { CommunityMomentsView } from "@/components/community/CommunityMomentsView";
 import { CommunityRequestsView } from "@/components/community/CommunityRequestsView";
+import {
+  MOMENTS_ROUTE,
+  normalizeCommunitySection,
+  SPIRALS_ROUTE,
+} from "@/components/community/CommunityMomentsMigration";
 
 const COMMUNITY_SECTIONS = new Set<CommunityNavKey>([
   "home",
+  "moments",
+  "spirals",
   "people",
   "hubs",
   "stories",
@@ -29,7 +36,7 @@ export default function CommunityScreen() {
   const search = useSearch();
   const [match, params] = useRoute("/community/:section");
   const requestedSection = match && params?.section ? params.section : "home";
-  const compatibleSection = requestedSection === "spirals" ? "circles" : requestedSection;
+  const compatibleSection = normalizeCommunitySection(requestedSection);
   const normalizedSection: CommunityNavKey = COMMUNITY_SECTIONS.has(compatibleSection as CommunityNavKey)
     ? compatibleSection as CommunityNavKey
     : "home";
@@ -37,10 +44,16 @@ export default function CommunityScreen() {
   useEffect(() => {
     if (requestedSection === "messages") {
       setLocation("/messages");
+      return;
     }
-  }, [requestedSection, setLocation]);
+    if (requestedSection === "stories" || requestedSection === "circles") {
+      const canonicalRoute = requestedSection === "stories" ? MOMENTS_ROUTE : SPIRALS_ROUTE;
+      const query = new URLSearchParams(search).toString();
+      setLocation(`${canonicalRoute}${query ? `?${query}` : ""}`);
+    }
+  }, [requestedSection, search, setLocation]);
 
-  const [storyComposerSignal, setStoryComposerSignal] = useState(0);
+  const [sparkComposerSignal, setSparkComposerSignal] = useState(0);
 
   const [communitySearch, setCommunitySearch] = useState("");
 
@@ -49,8 +62,9 @@ export default function CommunityScreen() {
     const value = Number(new URLSearchParams(search).get("hubId"));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
   }, [search]);
-  const openStoryId = useMemo(() => {
-    const value = Number(new URLSearchParams(search).get("storyId"));
+  const openSparkId = useMemo(() => {
+    const query = new URLSearchParams(search);
+    const value = Number(query.get("sparkId") ?? query.get("storyId"));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
   }, [search]);
   const openPostId = useMemo(() => {
@@ -103,18 +117,18 @@ export default function CommunityScreen() {
           <CommunityHomeView
             hubId={effectiveHubId}
             hubResolved={defaultHubResolved}
-            storyComposerSignal={storyComposerSignal}
-            openStoryId={openStoryId}
+            sparkComposerSignal={sparkComposerSignal}
+            openSparkId={openSparkId}
             openPostId={openPostId}
-            onOpenStoryComposer={() => setStoryComposerSignal((signal) => signal + 1)}
+            onOpenSparkComposer={() => setSparkComposerSignal((signal) => signal + 1)}
             searchQuery={communitySearch}
           />
         )}
+        {normalizedSection === "moments" && <CommunityMomentsView hubId={effectiveHubId} openSparkId={openSparkId} />}
         {normalizedSection === "people" && <CommunityPeopleView hubId={effectiveHubId} />}
         {normalizedSection === "hubs" && <CommunityHubsView hubId={effectiveHubId} />}
-        {normalizedSection === "stories" && <CommunityStoriesView hubId={effectiveHubId} openStoryId={openStoryId} />}
         {normalizedSection === "requests" && <CommunityRequestsView />}
-        {normalizedSection === "circles" && <CommunitySpiralsTab />}
+        {normalizedSection === "spirals" && <CommunitySpiralsTab />}
         {normalizedSection === "media" && <MediaDiscoveryView hubId={effectiveHubId} />}
         {normalizedSection === "more" && <CommunityMoreDirectory />}
 

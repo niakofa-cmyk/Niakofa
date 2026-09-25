@@ -20,10 +20,11 @@ import "./community-social-v4.css";
 
 export type CommunityNavKey =
   | "home"
+  | "moments"
   | "people"
   | "hubs"
+  | "spirals"
   | "stories"
-  | "messages"
   | "notifications"
   | "profile"
   | "more"
@@ -36,7 +37,7 @@ interface CommunitySocialShellProps {
   active: CommunityNavKey;
   onNavigate: (key: CommunityNavKey) => void;
   onRoute: (path: string) => void;
-  /** Retained for API compatibility; creation belongs to the feed and Story surfaces. */
+  /** Retained for API compatibility; Spark creation belongs to the feed and Moments surfaces. */
   onCreate: () => void;
   onSearch: (value: string) => void;
   searchValue?: string;
@@ -45,9 +46,9 @@ interface CommunitySocialShellProps {
 
 const primaryNav = [
   { key: "home" as const, label: "Home", icon: House },
-  { key: "stories" as const, label: "Stories", icon: BookOpen },
+  { key: "moments" as const, label: "Moments", icon: ImageIcon },
+  { key: "spirals" as const, label: "Spirals", icon: UsersRound },
   { key: "people" as const, label: "People", icon: Users },
-  { key: "messages" as const, label: "Messages", icon: MessageCircle },
   { key: "notifications" as const, label: "Notifications", icon: Bell },
 ];
 
@@ -56,7 +57,7 @@ const menuItems = [
   { href: "/profile", label: "Profile", description: "Your Niakofa profile", icon: UserRound },
   { href: "/community/requests", label: "Requests", description: "Give or receive help", icon: BriefcaseBusiness },
   { href: "/community/services", label: "Services", description: "Skills and offers", icon: Wrench },
-  { href: "/community/circles", label: "Spirals", description: "Live community conversations", icon: UsersRound },
+  { href: "/community/spirals", label: "Spirals", description: "Live community conversations", icon: UsersRound },
   { href: "/community/media", label: "Media", description: "Photos and shared moments", icon: ImageIcon },
   { href: "/diaspora", label: "Diaspora", description: "Global cultural communities", icon: Globe2 },
   { href: "/diaspora/family", label: "Family", description: "Family spaces and memories", icon: UsersRound },
@@ -118,10 +119,6 @@ export function CommunitySocialShell({
   const navigate = (key: CommunityNavKey) => {
     if (key === "notifications") {
       setNotificationsOpen(true);
-      return;
-    }
-    if (key === "messages") {
-      onRoute("/messages");
       return;
     }
     if (key === "profile") {
@@ -274,7 +271,7 @@ export function CommunitySocialShell({
             <div className="mt-5 rounded-2xl border border-border bg-muted/40 p-4">
               <p className="text-xs font-bold">Niakofa systems stay connected.</p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Requests, Services, Spirals, Media, Diaspora, Hub membership, Stories, Messages and realtime features remain available without becoming tabs.
+                Requests, Services, Spirals, Media, Diaspora, Hub membership, Moments, Sparks, Messages and realtime features remain available without becoming tabs.
               </p>
             </div>
           </aside>

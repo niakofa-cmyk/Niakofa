@@ -1,11 +1,9 @@
-import { CommunityStoryRail } from "./CommunityStoryRail";
+import { CommunityMomentsExperience } from "./CommunityMomentsExperience";
 
 /**
- * Named boundary for the Community → Stories experience.
- *
- * The rail owns Story data, playback, creation, gallery, music, and durable
- * interactions. This shell keeps that surface separate from Community Feed
- * and gives future Stories navigation states one stable integration point.
+ * Compatibility boundary for callers that still use the internal Story name.
+ * The user-facing destination and short-form content language are Moments and
+ * Sparks.
  */
 export function CommunityStoriesExperience({
   hubId,
@@ -19,16 +17,11 @@ export function CommunityStoriesExperience({
   compact?: boolean;
 }) {
   return (
-    <section
-      className="nia-community-stories-experience"
-      aria-label="Niakofa Community Stories experience"
-    >
-      <CommunityStoryRail
+    <CommunityMomentsExperience
         hubId={hubId}
         openComposerSignal={openComposerSignal}
-        openStoryId={openStoryId}
+        openSparkId={openStoryId}
         compact={compact}
-      />
-    </section>
+    />
   );
 }

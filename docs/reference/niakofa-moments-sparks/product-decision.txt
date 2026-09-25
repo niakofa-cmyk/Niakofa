@@ -1,0 +1,115 @@
+Yes — I agree with that distinction, and I would change the architecture accordingly.
+
+The cleanest model is:
+
+Niakofa term	What it represents	User action
+SPARKS	The individual short-form posts/videos	Create a Spark
+MOMENTS	The immersive short-form viewing experience/destination	Explore Moments
+STORIES	Longer-form, enduring narratives	Share a Story
+SPIRALS	Community groups/interest circles	Join/Create a Spiral
+GRIOT / LEGACY	Preserved cultural, family, and historical memory	Preserve a Legacy
+
+So, yes: users create Sparks, not Moments.
+
+The key distinction
+
+Think of it like this:
+
+Instagram
+
+Reel = individual video
+Reels = viewing destination
+
+YouTube
+
+Short = individual video
+Shorts = viewing destination
+
+For Niakofa:
+
+Spark = individual piece of content
+Moments = the place where Sparks are experienced
+
+So:
+
+Create a Spark.
+Discover Sparks in Moments.
+
+That gives Niakofa a much stronger product vocabulary.
+
+What I would change in the current Community
+
+Instead of:
+
+Home | Stories | Spirals | People | Notifications
+
+I would use:
+
+Home | Moments | Spirals | People | Notifications
+
+Then inside Moments:
+
+Moments
+
+The Global Village in motion.
+
++ Create a Spark
+
+And the content cards/items are explicitly called Sparks.
+
+For example:
+
+“Create a Spark”
+“Post a Spark”
+“Share this Spark”
+“React to this Spark”
+“Save this Spark”
+“Your Sparks”
+“Trending Sparks”
+“Sparks from Fort Worth”
+“Sparks from your Spirals”
+And this resolves the Stories problem
+
+I would not simply rename the current Stories tab to Sparks.
+
+That would make the destination sound like a collection of individual posts rather than an experience.
+
+Instead:
+
+Stories → Moments
+
+while:
+
+Story → Spark only for the short-form content model.
+
+Then reserve Stories for actual narrative content.
+
+For example:
+
+Community Stories — “The story of how a Fort Worth neighbor helped another family.”
+
+versus:
+
+Spark — a 30-second video showing that act of kindness.
+
+And eventually:
+
+Legacy — that story preserved as part of the community's history.
+
+That gives you a very coherent hierarchy:
+
+SPARK → MOMENT → STORY → LEGACY
+
+Not every Spark becomes a Story, and not every Story becomes a Legacy.
+
+One important change from our previous recommendation
+
+Since you've officially decided on Spirals, I would now lock the primary Community architecture as:
+
+HOME · MOMENTS · SPIRALS · PEOPLE · NOTIFICATIONS
+
+with Messages remaining a persistent header action.
+
+And I would make Moments the replacement for the current Stories destination, while Sparks becomes the fundamental short-form content object users actually create.
+
+That's the terminology I would now carry into the GitHub implementation, documentation, routes, analytics, and UI copy.

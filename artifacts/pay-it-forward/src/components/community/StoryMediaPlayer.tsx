@@ -93,7 +93,7 @@ export function StoryMediaPlayer({
   if (!media || !media.media_url) {
     return (
       <div className="relative grid h-full place-items-center overflow-hidden bg-black px-8 text-center text-2xl font-black text-white">
-        {!hasPersistedText && <span>{fallbackText || "Community Moment"}</span>}
+        {!hasPersistedText && <span>{fallbackText || "Community Spark"}</span>}
         <StoryElementLayer elements={elements} />
       </div>
     );

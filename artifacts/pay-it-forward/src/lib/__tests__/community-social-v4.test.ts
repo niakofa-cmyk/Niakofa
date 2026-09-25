@@ -3,13 +3,23 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  LEGACY_MOMENTS_ROUTE,
+  LEGACY_SPIRALS_ROUTE,
+  MOMENTS_ROUTE,
+  normalizeCommunitySection,
+  SPIRALS_ROUTE,
+} from "../../components/community/CommunityMomentsMigration";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const page = fs.readFileSync(path.join(__dirname, "../../pages/community.tsx"), "utf8");
 const shell = fs.readFileSync(path.join(__dirname, "../../components/community/CommunitySocialShell.tsx"), "utf8");
+const moments = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityMomentsView.tsx"), "utf8");
+const migration = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityMomentsMigration.ts"), "utf8");
 const more = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityMoreDirectory.tsx"), "utf8");
 const feed = fs.readFileSync(path.join(__dirname, "../../components/community/HubCommunityFeedPanel.tsx"), "utf8");
 const storyVisual = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoryVisual.tsx"), "utf8");
+const storyRail = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoryRail.tsx"), "utf8");
 const storyStyles = fs.readFileSync(path.join(__dirname, "../../components/community/community-story-visual.css"), "utf8");
 const profile = fs.readFileSync(path.join(__dirname, "../../pages/profile.tsx"), "utf8");
 const localeUtils = fs.readFileSync(path.join(__dirname, "../locale-utils.ts"), "utf8");
@@ -19,7 +29,7 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(page, /<CommunityHomeView/);
     assert.match(page, /<CommunityPeopleView/);
     assert.match(page, /<CommunityHubsView/);
-    assert.match(page, /<CommunityStoriesView/);
+    assert.match(page, /<CommunityMomentsView/);
     assert.match(page, /<CommunityRequestsView/);
   });
 
@@ -30,15 +40,20 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(page, /CommunitySpiralsTab/);
   });
 
-  test("focused social navigation promotes Messages and keeps systems secondary", () => {
-    assert.match(shell, /key: "messages" as const, label: "Messages", icon: MessageCircle/);
-    assert.match(shell, /if \(key === "messages"\) \{\s+onRoute\("\/messages"\)/);
+  test("focused social navigation promotes Moments and Spirals, with Messages in the header", () => {
+    const nav = shell.match(/const primaryNav = \[([\s\S]*?)\];/)?.[1] ?? "";
+    assert.deepEqual(
+      [...nav.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]),
+      ["Home", "Moments", "Spirals", "People", "Notifications"],
+    );
+    assert.match(shell, /aria-label="Open Messages"[\s\S]*?onRoute\("\/messages"\)/);
+    assert.doesNotMatch(shell, /key: "messages" as const/);
     assert.doesNotMatch(shell, /key: "hubs" as const, label: "Hubs"/);
     for (const path of [
       "/community/hubs",
       "/community/requests",
       "/community/services",
-      "/community/circles",
+      "/community/spirals",
       "/community/media",
       "/diaspora",
       "/diaspora/family",
@@ -57,9 +72,45 @@ describe("Community Social V4 view boundaries", () => {
     assert.doesNotMatch(more, /href: "\/community\/stories"/);
   });
 
-  test("legacy Community Messages path normalizes to the canonical Messages route", () => {
+  test("legacy short-form and circle routes normalize without dropping deep-link parameters", () => {
     assert.match(page, /if \(requestedSection === "messages"\) \{\s+setLocation\("\/messages"\)/);
-    assert.match(page, /const compatibleSection = requestedSection === "spirals" \? "circles" : requestedSection/);
+    assert.equal(normalizeCommunitySection("stories"), "moments");
+    assert.equal(normalizeCommunitySection("circles"), "spirals");
+    assert.equal(MOMENTS_ROUTE, "/community/moments");
+    assert.equal(LEGACY_MOMENTS_ROUTE, "/community/stories");
+    assert.equal(SPIRALS_ROUTE, "/community/spirals");
+    assert.equal(LEGACY_SPIRALS_ROUTE, "/community/circles");
+    assert.match(page, /requestedSection === "stories" \|\| requestedSection === "circles"/);
+    assert.match(page, /new URLSearchParams\(search\)\.toString\(\)/);
+    assert.match(page, /query\.get\("sparkId"\) \?\? query\.get\("storyId"\)/);
+    assert.match(moments, /openSparkId/);
+  });
+
+  test("short-form display language is Sparks inside the Moments destination", () => {
+    assert.match(migration, /destination: "Moments"/);
+    assert.match(migration, /itemSingular: "Spark"/);
+    assert.match(migration, /durableNarrative: "Stories"/);
+    assert.match(feed, /Create a Spark/);
+    assert.match(storyVisual, /Create a Spark/);
+    assert.match(storyVisual, /Post Spark/);
+    assert.match(storyVisual, /aria-label="Community Moments"/);
+  });
+
+  test("Moments keeps the existing immersive viewer controls and reduced-motion support", () => {
+    assert.match(storyRail, /const advanceFrame = useCallback/);
+    assert.match(storyRail, /const moveToAuthor = useCallback/);
+    assert.match(storyRail, /window\.addEventListener\("keydown", onKeyDown\)/);
+    assert.match(storyRail, /onHoldChange=\{setStoryPaused\}/);
+    assert.match(storyRail, /onSwipe=\{\(direction\) =>/);
+    assert.match(storyVisual, /onPointerDown=/);
+    assert.match(storyVisual, /onPointerUp=/);
+    assert.match(storyStyles, /prefers-reduced-motion: reduce/);
+  });
+
+  test("story API remains the compatible persistence and media boundary", () => {
+    assert.match(page, /storyId/);
+    assert.match(fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoryRail.tsx"), "utf8"), /\/api\/community\/stories/);
+    assert.match(fs.readFileSync(path.join(__dirname, "../../lib/storyMediaPipeline.ts"), "utf8"), /validateStoryMedia/);
   });
 
   test("shared Community posts preserve a deep link to the conversation card", () => {

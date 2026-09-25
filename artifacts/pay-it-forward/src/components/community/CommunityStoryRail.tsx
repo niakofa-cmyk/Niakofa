@@ -17,6 +17,7 @@ import { StoryShareSheet } from "./StoryShareSheet";
 import { normalizeStoryFiles, useObjectUrls, validateStoryFiles } from "./StoryComposerMedia";
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
 import { readStoryMediaMetadata } from "@/lib/storyMediaPipeline";
+import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import {
   getStoryMetrics,
   reactToStory,
@@ -156,7 +157,7 @@ export function CommunityStoryRail({
       name: author.author.name,
       avatarUrl: author.author.avatar_url,
       seen: seenAuthorIds.has(author.author_user_id),
-      contextLabel: hubId ? "Hub Story" : "Community",
+      contextLabel: hubId ? "Hub Spark" : "Community",
     })),
     [authors, hubId, seenAuthorIds],
   );
@@ -169,7 +170,7 @@ export function CommunityStoryRail({
     [files, previewUrls],
   );
   const musicTracks = useMemo(() => [
-    { id: "original", title: "Original audio", artist: "Your Story" },
+    { id: "original", title: "Original audio", artist: "Your Spark" },
     { id: "sunrise", title: "Sunrise", artist: "Niakofa curated" },
     { id: "neighborhood-pulse", title: "Neighborhood pulse", artist: "Niakofa curated" },
     { id: "quiet-strength", title: "Quiet strength", artist: "Niakofa curated" },
@@ -234,10 +235,10 @@ export function CommunityStoryRail({
         const query = hubId ? `?hubId=${encodeURIComponent(String(hubId))}` : "";
         const response = await fetch(`/api/community/stories${query}`, { headers: authHeaders() });
         const data = await response.json().catch(() => ({})) as { stories?: CommunityStory[]; error?: string };
-        if (!response.ok) throw new Error(data.error || "Could not load Community Stories.");
+        if (!response.ok) throw new Error(data.error || "Could not load Moments.");
         if (!cancelled) setStories(Array.isArray(data.stories) ? data.stories : []);
       } catch (reason: unknown) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load Community Stories.");
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load Moments.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -342,7 +343,8 @@ export function CommunityStoryRail({
         body: JSON.stringify({ caption: caption.trim(), hub_id: hubId, audience, media, elements }),
       });
       const data = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(data.error || "Could not publish your Story.");
+      if (!response.ok) throw new Error(data.error || "Could not publish your Spark.");
+      trackCommunityContent("community_spark_created", hubId === null ? {} : { hub_id: hubId });
       resetComposer();
       setComposerOpen(false);
       const refresh = await fetch(`/api/community/stories${hubId ? `?hubId=${hubId}` : ""}`, { headers: authHeaders() });
@@ -351,7 +353,7 @@ export function CommunityStoryRail({
         setStories(Array.isArray(next.stories) ? next.stories : []);
       }
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Could not publish your Story.");
+      setError(reason instanceof Error ? reason.message : "Could not publish your Spark.");
     } finally {
       setPublishing(false);
     }
@@ -408,7 +410,9 @@ export function CommunityStoryRail({
   useEffect(() => {
     if (selectedStoryId === null) return;
     setStoryProgress(0);
-    void recordStoryView(selectedStoryId).catch(() => {});
+    void recordStoryView(selectedStoryId)
+      .then(() => trackCommunityContent("community_spark_viewed", { spark_id: selectedStoryId }))
+      .catch(() => {});
     void getStoryMetrics(selectedStoryId)
       .then((metrics) => setReactedStoryIds((current) => ({ ...current, [selectedStoryId]: Boolean(metrics.viewer_reaction) })))
       .catch(() => {});
@@ -492,6 +496,10 @@ export function CommunityStoryRail({
     try {
       if (alreadyReacted) await removeStoryReaction(selectedStoryId);
       else await reactToStory(selectedStoryId);
+      trackCommunityContent("community_spark_reacted", {
+        spark_id: selectedStoryId,
+        action: alreadyReacted ? "removed" : "added",
+      });
       setReactedStoryIds((current) => ({ ...current, [selectedStoryId]: !alreadyReacted }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not update your reaction.");
@@ -509,19 +517,19 @@ export function CommunityStoryRail({
   return (
     <>
       {error && <p role="alert" className="mb-3 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
-      <section className="nia-community-stories-shell" aria-label="Niakofa Community Stories">
+      <section className="nia-community-stories-shell" aria-label="Niakofa Community Moments">
         {!compact && <header className="nia-community-stories-hero">
           <div className="nia-community-stories-brand">
             <div className="nia-community-stories-mark" aria-hidden="true">N</div>
             <div>
               <p className="nia-story-kicker">Niakofa Community</p>
-              <h1>Stories</h1>
+              <h1>Moments</h1>
               <p>Share • Connect • Build Together</p>
             </div>
           </div>
           <button className="nia-story-pill" type="button" onClick={() => setComposerOpen(true)}>
             <span aria-hidden="true">＋</span>
-            Create Story
+            Create a Spark
           </button>
         </header>}
 
@@ -530,7 +538,7 @@ export function CommunityStoryRail({
           loading={loading}
           onCreate={() => setComposerOpen(true)}
           onOpen={openStory}
-          emptyLabel="No Stories yet. Start the first Community Story."
+          emptyLabel="No Sparks yet. Create the first Spark."
         />
       </section>
 
@@ -546,9 +554,9 @@ export function CommunityStoryRail({
                 >
                   <div className="relative flex h-full w-full items-center justify-center overflow-hidden" style={!selectedFileUrl ? { background: textBackground } : undefined}>
                     {selectedFileUrl ? (
-                      selectedPreviewFile?.type.startsWith("video/") ? <video src={selectedFileUrl} muted playsInline className="max-h-[52dvh] max-w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Story preview" className="max-h-[52dvh] max-w-full object-contain" style={{ filter }} />
+                      selectedPreviewFile?.type.startsWith("video/") ? <video src={selectedFileUrl} muted playsInline className="max-h-[52dvh] max-w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Spark preview" className="max-h-[52dvh] max-w-full object-contain" style={{ filter }} />
                     ) : (
-                      <div className="px-8 text-center text-white"><Type className="mx-auto h-10 w-10 text-white/70" /><p className="mt-3 font-black">{caption ? "Text Story preview" : "Add a photo or video"}</p><p className="mt-1 text-xs text-white/65">Use your camera, choose recent items, or create a text-only Story.</p></div>
+                      <div className="px-8 text-center text-white"><Type className="mx-auto h-10 w-10 text-white/70" /><p className="mt-3 font-black">{caption ? "Text Spark preview" : "Add a photo or video"}</p><p className="mt-1 text-xs text-white/65">Use your camera, choose recent items, or create a text-only Spark.</p></div>
                     )}
                   </div>
                 </StoryEditorCanvas>
@@ -568,8 +576,8 @@ export function CommunityStoryRail({
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
                 <input ref={cameraInput} type="file" accept="image/*,video/*" capture="environment" className="sr-only" onChange={onFileChange} />
                 <input ref={galleryInput} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={onFileChange} />
-                {files.length > 0 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="Story media sequence">
-                  {files.map((file, index) => <button key={`${file.name}-${index}`} type="button" onClick={() => setPreviewFileIndex(index)} className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 ${previewFileIndex === index ? "border-primary" : "border-white/20"}`} aria-label={`Preview Story item ${index + 1}`}>
+                {files.length > 0 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="Spark media sequence">
+                  {files.map((file, index) => <button key={`${file.name}-${index}`} type="button" onClick={() => setPreviewFileIndex(index)} className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 ${previewFileIndex === index ? "border-primary" : "border-white/20"}`} aria-label={`Preview Spark item ${index + 1}`}>
                     {previewUrls[index] ? (file.type.startsWith("video/") ? <video src={previewUrls[index]} muted playsInline className="h-full w-full object-cover" /> : <img src={previewUrls[index]} alt="" className="h-full w-full object-cover" />) : <span className="grid h-full place-items-center text-xs">{index + 1}</span>}
                     <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[9px] text-white">{index + 1}</span>
                   </button>)}
@@ -592,13 +600,13 @@ export function CommunityStoryRail({
                 {tool === "effects" && <div className="flex gap-2 overflow-x-auto pb-1">{(["none", "warmth", "contrast", "grayscale", "vignette"] as Effect[]).map((item) => <button key={item} type="button" onClick={() => setEffect(item)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold capitalize ${effect === item ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}>{item}</button>)}</div>}
                 {tool === "mention" && <div className="space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); setEditorElements((current) => current.filter((element) => element.id !== "mention")); }} className="min-h-11 w-full rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); upsertEditorElement({ id: "mention", type: "mention", payload: { display_name: candidate.name, mention_user_id: candidate.id }, position_x: 50, position_y: 65, scale: 1, rotation: 0, z_index: 18 }); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
                 {tool === "text" && <div className="grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-white/65">Color<input type="color" value={textColor} onChange={(event) => { const value = event.target.value; setTextColor(value); updateEditorElement("caption", { payload: { color: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-white/10" /></label><label className="text-[10px] font-bold text-white/65">Size<select value={textSize} onChange={(event) => { const value = event.target.value; setTextSize(value); updateEditorElement("caption", { payload: { font_size: Number(value) } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-white/65">Align<select value={textAlign} onChange={(event) => { const value = event.target.value as "left" | "center" | "right"; setTextAlign(value); updateEditorElement("caption", { payload: { align: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-white/65">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
-                <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={2} className="mt-3 w-full resize-none rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white outline-none focus:border-primary" placeholder="Add text to your Moment…" />
+                <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={2} className="mt-3 w-full resize-none rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white outline-none focus:border-primary" placeholder="Add text to your Spark…" />
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-white/15 bg-white/5 px-3 py-2">
                   <div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><div><p className="text-xs font-black">Share with</p><p className="text-[10px] text-white/60">{audience === "hub" ? "Selected Hub members" : "Your approved community"}</p></div></div>
                   <select id="story-audience" value={audience} onChange={(event) => setAudience(event.target.value as "community" | "hub")} disabled={!hubId} className="rounded-lg border border-white/20 bg-black px-2 py-2 text-xs font-bold"><option value="community">Community</option><option value="hub">This Hub</option></select>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="text-[10px] leading-relaxed text-white/55">Video Stories are short recorded or camera-roll clips. Music remains curated metadata until a licensed audio pipeline is approved.</p>
+                  <p className="text-[10px] leading-relaxed text-white/55">Spark videos are short recorded or camera-roll clips. Music remains curated metadata until a licensed audio pipeline is approved.</p>
                   {files.length > 0 && <button type="button" onClick={() => { setFiles([]); setGallerySelection([]); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
                 </div>
               </div>
@@ -608,13 +616,13 @@ export function CommunityStoryRail({
       )}
 
       {selectedStory && selectedAuthor && (
-        <div className="nia-story-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${selectedAuthor.author.name}'s Story`}>
+        <div className="nia-story-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${selectedAuthor.author.name}'s Spark`}>
           <StoryViewerChrome
             author={{
               id: selectedAuthor.author_user_id,
               name: selectedAuthor.author.name,
               avatarUrl: selectedAuthor.author.avatar_url,
-              contextLabel: selectedStory.hub_id ? "Hub Story" : "Community",
+              contextLabel: selectedStory.hub_id ? "Hub Spark" : "Community",
             }}
             progress={storyProgress}
             onPrevious={() => advanceFrame(-1)}
@@ -639,18 +647,18 @@ export function CommunityStoryRail({
               })
                 .then(() => navigate(`/messages?mode=direct&recipientId=${selectedStory.author_user_id}&storyId=${selectedStory.id}`))
                 .catch((reason: unknown) => {
-                  setError(reason instanceof Error ? reason.message : "Could not send your Story reply.");
+                  setError(reason instanceof Error ? reason.message : "Could not send your Spark reply.");
                 });
             }}
             onShare={() => setShareStoryId(selectedStory.id)}
-            replyPlaceholder={selectedStory.reply_enabled ? "Reply to this Story…" : "Replies are off"}
+            replyPlaceholder={selectedStory.reply_enabled ? "Reply to this Spark…" : "Replies are off"}
             replyDisabled={!selectedStory.reply_enabled}
           >
             <div className="nia-story-viewer__player-shell">
               <StoryMediaPlayer
                 media={selectedPlayerMedia}
                 elements={selectedStory.elements}
-                fallbackText={selectedMedia ? "Loading Story media…" : selectedStory.caption || "Community Moment"}
+                fallbackText={selectedMedia ? "Loading Spark media…" : selectedStory.caption || "Community Spark"}
                 onComplete={completeSelectedFrame}
                 onProgress={setStoryProgress}
                 paused={storyPaused}

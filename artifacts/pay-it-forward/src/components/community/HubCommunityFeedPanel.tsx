@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, CircleDot, FileImage, Globe2, Heart, Loader2, MessageCircle, Send, Share2, Users, BookOpen, BriefcaseBusiness, Image as ImageIcon } from "lucide-react";
+import { ArrowRight, CircleDot, FileImage, Globe2, Heart, Loader2, MessageCircle, Send, Share2, Users, Sparkles, BriefcaseBusiness, Image as ImageIcon } from "lucide-react";
 import { useLocation } from "wouter";
 import {
   addHubCommunityComment,
@@ -316,8 +316,8 @@ export default function HubCommunityFeedPanel({
                     }}
                     className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-muted-foreground hover:bg-muted"
                   >
-                    <BookOpen className="h-4 w-4 text-primary" />
-                    Story
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Create a Spark
                   </button>
                 </div>
                 <button type="button" disabled={posting || !postBody.trim()} onClick={() => void submitPost()} className="inline-flex min-h-10 items-center rounded-full bg-primary px-5 text-sm font-bold text-primary-foreground disabled:opacity-50">

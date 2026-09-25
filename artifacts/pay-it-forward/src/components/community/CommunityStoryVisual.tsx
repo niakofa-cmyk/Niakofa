@@ -37,7 +37,7 @@ export function StoryVisualRail({
   authors,
   onCreate,
   onOpen,
-  emptyLabel = "Be the first neighbor to share a Moment.",
+  emptyLabel = "Be the first neighbor to share a Spark.",
   loading = false,
 }: {
   authors: StoryVisualAuthor[];
@@ -47,10 +47,10 @@ export function StoryVisualRail({
   loading?: boolean;
 }) {
   return (
-    <section className="nia-story-rail" aria-label="Community Stories">
+    <section className="nia-story-rail" aria-label="Community Moments">
       <div className="nia-story-rail__header">
         <div>
-          <p className="nia-story-kicker">Stories</p>
+          <p className="nia-story-kicker">Moments</p>
           <h2>Share what is happening now.</h2>
         </div>
         <button className="nia-story-pill" type="button" onClick={onCreate}>
@@ -64,12 +64,12 @@ export function StoryVisualRail({
           className="nia-story-author nia-story-author--create"
           type="button"
           onClick={onCreate}
-          aria-label="Create your Story"
+          aria-label="Create a Spark"
         >
           <span className="nia-story-avatar nia-story-avatar--create">
             <Camera size={22} />
           </span>
-          <span>Your Story</span>
+          <span>Your Sparks</span>
         </button>
 
         {authors.map((author, index) => (
@@ -78,7 +78,7 @@ export function StoryVisualRail({
             type="button"
             key={author.id}
             onClick={() => onOpen(index)}
-            aria-label={`Open ${author.name}'s Story`}
+            aria-label={`Open ${author.name}'s Sparks`}
           >
             <span
               className={[
@@ -99,7 +99,7 @@ export function StoryVisualRail({
           </button>
         ))}
         {loading ? (
-          <p className="nia-story-rail__empty" role="status" aria-live="polite">Loading Community Stories…</p>
+          <p className="nia-story-rail__empty" role="status" aria-live="polite">Loading Moments…</p>
         ) : !authors.length ? (
           <p className="nia-story-rail__empty">{emptyLabel}</p>
         ) : null}
@@ -121,7 +121,7 @@ export function StoryViewerChrome({
   onSwipe,
   onHoldChange,
   children,
-  replyPlaceholder = "Reply to this Story…",
+  replyPlaceholder = "Reply to this Spark…",
   replyDisabled = false,
 }: {
   author: StoryVisualAuthor;
@@ -141,12 +141,12 @@ export function StoryViewerChrome({
 }) {
   return (
     <div className="nia-story-viewer">
-      <div className="nia-story-viewer__progress" aria-label="Story progress">
+      <div className="nia-story-viewer__progress" aria-label="Spark progress">
         <span style={{ width: `${Math.max(0, Math.min(100, progress * 100))}%` }} />
       </div>
 
       <header className="nia-story-viewer__top">
-        <button className="nia-story-icon" type="button" onClick={onPrevious} aria-label="Previous Story">
+        <button className="nia-story-icon" type="button" onClick={onPrevious} aria-label="Previous Spark">
           <ChevronLeft size={21} />
         </button>
         <div className="nia-story-viewer__identity">
@@ -159,10 +159,10 @@ export function StoryViewerChrome({
           </span>
         </div>
         <div className="nia-story-viewer__actions">
-          <button className="nia-story-icon" type="button" onClick={onMore} aria-label="Story options">
+          <button className="nia-story-icon" type="button" onClick={onMore} aria-label="Spark options">
             <MoreHorizontal size={21} />
           </button>
-          <button className="nia-story-icon" type="button" onClick={onClose} aria-label="Close Story">
+          <button className="nia-story-icon" type="button" onClick={onClose} aria-label="Close Spark">
             <X size={22} />
           </button>
         </div>
@@ -220,8 +220,8 @@ export function StoryViewerChrome({
 
       <footer className="nia-story-viewer__bottom">
         <div className="nia-story-viewer__reactions">
-          <button type="button" className="nia-story-round" onClick={onReact} aria-label="React to Story">💙</button>
-          <button type="button" className="nia-story-round" onClick={onShare} aria-label="Share Story"><Share2 size={18} /></button>
+          <button type="button" className="nia-story-round" onClick={onReact} aria-label="React to Spark">💙</button>
+          <button type="button" className="nia-story-round" onClick={onShare} aria-label="Share Spark"><Share2 size={18} /></button>
         </div>
         <form
           className="nia-story-reply"
@@ -235,7 +235,7 @@ export function StoryViewerChrome({
             if (input) input.value = "";
           }}
         >
-          <input name="reply" placeholder={replyPlaceholder} aria-label="Reply to Story" disabled={replyDisabled} />
+          <input name="reply" placeholder={replyPlaceholder} aria-label="Reply to Spark" disabled={replyDisabled} />
           <button type="submit" aria-label="Send reply" disabled={replyDisabled}><Send size={18} /></button>
         </form>
       </footer>
@@ -273,14 +273,14 @@ export function StoryComposerChrome({
   return (
     <div className="nia-story-composer">
       <header className="nia-story-composer__header">
-        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onClose} aria-label="Close Story creator">
+        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onClose} aria-label="Close Spark creator">
           <X size={23} />
         </button>
         <div className="nia-story-composer__title">
-          <strong>Create Community Story</strong>
-          <span>Share a moment with your community</span>
+          <strong>Create a Spark</strong>
+          <span>Share a Spark with your community</span>
         </div>
-        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onSettings} aria-label="Story settings">
+        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onSettings} aria-label="Spark settings">
           <Settings2 size={21} />
         </button>
       </header>
@@ -300,7 +300,7 @@ export function StoryComposerChrome({
         </button>
       </div>
 
-      <nav className="nia-story-tool-dock" aria-label="Story editing tools">
+      <nav className="nia-story-tool-dock" aria-label="Spark editing tools">
         {tools.map((tool) => (
           <button
             key={tool.key}
@@ -321,7 +321,7 @@ export function StoryComposerChrome({
         disabled={publishing}
         aria-live="polite"
       >
-        {publishing ? "Publishing…" : "Share to Community"}
+        {publishing ? "Publishing…" : "Post Spark"}
       </button>
     </div>
   );
@@ -354,7 +354,7 @@ export function StoryGalleryChrome({
         </button>
         <div>
           <strong>Gallery</strong>
-          <span>{selected.length ? `${selected.length} selected` : "Choose a moment"}</span>
+          <span>{selected.length ? `${selected.length} selected` : "Choose Spark media"}</span>
         </div>
         <div className="nia-story-gallery__header-actions">
           <button type="button" className="nia-story-multiple" onClick={onMultiple}>
@@ -413,7 +413,7 @@ export function StoryMusicChrome({
   onPlay: (id: string | number) => void;
 }) {
   return (
-    <section className="nia-story-music" aria-label="Story music">
+    <section className="nia-story-music" aria-label="Spark music">
       <div className="nia-story-music__search">
         <Search size={18} />
         <input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search music" />

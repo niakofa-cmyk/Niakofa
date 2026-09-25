@@ -13,6 +13,13 @@ export type CommunityMediaAnalyticsEvent =
   | "community_media_quick_view_opened"
   | "community_media_save_changed";
 
+export type CommunityContentAnalyticsEvent =
+  | "moment_opened"
+  | "community_spark_viewed"
+  | "community_spark_created"
+  | "community_spark_reacted"
+  | "community_spark_shared";
+
 export type CommunityMediaAnalyticsProperties = {
   hub_id?: number;
   media_id?: number;
@@ -28,10 +35,23 @@ export type CommunityMediaAnalyticsProperties = {
   saved?: boolean;
 };
 
+export type CommunityContentAnalyticsProperties = {
+  hub_id?: number;
+  spark_id?: number;
+  action?: "added" | "removed";
+};
+
 type CommunityMediaEventPayload = {
   event: CommunityMediaAnalyticsEvent;
   properties: CommunityMediaAnalyticsProperties & { distinct_id: string };
 };
+
+type CommunityContentEventPayload = {
+  event: CommunityContentAnalyticsEvent;
+  properties: CommunityContentAnalyticsProperties & { distinct_id: string };
+};
+
+type CommunityAnalyticsPayload = CommunityMediaEventPayload | CommunityContentEventPayload;
 
 function readStorage(key: string): string | null {
   try {
@@ -74,13 +94,25 @@ export function buildCommunityMediaEventPayload(
   };
 }
 
-export function trackCommunityMedia(
-  event: CommunityMediaAnalyticsEvent,
-  properties: CommunityMediaAnalyticsProperties,
-): void {
-  if (typeof window === "undefined" || !POSTHOG_KEY || readStorage(OPT_OUT_KEY) === "true") return;
+export function buildCommunityContentEventPayload(
+  event: CommunityContentAnalyticsEvent,
+  properties: CommunityContentAnalyticsProperties,
+  distinctId: string,
+): CommunityContentEventPayload {
+  return {
+    event,
+    properties: {
+      ...properties,
+      distinct_id: distinctId,
+    },
+  };
+}
 
-  const payload = buildCommunityMediaEventPayload(event, properties, getDistinctId());
+function canTrackCommunityAnalytics(): boolean {
+  return typeof window !== "undefined" && Boolean(POSTHOG_KEY) && readStorage(OPT_OUT_KEY) !== "true";
+}
+
+function submitCommunityAnalytics(payload: CommunityAnalyticsPayload): void {
   void fetch(`${POSTHOG_HOST}/capture/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -89,4 +121,24 @@ export function trackCommunityMedia(
   }).catch(() => {
     // Observability is fail-open: a blocked analytics request must not affect the app.
   });
+}
+
+export function trackCommunityMedia(
+  event: CommunityMediaAnalyticsEvent,
+  properties: CommunityMediaAnalyticsProperties,
+): void {
+  if (!canTrackCommunityAnalytics()) return;
+
+  const payload = buildCommunityMediaEventPayload(event, properties, getDistinctId());
+  submitCommunityAnalytics(payload);
+}
+
+export function trackCommunityContent(
+  event: CommunityContentAnalyticsEvent,
+  properties: CommunityContentAnalyticsProperties,
+): void {
+  if (!canTrackCommunityAnalytics()) return;
+
+  const payload = buildCommunityContentEventPayload(event, properties, getDistinctId());
+  submitCommunityAnalytics(payload);
 }

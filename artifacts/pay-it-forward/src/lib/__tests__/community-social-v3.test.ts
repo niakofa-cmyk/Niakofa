@@ -47,15 +47,15 @@ describe("Community Social V4 architecture", () => {
     assert.match(shell, /menuItems/);
     assert.match(shell, /\/community\/requests/);
     assert.match(shell, /\/community\/services/);
-    assert.match(shell, /\/community\/circles/);
+    assert.match(shell, /\/community\/spirals/);
     assert.match(shell, /\/community\/media/);
     assert.match(shell, /\/diaspora/);
     assert.match(shell, /href: "\/profile"/);
   });
 
-  test("Stories stays focused while gratitude remains a separate Community capability", () => {
-    const stories = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoriesView.tsx"), "utf8");
-    assert.doesNotMatch(stories, /gratitude|Gratitude/);
+  test("Moments stays focused while gratitude remains a separate Community capability", () => {
+    const moments = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityMomentsView.tsx"), "utf8");
+    assert.doesNotMatch(moments, /gratitude|Gratitude/);
     assert.match(fs.readFileSync(path.join(__dirname, "../../components/community/CommunityGratitudeComposer.tsx"), "utf8"), /POST.*api\/gratitude|\/api\/gratitude/);
   });
 

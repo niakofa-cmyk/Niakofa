@@ -147463,7 +147463,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "e914db8768fcd2a7d0212cc7130a48b6e4f181e5";
+var GIT_COMMIT = "4d62ac2bc02310096fb625693f849760259428cd";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -159198,7 +159198,7 @@ function sanitizeSessionId(raw) {
 }
 router23.post(
   "/nia/chat",
-  requireAuth,
+  parseAuth,
   crisisAwareChatLimiter,
   async (req, res) => {
     if (!await isNiaEnabled3()) {
@@ -159358,10 +159358,18 @@ router23.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async 
     const upstream = await fetch(`${getNiaUrl()}/history/${encodeURIComponent(sessionId)}`, {
       headers: req.headers.authorization ? { authorization: req.headers.authorization } : {}
     });
-    if (!upstream.ok) return res.json([]);
+    if (!upstream.ok) {
+      const body = await upstream.text().catch(() => "");
+      return res.status(upstream.status).json({
+        error: "Unable to load Nia conversation history.",
+        upstreamStatus: upstream.status,
+        detail: body.slice(0, 300) || void 0
+      });
+    }
     return res.json(await upstream.json());
-  } catch {
-    return res.json([]);
+  } catch (err) {
+    logger.warn({ err, sessionId }, "nia history: upstream unavailable");
+    return res.status(502).json({ error: "Nia conversation history is temporarily unavailable." });
   }
 });
 router23.get("/nia/memory", requireAuth, async (req, res) => {
@@ -183897,46 +183905,68 @@ async function processNiaCheckins() {
   logger.info({ count: due.length }, "nia-checkin: processing check-ins");
   for (const req of due) {
     try {
-      const claim = await db.execute(sql`
-        UPDATE help_requests
-        SET nia_checkin_sent_at = NOW()
-        WHERE id = ${req.id} AND nia_checkin_sent_at IS NULL
+      const lockResult = await db.execute(sql`
+        SELECT pg_try_advisory_lock(hashtext('nia-checkin:' || ${req.id}::text)) AS locked
       `);
-      if ((claim.rowCount ?? 0) === 0) {
-        logger.info({ requestId: req.id }, "nia-checkin: already processed, skipping");
+      if (!lockResult.rows[0]?.locked) {
+        logger.info({ requestId: req.id }, "nia-checkin: another worker owns request, skipping");
         continue;
       }
-      const sessionId = `checkin-${req.requester_id}-${req.id}`;
-      const niaPayload = {
-        userId: req.requester_id,
-        requestId: req.id,
-        requestTitle: req.title,
-        category: req.category,
-        helperName: req.helper_name ?? null,
-        sessionId,
-        hubInCrisis: req.hub_in_crisis
-      };
-      requestNia("/checkin", {
-        method: "POST",
-        body: JSON.stringify(niaPayload)
-      }).then((response) => {
-        if (!response.ok) throw new Error(`Nia check-in returned ${response.status}`);
-      }).catch(
-        (err) => logger.warn({ err, requestId: req.id }, "nia-checkin: nia-service call failed")
-      );
-      await sendPushToUser(req.requester_id, {
-        title: "\u{1F499} Nia checked in on you",
-        body: `How did ${req.title} go? Tap to chat with Nia.`,
-        urgency: "normal",
-        requestId: req.id,
-        notifType: "nia_checkin"
-      }).catch(
-        (err) => logger.warn({ err, userId: req.requester_id }, "nia-checkin: push failed")
-      );
-      logger.info(
-        { requestId: req.id, userId: req.requester_id },
-        "nia-checkin: sent"
-      );
+      try {
+        const state = await db.execute(sql`
+          SELECT nia_checkin_sent_at FROM help_requests WHERE id = ${req.id} LIMIT 1
+        `);
+        if (state.rows[0]?.nia_checkin_sent_at) {
+          logger.info({ requestId: req.id }, "nia-checkin: already processed, skipping");
+          continue;
+        }
+        const sessionId = `nia_checkin_${req.id}`;
+        const niaPayload = {
+          userId: req.requester_id,
+          requestId: req.id,
+          requestTitle: req.title,
+          category: req.category,
+          helperName: req.helper_name ?? null,
+          sessionId,
+          hubInCrisis: req.hub_in_crisis
+        };
+        const response = await requestNia("/checkin", {
+          method: "POST",
+          body: JSON.stringify(niaPayload)
+        });
+        const responseBody = await response.text();
+        if (!response.ok) {
+          throw new Error(`Nia check-in returned ${response.status}: ${responseBody.slice(0, 200)}`);
+        }
+        const mark = await db.execute(sql`
+          UPDATE help_requests
+          SET nia_checkin_sent_at = NOW()
+          WHERE id = ${req.id} AND nia_checkin_sent_at IS NULL
+        `);
+        if ((mark.rowCount ?? 0) === 0) {
+          logger.info({ requestId: req.id }, "nia-checkin: completion lost race");
+          continue;
+        }
+        await sendPushToUser(req.requester_id, {
+          title: "\u{1F499} Nia checked in on you",
+          body: `How did ${req.title} go? Tap to chat with Nia.`,
+          urgency: "normal",
+          requestId: req.id,
+          notifType: "nia_checkin"
+        }).catch(
+          (err) => logger.warn({ err, userId: req.requester_id }, "nia-checkin: push failed")
+        );
+        logger.info(
+          { requestId: req.id, userId: req.requester_id },
+          "nia-checkin: sent"
+        );
+      } finally {
+        await db.execute(sql`
+          SELECT pg_advisory_unlock(hashtext('nia-checkin:' || ${req.id}::text))
+        `).catch(
+          (err) => logger.warn({ err, requestId: req.id }, "nia-checkin: advisory unlock failed")
+        );
+      }
     } catch (err) {
       logger.error({ err, requestId: req.id }, "nia-checkin: failed for request");
     }
