@@ -67,7 +67,7 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(shell, /<button[^>]*aria-label="Open Messages"[^>]*onClick=\{\(\) => onRoute\("\/messages"\)\}/);
     assert.doesNotMatch(shell, /key: "messages" as const/);
     assert.doesNotMatch(shell, /key: "hubs" as const, label: "Hubs"/);
-    assert.match(shell, /href: "\/community\/exchange", label: "Exchange"/);
+    assert.doesNotMatch(shell, /href: "\/community\/exchange", label: "Exchange"/);
     for (const path of [
       "/community/hubs",
       "/community/requests",
