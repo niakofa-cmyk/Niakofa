@@ -1,0 +1,117 @@
+import { authHeaders } from "@/lib/auth";
+import type {
+  ExchangeCategory,
+  ExchangeCondition,
+  ExchangeListing,
+  ExchangeListingType,
+  ExchangeListingsResponse,
+  ExchangePickupRequest,
+  ExchangePickupRequestsResponse,
+  ExchangeResourceType,
+} from "@/lib/community-exchange-types";
+
+interface RequestOptions extends RequestInit {
+  body?: BodyInit | null;
+}
+
+async function request<T>(url: string, options: RequestOptions = {}): Promise<T> {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...authHeaders(),
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers ?? {}),
+    },
+  });
+
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    const message = typeof payload === "object" && payload && "error" in payload && typeof payload.error === "string"
+      ? payload.error
+      : "Something went wrong. Please try again.";
+    throw new Error(message);
+  }
+
+  return payload as T;
+}
+
+export interface ListingQuery {
+  type?: ExchangeListingType;
+  resource_type?: ExchangeResourceType;
+  q?: string;
+  neighborhood?: string;
+  mine?: boolean;
+}
+
+export async function getExchangeListings(query: ListingQuery): Promise<ExchangeListingsResponse> {
+  const params = new URLSearchParams();
+  if (query.type) params.set("type", query.type);
+  if (query.resource_type) params.set("resource_type", query.resource_type);
+  if (query.q?.trim()) params.set("q", query.q.trim());
+  if (query.neighborhood?.trim()) params.set("neighborhood", query.neighborhood.trim());
+  if (query.mine) params.set("mine", "true");
+  const suffix = params.toString();
+  return request<ExchangeListingsResponse>(`/api/community/exchange/listings${suffix ? `?${suffix}` : ""}`);
+}
+
+export async function getExchangeListing(id: number): Promise<{ listing: ExchangeListing }> {
+  return request<{ listing: ExchangeListing }>(`/api/community/exchange/listings/${id}`);
+}
+
+export interface CreateListingInput {
+  listing_type: ExchangeListingType;
+  resource_type: ExchangeResourceType;
+  title: string;
+  description: string;
+  category: ExchangeCategory;
+  condition: ExchangeCondition;
+  neighborhood: string;
+  pickup_notes?: string;
+}
+
+export async function createExchangeListing(data: CreateListingInput): Promise<{ listing: ExchangeListing; message: string }> {
+  return request<{ listing: ExchangeListing; message: string }>("/api/community/exchange/listings", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getExchangePickupRequests(): Promise<ExchangePickupRequestsResponse> {
+  return request<ExchangePickupRequestsResponse>("/api/community/exchange/pickup-requests");
+}
+
+export interface CreatePickupRequestInput {
+  note: string;
+  pickup_area: string;
+  proposed_window: string;
+}
+
+export async function createExchangePickupRequest(id: number, data: CreatePickupRequestInput): Promise<{ pickup_request: ExchangePickupRequest }> {
+  return request<{ pickup_request: ExchangePickupRequest }>(`/api/community/exchange/listings/${id}/pickup-requests`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export type PickupAction = "accept" | "decline" | "cancel" | "confirm-complete";
+
+export async function updateExchangePickupRequest(id: number, action: PickupAction): Promise<{ pickup_request: ExchangePickupRequest }> {
+  return request<{ pickup_request: ExchangePickupRequest }>(`/api/community/exchange/pickup-requests/${id}/${action}`, {
+    method: "POST",
+  });
+}
+
+export type ExchangeReportType = "fraud" | "harassment" | "dangerous_behavior" | "spam" | "other";
+
+export async function reportExchangeListing(id: number, data: { type: ExchangeReportType; description: string }): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/community/exchange/listings/${id}/report`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}

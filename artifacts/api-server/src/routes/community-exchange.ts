@@ -17,9 +17,13 @@ const router = Router();
 
 const CATEGORY_VALUES = ["household", "clothing", "food", "books", "electronics", "children", "other"] as const;
 const CONDITION_VALUES = ["new", "like_new", "good", "well_loved"] as const;
+const LISTING_TYPE_VALUES = ["offer", "need"] as const;
+const RESOURCE_TYPE_VALUES = ["goods", "services"] as const;
 const NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\b(?:text|call|email|venmo|cash\s*app|zelle|whatsapp|telegram)\b)/i;
 
 const listingBody = z.object({
+  listing_type: z.enum(LISTING_TYPE_VALUES).default("offer"),
+  resource_type: z.enum(RESOURCE_TYPE_VALUES).default("goods"),
   title: z.string().trim().min(3).max(100),
   description: z.string().trim().min(10).max(2000),
   category: z.enum(CATEGORY_VALUES),
@@ -71,6 +75,8 @@ async function isBlockedBetween(firstUserId: number, secondUserId: number): Prom
 const listingSelect = {
   id: exchangeListingsTable.id,
   seller_id: exchangeListingsTable.seller_id,
+  listing_type: exchangeListingsTable.listing_type,
+  resource_type: exchangeListingsTable.resource_type,
   title: exchangeListingsTable.title,
   description: exchangeListingsTable.description,
   category: exchangeListingsTable.category,
@@ -88,6 +94,13 @@ const listingSelect = {
 router.get("/community/exchange/listings", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const mine = req.query.mine === "true";
+  const listingType = typeof req.query.type === "string" && LISTING_TYPE_VALUES.includes(req.query.type as typeof LISTING_TYPE_VALUES[number])
+    ? req.query.type
+    : undefined;
+  const resourceType = typeof req.query.resource_type === "string" && RESOURCE_TYPE_VALUES.includes(req.query.resource_type as typeof RESOURCE_TYPE_VALUES[number])
+    ? req.query.resource_type
+    : undefined;
+  const neighborhood = typeof req.query.neighborhood === "string" ? req.query.neighborhood.trim().slice(0, 80) : "";
   const category = typeof req.query.category === "string" && CATEGORY_VALUES.includes(req.query.category as typeof CATEGORY_VALUES[number])
     ? req.query.category
     : undefined;
@@ -102,6 +115,9 @@ router.get("/community/exchange/listings", requireAuth, requireApproved, general
     .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
     .where(and(
       conditions,
+      listingType ? eq(exchangeListingsTable.listing_type, listingType) : undefined,
+      resourceType ? eq(exchangeListingsTable.resource_type, resourceType) : undefined,
+      neighborhood ? eq(exchangeListingsTable.neighborhood, neighborhood) : undefined,
       category ? eq(exchangeListingsTable.category, category) : undefined,
       query ? sql`(${exchangeListingsTable.title} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`} OR ${exchangeListingsTable.description} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`})` : undefined,
     ))
@@ -136,6 +152,8 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
   const moderation = moderatePostText(`${data.title}\n${data.description}\n${data.pickup_notes}`);
   const [listing] = await db.insert(exchangeListingsTable).values({
     seller_id: req.authenticatedUserId!,
+    listing_type: data.listing_type,
+    resource_type: data.resource_type,
     title: data.title,
     description: data.description,
     category: data.category,

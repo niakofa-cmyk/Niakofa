@@ -20770,27 +20770,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router66;
+    module.exports = Router67;
     module.exports.Route = Route;
-    function Router66(options) {
-      if (!(this instanceof Router66)) {
-        return new Router66(options);
+    function Router67(options) {
+      if (!(this instanceof Router67)) {
+        return new Router67(options);
       }
       const opts = options || {};
-      function router66(req, res, next) {
-        router66.handle(req, res, next);
+      function router67(req, res, next) {
+        router67.handle(req, res, next);
       }
-      Object.setPrototypeOf(router66, this);
-      router66.caseSensitive = opts.caseSensitive;
-      router66.mergeParams = opts.mergeParams;
-      router66.params = {};
-      router66.strict = opts.strict;
-      router66.stack = [];
-      return router66;
+      Object.setPrototypeOf(router67, this);
+      router67.caseSensitive = opts.caseSensitive;
+      router67.mergeParams = opts.mergeParams;
+      router67.params = {};
+      router67.strict = opts.strict;
+      router67.stack = [];
+      return router67;
     }
-    Router66.prototype = function() {
+    Router67.prototype = function() {
     };
-    Router66.prototype.param = function param2(name2, fn) {
+    Router67.prototype.param = function param2(name2, fn) {
       if (!name2) {
         throw new TypeError("argument name is required");
       }
@@ -20810,7 +20810,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router66.prototype.handle = function handle(req, res, callback) {
+    Router67.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20937,7 +20937,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router66.prototype.use = function use(handler) {
+    Router67.prototype.use = function use(handler) {
       let offset = 0;
       let path5 = "/";
       if (typeof handler !== "function") {
@@ -20970,7 +20970,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router66.prototype.route = function route(path5) {
+    Router67.prototype.route = function route(path5) {
       const route2 = new Route(path5);
       const layer = new Layer(path5, {
         sensitive: this.caseSensitive,
@@ -20985,7 +20985,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router66.prototype[method] = function(path5) {
+      Router67.prototype[method] = function(path5) {
         const route = this.route(path5);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21168,13 +21168,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router66 = require_router();
+    var Router67 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router66 = null;
+      var router67 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21183,13 +21183,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router66 === null) {
-            router66 = new Router66({
+          if (router67 === null) {
+            router67 = new Router67({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router66;
+          return router67;
         }
       });
     };
@@ -21260,15 +21260,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router66 = this.router;
+      var router67 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router66.use(path5, fn2);
+          return router67.use(path5, fn2);
         }
         debug(".use app under %s", path5);
         fn2.mountpath = path5;
         fn2.parent = this;
-        router66.use(path5, function mounted_app(req, res, next) {
+        router67.use(path5, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -22542,7 +22542,7 @@ var require_cookie = __commonJS({
   "../../node_modules/.pnpm/cookie@0.7.2/node_modules/cookie/index.js"(exports) {
     "use strict";
     exports.parse = parse3;
-    exports.serialize = serialize;
+    exports.serialize = serialize2;
     var __toString = Object.prototype.toString;
     var __hasOwnProperty = Object.prototype.hasOwnProperty;
     var cookieNameRegExp = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -22601,7 +22601,7 @@ var require_cookie = __commonJS({
       }
       return min2;
     }
-    function serialize(name2, val, opt) {
+    function serialize2(name2, val, opt) {
       var enc = opt && opt.encode || encodeURIComponent;
       if (typeof enc !== "function") {
         throw new TypeError("option encode is invalid");
@@ -23841,7 +23841,7 @@ var require_express = __commonJS({
     var EventEmitter2 = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router66 = require_router();
+    var Router67 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23863,8 +23863,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router66.Route;
-    exports.Router = Router66;
+    exports.Route = Router67.Route;
+    exports.Router = Router67;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -24954,7 +24954,7 @@ var require_redact = __commonJS({
       const {
         paths = [],
         censor = "[REDACTED]",
-        serialize = JSON.stringify,
+        serialize: serialize2 = JSON.stringify,
         strict = true,
         remove = false
       } = options;
@@ -24963,10 +24963,10 @@ var require_redact = __commonJS({
       return function redact(obj) {
         if (strict && (obj === null || typeof obj !== "object")) {
           if (obj === null || obj === void 0) {
-            return serialize ? serialize(obj) : obj;
+            return serialize2 ? serialize2(obj) : obj;
           }
           if (typeof obj !== "object") {
-            return serialize ? serialize(obj) : obj;
+            return serialize2 ? serialize2(obj) : obj;
           }
         }
         const cloned = selectiveClone(obj, pathStructure);
@@ -24976,14 +24976,14 @@ var require_redact = __commonJS({
           actualCensor = censor;
         }
         redactPaths(cloned, paths, actualCensor, remove);
-        if (serialize === false) {
+        if (serialize2 === false) {
           cloned.restore = function() {
             return deepClone(original);
           };
           return cloned;
         }
-        if (typeof serialize === "function") {
-          return serialize(cloned);
+        if (typeof serialize2 === "function") {
+          return serialize2(cloned);
         }
         return JSON.stringify(cloned);
       };
@@ -25072,7 +25072,7 @@ var require_redaction = __commonJS({
     var rx = /[^.[\]]+|\[([^[\]]*?)\]/g;
     var CENSOR = "[Redacted]";
     var strict = false;
-    function redaction(opts, serialize) {
+    function redaction(opts, serialize2) {
       const { paths, censor, remove } = handle(opts);
       const shape = paths.reduce((o, str) => {
         rx.lastIndex = 0;
@@ -25106,10 +25106,10 @@ var require_redaction = __commonJS({
         return o;
       }, {});
       const result = {
-        [redactFmtSym]: Redact({ paths, censor, serialize, strict, remove })
+        [redactFmtSym]: Redact({ paths, censor, serialize: serialize2, strict, remove })
       };
       const topCensor = (...args) => {
-        return typeof censor === "function" ? serialize(censor(...args)) : serialize(censor);
+        return typeof censor === "function" ? serialize2(censor(...args)) : serialize2(censor);
       };
       return [...Object.keys(shape), ...Object.getOwnPropertySymbols(shape)].reduce((o, k) => {
         if (shape[k] === null) {
@@ -25121,7 +25121,7 @@ var require_redaction = __commonJS({
           o[k] = Redact({
             paths: shape[k],
             censor: wrappedCensor,
-            serialize,
+            serialize: serialize2,
             strict,
             remove
           });
@@ -32592,7 +32592,7 @@ var require_serializer = __commonJS({
       99
       /* code.copyDone */
     );
-    var serialize = {
+    var serialize2 = {
       startup,
       password,
       requestSsl,
@@ -32612,7 +32612,7 @@ var require_serializer = __commonJS({
       copyFail,
       cancel
     };
-    exports.serialize = serialize;
+    exports.serialize = serialize2;
   }
 });
 
@@ -33086,11 +33086,11 @@ var require_connection = __commonJS({
   "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection.js"(exports, module) {
     "use strict";
     var EventEmitter2 = __require("events").EventEmitter;
-    var { parse: parse3, serialize } = require_dist3();
+    var { parse: parse3, serialize: serialize2 } = require_dist3();
     var { getStream, getSecureStream } = require_stream();
-    var flushBuffer = serialize.flush();
-    var syncBuffer = serialize.sync();
-    var endBuffer = serialize.end();
+    var flushBuffer = serialize2.flush();
+    var syncBuffer = serialize2.sync();
+    var endBuffer = serialize2.end();
     var Connection2 = class extends EventEmitter2 {
       constructor(config2) {
         super();
@@ -33181,22 +33181,22 @@ var require_connection = __commonJS({
         });
       }
       requestSsl() {
-        this.stream.write(serialize.requestSsl());
+        this.stream.write(serialize2.requestSsl());
       }
       startup(config2) {
-        this.stream.write(serialize.startup(config2));
+        this.stream.write(serialize2.startup(config2));
       }
       cancel(processID, secretKey) {
-        this._send(serialize.cancel(processID, secretKey));
+        this._send(serialize2.cancel(processID, secretKey));
       }
       password(password) {
-        this._send(serialize.password(password));
+        this._send(serialize2.password(password));
       }
       sendSASLInitialResponseMessage(mechanism, initialResponse) {
-        this._send(serialize.sendSASLInitialResponseMessage(mechanism, initialResponse));
+        this._send(serialize2.sendSASLInitialResponseMessage(mechanism, initialResponse));
       }
       sendSCRAMClientFinalMessage(additionalData) {
-        this._send(serialize.sendSCRAMClientFinalMessage(additionalData));
+        this._send(serialize2.sendSCRAMClientFinalMessage(additionalData));
       }
       _send(buffer) {
         if (!this.stream.writable) {
@@ -33205,19 +33205,19 @@ var require_connection = __commonJS({
         return this.stream.write(buffer);
       }
       query(text2) {
-        this._send(serialize.query(text2));
+        this._send(serialize2.query(text2));
       }
       // send parse message
       parse(query) {
-        this._send(serialize.parse(query));
+        this._send(serialize2.parse(query));
       }
       // send bind message
       bind(config2) {
-        this._send(serialize.bind(config2));
+        this._send(serialize2.bind(config2));
       }
       // send execute message
       execute(config2) {
-        this._send(serialize.execute(config2));
+        this._send(serialize2.execute(config2));
       }
       flush() {
         if (this.stream.writable) {
@@ -33245,19 +33245,19 @@ var require_connection = __commonJS({
         });
       }
       close(msg) {
-        this._send(serialize.close(msg));
+        this._send(serialize2.close(msg));
       }
       describe(msg) {
-        this._send(serialize.describe(msg));
+        this._send(serialize2.describe(msg));
       }
       sendCopyFromChunk(chunk) {
-        this._send(serialize.copyData(chunk));
+        this._send(serialize2.copyData(chunk));
       }
       endCopyFrom() {
-        this._send(serialize.copyDone());
+        this._send(serialize2.copyDone());
       }
       sendCopyFail(msg) {
-        this._send(serialize.copyFail(msg));
+        this._send(serialize2.copyFail(msg));
       }
     };
     module.exports = Connection2;
@@ -58659,6 +58659,53 @@ var init_community_media_saves = __esm({
   }
 });
 
+// ../../lib/db/src/schema/exchange.ts
+var exchangeListingsTable, exchangePickupRequestsTable;
+var init_exchange = __esm({
+  "../../lib/db/src/schema/exchange.ts"() {
+    "use strict";
+    init_pg_core();
+    init_users();
+    exchangeListingsTable = pgTable("exchange_listings", {
+      id: serial("id").primaryKey(),
+      seller_id: integer("seller_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+      listing_type: text("listing_type").notNull().default("offer"),
+      resource_type: text("resource_type").notNull().default("goods"),
+      title: text("title").notNull(),
+      description: text("description").notNull(),
+      category: text("category").notNull().default("other"),
+      condition: text("condition").notNull().default("good"),
+      neighborhood: text("neighborhood").notNull(),
+      pickup_notes: text("pickup_notes"),
+      status: text("status").notNull().default("active"),
+      moderation_status: text("moderation_status").notNull().default("approved"),
+      moderation_reason: text("moderation_reason"),
+      created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+      updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+    });
+    exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
+      id: serial("id").primaryKey(),
+      listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
+      buyer_id: integer("buyer_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+      note: text("note").notNull(),
+      pickup_area: text("pickup_area").notNull(),
+      proposed_window: text("proposed_window").notNull(),
+      status: text("status").notNull().default("requested"),
+      buyer_confirmed_at: timestamp("buyer_confirmed_at", { withTimezone: true }),
+      seller_confirmed_at: timestamp("seller_confirmed_at", { withTimezone: true }),
+      accepted_at: timestamp("accepted_at", { withTimezone: true }),
+      cancelled_at: timestamp("cancelled_at", { withTimezone: true }),
+      completed_at: timestamp("completed_at", { withTimezone: true }),
+      created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+      updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+    }, (table) => [
+      index("exchange_pickup_requests_listing_idx").on(table.listing_id, table.created_at),
+      index("exchange_pickup_requests_buyer_idx").on(table.buyer_id, table.updated_at),
+      uniqueIndex("exchange_pickup_requests_one_active_per_buyer_listing_idx").on(table.listing_id, table.buyer_id)
+    ]);
+  }
+});
+
 // ../../lib/db/src/schema/index.ts
 var schema_exports = {};
 __export(schema_exports, {
@@ -58717,6 +58764,8 @@ __export(schema_exports, {
   dnaMatchResultsTable: () => dnaMatchResultsTable,
   dnaMatchingConsentTable: () => dnaMatchingConsentTable,
   dnaProviderEnum: () => dnaProviderEnum,
+  exchangeListingsTable: () => exchangeListingsTable,
+  exchangePickupRequestsTable: () => exchangePickupRequestsTable,
   familiesTable: () => familiesTable,
   familyAssetProcessingStatusEnum: () => familyAssetProcessingStatusEnum,
   familyAssetTypeEnum: () => familyAssetTypeEnum,
@@ -58880,6 +58929,7 @@ var init_schema2 = __esm({
     init_circle_recordings();
     init_media_assets();
     init_community_media_saves();
+    init_exchange();
   }
 });
 
@@ -58942,6 +58992,8 @@ __export(src_exports, {
   dnaMatchResultsTable: () => dnaMatchResultsTable,
   dnaMatchingConsentTable: () => dnaMatchingConsentTable,
   dnaProviderEnum: () => dnaProviderEnum,
+  exchangeListingsTable: () => exchangeListingsTable,
+  exchangePickupRequestsTable: () => exchangePickupRequestsTable,
   familiesTable: () => familiesTable,
   familyAssetProcessingStatusEnum: () => familyAssetProcessingStatusEnum,
   familyAssetTypeEnum: () => familyAssetTypeEnum,
@@ -59042,6 +59094,7 @@ var init_src = __esm({
     init_community_stories();
     init_media_assets();
     init_request_message_attachments();
+    init_exchange();
     ({ Pool: Pool3 } = esm_default);
     if (!process.env.DATABASE_URL) {
       throw new Error(
@@ -146668,14 +146721,14 @@ var require_src7 = __commonJS({
 import http4 from "http";
 
 // src/app.ts
-var import_express68 = __toESM(require_express2(), 1);
+var import_express69 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 var import_compression = __toESM(require_compression(), 1);
 import path2 from "path";
 
 // src/routes/index.ts
-var import_express67 = __toESM(require_express2(), 1);
+var import_express68 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express3 = __toESM(require_express2(), 1);
@@ -147463,7 +147516,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "4d62ac2bc02310096fb625693f849760259428cd";
+var GIT_COMMIT = "25c9d6a992262606e8c0820e37182c09890f79ea";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -181440,6 +181493,302 @@ router64.get("/media-assets/:id/thumbnail", requireAuth, requireApproved, genera
 router64.get("/media-assets/:id", requireAuth, requireApproved, generalApiLimiter, (req, res) => streamMediaAsset(req, res, false));
 var media_assets_v21_default = router64;
 
+// src/routes/community-exchange.ts
+var import_express67 = __toESM(require_express2(), 1);
+init_drizzle_orm();
+init_src();
+init_zod();
+init_auth();
+init_rate_limit();
+var router65 = (0, import_express67.Router)();
+var CATEGORY_VALUES = ["household", "clothing", "food", "books", "electronics", "children", "other"];
+var CONDITION_VALUES = ["new", "like_new", "good", "well_loved"];
+var LISTING_TYPE_VALUES = ["offer", "need"];
+var RESOURCE_TYPE_VALUES = ["goods", "services"];
+var NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\b(?:text|call|email|venmo|cash\s*app|zelle|whatsapp|telegram)\b)/i;
+var listingBody = external_exports2.object({
+  listing_type: external_exports2.enum(LISTING_TYPE_VALUES).default("offer"),
+  resource_type: external_exports2.enum(RESOURCE_TYPE_VALUES).default("goods"),
+  title: external_exports2.string().trim().min(3).max(100),
+  description: external_exports2.string().trim().min(10).max(2e3),
+  category: external_exports2.enum(CATEGORY_VALUES),
+  condition: external_exports2.enum(CONDITION_VALUES),
+  neighborhood: external_exports2.string().trim().min(2).max(80),
+  pickup_notes: external_exports2.string().trim().max(500).optional().default("")
+});
+var pickupBody = external_exports2.object({
+  note: external_exports2.string().trim().min(3).max(1e3),
+  pickup_area: external_exports2.string().trim().min(2).max(100),
+  proposed_window: external_exports2.string().trim().min(2).max(120)
+});
+var reportBody = external_exports2.object({
+  type: external_exports2.enum(["fraud", "harassment", "dangerous_behavior", "spam", "other"]),
+  description: external_exports2.string().trim().min(10).max(2e3)
+});
+function parseId2(value) {
+  const id3 = Number(value);
+  return Number.isSafeInteger(id3) && id3 > 0 ? id3 : null;
+}
+function safeCoarseText(value) {
+  return !NO_PRIVATE_CONTACT.test(value);
+}
+function serialize(value) {
+  return value instanceof Date ? value.toISOString() : value;
+}
+function serializeListing(listing) {
+  return Object.fromEntries(Object.entries(listing).map(([key, value]) => [key, serialize(value)]));
+}
+async function isBlockedBetween2(firstUserId, secondUserId) {
+  const [block] = await db.select({ blocker_id: directMessageBlocksTable.blocker_id }).from(directMessageBlocksTable).where(or(
+    and(eq(directMessageBlocksTable.blocker_id, firstUserId), eq(directMessageBlocksTable.blocked_id, secondUserId)),
+    and(eq(directMessageBlocksTable.blocker_id, secondUserId), eq(directMessageBlocksTable.blocked_id, firstUserId))
+  )).limit(1);
+  return Boolean(block);
+}
+var listingSelect = {
+  id: exchangeListingsTable.id,
+  seller_id: exchangeListingsTable.seller_id,
+  listing_type: exchangeListingsTable.listing_type,
+  resource_type: exchangeListingsTable.resource_type,
+  title: exchangeListingsTable.title,
+  description: exchangeListingsTable.description,
+  category: exchangeListingsTable.category,
+  condition: exchangeListingsTable.condition,
+  neighborhood: exchangeListingsTable.neighborhood,
+  pickup_notes: exchangeListingsTable.pickup_notes,
+  status: exchangeListingsTable.status,
+  moderation_status: exchangeListingsTable.moderation_status,
+  created_at: exchangeListingsTable.created_at,
+  updated_at: exchangeListingsTable.updated_at,
+  seller_name: usersTable.name,
+  seller_avatar_url: usersTable.avatar_url
+};
+router65.get("/community/exchange/listings", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId;
+  const mine = req.query.mine === "true";
+  const listingType = typeof req.query.type === "string" && LISTING_TYPE_VALUES.includes(req.query.type) ? req.query.type : void 0;
+  const resourceType = typeof req.query.resource_type === "string" && RESOURCE_TYPE_VALUES.includes(req.query.resource_type) ? req.query.resource_type : void 0;
+  const neighborhood = typeof req.query.neighborhood === "string" ? req.query.neighborhood.trim().slice(0, 80) : "";
+  const category = typeof req.query.category === "string" && CATEGORY_VALUES.includes(req.query.category) ? req.query.category : void 0;
+  const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
+  const conditions = mine ? eq(exchangeListingsTable.seller_id, userId) : and(eq(exchangeListingsTable.status, "active"), eq(exchangeListingsTable.moderation_status, "approved"));
+  const rows = await db.select(listingSelect).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(and(
+    conditions,
+    listingType ? eq(exchangeListingsTable.listing_type, listingType) : void 0,
+    resourceType ? eq(exchangeListingsTable.resource_type, resourceType) : void 0,
+    neighborhood ? eq(exchangeListingsTable.neighborhood, neighborhood) : void 0,
+    category ? eq(exchangeListingsTable.category, category) : void 0,
+    query ? sql`(${exchangeListingsTable.title} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`} OR ${exchangeListingsTable.description} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`})` : void 0
+  )).orderBy(desc(exchangeListingsTable.created_at), desc(exchangeListingsTable.id)).limit(100);
+  return res.json({ listings: rows.map((row) => serializeListing(row)) });
+});
+router65.get("/community/exchange/listings/:id", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id3 = parseId2(req.params.id);
+  if (!id3) return res.status(400).json({ error: "Invalid listing id" });
+  const [listing] = await db.select(listingSelect).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(eq(exchangeListingsTable.id, id3)).limit(1);
+  if (!listing || listing.moderation_status !== "approved" && listing.seller_id !== req.authenticatedUserId) {
+    return res.status(404).json({ error: "Listing not found" });
+  }
+  return res.json({ listing: serializeListing(listing) });
+});
+router65.post("/community/exchange/listings", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
+  const parsed = listingBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid listing", details: parsed.error.issues });
+  const data = parsed.data;
+  if (![data.neighborhood, data.pickup_notes].every(safeCoarseText)) {
+    return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
+  }
+  const moderation = moderatePostText(`${data.title}
+${data.description}
+${data.pickup_notes}`);
+  const [listing] = await db.insert(exchangeListingsTable).values({
+    seller_id: req.authenticatedUserId,
+    listing_type: data.listing_type,
+    resource_type: data.resource_type,
+    title: data.title,
+    description: data.description,
+    category: data.category,
+    condition: data.condition,
+    neighborhood: data.neighborhood,
+    pickup_notes: data.pickup_notes || null,
+    moderation_status: moderation.status,
+    moderation_reason: moderation.reason
+  }).returning();
+  return res.status(201).json({
+    listing: serializeListing(listing),
+    message: moderation.status === "approved" ? "Listing published." : "Listing saved for safety review before it appears publicly."
+  });
+});
+router65.post("/community/exchange/listings/:id/withdraw", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id3 = parseId2(req.params.id);
+  if (!id3) return res.status(400).json({ error: "Invalid listing id" });
+  const [listing] = await db.select().from(exchangeListingsTable).where(and(
+    eq(exchangeListingsTable.id, id3),
+    eq(exchangeListingsTable.seller_id, req.authenticatedUserId)
+  )).limit(1);
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (listing.status === "reserved") return res.status(409).json({ error: "Cancel the accepted pickup before withdrawing this listing." });
+  if (listing.status !== "active") return res.status(409).json({ error: "This listing is no longer active." });
+  const [updated] = await db.update(exchangeListingsTable).set({ status: "withdrawn", updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangeListingsTable.id, id3), eq(exchangeListingsTable.status, "active"))).returning();
+  return res.json({ listing: serializeListing(updated) });
+});
+router65.get("/community/exchange/pickup-requests", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId;
+  const rows = await db.select({
+    id: exchangePickupRequestsTable.id,
+    listing_id: exchangePickupRequestsTable.listing_id,
+    buyer_id: exchangePickupRequestsTable.buyer_id,
+    note: exchangePickupRequestsTable.note,
+    pickup_area: exchangePickupRequestsTable.pickup_area,
+    proposed_window: exchangePickupRequestsTable.proposed_window,
+    status: exchangePickupRequestsTable.status,
+    buyer_confirmed_at: exchangePickupRequestsTable.buyer_confirmed_at,
+    seller_confirmed_at: exchangePickupRequestsTable.seller_confirmed_at,
+    accepted_at: exchangePickupRequestsTable.accepted_at,
+    cancelled_at: exchangePickupRequestsTable.cancelled_at,
+    completed_at: exchangePickupRequestsTable.completed_at,
+    created_at: exchangePickupRequestsTable.created_at,
+    updated_at: exchangePickupRequestsTable.updated_at,
+    listing_title: exchangeListingsTable.title,
+    listing_status: exchangeListingsTable.status,
+    seller_id: exchangeListingsTable.seller_id,
+    seller_name: sql`seller.name`,
+    buyer_name: sql`buyer.name`
+  }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).innerJoin(sql`users seller`, sql`seller.id = ${exchangeListingsTable.seller_id}`).innerJoin(sql`users buyer`, sql`buyer.id = ${exchangePickupRequestsTable.buyer_id}`).where(or(eq(exchangePickupRequestsTable.buyer_id, userId), eq(exchangeListingsTable.seller_id, userId))).orderBy(desc(exchangePickupRequestsTable.updated_at), desc(exchangePickupRequestsTable.id)).limit(100);
+  return res.json({ pickup_requests: rows.map((row) => serializeListing(row)) });
+});
+router65.post("/community/exchange/listings/:id/pickup-requests", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const listingId = parseId2(req.params.id);
+  if (!listingId) return res.status(400).json({ error: "Invalid listing id" });
+  const parsed = pickupBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid pickup request", details: parsed.error.issues });
+  if (![parsed.data.note, parsed.data.pickup_area, parsed.data.proposed_window].every(safeCoarseText)) {
+    return res.status(400).json({ error: "Keep pickup coordination inside Niakofa and use a coarse public area. Do not include phone numbers, email addresses, links, or exact addresses." });
+  }
+  const userId = req.authenticatedUserId;
+  const [listing] = await db.select().from(exchangeListingsTable).where(eq(exchangeListingsTable.id, listingId)).limit(1);
+  if (!listing || listing.status !== "active" || listing.moderation_status !== "approved") return res.status(404).json({ error: "Listing is not available." });
+  if (listing.seller_id === userId) return res.status(400).json({ error: "You cannot request your own listing." });
+  if (await isBlockedBetween2(userId, listing.seller_id)) return res.status(403).json({ error: "Messaging is blocked between these accounts." });
+  const [existing] = await db.select({ id: exchangePickupRequestsTable.id }).from(exchangePickupRequestsTable).where(and(eq(exchangePickupRequestsTable.listing_id, listingId), eq(exchangePickupRequestsTable.buyer_id, userId))).limit(1);
+  if (existing) return res.status(409).json({ error: "You already have a pickup request for this listing." });
+  const [pickupRequest] = await db.insert(exchangePickupRequestsTable).values({
+    listing_id: listingId,
+    buyer_id: userId,
+    note: parsed.data.note,
+    pickup_area: parsed.data.pickup_area,
+    proposed_window: parsed.data.proposed_window
+  }).returning();
+  return res.status(201).json({ pickup_request: serializeListing(pickupRequest) });
+});
+async function loadPickupRequest(id3) {
+  const [row] = await db.select({
+    id: exchangePickupRequestsTable.id,
+    listing_id: exchangePickupRequestsTable.listing_id,
+    buyer_id: exchangePickupRequestsTable.buyer_id,
+    status: exchangePickupRequestsTable.status,
+    buyer_confirmed_at: exchangePickupRequestsTable.buyer_confirmed_at,
+    seller_confirmed_at: exchangePickupRequestsTable.seller_confirmed_at,
+    seller_id: exchangeListingsTable.seller_id,
+    listing_status: exchangeListingsTable.status
+  }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).where(eq(exchangePickupRequestsTable.id, id3)).limit(1);
+  return row ?? null;
+}
+router65.post("/community/exchange/pickup-requests/:id/accept", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id3 = parseId2(req.params.id);
+  if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
+  const userId = req.authenticatedUserId;
+  const result = await db.transaction(async (tx) => {
+    const [pickup] = await tx.select({
+      id: exchangePickupRequestsTable.id,
+      listing_id: exchangePickupRequestsTable.listing_id,
+      buyer_id: exchangePickupRequestsTable.buyer_id,
+      status: exchangePickupRequestsTable.status,
+      seller_id: exchangeListingsTable.seller_id,
+      listing_status: exchangeListingsTable.status
+    }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).where(eq(exchangePickupRequestsTable.id, id3)).limit(1);
+    if (!pickup) return { error: "Pickup request not found", status: 404 };
+    if (pickup.seller_id !== userId) return { error: "Only the seller can accept this request.", status: 403 };
+    if (pickup.status !== "requested" || pickup.listing_status !== "active") return { error: "This request is no longer available to accept.", status: 409 };
+    const [listing] = await tx.update(exchangeListingsTable).set({ status: "reserved", updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "active"))).returning({ id: exchangeListingsTable.id });
+    if (!listing) return { error: "Another pickup request was accepted first.", status: 409 };
+    const [updated] = await tx.update(exchangePickupRequestsTable).set({ status: "accepted", accepted_at: /* @__PURE__ */ new Date(), updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "requested"))).returning();
+    if (!updated) return { error: "This pickup request was already changed.", status: 409 };
+    return { pickup_request: updated };
+  });
+  if ("error" in result) return res.status(result.status).json({ error: result.error });
+  return res.json({ pickup_request: serializeListing(result.pickup_request) });
+});
+router65.post("/community/exchange/pickup-requests/:id/decline", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id3 = parseId2(req.params.id);
+  if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
+  const pickup = await loadPickupRequest(id3);
+  if (!pickup) return res.status(404).json({ error: "Pickup request not found" });
+  if (pickup.seller_id !== req.authenticatedUserId) return res.status(403).json({ error: "Only the seller can decline this request." });
+  if (pickup.status !== "requested") return res.status(409).json({ error: "This request is no longer awaiting a response." });
+  const [updated] = await db.update(exchangePickupRequestsTable).set({ status: "declined", cancelled_at: /* @__PURE__ */ new Date(), updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "requested"))).returning();
+  return res.json({ pickup_request: serializeListing(updated) });
+});
+router65.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id3 = parseId2(req.params.id);
+  if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
+  const pickup = await loadPickupRequest(id3);
+  if (!pickup) return res.status(404).json({ error: "Pickup request not found" });
+  if (pickup.buyer_id !== req.authenticatedUserId && pickup.seller_id !== req.authenticatedUserId) return res.status(403).json({ error: "Only the pickup participants can cancel." });
+  if (!["requested", "accepted"].includes(pickup.status)) return res.status(409).json({ error: "This pickup cannot be cancelled." });
+  const result = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(exchangePickupRequestsTable).set({ status: "cancelled", cancelled_at: /* @__PURE__ */ new Date(), updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangePickupRequestsTable.id, id3), inArray(exchangePickupRequestsTable.status, ["requested", "accepted"]))).returning();
+    if (updated?.status === "cancelled" && pickup.status === "accepted") {
+      await tx.update(exchangeListingsTable).set({ status: "active", updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
+    }
+    return updated;
+  });
+  if (!result) return res.status(409).json({ error: "This pickup was already changed." });
+  return res.json({ pickup_request: serializeListing(result) });
+});
+router65.post("/community/exchange/pickup-requests/:id/confirm-complete", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id3 = parseId2(req.params.id);
+  if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
+  const pickup = await loadPickupRequest(id3);
+  if (!pickup) return res.status(404).json({ error: "Pickup request not found" });
+  const userId = req.authenticatedUserId;
+  const isBuyer = pickup.buyer_id === userId;
+  const isSeller = pickup.seller_id === userId;
+  if (!isBuyer && !isSeller) return res.status(403).json({ error: "Only the pickup participants can confirm completion." });
+  if (pickup.status !== "accepted") return res.status(409).json({ error: "Completion can only be confirmed for an accepted pickup." });
+  const now = /* @__PURE__ */ new Date();
+  const updates = isBuyer ? { buyer_confirmed_at: now, updated_at: now } : { seller_confirmed_at: now, updated_at: now };
+  const [updated] = await db.update(exchangePickupRequestsTable).set(updates).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "accepted"))).returning();
+  if (!updated) return res.status(409).json({ error: "This pickup was already changed." });
+  const bothConfirmed = Boolean(updated.buyer_confirmed_at && updated.seller_confirmed_at);
+  if (bothConfirmed) {
+    const [completed] = await db.transaction(async (tx) => {
+      const [done] = await tx.update(exchangePickupRequestsTable).set({ status: "completed", completed_at: now, updated_at: now }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "accepted"))).returning();
+      if (done) await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now }).where(eq(exchangeListingsTable.id, pickup.listing_id));
+      return [done];
+    });
+    return res.json({ pickup_request: serializeListing(completed ?? updated) });
+  }
+  return res.json({ pickup_request: serializeListing(updated), awaiting_other_confirmation: true });
+});
+router65.post("/community/exchange/listings/:id/report", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const listingId = parseId2(req.params.id);
+  if (!listingId) return res.status(400).json({ error: "Invalid listing id" });
+  const parsed = reportBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid report", details: parsed.error.issues });
+  const [listing] = await db.select({ seller_id: exchangeListingsTable.seller_id, title: exchangeListingsTable.title }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, listingId)).limit(1);
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (listing.seller_id === req.authenticatedUserId) return res.status(400).json({ error: "You cannot report your own listing." });
+  const [report] = await db.insert(reportsTable).values({
+    reporter_id: req.authenticatedUserId,
+    reported_user_id: listing.seller_id,
+    type: parsed.data.type,
+    description: `Exchange listing #${listingId} (\u201C${listing.title}\u201D): ${parsed.data.description}`
+  }).returning();
+  return res.status(201).json({ report_id: report.id, message: "Thanks. The listing has been sent to the safety team." });
+});
+var community_exchange_default = router65;
+
 // src/middlewares/stamp-location-updated-at.ts
 init_src();
 init_drizzle_orm();
@@ -181544,78 +181893,79 @@ function messageActivityAudit(req, res, next) {
 }
 
 // src/routes/index.ts
-var router65 = (0, import_express67.Router)();
-router65.use((req, _res, next) => {
+var router66 = (0, import_express68.Router)();
+router66.use((req, _res, next) => {
   req.url = req.url.replace(/^\/audio-spiral-sessions(?=\/|$)/, "/audio-circle-sessions").replace(/^\/audio-spirals(?=\/|$)/, "/audio-circles");
   next();
 });
-router65.use(health_default);
-router65.use(verification_default);
-router65.use(stampLocationUpdatedAt);
-router65.use(messageActivityAudit);
-router65.use(users_default);
-router65.use(requests_default);
-router65.use(helpers_default);
-router65.use(navigation_default);
-router65.use(push_default);
-router65.use(stripe_default);
-router65.use(leaderboard_default);
-router65.use(gratitude_default);
-router65.use(community_hub_feed_default);
-router65.use(reports_default);
-router65.use(civic_default);
-router65.use(admin_analytics_default);
-router65.use(admin_communities_default);
-router65.use(communities_default);
-router65.use(crisis_default);
-router65.use(recurring_default);
-router65.use(community_neighborhoods_default);
-router65.use(region_crisis_resources_default);
-router65.use(nia_context_default);
-router65.use(nia_voice_default);
-router65.use(nia_proxy_default);
-router65.use(pool_default);
-router65.use(pool_stripe_reconciliation_default);
-router65.use(admin_pool_settlements_default);
-router65.use(businesses_default);
-router65.use(gov_sponsors_default);
-router65.use(background_checks_default);
-router65.use(wallet_default);
-router65.use(google_auth_default);
-router65.use("/checkin", checkin_default);
-router65.use(disputes_default);
-router65.use(impact_default);
-router65.use(griot_default);
-router65.use(global_village_pulse_default);
-router65.use(diaspora_live_presence_default);
-router65.use(audio_circles_default);
-router65.use(circle_location_default);
-router65.use(circle_recordings_default);
-router65.use(circle_heartbeat_default);
-router65.use(circle_media_token_default);
-router65.use(circle_livekit_health_default);
-router65.use(webrtc_ice_default);
-router65.use(coverage_interest_default);
-router65.use(family_default);
-router65.use(family_consent_default);
-router65.use(dna_matching_default);
-router65.use(diaspora_research_default);
-router65.use(diaspora_connections_default);
-router65.use(diaspora_completion_default);
-router65.use(diaspora_default);
-router65.use(diaspora_hub_memberships_default);
-router65.use(diaspora_hub_messages_default);
-router65.use(messages_context_default);
-router65.use(messages_social_default);
-router65.use(community_stories_default);
-router65.use(community_story_interactions_default);
-router65.use(messages_unread_summary_default);
-router65.use(message_media_default);
-router65.use(direct_call_default);
-router65.use(direct_messages_default);
-router65.use(realtime_events_default);
-router65.use(media_assets_v21_default);
-var routes_default = router65;
+router66.use(health_default);
+router66.use(verification_default);
+router66.use(stampLocationUpdatedAt);
+router66.use(messageActivityAudit);
+router66.use(users_default);
+router66.use(requests_default);
+router66.use(helpers_default);
+router66.use(navigation_default);
+router66.use(push_default);
+router66.use(stripe_default);
+router66.use(leaderboard_default);
+router66.use(gratitude_default);
+router66.use(community_hub_feed_default);
+router66.use(reports_default);
+router66.use(civic_default);
+router66.use(admin_analytics_default);
+router66.use(admin_communities_default);
+router66.use(communities_default);
+router66.use(crisis_default);
+router66.use(recurring_default);
+router66.use(community_neighborhoods_default);
+router66.use(region_crisis_resources_default);
+router66.use(nia_context_default);
+router66.use(nia_voice_default);
+router66.use(nia_proxy_default);
+router66.use(pool_default);
+router66.use(pool_stripe_reconciliation_default);
+router66.use(admin_pool_settlements_default);
+router66.use(businesses_default);
+router66.use(gov_sponsors_default);
+router66.use(background_checks_default);
+router66.use(wallet_default);
+router66.use(google_auth_default);
+router66.use("/checkin", checkin_default);
+router66.use(disputes_default);
+router66.use(impact_default);
+router66.use(griot_default);
+router66.use(global_village_pulse_default);
+router66.use(diaspora_live_presence_default);
+router66.use(audio_circles_default);
+router66.use(circle_location_default);
+router66.use(circle_recordings_default);
+router66.use(circle_heartbeat_default);
+router66.use(circle_media_token_default);
+router66.use(circle_livekit_health_default);
+router66.use(webrtc_ice_default);
+router66.use(coverage_interest_default);
+router66.use(family_default);
+router66.use(family_consent_default);
+router66.use(dna_matching_default);
+router66.use(diaspora_research_default);
+router66.use(diaspora_connections_default);
+router66.use(diaspora_completion_default);
+router66.use(diaspora_default);
+router66.use(diaspora_hub_memberships_default);
+router66.use(diaspora_hub_messages_default);
+router66.use(messages_context_default);
+router66.use(messages_social_default);
+router66.use(community_stories_default);
+router66.use(community_story_interactions_default);
+router66.use(messages_unread_summary_default);
+router66.use(message_media_default);
+router66.use(direct_call_default);
+router66.use(direct_messages_default);
+router66.use(realtime_events_default);
+router66.use(media_assets_v21_default);
+router66.use(community_exchange_default);
+var routes_default = router66;
 
 // src/app.ts
 init_logger2();
@@ -182249,7 +182599,7 @@ var helmet = Object.assign(
 );
 
 // src/app.ts
-var app = (0, import_express68.default)();
+var app = (0, import_express69.default)();
 app.set("trust proxy", 1);
 app.use((0, import_compression.default)({ threshold: 1024 }));
 app.use(
@@ -182351,33 +182701,33 @@ app.use((0, import_pino_http.default)({ logger }));
 app.use(requestTimeout(3e4));
 app.use(parseAuth);
 app.use(apiTrafficLimiter);
-app.use("/api/stripe/webhook", import_express68.default.raw({ type: "application/json", limit: "1mb" }));
-app.use("/api/verification/identity/webhook", import_express68.default.raw({ type: "application/json", limit: "1mb" }));
-app.use("/api/background-checks/webhook", import_express68.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/stripe/webhook", import_express69.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/verification/identity/webhook", import_express69.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/background-checks/webhook", import_express69.default.raw({ type: "application/json", limit: "1mb" }));
 app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
-app.use("/api/audio-circle-sessions/:id/recording-upload", import_express68.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
-app.use("/api/audio-spiral-sessions/:id/recording-upload", import_express68.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+app.use("/api/audio-circle-sessions/:id/recording-upload", import_express69.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+app.use("/api/audio-spiral-sessions/:id/recording-upload", import_express69.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
 app.use(
   "/api/audio-circle-sessions/:sessionId/recording/:recordingId/finalize",
-  import_express68.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
+  import_express69.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
 );
 app.use(
   "/api/audio-spiral-sessions/:sessionId/recording/:recordingId/finalize",
-  import_express68.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
+  import_express69.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
 );
 app.use(
   "/api/media-assets/:id/upload",
-  import_express68.default.raw({ type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"], limit: "500mb" })
+  import_express69.default.raw({ type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"], limit: "500mb" })
 );
 app.use(
   "/api/diaspora/dna/import",
-  import_express68.default.raw({
+  import_express69.default.raw({
     type: ["text/csv", "text/plain", "application/json", "application/octet-stream"],
     limit: "30mb"
   })
 );
-app.use(import_express68.default.json({ limit: "40mb" }));
-app.use(import_express68.default.urlencoded({ extended: true, limit: "1mb" }));
+app.use(import_express69.default.json({ limit: "40mb" }));
+app.use(import_express69.default.urlencoded({ extended: true, limit: "1mb" }));
 app.use((_req, res, next) => {
   const id3 = _req.id;
   if (id3 != null) res.setHeader("X-Request-ID", String(id3));
@@ -182386,7 +182736,7 @@ app.use((_req, res, next) => {
 var uploadsDir = process.env.UPLOADS_DIR || (process.env.NODE_ENV === "production" ? "/data/uploads" : "uploads");
 app.use(
   "/uploads",
-  import_express68.default.static(uploadsDir, {
+  import_express69.default.static(uploadsDir, {
     maxAge: "7d",
     etag: true,
     lastModified: true,
@@ -182401,7 +182751,7 @@ var frontendDist = process.env.FRONTEND_DIST || path2.join(import.meta.dirname, 
 var shouldServeFrontend = process.env.NODE_ENV === "production" || process.env.SERVE_FRONTEND === "true";
 if (shouldServeFrontend) {
   app.use(
-    import_express68.default.static(frontendDist, {
+    import_express69.default.static(frontendDist, {
       maxAge: "1y",
       etag: true,
       lastModified: true,

@@ -9,6 +9,8 @@ import { usersTable } from "./users";
 export const exchangeListingsTable = pgTable("exchange_listings", {
   id: serial("id").primaryKey(),
   seller_id: integer("seller_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+  listing_type: text("listing_type").notNull().default("offer"),
+  resource_type: text("resource_type").notNull().default("goods"),
   title: text("title").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull().default("other"),
