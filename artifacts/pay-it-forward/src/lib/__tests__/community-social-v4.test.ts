@@ -45,6 +45,7 @@ describe("Community Social V4 view boundaries", () => {
   test("Community routes delegate primary destinations to dedicated views", () => {
     assert.match(page, /<CommunityHomeView/);
     assert.match(page, /<CommunityPeopleView/);
+    assert.match(page, /<CommunityExchangeView/);
     assert.match(page, /<CommunityHubsView/);
     assert.match(page, /<CommunityMomentsView/);
     assert.match(page, /<CommunityRequestsView/);
@@ -57,15 +58,16 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(page, /CommunitySpiralsTab/);
   });
 
-  test("focused social navigation promotes Moments and Spirals, with Messages in the header", () => {
+  test("six-tab social navigation promotes Exchange and Profile, with Messages in the header", () => {
     const nav = shell.match(/const primaryNav = \[([\s\S]*?)\];/)?.[1] ?? "";
     assert.deepEqual(
       [...nav.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]),
-      ["Home", "Moments", "Spirals", "People", "Notifications"],
+      ["Home", "Moments", "People", "Exchange", "Notifications", "Profile"],
     );
     assert.match(shell, /<button[^>]*aria-label="Open Messages"[^>]*onClick=\{\(\) => onRoute\("\/messages"\)\}/);
     assert.doesNotMatch(shell, /key: "messages" as const/);
     assert.doesNotMatch(shell, /key: "hubs" as const, label: "Hubs"/);
+    assert.match(shell, /href: "\/community\/exchange", label: "Exchange"/);
     for (const path of [
       "/community/hubs",
       "/community/requests",
