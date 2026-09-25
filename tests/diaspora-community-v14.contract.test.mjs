@@ -36,6 +36,8 @@ assert.match(communityContract, /stories: "\/community\/stories"/);
 assert.match(communityContract, /circles: "\/community\/circles"/);
 assert.match(communityContract, /function canonicalCommunityRoute/);
 assert.match(communityMigration, /function canonicalCommunitySectionRoute/);
+assert.match(communityExchange, /Niakofa Exchange marketplace/);
+assert.match(communityExchange, /SkillsMarketplaceTab/);
 assert.match(communityStoryRail, /const query = hubId \? `\?hubId=\$\{encodeURIComponent\(String\(hubId\)\)\}` : ""/);
 assert.match(communityStoryRail, /fetch\(`\/api\/community\/stories\$\{query\}/);
 assert.match(community, /\.finally\(\(\) => \{\s+if \(!cancelled\) setDefaultHubResolved\(true\);/);
