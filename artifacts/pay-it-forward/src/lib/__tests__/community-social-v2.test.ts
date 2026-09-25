@@ -54,7 +54,8 @@ describe("Community Social legacy behavior coverage", () => {
     assert.match(shellCss, /grid-template-columns: repeat\(5/);
     assert.match(shellFile, /menuItems/);
     assert.match(shellFile, /href: "\/profile"/);
-    assert.doesNotMatch(shellFile, /key: "profile" as const/);
+    assert.match(shellFile, /key: "profile" as const/);
+    assert.match(shellFile, /key: "exchange" as const/);
   });
 
   test("Home places compact Moments before its composer and feed", () => {
