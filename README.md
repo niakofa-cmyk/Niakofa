@@ -134,6 +134,23 @@ pnpm --filter @workspace/api-server run test
 
 ---
 
+## Community Experience Architecture
+
+Niakofa's Community experience uses a deliberate vocabulary and compatibility boundary:
+
+- **Home** — the living Community Hub and feed.
+- **Moments** — the short-form destination.
+- **Sparks** — individual short-form expressions created and shared by members.
+- **Spirals** — community/group spaces, replacing the former Circles terminology.
+- **Stories** — durable narratives that remain distinct from short-form Moments.
+- **Legacy** — preserved cultural, family, and community memory.
+- **Messages** — a persistent header action rather than a primary Community destination.
+- **Nia AI** — a separate AI boundary; Community social features do not depend on the Nia service.
+
+The migration intentionally preserves the mature `/api/community/stories` persistence/media boundary while the user-facing experience is presented as Moments/Sparks. Legacy `/community/stories` and `/community/circles` routes normalize to Moments and Spirals while preserving query parameters for deep links.
+
+The canonical contract lives in `artifacts/pay-it-forward/src/components/community/CommunityExperienceContract.ts`; `CommunityMomentsMigration.ts` is the compatibility layer. This prevents product-language changes from becoming accidental API/data migrations.
+
 ## Product Screens
 
 | Route | Description |
