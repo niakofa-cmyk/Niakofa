@@ -19,14 +19,18 @@ describe("Community Social V4 architecture", () => {
   const app = fs.readFileSync(path.join(__dirname, "../../App.tsx"), "utf8");
 
   test("primary Community navigation is icon-first and uses the six canonical destinations", () => {
-    assert.match(shellCss, /grid-template-columns: repeat\(5/);
+    assert.match(shellCss, /grid-template-columns: repeat\(6/);
     assert.equal((shell.match(/key: "/g) || []).length >= 5, true);
     assert.match(shell, /aria-label=\{item\.label\}/);
     assert.match(shell, /icon: BookOpen/);
     assert.match(shell, /icon: Users\b/);
     assert.match(shell, /icon: Globe2/);
     assert.match(shell, /icon: Bell/);
-    assert.doesNotMatch(shell, /key: "profile" as const/);
+    assert.match(shell, /icon: ShoppingBag/);
+    assert.match(shell, /icon: Clapperboard/);
+    assert.match(shell, /icon: House/);
+    assert.match(shell, /icon: UserRound/);
+    assert.match(shell, /key: "profile" as const/);
   });
 
   test("Hub post updates remain on the canonical realtime contract", () => {
@@ -50,7 +54,6 @@ describe("Community Social V4 architecture", () => {
     assert.match(shell, /\/community\/spirals/);
     assert.match(shell, /\/community\/media/);
     assert.match(shell, /\/diaspora/);
-    assert.match(shell, /href: "\/profile"/);
   });
 
   test("Moments stays focused while gratitude remains a separate Community capability", () => {
