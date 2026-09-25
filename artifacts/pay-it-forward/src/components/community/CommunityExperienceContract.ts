@@ -6,12 +6,14 @@
  * Moments/Sparks/Spirals without breaking the mature story/media boundary.
  */
 export const COMMUNITY_EXPERIENCE = {
-  primaryNavigation: ["home", "moments", "spirals", "people", "notifications"] as const,
+  primaryNavigation: ["home", "moments", "people", "exchange", "notifications", "profile"] as const,
   routes: {
     home: "/community",
     moments: "/community/moments",
     spirals: "/community/spirals",
     people: "/community/people",
+    exchange: "/community/exchange",
+    profile: "/profile",
     notifications: "/notifications",
     messages: "/messages",
   },
@@ -21,6 +23,7 @@ export const COMMUNITY_EXPERIENCE = {
   },
   vocabulary: {
     destination: "Moments",
+    marketplace: "Exchange",
     itemSingular: "Spark",
     itemPlural: "Sparks",
     community: "Spirals",
@@ -57,6 +60,8 @@ export function canonicalCommunityRoute(section: string): string {
   if (normalized === "moments") return COMMUNITY_EXPERIENCE.routes.moments;
   if (normalized === "spirals") return COMMUNITY_EXPERIENCE.routes.spirals;
   if (normalized === "people") return COMMUNITY_EXPERIENCE.routes.people;
+  if (normalized === "exchange") return COMMUNITY_EXPERIENCE.routes.exchange;
+  if (normalized === "profile") return COMMUNITY_EXPERIENCE.routes.profile;
   return `/community/${normalized}`;
 }
 
