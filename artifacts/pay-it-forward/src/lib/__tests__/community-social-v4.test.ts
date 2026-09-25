@@ -46,7 +46,7 @@ describe("Community Social V4 view boundaries", () => {
       [...nav.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]),
       ["Home", "Moments", "Spirals", "People", "Notifications"],
     );
-    assert.match(shell, /aria-label="Open Messages"[\s\S]*?onRoute\("\/messages"\)/);
+    assert.match(shell, /<button[^>]*aria-label="Open Messages"[^>]*onClick=\{\(\) => onRoute\("\/messages"\)\}/);
     assert.doesNotMatch(shell, /key: "messages" as const/);
     assert.doesNotMatch(shell, /key: "hubs" as const, label: "Hubs"/);
     for (const path of [
@@ -103,7 +103,7 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(storyRail, /onHoldChange=\{setStoryPaused\}/);
     assert.match(storyRail, /onSwipe=\{\(direction\) =>/);
     assert.match(storyVisual, /onPointerDown=/);
-    assert.match(storyVisual, /onPointerUp=/);
+    assert.match(storyVisual, /window\.addEventListener\("pointerup", up\)/);
     assert.match(storyStyles, /prefers-reduced-motion: reduce/);
   });
 
