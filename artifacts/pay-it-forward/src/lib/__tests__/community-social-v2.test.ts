@@ -51,7 +51,7 @@ describe("Community Social legacy behavior coverage", () => {
   test("V4 owns the Community primary navigation and secondary menu", () => {
     assert.doesNotMatch(shellFile, /contentNavItems/);
     assert.match(shellFile, /const primaryNav =/);
-    assert.match(shellCss, /grid-template-columns: repeat\(5/);
+    assert.match(shellCss, /grid-template-columns: repeat\(6/);
     assert.match(shellFile, /menuItems/);
     assert.match(shellFile, /href: "\/profile"/);
     assert.match(shellFile, /key: "profile" as const/);
