@@ -27,7 +27,7 @@ assert.match(gratitude, /usersTable\.diaspora_hub_id/);
 assert.match(gratitude, /usersTable\.approval_status/);
 assert.match(gratitude, /usersTable\.is_suspended/);
 assert.match(gratitudeComposer, /fetch\("\/api\/gratitude"/);
-assert.match(communityStories, /CommunityStoriesExperience/);
+assert.match(communityStories, /CommunityMomentsView/);
 assert.match(communityStoryRail, /const query = hubId \? `\?hubId=\$\{encodeURIComponent\(String\(hubId\)\)\}` : ""/);
 assert.match(communityStoryRail, /fetch\(`\/api\/community\/stories\$\{query\}/);
 assert.match(community, /\.finally\(\(\) => \{\s+if \(!cancelled\) setDefaultHubResolved\(true\);/);
