@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   db,
   directMessageBlocksTable,
@@ -248,11 +248,15 @@ async function loadPickupRequest(id: number) {
   return row ?? null;
 }
 
+type AcceptPickupResult =
+  | { error: string; status: 403 | 404 | 409 }
+  | { pickup_request: typeof exchangePickupRequestsTable.$inferSelect };
+
 router.post("/community/exchange/pickup-requests/:id/accept", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid pickup request id" });
   const userId = req.authenticatedUserId!;
-  const result = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<AcceptPickupResult> => {
     const [pickup] = await tx.select({
       id: exchangePickupRequestsTable.id,
       listing_id: exchangePickupRequestsTable.listing_id,
@@ -273,6 +277,7 @@ router.post("/community/exchange/pickup-requests/:id/accept", requireAuth, requi
     const [updated] = await tx.update(exchangePickupRequestsTable)
       .set({ status: "accepted", accepted_at: new Date(), updated_at: new Date() })
       .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, "requested"))).returning();
+    if (!updated) return { error: "This pickup request was already changed.", status: 409 as const };
     return { pickup_request: updated };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
