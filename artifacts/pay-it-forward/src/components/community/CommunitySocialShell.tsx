@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Bell,
   BookOpen,
+  Clapperboard,
   BriefcaseBusiness,
   Globe2,
   House,
@@ -48,7 +49,7 @@ interface CommunitySocialShellProps {
 
 const primaryNav = [
   { key: "home" as const, label: "Home", icon: House },
-  { key: "moments" as const, label: "Moments", icon: ImageIcon },
+  { key: "moments" as const, label: "Moments", icon: Clapperboard },
   { key: "people" as const, label: "People", icon: Users },
   { key: "exchange" as const, label: "Exchange", icon: ShoppingBag },
   { key: "notifications" as const, label: "Notifications", icon: Bell },
