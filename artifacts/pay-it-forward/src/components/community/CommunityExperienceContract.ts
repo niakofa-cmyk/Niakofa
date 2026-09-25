@@ -38,8 +38,28 @@ export const COMMUNITY_EXPERIENCE = {
 export type CommunityPrimaryNavKey =
   (typeof COMMUNITY_EXPERIENCE.primaryNavigation)[number];
 
+const COMMUNITY_SECTION_ALIASES: Readonly<Record<string, string>> = {
+  stories: "moments",
+  circles: "spirals",
+};
+
 export function normalizeCommunityRoute(section: string): string {
-  if (section === "stories") return "moments";
-  if (section === "circles") return "spirals";
-  return section;
+  return COMMUNITY_SECTION_ALIASES[section] ?? section;
+}
+
+export function isCommunityPrimaryNavKey(value: string): value is CommunityPrimaryNavKey {
+  return (COMMUNITY_EXPERIENCE.primaryNavigation as readonly string[]).includes(value);
+}
+
+export function canonicalCommunityRoute(section: string): string {
+  const normalized = normalizeCommunityRoute(section);
+  if (normalized === "home") return COMMUNITY_EXPERIENCE.routes.home;
+  if (normalized === "moments") return COMMUNITY_EXPERIENCE.routes.moments;
+  if (normalized === "spirals") return COMMUNITY_EXPERIENCE.routes.spirals;
+  if (normalized === "people") return COMMUNITY_EXPERIENCE.routes.people;
+  return `/community/${normalized}`;
+}
+
+export function isLegacyCommunitySection(section: string): boolean {
+  return Object.prototype.hasOwnProperty.call(COMMUNITY_SECTION_ALIASES, section);
 }
