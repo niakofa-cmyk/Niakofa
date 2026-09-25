@@ -11,6 +11,7 @@ import { CommunityPeopleView } from "@/components/community/CommunityPeopleView"
 import { CommunityHubsView } from "@/components/community/CommunityHubsView";
 import { CommunityMomentsView } from "@/components/community/CommunityMomentsView";
 import { CommunityRequestsView } from "@/components/community/CommunityRequestsView";
+import { CommunityExchangeView } from "@/components/community/CommunityExchangeView";
 import {
   canonicalCommunitySectionRoute,
   normalizeCommunitySection,
@@ -21,6 +22,7 @@ const COMMUNITY_SECTIONS = new Set<CommunityNavKey>([
   "moments",
   "spirals",
   "people",
+  "exchange",
   "hubs",
   "stories",
   "more",
@@ -125,6 +127,7 @@ export default function CommunityScreen() {
         )}
         {normalizedSection === "moments" && <CommunityMomentsView hubId={effectiveHubId} openSparkId={openSparkId} />}
         {normalizedSection === "people" && <CommunityPeopleView hubId={effectiveHubId} />}
+        {normalizedSection === "exchange" && <CommunityExchangeView />}
         {normalizedSection === "hubs" && <CommunityHubsView hubId={effectiveHubId} />}
         {normalizedSection === "requests" && <CommunityRequestsView />}
         {normalizedSection === "spirals" && <CommunitySpiralsTab />}
