@@ -18,7 +18,7 @@ describe("Community Social V4 architecture", () => {
   );
   const app = fs.readFileSync(path.join(__dirname, "../../App.tsx"), "utf8");
 
-  test("primary Community navigation is icon-first and limited to five destinations", () => {
+  test("primary Community navigation is icon-first and uses the six canonical destinations", () => {
     assert.match(shellCss, /grid-template-columns: repeat\(5/);
     assert.equal((shell.match(/key: "/g) || []).length >= 5, true);
     assert.match(shell, /aria-label=\{item\.label\}/);
