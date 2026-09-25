@@ -70,4 +70,5 @@ export * from "./audio-circles";
 export * from "./circle-recordings";
 export * from "./media-assets";
 export * from "./community-media-saves";
+export * from "./exchange";
 //# sourceMappingURL=index.d.ts.map

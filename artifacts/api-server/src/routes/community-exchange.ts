@@ -237,7 +237,11 @@ router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, req
   if (await isBlockedBetween(userId, listing.seller_id)) return res.status(403).json({ error: "Messaging is blocked between these accounts." });
   const [existing] = await db.select({ id: exchangePickupRequestsTable.id })
     .from(exchangePickupRequestsTable)
-    .where(and(eq(exchangePickupRequestsTable.listing_id, listingId), eq(exchangePickupRequestsTable.buyer_id, userId)))
+    .where(and(
+      eq(exchangePickupRequestsTable.listing_id, listingId),
+      eq(exchangePickupRequestsTable.buyer_id, userId),
+      inArray(exchangePickupRequestsTable.status, ["requested", "accepted"]),
+    ))
     .limit(1);
   if (existing) return res.status(409).json({ error: "You already have a pickup request for this listing." });
   const [pickupRequest] = await db.insert(exchangePickupRequestsTable).values({

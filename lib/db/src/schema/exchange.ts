@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
@@ -43,7 +44,8 @@ export const exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
   index("exchange_pickup_requests_listing_idx").on(table.listing_id, table.created_at),
   index("exchange_pickup_requests_buyer_idx").on(table.buyer_id, table.updated_at),
   uniqueIndex("exchange_pickup_requests_one_active_per_buyer_listing_idx")
-    .on(table.listing_id, table.buyer_id),
+    .on(table.listing_id, table.buyer_id)
+    .where(sql`${table.status} IN ('requested', 'accepted')`),
 ]);
 
 export type ExchangeListing = typeof exchangeListingsTable.$inferSelect;
