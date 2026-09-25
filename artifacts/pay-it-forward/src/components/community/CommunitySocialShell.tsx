@@ -165,7 +165,7 @@ export function CommunitySocialShell({
             >
               <Search className="h-5 w-5" />
             </button>
-            <button type="button" onClick={() => onRoute("/messages")} aria-label="Open Messages" className="nk-community-v4-icon-button">
+            <button type="button" aria-label="Open Messages" onClick={() => onRoute("/messages")} className="nk-community-v4-icon-button">
               <MessageCircle className="h-5 w-5" />
             </button>
             <button
