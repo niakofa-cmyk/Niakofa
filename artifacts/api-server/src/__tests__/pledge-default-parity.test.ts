@@ -96,6 +96,13 @@ jest.unstable_mockModule("@workspace/db", () => ({
   communityPoolFinancialEventsTable: {},
   poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
   scheduledPaymentsTable: { id: "id", user_id: "user_id", status: "status" },
+  userSettingsTable: {
+    user_id: "user_id",
+    notif_exchange_digest: "notif_exchange_digest",
+    notif_optional_paused: "notif_optional_paused",
+    exchange_digest_area: "exchange_digest_area",
+    exchange_digest_timezone: "exchange_digest_timezone",
+  },
   walletCashoutsTable: { id: "id", user_id: "user_id", status: "status" },
   paymentTransactionsTable: { id: "id", request_id: "request_id", state: "state" },
   transactionsTable: { id: "id", user_id: "user_id" },
@@ -103,6 +110,19 @@ jest.unstable_mockModule("@workspace/db", () => ({
   // scheduler imports these tables for expired Community Story cleanup.
   communityStoriesTable: { id: "id", expires_at: "expires_at", author_user_id: "author_user_id" },
   communityStoryMediaTable: { id: "id", story_id: "story_id", storage_key: "storage_key" },
+  exchangeListingsTable: {
+    id: "id",
+    status: "status",
+    updated_at: "updated_at",
+  },
+  exchangeDigestDeliveriesTable: {
+    id: "id",
+    user_id: "user_id",
+    week_key: "week_key",
+    listing_count: "listing_count",
+    sent_at: "sent_at",
+    delivered: "delivered",
+  },
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({

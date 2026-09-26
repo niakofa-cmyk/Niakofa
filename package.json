@@ -43,6 +43,7 @@
     "test:request-arrival-acceptance": "bash ops/run-request-arrival-acceptance.sh",
     "test:request-arrival-acceptance-guards": "node --test ops/request-arrival-acceptance-guards.test.mjs",
     "test:production-readiness-contract": "node --test scripts/production-readiness-contract-2026-09-05.mjs",
+    "test:exchange-readiness-contract": "node --test scripts/exchange-production-readiness-contract.test.mjs",
     "test:v17-1-contract": "node --test tests/v17-1-package-contract.test.mjs",
     "test:v17-2-1-contract": "node --test tests/v17-2-1-package-contract.test.mjs",
     "test:diaspora": "bash scripts/run-repo-diaspora-contracts.sh",

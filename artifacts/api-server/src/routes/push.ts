@@ -181,7 +181,6 @@ async function userAllowsNotif(
   }
   switch (notifType) {
     case "nearby_requests": return s.notif_nearby_requests ?? true;
-    case "task_accepted":   return s.notif_task_accepted ?? true;
     case "wallet":          return s.notif_wallet_updates ?? true;
     case "community":       return s.notif_community_activity ?? false;
     case "exchange":        return s.notif_exchange_activity ?? false;

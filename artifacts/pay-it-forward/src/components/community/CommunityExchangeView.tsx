@@ -43,6 +43,7 @@ import type {
   ExchangeResourceType,
 } from "@/lib/community-exchange-types";
 import { authHeaders } from "@/lib/auth";
+import { useAppContext } from "@/lib/AppContext";
 
 type FeedFilter = "all" | "goods" | "services" | "needs";
 type LocalLocation = {
@@ -52,11 +53,14 @@ type LocalLocation = {
 };
 
 type ExchangeImpact = {
-  completed: number;
+  completed: number | null;
   active_offers: number;
   active_needs: number;
-  unique_neighbors: number;
-  completed_30d: number;
+  unique_neighbors: number | null;
+  completed_30d: number | null;
+  suppressed: boolean;
+  privacy_threshold: number;
+  privacy_note: string;
 };
 
 const LOCATION_KEY = "niakofa_exchange_location";
@@ -90,6 +94,19 @@ function readLocation(): LocalLocation | null {
   } catch {
     return null;
   }
+}
+
+async function persistExchangeDigestLocation(userId: number, location: LocalLocation): Promise<void> {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const response = await fetch(`${base}/api/users/${userId}/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({
+      exchange_digest_area: location.label,
+      exchange_digest_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    }),
+  });
+  if (!response.ok) throw new Error("Exchange digest location could not be saved");
 }
 
 function formatDate(date: string) {
@@ -186,6 +203,7 @@ function ListingCard({ listing, onOpen }: { listing: ExchangeListing; onOpen: ()
 }
 
 export function CommunityExchangeView() {
+  const { currentUser } = useAppContext();
   const initialLocation = readLocation();
   const [location, setLocation] = useState<LocalLocation | null>(initialLocation);
   const [locationOpen, setLocationOpen] = useState(!initialLocation);
@@ -327,6 +345,14 @@ export function CommunityExchangeView() {
       cancelled = true;
     };
   }, [location, selectedId]);
+
+  useEffect(() => {
+    if (!currentUser?.id || !location) return;
+    void persistExchangeDigestLocation(currentUser.id, location).catch(() => {
+      // The local Exchange board remains usable if settings persistence is
+      // temporarily unavailable; the next location change retries it.
+    });
+  }, [currentUser?.id, location]);
 
   const saveLocation = (event: FormEvent) => {
     event.preventDefault();
@@ -558,14 +584,14 @@ export function CommunityExchangeView() {
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Community Impact</p>
               <h2 id="exchange-impact-heading" className="mt-1 text-xl font-black">The Exchange is moving care</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Verified only when both neighbors confirm completion. Your private activity is scoped to your account.</p>
+               <p className="mt-1 text-sm text-muted-foreground">{impact.privacy_note}</p>
             </div>
             <HeartHandshake className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {[
-              ["Completed", impact.completed],
-              ["Neighbors reached", impact.unique_neighbors],
+               ["Completed", impact.completed ?? "—"],
+               ["Neighbors reached", impact.unique_neighbors ?? "—"],
               ["Offers live", impact.active_offers],
               ["Needs live", impact.active_needs],
             ].map(([label, value]) => (

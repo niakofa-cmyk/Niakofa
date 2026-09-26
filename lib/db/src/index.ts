@@ -42,4 +42,8 @@ export {
   mediaProcessingJobsTable,
 } from "./schema/media-assets";
 export { requestMessageAttachmentsTable } from "./schema/request-message-attachments";
-export { exchangeListingsTable, exchangePickupRequestsTable } from "./schema/exchange";
+export {
+  exchangeListingsTable,
+  exchangePickupRequestsTable,
+  exchangeDigestDeliveriesTable,
+} from "./schema/exchange";

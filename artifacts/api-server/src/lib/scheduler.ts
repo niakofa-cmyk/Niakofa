@@ -18,7 +18,6 @@ import {
   communityStoriesTable,
   communityStoryMediaTable,
   exchangeListingsTable,
-  exchangePickupRequestsTable,
   exchangeDigestDeliveriesTable,
 } from "@workspace/db";
 import { eq, and, lte, sql, inArray } from "drizzle-orm";
@@ -35,15 +34,64 @@ import { broadcast } from "./ws-hub";
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
-const EXCHANGE_MAINTENANCE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+// Run hourly so a user's local weekly delivery window is not missed by a
+// six-hour UTC cadence. The archival query remains idempotent and indexed.
+const EXCHANGE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
 const EXCHANGE_STALE_DAYS = 30;
 const EXCHANGE_DIGEST_RADIUS_MILES = 15;
 
-function exchangeWeekKey(now = new Date()): string {
-  const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+type ExchangeDigestListing = {
+  id: number;
+  title: string;
+  listing_type: string;
+  neighborhood: string;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
+function safeTimeZone(timeZone: string | null | undefined): string {
+  if (!timeZone) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+    return timeZone;
+  } catch {
+    return "UTC";
+  }
+}
+
+function localDateParts(now: Date, timeZone: string): { year: number; month: number; day: number; weekday: string; hour: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: safeTimeZone(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    year: Number(value("year")),
+    month: Number(value("month")),
+    day: Number(value("day")),
+    weekday: value("weekday"),
+    hour: Number(value("hour")),
+  };
+}
+
+function exchangeWeekKey(now = new Date(), timeZone = "UTC"): string {
+  const local = localDateParts(now, timeZone);
+  const date = new Date(Date.UTC(local.year, local.month - 1, local.day));
   const day = date.getUTCDay();
   date.setUTCDate(date.getUTCDate() - (day === 0 ? 6 : day - 1));
   return date.toISOString().slice(0, 10);
+}
+
+function exchangeDigestWindowOpen(now: Date, timeZone: string | null | undefined): boolean {
+  const local = localDateParts(now, safeTimeZone(timeZone));
+  // Monday morning in the user's timezone. The six-hour window is wide
+  // enough for the hourly worker to tolerate restarts and DST transitions.
+  return local.weekday === "Mon" && local.hour >= 8 && local.hour < 14;
 }
 
 async function archiveStaleExchangeListings(): Promise<number> {
@@ -68,25 +116,25 @@ async function archiveStaleExchangeListings(): Promise<number> {
   return archived.length;
 }
 
-async function processExchangeDigest(now = new Date()): Promise<void> {
-  const weekKey = exchangeWeekKey(now);
-  const recipients = await db.select({
-    id: usersTable.id,
-    lat: usersTable.lat,
-    lng: usersTable.lng,
-  }).from(usersTable)
-    .innerJoin(userSettingsTable, eq(userSettingsTable.user_id, usersTable.id))
-    .where(and(
-      eq(userSettingsTable.notif_exchange_digest, true),
-      eq(userSettingsTable.notif_optional_paused, false),
-      sql`${usersTable.lat} IS NOT NULL AND ${usersTable.lng} IS NOT NULL`,
-    ));
+function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const radius = 3958.8;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos((lat1 * Math.PI) / 180)
+      * Math.cos((lat2 * Math.PI) / 180)
+      * Math.sin(dLng / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-  for (const recipient of recipients) {
-    if (recipient.lat == null || recipient.lng == null) continue;
-    let listings: { id: number; title: string; listing_type: string; neighborhood: string }[] = [];
+async function findExchangeDigestListings(
+  recipient: { lat: number | null; lng: number | null; area: string | null },
+): Promise<ExchangeDigestListing[]> {
+  let listings: ExchangeDigestListing[] = [];
+  const radiusMeters = EXCHANGE_DIGEST_RADIUS_MILES * 1609.344;
+
+  if (recipient.lat != null && recipient.lng != null) {
     try {
-      const radiusMeters = EXCHANGE_DIGEST_RADIUS_MILES * 1609.344;
       const rows = await db.execute(sql`
         SELECT id, title, listing_type, neighborhood
         FROM exchange_listings
@@ -102,12 +150,70 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
         ORDER BY updated_at DESC, id DESC
         LIMIT 5
       `);
-      listings = rows.rows as typeof listings;
+      listings = rows.rows as ExchangeDigestListing[];
     } catch (err) {
-      logger.warn({ err }, "exchange-digest: geospatial query unavailable");
+      logger.warn({ err }, "exchange-digest: geospatial query unavailable; using indexed fallback");
     }
-    if (listings.length === 0) continue;
 
+    // Development Postgres may not have PostGIS. Keep distance filtering
+    // server-side with an indexed bounding box plus Haversine verification.
+    if (listings.length === 0) {
+      const latDelta = EXCHANGE_DIGEST_RADIUS_MILES / 69;
+      const lngDelta = EXCHANGE_DIGEST_RADIUS_MILES
+        / (69 * Math.max(0.25, Math.cos((recipient.lat * Math.PI) / 180)));
+      const rows = await db.execute(sql`
+        SELECT id, title, listing_type, neighborhood, latitude, longitude
+        FROM exchange_listings
+        WHERE status = 'active'
+          AND moderation_status = 'approved'
+          AND latitude BETWEEN ${recipient.lat - latDelta} AND ${recipient.lat + latDelta}
+          AND longitude BETWEEN ${recipient.lng - lngDelta} AND ${recipient.lng + lngDelta}
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 50
+      `);
+      listings = (rows.rows as ExchangeDigestListing[])
+        .filter((listing) => listing.latitude != null && listing.longitude != null
+          && haversineMiles(recipient.lat!, recipient.lng!, listing.latitude, listing.longitude) <= EXCHANGE_DIGEST_RADIUS_MILES)
+        .slice(0, 5);
+    }
+  }
+
+  // ZIP/neighborhood fallback keeps the digest useful when a member has not
+  // shared coordinates with the API. The neighborhood index makes this an
+  // indexed server-side lookup, and the coarse label is never exposed as GPS.
+  if (listings.length === 0 && recipient.area?.trim()) {
+    const rows = await db.execute(sql`
+      SELECT id, title, listing_type, neighborhood
+      FROM exchange_listings
+      WHERE status = 'active'
+        AND moderation_status = 'approved'
+        AND neighborhood = ${recipient.area.trim()}
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 5
+    `);
+    listings = rows.rows as ExchangeDigestListing[];
+  }
+
+  return listings;
+}
+
+async function processExchangeDigest(now = new Date()): Promise<void> {
+  const recipients = await db.select({
+    id: usersTable.id,
+    lat: usersTable.lat,
+    lng: usersTable.lng,
+    area: userSettingsTable.exchange_digest_area,
+    timezone: userSettingsTable.exchange_digest_timezone,
+  }).from(usersTable)
+    .innerJoin(userSettingsTable, eq(userSettingsTable.user_id, usersTable.id))
+    .where(and(
+      eq(userSettingsTable.notif_exchange_digest, true),
+      eq(userSettingsTable.notif_optional_paused, false),
+    ));
+
+  for (const recipient of recipients) {
+    const timeZone = safeTimeZone(recipient.timezone);
+    const weekKey = exchangeWeekKey(now, timeZone);
     const [existingDelivery] = await db.select({
       id: exchangeDigestDeliveriesTable.id,
       delivered: exchangeDigestDeliveriesTable.delivered,
@@ -118,8 +224,13 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
         eq(exchangeDigestDeliveriesTable.week_key, weekKey),
       ))
       .limit(1);
-    let deliveryId: number;
     if (existingDelivery?.delivered) continue;
+    if (!existingDelivery && !exchangeDigestWindowOpen(now, timeZone)) continue;
+
+    const listings = await findExchangeDigestListings(recipient);
+    if (listings.length === 0) continue;
+
+    let deliveryId: number;
     if (existingDelivery) {
       const [claimed] = await db.update(exchangeDigestDeliveriesTable)
         .set({ sent_at: now, listing_count: listings.length })
@@ -155,7 +266,7 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
         .set({ delivered: true })
         .where(eq(exchangeDigestDeliveriesTable.id, deliveryId));
     } catch (err) {
-      logger.warn({ err, user_id: recipient.id }, "exchange-digest: delivery failed; will be retried next week");
+      logger.warn({ err, user_id: recipient.id }, "exchange-digest: delivery failed; will be retried on the next eligible run");
     }
   }
 }

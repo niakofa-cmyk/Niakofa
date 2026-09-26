@@ -21,6 +21,7 @@ const CONDITION_VALUES = ["new", "like_new", "good", "well_loved"] as const;
 const LISTING_TYPE_VALUES = ["offer", "need"] as const;
 const RESOURCE_TYPE_VALUES = ["goods", "services"] as const;
 const NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\b(?:text|call|email|venmo|cash\s*app|zelle|whatsapp|telegram)\b)/i;
+const EXCHANGE_IMPACT_PRIVACY_THRESHOLD = 5;
 
 const listingBody = z.object({
   listing_type: z.enum(LISTING_TYPE_VALUES).default("offer"),
@@ -365,7 +366,10 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid pickup request id" });
   const userId = req.authenticatedUserId!;
-  const result = await db.transaction(async (tx) => {
+  type ConfirmCompleteResult =
+    | { error: string; status: 403 | 404 | 409 }
+    | { pickup_request: typeof exchangePickupRequestsTable.$inferSelect; awaiting_other_confirmation?: boolean };
+  const result = await db.transaction(async (tx): Promise<ConfirmCompleteResult> => {
     const [pickup] = await tx.select({
       id: exchangePickupRequestsTable.id,
       listing_id: exchangePickupRequestsTable.listing_id,
@@ -409,27 +413,32 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
   });
 });
 
-router.get("/community/exchange/impact", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
-  const userId = req.authenticatedUserId!;
-  const [row] = await db.select({
+router.get("/community/exchange/impact", requireAuth, requireApproved, generalApiLimiter, async (_req, res) => {
+  const [activity] = await db.select({
     completed: sql<number>`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed')::int`,
-    active_offers: sql<number>`COUNT(*) FILTER (WHERE ${exchangeListingsTable.status} = 'active' AND ${exchangeListingsTable.listing_type} = 'offer')::int`,
-    active_needs: sql<number>`COUNT(*) FILTER (WHERE ${exchangeListingsTable.status} = 'active' AND ${exchangeListingsTable.listing_type} = 'need')::int`,
     unique_neighbors: sql<number>`COUNT(DISTINCT CASE WHEN ${exchangePickupRequestsTable.status} = 'completed' THEN ${exchangePickupRequestsTable.buyer_id} END)::int`,
     last_30_days: sql<number>`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.completed_at} >= NOW() - INTERVAL '30 days')::int`,
-  }).from(exchangePickupRequestsTable)
-    .leftJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id))
-    .where(or(
-      eq(exchangePickupRequestsTable.buyer_id, userId),
-      eq(exchangeListingsTable.seller_id, userId),
-    ));
+  }).from(exchangePickupRequestsTable);
+  const [live] = await db.select({
+    active_offers: sql<number>`COUNT(*) FILTER (WHERE ${exchangeListingsTable.listing_type} = 'offer')::int`,
+    active_needs: sql<number>`COUNT(*) FILTER (WHERE ${exchangeListingsTable.listing_type} = 'need')::int`,
+  }).from(exchangeListingsTable).where(and(
+    eq(exchangeListingsTable.status, "active"),
+    eq(exchangeListingsTable.moderation_status, "approved"),
+  ));
+  const completed = activity?.completed ?? 0;
+  const suppressed = completed < EXCHANGE_IMPACT_PRIVACY_THRESHOLD;
   return res.json({
-    completed: row?.completed ?? 0,
-    active_offers: row?.active_offers ?? 0,
-    active_needs: row?.active_needs ?? 0,
-    unique_neighbors: row?.unique_neighbors ?? 0,
-    completed_30d: row?.last_30_days ?? 0,
-    privacy_note: "Counts are limited to your Exchange activity.",
+    completed: suppressed ? null : completed,
+    active_offers: live?.active_offers ?? 0,
+    active_needs: live?.active_needs ?? 0,
+    unique_neighbors: suppressed ? null : (activity?.unique_neighbors ?? 0),
+    completed_30d: suppressed ? null : (activity?.last_30_days ?? 0),
+    suppressed,
+    privacy_threshold: EXCHANGE_IMPACT_PRIVACY_THRESHOLD,
+    privacy_note: suppressed
+      ? `Verified completion totals are shown after ${EXCHANGE_IMPACT_PRIVACY_THRESHOLD} community completions to protect small groups.`
+      : "Community-wide counts use only two-party verified Exchange completions.",
   });
 });
 

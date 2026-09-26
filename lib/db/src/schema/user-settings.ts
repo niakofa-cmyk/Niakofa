@@ -17,6 +17,9 @@ export const userSettingsTable = pgTable("user_settings", {
   notif_exchange_digest: boolean("notif_exchange_digest").notNull().default(false),
   // Pauses optional notifications without erasing saved category choices.
   notif_optional_paused: boolean("notif_optional_paused").notNull().default(false),
+  // Coarse Exchange digest context; never an exact address or raw GPS value.
+  exchange_digest_area: text("exchange_digest_area"),
+  exchange_digest_timezone: text("exchange_digest_timezone"),
 
   // Privacy preferences
   privacy_profile_visible: boolean("privacy_profile_visible").notNull().default(true),

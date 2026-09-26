@@ -955,6 +955,7 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
     "notif_nearby_requests", "notif_emergency", "notif_task_accepted",
     "notif_wallet_updates", "notif_community_activity", "notif_pledge_reminders",
     "notif_exchange_activity", "notif_exchange_digest", "notif_optional_paused",
+    "exchange_digest_area", "exchange_digest_timezone",
     "privacy_profile_visible", "privacy_live_location", "privacy_activity_sharing",
     "privacy_anonymous_giving", "service_radius_miles", "max_travel_miles", "specialties",
     "preferred_language", "spirit_animal",
@@ -965,6 +966,20 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
     if (req.body[key] === undefined) continue;
     if (key.startsWith("notif_") && typeof req.body[key] !== "boolean") {
       return res.status(400).json({ error: `${key} must be a boolean` });
+    }
+    if (key === "exchange_digest_area" &&
+        (typeof req.body[key] !== "string" || req.body[key].trim().length < 2 || req.body[key].trim().length > 80)) {
+      return res.status(400).json({ error: "exchange_digest_area must be a coarse area label" });
+    }
+    if (key === "exchange_digest_timezone") {
+      if (typeof req.body[key] !== "string" || req.body[key].length > 64) {
+        return res.status(400).json({ error: "exchange_digest_timezone must be an IANA timezone" });
+      }
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: req.body[key] }).format();
+      } catch {
+        return res.status(400).json({ error: "exchange_digest_timezone must be an IANA timezone" });
+      }
     }
     if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
     if (key === "spirit_animal" && !isValidSpiritAnimal(req.body[key])) continue;

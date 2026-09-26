@@ -53,7 +53,19 @@ async function saveSettings(
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(updates),
   });
-  if (!res.ok) throw new Error("Failed to save settings");
+  if (!res.ok) {
+    let payload: { error?: string; settings?: Record<string, unknown> } = {};
+    try {
+      payload = await res.json();
+    } catch {
+      // Keep the generic save error below for non-JSON failures.
+    }
+    const error = new Error(payload.error ?? "Failed to save settings") as Error & {
+      settings?: Record<string, unknown>;
+    };
+    error.settings = payload.settings;
+    throw error;
+  }
   return res.json();
 }
 
@@ -109,7 +121,6 @@ function NotificationPreferences({ userId }: { userId: number }) {
 
   const handleSave = async () => {
     setSaving(true);
-    const previous = prefs;
     try {
       const saved = await saveSettings(userId, {
         ...prefs,
@@ -119,11 +130,25 @@ function NotificationPreferences({ userId }: { userId: number }) {
       toast({ title: "Notification preferences saved" });
     } catch (error) {
       // A stale settings timestamp means another tab/session won the write.
-      // Restore the server copy instead of leaving a misleading optimistic UI.
-      if (error instanceof Error && error.message.includes("Failed")) {
-        setPrefs(previous);
+      // Adopt the server copy instead of leaving a misleading optimistic UI.
+      const serverSettings = error instanceof Error
+        ? (error as Error & { settings?: Record<string, unknown> }).settings
+        : undefined;
+      if (serverSettings) {
+        setPrefs((current) => {
+          const next = { ...current };
+          for (const key of Object.keys(current) as (keyof typeof current)[]) {
+            if (typeof serverSettings[key] === "boolean") next[key] = serverSettings[key] as boolean;
+          }
+          return next;
+        });
+        setUpdatedAt(typeof serverSettings.updated_at === "string" ? serverSettings.updated_at : updatedAt);
       }
-      toast({ title: "Failed to save. Please reload and try again.", variant: "destructive" });
+      toast({
+        title: serverSettings ? "Preferences changed elsewhere" : "Failed to save. Please reload and try again.",
+        description: serverSettings ? "Your screen now shows the saved preferences." : undefined,
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -151,6 +176,7 @@ function NotificationPreferences({ userId }: { userId: number }) {
                 <Switch
                   checked={prefs[key]}
                   onCheckedChange={() => toggle(key)}
+                   disabled={saving}
                 />
               </div>
             ))}

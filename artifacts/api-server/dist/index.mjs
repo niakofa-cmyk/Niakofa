@@ -55765,6 +55765,15 @@ var init_user_settings = __esm({
       notif_wallet_updates: boolean("notif_wallet_updates").notNull().default(true),
       notif_community_activity: boolean("notif_community_activity").notNull().default(false),
       notif_pledge_reminders: boolean("notif_pledge_reminders").notNull().default(true),
+      // Optional Exchange discovery notifications. Active pickup coordination
+      // remains essential and is not controlled by these flags.
+      notif_exchange_activity: boolean("notif_exchange_activity").notNull().default(false),
+      notif_exchange_digest: boolean("notif_exchange_digest").notNull().default(false),
+      // Pauses optional notifications without erasing saved category choices.
+      notif_optional_paused: boolean("notif_optional_paused").notNull().default(false),
+      // Coarse Exchange digest context; never an exact address or raw GPS value.
+      exchange_digest_area: text("exchange_digest_area"),
+      exchange_digest_timezone: text("exchange_digest_timezone"),
       // Privacy preferences
       privacy_profile_visible: boolean("privacy_profile_visible").notNull().default(true),
       privacy_live_location: boolean("privacy_live_location").notNull().default(false),
@@ -58660,10 +58669,11 @@ var init_community_media_saves = __esm({
 });
 
 // ../../lib/db/src/schema/exchange.ts
-var exchangeListingsTable, exchangePickupRequestsTable;
+var exchangeListingsTable, exchangePickupRequestsTable, exchangeDigestDeliveriesTable;
 var init_exchange = __esm({
   "../../lib/db/src/schema/exchange.ts"() {
     "use strict";
+    init_drizzle_orm();
     init_pg_core();
     init_users();
     exchangeListingsTable = pgTable("exchange_listings", {
@@ -58677,9 +58687,15 @@ var init_exchange = __esm({
       condition: text("condition").notNull().default("good"),
       neighborhood: text("neighborhood").notNull(),
       pickup_notes: text("pickup_notes"),
+      // Privacy-rounded coordinates used only for server-side local matching.
+      // These are never returned by the Exchange API.
+      latitude: real("latitude"),
+      longitude: real("longitude"),
       status: text("status").notNull().default("active"),
       moderation_status: text("moderation_status").notNull().default("approved"),
       moderation_reason: text("moderation_reason"),
+      archived_at: timestamp("archived_at", { withTimezone: true }),
+      archive_reason: text("archive_reason"),
       created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
       updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
     });
@@ -58701,7 +58717,18 @@ var init_exchange = __esm({
     }, (table) => [
       index("exchange_pickup_requests_listing_idx").on(table.listing_id, table.created_at),
       index("exchange_pickup_requests_buyer_idx").on(table.buyer_id, table.updated_at),
-      uniqueIndex("exchange_pickup_requests_one_active_per_buyer_listing_idx").on(table.listing_id, table.buyer_id)
+      uniqueIndex("exchange_pickup_requests_one_active_per_buyer_listing_idx").on(table.listing_id, table.buyer_id).where(sql`${table.status} IN ('requested', 'accepted')`)
+    ]);
+    exchangeDigestDeliveriesTable = pgTable("exchange_digest_deliveries", {
+      id: serial("id").primaryKey(),
+      user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+      week_key: text("week_key").notNull(),
+      listing_count: integer("listing_count").notNull().default(0),
+      sent_at: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+      delivered: boolean("delivered").notNull().default(false)
+    }, (table) => [
+      uniqueIndex("exchange_digest_deliveries_user_week_idx").on(table.user_id, table.week_key),
+      index("exchange_digest_deliveries_sent_idx").on(table.sent_at)
     ]);
   }
 });
@@ -58764,6 +58791,7 @@ __export(schema_exports, {
   dnaMatchResultsTable: () => dnaMatchResultsTable,
   dnaMatchingConsentTable: () => dnaMatchingConsentTable,
   dnaProviderEnum: () => dnaProviderEnum,
+  exchangeDigestDeliveriesTable: () => exchangeDigestDeliveriesTable,
   exchangeListingsTable: () => exchangeListingsTable,
   exchangePickupRequestsTable: () => exchangePickupRequestsTable,
   familiesTable: () => familiesTable,
@@ -58992,6 +59020,7 @@ __export(src_exports, {
   dnaMatchResultsTable: () => dnaMatchResultsTable,
   dnaMatchingConsentTable: () => dnaMatchingConsentTable,
   dnaProviderEnum: () => dnaProviderEnum,
+  exchangeDigestDeliveriesTable: () => exchangeDigestDeliveriesTable,
   exchangeListingsTable: () => exchangeListingsTable,
   exchangePickupRequestsTable: () => exchangePickupRequestsTable,
   familiesTable: () => familiesTable,
@@ -128745,25 +128774,34 @@ async function deliverToSubs(subs, payload) {
   return delivered;
 }
 async function userAllowsNotif(userId, notifType) {
-  if (!notifType || notifType === "emergency" || notifType === "nia_checkin") return true;
+  if (!notifType || notifType === "emergency" || notifType === "task_accepted" || notifType === "nia_checkin") return true;
   const rows = await db.select({
     notif_nearby_requests: userSettingsTable.notif_nearby_requests,
     notif_task_accepted: userSettingsTable.notif_task_accepted,
     notif_wallet_updates: userSettingsTable.notif_wallet_updates,
     notif_community_activity: userSettingsTable.notif_community_activity,
-    notif_emergency: userSettingsTable.notif_emergency
+    notif_emergency: userSettingsTable.notif_emergency,
+    notif_exchange_activity: userSettingsTable.notif_exchange_activity,
+    notif_exchange_digest: userSettingsTable.notif_exchange_digest,
+    notif_optional_paused: userSettingsTable.notif_optional_paused
   }).from(userSettingsTable).where(eq(userSettingsTable.user_id, userId)).limit(1);
   if (rows.length === 0) return true;
   const s2 = rows[0];
+  const optionalPaused = s2.notif_optional_paused ?? false;
+  if (optionalPaused && ["nearby_requests", "community", "exchange", "exchange_digest"].includes(notifType ?? "")) {
+    return false;
+  }
   switch (notifType) {
     case "nearby_requests":
       return s2.notif_nearby_requests ?? true;
-    case "task_accepted":
-      return s2.notif_task_accepted ?? true;
     case "wallet":
       return s2.notif_wallet_updates ?? true;
     case "community":
       return s2.notif_community_activity ?? false;
+    case "exchange":
+      return s2.notif_exchange_activity ?? false;
+    case "exchange_digest":
+      return s2.notif_exchange_digest ?? false;
     default:
       return true;
   }
@@ -147516,7 +147554,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "25c9d6a992262606e8c0820e37182c09890f79ea";
+var GIT_COMMIT = "8e878c245fe6e8376f643a58e5b4d1688493246d";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -151135,6 +151173,17 @@ router6.get("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership
 router6.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const id3 = parseInt(String(req.params.id));
   if (isNaN(id3)) return res.status(400).json({ error: "Invalid id" });
+  const expectedUpdatedAt = typeof req.body?.expected_updated_at === "string" ? new Date(req.body.expected_updated_at) : void 0;
+  if (expectedUpdatedAt && Number.isNaN(expectedUpdatedAt.getTime())) {
+    return res.status(400).json({ error: "Invalid expected_updated_at" });
+  }
+  const currentRows = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id3)).limit(1);
+  if (expectedUpdatedAt && currentRows[0] && currentRows[0].updated_at.getTime() !== expectedUpdatedAt.getTime()) {
+    return res.status(409).json({
+      error: "Settings changed elsewhere. Reload before saving.",
+      settings: currentRows[0]
+    });
+  }
   const allowed = [
     "notif_nearby_requests",
     "notif_emergency",
@@ -151142,6 +151191,11 @@ router6.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership
     "notif_wallet_updates",
     "notif_community_activity",
     "notif_pledge_reminders",
+    "notif_exchange_activity",
+    "notif_exchange_digest",
+    "notif_optional_paused",
+    "exchange_digest_area",
+    "exchange_digest_timezone",
     "privacy_profile_visible",
     "privacy_live_location",
     "privacy_activity_sharing",
@@ -151156,6 +151210,22 @@ router6.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership
   const updates = { updated_at: /* @__PURE__ */ new Date() };
   for (const key of allowed) {
     if (req.body[key] === void 0) continue;
+    if (key.startsWith("notif_") && typeof req.body[key] !== "boolean") {
+      return res.status(400).json({ error: `${key} must be a boolean` });
+    }
+    if (key === "exchange_digest_area" && (typeof req.body[key] !== "string" || req.body[key].trim().length < 2 || req.body[key].trim().length > 80)) {
+      return res.status(400).json({ error: "exchange_digest_area must be a coarse area label" });
+    }
+    if (key === "exchange_digest_timezone") {
+      if (typeof req.body[key] !== "string" || req.body[key].length > 64) {
+        return res.status(400).json({ error: "exchange_digest_timezone must be an IANA timezone" });
+      }
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: req.body[key] }).format();
+      } catch {
+        return res.status(400).json({ error: "exchange_digest_timezone must be an IANA timezone" });
+      }
+    }
     if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
     if (key === "spirit_animal" && !isValidSpiritAnimal(req.body[key])) continue;
     updates[key] = req.body[key];
@@ -181500,12 +181570,14 @@ init_src();
 init_zod();
 init_auth();
 init_rate_limit();
+init_push();
 var router65 = (0, import_express67.Router)();
 var CATEGORY_VALUES = ["household", "clothing", "food", "books", "electronics", "children", "other"];
 var CONDITION_VALUES = ["new", "like_new", "good", "well_loved"];
 var LISTING_TYPE_VALUES = ["offer", "need"];
 var RESOURCE_TYPE_VALUES = ["goods", "services"];
 var NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\b(?:text|call|email|venmo|cash\s*app|zelle|whatsapp|telegram)\b)/i;
+var EXCHANGE_IMPACT_PRIVACY_THRESHOLD = 5;
 var listingBody = external_exports2.object({
   listing_type: external_exports2.enum(LISTING_TYPE_VALUES).default("offer"),
   resource_type: external_exports2.enum(RESOURCE_TYPE_VALUES).default("goods"),
@@ -181531,6 +181603,9 @@ function parseId2(value) {
 }
 function safeCoarseText(value) {
   return !NO_PRIVATE_CONTACT.test(value);
+}
+function roundedCoordinate(value) {
+  return value == null || !Number.isFinite(value) ? null : Math.round(value * 100) / 100;
 }
 function serialize(value) {
   return value instanceof Date ? value.toISOString() : value;
@@ -181601,6 +181676,7 @@ router65.post("/community/exchange/listings", requireAuth, requireApproved, comm
   const moderation = moderatePostText(`${data.title}
 ${data.description}
 ${data.pickup_notes}`);
+  const [seller] = await db.select({ lat: usersTable.lat, lng: usersTable.lng }).from(usersTable).where(eq(usersTable.id, req.authenticatedUserId)).limit(1);
   const [listing] = await db.insert(exchangeListingsTable).values({
     seller_id: req.authenticatedUserId,
     listing_type: data.listing_type,
@@ -181611,6 +181687,8 @@ ${data.pickup_notes}`);
     condition: data.condition,
     neighborhood: data.neighborhood,
     pickup_notes: data.pickup_notes || null,
+    latitude: roundedCoordinate(seller?.lat),
+    longitude: roundedCoordinate(seller?.lng),
     moderation_status: moderation.status,
     moderation_reason: moderation.reason
   }).returning();
@@ -181670,7 +181748,11 @@ router65.post("/community/exchange/listings/:id/pickup-requests", requireAuth, r
   if (!listing || listing.status !== "active" || listing.moderation_status !== "approved") return res.status(404).json({ error: "Listing is not available." });
   if (listing.seller_id === userId) return res.status(400).json({ error: "You cannot request your own listing." });
   if (await isBlockedBetween2(userId, listing.seller_id)) return res.status(403).json({ error: "Messaging is blocked between these accounts." });
-  const [existing] = await db.select({ id: exchangePickupRequestsTable.id }).from(exchangePickupRequestsTable).where(and(eq(exchangePickupRequestsTable.listing_id, listingId), eq(exchangePickupRequestsTable.buyer_id, userId))).limit(1);
+  const [existing] = await db.select({ id: exchangePickupRequestsTable.id }).from(exchangePickupRequestsTable).where(and(
+    eq(exchangePickupRequestsTable.listing_id, listingId),
+    eq(exchangePickupRequestsTable.buyer_id, userId),
+    inArray(exchangePickupRequestsTable.status, ["requested", "accepted"])
+  )).limit(1);
   if (existing) return res.status(409).json({ error: "You already have a pickup request for this listing." });
   const [pickupRequest] = await db.insert(exchangePickupRequestsTable).values({
     listing_id: listingId,
@@ -181679,6 +181761,12 @@ router65.post("/community/exchange/listings/:id/pickup-requests", requireAuth, r
     pickup_area: parsed.data.pickup_area,
     proposed_window: parsed.data.proposed_window
   }).returning();
+  void sendPushToUser(listing.seller_id, {
+    title: "A neighbor wants to coordinate",
+    body: `Someone responded to \u201C${listing.title}\u201D. Open Exchange to review the request.`,
+    notifType: "task_accepted"
+  }).catch(() => {
+  });
   return res.status(201).json({ pickup_request: serializeListing(pickupRequest) });
 });
 async function loadPickupRequest(id3) {
@@ -181717,6 +181805,12 @@ router65.post("/community/exchange/pickup-requests/:id/accept", requireAuth, req
     return { pickup_request: updated };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
+  void sendPushToUser(result.pickup_request.buyer_id, {
+    title: "Your Exchange request was accepted",
+    body: "Your neighbor accepted the coordination request. Open Exchange to confirm the handoff details.",
+    notifType: "task_accepted"
+  }).catch(() => {
+  });
   return res.json({ pickup_request: serializeListing(result.pickup_request) });
 });
 router65.post("/community/exchange/pickup-requests/:id/decline", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
@@ -181749,27 +181843,67 @@ router65.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, req
 router65.post("/community/exchange/pickup-requests/:id/confirm-complete", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id3 = parseId2(req.params.id);
   if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
-  const pickup = await loadPickupRequest(id3);
-  if (!pickup) return res.status(404).json({ error: "Pickup request not found" });
   const userId = req.authenticatedUserId;
-  const isBuyer = pickup.buyer_id === userId;
-  const isSeller = pickup.seller_id === userId;
-  if (!isBuyer && !isSeller) return res.status(403).json({ error: "Only the pickup participants can confirm completion." });
-  if (pickup.status !== "accepted") return res.status(409).json({ error: "Completion can only be confirmed for an accepted pickup." });
-  const now = /* @__PURE__ */ new Date();
-  const updates = isBuyer ? { buyer_confirmed_at: now, updated_at: now } : { seller_confirmed_at: now, updated_at: now };
-  const [updated] = await db.update(exchangePickupRequestsTable).set(updates).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "accepted"))).returning();
-  if (!updated) return res.status(409).json({ error: "This pickup was already changed." });
-  const bothConfirmed = Boolean(updated.buyer_confirmed_at && updated.seller_confirmed_at);
-  if (bothConfirmed) {
-    const [completed] = await db.transaction(async (tx) => {
-      const [done] = await tx.update(exchangePickupRequestsTable).set({ status: "completed", completed_at: now, updated_at: now }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "accepted"))).returning();
-      if (done) await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now }).where(eq(exchangeListingsTable.id, pickup.listing_id));
-      return [done];
-    });
-    return res.json({ pickup_request: serializeListing(completed ?? updated) });
-  }
-  return res.json({ pickup_request: serializeListing(updated), awaiting_other_confirmation: true });
+  const result = await db.transaction(async (tx) => {
+    const [pickup] = await tx.select({
+      id: exchangePickupRequestsTable.id,
+      listing_id: exchangePickupRequestsTable.listing_id,
+      buyer_id: exchangePickupRequestsTable.buyer_id,
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangePickupRequestsTable.status,
+      buyer_confirmed_at: exchangePickupRequestsTable.buyer_confirmed_at,
+      seller_confirmed_at: exchangePickupRequestsTable.seller_confirmed_at
+    }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).where(eq(exchangePickupRequestsTable.id, id3)).for("update").limit(1);
+    if (!pickup) return { error: "Pickup request not found", status: 404 };
+    const isBuyer = pickup.buyer_id === userId;
+    const isSeller = pickup.seller_id === userId;
+    if (!isBuyer && !isSeller) return { error: "Only the pickup participants can confirm completion.", status: 403 };
+    if (pickup.status !== "accepted") return { error: "Completion can only be confirmed for an accepted pickup.", status: 409 };
+    const now = /* @__PURE__ */ new Date();
+    const [updated] = await tx.update(exchangePickupRequestsTable).set(
+      isBuyer ? { buyer_confirmed_at: now, updated_at: now } : { seller_confirmed_at: now, updated_at: now }
+    ).where(eq(exchangePickupRequestsTable.id, id3)).returning();
+    if (!updated) return { error: "This pickup was already changed.", status: 409 };
+    if (updated.buyer_confirmed_at && updated.seller_confirmed_at) {
+      const [completed] = await tx.update(exchangePickupRequestsTable).set({ status: "completed", completed_at: now, updated_at: now }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "accepted"))).returning();
+      if (completed) {
+        await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now }).where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
+      }
+      return { pickup_request: completed ?? updated };
+    }
+    return { pickup_request: updated, awaiting_other_confirmation: true };
+  });
+  if ("error" in result) return res.status(result.status).json({ error: result.error });
+  return res.json({
+    pickup_request: serializeListing(result.pickup_request),
+    ..."awaiting_other_confirmation" in result ? { awaiting_other_confirmation: result.awaiting_other_confirmation } : {}
+  });
+});
+router65.get("/community/exchange/impact", requireAuth, requireApproved, generalApiLimiter, async (_req, res) => {
+  const [activity] = await db.select({
+    completed: sql`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed')::int`,
+    unique_neighbors: sql`COUNT(DISTINCT CASE WHEN ${exchangePickupRequestsTable.status} = 'completed' THEN ${exchangePickupRequestsTable.buyer_id} END)::int`,
+    last_30_days: sql`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.completed_at} >= NOW() - INTERVAL '30 days')::int`
+  }).from(exchangePickupRequestsTable);
+  const [live] = await db.select({
+    active_offers: sql`COUNT(*) FILTER (WHERE ${exchangeListingsTable.listing_type} = 'offer')::int`,
+    active_needs: sql`COUNT(*) FILTER (WHERE ${exchangeListingsTable.listing_type} = 'need')::int`
+  }).from(exchangeListingsTable).where(and(
+    eq(exchangeListingsTable.status, "active"),
+    eq(exchangeListingsTable.moderation_status, "approved")
+  ));
+  const completed = activity?.completed ?? 0;
+  const suppressed = completed < EXCHANGE_IMPACT_PRIVACY_THRESHOLD;
+  return res.json({
+    completed: suppressed ? null : completed,
+    active_offers: live?.active_offers ?? 0,
+    active_needs: live?.active_needs ?? 0,
+    unique_neighbors: suppressed ? null : activity?.unique_neighbors ?? 0,
+    completed_30d: suppressed ? null : activity?.last_30_days ?? 0,
+    suppressed,
+    privacy_threshold: EXCHANGE_IMPACT_PRIVACY_THRESHOLD,
+    privacy_note: suppressed ? `Verified completion totals are shown after ${EXCHANGE_IMPACT_PRIVACY_THRESHOLD} community completions to protect small groups.` : "Community-wide counts use only two-party verified Exchange completions."
+  });
 });
 router65.post("/community/exchange/listings/:id/report", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const listingId = parseId2(req.params.id);
@@ -182831,6 +182965,202 @@ init_worker_registry();
 init_ws_hub();
 var SIX_HOURS_MS = 6 * 60 * 60 * 1e3;
 var STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1e3;
+var EXCHANGE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1e3;
+var EXCHANGE_STALE_DAYS = 30;
+var EXCHANGE_DIGEST_RADIUS_MILES = 15;
+function safeTimeZone(timeZone) {
+  if (!timeZone) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+    return timeZone;
+  } catch {
+    return "UTC";
+  }
+}
+function localDateParts(now, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: safeTimeZone(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(now);
+  const value = (type) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    year: Number(value("year")),
+    month: Number(value("month")),
+    day: Number(value("day")),
+    weekday: value("weekday"),
+    hour: Number(value("hour"))
+  };
+}
+function exchangeWeekKey(now = /* @__PURE__ */ new Date(), timeZone = "UTC") {
+  const local = localDateParts(now, timeZone);
+  const date6 = new Date(Date.UTC(local.year, local.month - 1, local.day));
+  const day2 = date6.getUTCDay();
+  date6.setUTCDate(date6.getUTCDate() - (day2 === 0 ? 6 : day2 - 1));
+  return date6.toISOString().slice(0, 10);
+}
+function exchangeDigestWindowOpen(now, timeZone) {
+  const local = localDateParts(now, safeTimeZone(timeZone));
+  return local.weekday === "Mon" && local.hour >= 8 && local.hour < 14;
+}
+async function archiveStaleExchangeListings() {
+  const cutoff = new Date(Date.now() - EXCHANGE_STALE_DAYS * 24 * 60 * 60 * 1e3);
+  const archived = await db.update(exchangeListingsTable).set({
+    status: "archived",
+    archived_at: /* @__PURE__ */ new Date(),
+    archive_reason: "stale_after_30_days_without_active_coordination",
+    updated_at: /* @__PURE__ */ new Date()
+  }).where(and(
+    eq(exchangeListingsTable.status, "active"),
+    lte(exchangeListingsTable.updated_at, cutoff),
+    sql`NOT EXISTS (
+        SELECT 1 FROM exchange_pickup_requests pickup
+        WHERE pickup.listing_id = ${exchangeListingsTable.id}
+          AND pickup.status IN ('requested', 'accepted')
+      )`
+  )).returning({ id: exchangeListingsTable.id });
+  return archived.length;
+}
+function haversineMiles2(lat1, lng1, lat2, lng2) {
+  const radius = 3958.8;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+async function findExchangeDigestListings(recipient) {
+  let listings = [];
+  const radiusMeters = EXCHANGE_DIGEST_RADIUS_MILES * 1609.344;
+  if (recipient.lat != null && recipient.lng != null) {
+    try {
+      const rows = await db.execute(sql`
+        SELECT id, title, listing_type, neighborhood
+        FROM exchange_listings
+        WHERE status = 'active'
+          AND moderation_status = 'approved'
+          AND latitude IS NOT NULL
+          AND longitude IS NOT NULL
+          AND ST_DWithin(
+            ST_MakePoint(${recipient.lng}, ${recipient.lat})::geography,
+            ST_MakePoint(longitude, latitude)::geography,
+            ${radiusMeters}
+          )
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 5
+      `);
+      listings = rows.rows;
+    } catch (err) {
+      logger.warn({ err }, "exchange-digest: geospatial query unavailable; using indexed fallback");
+    }
+    if (listings.length === 0) {
+      const latDelta = EXCHANGE_DIGEST_RADIUS_MILES / 69;
+      const lngDelta = EXCHANGE_DIGEST_RADIUS_MILES / (69 * Math.max(0.25, Math.cos(recipient.lat * Math.PI / 180)));
+      const rows = await db.execute(sql`
+        SELECT id, title, listing_type, neighborhood, latitude, longitude
+        FROM exchange_listings
+        WHERE status = 'active'
+          AND moderation_status = 'approved'
+          AND latitude BETWEEN ${recipient.lat - latDelta} AND ${recipient.lat + latDelta}
+          AND longitude BETWEEN ${recipient.lng - lngDelta} AND ${recipient.lng + lngDelta}
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 50
+      `);
+      listings = rows.rows.filter((listing) => listing.latitude != null && listing.longitude != null && haversineMiles2(recipient.lat, recipient.lng, listing.latitude, listing.longitude) <= EXCHANGE_DIGEST_RADIUS_MILES).slice(0, 5);
+    }
+  }
+  if (listings.length === 0 && recipient.area?.trim()) {
+    const rows = await db.execute(sql`
+      SELECT id, title, listing_type, neighborhood
+      FROM exchange_listings
+      WHERE status = 'active'
+        AND moderation_status = 'approved'
+        AND neighborhood = ${recipient.area.trim()}
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 5
+    `);
+    listings = rows.rows;
+  }
+  return listings;
+}
+async function processExchangeDigest(now = /* @__PURE__ */ new Date()) {
+  const recipients = await db.select({
+    id: usersTable.id,
+    lat: usersTable.lat,
+    lng: usersTable.lng,
+    area: userSettingsTable.exchange_digest_area,
+    timezone: userSettingsTable.exchange_digest_timezone
+  }).from(usersTable).innerJoin(userSettingsTable, eq(userSettingsTable.user_id, usersTable.id)).where(and(
+    eq(userSettingsTable.notif_exchange_digest, true),
+    eq(userSettingsTable.notif_optional_paused, false)
+  ));
+  for (const recipient of recipients) {
+    const timeZone = safeTimeZone(recipient.timezone);
+    const weekKey = exchangeWeekKey(now, timeZone);
+    const [existingDelivery] = await db.select({
+      id: exchangeDigestDeliveriesTable.id,
+      delivered: exchangeDigestDeliveriesTable.delivered,
+      sent_at: exchangeDigestDeliveriesTable.sent_at
+    }).from(exchangeDigestDeliveriesTable).where(and(
+      eq(exchangeDigestDeliveriesTable.user_id, recipient.id),
+      eq(exchangeDigestDeliveriesTable.week_key, weekKey)
+    )).limit(1);
+    if (existingDelivery?.delivered) continue;
+    if (!existingDelivery && !exchangeDigestWindowOpen(now, timeZone)) continue;
+    const listings = await findExchangeDigestListings(recipient);
+    if (listings.length === 0) continue;
+    let deliveryId;
+    if (existingDelivery) {
+      const [claimed] = await db.update(exchangeDigestDeliveriesTable).set({ sent_at: now, listing_count: listings.length }).where(and(
+        eq(exchangeDigestDeliveriesTable.id, existingDelivery.id),
+        eq(exchangeDigestDeliveriesTable.delivered, false),
+        sql`${exchangeDigestDeliveriesTable.sent_at} < NOW() - INTERVAL '12 hours'`
+      )).returning({ id: exchangeDigestDeliveriesTable.id });
+      if (!claimed) continue;
+      deliveryId = claimed.id;
+    } else {
+      const [created] = await db.insert(exchangeDigestDeliveriesTable).values({ user_id: recipient.id, week_key: weekKey, listing_count: listings.length }).onConflictDoNothing({
+        target: [exchangeDigestDeliveriesTable.user_id, exchangeDigestDeliveriesTable.week_key]
+      }).returning({ id: exchangeDigestDeliveriesTable.id });
+      if (!created) continue;
+      deliveryId = created.id;
+    }
+    const body = listings.map((listing) => `${listing.listing_type === "need" ? "Need" : "Offer"}: ${listing.title} (${listing.neighborhood})`).join(" \xB7 ");
+    try {
+      await sendPushToUser(recipient.id, {
+        title: "Your weekly Exchange neighborhood digest",
+        body: `${listings.length} nearby post${listings.length === 1 ? "" : "s"}: ${body}`,
+        notifType: "exchange_digest"
+      });
+      await db.update(exchangeDigestDeliveriesTable).set({ delivered: true }).where(eq(exchangeDigestDeliveriesTable.id, deliveryId));
+    } catch (err) {
+      logger.warn({ err, user_id: recipient.id }, "exchange-digest: delivery failed; will be retried on the next eligible run");
+    }
+  }
+}
+async function processExchangeMaintenance() {
+  try {
+    const archivedCount = await archiveStaleExchangeListings();
+    await processExchangeDigest();
+    if (archivedCount > 0) {
+      logger.info({ count: archivedCount }, "exchange-maintenance: stale listings archived");
+    }
+  } catch (err) {
+    logger.error({ err }, "exchange-maintenance: run failed");
+    throw err;
+  }
+}
+function startExchangeMaintenanceWorker() {
+  processExchangeMaintenance().then(() => workerRan("exchange-maintenance", true)).catch(() => workerRan("exchange-maintenance", false));
+  const interval2 = setInterval(() => {
+    processExchangeMaintenance().then(() => workerRan("exchange-maintenance", true)).catch(() => workerRan("exchange-maintenance", false));
+  }, EXCHANGE_MAINTENANCE_INTERVAL_MS);
+  logger.info({ intervalMs: EXCHANGE_MAINTENANCE_INTERVAL_MS }, "scheduler: Exchange maintenance worker started");
+  return () => clearInterval(interval2);
+}
 async function processCommunityStoryCleanup() {
   const expired = await db.select({
     id: communityStoriesTable.id,
@@ -185251,6 +185581,7 @@ server.listen(port, async () => {
   registerWorker("daily-kindness", "Daily Kindness Engine", false);
   registerWorker("payment-reminder", "Payment Reminder", false);
   registerWorker("community-story-cleanup", "Community Story Cleanup", false);
+  registerWorker("exchange-maintenance", "Exchange Maintenance", false);
   registerWorker("pool-settlement", "Pool Settlement Status", false);
   if (isMediaPlatformV21Enabled()) {
     registerWorker("media-processing", "Universal Media Processing", true);
@@ -185323,6 +185654,8 @@ server.listen(port, async () => {
   workerStarted("pool-settlement", "Pool Settlement Status", false);
   startCommunityStoryCleanupWorker();
   workerStarted("community-story-cleanup", "Community Story Cleanup", false);
+  startExchangeMaintenanceWorker();
+  workerStarted("exchange-maintenance", "Exchange Maintenance", false);
   processRecurringRequests().catch(
     (err) => logger.error({ err }, "recurring-worker: initial run failed \u2014 non-fatal")
   );
