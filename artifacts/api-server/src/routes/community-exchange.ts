@@ -338,6 +338,13 @@ router.post("/community/exchange/pickup-requests/:id/decline", requireAuth, requ
   const [updated] = await db.update(exchangePickupRequestsTable)
     .set({ status: "declined", cancelled_at: new Date(), updated_at: new Date() })
     .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, "requested"))).returning();
+  if (updated) {
+    void sendPushToUser(updated.buyer_id, {
+      title: "Your Exchange request was declined",
+      body: "This coordination request was declined. You can browse Exchange for other ways to connect with a neighbor.",
+      notifType: "task_accepted",
+    }).catch(() => {});
+  }
   return res.json({ pickup_request: serializeListing(updated as unknown as Record<string, unknown>) });
 });
 
@@ -359,6 +366,12 @@ router.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requi
     return updated;
   });
   if (!result) return res.status(409).json({ error: "This pickup was already changed." });
+  const otherParticipantId = req.authenticatedUserId === pickup.buyer_id ? pickup.seller_id : pickup.buyer_id;
+  void sendPushToUser(otherParticipantId, {
+    title: "Exchange coordination was cancelled",
+    body: "The other participant cancelled this pickup coordination. The listing is available again if it is still active.",
+    notifType: "task_accepted",
+  }).catch(() => {});
   return res.json({ pickup_request: serializeListing(result as unknown as Record<string, unknown>) });
 });
 
@@ -368,7 +381,11 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
   const userId = req.authenticatedUserId!;
   type ConfirmCompleteResult =
     | { error: string; status: 403 | 404 | 409 }
-    | { pickup_request: typeof exchangePickupRequestsTable.$inferSelect; awaiting_other_confirmation?: boolean };
+    | {
+      pickup_request: typeof exchangePickupRequestsTable.$inferSelect;
+      awaiting_other_confirmation?: boolean;
+      notifyUserIds: number[];
+    };
   const result = await db.transaction(async (tx): Promise<ConfirmCompleteResult> => {
     const [pickup] = await tx.select({
       id: exchangePickupRequestsTable.id,
@@ -402,11 +419,27 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
         await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now })
           .where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
       }
-      return { pickup_request: completed ?? updated };
+      return {
+        pickup_request: completed ?? updated,
+        notifyUserIds: [pickup.buyer_id, pickup.seller_id],
+      };
     }
-    return { pickup_request: updated, awaiting_other_confirmation: true as const };
+    return {
+      pickup_request: updated,
+      awaiting_other_confirmation: true as const,
+      notifyUserIds: [isBuyer ? pickup.seller_id : pickup.buyer_id],
+    };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
+  if (result.notifyUserIds.length > 0) {
+    void Promise.allSettled(result.notifyUserIds.map((participantId) => sendPushToUser(participantId, {
+      title: result.awaiting_other_confirmation ? "Exchange handoff confirmation recorded" : "Exchange handoff completed",
+      body: result.awaiting_other_confirmation
+        ? "Your confirmation is recorded. The other participant still needs to confirm the handoff."
+        : "Both participants confirmed the handoff. Thank you for closing the loop.",
+      notifType: "task_accepted",
+    })));
+  }
   return res.json({
     pickup_request: serializeListing(result.pickup_request as unknown as Record<string, unknown>),
     ...("awaiting_other_confirmation" in result ? { awaiting_other_confirmation: result.awaiting_other_confirmation } : {}),

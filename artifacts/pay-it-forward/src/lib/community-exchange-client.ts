@@ -101,8 +101,11 @@ export async function createExchangePickupRequest(id: number, data: CreatePickup
 
 export type PickupAction = "accept" | "decline" | "cancel" | "confirm-complete";
 
-export async function updateExchangePickupRequest(id: number, action: PickupAction): Promise<{ pickup_request: ExchangePickupRequest }> {
-  return request<{ pickup_request: ExchangePickupRequest }>(`/api/community/exchange/pickup-requests/${id}/${action}`, {
+export async function updateExchangePickupRequest(
+  id: number,
+  action: PickupAction,
+): Promise<{ pickup_request: ExchangePickupRequest; awaiting_other_confirmation?: boolean }> {
+  return request<{ pickup_request: ExchangePickupRequest; awaiting_other_confirmation?: boolean }>(`/api/community/exchange/pickup-requests/${id}/${action}`, {
     method: "POST",
   });
 }

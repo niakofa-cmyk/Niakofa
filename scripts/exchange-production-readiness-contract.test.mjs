@@ -37,10 +37,23 @@ test("Exchange completion and impact metrics use verified, privacy-safe semantic
   const exchange = await read("artifacts/api-server/src/routes/community-exchange.ts");
   assert.match(exchange, /buyer_confirmed_at/);
   assert.match(exchange, /seller_confirmed_at/);
+  assert.match(exchange, /Your Exchange request was declined/);
+  assert.match(exchange, /Exchange coordination was cancelled/);
+  assert.match(exchange, /Exchange handoff confirmation recorded/);
+  assert.match(exchange, /Exchange handoff completed/);
+  assert.match(exchange, /Promise\.allSettled\(result\.notifyUserIds\.map/);
   assert.match(exchange, /EXCHANGE_IMPACT_PRIVACY_THRESHOLD = 5/);
   assert.match(exchange, /const suppressed = completed < EXCHANGE_IMPACT_PRIVACY_THRESHOLD/);
   assert.match(exchange, /completed: suppressed \? null : completed/);
   assert.doesNotMatch(exchange, /const userId = req\.authenticatedUserId!;\s+const \[row\] = await db\.select\(\{\s*completed:/);
+});
+
+test("Exchange client surfaces the two-party completion state", async () => {
+  const client = await read("artifacts/pay-it-forward/src/lib/community-exchange-client.ts");
+  const view = await read("artifacts/pay-it-forward/src/components/community/CommunityExchangeView.tsx");
+  assert.match(client, /awaiting_other_confirmation\?: boolean/);
+  assert.match(view, /awaiting_other_confirmation/);
+  assert.match(view, /Waiting for the other participant to confirm/);
 });
 
 test("digest location persistence is coarse and timezone-aware", async () => {
