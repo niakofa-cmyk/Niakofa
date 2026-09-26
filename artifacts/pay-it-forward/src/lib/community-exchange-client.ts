@@ -90,6 +90,15 @@ export async function createExchangeListing(data: CreateListingInput): Promise<{
   });
 }
 
+export type UpdateListingInput = Partial<CreateListingInput>;
+
+export async function updateExchangeListing(id: number, data: UpdateListingInput): Promise<{ listing: ExchangeListing; message: string }> {
+  return request<{ listing: ExchangeListing; message: string }>(`/api/community/exchange/listings/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function renewExchangeListing(id: number): Promise<{ listing: ExchangeListing }> {
   return request<{ listing: ExchangeListing }>(`/api/community/exchange/listings/${id}/renew`, {
     method: "POST",

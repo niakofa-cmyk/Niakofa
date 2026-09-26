@@ -35,6 +35,19 @@ const listingBody = z.object({
   pickup_notes: z.string().trim().max(500).optional().default(""),
 });
 
+const listingEditBody = z.object({
+  listing_type: z.enum(LISTING_TYPE_VALUES).optional(),
+  resource_type: z.enum(RESOURCE_TYPE_VALUES).optional(),
+  title: z.string().trim().min(3).max(100).optional(),
+  description: z.string().trim().min(10).max(2000).optional(),
+  category: z.enum(CATEGORY_VALUES).optional(),
+  condition: z.enum(CONDITION_VALUES).optional(),
+  neighborhood: z.string().trim().min(2).max(80).optional(),
+  pickup_notes: z.string().trim().max(500).optional(),
+}).refine((value) => Object.keys(value).length > 0, {
+  message: "At least one listing field is required.",
+});
+
 const pickupBody = z.object({
   note: z.string().trim().min(3).max(1000),
   pickup_area: z.string().trim().min(2).max(100),
@@ -53,6 +66,40 @@ function parseId(value: unknown): number | null {
 
 function safeCoarseText(value: string): boolean {
   return !NO_PRIVATE_CONTACT.test(value);
+}
+
+function exchangeMessagesActionUrl(recipientId: number, listingId: number, pickupRequestId?: number): string {
+  const params = new URLSearchParams({
+    mode: "direct",
+    recipientId: String(recipientId),
+    exchangeListingId: String(listingId),
+  });
+  if (pickupRequestId) params.set("exchangePickupRequestId", String(pickupRequestId));
+  return `/messages?${params.toString()}`;
+}
+
+function notifyExchangeParticipant(input: {
+  recipientId: number;
+  actorUserId: number;
+  listingId: number;
+  pickupRequestId?: number;
+  title: string;
+  body: string;
+  action?: string;
+}): Promise<void> {
+  return createMessageNotification({
+    userId: input.recipientId,
+    actorUserId: input.actorUserId,
+    type: "exchange",
+    title: input.title,
+    body: input.body,
+    actionUrl: exchangeMessagesActionUrl(input.recipientId, input.listingId, input.pickupRequestId),
+    metadata: {
+      exchange_listing_id: input.listingId,
+      ...(input.pickupRequestId ? { exchange_pickup_request_id: input.pickupRequestId } : {}),
+      ...(input.action ? { action: input.action } : {}),
+    },
+  });
 }
 
 function roundedCoordinate(value: number | null | undefined): number | null {
@@ -276,6 +323,72 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
   });
 });
 
+router.patch("/community/exchange/listings/:id", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid listing id" });
+  const parsed = listingEditBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid listing update", details: parsed.error.issues });
+  const data = parsed.data;
+  const [listing] = await db.select().from(exchangeListingsTable).where(and(
+    eq(exchangeListingsTable.id, id),
+    eq(exchangeListingsTable.seller_id, req.authenticatedUserId!),
+  )).limit(1);
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (listing.status !== "active") {
+    return res.status(409).json({ error: "A listing can only be edited before pickup coordination is accepted." });
+  }
+  if ([data.neighborhood, data.pickup_notes].filter((value): value is string => value !== undefined).some((value) => !safeCoarseText(value))) {
+    return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
+  }
+  const nextTitle = data.title ?? listing.title;
+  const nextDescription = data.description ?? listing.description;
+  const nextPickupNotes = data.pickup_notes ?? listing.pickup_notes ?? "";
+  const moderation = moderatePostText(`${nextTitle}\n${nextDescription}\n${nextPickupNotes}`);
+  const updates = Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined),
+  ) as Partial<typeof exchangeListingsTable.$inferInsert>;
+  const now = new Date();
+  const [updated] = await db.update(exchangeListingsTable)
+    .set({
+      ...updates,
+      pickup_notes: data.pickup_notes === undefined ? undefined : data.pickup_notes || null,
+      moderation_status: moderation.status,
+      moderation_reason: moderation.reason,
+      updated_at: now,
+    })
+    .where(and(
+      eq(exchangeListingsTable.id, id),
+      eq(exchangeListingsTable.seller_id, req.authenticatedUserId!),
+      eq(exchangeListingsTable.status, "active"),
+    ))
+    .returning();
+  if (!updated) return res.status(409).json({ error: "This listing changed before it could be edited." });
+
+  const activeRequests = await db.select({
+    id: exchangePickupRequestsTable.id,
+    buyer_id: exchangePickupRequestsTable.buyer_id,
+  }).from(exchangePickupRequestsTable).where(and(
+    eq(exchangePickupRequestsTable.listing_id, id),
+    eq(exchangePickupRequestsTable.status, "requested"),
+  ));
+  void Promise.allSettled(activeRequests.map((request) => notifyExchangeParticipant({
+    recipientId: request.buyer_id,
+    actorUserId: req.authenticatedUserId!,
+    listingId: updated.id,
+    pickupRequestId: request.id,
+    title: "An Exchange post changed",
+    body: `The owner updated “${updated.title}”. Open Messages to review the current coordination details.`,
+    action: "listing_updated",
+  })));
+
+  return res.json({
+    listing: serializeListing(updated as unknown as Record<string, unknown>),
+    message: moderation.status === "approved"
+      ? "Listing updated."
+      : "Listing updated and held for safety review.",
+  });
+});
+
 router.post("/community/exchange/listings/:id/withdraw", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid listing id" });
@@ -388,6 +501,15 @@ router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, req
     pickup_area: parsed.data.pickup_area,
     proposed_window: parsed.data.proposed_window,
   }).returning();
+  void notifyExchangeParticipant({
+    recipientId: listing.seller_id,
+    actorUserId: userId,
+    listingId: listing.id,
+    pickupRequestId: pickupRequest.id,
+    title: "A neighbor wants to coordinate",
+    body: `Someone responded to “${listing.title}”. Open Messages to review the request.`,
+    action: "request_created",
+  }).catch(() => {});
   void sendPushToUser(listing.seller_id, {
     title: "A neighbor wants to coordinate",
     body: `Someone responded to “${listing.title}”. Open Exchange to review the request.`,
@@ -445,6 +567,15 @@ router.post("/community/exchange/pickup-requests/:id/accept", requireAuth, requi
     return { pickup_request: updated };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
+  void notifyExchangeParticipant({
+    recipientId: result.pickup_request.buyer_id,
+    actorUserId: userId,
+    listingId: result.pickup_request.listing_id,
+    pickupRequestId: result.pickup_request.id,
+    title: "Your Exchange request was accepted",
+    body: "Your neighbor accepted the coordination request. Continue the handoff in Messages.",
+    action: "request_accepted",
+  }).catch(() => {});
   void sendPushToUser(result.pickup_request.buyer_id, {
     title: "Your Exchange request was accepted",
     body: "Your neighbor accepted the coordination request. Open Exchange to confirm the handoff details.",
@@ -464,6 +595,15 @@ router.post("/community/exchange/pickup-requests/:id/decline", requireAuth, requ
     .set({ status: "declined", cancelled_at: new Date(), updated_at: new Date() })
     .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, "requested"))).returning();
   if (updated) {
+    void notifyExchangeParticipant({
+      recipientId: updated.buyer_id,
+      actorUserId: req.authenticatedUserId!,
+      listingId: pickup.listing_id,
+      pickupRequestId: updated.id,
+      title: "Your Exchange request was declined",
+      body: "This coordination request was declined. Open Messages for the update, or browse Exchange for another neighbor.",
+      action: "request_declined",
+    }).catch(() => {});
     void sendPushToUser(updated.buyer_id, {
       title: "Your Exchange request was declined",
       body: "This coordination request was declined. You can browse Exchange for other ways to connect with a neighbor.",
@@ -492,6 +632,15 @@ router.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requi
   });
   if (!result) return res.status(409).json({ error: "This pickup was already changed." });
   const otherParticipantId = req.authenticatedUserId === pickup.buyer_id ? pickup.seller_id : pickup.buyer_id;
+  void notifyExchangeParticipant({
+    recipientId: otherParticipantId,
+    actorUserId: req.authenticatedUserId!,
+    listingId: pickup.listing_id,
+    pickupRequestId: result.id,
+    title: "Exchange coordination was cancelled",
+    body: "The other participant cancelled this pickup coordination. Open Messages for the update.",
+    action: "request_cancelled",
+  }).catch(() => {});
   void sendPushToUser(otherParticipantId, {
     title: "Exchange coordination was cancelled",
     body: "The other participant cancelled this pickup coordination. The listing is available again if it is still active.",
@@ -557,6 +706,20 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
   if (result.notifyUserIds.length > 0) {
+    const otherParticipantId = result.notifyUserIds.find((participantId) => participantId !== userId);
+    if (otherParticipantId) {
+      void notifyExchangeParticipant({
+        recipientId: otherParticipantId,
+        actorUserId: userId,
+        listingId: result.pickup_request.listing_id,
+        pickupRequestId: result.pickup_request.id,
+        title: result.awaiting_other_confirmation ? "Exchange handoff confirmation recorded" : "Exchange handoff completed",
+        body: result.awaiting_other_confirmation
+          ? "The other participant confirmed their side. Continue the handoff in Messages."
+          : "Both participants confirmed the handoff. Thank you for closing the loop.",
+        action: result.awaiting_other_confirmation ? "handoff_confirmation_recorded" : "handoff_completed",
+      }).catch(() => {});
+    }
     void Promise.allSettled(result.notifyUserIds.map((participantId) => sendPushToUser(participantId, {
       title: result.awaiting_other_confirmation ? "Exchange handoff confirmation recorded" : "Exchange handoff completed",
       body: result.awaiting_other_confirmation

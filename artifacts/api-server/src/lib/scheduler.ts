@@ -330,8 +330,11 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
           .from(exchangeDigestDeliveriesTable)
           .where(eq(exchangeDigestDeliveriesTable.id, deliveryId))
           .limit(1);
-        const terminalFailure = delivery.status !== "no_subscriptions"
-          && (attempt?.attempt_count ?? EXCHANGE_DIGEST_MAX_ATTEMPTS) >= EXCHANGE_DIGEST_MAX_ATTEMPTS;
+        // "no_subscriptions" is retryable while the weekly delivery window is
+        // open, but it must still respect the same bounded-attempt terminal
+        // state as provider failures. Otherwise one unsubscribed account is
+        // retried forever on every maintenance tick.
+        const terminalFailure = (attempt?.attempt_count ?? EXCHANGE_DIGEST_MAX_ATTEMPTS) >= EXCHANGE_DIGEST_MAX_ATTEMPTS;
         await db.update(exchangeDigestDeliveriesTable)
           .set({
             claim_token: null,

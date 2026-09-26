@@ -596,6 +596,7 @@ export default function MessagesPage() {
     setSelectedDirectId(null);
     setDirectMessages([]);
     setBody(initialBody);
+    setContexts([]);
     setSearch("");
     setSearchResults([]);
     setShowInfo(false);
@@ -604,7 +605,10 @@ export default function MessagesPage() {
 
   useEffect(() => {
     const recipientId = Number.parseInt(queryValue(location, "recipientId") ?? "", 10);
-    if (!Number.isSafeInteger(recipientId) || recipientId <= 0 || activeRecipient?.id === recipientId) return;
+    const exchangeListingId = Number.parseInt(queryValue(location, "exchangeListingId") ?? "", 10);
+    const exchangePickupRequestId = Number.parseInt(queryValue(location, "exchangePickupRequestId") ?? "", 10);
+    const hasExchangeContext = Number.isSafeInteger(exchangeListingId) && exchangeListingId > 0;
+    if (!Number.isSafeInteger(recipientId) || recipientId <= 0 || (activeRecipient?.id === recipientId && !hasExchangeContext)) return;
     const storyId = Number.parseInt(queryValue(location, "storyId") ?? "", 10);
     let cancelled = false;
     const loadRecipient = async () => {
@@ -613,8 +617,17 @@ export default function MessagesPage() {
       const data = await response.json() as { user?: DirectUser };
       const recipient = data.user;
       if (recipient && !cancelled) {
-        startDirectWithUser(recipient, `Replying to ${recipient.name}'s Story`);
+        startDirectWithUser(recipient, hasExchangeContext ? "" : `Replying to ${recipient.name}'s Story`);
         if (Number.isSafeInteger(storyId) && storyId > 0) setContexts([{ type: "story", story_id: storyId, label: "Community Story" }]);
+        if (hasExchangeContext) {
+          const params = new URLSearchParams({ section: "exchange", listingId: String(exchangeListingId) });
+          if (Number.isSafeInteger(exchangePickupRequestId) && exchangePickupRequestId > 0) params.set("pickupRequestId", String(exchangePickupRequestId));
+          setContexts([{
+            type: "link",
+            url: `${window.location.origin}/community?${params.toString()}`,
+            label: `Exchange coordination · Post #${exchangeListingId}`,
+          }]);
+        }
       }
     };
     void loadRecipient();

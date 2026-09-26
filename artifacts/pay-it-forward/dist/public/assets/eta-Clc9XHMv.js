@@ -1,1 +1,0 @@
-function e(s){const t=s.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)(?=\s|\d|$)/i),n=s.match(/(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)(?=\s|$)/i),r=t?Number.parseFloat(t[1]):0,c=n?Number.parseFloat(n[1]):0,o=Math.round(r*3600+c*60);return Number.isFinite(o)?o:0}export{e as p};

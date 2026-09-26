@@ -32,6 +32,7 @@ import {
   getExchangePickupRequests,
   reportExchangeListing,
   renewExchangeListing,
+  updateExchangeListing,
   updateExchangePickupRequest,
   type ExchangeReportType,
 } from "@/lib/community-exchange-client";
@@ -177,10 +178,11 @@ function ExchangeSkeleton() {
   );
 }
 
-function ListingCard({ listing, onOpen, onRenew }: {
+function ListingCard({ listing, onOpen, onRenew, onEdit }: {
   listing: ExchangeListing;
   onOpen: () => void;
   onRenew?: (listing: ExchangeListing) => void;
+  onEdit?: (listing: ExchangeListing) => void;
 }) {
   const isNeed = listing.listing_type === "need";
   return (
@@ -203,6 +205,11 @@ function ListingCard({ listing, onOpen, onRenew }: {
       {listing.status === "archived" && onRenew && (
         <button type="button" onClick={() => onRenew(listing)} className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-primary/40 px-3 py-2 text-xs font-black text-primary transition hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-renew-listing-${listing.id}`}>
           <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Renew this post
+        </button>
+      )}
+      {listing.status === "active" && onEdit && (
+        <button type="button" onClick={() => onEdit(listing)} className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-black text-muted-foreground transition hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-edit-listing-${listing.id}`}>
+          <Tag className="h-3.5 w-3.5" aria-hidden="true" /> Edit this post
         </button>
       )}
     </div>
@@ -233,7 +240,10 @@ export function CommunityExchangeView() {
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [requestsError, setRequestsError] = useState("");
   const [refreshTick, setRefreshTick] = useState(0);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(() => {
+    const value = Number(new URLSearchParams(window.location.search).get("listingId"));
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  });
   const [selectedListing, setSelectedListing] = useState<ExchangeListing | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -248,6 +258,9 @@ export function CommunityExchangeView() {
   const [reportForm, setReportForm] = useState<{ type: ExchangeReportType; description: string }>({ type: "other", description: "" });
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState("");
   const [impact, setImpact] = useState<ExchangeImpact | null>(null);
   const [postForm, setPostForm] = useState({
     listing_type: "offer" as ExchangeListingType,
@@ -257,6 +270,16 @@ export function CommunityExchangeView() {
     category: "household" as ExchangeCategory,
     condition: "good" as ExchangeCondition,
     neighborhood: initialLocation?.label ?? "",
+    pickup_notes: "",
+  });
+  const [editForm, setEditForm] = useState({
+    listing_type: "offer" as ExchangeListingType,
+    resource_type: "goods" as ExchangeResourceType,
+    title: "",
+    description: "",
+    category: "household" as ExchangeCategory,
+    condition: "good" as ExchangeCondition,
+    neighborhood: "",
     pickup_notes: "",
   });
 
@@ -503,6 +526,26 @@ export function CommunityExchangeView() {
     }
   };
 
+  const submitEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selectedListing && !editForm.title) return;
+    const listingId = selectedListing?.id ?? Number(new URLSearchParams(window.location.search).get("listingId"));
+    if (!Number.isSafeInteger(listingId) || listingId <= 0) return;
+    setEditSubmitting(true);
+    setEditError("");
+    try {
+      const result = await updateExchangeListing(listingId, editForm);
+      setNotice(result.message || "Listing updated.");
+      setEditOpen(false);
+      setSelectedId(null);
+      setRefreshTick((tick) => tick + 1);
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "The listing could not be updated.");
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
   const runPickupAction = async (request: ExchangePickupRequest, action: "accept" | "decline" | "cancel" | "confirm-complete") => {
     setActionLoading(request.id);
     setNotice("");
@@ -632,7 +675,20 @@ export function CommunityExchangeView() {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2" data-testid="listings-grid">
-            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} onRenew={mineOnly ? renewListing : undefined} />)}
+            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} onRenew={mineOnly ? renewListing : undefined} onEdit={mineOnly ? (item) => {
+              setEditError("");
+              setEditForm({
+                listing_type: item.listing_type,
+                resource_type: item.resource_type,
+                title: item.title,
+                description: item.description,
+                category: item.category,
+                condition: item.condition,
+                neighborhood: item.neighborhood,
+                pickup_notes: item.pickup_notes ?? "",
+              });
+              setEditOpen(true);
+            } : undefined} />)}
           </div>
           {nextCursor && (
             <button
@@ -665,7 +721,15 @@ export function CommunityExchangeView() {
                      One participant has confirmed the handoff. Waiting for the other participant to confirm.
                    </p>
                  )}
-                <div className="mt-3 flex flex-wrap gap-2">
+                 <div className="mt-3 flex flex-wrap gap-2">
+                   {currentUser && (currentUser.id === request.buyer_id || currentUser.id === request.seller_id) && (currentUser.id === request.buyer_id ? request.seller_id : request.buyer_id) ? (
+                     <button type="button" onClick={() => {
+                       const recipientId = currentUser.id === request.buyer_id ? request.seller_id : request.buyer_id;
+                       if (!recipientId) return;
+                       const params = new URLSearchParams({ mode: "direct", recipientId: String(recipientId), exchangeListingId: String(request.listing_id), exchangePickupRequestId: String(request.id) });
+                       window.location.assign(`/messages?${params.toString()}`);
+                     }} className="min-h-8 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-open-exchange-messages-${request.id}`}><MessageSquare className="mr-1 inline h-3.5 w-3.5" /> Open Messages</button>
+                   ) : null}
                   {request.status === "requested" && <><button type="button" disabled={actionLoading === request.id} onClick={() => runPickupAction(request, "accept")} className="min-h-8 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-accept-pickup-${request.id}`}>Accept</button><button type="button" disabled={actionLoading === request.id} onClick={() => runPickupAction(request, "decline")} className="min-h-8 rounded-lg border border-border px-2.5 py-1.5 text-xs font-bold hover:bg-muted disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-decline-pickup-${request.id}`}>Decline</button></>}
                   {(request.status === "requested" || request.status === "accepted") && <button type="button" disabled={actionLoading === request.id} onClick={() => runPickupAction(request, "cancel")} className="min-h-8 rounded-lg border border-border px-2.5 py-1.5 text-xs font-bold text-muted-foreground hover:bg-muted disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-cancel-pickup-${request.id}`}>Cancel</button>}
                   {request.status === "accepted" && <button type="button" disabled={actionLoading === request.id} onClick={() => runPickupAction(request, "confirm-complete")} className="min-h-8 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-complete-pickup-${request.id}`}>{actionLoading === request.id ? "Updating…" : "Confirm complete"}</button>}
@@ -733,6 +797,30 @@ export function CommunityExchangeView() {
           </form>
         </ModalFrame>
       )}
+
+       {editOpen && (
+         <ModalFrame title="Edit Exchange post" eyebrow="Before pickup coordination is accepted" onClose={() => setEditOpen(false)} wide>
+           <form onSubmit={submitEdit} className="space-y-4">
+             <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm leading-relaxed text-muted-foreground">
+               Updates go through the same safety review as a new post. Keep exact addresses, phone numbers, links, and payment details out of the post.
+             </div>
+             <div className="grid gap-3 sm:grid-cols-2">
+               <div className="space-y-2"><FieldLabel htmlFor="edit-listing-type">Post type</FieldLabel><select id="edit-listing-type" value={editForm.listing_type} onChange={(event) => setEditForm((current) => ({ ...current, listing_type: event.target.value as ExchangeListingType }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"><option value="offer">Offer</option><option value="need">Need</option></select></div>
+               <div className="space-y-2"><FieldLabel htmlFor="edit-resource-type">Resource</FieldLabel><select id="edit-resource-type" value={editForm.resource_type} onChange={(event) => setEditForm((current) => ({ ...current, resource_type: event.target.value as ExchangeResourceType }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"><option value="goods">Goods</option><option value="services">Services</option></select></div>
+             </div>
+             <div className="space-y-2"><FieldLabel htmlFor="edit-title">Short title</FieldLabel><input id="edit-title" required minLength={3} maxLength={100} value={editForm.title} onChange={(event) => setEditForm((current) => ({ ...current, title: event.target.value }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="input-edit-title" /></div>
+             <div className="space-y-2"><FieldLabel htmlFor="edit-description">Description</FieldLabel><textarea id="edit-description" required minLength={10} maxLength={2000} rows={5} value={editForm.description} onChange={(event) => setEditForm((current) => ({ ...current, description: event.target.value }))} className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm" data-testid="input-edit-description" /></div>
+             <div className="grid gap-3 sm:grid-cols-2">
+               <div className="space-y-2"><FieldLabel htmlFor="edit-category">Category</FieldLabel><select id="edit-category" value={editForm.category} onChange={(event) => setEditForm((current) => ({ ...current, category: event.target.value as ExchangeCategory }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm">{categories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select></div>
+               <div className="space-y-2"><FieldLabel htmlFor="edit-condition">Condition / format</FieldLabel><select id="edit-condition" value={editForm.condition} onChange={(event) => setEditForm((current) => ({ ...current, condition: event.target.value as ExchangeCondition }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm">{conditions.map((condition) => <option key={condition.value} value={condition.value}>{condition.label}</option>)}</select></div>
+             </div>
+             <div className="space-y-2"><FieldLabel htmlFor="edit-neighborhood">Neighborhood or ZIP</FieldLabel><input id="edit-neighborhood" required minLength={2} maxLength={80} value={editForm.neighborhood} onChange={(event) => setEditForm((current) => ({ ...current, neighborhood: event.target.value }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="input-edit-neighborhood" /></div>
+             <div className="space-y-2"><FieldLabel htmlFor="edit-pickup-notes">Public pickup notes (optional)</FieldLabel><textarea id="edit-pickup-notes" maxLength={500} rows={3} value={editForm.pickup_notes} onChange={(event) => setEditForm((current) => ({ ...current, pickup_notes: event.target.value }))} className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm" data-testid="input-edit-pickup-notes" /></div>
+             {editError && <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert" data-testid="error-edit-listing">{editError}</p>}
+             <div className="flex justify-end gap-2 border-t border-border pt-4"><button type="button" onClick={() => setEditOpen(false)} className="min-h-10 rounded-xl border border-border px-4 py-2 text-sm font-bold hover:bg-muted">Cancel</button><button type="submit" disabled={editSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-60" data-testid="button-save-edit-listing">{editSubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Save changes</button></div>
+           </form>
+         </ModalFrame>
+       )}
 
       {selectedId !== null && (
         <ModalFrame title={selectedListing?.title || "Listing details"} eyebrow="Community post" onClose={() => setSelectedId(null)} wide>
