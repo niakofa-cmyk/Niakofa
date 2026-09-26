@@ -68,9 +68,16 @@ export const exchangeDigestDeliveriesTable = pgTable("exchange_digest_deliveries
   listing_count: integer("listing_count").notNull().default(0),
   sent_at: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   delivered: boolean("delivered").notNull().default(false),
+  attempt_count: integer("attempt_count").notNull().default(0),
+  claim_token: text("claim_token"),
+  claim_expires_at: timestamp("claim_expires_at", { withTimezone: true }),
+  next_attempt_at: timestamp("next_attempt_at", { withTimezone: true }),
+  terminal_failure: boolean("terminal_failure").notNull().default(false),
+  last_error: text("last_error"),
 }, (table) => [
   uniqueIndex("exchange_digest_deliveries_user_week_idx").on(table.user_id, table.week_key),
   index("exchange_digest_deliveries_sent_idx").on(table.sent_at),
+  index("exchange_digest_deliveries_retry_idx").on(table.next_attempt_at, table.claim_expires_at),
 ]);
 
 export type ExchangeDigestDelivery = typeof exchangeDigestDeliveriesTable.$inferSelect;

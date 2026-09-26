@@ -10,6 +10,8 @@ test("notification delivery remains server-enforced and preserves essential path
   assert.match(push, /notif_optional_paused/);
   assert.match(push, /notifType === "emergency" \|\| notifType === "task_accepted" \|\| notifType === "nia_checkin"/);
   assert.match(push, /case "exchange_digest": return s\.notif_exchange_digest/);
+  assert.match(push, /"no_subscriptions"/);
+  assert.match(push, /"failed"/);
 });
 
 test("weekly Exchange delivery has durable deduplication and coarse fallback", async () => {
@@ -17,11 +19,14 @@ test("weekly Exchange delivery has durable deduplication and coarse fallback", a
   const schema = await read("lib/db/src/schema/exchange.ts");
   assert.match(scheduler, /exchangeDigestDeliveriesTable/);
   assert.match(scheduler, /onConflictDoNothing/);
-  assert.match(scheduler, /exchangeDigestDelivery.*weekKey|weekKey.*exchangeDigestDelivery/s);
+  assert.match(scheduler, /const weekKey = exchangeWeekKey/);
   assert.match(scheduler, /exchange_digest_area/);
   assert.match(scheduler, /haversineMiles/);
   assert.match(scheduler, /neighborhood = \$\{recipient\.area\.trim\(\)\}/);
   assert.match(schema, /uniqueIndex\("exchange_digest_deliveries_user_week_idx"\)/);
+  assert.match(schema, /claim_expires_at/);
+  assert.match(schema, /attempt_count/);
+  assert.match(schema, /terminal_failure/);
 });
 
 test("stale Exchange archival is guarded against active coordination", async () => {
@@ -29,8 +34,22 @@ test("stale Exchange archival is guarded against active coordination", async () 
   assert.match(scheduler, /EXCHANGE_STALE_DAYS = 30/);
   assert.match(scheduler, /eq\(exchangeListingsTable\.status, "active"\)/);
   assert.match(scheduler, /status IN \('requested', 'accepted'\)/);
-  assert.match(scheduler, /archived_at: new Date\(\)/);
+  assert.match(scheduler, /archived_at: now/);
   assert.match(scheduler, /archive_reason: "stale_after_30_days_without_active_coordination"/);
+  assert.match(scheduler, /createMessageNotification/);
+  assert.match(scheduler, /exchange_listing_id: listing\.id/);
+});
+
+test("archived Exchange posts can be renewed without rewriting their history", async () => {
+  const exchange = await read("artifacts/api-server/src/routes/community-exchange.ts");
+  const client = await read("artifacts/pay-it-forward/src/lib/community-exchange-client.ts");
+  const view = await read("artifacts/pay-it-forward/src/components/community/CommunityExchangeView.tsx");
+  assert.match(exchange, /\/listings\/:id\/renew/);
+  assert.match(exchange, /eq\(exchangeListingsTable\.status, "archived"\)/);
+  assert.match(exchange, /archived_at: null/);
+  assert.match(exchange, /archive_reason: null/);
+  assert.match(client, /renewExchangeListing/);
+  assert.match(view, /Renew this post/);
 });
 
 test("Exchange completion and impact metrics use verified, privacy-safe semantics", async () => {

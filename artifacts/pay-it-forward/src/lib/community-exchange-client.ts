@@ -90,6 +90,12 @@ export async function createExchangeListing(data: CreateListingInput): Promise<{
   });
 }
 
+export async function renewExchangeListing(id: number): Promise<{ listing: ExchangeListing }> {
+  return request<{ listing: ExchangeListing }>(`/api/community/exchange/listings/${id}/renew`, {
+    method: "POST",
+  });
+}
+
 export async function getExchangePickupRequests(): Promise<ExchangePickupRequestsResponse> {
   return request<ExchangePickupRequestsResponse>("/api/community/exchange/pickup-requests");
 }

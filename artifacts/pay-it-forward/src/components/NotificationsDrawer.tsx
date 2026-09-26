@@ -5,7 +5,7 @@ import { authHeaders } from "@/lib/auth";
 import { wsSubscribe } from "@/lib/wsClient";
 import {
   X, Bell, BellOff, ShieldAlert, CheckCircle2,
-  Heart, MapPin, DollarSign, Calendar, Users, MessageCircle, Radio, Share2,
+  Heart, MapPin, DollarSign, Calendar, Users, MessageCircle, Radio, Share2, Store,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -28,6 +28,7 @@ export interface LiveNotification {
     | "story_share"
     | "story_mention"
     | "community"
+    | "exchange"
     | "system"
     | "circle_went_live";
   title: string;
@@ -73,6 +74,7 @@ const TYPE_CFG: Record<LiveNotification["type"], TypeCfg> = {
   story_share:      { Icon: Share2,         iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
   story_mention:   { Icon: Users,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
   community:       { Icon: Users,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
+  exchange:        { Icon: Store,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
   system:          { Icon: Bell,           iconColor: "text-muted-foreground", ringBg: "bg-muted",       cardBorder: "border-border"             },
   circle_went_live: { Icon: Radio,          iconColor: "text-red-400",      ringBg: "bg-red-500/10",       cardBorder: "border-red-500/30"     },
 };

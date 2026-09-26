@@ -10,6 +10,7 @@ export type MessageNotificationType =
   | "story_share"
   | "story_mention"
   | "community"
+  | "exchange"
   | "system";
 
 export async function createMessageNotification(input: {

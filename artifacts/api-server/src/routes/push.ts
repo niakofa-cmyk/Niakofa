@@ -90,6 +90,15 @@ export type PushPayload = {
   notifType?: "nearby_requests" | "task_accepted" | "wallet" | "community" | "exchange" | "exchange_digest" | "emergency" | "nia_checkin";
 };
 
+export type PushDeliveryStatus = "delivered" | "email_fallback" | "no_subscriptions" | "disabled" | "failed" | "skipped";
+
+export type PushDeliveryResult = {
+  status: PushDeliveryStatus;
+  attemptedSubscriptions: number;
+  deliveredSubscriptions: number;
+  fallbackEmailSent: boolean;
+};
+
 function pushOptions(urgency?: string): webpush.RequestOptions {
   return {
     urgency: urgency === "emergency" ? "high" : "normal",
@@ -200,27 +209,89 @@ export async function sendPushToUser(
   userId: number,
   payload: PushPayload,
   options?: { fallbackEmail?: string; fallbackEmailSubject?: string }
-): Promise<void> {
+): Promise<PushDeliveryResult> {
   // Check user's notification preference first
   if (!(await userAllowsNotif(userId, payload.notifType))) {
     logger.debug({ userId, notifType: payload.notifType }, "push: skipped — user opted out");
-    return;
+    return {
+      status: "skipped",
+      attemptedSubscriptions: 0,
+      deliveredSubscriptions: 0,
+      fallbackEmailSent: false,
+    };
   }
 
   const subs = await getSubsForUser(userId);
+  if (subs.length === 0) {
+    if (options?.fallbackEmail) {
+      const fallbackEmailSent = await sendAlertEmail({
+        to: options.fallbackEmail,
+        subject: options.fallbackEmailSubject ?? payload.title,
+        title: payload.title,
+        body: payload.body,
+      }).then(() => true).catch(() => false);
+      return {
+        status: fallbackEmailSent ? "email_fallback" : "no_subscriptions",
+        attemptedSubscriptions: 0,
+        deliveredSubscriptions: 0,
+        fallbackEmailSent,
+      };
+    }
+    return {
+      status: "no_subscriptions",
+      attemptedSubscriptions: 0,
+      deliveredSubscriptions: 0,
+      fallbackEmailSent: false,
+    };
+  }
+
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
+    if (options?.fallbackEmail) {
+      const fallbackEmailSent = await sendAlertEmail({
+        to: options.fallbackEmail,
+        subject: options.fallbackEmailSubject ?? payload.title,
+        title: payload.title,
+        body: payload.body,
+      }).then(() => true).catch(() => false);
+      return {
+        status: fallbackEmailSent ? "email_fallback" : "disabled",
+        attemptedSubscriptions: 0,
+        deliveredSubscriptions: 0,
+        fallbackEmailSent,
+      };
+    }
+    return {
+      status: "disabled",
+      attemptedSubscriptions: 0,
+      deliveredSubscriptions: 0,
+      fallbackEmailSent: false,
+    };
+  }
+
   const delivered = await deliverToSubs(subs, payload);
 
   if (delivered === 0 && options?.fallbackEmail) {
     logger.info({ userId }, "push: no delivery — falling back to email");
-    await sendAlertEmail({
+    const fallbackEmailSent = await sendAlertEmail({
       to: options.fallbackEmail,
       subject: options.fallbackEmailSubject ?? payload.title,
       title: payload.title,
       body: payload.body,
-    }).catch(() => {
-      // Non-fatal: email fallback failure doesn't affect the main push flow
-    });
+    }).then(() => true).catch(() => false);
+    return {
+      status: fallbackEmailSent ? "email_fallback" : "failed",
+      attemptedSubscriptions: subs.length,
+      deliveredSubscriptions: delivered,
+      fallbackEmailSent,
+    };
   }
+
+  return {
+    status: delivered > 0 ? "delivered" : "failed",
+    attemptedSubscriptions: subs.length,
+    deliveredSubscriptions: delivered,
+    fallbackEmailSent: false,
+  };
 }
 
 /**

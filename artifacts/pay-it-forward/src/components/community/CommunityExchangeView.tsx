@@ -31,6 +31,7 @@ import {
   getExchangeListings,
   getExchangePickupRequests,
   reportExchangeListing,
+  renewExchangeListing,
   updateExchangePickupRequest,
   type ExchangeReportType,
 } from "@/lib/community-exchange-client";
@@ -45,7 +46,7 @@ import type {
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 
-type FeedFilter = "all" | "goods" | "services" | "needs";
+type FeedFilter = "all" | "goods" | "services" | "needs" | "mine";
 type LocalLocation = {
   label: string;
   city: string;
@@ -176,29 +177,35 @@ function ExchangeSkeleton() {
   );
 }
 
-function ListingCard({ listing, onOpen }: { listing: ExchangeListing; onOpen: () => void }) {
+function ListingCard({ listing, onOpen, onRenew }: {
+  listing: ExchangeListing;
+  onOpen: () => void;
+  onRenew?: (listing: ExchangeListing) => void;
+}) {
   const isNeed = listing.listing_type === "need";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group flex min-h-48 flex-col rounded-2xl border border-border bg-card p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-card/80 focus:outline-none focus:ring-2 focus:ring-primary"
-      data-testid={`card-listing-${listing.id}`}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${isNeed ? "bg-amber-400/15 text-amber-200" : "bg-primary/15 text-primary"}`}>
-          {isNeed ? <HeartHandshake className="h-3.5 w-3.5" aria-hidden="true" /> : <HandHeart className="h-3.5 w-3.5" aria-hidden="true" />}
-          {isNeed ? "Need" : "Offer"}
-        </span>
-        <span className="text-[11px] text-muted-foreground">{listing.resource_type === "services" ? "Service" : "Goods"}</span>
-      </div>
-      <h3 className="mt-4 line-clamp-2 text-lg font-black tracking-tight group-hover:text-primary">{listing.title}</h3>
-      <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{listing.description}</p>
-      <div className="mt-auto flex items-center justify-between gap-3 pt-5 text-xs text-muted-foreground">
-        <span className="inline-flex min-w-0 items-center gap-1.5 truncate"><MapPin className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />{listing.neighborhood}</span>
-        <span className="shrink-0">{formatDate(listing.created_at)}</span>
-      </div>
-    </button>
+    <div className="group flex min-h-48 flex-col rounded-2xl border border-border bg-card p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-card/80" data-testid={`card-listing-${listing.id}`}>
+      <button type="button" onClick={onOpen} className="flex min-h-36 flex-1 flex-col text-left focus:outline-none focus:ring-2 focus:ring-primary">
+        <div className="flex items-center justify-between gap-2">
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${isNeed ? "bg-amber-400/15 text-amber-200" : "bg-primary/15 text-primary"}`}>
+            {isNeed ? <HeartHandshake className="h-3.5 w-3.5" aria-hidden="true" /> : <HandHeart className="h-3.5 w-3.5" aria-hidden="true" />}
+            {isNeed ? "Need" : "Offer"}
+          </span>
+          <span className="text-[11px] text-muted-foreground">{listing.resource_type === "services" ? "Service" : "Goods"}</span>
+        </div>
+        <h3 className="mt-4 line-clamp-2 text-lg font-black tracking-tight group-hover:text-primary">{listing.title}</h3>
+        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{listing.description}</p>
+        <div className="mt-auto flex items-center justify-between gap-3 pt-5 text-xs text-muted-foreground">
+          <span className="inline-flex min-w-0 items-center gap-1.5 truncate"><MapPin className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />{listing.neighborhood}</span>
+          <span className="shrink-0">{formatDate(listing.created_at)}</span>
+        </div>
+      </button>
+      {listing.status === "archived" && onRenew && (
+        <button type="button" onClick={() => onRenew(listing)} className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-primary/40 px-3 py-2 text-xs font-black text-primary transition hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-renew-listing-${listing.id}`}>
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Renew this post
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -212,7 +219,10 @@ export function CommunityExchangeView() {
   const [city, setCity] = useState(initialLocation?.city ?? "Fort Worth, TX");
   const [locationError, setLocationError] = useState("");
   const [locating, setLocating] = useState(false);
-  const [feedFilter, setFeedFilter] = useState<FeedFilter>("all");
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>(() =>
+    new URLSearchParams(window.location.search).get("mine") === "true" ? "mine" : "all"
+  );
+  const [mineOnly, setMineOnly] = useState(() => new URLSearchParams(window.location.search).get("mine") === "true");
   const [query, setQuery] = useState("");
   const [listings, setListings] = useState<ExchangeListing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
@@ -272,8 +282,7 @@ export function CommunityExchangeView() {
       setListingsError("");
       try {
         const filter: Parameters<typeof getExchangeListings>[0] = {
-          neighborhood: location.label,
-          nearby: location.source === "browser",
+          ...(mineOnly ? { mine: true } : { neighborhood: location.label, nearby: location.source === "browser" }),
           limit: 24,
         };
         if (feedFilter === "goods" || feedFilter === "services") filter.resource_type = feedFilter;
@@ -294,7 +303,7 @@ export function CommunityExchangeView() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [feedFilter, location, query, refreshTick]);
+  }, [feedFilter, location, mineOnly, query, refreshTick]);
 
   const loadMoreListings = async () => {
     if (!location || !nextCursor || listingsMoreLoading) return;
@@ -302,8 +311,7 @@ export function CommunityExchangeView() {
     setListingsError("");
     try {
       const filter: Parameters<typeof getExchangeListings>[0] = {
-        neighborhood: location.label,
-        nearby: location.source === "browser",
+        ...(mineOnly ? { mine: true } : { neighborhood: location.label, nearby: location.source === "browser" }),
         cursor: nextCursor,
         limit: 24,
       };
@@ -515,6 +523,21 @@ export function CommunityExchangeView() {
     }
   };
 
+  const renewListing = async (listing: ExchangeListing) => {
+    setActionLoading(listing.id);
+    setNotice("");
+    try {
+      await renewExchangeListing(listing.id);
+      setNotice("Your Exchange post is active again.");
+      setSelectedId(null);
+      setRefreshTick((tick) => tick + 1);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "This post could not be renewed.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const submitReport = async (event: FormEvent) => {
     event.preventDefault();
     if (!selectedListing) return;
@@ -580,8 +603,9 @@ export function CommunityExchangeView() {
               ["goods", "Goods"],
               ["services", "Services"],
               ["needs", "Needs"],
+              ["mine", "My posts"],
             ] as const).map(([value, label]) => (
-              <button key={value} type="button" role="tab" aria-selected={feedFilter === value} onClick={() => setFeedFilter(value)} className={`min-h-9 shrink-0 rounded-lg px-3 text-xs font-bold transition focus:outline-none focus:ring-2 focus:ring-primary ${feedFilter === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`} data-testid={`tab-filter-${value}`}>
+              <button key={value} type="button" role="tab" aria-selected={feedFilter === value} onClick={() => { setFeedFilter(value); setMineOnly(value === "mine"); }} className={`min-h-9 shrink-0 rounded-lg px-3 text-xs font-bold transition focus:outline-none focus:ring-2 focus:ring-primary ${feedFilter === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`} data-testid={`tab-filter-${value}`}>
                 {label}
               </button>
             ))}
@@ -608,7 +632,7 @@ export function CommunityExchangeView() {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2" data-testid="listings-grid">
-            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} />)}
+            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} onRenew={mineOnly ? renewListing : undefined} />)}
           </div>
           {nextCursor && (
             <button

@@ -20,6 +20,7 @@ import {
   exchangeListingsTable,
   exchangeDigestDeliveriesTable,
 } from "@workspace/db";
+import { randomUUID } from "node:crypto";
 import { eq, and, lte, sql, inArray } from "drizzle-orm";
 import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
@@ -30,6 +31,7 @@ import { buildCashoutTransferParams, cashoutIdempotencyKey } from "./stripe-cash
 import { workerRan } from "./worker-registry";
 import { deleteAsset } from "./storage";
 import { broadcast } from "./ws-hub";
+import { createMessageNotification } from "./message-notifications";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
@@ -39,6 +41,9 @@ const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const EXCHANGE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
 const EXCHANGE_STALE_DAYS = 30;
 const EXCHANGE_DIGEST_RADIUS_MILES = 15;
+const EXCHANGE_DIGEST_CLAIM_MS = 15 * 60 * 1000;
+const EXCHANGE_DIGEST_MAX_ATTEMPTS = 8;
+const EXCHANGE_DIGEST_RETRY_MS = 6 * 60 * 60 * 1000;
 
 type ExchangeDigestListing = {
   id: number;
@@ -47,6 +52,12 @@ type ExchangeDigestListing = {
   neighborhood: string;
   latitude?: number | null;
   longitude?: number | null;
+};
+
+type ArchivedExchangeListing = {
+  id: number;
+  seller_id: number;
+  title: string;
 };
 
 function safeTimeZone(timeZone: string | null | undefined): string {
@@ -94,14 +105,14 @@ function exchangeDigestWindowOpen(now: Date, timeZone: string | null | undefined
   return local.weekday === "Mon" && local.hour >= 8 && local.hour < 14;
 }
 
-async function archiveStaleExchangeListings(): Promise<number> {
-  const cutoff = new Date(Date.now() - EXCHANGE_STALE_DAYS * 24 * 60 * 60 * 1000);
+async function archiveStaleExchangeListings(now = new Date()): Promise<ArchivedExchangeListing[]> {
+  const cutoff = new Date(now.getTime() - EXCHANGE_STALE_DAYS * 24 * 60 * 60 * 1000);
   const archived = await db.update(exchangeListingsTable)
     .set({
       status: "archived",
-      archived_at: new Date(),
+       archived_at: now,
       archive_reason: "stale_after_30_days_without_active_coordination",
-      updated_at: new Date(),
+       updated_at: now,
     })
     .where(and(
       eq(exchangeListingsTable.status, "active"),
@@ -112,8 +123,12 @@ async function archiveStaleExchangeListings(): Promise<number> {
           AND pickup.status IN ('requested', 'accepted')
       )`,
     ))
-    .returning({ id: exchangeListingsTable.id });
-  return archived.length;
+    .returning({
+      id: exchangeListingsTable.id,
+      seller_id: exchangeListingsTable.seller_id,
+      title: exchangeListingsTable.title,
+    });
+  return archived;
 }
 
 function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -217,34 +232,57 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
     const [existingDelivery] = await db.select({
       id: exchangeDigestDeliveriesTable.id,
       delivered: exchangeDigestDeliveriesTable.delivered,
-      sent_at: exchangeDigestDeliveriesTable.sent_at,
+      terminal_failure: exchangeDigestDeliveriesTable.terminal_failure,
+      claim_expires_at: exchangeDigestDeliveriesTable.claim_expires_at,
+      next_attempt_at: exchangeDigestDeliveriesTable.next_attempt_at,
     }).from(exchangeDigestDeliveriesTable)
       .where(and(
         eq(exchangeDigestDeliveriesTable.user_id, recipient.id),
         eq(exchangeDigestDeliveriesTable.week_key, weekKey),
       ))
       .limit(1);
-    if (existingDelivery?.delivered) continue;
+    if (existingDelivery?.delivered || existingDelivery?.terminal_failure) continue;
     if (!existingDelivery && !exchangeDigestWindowOpen(now, timeZone)) continue;
+    if (existingDelivery?.next_attempt_at && existingDelivery.next_attempt_at > now) continue;
+    if (existingDelivery?.claim_expires_at && existingDelivery.claim_expires_at > now) continue;
 
     const listings = await findExchangeDigestListings(recipient);
     if (listings.length === 0) continue;
 
+    const claimToken = randomUUID();
+    const claimExpiresAt = new Date(now.getTime() + EXCHANGE_DIGEST_CLAIM_MS);
     let deliveryId: number;
     if (existingDelivery) {
       const [claimed] = await db.update(exchangeDigestDeliveriesTable)
-        .set({ sent_at: now, listing_count: listings.length })
+        .set({
+          sent_at: now,
+          listing_count: listings.length,
+          claim_token: claimToken,
+          claim_expires_at: claimExpiresAt,
+          attempt_count: sql`${exchangeDigestDeliveriesTable.attempt_count} + 1`,
+          last_error: null,
+        })
         .where(and(
           eq(exchangeDigestDeliveriesTable.id, existingDelivery.id),
           eq(exchangeDigestDeliveriesTable.delivered, false),
-          sql`${exchangeDigestDeliveriesTable.sent_at} < NOW() - INTERVAL '12 hours'`,
+          eq(exchangeDigestDeliveriesTable.terminal_failure, false),
+          sql`(${exchangeDigestDeliveriesTable.claim_expires_at} IS NULL OR ${exchangeDigestDeliveriesTable.claim_expires_at} <= ${now})`,
+          sql`(${exchangeDigestDeliveriesTable.next_attempt_at} IS NULL OR ${exchangeDigestDeliveriesTable.next_attempt_at} <= ${now})`,
         ))
         .returning({ id: exchangeDigestDeliveriesTable.id });
       if (!claimed) continue;
       deliveryId = claimed.id;
     } else {
       const [created] = await db.insert(exchangeDigestDeliveriesTable)
-        .values({ user_id: recipient.id, week_key: weekKey, listing_count: listings.length })
+        .values({
+          user_id: recipient.id,
+          week_key: weekKey,
+          listing_count: listings.length,
+          sent_at: now,
+          attempt_count: 1,
+          claim_token: claimToken,
+          claim_expires_at: claimExpiresAt,
+        })
         .onConflictDoNothing({
           target: [exchangeDigestDeliveriesTable.user_id, exchangeDigestDeliveriesTable.week_key],
         })
@@ -257,26 +295,101 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
       .map((listing) => `${listing.listing_type === "need" ? "Need" : "Offer"}: ${listing.title} (${listing.neighborhood})`)
       .join(" · ");
     try {
-      await sendPushToUser(recipient.id, {
+      const delivery = await sendPushToUser(recipient.id, {
         title: "Your weekly Exchange neighborhood digest",
         body: `${listings.length} nearby post${listings.length === 1 ? "" : "s"}: ${body}`,
         notifType: "exchange_digest",
       });
-      await db.update(exchangeDigestDeliveriesTable)
-        .set({ delivered: true })
-        .where(eq(exchangeDigestDeliveriesTable.id, deliveryId));
+      if (delivery.status === "delivered" || delivery.status === "email_fallback") {
+        await db.update(exchangeDigestDeliveriesTable)
+          .set({
+            delivered: true,
+            claim_token: null,
+            claim_expires_at: null,
+            next_attempt_at: null,
+            last_error: null,
+          })
+          .where(and(
+            eq(exchangeDigestDeliveriesTable.id, deliveryId),
+            eq(exchangeDigestDeliveriesTable.claim_token, claimToken),
+          ));
+      } else if (delivery.status === "skipped") {
+        await db.update(exchangeDigestDeliveriesTable)
+          .set({
+            claim_token: null,
+            claim_expires_at: null,
+            terminal_failure: true,
+            last_error: "Notification preference changed before delivery",
+          })
+          .where(and(
+            eq(exchangeDigestDeliveriesTable.id, deliveryId),
+            eq(exchangeDigestDeliveriesTable.claim_token, claimToken),
+          ));
+      } else {
+        const [attempt] = await db.select({ attempt_count: exchangeDigestDeliveriesTable.attempt_count })
+          .from(exchangeDigestDeliveriesTable)
+          .where(eq(exchangeDigestDeliveriesTable.id, deliveryId))
+          .limit(1);
+        const terminalFailure = delivery.status !== "no_subscriptions"
+          && (attempt?.attempt_count ?? EXCHANGE_DIGEST_MAX_ATTEMPTS) >= EXCHANGE_DIGEST_MAX_ATTEMPTS;
+        await db.update(exchangeDigestDeliveriesTable)
+          .set({
+            claim_token: null,
+            claim_expires_at: null,
+            next_attempt_at: terminalFailure ? null : new Date(now.getTime() + EXCHANGE_DIGEST_RETRY_MS),
+            terminal_failure: terminalFailure,
+            last_error: delivery.status,
+          })
+          .where(and(
+            eq(exchangeDigestDeliveriesTable.id, deliveryId),
+            eq(exchangeDigestDeliveriesTable.claim_token, claimToken),
+          ));
+      }
     } catch (err) {
-      logger.warn({ err, user_id: recipient.id }, "exchange-digest: delivery failed; will be retried on the next eligible run");
+      const [attempt] = await db.select({ attempt_count: exchangeDigestDeliveriesTable.attempt_count })
+        .from(exchangeDigestDeliveriesTable)
+        .where(eq(exchangeDigestDeliveriesTable.id, deliveryId))
+        .limit(1);
+      const terminalFailure = (attempt?.attempt_count ?? EXCHANGE_DIGEST_MAX_ATTEMPTS) >= EXCHANGE_DIGEST_MAX_ATTEMPTS;
+      await db.update(exchangeDigestDeliveriesTable)
+        .set({
+          claim_token: null,
+          claim_expires_at: null,
+          next_attempt_at: terminalFailure ? null : new Date(now.getTime() + EXCHANGE_DIGEST_RETRY_MS),
+          terminal_failure: terminalFailure,
+          last_error: "push_exception",
+        })
+        .where(and(
+          eq(exchangeDigestDeliveriesTable.id, deliveryId),
+          eq(exchangeDigestDeliveriesTable.claim_token, claimToken),
+        ))
+        .catch((updateError) => logger.warn({ err: updateError, user_id: recipient.id }, "exchange-digest: failed to record retry state"));
+      logger.warn({ err, user_id: recipient.id }, "exchange-digest: delivery failed; retry state recorded");
     }
   }
 }
 
 async function processExchangeMaintenance(): Promise<void> {
   try {
-    const archivedCount = await archiveStaleExchangeListings();
+    const archivedListings = await archiveStaleExchangeListings();
     await processExchangeDigest();
-    if (archivedCount > 0) {
-      logger.info({ count: archivedCount }, "exchange-maintenance: stale listings archived");
+    if (archivedListings.length > 0) {
+      await Promise.allSettled(archivedListings.map((listing) => Promise.all([
+        createMessageNotification({
+          userId: listing.seller_id,
+          type: "exchange",
+          title: "Your Exchange post was archived",
+          body: `“${listing.title}” was archived after 30 days without active coordination. Open Exchange to renew it when you are ready.`,
+          actionUrl: "/community?section=exchange&mine=true",
+          metadata: { exchange_listing_id: listing.id, reason: "stale_after_30_days_without_active_coordination" },
+        }),
+        sendPushToUser(listing.seller_id, {
+          title: "Your Exchange post was archived",
+          body: `“${listing.title}” is no longer active. Open Exchange to renew it when you are ready.`,
+          notifType: "exchange",
+        }),
+      ])));
+      logger.info({ count: archivedListings.length }, "exchange-maintenance: stale listings archived and owners notified");
     }
   } catch (err) {
     logger.error({ err }, "exchange-maintenance: run failed");

@@ -13,6 +13,7 @@ import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter, communityPostLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
 import { sendPushToUser } from "./push";
+import { createMessageNotification } from "../lib/message-notifications";
 
 const router = Router();
 
@@ -289,6 +290,38 @@ router.post("/community/exchange/listings/:id/withdraw", requireAuth, requireApp
     .set({ status: "withdrawn", updated_at: new Date() })
     .where(and(eq(exchangeListingsTable.id, id), eq(exchangeListingsTable.status, "active")))
     .returning();
+  return res.json({ listing: serializeListing(updated as unknown as Record<string, unknown>) });
+});
+
+router.post("/community/exchange/listings/:id/renew", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid listing id" });
+  const [listing] = await db.select().from(exchangeListingsTable).where(and(
+    eq(exchangeListingsTable.id, id),
+    eq(exchangeListingsTable.seller_id, req.authenticatedUserId!),
+  )).limit(1);
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (listing.status !== "archived") return res.status(409).json({ error: "Only an archived listing can be renewed." });
+  if (listing.moderation_status !== "approved") return res.status(409).json({ error: "This listing needs safety review before it can be renewed." });
+  const now = new Date();
+  const [updated] = await db.update(exchangeListingsTable)
+    .set({
+      status: "active",
+      archived_at: null,
+      archive_reason: null,
+      updated_at: now,
+    })
+    .where(and(eq(exchangeListingsTable.id, id), eq(exchangeListingsTable.status, "archived")))
+    .returning();
+  if (!updated) return res.status(409).json({ error: "This listing was already renewed." });
+  void createMessageNotification({
+    userId: updated.seller_id,
+    type: "exchange",
+    title: "Your Exchange post is active again",
+    body: `“${updated.title}” is visible to neighbors again.`,
+    actionUrl: "/community?section=exchange&mine=true",
+    metadata: { exchange_listing_id: updated.id, action: "renewed" },
+  }).catch(() => {});
   return res.json({ listing: serializeListing(updated as unknown as Record<string, unknown>) });
 });
 
