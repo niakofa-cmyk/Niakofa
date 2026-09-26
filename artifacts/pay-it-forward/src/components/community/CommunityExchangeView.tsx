@@ -216,6 +216,8 @@ export function CommunityExchangeView() {
   const [query, setQuery] = useState("");
   const [listings, setListings] = useState<ExchangeListing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
+  const [listingsMoreLoading, setListingsMoreLoading] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [listingsError, setListingsError] = useState("");
   const [pickupRequests, setPickupRequests] = useState<ExchangePickupRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
@@ -263,16 +265,25 @@ export function CommunityExchangeView() {
   useEffect(() => {
     if (!location) return;
     let cancelled = false;
+    setListings([]);
+    setNextCursor(null);
     const timer = window.setTimeout(async () => {
       setListingsLoading(true);
       setListingsError("");
       try {
-        const filter: Parameters<typeof getExchangeListings>[0] = { neighborhood: location.label };
+        const filter: Parameters<typeof getExchangeListings>[0] = {
+          neighborhood: location.label,
+          nearby: location.source === "browser",
+          limit: 24,
+        };
         if (feedFilter === "goods" || feedFilter === "services") filter.resource_type = feedFilter;
         if (feedFilter === "needs") filter.type = "need";
         if (query.trim()) filter.q = query;
         const result = await getExchangeListings(filter);
-        if (!cancelled) setListings(result.listings ?? []);
+        if (!cancelled) {
+          setListings(result.listings ?? []);
+          setNextCursor(result.next_cursor ?? null);
+        }
       } catch (error) {
         if (!cancelled) setListingsError(error instanceof Error ? error.message : "Listings could not be loaded.");
       } finally {
@@ -284,6 +295,30 @@ export function CommunityExchangeView() {
       window.clearTimeout(timer);
     };
   }, [feedFilter, location, query, refreshTick]);
+
+  const loadMoreListings = async () => {
+    if (!location || !nextCursor || listingsMoreLoading) return;
+    setListingsMoreLoading(true);
+    setListingsError("");
+    try {
+      const filter: Parameters<typeof getExchangeListings>[0] = {
+        neighborhood: location.label,
+        nearby: location.source === "browser",
+        cursor: nextCursor,
+        limit: 24,
+      };
+      if (feedFilter === "goods" || feedFilter === "services") filter.resource_type = feedFilter;
+      if (feedFilter === "needs") filter.type = "need";
+      if (query.trim()) filter.q = query;
+      const result = await getExchangeListings(filter);
+      setListings((current) => [...current, ...(result.listings ?? [])]);
+      setNextCursor(result.next_cursor ?? null);
+    } catch (error) {
+      setListingsError(error instanceof Error ? error.message : "More listings could not be loaded.");
+    } finally {
+      setListingsMoreLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!location) return;
@@ -384,7 +419,21 @@ export function CommunityExchangeView() {
     setLocating(true);
     setLocationError("");
     navigator.geolocation.getCurrentPosition(
-      () => {
+      (position) => {
+        if (currentUser?.id) {
+          const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+          void fetch(`${base}/api/users/${currentUser.id}/location`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: JSON.stringify({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            }),
+          }).catch(() => {
+            // The coarse board remains usable if location persistence is
+            // temporarily unavailable; manual area filtering still works.
+          });
+        }
         const next: LocalLocation = { label: "Nearby area", city: "Nearby community", source: "browser" };
         localStorage.setItem(LOCATION_KEY, JSON.stringify(next));
         setLocation(next);
@@ -557,9 +606,23 @@ export function CommunityExchangeView() {
           <button type="button" onClick={query ? () => setQuery("") : openPost} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary" data-testid="button-empty-listings-action">{query ? "Clear search" : "Make the first post"} <ArrowRight className="h-4 w-4" /></button>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2" data-testid="listings-grid">
-          {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} />)}
-        </div>
+        <>
+          <div className="grid gap-3 sm:grid-cols-2" data-testid="listings-grid">
+            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} />)}
+          </div>
+          {nextCursor && (
+            <button
+              type="button"
+              onClick={() => void loadMoreListings()}
+              disabled={listingsMoreLoading}
+              className="mx-auto inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-bold hover:bg-muted disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary"
+              data-testid="button-load-more-listings"
+            >
+              {listingsMoreLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {listingsMoreLoading ? "Loading…" : "Load more listings"}
+            </button>
+          )}
+        </>
       )}
 
       <section className="rounded-2xl border border-border bg-card p-4 sm:p-5" aria-labelledby="coordination-heading">

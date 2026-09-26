@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import {
   db,
   directMessageBlocksTable,
@@ -66,6 +66,37 @@ function serializeListing(listing: Record<string, unknown>): Record<string, unkn
   return Object.fromEntries(Object.entries(listing).map(([key, value]) => [key, serialize(value)]));
 }
 
+const EXCHANGE_LISTING_PAGE_SIZE = 24;
+const EXCHANGE_LISTING_MAX_PAGE_SIZE = 50;
+
+type ListingCursor = { created_at: string; id: number };
+
+function encodeListingCursor(listing: { created_at: Date; id: number }): string {
+  return Buffer.from(JSON.stringify({
+    created_at: listing.created_at.toISOString(),
+    id: listing.id,
+  })).toString("base64url");
+}
+
+function decodeListingCursor(value: unknown): ListingCursor | null {
+  if (typeof value !== "string" || value.length > 200) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<ListingCursor>;
+    const createdAt = typeof parsed.created_at === "string" ? new Date(parsed.created_at) : null;
+    const id = parsed.id;
+    if (!createdAt || Number.isNaN(createdAt.getTime())
+      || typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) return null;
+    return { created_at: createdAt.toISOString(), id };
+  } catch {
+    return null;
+  }
+}
+
+function clampRadius(value: unknown): number {
+  const parsed = typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? Math.min(50, Math.max(1, parsed)) : 15;
+}
+
 async function isBlockedBetween(firstUserId: number, secondUserId: number): Promise<boolean> {
   const [block] = await db
     .select({ blocker_id: directMessageBlocksTable.blocker_id })
@@ -100,6 +131,7 @@ const listingSelect = {
 router.get("/community/exchange/listings", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const mine = req.query.mine === "true";
+  const nearby = req.query.nearby === "true";
   const listingType = typeof req.query.type === "string" && LISTING_TYPE_VALUES.includes(req.query.type as typeof LISTING_TYPE_VALUES[number])
     ? req.query.type
     : undefined;
@@ -111,6 +143,52 @@ router.get("/community/exchange/listings", requireAuth, requireApproved, general
     ? req.query.category
     : undefined;
   const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
+  const requestedLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : EXCHANGE_LISTING_PAGE_SIZE;
+  const pageSize = Number.isSafeInteger(requestedLimit)
+    ? Math.min(EXCHANGE_LISTING_MAX_PAGE_SIZE, Math.max(1, requestedLimit))
+    : EXCHANGE_LISTING_PAGE_SIZE;
+  const cursorValue = req.query.cursor;
+  const cursor = cursorValue == null ? null : decodeListingCursor(cursorValue);
+  if (cursorValue != null && !cursor) return res.status(400).json({ error: "Invalid listing cursor" });
+
+  let viewerLocation: { lat: number | null; lng: number | null } | null = null;
+  if (nearby) {
+    const [viewer] = await db.select({ lat: usersTable.lat, lng: usersTable.lng })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    viewerLocation = viewer ?? null;
+  }
+
+  let locationCondition:
+    | ReturnType<typeof and>
+    | ReturnType<typeof eq>
+    | ReturnType<typeof sql>
+    | undefined;
+  if (nearby && viewerLocation?.lat != null && viewerLocation.lng != null
+      && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
+    const radius = clampRadius(req.query.radius_miles);
+    const latDelta = radius / 69;
+    const lngDelta = radius / (69 * Math.max(0.25, Math.cos((viewerLocation.lat * Math.PI) / 180)));
+    // The bounding box uses the composite geo index; the Haversine expression
+    // removes the box's corner false positives without requiring PostGIS.
+    locationCondition = and(
+      sql`${exchangeListingsTable.latitude} IS NOT NULL AND ${exchangeListingsTable.longitude} IS NOT NULL`,
+      sql`${exchangeListingsTable.latitude} BETWEEN ${viewerLocation.lat - latDelta} AND ${viewerLocation.lat + latDelta}`,
+      sql`${exchangeListingsTable.longitude} BETWEEN ${viewerLocation.lng - lngDelta} AND ${viewerLocation.lng + lngDelta}`,
+      sql`3958.8 * 2 * ASIN(SQRT(
+        POWER(SIN(RADIANS(${exchangeListingsTable.latitude} - ${viewerLocation.lat}) / 2), 2) +
+        COS(RADIANS(${viewerLocation.lat})) * COS(RADIANS(${exchangeListingsTable.latitude})) *
+        POWER(SIN(RADIANS(${exchangeListingsTable.longitude} - ${viewerLocation.lng}) / 2), 2)
+      )) <= ${radius}`,
+    );
+  } else if (neighborhood) {
+    locationCondition = eq(exchangeListingsTable.neighborhood, neighborhood);
+  } else if (nearby) {
+    // A nearby request without coordinates must not silently become a
+    // community-wide feed.
+    locationCondition = sql`FALSE`;
+  }
 
   const conditions = mine
     ? eq(exchangeListingsTable.seller_id, userId)
@@ -123,14 +201,28 @@ router.get("/community/exchange/listings", requireAuth, requireApproved, general
       conditions,
       listingType ? eq(exchangeListingsTable.listing_type, listingType) : undefined,
       resourceType ? eq(exchangeListingsTable.resource_type, resourceType) : undefined,
-      neighborhood ? eq(exchangeListingsTable.neighborhood, neighborhood) : undefined,
+      locationCondition,
       category ? eq(exchangeListingsTable.category, category) : undefined,
       query ? sql`(${exchangeListingsTable.title} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`} OR ${exchangeListingsTable.description} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`})` : undefined,
+      cursor
+        ? or(
+          lt(exchangeListingsTable.created_at, new Date(cursor.created_at)),
+          and(
+            eq(exchangeListingsTable.created_at, new Date(cursor.created_at)),
+            lt(exchangeListingsTable.id, cursor.id),
+          ),
+        )
+        : undefined,
     ))
     .orderBy(desc(exchangeListingsTable.created_at), desc(exchangeListingsTable.id))
-    .limit(100);
+    .limit(pageSize + 1);
 
-  return res.json({ listings: rows.map((row) => serializeListing(row as unknown as Record<string, unknown>)) });
+  const hasMore = rows.length > pageSize;
+  const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
+  return res.json({
+    listings: pageRows.map((row) => serializeListing(row as unknown as Record<string, unknown>)),
+    next_cursor: hasMore ? encodeListingCursor(pageRows[pageRows.length - 1]) : null,
+  });
 });
 
 router.get("/community/exchange/listings/:id", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
@@ -484,12 +576,29 @@ router.post("/community/exchange/listings/:id/report", requireAuth, requireAppro
     .from(exchangeListingsTable).where(eq(exchangeListingsTable.id, listingId)).limit(1);
   if (!listing) return res.status(404).json({ error: "Listing not found" });
   if (listing.seller_id === req.authenticatedUserId) return res.status(400).json({ error: "You cannot report your own listing." });
-  const [report] = await db.insert(reportsTable).values({
-    reporter_id: req.authenticatedUserId!,
-    reported_user_id: listing.seller_id,
-    type: parsed.data.type,
-    description: `Exchange listing #${listingId} (“${listing.title}”): ${parsed.data.description}`,
-  }).returning();
+  const [existingReport] = await db.select({ id: reportsTable.id })
+    .from(reportsTable)
+    .where(and(
+      eq(reportsTable.reporter_id, req.authenticatedUserId!),
+      eq(reportsTable.reported_exchange_listing_id, listingId),
+    ))
+    .limit(1);
+  if (existingReport) return res.status(409).json({ error: "You already reported this listing. The safety team has the report." });
+  let report: typeof reportsTable.$inferSelect;
+  try {
+    [report] = await db.insert(reportsTable).values({
+      reporter_id: req.authenticatedUserId!,
+      reported_user_id: listing.seller_id,
+      reported_exchange_listing_id: listingId,
+      type: parsed.data.type,
+      description: `Exchange listing #${listingId} (“${listing.title}”): ${parsed.data.description}`,
+    }).returning();
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return res.status(409).json({ error: "You already reported this listing. The safety team has the report." });
+    }
+    throw error;
+  }
   return res.status(201).json({ report_id: report.id, message: "Thanks. The listing has been sent to the safety team." });
 });
 

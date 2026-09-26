@@ -51,6 +51,7 @@ export interface ExchangeListingResponse {
 
 export interface ExchangeListingsResponse {
   listings: ExchangeListing[];
+  next_cursor?: string | null;
 }
 
 export interface ExchangePickupRequestsResponse {

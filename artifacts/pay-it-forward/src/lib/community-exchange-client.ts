@@ -47,6 +47,10 @@ export interface ListingQuery {
   q?: string;
   neighborhood?: string;
   mine?: boolean;
+  nearby?: boolean;
+  radius_miles?: number;
+  cursor?: string | null;
+  limit?: number;
 }
 
 export async function getExchangeListings(query: ListingQuery): Promise<ExchangeListingsResponse> {
@@ -56,6 +60,10 @@ export async function getExchangeListings(query: ListingQuery): Promise<Exchange
   if (query.q?.trim()) params.set("q", query.q.trim());
   if (query.neighborhood?.trim()) params.set("neighborhood", query.neighborhood.trim());
   if (query.mine) params.set("mine", "true");
+  if (query.nearby) params.set("nearby", "true");
+  if (query.radius_miles) params.set("radius_miles", String(query.radius_miles));
+  if (query.cursor) params.set("cursor", query.cursor);
+  if (query.limit) params.set("limit", String(query.limit));
   const suffix = params.toString();
   return request<ExchangeListingsResponse>(`/api/community/exchange/listings${suffix ? `?${suffix}` : ""}`);
 }

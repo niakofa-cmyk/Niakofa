@@ -89,6 +89,23 @@ export declare const reportsTable: import("drizzle-orm/pg-core").PgTableWithColu
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        reported_exchange_listing_id: import("drizzle-orm/pg-core").PgColumn<{
+            name: "reported_exchange_listing_id";
+            tableName: "reports";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         type: import("drizzle-orm/pg-core").PgColumn<{
             name: "type";
             tableName: "reports";

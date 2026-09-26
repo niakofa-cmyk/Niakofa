@@ -57378,6 +57378,9 @@ var init_reports = __esm({
       reported_user_id: integer("reported_user_id"),
       reported_request_id: integer("reported_request_id"),
       reported_griot_story_id: integer("reported_griot_story_id"),
+      // Exchange reports use a first-class target so duplicate submissions can be
+      // rejected atomically instead of parsing the human-readable description.
+      reported_exchange_listing_id: integer("reported_exchange_listing_id"),
       type: reportTypeEnum("type").notNull(),
       description: text("description").notNull(),
       status: reportStatusEnum("status").notNull().default("pending"),
@@ -147554,7 +147557,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "8e878c245fe6e8376f643a58e5b4d1688493246d";
+var GIT_COMMIT = "48d3b51e36d1d391310239b285fa9af26d587502";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -181613,6 +181616,30 @@ function serialize(value) {
 function serializeListing(listing) {
   return Object.fromEntries(Object.entries(listing).map(([key, value]) => [key, serialize(value)]));
 }
+var EXCHANGE_LISTING_PAGE_SIZE = 24;
+var EXCHANGE_LISTING_MAX_PAGE_SIZE = 50;
+function encodeListingCursor(listing) {
+  return Buffer.from(JSON.stringify({
+    created_at: listing.created_at.toISOString(),
+    id: listing.id
+  })).toString("base64url");
+}
+function decodeListingCursor(value) {
+  if (typeof value !== "string" || value.length > 200) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    const createdAt = typeof parsed.created_at === "string" ? new Date(parsed.created_at) : null;
+    const id3 = parsed.id;
+    if (!createdAt || Number.isNaN(createdAt.getTime()) || typeof id3 !== "number" || !Number.isSafeInteger(id3) || id3 <= 0) return null;
+    return { created_at: createdAt.toISOString(), id: id3 };
+  } catch {
+    return null;
+  }
+}
+function clampRadius(value) {
+  const parsed = typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? Math.min(50, Math.max(1, parsed)) : 15;
+}
 async function isBlockedBetween2(firstUserId, secondUserId) {
   const [block] = await db.select({ blocker_id: directMessageBlocksTable.blocker_id }).from(directMessageBlocksTable).where(or(
     and(eq(directMessageBlocksTable.blocker_id, firstUserId), eq(directMessageBlocksTable.blocked_id, secondUserId)),
@@ -181641,21 +181668,64 @@ var listingSelect = {
 router65.get("/community/exchange/listings", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId;
   const mine = req.query.mine === "true";
+  const nearby = req.query.nearby === "true";
   const listingType = typeof req.query.type === "string" && LISTING_TYPE_VALUES.includes(req.query.type) ? req.query.type : void 0;
   const resourceType = typeof req.query.resource_type === "string" && RESOURCE_TYPE_VALUES.includes(req.query.resource_type) ? req.query.resource_type : void 0;
   const neighborhood = typeof req.query.neighborhood === "string" ? req.query.neighborhood.trim().slice(0, 80) : "";
   const category = typeof req.query.category === "string" && CATEGORY_VALUES.includes(req.query.category) ? req.query.category : void 0;
   const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
+  const requestedLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : EXCHANGE_LISTING_PAGE_SIZE;
+  const pageSize = Number.isSafeInteger(requestedLimit) ? Math.min(EXCHANGE_LISTING_MAX_PAGE_SIZE, Math.max(1, requestedLimit)) : EXCHANGE_LISTING_PAGE_SIZE;
+  const cursorValue = req.query.cursor;
+  const cursor = cursorValue == null ? null : decodeListingCursor(cursorValue);
+  if (cursorValue != null && !cursor) return res.status(400).json({ error: "Invalid listing cursor" });
+  let viewerLocation = null;
+  if (nearby) {
+    const [viewer] = await db.select({ lat: usersTable.lat, lng: usersTable.lng }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    viewerLocation = viewer ?? null;
+  }
+  let locationCondition;
+  if (nearby && viewerLocation?.lat != null && viewerLocation.lng != null && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
+    const radius = clampRadius(req.query.radius_miles);
+    const latDelta = radius / 69;
+    const lngDelta = radius / (69 * Math.max(0.25, Math.cos(viewerLocation.lat * Math.PI / 180)));
+    locationCondition = and(
+      sql`${exchangeListingsTable.latitude} IS NOT NULL AND ${exchangeListingsTable.longitude} IS NOT NULL`,
+      sql`${exchangeListingsTable.latitude} BETWEEN ${viewerLocation.lat - latDelta} AND ${viewerLocation.lat + latDelta}`,
+      sql`${exchangeListingsTable.longitude} BETWEEN ${viewerLocation.lng - lngDelta} AND ${viewerLocation.lng + lngDelta}`,
+      sql`3958.8 * 2 * ASIN(SQRT(
+        POWER(SIN(RADIANS(${exchangeListingsTable.latitude} - ${viewerLocation.lat}) / 2), 2) +
+        COS(RADIANS(${viewerLocation.lat})) * COS(RADIANS(${exchangeListingsTable.latitude})) *
+        POWER(SIN(RADIANS(${exchangeListingsTable.longitude} - ${viewerLocation.lng}) / 2), 2)
+      )) <= ${radius}`
+    );
+  } else if (neighborhood) {
+    locationCondition = eq(exchangeListingsTable.neighborhood, neighborhood);
+  } else if (nearby) {
+    locationCondition = sql`FALSE`;
+  }
   const conditions = mine ? eq(exchangeListingsTable.seller_id, userId) : and(eq(exchangeListingsTable.status, "active"), eq(exchangeListingsTable.moderation_status, "approved"));
   const rows = await db.select(listingSelect).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(and(
     conditions,
     listingType ? eq(exchangeListingsTable.listing_type, listingType) : void 0,
     resourceType ? eq(exchangeListingsTable.resource_type, resourceType) : void 0,
-    neighborhood ? eq(exchangeListingsTable.neighborhood, neighborhood) : void 0,
+    locationCondition,
     category ? eq(exchangeListingsTable.category, category) : void 0,
-    query ? sql`(${exchangeListingsTable.title} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`} OR ${exchangeListingsTable.description} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`})` : void 0
-  )).orderBy(desc(exchangeListingsTable.created_at), desc(exchangeListingsTable.id)).limit(100);
-  return res.json({ listings: rows.map((row) => serializeListing(row)) });
+    query ? sql`(${exchangeListingsTable.title} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`} OR ${exchangeListingsTable.description} ILIKE ${`%${query.replace(/[%_]/g, "\\$&")}%`})` : void 0,
+    cursor ? or(
+      lt(exchangeListingsTable.created_at, new Date(cursor.created_at)),
+      and(
+        eq(exchangeListingsTable.created_at, new Date(cursor.created_at)),
+        lt(exchangeListingsTable.id, cursor.id)
+      )
+    ) : void 0
+  )).orderBy(desc(exchangeListingsTable.created_at), desc(exchangeListingsTable.id)).limit(pageSize + 1);
+  const hasMore = rows.length > pageSize;
+  const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
+  return res.json({
+    listings: pageRows.map((row) => serializeListing(row)),
+    next_cursor: hasMore ? encodeListingCursor(pageRows[pageRows.length - 1]) : null
+  });
 });
 router65.get("/community/exchange/listings/:id", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id3 = parseId2(req.params.id);
@@ -181821,6 +181891,14 @@ router65.post("/community/exchange/pickup-requests/:id/decline", requireAuth, re
   if (pickup.seller_id !== req.authenticatedUserId) return res.status(403).json({ error: "Only the seller can decline this request." });
   if (pickup.status !== "requested") return res.status(409).json({ error: "This request is no longer awaiting a response." });
   const [updated] = await db.update(exchangePickupRequestsTable).set({ status: "declined", cancelled_at: /* @__PURE__ */ new Date(), updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "requested"))).returning();
+  if (updated) {
+    void sendPushToUser(updated.buyer_id, {
+      title: "Your Exchange request was declined",
+      body: "This coordination request was declined. You can browse Exchange for other ways to connect with a neighbor.",
+      notifType: "task_accepted"
+    }).catch(() => {
+    });
+  }
   return res.json({ pickup_request: serializeListing(updated) });
 });
 router65.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
@@ -181838,6 +181916,13 @@ router65.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, req
     return updated;
   });
   if (!result) return res.status(409).json({ error: "This pickup was already changed." });
+  const otherParticipantId = req.authenticatedUserId === pickup.buyer_id ? pickup.seller_id : pickup.buyer_id;
+  void sendPushToUser(otherParticipantId, {
+    title: "Exchange coordination was cancelled",
+    body: "The other participant cancelled this pickup coordination. The listing is available again if it is still active.",
+    notifType: "task_accepted"
+  }).catch(() => {
+  });
   return res.json({ pickup_request: serializeListing(result) });
 });
 router65.post("/community/exchange/pickup-requests/:id/confirm-complete", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
@@ -181869,11 +181954,25 @@ router65.post("/community/exchange/pickup-requests/:id/confirm-complete", requir
       if (completed) {
         await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now }).where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
       }
-      return { pickup_request: completed ?? updated };
+      return {
+        pickup_request: completed ?? updated,
+        notifyUserIds: [pickup.buyer_id, pickup.seller_id]
+      };
     }
-    return { pickup_request: updated, awaiting_other_confirmation: true };
+    return {
+      pickup_request: updated,
+      awaiting_other_confirmation: true,
+      notifyUserIds: [isBuyer ? pickup.seller_id : pickup.buyer_id]
+    };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
+  if (result.notifyUserIds.length > 0) {
+    void Promise.allSettled(result.notifyUserIds.map((participantId) => sendPushToUser(participantId, {
+      title: result.awaiting_other_confirmation ? "Exchange handoff confirmation recorded" : "Exchange handoff completed",
+      body: result.awaiting_other_confirmation ? "Your confirmation is recorded. The other participant still needs to confirm the handoff." : "Both participants confirmed the handoff. Thank you for closing the loop.",
+      notifType: "task_accepted"
+    })));
+  }
   return res.json({
     pickup_request: serializeListing(result.pickup_request),
     ..."awaiting_other_confirmation" in result ? { awaiting_other_confirmation: result.awaiting_other_confirmation } : {}
@@ -181913,12 +182012,26 @@ router65.post("/community/exchange/listings/:id/report", requireAuth, requireApp
   const [listing] = await db.select({ seller_id: exchangeListingsTable.seller_id, title: exchangeListingsTable.title }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, listingId)).limit(1);
   if (!listing) return res.status(404).json({ error: "Listing not found" });
   if (listing.seller_id === req.authenticatedUserId) return res.status(400).json({ error: "You cannot report your own listing." });
-  const [report] = await db.insert(reportsTable).values({
-    reporter_id: req.authenticatedUserId,
-    reported_user_id: listing.seller_id,
-    type: parsed.data.type,
-    description: `Exchange listing #${listingId} (\u201C${listing.title}\u201D): ${parsed.data.description}`
-  }).returning();
+  const [existingReport] = await db.select({ id: reportsTable.id }).from(reportsTable).where(and(
+    eq(reportsTable.reporter_id, req.authenticatedUserId),
+    eq(reportsTable.reported_exchange_listing_id, listingId)
+  )).limit(1);
+  if (existingReport) return res.status(409).json({ error: "You already reported this listing. The safety team has the report." });
+  let report;
+  try {
+    [report] = await db.insert(reportsTable).values({
+      reporter_id: req.authenticatedUserId,
+      reported_user_id: listing.seller_id,
+      reported_exchange_listing_id: listingId,
+      type: parsed.data.type,
+      description: `Exchange listing #${listingId} (\u201C${listing.title}\u201D): ${parsed.data.description}`
+    }).returning();
+  } catch (error40) {
+    if (error40.code === "23505") {
+      return res.status(409).json({ error: "You already reported this listing. The safety team has the report." });
+    }
+    throw error40;
+  }
   return res.status(201).json({ report_id: report.id, message: "Thanks. The listing has been sent to the safety team." });
 });
 var community_exchange_default = router65;
