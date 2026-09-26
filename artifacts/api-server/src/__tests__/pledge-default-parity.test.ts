@@ -110,6 +110,9 @@ jest.unstable_mockModule("@workspace/db", () => ({
   // scheduler imports these tables for expired Community Story cleanup.
   communityStoriesTable: { id: "id", expires_at: "expires_at", author_user_id: "author_user_id" },
   communityStoryMediaTable: { id: "id", story_id: "story_id", storage_key: "storage_key" },
+  // scheduler's notification helper imports this table from @workspace/db.
+  // Keep the native-ESM mock contract aligned with the real package exports.
+  messageNotificationsTable: { id: "id", user_id: "user_id", actor_user_id: "actor_user_id", type: "type", title: "title", body: "body", created_at: "created_at" },
   exchangeListingsTable: {
     id: "id",
     status: "status",
