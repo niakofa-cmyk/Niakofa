@@ -1,14 +1,24 @@
 import { Router } from "express";
-import { db, reportsTable, usersTable, griotStoriesTable } from "@workspace/db";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import {
+  db,
+  reportsTable,
+  usersTable,
+  griotStoriesTable,
+  exchangeListingsTable,
+  exchangeModerationReviewHistoryTable,
+} from "@workspace/db";
+import { eq, and, desc, sql, inArray, isNotNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
+import { createMessageNotification } from "../lib/message-notifications";
 
 const router = Router();
+const sellerUsersTable = alias(usersTable, "seller");
 
 const CreateReportBody = z.object({
   reporter_id: z.number().int().positive(),
@@ -178,6 +188,58 @@ router.get("/reports/griot-stories", requireAuth, requireAdmin(), adminLimiter, 
   return res.json(rows.map(r => ({ ...r, story_author_name: r.story_author_id != null ? (authorMap.get(r.story_author_id) ?? null) : null })));
 });
 
+// ── GET /reports/exchange — admin: dedicated Exchange safety queue ───────────
+// This remains separate from generic reports so moderators can see the listing
+// lifecycle, current hold state, and the number of independent open reports.
+router.get("/reports/exchange", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const status = req.query.status as string | undefined;
+  const validStatuses = ["pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
+  const validStatus = status && validStatuses.includes(status) ? status : undefined;
+  const rows = await db.select({
+    id: reportsTable.id,
+    reporter_id: reportsTable.reporter_id,
+    reported_user_id: reportsTable.reported_user_id,
+    reported_exchange_listing_id: reportsTable.reported_exchange_listing_id,
+    type: reportsTable.type,
+    description: reportsTable.description,
+    status: reportsTable.status,
+    admin_notes: reportsTable.admin_notes,
+    reviewed_by: reportsTable.reviewed_by,
+    reviewed_at: reportsTable.reviewed_at,
+    created_at: reportsTable.created_at,
+    updated_at: reportsTable.updated_at,
+    reporter_name: usersTable.name,
+    reporter_email: usersTable.email,
+    seller_name: sellerUsersTable.name,
+    listing_title: exchangeListingsTable.title,
+    listing_description: exchangeListingsTable.description,
+    listing_type: exchangeListingsTable.listing_type,
+    resource_type: exchangeListingsTable.resource_type,
+    listing_category: exchangeListingsTable.category,
+    listing_status: exchangeListingsTable.status,
+    listing_moderation_status: exchangeListingsTable.moderation_status,
+    listing_moderation_reason: exchangeListingsTable.moderation_reason,
+    listing_hold_at: exchangeListingsTable.moderation_hold_at,
+    listing_hold_reason: exchangeListingsTable.moderation_hold_reason,
+    open_report_count: sql<number>`(
+      SELECT COUNT(*)::int FROM reports open_report
+      WHERE open_report.reported_exchange_listing_id = ${reportsTable.reported_exchange_listing_id}
+        AND open_report.status IN ('pending', 'under_review')
+    )`,
+  })
+    .from(reportsTable)
+    .innerJoin(exchangeListingsTable, eq(reportsTable.reported_exchange_listing_id, exchangeListingsTable.id))
+    .leftJoin(usersTable, eq(reportsTable.reporter_id, usersTable.id))
+    .innerJoin(sellerUsersTable, eq(sellerUsersTable.id, exchangeListingsTable.seller_id))
+    .where(and(
+      isNotNull(reportsTable.reported_exchange_listing_id),
+      validStatus ? eq(reportsTable.status, validStatus as "pending" | "under_review" | "resolved_dismissed" | "resolved_warned" | "resolved_banned") : undefined,
+    ))
+    .orderBy(desc(reportsTable.created_at))
+    .limit(200);
+  return res.json(rows);
+});
+
 // ── GET /reports/:id — admin: get a single report ─────────────────────────
 router.get("/reports/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(String(req.params.id));
@@ -243,6 +305,140 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, a
     .returning();
 
   if (!updated) return res.status(404).json({ error: "Report not found" });
+
+  // Exchange reports use a separate, durable moderation lifecycle. Raw report
+  // counts never delete a post or suspend an account; only this authenticated
+  // moderator action changes the listing and can contribute to repeat-violation
+  // enforcement.
+  if (updated.reported_exchange_listing_id) {
+    const listingId = updated.reported_exchange_listing_id;
+    const [listing] = await db.select({
+      id: exchangeListingsTable.id,
+      seller_id: exchangeListingsTable.seller_id,
+      title: exchangeListingsTable.title,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status,
+    }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, listingId)).limit(1);
+
+    if (listing) {
+      const openReports = await db.select({ count: sql<number>`COUNT(*)::int` })
+        .from(reportsTable)
+        .where(and(
+          eq(reportsTable.reported_exchange_listing_id, listingId),
+          sql`${reportsTable.status} IN ('pending', 'under_review')`,
+        ));
+      const hasOpenReports = (openReports[0]?.count ?? 0) > 0;
+      let nextModerationStatus = listing.moderation_status;
+      let action = "reviewed";
+      let listingStatus: string | undefined;
+      let moderationReason: string | null | undefined;
+      let holdAt: Date | null | undefined;
+      let holdReason: string | null | undefined;
+
+      if (status === "under_review") {
+        nextModerationStatus = "held";
+        action = "temporary_hold";
+        moderationReason = "temporary_hold_for_moderator_review";
+        holdAt = new Date();
+        holdReason = "A moderator is reviewing an Exchange safety report.";
+      } else if (status === "resolved_dismissed") {
+        action = "dismissed";
+        if (!hasOpenReports) {
+          nextModerationStatus = "approved";
+          moderationReason = null;
+          holdAt = null;
+          holdReason = null;
+        }
+      } else if (status === "resolved_warned") {
+        action = "confirmed_warning";
+        if (!hasOpenReports) {
+          nextModerationStatus = "approved";
+          moderationReason = null;
+          holdAt = null;
+          holdReason = null;
+        } else {
+          nextModerationStatus = "held";
+          moderationReason = "additional_open_reports_require_review";
+          holdAt = new Date();
+          holdReason = "Additional reports remain open after a moderator warning.";
+        }
+      } else if (status === "resolved_banned") {
+        action = "confirmed_violation";
+        nextModerationStatus = "rejected";
+        moderationReason = "confirmed_exchange_safety_violation";
+        holdAt = new Date();
+        holdReason = "Removed from public Exchange after moderator-confirmed violation.";
+        // Keep reserved/completed coordination records intact. A listing with
+        // no active handoff can be withdrawn from discovery without erasing
+        // its historical row or pickup records.
+        if (listing.status === "active") listingStatus = "withdrawn";
+      }
+
+      await db.transaction(async (tx) => {
+        const listingUpdates: Record<string, unknown> = {
+          moderation_status: nextModerationStatus,
+          moderation_reason: moderationReason,
+          moderation_reviewed_by: reviewed_by,
+          moderation_reviewed_at: new Date(),
+          moderation_hold_at: holdAt,
+          moderation_hold_reason: holdReason,
+        };
+        if (listingStatus) {
+          listingUpdates.status = listingStatus;
+          listingUpdates.updated_at = new Date();
+        }
+        await tx.update(exchangeListingsTable)
+          .set(listingUpdates as Partial<typeof exchangeListingsTable.$inferInsert>)
+          .where(eq(exchangeListingsTable.id, listingId));
+        await tx.insert(exchangeModerationReviewHistoryTable).values({
+          report_id: updated.id,
+          listing_id: listingId,
+          moderator_id: reviewed_by,
+          action,
+          previous_moderation_status: listing.moderation_status,
+          next_moderation_status: nextModerationStatus,
+          notes: admin_notes ?? null,
+        });
+      });
+
+      if (status === "resolved_banned") {
+        const [confirmed] = await db.select({ count: sql<number>`COUNT(*)::int` })
+          .from(reportsTable)
+          .where(and(
+            eq(reportsTable.reported_user_id, listing.seller_id),
+            eq(reportsTable.status, "resolved_banned"),
+            isNotNull(reportsTable.reported_exchange_listing_id),
+          ));
+        // Three moderator-confirmed Exchange violations suspend the account
+        // through Niakofa's existing auth gate. Reports alone never count.
+        if ((confirmed?.count ?? 0) >= 3) {
+          await db.update(usersTable).set({
+            is_suspended: true,
+            suspended_at: new Date(),
+            suspended_reason: "Three moderator-confirmed Exchange safety violations",
+            helper_mode_active: false,
+            token_version: sql`${usersTable.token_version} + 1`,
+          }).where(eq(usersTable.id, listing.seller_id));
+        }
+      }
+
+      const notice = status === "resolved_dismissed"
+        ? "The safety team reviewed your Exchange post and dismissed the report."
+        : status === "resolved_warned"
+          ? "The safety team reviewed your Exchange post. Please keep Exchange non-commercial and safe for neighbors."
+          : status === "resolved_banned"
+            ? "The safety team removed your Exchange post after confirming a community safety violation."
+            : "Your Exchange post is temporarily on hold while the safety team reviews it.";
+      void createMessageNotification({
+        userId: listing.seller_id,
+        type: "exchange",
+        title: "Exchange safety review update",
+        body: notice,
+        actionUrl: "/community?section=exchange&mine=true",
+        metadata: { exchange_listing_id: listingId, report_id: updated.id, action },
+      }).catch(() => {});
+    }
+  }
 
   // If a griot story report is upheld (resolved_banned), pull the story back
   // out of public view immediately — do not leave it live while banned.

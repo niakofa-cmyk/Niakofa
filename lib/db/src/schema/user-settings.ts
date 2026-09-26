@@ -15,6 +15,13 @@ export const userSettingsTable = pgTable("user_settings", {
   // remains essential and is not controlled by these flags.
   notif_exchange_activity: boolean("notif_exchange_activity").notNull().default(false),
   notif_exchange_digest: boolean("notif_exchange_digest").notNull().default(false),
+  // Granular Exchange discovery filters. Defaults stay enabled so existing
+  // members who already opt into Exchange activity keep the same behavior.
+  notif_exchange_needs: boolean("notif_exchange_needs").notNull().default(true),
+  notif_exchange_offers: boolean("notif_exchange_offers").notNull().default(true),
+  notif_exchange_goods: boolean("notif_exchange_goods").notNull().default(true),
+  notif_exchange_services: boolean("notif_exchange_services").notNull().default(true),
+  notif_exchange_urgent_aid: boolean("notif_exchange_urgent_aid").notNull().default(true),
   // Pauses optional notifications without erasing saved category choices.
   notif_optional_paused: boolean("notif_optional_paused").notNull().default(false),
   // Coarse Exchange digest context; never an exact address or raw GPS value.

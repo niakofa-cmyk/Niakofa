@@ -1,6 +1,6 @@
 export type ExchangeListingType = "offer" | "need";
 export type ExchangeResourceType = "goods" | "services";
-export type ExchangeCategory = "household" | "clothing" | "food" | "books" | "electronics" | "children" | "other";
+export type ExchangeCategory = "household" | "clothing" | "food" | "books" | "electronics" | "children" | "urgent_aid" | "other";
 export type ExchangeCondition = "new" | "like_new" | "good" | "well_loved";
 export type PickupStatus = "requested" | "accepted" | "declined" | "cancelled" | "completed";
 

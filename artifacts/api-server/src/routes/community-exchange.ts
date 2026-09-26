@@ -17,12 +17,13 @@ import { createMessageNotification } from "../lib/message-notifications";
 
 const router = Router();
 
-const CATEGORY_VALUES = ["household", "clothing", "food", "books", "electronics", "children", "other"] as const;
+const CATEGORY_VALUES = ["household", "clothing", "food", "books", "electronics", "children", "urgent_aid", "other"] as const;
 const CONDITION_VALUES = ["new", "like_new", "good", "well_loved"] as const;
 const LISTING_TYPE_VALUES = ["offer", "need"] as const;
 const RESOURCE_TYPE_VALUES = ["goods", "services"] as const;
 const NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\b(?:text|call|email|venmo|cash\s*app|zelle|whatsapp|telegram)\b)/i;
 const EXCHANGE_IMPACT_PRIVACY_THRESHOLD = 5;
+const EXCHANGE_HOLD_REPORT_THRESHOLD = 3;
 
 const listingBody = z.object({
   listing_type: z.enum(LISTING_TYPE_VALUES).default("offer"),
@@ -55,7 +56,7 @@ const pickupBody = z.object({
 });
 
 const reportBody = z.object({
-  type: z.enum(["fraud", "harassment", "dangerous_behavior", "spam", "other"]),
+  type: z.enum(["fraud", "harassment", "dangerous_behavior", "spam", "commercial_pricing", "spam_or_solicitation", "unsafe_or_harmful", "other"]),
   description: z.string().trim().min(10).max(2000),
 });
 
@@ -795,7 +796,50 @@ router.post("/community/exchange/listings/:id/report", requireAuth, requireAppro
     }
     throw error;
   }
-  return res.status(201).json({ report_id: report.id, message: "Thanks. The listing has been sent to the safety team." });
+
+  // Three unique authenticated reports create a temporary review hold rather
+  // than deleting or withdrawing the listing. The listing lifecycle and any
+  // accepted pickup history remain intact while moderators investigate.
+  const [openReports] = await db.select({
+    count: sql<number>`COUNT(*)::int`,
+  }).from(reportsTable).where(and(
+    eq(reportsTable.reported_exchange_listing_id, listingId),
+    sql`${reportsTable.status} IN ('pending', 'under_review')`,
+  ));
+  let held = false;
+  if ((openReports?.count ?? 0) >= EXCHANGE_HOLD_REPORT_THRESHOLD) {
+    const [heldListing] = await db.update(exchangeListingsTable)
+      .set({
+        moderation_status: "held",
+        moderation_reason: "temporary_hold_after_three_unique_reports",
+        moderation_hold_at: new Date(),
+        moderation_hold_reason: "Three unique reports are awaiting moderator review.",
+      })
+      .where(and(
+        eq(exchangeListingsTable.id, listingId),
+        eq(exchangeListingsTable.moderation_status, "approved"),
+      ))
+      .returning({ id: exchangeListingsTable.id });
+    held = Boolean(heldListing);
+    if (held) {
+      void createMessageNotification({
+        userId: listing.seller_id,
+        type: "exchange",
+        title: "Your Exchange post is temporarily on hold",
+        body: `“${listing.title}” is temporarily hidden while the safety team reviews community reports. Active pickup history is preserved.`,
+        actionUrl: "/community?section=exchange&mine=true",
+        metadata: { exchange_listing_id: listingId, action: "temporary_hold" },
+      }).catch(() => {});
+    }
+  }
+
+  return res.status(201).json({
+    report_id: report.id,
+    held,
+    message: held
+      ? "Thanks. The listing is temporarily held for safety review."
+      : "Thanks. The listing has been sent to the safety team.",
+  });
 });
 
 export default router;

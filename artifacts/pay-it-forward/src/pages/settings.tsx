@@ -80,6 +80,11 @@ function NotificationPreferences({ userId }: { userId: number }) {
     notif_community_activity: false,
     notif_exchange_activity: false,
     notif_exchange_digest: false,
+    notif_exchange_needs: true,
+    notif_exchange_offers: true,
+    notif_exchange_goods: true,
+    notif_exchange_services: true,
+    notif_exchange_urgent_aid: true,
     notif_optional_paused: false,
   });
   const [loading, setLoading] = useState(true);
@@ -98,6 +103,11 @@ function NotificationPreferences({ userId }: { userId: number }) {
             notif_community_activity: data.notif_community_activity ?? false,
             notif_exchange_activity: data.notif_exchange_activity ?? false,
             notif_exchange_digest: data.notif_exchange_digest ?? false,
+            notif_exchange_needs: data.notif_exchange_needs ?? true,
+            notif_exchange_offers: data.notif_exchange_offers ?? true,
+            notif_exchange_goods: data.notif_exchange_goods ?? true,
+            notif_exchange_services: data.notif_exchange_services ?? true,
+            notif_exchange_urgent_aid: data.notif_exchange_urgent_aid ?? true,
             notif_optional_paused: data.notif_optional_paused ?? false,
           });
           setUpdatedAt(typeof data.updated_at === "string" ? data.updated_at : null);
@@ -116,6 +126,11 @@ function NotificationPreferences({ userId }: { userId: number }) {
     notif_community_activity: "Community activity feed",
     notif_exchange_activity: "Exchange activity near me",
     notif_exchange_digest: "Weekly Exchange digest",
+    notif_exchange_needs: "Exchange needs",
+    notif_exchange_offers: "Exchange offers",
+    notif_exchange_goods: "Exchange goods",
+    notif_exchange_services: "Exchange services",
+    notif_exchange_urgent_aid: "Urgent aid Exchange posts",
     notif_optional_paused: "Pause optional notifications",
   };
 
@@ -172,7 +187,7 @@ function NotificationPreferences({ userId }: { userId: number }) {
                 key={key}
                 className="flex items-center justify-between p-3 bg-background rounded-xl border border-border mb-2"
               >
-                <span className="text-sm">{labels[key]}</span>
+                <span className={`text-sm ${key.startsWith("notif_exchange_") ? "pl-3" : ""}`}>{labels[key]}</span>
                 <Switch
                   checked={prefs[key]}
                   onCheckedChange={() => toggle(key)}

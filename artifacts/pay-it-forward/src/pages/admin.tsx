@@ -41,6 +41,22 @@ interface Report {
   reporter_name?: string | null;
   reporter_email?: string | null;
   reported_user_name?: string | null;
+  reported_exchange_listing_id?: number | null;
+}
+
+interface ExchangeReport extends Report {
+  reported_exchange_listing_id: number;
+  seller_name?: string | null;
+  listing_title?: string | null;
+  listing_description?: string | null;
+  listing_type?: string | null;
+  resource_type?: string | null;
+  listing_category?: string | null;
+  listing_status?: string | null;
+  listing_moderation_status?: string | null;
+  listing_moderation_reason?: string | null;
+  listing_hold_reason?: string | null;
+  open_report_count?: number | null;
 }
 
 interface AdminUser {
@@ -3184,12 +3200,150 @@ function UserReportsSection({ authed, refreshTick = 0 }: { authed: boolean; refr
   );
 }
 
+function ExchangeReportsSection({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?: number }) {
+  const [reports, setReports] = useState<ExchangeReport[]>([]);
+  const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const status = statusFilter === "open" ? "?status=pending" : "";
+      const res = await fetch(`${BASE}/api/reports/exchange${status}`, {
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (!res.ok) throw new Error("Failed");
+      setReports(await res.json() as ExchangeReport[]);
+    } catch {
+      toast({ title: "Could not load Exchange reports", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter]);
+
+  useEffect(() => { if (authed) void load(); }, [authed, load, refreshTick]);
+
+  const decide = async (report: ExchangeReport, status: "under_review" | "resolved_dismissed" | "resolved_warned" | "resolved_banned") => {
+    if (status === "resolved_banned" && !window.confirm("Remove this Exchange post after confirming a violation? Active pickup history is preserved.")) return;
+    setProcessing(report.id);
+    try {
+      const res = await fetch(`${BASE}/api/reports/${report.id}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({
+        title: status === "under_review" ? "Listing held for review" : "Exchange report updated",
+        description: status === "resolved_banned" ? "The listing was removed from discovery; pickup history remains." : undefined,
+      });
+      await load();
+    } catch {
+      toast({ title: "Exchange action failed", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        {(["open", "all"] as const).map(filter => (
+          <button key={filter} onClick={() => setStatusFilter(filter)}
+            className={`text-[11px] font-bold px-3 py-1.5 rounded-full border ${statusFilter === filter ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground"}`}>
+            {filter === "open" ? "Open queue" : "All history"}
+          </button>
+        ))}
+        <button onClick={() => void load()} className="ml-auto w-8 h-8 rounded-lg border border-border flex items-center justify-center" title="Refresh">
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      <div className="bg-muted/40 border border-border rounded-xl px-3 py-2.5 text-[11px] text-muted-foreground flex items-start gap-2">
+        <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+        <span>Three independent open reports create a temporary hold. Only a moderator decision confirms a warning or removal; active pickup records are never deleted.</span>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : reports.length === 0 ? (
+        <div className="text-center py-14">
+          <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-400/40" />
+          <div className="font-bold text-sm text-muted-foreground">{statusFilter === "open" ? "Exchange queue is clear" : "No Exchange reports yet"}</div>
+        </div>
+      ) : (
+        reports.map(report => {
+          const statusMeta = STATUS_LABELS[report.status] ?? { label: report.status, color: "bg-muted text-muted-foreground border-border" };
+          const open = report.status === "pending" || report.status === "under_review";
+          return (
+            <div key={report.id} className="bg-card border border-border rounded-2xl p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-bold text-sm flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5 text-primary shrink-0" />
+                    {report.listing_title ?? `Exchange listing #${report.reported_exchange_listing_id}`}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    {report.listing_type ?? "post"} · {report.resource_type ?? "resource"} · {report.listing_category ?? "other"}
+                    {report.seller_name ? ` · by ${report.seller_name}` : ""}
+                  </div>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${statusMeta.color}`}>{statusMeta.label}</span>
+              </div>
+
+              <div className="flex items-start gap-1.5 bg-destructive/10 rounded-xl px-2.5 py-2">
+                <Flag className="w-3 h-3 text-destructive mt-0.5 shrink-0" />
+                <div className="text-[11px] leading-relaxed">
+                  <span className="font-bold text-destructive">{TYPE_LABELS[report.type] ?? report.type}</span> — {report.description}
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    Reported by {report.reporter_name ?? report.reporter_email ?? `User #${report.reporter_id}`} · {fmtDate(report.created_at)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground">
+                <span className="font-bold">Open reports: {report.open_report_count ?? 0}</span>
+                <span>Listing: {report.listing_status ?? "unknown"}</span>
+                <span>Moderation: {report.listing_moderation_status ?? "unknown"}</span>
+                {report.listing_hold_reason && <span className="text-yellow-600 dark:text-yellow-400">{report.listing_hold_reason}</span>}
+              </div>
+
+              {open ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => void decide(report, "under_review")} disabled={processing === report.id}
+                    className="h-9 rounded-xl border border-yellow-500/40 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300 text-xs font-black disabled:opacity-50">
+                    {processing === report.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto" /> : "Hold for review"}
+                  </button>
+                  <button onClick={() => void decide(report, "resolved_dismissed")} disabled={processing === report.id}
+                    className="h-9 rounded-xl border border-border bg-muted/40 text-xs font-black disabled:opacity-50">Dismiss</button>
+                  <button onClick={() => void decide(report, "resolved_warned")} disabled={processing === report.id}
+                    className="h-9 rounded-xl border border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-300 text-xs font-black disabled:opacity-50">Confirm + warn</button>
+                  <button onClick={() => void decide(report, "resolved_banned")} disabled={processing === report.id}
+                    className="h-9 rounded-xl bg-destructive text-destructive-foreground text-xs font-black disabled:opacity-50">Confirm + remove</button>
+                </div>
+              ) : (
+                <div className="text-[11px] text-muted-foreground">
+                  {report.status === "resolved_banned" ? "Removed from public Exchange by moderator." :
+                    report.status === "resolved_warned" ? "Warning recorded; listing remains subject to any open reports." :
+                    "Report resolved; no enforcement action taken."}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 // ── Reports Tab — 3-section moderation hub ────────────────────────────────────
 function ReportsTab({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?: number }) {
-  const [section, setSection] = useState<"user-reports" | "flagged" | "posts">("user-reports");
+  const [section, setSection] = useState<"user-reports" | "exchange" | "flagged" | "posts">("user-reports");
 
   const SECTIONS = [
     { key: "user-reports", label: "User Reports", icon: Flag },
+    { key: "exchange",     label: "Exchange Safety", icon: ShieldAlert },
     { key: "flagged",      label: "Flagged Requests", icon: ShieldAlert },
     { key: "posts",        label: "Post Moderation", icon: Megaphone },
   ] as const;
@@ -3206,6 +3360,7 @@ function ReportsTab({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?
         ))}
       </div>
       {section === "user-reports" && <UserReportsSection authed={authed} refreshTick={refreshTick} />}
+      {section === "exchange"    && <ExchangeReportsSection authed={authed} refreshTick={refreshTick} />}
       {section === "flagged"      && <FlaggedRequestsSection />}
       {section === "posts"        && <PostModerationSection />}
     </div>

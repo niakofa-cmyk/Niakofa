@@ -49,9 +49,19 @@ type ExchangeDigestListing = {
   id: number;
   title: string;
   listing_type: string;
+  resource_type: string;
+  category: string;
   neighborhood: string;
   latitude?: number | null;
   longitude?: number | null;
+};
+
+type ExchangeDigestPreferences = {
+  needs: boolean;
+  offers: boolean;
+  goods: boolean;
+  services: boolean;
+  urgentAid: boolean;
 };
 
 type ArchivedExchangeListing = {
@@ -144,14 +154,21 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
 
 async function findExchangeDigestListings(
   recipient: { lat: number | null; lng: number | null; area: string | null },
+  preferences: ExchangeDigestPreferences,
 ): Promise<ExchangeDigestListing[]> {
   let listings: ExchangeDigestListing[] = [];
   const radiusMeters = EXCHANGE_DIGEST_RADIUS_MILES * 1609.344;
+  const eligible = (listing: ExchangeDigestListing) => {
+    if (listing.category === "urgent_aid") return preferences.urgentAid;
+    const typeAllowed = listing.listing_type === "need" ? preferences.needs : preferences.offers;
+    const resourceAllowed = listing.resource_type === "services" ? preferences.services : preferences.goods;
+    return typeAllowed && resourceAllowed;
+  };
 
   if (recipient.lat != null && recipient.lng != null) {
     try {
       const rows = await db.execute(sql`
-        SELECT id, title, listing_type, neighborhood
+        SELECT id, title, listing_type, resource_type, category, neighborhood
         FROM exchange_listings
         WHERE status = 'active'
           AND moderation_status = 'approved'
@@ -163,9 +180,9 @@ async function findExchangeDigestListings(
             ${radiusMeters}
           )
         ORDER BY updated_at DESC, id DESC
-        LIMIT 5
+         LIMIT 50
       `);
-      listings = rows.rows as ExchangeDigestListing[];
+      listings = (rows.rows as ExchangeDigestListing[]).filter(eligible).slice(0, 5);
     } catch (err) {
       logger.warn({ err }, "exchange-digest: geospatial query unavailable; using indexed fallback");
     }
@@ -177,7 +194,7 @@ async function findExchangeDigestListings(
       const lngDelta = EXCHANGE_DIGEST_RADIUS_MILES
         / (69 * Math.max(0.25, Math.cos((recipient.lat * Math.PI) / 180)));
       const rows = await db.execute(sql`
-        SELECT id, title, listing_type, neighborhood, latitude, longitude
+        SELECT id, title, listing_type, resource_type, category, neighborhood, latitude, longitude
         FROM exchange_listings
         WHERE status = 'active'
           AND moderation_status = 'approved'
@@ -189,6 +206,7 @@ async function findExchangeDigestListings(
       listings = (rows.rows as ExchangeDigestListing[])
         .filter((listing) => listing.latitude != null && listing.longitude != null
           && haversineMiles(recipient.lat!, recipient.lng!, listing.latitude, listing.longitude) <= EXCHANGE_DIGEST_RADIUS_MILES)
+        .filter(eligible)
         .slice(0, 5);
     }
   }
@@ -198,15 +216,15 @@ async function findExchangeDigestListings(
   // indexed server-side lookup, and the coarse label is never exposed as GPS.
   if (listings.length === 0 && recipient.area?.trim()) {
     const rows = await db.execute(sql`
-      SELECT id, title, listing_type, neighborhood
+      SELECT id, title, listing_type, resource_type, category, neighborhood
       FROM exchange_listings
       WHERE status = 'active'
         AND moderation_status = 'approved'
         AND neighborhood = ${recipient.area.trim()}
       ORDER BY updated_at DESC, id DESC
-      LIMIT 5
+      LIMIT 50
     `);
-    listings = rows.rows as ExchangeDigestListing[];
+    listings = (rows.rows as ExchangeDigestListing[]).filter(eligible).slice(0, 5);
   }
 
   return listings;
@@ -219,6 +237,11 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
     lng: usersTable.lng,
     area: userSettingsTable.exchange_digest_area,
     timezone: userSettingsTable.exchange_digest_timezone,
+    needs: userSettingsTable.notif_exchange_needs,
+    offers: userSettingsTable.notif_exchange_offers,
+    goods: userSettingsTable.notif_exchange_goods,
+    services: userSettingsTable.notif_exchange_services,
+    urgentAid: userSettingsTable.notif_exchange_urgent_aid,
   }).from(usersTable)
     .innerJoin(userSettingsTable, eq(userSettingsTable.user_id, usersTable.id))
     .where(and(
@@ -246,7 +269,13 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
     if (existingDelivery?.next_attempt_at && existingDelivery.next_attempt_at > now) continue;
     if (existingDelivery?.claim_expires_at && existingDelivery.claim_expires_at > now) continue;
 
-    const listings = await findExchangeDigestListings(recipient);
+    const listings = await findExchangeDigestListings(recipient, {
+      needs: recipient.needs ?? true,
+      offers: recipient.offers ?? true,
+      goods: recipient.goods ?? true,
+      services: recipient.services ?? true,
+      urgentAid: recipient.urgentAid ?? true,
+    });
     if (listings.length === 0) continue;
 
     const claimToken = randomUUID();

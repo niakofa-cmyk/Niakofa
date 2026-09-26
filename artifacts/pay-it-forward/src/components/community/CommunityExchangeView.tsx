@@ -74,6 +74,7 @@ const categories: Array<{ value: ExchangeCategory; label: string }> = [
   { value: "books", label: "Books" },
   { value: "electronics", label: "Electronics" },
   { value: "children", label: "Children" },
+  { value: "urgent_aid", label: "Urgent aid" },
   { value: "other", label: "Other" },
 ];
 const conditions: Array<{ value: ExchangeCondition; label: string }> = [

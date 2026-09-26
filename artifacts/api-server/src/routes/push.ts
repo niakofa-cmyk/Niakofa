@@ -88,6 +88,11 @@ export type PushPayload = {
   //   "emergency"          → notif_emergency (emergencies always bypass gate)
   //   "nia_checkin" | undefined → not gated (always send)
   notifType?: "nearby_requests" | "task_accepted" | "wallet" | "community" | "exchange" | "exchange_digest" | "emergency" | "nia_checkin";
+  // Optional Exchange discovery dimensions. These are ignored for essential
+  // pickup coordination, which uses task_accepted and bypasses these filters.
+  exchangeListingType?: "need" | "offer";
+  exchangeResourceType?: "goods" | "services";
+  exchangeUrgentAid?: boolean;
 };
 
 export type PushDeliveryStatus = "delivered" | "email_fallback" | "no_subscriptions" | "disabled" | "failed" | "skipped";
@@ -161,8 +166,9 @@ async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayl
  */
 async function userAllowsNotif(
   userId: number,
-  notifType: PushPayload["notifType"]
+  payload: PushPayload
 ): Promise<boolean> {
+  const notifType = payload.notifType;
   // These types are never gated
   if (!notifType || notifType === "emergency" || notifType === "task_accepted" || notifType === "nia_checkin") return true;
 
@@ -175,6 +181,11 @@ async function userAllowsNotif(
       notif_emergency: userSettingsTable.notif_emergency,
       notif_exchange_activity: userSettingsTable.notif_exchange_activity,
       notif_exchange_digest: userSettingsTable.notif_exchange_digest,
+      notif_exchange_needs: userSettingsTable.notif_exchange_needs,
+      notif_exchange_offers: userSettingsTable.notif_exchange_offers,
+      notif_exchange_goods: userSettingsTable.notif_exchange_goods,
+      notif_exchange_services: userSettingsTable.notif_exchange_services,
+      notif_exchange_urgent_aid: userSettingsTable.notif_exchange_urgent_aid,
       notif_optional_paused: userSettingsTable.notif_optional_paused,
     })
     .from(userSettingsTable)
@@ -192,8 +203,25 @@ async function userAllowsNotif(
     case "nearby_requests": return s.notif_nearby_requests ?? true;
     case "wallet":          return s.notif_wallet_updates ?? true;
     case "community":       return s.notif_community_activity ?? false;
-    case "exchange":        return s.notif_exchange_activity ?? false;
-    case "exchange_digest": return s.notif_exchange_digest ?? false;
+    case "exchange":
+    case "exchange_digest": {
+      const baseAllowed = notifType === "exchange"
+        ? (s.notif_exchange_activity ?? false)
+        : (s.notif_exchange_digest ?? false);
+      if (!baseAllowed) return false;
+      if (payload.exchangeUrgentAid) return s.notif_exchange_urgent_aid ?? true;
+      const listingTypeAllowed = payload.exchangeListingType === "need"
+        ? (s.notif_exchange_needs ?? true)
+        : payload.exchangeListingType === "offer"
+          ? (s.notif_exchange_offers ?? true)
+          : true;
+      const resourceTypeAllowed = payload.exchangeResourceType === "goods"
+        ? (s.notif_exchange_goods ?? true)
+        : payload.exchangeResourceType === "services"
+          ? (s.notif_exchange_services ?? true)
+          : true;
+      return listingTypeAllowed && resourceTypeAllowed;
+    }
     default:                return true;
   }
 }
@@ -211,7 +239,7 @@ export async function sendPushToUser(
   options?: { fallbackEmail?: string; fallbackEmailSubject?: string }
 ): Promise<PushDeliveryResult> {
   // Check user's notification preference first
-  if (!(await userAllowsNotif(userId, payload.notifType))) {
+  if (!(await userAllowsNotif(userId, payload))) {
     logger.debug({ userId, notifType: payload.notifType }, "push: skipped — user opted out");
     return {
       status: "skipped",
@@ -404,7 +432,7 @@ export async function sendPushToNearbyHelpers(
   await Promise.allSettled(
     nearbyHelpers.map(async h => {
       // Check notification preference — emergency always goes through
-      if (!isEmergency && !(await userAllowsNotif(h.id, payload.notifType ?? "nearby_requests"))) {
+      if (!isEmergency && !(await userAllowsNotif(h.id, payload))) {
         return; // helper opted out of this notification type
       }
       const subs = await getSubsForUser(h.id);

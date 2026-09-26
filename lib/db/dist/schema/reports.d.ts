@@ -1,4 +1,4 @@
-export declare const reportTypeEnum: import("drizzle-orm/pg-core").PgEnum<["suspicious_request", "suspicious_helper", "fraud", "harassment", "fake_profile", "dangerous_behavior", "spam", "other", "sos"]>;
+export declare const reportTypeEnum: import("drizzle-orm/pg-core").PgEnum<["suspicious_request", "suspicious_helper", "fraud", "harassment", "fake_profile", "dangerous_behavior", "spam", "commercial_pricing", "spam_or_solicitation", "unsafe_or_harmful", "other", "sos"]>;
 export declare const reportStatusEnum: import("drizzle-orm/pg-core").PgEnum<["pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"]>;
 export declare const reportsTable: import("drizzle-orm/pg-core").PgTableWithColumns<{
     name: "reports";
@@ -111,14 +111,14 @@ export declare const reportsTable: import("drizzle-orm/pg-core").PgTableWithColu
             tableName: "reports";
             dataType: "string";
             columnType: "PgEnumColumn";
-            data: "other" | "suspicious_request" | "suspicious_helper" | "fraud" | "harassment" | "fake_profile" | "dangerous_behavior" | "spam" | "sos";
+            data: "other" | "suspicious_request" | "suspicious_helper" | "fraud" | "harassment" | "fake_profile" | "dangerous_behavior" | "spam" | "commercial_pricing" | "spam_or_solicitation" | "unsafe_or_harmful" | "sos";
             driverParam: string;
             notNull: true;
             hasDefault: false;
             isPrimaryKey: false;
             isAutoincrement: false;
             hasRuntimeDefault: false;
-            enumValues: ["suspicious_request", "suspicious_helper", "fraud", "harassment", "fake_profile", "dangerous_behavior", "spam", "other", "sos"];
+            enumValues: ["suspicious_request", "suspicious_helper", "fraud", "harassment", "fake_profile", "dangerous_behavior", "spam", "commercial_pricing", "spam_or_solicitation", "unsafe_or_harmful", "other", "sos"];
             baseColumn: never;
             identity: undefined;
             generated: undefined;

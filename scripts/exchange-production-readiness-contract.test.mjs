@@ -9,7 +9,12 @@ test("notification delivery remains server-enforced and preserves essential path
   assert.match(push, /if \(!\(await userAllowsNotif\(userId, payload\.notifType\)\)\)/);
   assert.match(push, /notif_optional_paused/);
   assert.match(push, /notifType === "emergency" \|\| notifType === "task_accepted" \|\| notifType === "nia_checkin"/);
-  assert.match(push, /case "exchange_digest": return s\.notif_exchange_digest/);
+  assert.match(push, /case "exchange_digest":/);
+  assert.match(push, /notif_exchange_needs/);
+  assert.match(push, /notif_exchange_offers/);
+  assert.match(push, /notif_exchange_goods/);
+  assert.match(push, /notif_exchange_services/);
+  assert.match(push, /notif_exchange_urgent_aid/);
   assert.match(push, /"no_subscriptions"/);
   assert.match(push, /"failed"/);
 });
@@ -82,4 +87,22 @@ test("digest location persistence is coarse and timezone-aware", async () => {
   assert.match(settings, /must be an IANA timezone/);
   assert.match(client, /exchange_digest_area: location\.label/);
   assert.match(client, /exchange_digest_timezone:/);
+});
+
+test("Exchange safety uses moderator-confirmed holds and durable review history", async () => {
+  const exchange = await read("artifacts/api-server/src/routes/community-exchange.ts");
+  const reports = await read("artifacts/api-server/src/routes/reports.ts");
+  const schema = await read("lib/db/src/schema/exchange.ts");
+  const migration = await read("lib/db/migrations/0166_exchange_category_moderation.sql");
+  assert.match(exchange, /EXCHANGE_HOLD_REPORT_THRESHOLD = 3/);
+  assert.match(exchange, /moderation_status: "held"/);
+  assert.match(exchange, /temporary_hold_after_three_unique_reports/);
+  assert.match(reports, /\/reports\/exchange/);
+  assert.match(reports, /temporary_hold/);
+  assert.match(reports, /confirmed_violation/);
+  assert.match(reports, /Three moderator-confirmed Exchange violations/);
+  assert.match(schema, /exchangeModerationReviewHistoryTable/);
+  assert.match(schema, /previous_moderation_status/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS exchange_moderation_review_history/);
+  assert.match(migration, /ALTER TYPE report_type ADD VALUE IF NOT EXISTS 'commercial_pricing'/);
 });

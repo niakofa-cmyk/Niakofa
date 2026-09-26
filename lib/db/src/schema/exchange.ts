@@ -25,6 +25,10 @@ export const exchangeListingsTable = pgTable("exchange_listings", {
   status: text("status").notNull().default("active"),
   moderation_status: text("moderation_status").notNull().default("approved"),
   moderation_reason: text("moderation_reason"),
+  moderation_hold_at: timestamp("moderation_hold_at", { withTimezone: true }),
+  moderation_hold_reason: text("moderation_hold_reason"),
+  moderation_reviewed_by: integer("moderation_reviewed_by"),
+  moderation_reviewed_at: timestamp("moderation_reviewed_at", { withTimezone: true }),
   archived_at: timestamp("archived_at", { withTimezone: true }),
   archive_reason: text("archive_reason"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -81,3 +85,24 @@ export const exchangeDigestDeliveriesTable = pgTable("exchange_digest_deliveries
 ]);
 
 export type ExchangeDigestDelivery = typeof exchangeDigestDeliveriesTable.$inferSelect;
+
+/**
+ * Immutable moderator actions for Exchange reports. Report rows retain the
+ * current decision; this table preserves the complete review timeline.
+ */
+export const exchangeModerationReviewHistoryTable = pgTable("exchange_moderation_review_history", {
+  id: serial("id").primaryKey(),
+  report_id: integer("report_id").notNull(),
+  listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
+  moderator_id: integer("moderator_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+  action: text("action").notNull(),
+  previous_moderation_status: text("previous_moderation_status"),
+  next_moderation_status: text("next_moderation_status"),
+  notes: text("notes"),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("exchange_moderation_review_history_listing_idx").on(table.listing_id, table.created_at),
+  index("exchange_moderation_review_history_report_idx").on(table.report_id, table.created_at),
+]);
+
+export type ExchangeModerationReviewHistory = typeof exchangeModerationReviewHistoryTable.$inferSelect;

@@ -955,6 +955,8 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
     "notif_nearby_requests", "notif_emergency", "notif_task_accepted",
     "notif_wallet_updates", "notif_community_activity", "notif_pledge_reminders",
     "notif_exchange_activity", "notif_exchange_digest", "notif_optional_paused",
+    "notif_exchange_needs", "notif_exchange_offers", "notif_exchange_goods",
+    "notif_exchange_services", "notif_exchange_urgent_aid",
     "exchange_digest_area", "exchange_digest_timezone",
     "privacy_profile_visible", "privacy_live_location", "privacy_activity_sharing",
     "privacy_anonymous_giving", "service_radius_miles", "max_travel_miles", "specialties",
