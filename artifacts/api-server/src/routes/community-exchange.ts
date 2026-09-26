@@ -12,6 +12,7 @@ import { z } from "zod";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter, communityPostLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
+import { sendPushToUser } from "./push";
 
 const router = Router();
 
@@ -50,6 +51,10 @@ function parseId(value: unknown): number | null {
 
 function safeCoarseText(value: string): boolean {
   return !NO_PRIVATE_CONTACT.test(value);
+}
+
+function roundedCoordinate(value: number | null | undefined): number | null {
+  return value == null || !Number.isFinite(value) ? null : Math.round(value * 100) / 100;
 }
 
 function serialize(value: unknown): unknown {
@@ -150,6 +155,10 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
   const moderation = moderatePostText(`${data.title}\n${data.description}\n${data.pickup_notes}`);
+  const [seller] = await db.select({ lat: usersTable.lat, lng: usersTable.lng })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.authenticatedUserId!))
+    .limit(1);
   const [listing] = await db.insert(exchangeListingsTable).values({
     seller_id: req.authenticatedUserId!,
     listing_type: data.listing_type,
@@ -160,6 +169,8 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
     condition: data.condition,
     neighborhood: data.neighborhood,
     pickup_notes: data.pickup_notes || null,
+    latitude: roundedCoordinate(seller?.lat),
+    longitude: roundedCoordinate(seller?.lng),
     moderation_status: moderation.status,
     moderation_reason: moderation.reason,
   }).returning();
@@ -251,6 +262,11 @@ router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, req
     pickup_area: parsed.data.pickup_area,
     proposed_window: parsed.data.proposed_window,
   }).returning();
+  void sendPushToUser(listing.seller_id, {
+    title: "A neighbor wants to coordinate",
+    body: `Someone responded to “${listing.title}”. Open Exchange to review the request.`,
+    notifType: "task_accepted",
+  }).catch(() => {});
   return res.status(201).json({ pickup_request: serializeListing(pickupRequest as unknown as Record<string, unknown>) });
 });
 
@@ -303,6 +319,11 @@ router.post("/community/exchange/pickup-requests/:id/accept", requireAuth, requi
     return { pickup_request: updated };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
+  void sendPushToUser(result.pickup_request.buyer_id, {
+    title: "Your Exchange request was accepted",
+    body: "Your neighbor accepted the coordination request. Open Exchange to confirm the handoff details.",
+    notifType: "task_accepted",
+  }).catch(() => {});
   return res.json({ pickup_request: serializeListing(result.pickup_request as unknown as Record<string, unknown>) });
 });
 
@@ -343,31 +364,73 @@ router.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requi
 router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid pickup request id" });
-  const pickup = await loadPickupRequest(id);
-  if (!pickup) return res.status(404).json({ error: "Pickup request not found" });
   const userId = req.authenticatedUserId!;
-  const isBuyer = pickup.buyer_id === userId;
-  const isSeller = pickup.seller_id === userId;
-  if (!isBuyer && !isSeller) return res.status(403).json({ error: "Only the pickup participants can confirm completion." });
-  if (pickup.status !== "accepted") return res.status(409).json({ error: "Completion can only be confirmed for an accepted pickup." });
-  const now = new Date();
-  const updates = isBuyer ? { buyer_confirmed_at: now, updated_at: now } : { seller_confirmed_at: now, updated_at: now };
-  const [updated] = await db.update(exchangePickupRequestsTable).set(updates)
-    .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, "accepted"))).returning();
-  if (!updated) return res.status(409).json({ error: "This pickup was already changed." });
-  const bothConfirmed = Boolean(updated.buyer_confirmed_at && updated.seller_confirmed_at);
-  if (bothConfirmed) {
-    const [completed] = await db.transaction(async (tx) => {
-      const [done] = await tx.update(exchangePickupRequestsTable)
+  const result = await db.transaction(async (tx) => {
+    const [pickup] = await tx.select({
+      id: exchangePickupRequestsTable.id,
+      listing_id: exchangePickupRequestsTable.listing_id,
+      buyer_id: exchangePickupRequestsTable.buyer_id,
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangePickupRequestsTable.status,
+      buyer_confirmed_at: exchangePickupRequestsTable.buyer_confirmed_at,
+      seller_confirmed_at: exchangePickupRequestsTable.seller_confirmed_at,
+    }).from(exchangePickupRequestsTable)
+      .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id))
+      .where(eq(exchangePickupRequestsTable.id, id))
+      .for("update")
+      .limit(1);
+    if (!pickup) return { error: "Pickup request not found", status: 404 as const };
+    const isBuyer = pickup.buyer_id === userId;
+    const isSeller = pickup.seller_id === userId;
+    if (!isBuyer && !isSeller) return { error: "Only the pickup participants can confirm completion.", status: 403 as const };
+    if (pickup.status !== "accepted") return { error: "Completion can only be confirmed for an accepted pickup.", status: 409 as const };
+    const now = new Date();
+    const [updated] = await tx.update(exchangePickupRequestsTable).set(
+      isBuyer ? { buyer_confirmed_at: now, updated_at: now } : { seller_confirmed_at: now, updated_at: now },
+    ).where(eq(exchangePickupRequestsTable.id, id)).returning();
+    if (!updated) return { error: "This pickup was already changed.", status: 409 as const };
+    if (updated.buyer_confirmed_at && updated.seller_confirmed_at) {
+      const [completed] = await tx.update(exchangePickupRequestsTable)
         .set({ status: "completed", completed_at: now, updated_at: now })
-        .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, "accepted"))).returning();
-      if (done) await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now })
-        .where(eq(exchangeListingsTable.id, pickup.listing_id));
-      return [done];
-    });
-    return res.json({ pickup_request: serializeListing((completed ?? updated) as unknown as Record<string, unknown>) });
-  }
-  return res.json({ pickup_request: serializeListing(updated as unknown as Record<string, unknown>), awaiting_other_confirmation: true });
+        .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, "accepted")))
+        .returning();
+      if (completed) {
+        await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now })
+          .where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
+      }
+      return { pickup_request: completed ?? updated };
+    }
+    return { pickup_request: updated, awaiting_other_confirmation: true as const };
+  });
+  if ("error" in result) return res.status(result.status).json({ error: result.error });
+  return res.json({
+    pickup_request: serializeListing(result.pickup_request as unknown as Record<string, unknown>),
+    ...("awaiting_other_confirmation" in result ? { awaiting_other_confirmation: result.awaiting_other_confirmation } : {}),
+  });
+});
+
+router.get("/community/exchange/impact", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const [row] = await db.select({
+    completed: sql<number>`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed')::int`,
+    active_offers: sql<number>`COUNT(*) FILTER (WHERE ${exchangeListingsTable.status} = 'active' AND ${exchangeListingsTable.listing_type} = 'offer')::int`,
+    active_needs: sql<number>`COUNT(*) FILTER (WHERE ${exchangeListingsTable.status} = 'active' AND ${exchangeListingsTable.listing_type} = 'need')::int`,
+    unique_neighbors: sql<number>`COUNT(DISTINCT CASE WHEN ${exchangePickupRequestsTable.status} = 'completed' THEN ${exchangePickupRequestsTable.buyer_id} END)::int`,
+    last_30_days: sql<number>`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.completed_at} >= NOW() - INTERVAL '30 days')::int`,
+  }).from(exchangePickupRequestsTable)
+    .leftJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id))
+    .where(or(
+      eq(exchangePickupRequestsTable.buyer_id, userId),
+      eq(exchangeListingsTable.seller_id, userId),
+    ));
+  return res.json({
+    completed: row?.completed ?? 0,
+    active_offers: row?.active_offers ?? 0,
+    active_needs: row?.active_needs ?? 0,
+    unique_neighbors: row?.unique_neighbors ?? 0,
+    completed_30d: row?.last_30_days ?? 0,
+    privacy_note: "Counts are limited to your Exchange activity.",
+  });
 });
 
 router.post("/community/exchange/listings/:id/report", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {

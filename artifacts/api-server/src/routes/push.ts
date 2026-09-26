@@ -83,9 +83,11 @@ export type PushPayload = {
   //   "task_accepted"      → notif_task_accepted
   //   "wallet"             → notif_wallet_updates
   //   "community"          → notif_community_activity
+  //   "exchange"           → notif_exchange_activity
+  //   "exchange_digest"    → notif_exchange_digest
   //   "emergency"          → notif_emergency (emergencies always bypass gate)
   //   "nia_checkin" | undefined → not gated (always send)
-  notifType?: "nearby_requests" | "task_accepted" | "wallet" | "community" | "emergency" | "nia_checkin";
+  notifType?: "nearby_requests" | "task_accepted" | "wallet" | "community" | "exchange" | "exchange_digest" | "emergency" | "nia_checkin";
 };
 
 function pushOptions(urgency?: string): webpush.RequestOptions {
@@ -143,7 +145,9 @@ async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayl
 
 /**
  * Return true if this user has opted in to this notification type.
- * Emergency and nia_checkin types are never blocked by user settings.
+ * Emergency, active pickup coordination, and nia_checkin types are never
+ * blocked by optional notification pause. Optional discovery categories are
+ * gated here on the server; the client is never authoritative.
  * Missing settings row = all defaults = allow.
  */
 async function userAllowsNotif(
@@ -151,7 +155,7 @@ async function userAllowsNotif(
   notifType: PushPayload["notifType"]
 ): Promise<boolean> {
   // These types are never gated
-  if (!notifType || notifType === "emergency" || notifType === "nia_checkin") return true;
+  if (!notifType || notifType === "emergency" || notifType === "task_accepted" || notifType === "nia_checkin") return true;
 
   const rows = await db
     .select({
@@ -160,6 +164,9 @@ async function userAllowsNotif(
       notif_wallet_updates: userSettingsTable.notif_wallet_updates,
       notif_community_activity: userSettingsTable.notif_community_activity,
       notif_emergency: userSettingsTable.notif_emergency,
+      notif_exchange_activity: userSettingsTable.notif_exchange_activity,
+      notif_exchange_digest: userSettingsTable.notif_exchange_digest,
+      notif_optional_paused: userSettingsTable.notif_optional_paused,
     })
     .from(userSettingsTable)
     .where(eq(userSettingsTable.user_id, userId))
@@ -168,11 +175,17 @@ async function userAllowsNotif(
   if (rows.length === 0) return true; // no settings row = default on
 
   const s = rows[0];
+  const optionalPaused = s.notif_optional_paused ?? false;
+  if (optionalPaused && ["nearby_requests", "community", "exchange", "exchange_digest"].includes(notifType ?? "")) {
+    return false;
+  }
   switch (notifType) {
     case "nearby_requests": return s.notif_nearby_requests ?? true;
     case "task_accepted":   return s.notif_task_accepted ?? true;
     case "wallet":          return s.notif_wallet_updates ?? true;
     case "community":       return s.notif_community_activity ?? false;
+    case "exchange":        return s.notif_exchange_activity ?? false;
+    case "exchange_digest": return s.notif_exchange_digest ?? false;
     default:                return true;
   }
 }

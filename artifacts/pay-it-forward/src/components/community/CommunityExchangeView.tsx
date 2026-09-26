@@ -42,12 +42,21 @@ import type {
   ExchangePickupRequest,
   ExchangeResourceType,
 } from "@/lib/community-exchange-types";
+import { authHeaders } from "@/lib/auth";
 
 type FeedFilter = "all" | "goods" | "services" | "needs";
 type LocalLocation = {
   label: string;
   city: string;
   source: "zip" | "area" | "browser";
+};
+
+type ExchangeImpact = {
+  completed: number;
+  active_offers: number;
+  active_needs: number;
+  unique_neighbors: number;
+  completed_30d: number;
 };
 
 const LOCATION_KEY = "niakofa_exchange_location";
@@ -209,6 +218,7 @@ export function CommunityExchangeView() {
   const [reportForm, setReportForm] = useState<{ type: ExchangeReportType; description: string }>({ type: "other", description: "" });
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [impact, setImpact] = useState<ExchangeImpact | null>(null);
   const [postForm, setPostForm] = useState({
     listing_type: "offer" as ExchangeListingType,
     resource_type: "goods" as ExchangeResourceType,
@@ -276,6 +286,20 @@ export function CommunityExchangeView() {
       cancelled = true;
     };
   }, [location, refreshTick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/community/exchange/impact`, { headers: authHeaders() })
+      .then((response) => response.ok ? response.json() as Promise<ExchangeImpact> : null)
+      .then((data) => {
+        if (!cancelled && data) setImpact(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshTick]);
 
   useEffect(() => {
     if (selectedId === null) {
@@ -527,6 +551,32 @@ export function CommunityExchangeView() {
           </div>
         )}
       </section>
+
+      {impact && (
+        <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5" aria-labelledby="exchange-impact-heading">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Community Impact</p>
+              <h2 id="exchange-impact-heading" className="mt-1 text-xl font-black">The Exchange is moving care</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Verified only when both neighbors confirm completion. Your private activity is scoped to your account.</p>
+            </div>
+            <HeartHandshake className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              ["Completed", impact.completed],
+              ["Neighbors reached", impact.unique_neighbors],
+              ["Offers live", impact.active_offers],
+              ["Needs live", impact.active_needs],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-border bg-background/60 p-3">
+                <p className="text-2xl font-black text-primary">{value}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{label}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <p className="flex items-center gap-2 px-1 text-[11px] leading-relaxed text-muted-foreground"><CircleHelp className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /> Exchange is for free community sharing only. Niakofa does not handle payments or checkout here.</p>
 

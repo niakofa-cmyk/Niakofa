@@ -8,7 +8,19 @@
  * Users still control fulfillment via the "Pay Now" button, but they get
  * a nudge when their target date arrives.
  */
-import { db, scheduledPaymentsTable, walletCashoutsTable, usersTable, transactionsTable, communityStoriesTable, communityStoryMediaTable } from "@workspace/db";
+import {
+  db,
+  scheduledPaymentsTable,
+  walletCashoutsTable,
+  usersTable,
+  userSettingsTable,
+  transactionsTable,
+  communityStoriesTable,
+  communityStoryMediaTable,
+  exchangeListingsTable,
+  exchangePickupRequestsTable,
+  exchangeDigestDeliveriesTable,
+} from "@workspace/db";
 import { eq, and, lte, sql, inArray } from "drizzle-orm";
 import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
@@ -23,6 +35,156 @@ import { broadcast } from "./ws-hub";
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const EXCHANGE_MAINTENANCE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const EXCHANGE_STALE_DAYS = 30;
+const EXCHANGE_DIGEST_RADIUS_MILES = 15;
+
+function exchangeWeekKey(now = new Date()): string {
+  const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const day = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (day === 0 ? 6 : day - 1));
+  return date.toISOString().slice(0, 10);
+}
+
+async function archiveStaleExchangeListings(): Promise<number> {
+  const cutoff = new Date(Date.now() - EXCHANGE_STALE_DAYS * 24 * 60 * 60 * 1000);
+  const archived = await db.update(exchangeListingsTable)
+    .set({
+      status: "archived",
+      archived_at: new Date(),
+      archive_reason: "stale_after_30_days_without_active_coordination",
+      updated_at: new Date(),
+    })
+    .where(and(
+      eq(exchangeListingsTable.status, "active"),
+      lte(exchangeListingsTable.updated_at, cutoff),
+      sql`NOT EXISTS (
+        SELECT 1 FROM exchange_pickup_requests pickup
+        WHERE pickup.listing_id = ${exchangeListingsTable.id}
+          AND pickup.status IN ('requested', 'accepted')
+      )`,
+    ))
+    .returning({ id: exchangeListingsTable.id });
+  return archived.length;
+}
+
+async function processExchangeDigest(now = new Date()): Promise<void> {
+  const weekKey = exchangeWeekKey(now);
+  const recipients = await db.select({
+    id: usersTable.id,
+    lat: usersTable.lat,
+    lng: usersTable.lng,
+  }).from(usersTable)
+    .innerJoin(userSettingsTable, eq(userSettingsTable.user_id, usersTable.id))
+    .where(and(
+      eq(userSettingsTable.notif_exchange_digest, true),
+      eq(userSettingsTable.notif_optional_paused, false),
+      sql`${usersTable.lat} IS NOT NULL AND ${usersTable.lng} IS NOT NULL`,
+    ));
+
+  for (const recipient of recipients) {
+    if (recipient.lat == null || recipient.lng == null) continue;
+    let listings: { id: number; title: string; listing_type: string; neighborhood: string }[] = [];
+    try {
+      const radiusMeters = EXCHANGE_DIGEST_RADIUS_MILES * 1609.344;
+      const rows = await db.execute(sql`
+        SELECT id, title, listing_type, neighborhood
+        FROM exchange_listings
+        WHERE status = 'active'
+          AND moderation_status = 'approved'
+          AND latitude IS NOT NULL
+          AND longitude IS NOT NULL
+          AND ST_DWithin(
+            ST_MakePoint(${recipient.lng}, ${recipient.lat})::geography,
+            ST_MakePoint(longitude, latitude)::geography,
+            ${radiusMeters}
+          )
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 5
+      `);
+      listings = rows.rows as typeof listings;
+    } catch (err) {
+      logger.warn({ err }, "exchange-digest: geospatial query unavailable");
+    }
+    if (listings.length === 0) continue;
+
+    const [existingDelivery] = await db.select({
+      id: exchangeDigestDeliveriesTable.id,
+      delivered: exchangeDigestDeliveriesTable.delivered,
+      sent_at: exchangeDigestDeliveriesTable.sent_at,
+    }).from(exchangeDigestDeliveriesTable)
+      .where(and(
+        eq(exchangeDigestDeliveriesTable.user_id, recipient.id),
+        eq(exchangeDigestDeliveriesTable.week_key, weekKey),
+      ))
+      .limit(1);
+    let deliveryId: number;
+    if (existingDelivery?.delivered) continue;
+    if (existingDelivery) {
+      const [claimed] = await db.update(exchangeDigestDeliveriesTable)
+        .set({ sent_at: now, listing_count: listings.length })
+        .where(and(
+          eq(exchangeDigestDeliveriesTable.id, existingDelivery.id),
+          eq(exchangeDigestDeliveriesTable.delivered, false),
+          sql`${exchangeDigestDeliveriesTable.sent_at} < NOW() - INTERVAL '12 hours'`,
+        ))
+        .returning({ id: exchangeDigestDeliveriesTable.id });
+      if (!claimed) continue;
+      deliveryId = claimed.id;
+    } else {
+      const [created] = await db.insert(exchangeDigestDeliveriesTable)
+        .values({ user_id: recipient.id, week_key: weekKey, listing_count: listings.length })
+        .onConflictDoNothing({
+          target: [exchangeDigestDeliveriesTable.user_id, exchangeDigestDeliveriesTable.week_key],
+        })
+        .returning({ id: exchangeDigestDeliveriesTable.id });
+      if (!created) continue;
+      deliveryId = created.id;
+    }
+
+    const body = listings
+      .map((listing) => `${listing.listing_type === "need" ? "Need" : "Offer"}: ${listing.title} (${listing.neighborhood})`)
+      .join(" · ");
+    try {
+      await sendPushToUser(recipient.id, {
+        title: "Your weekly Exchange neighborhood digest",
+        body: `${listings.length} nearby post${listings.length === 1 ? "" : "s"}: ${body}`,
+        notifType: "exchange_digest",
+      });
+      await db.update(exchangeDigestDeliveriesTable)
+        .set({ delivered: true })
+        .where(eq(exchangeDigestDeliveriesTable.id, deliveryId));
+    } catch (err) {
+      logger.warn({ err, user_id: recipient.id }, "exchange-digest: delivery failed; will be retried next week");
+    }
+  }
+}
+
+async function processExchangeMaintenance(): Promise<void> {
+  try {
+    const archivedCount = await archiveStaleExchangeListings();
+    await processExchangeDigest();
+    if (archivedCount > 0) {
+      logger.info({ count: archivedCount }, "exchange-maintenance: stale listings archived");
+    }
+  } catch (err) {
+    logger.error({ err }, "exchange-maintenance: run failed");
+    throw err;
+  }
+}
+
+export function startExchangeMaintenanceWorker(): () => void {
+  processExchangeMaintenance()
+    .then(() => workerRan("exchange-maintenance", true))
+    .catch(() => workerRan("exchange-maintenance", false));
+  const interval = setInterval(() => {
+    processExchangeMaintenance()
+      .then(() => workerRan("exchange-maintenance", true))
+      .catch(() => workerRan("exchange-maintenance", false));
+  }, EXCHANGE_MAINTENANCE_INTERVAL_MS);
+  logger.info({ intervalMs: EXCHANGE_MAINTENANCE_INTERVAL_MS }, "scheduler: Exchange maintenance worker started");
+  return () => clearInterval(interval);
+}
 
 async function processCommunityStoryCleanup(): Promise<void> {
   const expired = await db.select({

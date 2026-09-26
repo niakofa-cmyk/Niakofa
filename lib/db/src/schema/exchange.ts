@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, serial, text, timestamp, uniqueIndex, real, boolean } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
 /**
@@ -18,9 +18,15 @@ export const exchangeListingsTable = pgTable("exchange_listings", {
   condition: text("condition").notNull().default("good"),
   neighborhood: text("neighborhood").notNull(),
   pickup_notes: text("pickup_notes"),
+  // Privacy-rounded coordinates used only for server-side local matching.
+  // These are never returned by the Exchange API.
+  latitude: real("latitude"),
+  longitude: real("longitude"),
   status: text("status").notNull().default("active"),
   moderation_status: text("moderation_status").notNull().default("approved"),
   moderation_reason: text("moderation_reason"),
+  archived_at: timestamp("archived_at", { withTimezone: true }),
+  archive_reason: text("archive_reason"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -50,3 +56,21 @@ export const exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
 
 export type ExchangeListing = typeof exchangeListingsTable.$inferSelect;
 export type ExchangePickupRequest = typeof exchangePickupRequestsTable.$inferSelect;
+
+/**
+ * Idempotency ledger for the weekly Exchange digest. Keeping this in Postgres
+ * makes delivery deduplication safe across restarts and multiple API instances.
+ */
+export const exchangeDigestDeliveriesTable = pgTable("exchange_digest_deliveries", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  week_key: text("week_key").notNull(),
+  listing_count: integer("listing_count").notNull().default(0),
+  sent_at: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  delivered: boolean("delivered").notNull().default(false),
+}, (table) => [
+  uniqueIndex("exchange_digest_deliveries_user_week_idx").on(table.user_id, table.week_key),
+  index("exchange_digest_deliveries_sent_idx").on(table.sent_at),
+]);
+
+export type ExchangeDigestDelivery = typeof exchangeDigestDeliveriesTable.$inferSelect;

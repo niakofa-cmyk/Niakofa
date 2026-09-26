@@ -936,9 +936,25 @@ router.get("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
 router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const expectedUpdatedAt = typeof req.body?.expected_updated_at === "string"
+    ? new Date(req.body.expected_updated_at)
+    : undefined;
+  if (expectedUpdatedAt && Number.isNaN(expectedUpdatedAt.getTime())) {
+    return res.status(400).json({ error: "Invalid expected_updated_at" });
+  }
+  const currentRows = await db.select().from(userSettingsTable)
+    .where(eq(userSettingsTable.user_id, id)).limit(1);
+  if (expectedUpdatedAt && currentRows[0] &&
+      currentRows[0].updated_at.getTime() !== expectedUpdatedAt.getTime()) {
+    return res.status(409).json({
+      error: "Settings changed elsewhere. Reload before saving.",
+      settings: currentRows[0],
+    });
+  }
   const allowed = [
     "notif_nearby_requests", "notif_emergency", "notif_task_accepted",
     "notif_wallet_updates", "notif_community_activity", "notif_pledge_reminders",
+    "notif_exchange_activity", "notif_exchange_digest", "notif_optional_paused",
     "privacy_profile_visible", "privacy_live_location", "privacy_activity_sharing",
     "privacy_anonymous_giving", "service_radius_miles", "max_travel_miles", "specialties",
     "preferred_language", "spirit_animal",
@@ -947,6 +963,9 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
   const updates: Record<string, unknown> = { updated_at: new Date() };
   for (const key of allowed) {
     if (req.body[key] === undefined) continue;
+    if (key.startsWith("notif_") && typeof req.body[key] !== "boolean") {
+      return res.status(400).json({ error: `${key} must be a boolean` });
+    }
     if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
     if (key === "spirit_animal" && !isValidSpiritAnimal(req.body[key])) continue;
     updates[key] = req.body[key];

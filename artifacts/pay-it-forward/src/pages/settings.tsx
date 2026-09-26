@@ -66,9 +66,13 @@ function NotificationPreferences({ userId }: { userId: number }) {
     notif_task_accepted: true,
     notif_wallet_updates: true,
     notif_community_activity: false,
+    notif_exchange_activity: false,
+    notif_exchange_digest: false,
+    notif_optional_paused: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSettings(userId)
@@ -80,7 +84,11 @@ function NotificationPreferences({ userId }: { userId: number }) {
             notif_task_accepted: data.notif_task_accepted ?? true,
             notif_wallet_updates: data.notif_wallet_updates ?? true,
             notif_community_activity: data.notif_community_activity ?? false,
+            notif_exchange_activity: data.notif_exchange_activity ?? false,
+            notif_exchange_digest: data.notif_exchange_digest ?? false,
+            notif_optional_paused: data.notif_optional_paused ?? false,
           });
+          setUpdatedAt(typeof data.updated_at === "string" ? data.updated_at : null);
       })
       .finally(() => setLoading(false));
   }, [userId]);
@@ -94,15 +102,28 @@ function NotificationPreferences({ userId }: { userId: number }) {
     notif_task_accepted: "Task accepted / en route",
     notif_wallet_updates: "Wallet & pledge updates",
     notif_community_activity: "Community activity feed",
+    notif_exchange_activity: "Exchange activity near me",
+    notif_exchange_digest: "Weekly Exchange digest",
+    notif_optional_paused: "Pause optional notifications",
   };
 
   const handleSave = async () => {
     setSaving(true);
+    const previous = prefs;
     try {
-      await saveSettings(userId, prefs);
+      const saved = await saveSettings(userId, {
+        ...prefs,
+        ...(updatedAt ? { expected_updated_at: updatedAt } : {}),
+      });
+      setUpdatedAt(typeof saved.updated_at === "string" ? saved.updated_at : updatedAt);
       toast({ title: "Notification preferences saved" });
-    } catch {
-      toast({ title: "Failed to save", variant: "destructive" });
+    } catch (error) {
+      // A stale settings timestamp means another tab/session won the write.
+      // Restore the server copy instead of leaving a misleading optimistic UI.
+      if (error instanceof Error && error.message.includes("Failed")) {
+        setPrefs(previous);
+      }
+      toast({ title: "Failed to save. Please reload and try again.", variant: "destructive" });
     } finally {
       setSaving(false);
     }

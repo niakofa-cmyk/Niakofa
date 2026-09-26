@@ -11,6 +11,12 @@ export const userSettingsTable = pgTable("user_settings", {
   notif_wallet_updates: boolean("notif_wallet_updates").notNull().default(true),
   notif_community_activity: boolean("notif_community_activity").notNull().default(false),
   notif_pledge_reminders: boolean("notif_pledge_reminders").notNull().default(true),
+  // Optional Exchange discovery notifications. Active pickup coordination
+  // remains essential and is not controlled by these flags.
+  notif_exchange_activity: boolean("notif_exchange_activity").notNull().default(false),
+  notif_exchange_digest: boolean("notif_exchange_digest").notNull().default(false),
+  // Pauses optional notifications without erasing saved category choices.
+  notif_optional_paused: boolean("notif_optional_paused").notNull().default(false),
 
   // Privacy preferences
   privacy_profile_visible: boolean("privacy_profile_visible").notNull().default(true),
