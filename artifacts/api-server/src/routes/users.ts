@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable, niaConversationsTable, niaMemoriesTable } from "@workspace/db";
 import { eq, and, or, sql, inArray } from "drizzle-orm";
@@ -1222,7 +1222,7 @@ async function anonymizeAccount(userId: number): Promise<AccountDeletionResult> 
   return { deletionScheduledAt: effectiveScheduledAt, alreadyPending: !updated };
 }
 
-function sendDeletionAccepted(res: any, result: AccountDeletionResult, requestedByAdmin: boolean) {
+function sendDeletionAccepted(res: Response, result: AccountDeletionResult, requestedByAdmin: boolean) {
   return res.status(202).json({
     ok: true,
     status: "pending_purge",
@@ -1233,7 +1233,7 @@ function sendDeletionAccepted(res: any, result: AccountDeletionResult, requested
   });
 }
 
-function sendDeletionError(res: any, error: unknown, logMessage: string) {
+function sendDeletionError(res: Response, error: unknown, logMessage: string) {
   const typed = error as {
     code?: string;
     message?: string;
