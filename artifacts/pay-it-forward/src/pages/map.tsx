@@ -58,6 +58,8 @@ import { haversineDistanceMiles, haversineMeters, isNearbyUser } from "@/lib/geo
 import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
 import { ActiveHelpCard } from "@/components/request/ActiveHelpCard";
+import { LocationPuck } from "@/components/LocationPuck";
+import { getLocationMarkerState } from "@/lib/location-marker";
 
 // Module-level: resolved once at import time, not on every render.
 // Detecting a missing token here (rather than inside the component) means
@@ -698,6 +700,13 @@ export default function MapScreen() {
   // marker visibly "jumps" to each new fix. The hook interpolates using
   // requestAnimationFrame (ease-out cubic) so movement looks alive.
   const tweenedPosition = useTweenedPosition(myLocation ?? null, 800);
+  // Render the IP fallback too, but keep its approximate source separate from
+  // any tweened GPS coordinates so the puck never claims false precision.
+  const locationBase = myLocation ?? (
+    ipFallback ? { lat: ipFallback.lat, lng: ipFallback.lng, source: "ip" as const } : null
+  );
+  const markerLocation = tweenedPosition ?? locationBase;
+  const locationMarkerState = getLocationMarkerState(locationBase);
   const {
     mode: orientMode,
     setMode: setOrientMode,
@@ -1547,13 +1556,17 @@ export default function MapScreen() {
               The ErrorBoundary guards against any unexpected SVG crash here. */}
           <div className="mb-1 relative" aria-hidden="true">
             <ErrorBoundary fallback={
-              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                <MapPin className="w-6 h-6 text-primary" />
-              </div>
+              <LocationPuck
+                heading={heldHeading}
+                mapBearing={0}
+                size={64}
+                locationState={locationMarkerState}
+              />
             }>
               <UserLocationMarker
                 markerStyle={userSettings?.location_marker_style}
                 species={userSettings?.spirit_animal}
+                locationState={locationMarkerState}
                 heading={heldHeading}
                 mapBearing={0}
                 speed={0}
@@ -1663,18 +1676,27 @@ export default function MapScreen() {
             ~800ms) so the bird glides rather than teleporting to each new fix.
             Micro-reactions (celebrating/newNotification/accepted) are wired to
             WebSocket events above so the bird reacts to live platform events. */}
-        {(tweenedPosition ?? myLocation) && (
+        {markerLocation && (
           <Marker
-            longitude={(tweenedPosition ?? myLocation)!.lng}
-            latitude={(tweenedPosition ?? myLocation)!.lat}
+            longitude={markerLocation.lng}
+            latitude={markerLocation.lat}
             anchor="center"
           >
-            {/* ErrorBoundary: a CSS/SVG crash shows a teal dot fallback
-                instead of unmounting the whole map screen. */}
-            <ErrorBoundary fallback={<div className="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,212,255,0.9)]" />}>
+            {/* The blue puck is the canonical outer fallback as well as the
+                default marker, so a companion failure preserves location
+                state instead of changing the user's location semantics. */}
+            <ErrorBoundary fallback={
+              <LocationPuck
+                heading={heldHeading}
+                mapBearing={orientMode === "heading-up" ? (fusedHeading ?? 0) : 0}
+                size={34}
+                locationState={locationMarkerState}
+              />
+            }>
               <UserLocationMarker
                 markerStyle={userSettings?.location_marker_style}
                 species={userSettings?.spirit_animal}
+                locationState={locationMarkerState}
                 heading={
                   // locked-north: bird always faces north regardless of GPS.
                   // Doc: "Tap three times: Bird locks to North."

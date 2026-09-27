@@ -12,7 +12,7 @@ import { getIpLocation } from "./locale-utils";
 import { toast } from "../hooks/use-toast";
 import { publishMapLocation } from "./spiralLocationStore";
 
-interface Location {
+export interface Location {
   lat: number;
   lng: number;
   heading?: number | null;
@@ -20,6 +20,8 @@ interface Location {
   accuracy?: number | null;
   capturedAt?: number;
   source?: "gps" | "ip";
+  /** True when coordinates are intentionally generalized for privacy. */
+  privacyProtected?: boolean;
 }
 
 interface UserPlace {

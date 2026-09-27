@@ -3,12 +3,14 @@ import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { LocationPuck } from "@/components/LocationPuck";
 import { SpiritAnimalAvatar } from "@/components/SpiritAnimal/SpiritAnimalAvatar";
 import type { SpiritAnimalId, SpiritCompanionProps } from "@/components/SpiritAnimal/types";
+import type { LocationMarkerState } from "@/lib/location-marker";
 import { resolveLocationMarkerStyle } from "@/lib/location-marker";
 
 export interface UserLocationMarkerProps extends SpiritCompanionProps {
   /** Saved preference. Unknown or missing values intentionally resolve to puck. */
   markerStyle?: unknown;
   species?: SpiritAnimalId;
+  locationState?: LocationMarkerState;
 }
 
 /**
@@ -24,6 +26,7 @@ export function UserLocationMarker({
   species,
   batterySaver,
   size = 34,
+  locationState,
   ...spiritProps
 }: UserLocationMarkerProps) {
   const animationSuppressed = useIsAnimationSuppressed();
@@ -38,6 +41,7 @@ export function UserLocationMarker({
         heading={spiritProps.heading}
         mapBearing={spiritProps.mapBearing ?? 0}
         size={size}
+        locationState={locationState}
       />
     );
   }
@@ -49,6 +53,7 @@ export function UserLocationMarker({
           heading={spiritProps.heading}
           mapBearing={spiritProps.mapBearing ?? 0}
           size={size}
+          locationState={locationState}
         />
       }
     >

@@ -1,4 +1,5 @@
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
+import type { LocationMarkerState } from "@/lib/location-marker";
 
 interface LocationPuckProps {
   /** World-frame heading in degrees (0 = true north), or null if unknown. */
@@ -6,6 +7,8 @@ interface LocationPuckProps {
   /** Current map camera bearing in degrees — 0 in north-up mode, live in heading-up mode. */
   mapBearing: number;
   size?: number;
+  /** GPS/fallback state used to distinguish live, stale, and approximate fixes. */
+  locationState?: LocationMarkerState;
 }
 
 /**
@@ -28,9 +31,30 @@ interface LocationPuckProps {
  * a plain pulsing dot with no cone — matches the old behavior rather than
  * showing a meaningless/stale direction.
  */
-export function LocationPuck({ heading, mapBearing, size = 34 }: LocationPuckProps) {
+export function LocationPuck({
+  heading,
+  mapBearing,
+  size = 34,
+  locationState,
+}: LocationPuckProps) {
   const hasHeading = typeof heading === "number" && !Number.isNaN(heading);
   const suppressed = useIsAnimationSuppressed();
+  const signal = locationState?.signal ?? "live";
+  const accuracyMeters = locationState?.accuracyMeters ?? null;
+  const accuracyRatio = accuracyMeters == null
+    ? 0
+    : Math.min(1, Math.max(0, accuracyMeters) / 200);
+  // The ring is proportional to the reported horizontal accuracy, capped so a
+  // poor fix cannot cover the whole map. It is intentionally not a map-scale
+  // circle: its job is to communicate confidence at marker size.
+  const accuracyDiameter = accuracyMeters == null
+    ? 0
+    : size * (1.2 + accuracyRatio * 2.3);
+  const signalLabel =
+    signal === "live" ? "Live GPS location" :
+    signal === "stale" ? "Stale GPS location" :
+    signal === "privacy" ? "Privacy-protected approximate location" :
+    "Approximate location";
   // Screen-space rotation is the heading relative to the current camera
   // bearing, wrapped into [0, 360) for a clean CSS transform value.
   const screenRotationDeg = hasHeading ? ((((heading as number) - mapBearing) % 360) + 360) % 360 : 0;
@@ -39,8 +63,32 @@ export function LocationPuck({ heading, mapBearing, size = 34 }: LocationPuckPro
     <div
       className="relative flex items-center justify-center"
       style={{ width: size, height: size }}
+      aria-label={signalLabel}
+      data-location-signal={signal}
+      data-location-accuracy-meters={accuracyMeters == null ? undefined : Math.round(accuracyMeters)}
     >
-      {/* GPS accuracy rings — decorative, suppressed when Reduce Motion is on */}
+      {/* Reported horizontal GPS accuracy. This ring is omitted for IP/privacy
+          locations because those sources do not provide meter-level accuracy. */}
+      {accuracyDiameter > 0 && (
+        <div
+          className={`absolute rounded-full border border-primary/45 ${
+            signal === "stale" ? "border-dashed opacity-60" : "opacity-70"
+          }`}
+          style={{ width: accuracyDiameter, height: accuracyDiameter }}
+          title={`GPS accuracy approximately ${Math.round(accuracyMeters!)} meters`}
+        />
+      )}
+      {/* A small source ring keeps approximate/privacy state visible without
+          changing the canonical blue puck or implying false GPS precision. */}
+      {accuracyDiameter === 0 && signal !== "live" && (
+        <div
+          className={`absolute rounded-full border ${
+            signal === "privacy" ? "border-violet-300/70" : "border-amber-300/70"
+          } ${signal === "stale" ? "border-dashed opacity-60" : "opacity-70"}`}
+          style={{ width: size * 1.45, height: size * 1.45 }}
+        />
+      )}
+      {/* GPS accuracy rings — animated only when motion is allowed. */}
       {suppressed ? (
         <div
           className="absolute rounded-full bg-primary opacity-10"
@@ -61,7 +109,9 @@ export function LocationPuck({ heading, mapBearing, size = 34 }: LocationPuckPro
 
       {hasHeading ? (
         <div
-          className="absolute transition-transform duration-150 ease-linear"
+          className={`absolute transition-transform duration-150 ease-linear ${
+            signal === "stale" || signal === "privacy" ? "opacity-60" : ""
+          }`}
           style={{
             width: size,
             height: size,

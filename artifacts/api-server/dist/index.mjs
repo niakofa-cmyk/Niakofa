@@ -55799,6 +55799,8 @@ var init_user_settings = __esm({
       // Map avatar / navigation companion. Existing users remain on the original
       // Sankofa Bird when migration 0079 adds this field.
       spirit_animal: text("spirit_animal").notNull().default("sankofa_bird"),
+      // The accessible blue puck is the default; Spirit Animals remain optional.
+      location_marker_style: text("location_marker_style").notNull().default("puck"),
       updated_at: timestamp("updated_at").defaultNow().notNull()
     });
   }
@@ -113387,6 +113389,9 @@ var init_api2 = __esm({
       "notif_wallet_updates": booleanType(),
       "notif_community_activity": booleanType(),
       "notif_pledge_reminders": booleanType(),
+      "notif_exchange_activity": booleanType(),
+      "notif_exchange_digest": booleanType(),
+      "notif_optional_paused": booleanType(),
       "privacy_profile_visible": booleanType(),
       "privacy_live_location": booleanType(),
       "privacy_activity_sharing": booleanType(),
@@ -113396,6 +113401,7 @@ var init_api2 = __esm({
       "specialties": stringType().nullish(),
       "preferred_language": enumType(["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"]),
       "spirit_animal": enumType(["sankofa_bird", "black_panther", "elephant", "lion", "fish_eagle"]).describe("Map avatar / navigation companion selected by the user"),
+      "location_marker_style": enumType(["puck", "spirit"]).describe("User location marker; the blue puck is the accessible default"),
       "updated_at": coerce.date()
     });
     UpdateUserSettingsParams = objectType({
@@ -113408,6 +113414,10 @@ var init_api2 = __esm({
       "notif_wallet_updates": booleanType().optional(),
       "notif_community_activity": booleanType().optional(),
       "notif_pledge_reminders": booleanType().optional(),
+      "notif_exchange_activity": booleanType().optional(),
+      "notif_exchange_digest": booleanType().optional(),
+      "notif_optional_paused": booleanType().optional(),
+      "expected_updated_at": coerce.date().optional(),
       "privacy_profile_visible": booleanType().optional(),
       "privacy_live_location": booleanType().optional(),
       "privacy_activity_sharing": booleanType().optional(),
@@ -113416,7 +113426,8 @@ var init_api2 = __esm({
       "max_travel_miles": numberType().optional(),
       "specialties": stringType().optional(),
       "preferred_language": enumType(["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"]).optional(),
-      "spirit_animal": enumType(["sankofa_bird", "black_panther", "elephant", "lion", "fish_eagle"]).optional()
+      "spirit_animal": enumType(["sankofa_bird", "black_panther", "elephant", "lion", "fish_eagle"]).optional(),
+      "location_marker_style": enumType(["puck", "spirit"]).optional()
     }).describe("All fields optional \u2014 only provided keys are persisted (upsert)");
     UpdateUserSettingsResponse = objectType({
       "id": numberType().int(),
@@ -113427,6 +113438,9 @@ var init_api2 = __esm({
       "notif_wallet_updates": booleanType(),
       "notif_community_activity": booleanType(),
       "notif_pledge_reminders": booleanType(),
+      "notif_exchange_activity": booleanType(),
+      "notif_exchange_digest": booleanType(),
+      "notif_optional_paused": booleanType(),
       "privacy_profile_visible": booleanType(),
       "privacy_live_location": booleanType(),
       "privacy_activity_sharing": booleanType(),
@@ -113436,6 +113450,7 @@ var init_api2 = __esm({
       "specialties": stringType().nullish(),
       "preferred_language": enumType(["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"]),
       "spirit_animal": enumType(["sankofa_bird", "black_panther", "elephant", "lion", "fish_eagle"]).describe("Map avatar / navigation companion selected by the user"),
+      "location_marker_style": enumType(["puck", "spirit"]).describe("User location marker; the blue puck is the accessible default"),
       "updated_at": coerce.date()
     });
     UpdatePanicContactsParams = objectType({
@@ -115601,6 +115616,13 @@ var init_userSettings = __esm({
   }
 });
 
+// ../../lib/api-zod/src/generated/types/userSettingsLocationMarkerStyle.ts
+var init_userSettingsLocationMarkerStyle = __esm({
+  "../../lib/api-zod/src/generated/types/userSettingsLocationMarkerStyle.ts"() {
+    "use strict";
+  }
+});
+
 // ../../lib/api-zod/src/generated/types/userSettingsPreferredLanguage.ts
 var init_userSettingsPreferredLanguage = __esm({
   "../../lib/api-zod/src/generated/types/userSettingsPreferredLanguage.ts"() {
@@ -115618,6 +115640,13 @@ var init_userSettingsSpiritAnimal = __esm({
 // ../../lib/api-zod/src/generated/types/userSettingsUpdate.ts
 var init_userSettingsUpdate = __esm({
   "../../lib/api-zod/src/generated/types/userSettingsUpdate.ts"() {
+    "use strict";
+  }
+});
+
+// ../../lib/api-zod/src/generated/types/userSettingsUpdateLocationMarkerStyle.ts
+var init_userSettingsUpdateLocationMarkerStyle = __esm({
+  "../../lib/api-zod/src/generated/types/userSettingsUpdateLocationMarkerStyle.ts"() {
     "use strict";
   }
 });
@@ -115864,9 +115893,11 @@ var init_types2 = __esm({
     init_userRegistration();
     init_userRegistrationAccountType();
     init_userSettings();
+    init_userSettingsLocationMarkerStyle();
     init_userSettingsPreferredLanguage();
     init_userSettingsSpiritAnimal();
     init_userSettingsUpdate();
+    init_userSettingsUpdateLocationMarkerStyle();
     init_userSettingsUpdatePreferredLanguage();
     init_userSettingsUpdateSpiritAnimal();
     init_userSummary();
@@ -147669,7 +147700,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "81ef8442dd78db5c86673717e89e3b18e7913f90";
+var GIT_COMMIT = "bcaf2a91336d0b46effb19418319987fb8b2fe2b";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -150725,6 +150756,10 @@ function isValidSpiritAnimal(value) {
 }
 
 // src/routes/users.ts
+var VALID_LOCATION_MARKER_STYLES = ["puck", "spirit"];
+function isValidLocationMarkerStyle(value) {
+  return typeof value === "string" && VALID_LOCATION_MARKER_STYLES.includes(value);
+}
 function timingSafeEqualStr(expected, actual) {
   const a = Buffer.from(expected);
   const b = Buffer.from(actual);
@@ -151324,7 +151359,8 @@ router6.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership
     "max_travel_miles",
     "specialties",
     "preferred_language",
-    "spirit_animal"
+    "spirit_animal",
+    "location_marker_style"
   ];
   const VALID_LANGUAGES = ["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"];
   const updates = { updated_at: /* @__PURE__ */ new Date() };
@@ -151348,6 +151384,7 @@ router6.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership
     }
     if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
     if (key === "spirit_animal" && !isValidSpiritAnimal(req.body[key])) continue;
+    if (key === "location_marker_style" && !isValidLocationMarkerStyle(req.body[key])) continue;
     updates[key] = req.body[key];
   }
   const [row] = await db.insert(userSettingsTable).values({ user_id: id3, ...updates }).onConflictDoUpdate({ target: userSettingsTable.user_id, set: updates }).returning();

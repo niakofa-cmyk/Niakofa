@@ -42,6 +42,8 @@ import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline"
 import { ArrivalState } from "@/components/request/ArrivalState";
 import { HelperContextCard } from "@/components/request/HelperContextCard";
 import { NavigationContext } from "@/components/request/NavigationContext";
+import { getLocationMarkerState } from "@/lib/location-marker";
+import { LocationPuck } from "@/components/LocationPuck";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -240,6 +242,7 @@ export default function ActiveRequestScreen() {
   // Smooth GPS glide — interpolates between position fixes (1-3 s apart) so
   // the SankofaBird marker flies to each new GPS coordinate rather than snapping.
   const tweenedPosition = useTweenedPosition(myLocation ?? null, 800);
+  const locationMarkerState = getLocationMarkerState(myLocation);
 
   useEffect(() => {
     if (fusedHeading != null) applyHeading(fusedHeading);
@@ -885,10 +888,18 @@ export default function ActiveRequestScreen() {
           crash the navigation screen entirely. */}
       {!MAPBOX_TOKEN && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-background gap-3 px-6 z-10">
-          <ErrorBoundary fallback={<div className="w-10 h-10 rounded-full bg-primary/20" />}>
+          <ErrorBoundary fallback={
+            <LocationPuck
+              heading={heldHeading}
+              mapBearing={0}
+              size={56}
+              locationState={locationMarkerState}
+            />
+          }>
             <UserLocationMarker
               markerStyle={userSettings?.location_marker_style}
               species={userSettings?.spirit_animal}
+              locationState={locationMarkerState}
               heading={heldHeading} mapBearing={0} speed={0} navigating={false} size={56}
               celebrating={false} newNotification={false} accepted={false}
               donated={false} nearbyUser={false} mapZoom={14} upcomingTurnDirection={null}
@@ -924,12 +935,20 @@ export default function ActiveRequestScreen() {
           latitude={(tweenedPosition ?? myLocation).lat}
           anchor="center"
         >
-          {/* ErrorBoundary: a CSS/SVG crash in SankofaBird shows a teal dot
-              instead of unmounting the entire navigation screen. */}
-          <ErrorBoundary fallback={<div className="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,212,255,0.9)]" />}>
+          {/* The canonical puck preserves the same location state if the
+              optional companion crashes inside navigation. */}
+          <ErrorBoundary fallback={
+            <LocationPuck
+              heading={heldHeading}
+              mapBearing={mode === "heading-up" ? (fusedHeading ?? 0) : 0}
+              size={40}
+              locationState={locationMarkerState}
+            />
+          }>
             <UserLocationMarker
               markerStyle={userSettings?.location_marker_style}
               species={userSettings?.spirit_animal}
+              locationState={locationMarkerState}
               heading={heldHeading}
               mapBearing={mode === "heading-up" ? (fusedHeading ?? 0) : 0}
               speed={myLocation.speed ?? 0}
