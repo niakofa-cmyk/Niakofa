@@ -1287,9 +1287,11 @@ export default function SettingsPage() {
                     This cannot be undone.
                   </p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Deleting your account will permanently remove your profile,
-                    transaction history, goodwill score, and benevolence wallet
-                    balance. Scheduled payments will be cancelled.
+                    Your profile and personal settings will be removed from
+                    active use, push subscriptions will be deleted, scheduled
+                    payments will be cancelled, and your account will be
+                    anonymized before its scheduled purge. Required community
+                    and financial history may be retained in anonymous form.
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -1310,7 +1312,7 @@ export default function SettingsPage() {
                     onChange={(event) => setDeleteConfirmed(event.target.checked)}
                     className="mt-0.5 h-4 w-4 accent-destructive"
                   />
-                  <span>I understand that this action is permanent and cannot be undone.</span>
+                  <span>I understand that this signs me out immediately and permanently removes my personal account access.</span>
                 </label>
                 <Button
                   variant="destructive"

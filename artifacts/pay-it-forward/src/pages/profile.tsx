@@ -128,9 +128,11 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
           <p className="text-sm text-destructive font-bold mb-1">This cannot be undone.</p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Deleting your account will permanently remove your profile, transaction history, goodwill score,
-            and benevolence wallet balance. Scheduled payments will be cancelled. This action is irreversible
-            and cannot be recovered.
+            Your profile and personal settings will be removed from active
+            use, push subscriptions will be deleted, scheduled payments will
+            be cancelled, and your account will be anonymized before its
+            scheduled purge. Required community and financial history may be
+            retained in anonymous form.
           </p>
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
@@ -152,7 +154,7 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
             className="accent-destructive w-4 h-4"
           />
           <label htmlFor="confirm-delete" className="text-xs text-muted-foreground">
-            I understand this action is permanent and cannot be undone
+            I understand this signs me out immediately and permanently removes my personal account access
           </label>
         </div>
         <div className="grid grid-cols-2 gap-3">

@@ -133,7 +133,7 @@ async function getSubsForUser(userId: number): Promise<webpush.PushSubscription[
  * Deliver to a set of push subscriptions.
  * Returns the count of successful deliveries.
  */
-async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayload): Promise<number> {
+export async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayload): Promise<number> {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE || subs.length === 0) return 0;
   const data = JSON.stringify(payload);
   const opts = pushOptions(payload.urgency);
@@ -143,8 +143,11 @@ async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayl
       webpush.sendNotification(sub, data, opts)
         .then(() => { delivered++; })
         .catch(err => {
-          // 410 Gone = subscription expired — remove from DB
-          if ((err as { statusCode?: number }).statusCode === 410) {
+          // 404/410 both mean the endpoint is no longer usable. Treat the
+          // subscription as invalid and remove it so future sends do not
+          // repeatedly retry a dead browser registration.
+          const statusCode = (err as { statusCode?: number }).statusCode;
+          if (statusCode === 404 || statusCode === 410) {
             db.delete(pushSubscriptionsTable)
               .where(eq(pushSubscriptionsTable.endpoint, sub.endpoint))
               .catch(() => {
