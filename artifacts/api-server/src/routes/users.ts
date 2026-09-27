@@ -1,6 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable, niaConversationsTable, niaMemoriesTable } from "@workspace/db";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable, niaConversationsTable, niaMemoriesTable } from "@workspace/db";
 import { eq, and, or, sql, inArray } from "drizzle-orm";
 import {
   GetUserParams,
@@ -1047,17 +1047,13 @@ router.put("/users/me/community", requireAuth, async (req, res) => {
   return res.json({ ok: true, community_id: updated.community_id });
 });
 
-// help_requests.requester_id is now ON DELETE RESTRICT (migration 0070; was
-// CASCADE in migration 0020 — that used to mean deleting a user wiped every
-// request they ever made, including completed history, the moment they had
-// no more OPEN requests left). The database itself now refuses the delete
-// outright while ANY request still references the user as requester, so we
-// check ALL statuses here too — not just active ones — to turn that DB-level
-// rejection into a clean 409 instead of a raw constraint-violation 500.
-// help_requests.helper_id is ON DELETE SET NULL, so it only needs the
-// active-status check: a completed/cancelled claim safely loses the helper
-// label on delete without losing the request itself.
+// Account deletion is an anonymization workflow, not a cascade-delete. Active
+// requests still need a live requester/helper relationship until they are
+// completed or cancelled, so both self-service and admin deletion use the same
+// guard. Completed history is retained against the anonymized account.
+const ACTIVE_REQUESTER_STATUSES = ["open", "claimed", "en_route", "arrived", "pending_owner_approval"] as const;
 const ACTIVE_HELPER_STATUSES = ["claimed", "en_route", "arrived"] as const;
+const ACCOUNT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 async function findBlockingActiveRequests(userId: number) {
   return db
@@ -1065,9 +1061,9 @@ async function findBlockingActiveRequests(userId: number) {
     .from(requestsTable)
     .where(
       or(
-        eq(requestsTable.requester_id, userId),
-        and(eq(requestsTable.helper_id, userId), inArray(requestsTable.status, ACTIVE_HELPER_STATUSES))
-      )
+        and(eq(requestsTable.requester_id, userId), inArray(requestsTable.status, ACTIVE_REQUESTER_STATUSES)),
+        and(eq(requestsTable.helper_id, userId), inArray(requestsTable.status, ACTIVE_HELPER_STATUSES)),
+      ),
     )
     .limit(5);
 }
@@ -1087,6 +1083,175 @@ async function findBlockingPledges(userId: number) {
     .limit(5);
 }
 
+type AccountDeletionResult = {
+  deletionScheduledAt: Date;
+  alreadyPending: boolean;
+};
+
+function deletionError(code: string, message: string, extra: Record<string, unknown> = {}) {
+  return Object.assign(new Error(message), { code, ...extra });
+}
+
+async function anonymizeAccount(userId: number): Promise<AccountDeletionResult> {
+  const blocking = await findBlockingActiveRequests(userId);
+  if (blocking.length > 0) {
+    throw deletionError(
+      "ACCOUNT_DELETION_BLOCKED",
+      "This account has an active help request. Complete or cancel live requests before deleting the account.",
+      { blocking_request_ids: blocking.map((request) => request.id) },
+    );
+  }
+
+  const blockingPledges = await findBlockingPledges(userId);
+  if (blockingPledges.length > 0) {
+    throw deletionError(
+      "ACCOUNT_DELETION_BLOCKED",
+      "This account has hub pledge history that must remain attached to a resolvable account. Resolve or export the pledge before deleting the account.",
+      { blocking_pledge_ids: blockingPledges.map((pledge) => pledge.id) },
+    );
+  }
+
+  const now = new Date();
+  const deletionScheduledAt = new Date(now.getTime() + ACCOUNT_RETENTION_MS);
+  const ownedMedia = await db
+    .select({
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+    })
+    .from(mediaAssetsTable)
+    .where(eq(mediaAssetsTable.owner_user_id, userId))
+    .limit(1000);
+
+  let updated = false;
+  let effectiveScheduledAt = deletionScheduledAt;
+
+  // Conditional status transition makes retries safe: only the first request
+  // moves an active account into pending_purge and starts storage cleanup.
+  await db.transaction(async (tx) => {
+    await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
+    await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
+    // Nia memory and conversation text are personal data, not community or
+    // financial history. Erase both in the same privacy transition.
+    await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
+    await tx.delete(niaMemoriesTable).where(eq(niaMemoriesTable.user_id, userId));
+    await tx.update(scheduledPaymentsTable)
+      .set({ status: "cancelled" })
+      .where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
+    await tx.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
+    await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+
+    const [changed] = await tx.update(usersTable)
+      .set({
+        name: "Deleted account",
+        email: `deleted-user-${userId}@deleted.niakofa.invalid`,
+        avatar_url: null,
+        lat: null,
+        lng: null,
+        heading: null,
+        speed: null,
+        location_updated_at: null,
+        neighborhood: null,
+        city: null,
+        phone_masked: null,
+        panic_contacts: null,
+        password_hash: null,
+        password_reset_code: null,
+        password_reset_expires_at: null,
+        google_id: null,
+        oauth_provider: null,
+        is_helper: false,
+        helper_mode_active: false,
+        helper_status: "offline",
+        helper_languages: null,
+        helper_qualifications: null,
+        helper_bio: null,
+        helper_vehicle: null,
+        helper_social_links: null,
+        helper_skills: null,
+        specialties: null,
+        quick_replies: null,
+        organization_name: null,
+        organization_description: null,
+        account_type: "individual",
+        is_suspended: true,
+        suspended_at: now,
+        suspended_reason: "Account deletion requested",
+        approval_status: "denied",
+        token_version: sql`${usersTable.token_version} + 1`,
+        deletion_status: "pending_purge",
+        deletion_requested_at: now,
+        deletion_scheduled_at: deletionScheduledAt,
+        updated_at: now,
+      })
+      .where(and(eq(usersTable.id, userId), eq(usersTable.deletion_status, "active")))
+      .returning({ id: usersTable.id, deletion_scheduled_at: usersTable.deletion_scheduled_at });
+
+    if (changed) {
+      updated = true;
+      effectiveScheduledAt = changed.deletion_scheduled_at ?? deletionScheduledAt;
+      return;
+    }
+
+    const [existing] = await tx
+      .select({
+        id: usersTable.id,
+        deletion_status: usersTable.deletion_status,
+        deletion_scheduled_at: usersTable.deletion_scheduled_at,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (!existing) throw deletionError("USER_NOT_FOUND", "User not found");
+    effectiveScheduledAt = existing.deletion_scheduled_at ?? deletionScheduledAt;
+  });
+
+  if (updated) {
+    // Storage providers are outside the database transaction. Database rows
+    // are already hidden; storage failures must not undo the privacy change.
+    const { deleteAsset } = await import("../lib/storage.js");
+    await Promise.allSettled(
+      ownedMedia.flatMap((asset) =>
+        [asset.original_key, asset.thumbnail_key, asset.variant_key]
+          .filter((key): key is string => Boolean(key))
+          .map((key) => deleteAsset(key)),
+      ),
+    );
+  }
+
+  return { deletionScheduledAt: effectiveScheduledAt, alreadyPending: !updated };
+}
+
+function sendDeletionAccepted(res: any, result: AccountDeletionResult, requestedByAdmin: boolean) {
+  return res.status(202).json({
+    ok: true,
+    status: "pending_purge",
+    deletion_scheduled_at: result.deletionScheduledAt.toISOString(),
+    message: requestedByAdmin
+      ? "The account has been removed from active use. Required community and financial records will be retained as anonymous history and purged within 30 days."
+      : "Your personal account data has been removed from active use. Required community and financial records will be retained as anonymous history and the account will be purged within 30 days.",
+  });
+}
+
+function sendDeletionError(res: any, error: unknown, logMessage: string) {
+  const typed = error as {
+    code?: string;
+    message?: string;
+    blocking_request_ids?: number[];
+    blocking_pledge_ids?: number[];
+  };
+  if (typed.code === "ACCOUNT_DELETION_BLOCKED") {
+    return res.status(409).json({
+      error: typed.message,
+      ...(typed.blocking_request_ids ? { blocking_request_ids: typed.blocking_request_ids } : {}),
+      ...(typed.blocking_pledge_ids ? { blocking_pledge_ids: typed.blocking_pledge_ids } : {}),
+    });
+  }
+  if (typed.code === "USER_NOT_FOUND") return res.status(404).json({ error: "User not found" });
+  logger.error({ err: error }, logMessage);
+  return res.status(500).json({ error: "Failed to delete account" });
+}
+
 // Self-delete: authenticated user requests account deletion. Personal data is
 // anonymized immediately, tokens are revoked in the same transaction, and
 // historical community/financial rows remain available for their required
@@ -1096,105 +1261,9 @@ router.delete("/users/me", requireAuth, async (req, res) => {
   const userId = req.authenticatedUserId as number;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const now = new Date();
-    const deletionScheduledAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const ownedMedia = await db
-      .select({
-        original_key: mediaAssetsTable.original_key,
-        thumbnail_key: mediaAssetsTable.thumbnail_key,
-        variant_key: mediaAssetsTable.variant_key,
-      })
-      .from(mediaAssetsTable)
-      .where(eq(mediaAssetsTable.owner_user_id, userId))
-      .limit(1000);
-
-    // Keep the privacy transition atomic. Financial/community history is not
-    // deleted; the account row becomes a non-login pseudonymous record instead.
-    await db.transaction(async (tx) => {
-      await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
-      await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
-      // Nia memory and conversation text is personal data, not community or
-      // financial history. Remove it in the same privacy transition rather
-      // than leaving it attached to the anonymized account row.
-      await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
-      await tx.delete(niaMemoriesTable).where(eq(niaMemoriesTable.user_id, userId));
-      await tx.update(scheduledPaymentsTable)
-        .set({ status: "cancelled" })
-        .where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
-      await tx.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
-      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-      const [updated] = await tx.update(usersTable)
-        .set({
-          name: "Deleted account",
-          email: `deleted-user-${userId}@deleted.niakofa.invalid`,
-          avatar_url: null,
-          lat: null,
-          lng: null,
-          heading: null,
-          speed: null,
-          location_updated_at: null,
-          neighborhood: null,
-          city: null,
-          phone_masked: null,
-          panic_contacts: null,
-          password_hash: null,
-          password_reset_code: null,
-          password_reset_expires_at: null,
-          google_id: null,
-          oauth_provider: null,
-          is_helper: false,
-          helper_mode_active: false,
-          helper_status: "offline",
-          helper_languages: null,
-          helper_qualifications: null,
-          helper_bio: null,
-          helper_vehicle: null,
-          helper_social_links: null,
-          helper_skills: null,
-          specialties: null,
-          quick_replies: null,
-          organization_name: null,
-          organization_description: null,
-          account_type: "individual",
-          is_suspended: true,
-          suspended_at: now,
-          suspended_reason: "Account deletion requested",
-          approval_status: "denied",
-          token_version: sql`${usersTable.token_version} + 1`,
-          deletion_status: "pending_purge",
-          deletion_requested_at: now,
-          deletion_scheduled_at: deletionScheduledAt,
-          updated_at: now,
-        })
-        .where(eq(usersTable.id, userId))
-        .returning({ id: usersTable.id });
-      if (!updated) throw Object.assign(new Error("User not found"), { code: "USER_NOT_FOUND" });
-    });
-
-    // Storage providers are outside the database transaction. The DB rows are
-    // already hidden; best-effort object cleanup prevents orphaned personal
-    // media without allowing a storage outage to undo the privacy transition.
-    const { deleteAsset } = await import("../lib/storage.js");
-    await Promise.allSettled(
-      ownedMedia.flatMap((asset) =>
-        [asset.original_key, asset.thumbnail_key, asset.variant_key]
-          .filter((key): key is string => Boolean(key))
-          .map((key) => deleteAsset(key)),
-      ),
-    );
-
-    return res.status(202).json({
-      ok: true,
-      status: "pending_purge",
-      deletion_scheduled_at: deletionScheduledAt.toISOString(),
-      message: "Your personal account data has been removed from active use. Required community and financial records will be retained as anonymous history and the account will be purged within 30 days.",
-    });
+    return sendDeletionAccepted(res, await anonymizeAccount(userId), false);
   } catch (error) {
-    if ((error as { code?: string })?.code === "USER_NOT_FOUND") {
-      return res.status(404).json({ error: "User not found" });
-    }
-    logger.error({ err: error }, "self-delete: failed");
-    return res.status(500).json({ error: "Failed to delete account" });
+    return sendDeletionError(res, error, "self-delete: failed");
   }
 });
 
@@ -1205,40 +1274,9 @@ router.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (re
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
   try {
-    const blocking = await findBlockingActiveRequests(userId);
-    if (blocking.length > 0) {
-      return res.status(409).json({
-        error: "This account has help request history (open, ongoing, or completed) — a real record the database will not let us cascade-delete. Resolve/reassign any live ones, then work with support if the account itself must be removed.",
-        blocking_request_ids: blocking.map(r => r.id),
-      });
-    }
-    const blockingPledges = await findBlockingPledges(userId);
-    if (blockingPledges.length > 0) {
-      return res.status(409).json({
-        error: "This account has hub pledge history — a financial record that would be lost via cascade-delete. Resolve or export it before deleting this account.",
-        blocking_pledge_ids: blockingPledges.map(p => p.id),
-      });
-    }
-    // Delete user from all related tables. help_requests.requester_id is ON DELETE
-    // RESTRICT (migration 0070) so the database itself backs up the check above.
-    await db.transaction(async (tx) => {
-      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-      await tx.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
-      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
-      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-      await tx.delete(usersTable).where(eq(usersTable.id, userId));
-    });
-
-    return res.json({ ok: true, message: "Account deleted successfully" });
+    return sendDeletionAccepted(res, await anonymizeAccount(userId), true);
   } catch (error) {
-    if ((error as { code?: string })?.code === "23503") {
-      return res.status(409).json({
-        error: "This account has records that must be retained for community, moderation, or financial history. Resolve or export those records before deleting the account.",
-      });
-    }
-    logger.error({ err: error }, "delete-account: failed");
-    return res.status(500).json({ error: "Failed to delete account" });
+    return sendDeletionError(res, error, "admin-delete: failed");
   }
 });
 

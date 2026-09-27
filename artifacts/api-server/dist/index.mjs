@@ -147755,7 +147755,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "168ccc03c32c35f9a40e67101ccbab29f0aabbcf";
+var GIT_COMMIT = "1e4e8994684cfc6c00903ea8b934dcb34be0d34d";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -151460,11 +151460,13 @@ router6.put("/users/me/community", requireAuth, async (req, res) => {
   if (!updated) return res.status(404).json({ error: "User not found" });
   return res.json({ ok: true, community_id: updated.community_id });
 });
+var ACTIVE_REQUESTER_STATUSES = ["open", "claimed", "en_route", "arrived", "pending_owner_approval"];
 var ACTIVE_HELPER_STATUSES = ["claimed", "en_route", "arrived"];
+var ACCOUNT_RETENTION_MS = 30 * 24 * 60 * 60 * 1e3;
 async function findBlockingActiveRequests(userId) {
   return db.select({ id: requestsTable.id, status: requestsTable.status }).from(requestsTable).where(
     or(
-      eq(requestsTable.requester_id, userId),
+      and(eq(requestsTable.requester_id, userId), inArray(requestsTable.status, ACTIVE_REQUESTER_STATUSES)),
       and(eq(requestsTable.helper_id, userId), inArray(requestsTable.status, ACTIVE_HELPER_STATUSES))
     )
   ).limit(5);
@@ -151472,124 +151474,145 @@ async function findBlockingActiveRequests(userId) {
 async function findBlockingPledges(userId) {
   return db.select({ id: diasporaHubPledgesTable.id, status: diasporaHubPledgesTable.status }).from(diasporaHubPledgesTable).where(eq(diasporaHubPledgesTable.pledged_by, userId)).limit(5);
 }
-router6.delete("/users/me", requireAuth, async (req, res) => {
-  const userId = req.authenticatedUserId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  try {
-    const now = /* @__PURE__ */ new Date();
-    const deletionScheduledAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1e3);
-    const ownedMedia = await db.select({
-      original_key: mediaAssetsTable.original_key,
-      thumbnail_key: mediaAssetsTable.thumbnail_key,
-      variant_key: mediaAssetsTable.variant_key
-    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId)).limit(1e3);
-    await db.transaction(async (tx) => {
-      await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
-      await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
-      await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
-      await tx.delete(niaMemoriesTable).where(eq(niaMemoriesTable.user_id, userId));
-      await tx.update(scheduledPaymentsTable).set({ status: "cancelled" }).where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
-      await tx.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
-      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-      const [updated] = await tx.update(usersTable).set({
-        name: "Deleted account",
-        email: `deleted-user-${userId}@deleted.niakofa.invalid`,
-        avatar_url: null,
-        lat: null,
-        lng: null,
-        heading: null,
-        speed: null,
-        location_updated_at: null,
-        neighborhood: null,
-        city: null,
-        phone_masked: null,
-        panic_contacts: null,
-        password_hash: null,
-        password_reset_code: null,
-        password_reset_expires_at: null,
-        google_id: null,
-        oauth_provider: null,
-        is_helper: false,
-        helper_mode_active: false,
-        helper_status: "offline",
-        helper_languages: null,
-        helper_qualifications: null,
-        helper_bio: null,
-        helper_vehicle: null,
-        helper_social_links: null,
-        helper_skills: null,
-        specialties: null,
-        quick_replies: null,
-        organization_name: null,
-        organization_description: null,
-        account_type: "individual",
-        is_suspended: true,
-        suspended_at: now,
-        suspended_reason: "Account deletion requested",
-        approval_status: "denied",
-        token_version: sql`${usersTable.token_version} + 1`,
-        deletion_status: "pending_purge",
-        deletion_requested_at: now,
-        deletion_scheduled_at: deletionScheduledAt,
-        updated_at: now
-      }).where(eq(usersTable.id, userId)).returning({ id: usersTable.id });
-      if (!updated) throw Object.assign(new Error("User not found"), { code: "USER_NOT_FOUND" });
-    });
+function deletionError(code, message2, extra = {}) {
+  return Object.assign(new Error(message2), { code, ...extra });
+}
+async function anonymizeAccount(userId) {
+  const blocking = await findBlockingActiveRequests(userId);
+  if (blocking.length > 0) {
+    throw deletionError(
+      "ACCOUNT_DELETION_BLOCKED",
+      "This account has an active help request. Complete or cancel live requests before deleting the account.",
+      { blocking_request_ids: blocking.map((request) => request.id) }
+    );
+  }
+  const blockingPledges = await findBlockingPledges(userId);
+  if (blockingPledges.length > 0) {
+    throw deletionError(
+      "ACCOUNT_DELETION_BLOCKED",
+      "This account has hub pledge history that must remain attached to a resolvable account. Resolve or export the pledge before deleting the account.",
+      { blocking_pledge_ids: blockingPledges.map((pledge) => pledge.id) }
+    );
+  }
+  const now = /* @__PURE__ */ new Date();
+  const deletionScheduledAt = new Date(now.getTime() + ACCOUNT_RETENTION_MS);
+  const ownedMedia = await db.select({
+    original_key: mediaAssetsTable.original_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key
+  }).from(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId)).limit(1e3);
+  let updated = false;
+  let effectiveScheduledAt = deletionScheduledAt;
+  await db.transaction(async (tx) => {
+    await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
+    await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
+    await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
+    await tx.delete(niaMemoriesTable).where(eq(niaMemoriesTable.user_id, userId));
+    await tx.update(scheduledPaymentsTable).set({ status: "cancelled" }).where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
+    await tx.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
+    await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+    const [changed] = await tx.update(usersTable).set({
+      name: "Deleted account",
+      email: `deleted-user-${userId}@deleted.niakofa.invalid`,
+      avatar_url: null,
+      lat: null,
+      lng: null,
+      heading: null,
+      speed: null,
+      location_updated_at: null,
+      neighborhood: null,
+      city: null,
+      phone_masked: null,
+      panic_contacts: null,
+      password_hash: null,
+      password_reset_code: null,
+      password_reset_expires_at: null,
+      google_id: null,
+      oauth_provider: null,
+      is_helper: false,
+      helper_mode_active: false,
+      helper_status: "offline",
+      helper_languages: null,
+      helper_qualifications: null,
+      helper_bio: null,
+      helper_vehicle: null,
+      helper_social_links: null,
+      helper_skills: null,
+      specialties: null,
+      quick_replies: null,
+      organization_name: null,
+      organization_description: null,
+      account_type: "individual",
+      is_suspended: true,
+      suspended_at: now,
+      suspended_reason: "Account deletion requested",
+      approval_status: "denied",
+      token_version: sql`${usersTable.token_version} + 1`,
+      deletion_status: "pending_purge",
+      deletion_requested_at: now,
+      deletion_scheduled_at: deletionScheduledAt,
+      updated_at: now
+    }).where(and(eq(usersTable.id, userId), eq(usersTable.deletion_status, "active"))).returning({ id: usersTable.id, deletion_scheduled_at: usersTable.deletion_scheduled_at });
+    if (changed) {
+      updated = true;
+      effectiveScheduledAt = changed.deletion_scheduled_at ?? deletionScheduledAt;
+      return;
+    }
+    const [existing] = await tx.select({
+      id: usersTable.id,
+      deletion_status: usersTable.deletion_status,
+      deletion_scheduled_at: usersTable.deletion_scheduled_at
+    }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!existing) throw deletionError("USER_NOT_FOUND", "User not found");
+    effectiveScheduledAt = existing.deletion_scheduled_at ?? deletionScheduledAt;
+  });
+  if (updated) {
     const { deleteAsset: deleteAsset2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
     await Promise.allSettled(
       ownedMedia.flatMap(
         (asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key) => Boolean(key)).map((key) => deleteAsset2(key))
       )
     );
-    return res.status(202).json({
-      ok: true,
-      status: "pending_purge",
-      deletion_scheduled_at: deletionScheduledAt.toISOString(),
-      message: "Your personal account data has been removed from active use. Required community and financial records will be retained as anonymous history and the account will be purged within 30 days."
+  }
+  return { deletionScheduledAt: effectiveScheduledAt, alreadyPending: !updated };
+}
+function sendDeletionAccepted(res, result, requestedByAdmin) {
+  return res.status(202).json({
+    ok: true,
+    status: "pending_purge",
+    deletion_scheduled_at: result.deletionScheduledAt.toISOString(),
+    message: requestedByAdmin ? "The account has been removed from active use. Required community and financial records will be retained as anonymous history and purged within 30 days." : "Your personal account data has been removed from active use. Required community and financial records will be retained as anonymous history and the account will be purged within 30 days."
+  });
+}
+function sendDeletionError(res, error40, logMessage) {
+  const typed = error40;
+  if (typed.code === "ACCOUNT_DELETION_BLOCKED") {
+    return res.status(409).json({
+      error: typed.message,
+      ...typed.blocking_request_ids ? { blocking_request_ids: typed.blocking_request_ids } : {},
+      ...typed.blocking_pledge_ids ? { blocking_pledge_ids: typed.blocking_pledge_ids } : {}
     });
+  }
+  if (typed.code === "USER_NOT_FOUND") return res.status(404).json({ error: "User not found" });
+  logger.error({ err: error40 }, logMessage);
+  return res.status(500).json({ error: "Failed to delete account" });
+}
+router6.delete("/users/me", requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    return sendDeletionAccepted(res, await anonymizeAccount(userId), false);
   } catch (error40) {
-    if (error40?.code === "USER_NOT_FOUND") {
-      return res.status(404).json({ error: "User not found" });
-    }
-    logger.error({ err: error40 }, "self-delete: failed");
-    return res.status(500).json({ error: "Failed to delete account" });
+    return sendDeletionError(res, error40, "self-delete: failed");
   }
 });
 router6.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   try {
-    const blocking = await findBlockingActiveRequests(userId);
-    if (blocking.length > 0) {
-      return res.status(409).json({
-        error: "This account has help request history (open, ongoing, or completed) \u2014 a real record the database will not let us cascade-delete. Resolve/reassign any live ones, then work with support if the account itself must be removed.",
-        blocking_request_ids: blocking.map((r2) => r2.id)
-      });
-    }
-    const blockingPledges = await findBlockingPledges(userId);
-    if (blockingPledges.length > 0) {
-      return res.status(409).json({
-        error: "This account has hub pledge history \u2014 a financial record that would be lost via cascade-delete. Resolve or export it before deleting this account.",
-        blocking_pledge_ids: blockingPledges.map((p) => p.id)
-      });
-    }
-    await db.transaction(async (tx) => {
-      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-      await tx.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
-      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
-      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-      await tx.delete(usersTable).where(eq(usersTable.id, userId));
-    });
-    return res.json({ ok: true, message: "Account deleted successfully" });
+    return sendDeletionAccepted(res, await anonymizeAccount(userId), true);
   } catch (error40) {
-    if (error40?.code === "23503") {
-      return res.status(409).json({
-        error: "This account has records that must be retained for community, moderation, or financial history. Resolve or export those records before deleting the account."
-      });
-    }
-    logger.error({ err: error40 }, "delete-account: failed");
-    return res.status(500).json({ error: "Failed to delete account" });
+    return sendDeletionError(res, error40, "admin-delete: failed");
   }
 });
 router6.patch("/users/:id/moderation", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {

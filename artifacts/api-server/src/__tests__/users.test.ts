@@ -22,6 +22,10 @@ import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals
 import request from "supertest";
 import type { Express } from "express";
 import express from "express";
+// Import the canonical table definitions directly so the schema barrel does
+// not initialize @workspace/db before the ESM database mock is registered.
+import { niaConversationsTable as actualNiaConversationsTable } from "../../../../lib/db/src/schema/nia-conversations.js";
+import { niaMemoriesTable as actualNiaMemoriesTable } from "../../../../lib/db/src/schema/nia-memories.js";
 
 const mockDb: Record<string, jest.Mock> = {
   select:  jest.fn().mockReturnThis(),
@@ -65,8 +69,8 @@ jest.unstable_mockModule("@workspace/db", () => ({
   diasporaHubsTable: { id: "id", community_id: "community_id", name: "name", status: "status", is_seed: "is_seed", reserved_balance: "reserved_balance" },
   diasporaHubPledgesTable: { id: "id", pledged_by: "pledged_by", status: "status" },
   pushSubscriptionsTable: { id: "id", user_id: "user_id", endpoint: "endpoint", subscription: "subscription" },
-  niaConversationsTable: { id: "id", user_id: "user_id" },
-  niaMemoriesTable: { user_id: "user_id" },
+  niaConversationsTable: actualNiaConversationsTable,
+  niaMemoriesTable: actualNiaMemoriesTable,
   mediaAssetsTable: {
     id: "id",
     owner_user_id: "owner_user_id",
@@ -132,6 +136,12 @@ jest.unstable_mockModule("../middlewares/auth.js", () => ({
   signTokenById: jest.fn().mockReturnValue("test-token"),
   verifyToken: jest.fn().mockReturnValue({ userId: 42, valid: true, tokenVersion: 0 }),
   isSelf: jest.fn().mockReturnValue(true),
+}));
+
+jest.unstable_mockModule("../middlewares/authz.js", () => ({
+  requireAdmin: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  requireOwnership: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  resolveMeParam: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 jest.unstable_mockModule("../lib/storage.js", () => ({
@@ -283,6 +293,18 @@ describe("POST /api/users/login", () => {
 });
 
 describe("DELETE /api/users/me", () => {
+  it("blocks deletion while the account owns an active request", async () => {
+    mockDb.limit.mockResolvedValueOnce([{ id: 77, status: "en_route" }]);
+
+    const res = await request(app)
+      .delete("/api/users/me")
+      .set("Authorization", "Bearer test");
+
+    expect(res.status).toBe(409);
+    expect(res.body.blocking_request_ids).toEqual([77]);
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
   it("anonymizes the account and returns the scheduled purge state", async () => {
     mockDb.limit.mockResolvedValueOnce([]);
     mockDb.returning.mockResolvedValueOnce([{ id: 42 }]);
@@ -298,6 +320,23 @@ describe("DELETE /api/users/me", () => {
     });
     expect(res.body.deletion_scheduled_at).toEqual(expect.any(String));
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-    expect(mockDb.delete).toHaveBeenCalled();
+    expect(mockDb.delete).toHaveBeenCalledTimes(6);
+  });
+});
+
+describe("DELETE /api/users/:id", () => {
+  it("uses the same anonymization and Nia-erasure workflow for admins", async () => {
+    mockDb.limit.mockResolvedValueOnce([]);
+    mockDb.limit.mockResolvedValueOnce([]);
+    mockDb.returning.mockResolvedValueOnce([{ id: 42 }]);
+
+    const res = await request(app)
+      .delete("/api/users/42")
+      .set("Authorization", "Bearer test");
+
+    expect(res.status).toBe(202);
+    expect(res.body.status).toBe("pending_purge");
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockDb.delete).toHaveBeenCalledTimes(6);
   });
 });

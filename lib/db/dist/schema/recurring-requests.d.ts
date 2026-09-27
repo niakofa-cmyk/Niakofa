@@ -299,13 +299,13 @@ export declare const insertRecurringRequestSchema: z.ZodObject<{
     lat: z.ZodNumber;
     lng: z.ZodNumber;
     neighborhood: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    active: z.ZodOptional<z.ZodBoolean>;
     user_id: z.ZodInt;
     title: z.ZodString;
     description: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     category: z.ZodOptional<z.ZodString>;
     payment_type: z.ZodOptional<z.ZodString>;
     pay_it_forward_amount: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
-    active: z.ZodOptional<z.ZodBoolean>;
     day_of_week: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
     recurrence: z.ZodOptional<z.ZodString>;
     time_of_day: z.ZodOptional<z.ZodString>;

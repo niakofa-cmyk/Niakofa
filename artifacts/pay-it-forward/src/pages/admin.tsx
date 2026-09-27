@@ -1294,8 +1294,9 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
   );
 }
 
-// ── Hard-Delete User Button ───────────────────────────────────────────────────
-// Calls DELETE /users/:id — permanent. Requires typing the user's name in full.
+// ── Account Deletion Button ────────────────────────────────────────────────────
+// Requests the same anonymization/retention workflow used by self-service
+// deletion. Requires typing the user's name in full.
 function HardDeleteUserButton({ userId, userName, onDeleted }: {
   userId: number; userName: string; onDeleted: () => void;
 }) {
@@ -1312,7 +1313,7 @@ function HardDeleteUserButton({ userId, userName, onDeleted }: {
         headers: { Authorization: `Bearer ${getToken() ?? ""}` },
       });
       if (res.ok) {
-        toast({ title: `${userName} permanently deleted` });
+        toast({ title: `${userName} removed from active use` });
         onDeleted();
       } else {
         const b = await res.json().catch(() => ({})) as { error?: string };
@@ -1328,8 +1329,8 @@ function HardDeleteUserButton({ userId, userName, onDeleted }: {
         className="w-full flex items-center gap-3 p-4 bg-muted/40 border border-border rounded-2xl active:scale-[0.98] transition-all">
         <X className="w-5 h-5 text-muted-foreground" />
         <div className="text-left">
-          <div className="font-black text-sm text-muted-foreground">Hard Delete Account</div>
-          <div className="text-xs text-muted-foreground/60">Permanent — all data removed</div>
+          <div className="font-black text-sm text-muted-foreground">Request Account Deletion</div>
+          <div className="text-xs text-muted-foreground/60">Personal data removed now; required history retained</div>
         </div>
       </button>
     );
@@ -1338,7 +1339,7 @@ function HardDeleteUserButton({ userId, userName, onDeleted }: {
   return (
     <div className="border border-destructive/40 rounded-2xl p-4 space-y-3 bg-destructive/5">
       <div className="text-xs text-destructive font-bold leading-relaxed">
-        ⚠️ Permanently deletes all data for <strong>{userName}</strong> — requests, wallet, transactions, history. Cannot be undone.
+        ⚠️ Removes personal data from active use for <strong>{userName}</strong>. Required community and financial history is retained anonymously and the account is purged within 30 days.
       </div>
       <div className="text-xs text-muted-foreground">Type the user's name to confirm:</div>
       <input type="text" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder={userName}
@@ -1350,7 +1351,7 @@ function HardDeleteUserButton({ userId, userName, onDeleted }: {
         <button onClick={doDelete}
           disabled={confirm.trim().toLowerCase() !== userName.toLowerCase() || deleting}
           className="h-10 rounded-xl bg-destructive text-white text-sm font-black disabled:opacity-40 active:scale-95 transition-all">
-          {deleting ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : "Delete Forever"}
+          {deleting ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : "Request Deletion"}
         </button>
       </div>
     </div>
