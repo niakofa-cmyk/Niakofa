@@ -1,6 +1,6 @@
 # Niakofa — The Global Village
 
-A map-first, pay-it-forward mutual-aid platform for **The Global Village** — the idea that every neighborhood is part of one connected human community. Residents can request help with groceries, rides, errands, and more; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map that starts local and scales to any city. Includes Nia AI (Claude-powered cultural assistant), Family Vault (family-history preservation), and live Circles for community conversation.
+A map-first, pay-it-forward mutual-aid platform for **The Global Village** — the idea that every neighborhood is part of one connected human community. Residents can request help with groceries, rides, errands, and more; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map that starts local and scales to any city. Includes Nia AI (a separate AI service boundary), Family Vault (family-history preservation), Niakofa Community (Moments, Sparks, Spirals, Stories, and Legacy), and Niakofa Exchange for local goods, services, and needs.
 
 > **Mission:** Help Today. Pay It Forward Tomorrow. Building the Global Village one act of kindness at a time — starting in Fort Worth, TX, and built to grow anywhere.
 
@@ -145,7 +145,8 @@ Niakofa's Community experience uses a deliberate vocabulary and compatibility bo
 - **Stories** — durable narratives that remain distinct from short-form Moments.
 - **Legacy** — preserved cultural, family, and community memory.
 - **Messages** — a persistent header action rather than a primary Community destination.
-- **Nia AI** — a separate AI boundary; Community social features do not depend on the Nia service.
+- **Niakofa Exchange** — the local solidarity marketplace for goods, services, and needs, using coarse neighborhood/location matching and in-app pickup coordination.
+- **Nia AI** — a separate AI boundary; Community and Exchange features do not depend on the Nia service.
 
 The migration intentionally preserves the mature `/api/community/stories` persistence/media boundary while the user-facing experience is presented as Moments/Sparks. Legacy `/community/stories` and `/community/circles` routes normalize to Moments and Spirals while preserving query parameters for deep links.
 
@@ -158,7 +159,8 @@ The canonical contract lives in `artifacts/pay-it-forward/src/components/communi
 | `/` | Live Mapbox map — open requests + online helpers in real time |
 | `/request/new` | Create a help request (category, urgency, payment type) |
 | `/request/:id` | Track a live request — claim → en-route → arrived → complete |
-| `/community` | Leaderboard, stats, civic resources for Tarrant County |
+| `/community` | Community Hub — Moments, Sparks, Spirals, Stories, Legacy, and civic resources |
+| `/community?section=exchange` | Niakofa Exchange — local offers, needs, services, pickup coordination, safety review |
 | `/wallet` | Benevolence wallet, scheduled payments, pay-it-forward pledges |
 | `/profile` | User profile, helper mode toggle, trust score |
 | `/family-vault` | Family Vault — preserve family memories, photos, stories |
@@ -175,7 +177,9 @@ The canonical contract lives in `artifacts/pay-it-forward/src/components/communi
 - **Single Railway service:** Both api-server and nia-service run in the same container. `scripts/start.sh` runs migrations, starts nia-service (supervised, port 3001), then starts api-server in the foreground. Nia-service is proxied via `/api/nia/*` — callers never talk to port 3001 directly.
 - **Civic resources:** Seeded in the DB — 19 Tarrant County organizations across 8 categories.
 - **WebSocket hub** (`/ws`): Broadcasts live events — new requests, helper location updates, new reports, report reviews.
-- **BullMQ workers:** Handle payouts, pledges, and notification delivery. Production refuses to start without `REDIS_URL`; development retains the explicit interval fallback.
+- **BullMQ workers:** Handle payouts, pledges, notification delivery, stale Exchange maintenance, and scheduled account-deletion lifecycle completion. Production refuses to start without `REDIS_URL`; development retains the explicit interval fallback.
+- **Privacy-first Exchange location:** Exchange stores rounded coordinates for server-side matching, never returns exact coordinates through the public Exchange API, and falls back to an indexed bounding-box + Haversine query when PostGIS is unavailable.
+- **Account deletion:** Self-service and admin deletion share one anonymizing lifecycle. Personal/Nia data is removed immediately, active requests and unresolved pledges block deletion, tokens are revoked, and required history remains only through the documented retention window.
 - **Account migration passwords:** Users with `password_hash = null` get `password_reset_required: true` on login. The frontend shows an inline "Set Password" prompt that calls `PATCH /api/users/:id` with `new_password`.
 
 ---
