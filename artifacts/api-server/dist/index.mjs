@@ -147700,7 +147700,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "bcaf2a91336d0b46effb19418319987fb8b2fe2b";
+var GIT_COMMIT = "c86f5ab9ed7b8ff86dfb93114d85a801596f35c3";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -151435,14 +151435,21 @@ router6.delete("/users/me", requireAuth, async (req, res) => {
         blocking_pledge_ids: blockingPledges.map((p) => p.id)
       });
     }
-    await db.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-    await db.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
-    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
-    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-    await db.delete(usersTable).where(eq(usersTable.id, userId));
+    await db.transaction(async (tx) => {
+      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
+      await tx.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
+      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+      await tx.delete(usersTable).where(eq(usersTable.id, userId));
+    });
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error40) {
+    if (error40?.code === "23503") {
+      return res.status(409).json({
+        error: "This account has records that must be retained for community, moderation, or financial history. Contact support to complete the deletion request."
+      });
+    }
     logger.error({ err: error40 }, "self-delete: failed");
     return res.status(500).json({ error: "Failed to delete account" });
   }
@@ -151465,14 +151472,21 @@ router6.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (r
         blocking_pledge_ids: blockingPledges.map((p) => p.id)
       });
     }
-    await db.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-    await db.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
-    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
-    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-    await db.delete(usersTable).where(eq(usersTable.id, userId));
+    await db.transaction(async (tx) => {
+      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
+      await tx.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
+      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+      await tx.delete(usersTable).where(eq(usersTable.id, userId));
+    });
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error40) {
+    if (error40?.code === "23503") {
+      return res.status(409).json({
+        error: "This account has records that must be retained for community, moderation, or financial history. Resolve or export those records before deleting the account."
+      });
+    }
     logger.error({ err: error40 }, "delete-account: failed");
     return res.status(500).json({ error: "Failed to delete account" });
   }
@@ -152266,6 +152280,12 @@ function distanceMiles2(lat1, lng1, lat2, lng2) {
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+function parseQueryNumber(value) {
+  if (value === void 0) return void 0;
+  if (typeof value !== "string" || value.trim() === "") return NaN;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
 router8.get("/requests/stats", async (_req, res) => {
   const [openRow] = await db.select({ count: sql`COUNT(*)::int` }).from(requestsTable).where(eq(requestsTable.status, "open"));
   const [completedRow] = await db.select({ count: sql`COUNT(*)::int` }).from(requestsTable).where(eq(requestsTable.status, "completed"));
@@ -152366,43 +152386,61 @@ router8.get("/requests", requireAuth, async (req, res) => {
   const params = GetRequestsQueryParams.safeParse({
     status: req.query.status,
     category: req.query.category,
-    lat: req.query.lat ? parseFloat(req.query.lat) : void 0,
-    lng: req.query.lng ? parseFloat(req.query.lng) : void 0,
-    radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles) : void 0
+    lat: parseQueryNumber(req.query.lat),
+    lng: parseQueryNumber(req.query.lng),
+    radius_miles: parseQueryNumber(req.query.radius_miles)
   });
-  const helperIdRaw = req.query.helper_id ? parseInt(req.query.helper_id) : null;
-  const requesterIdRaw = req.query.requester_id ? parseInt(req.query.requester_id) : null;
-  if (helperIdRaw !== null && isNaN(helperIdRaw)) return res.status(400).json({ error: "helper_id must be a valid integer" });
-  if (requesterIdRaw !== null && isNaN(requesterIdRaw)) return res.status(400).json({ error: "requester_id must be a valid integer" });
+  if (req.query.lat === void 0 !== (req.query.lng === void 0)) {
+    return res.status(400).json({ error: "lat and lng must be supplied together" });
+  }
+  if (!params.success) {
+    return res.status(400).json({ error: "Invalid request filters", details: params.error.issues });
+  }
+  const helperIdRaw = req.query.helper_id === void 0 ? null : Number(req.query.helper_id);
+  const requesterIdRaw = req.query.requester_id === void 0 ? null : Number(req.query.requester_id);
+  if (helperIdRaw !== null && (!Number.isSafeInteger(helperIdRaw) || helperIdRaw < 1)) {
+    return res.status(400).json({ error: "helper_id must be a valid integer" });
+  }
+  if (requesterIdRaw !== null && (!Number.isSafeInteger(requesterIdRaw) || requesterIdRaw < 1)) {
+    return res.status(400).json({ error: "requester_id must be a valid integer" });
+  }
   const helperId = helperIdRaw;
   const requesterId = requesterIdRaw;
-  const limitParam = req.query.limit ? parseInt(req.query.limit) : 100;
-  if (isNaN(limitParam) || limitParam < 1) {
+  const limitParam = req.query.limit === void 0 ? 100 : Number(req.query.limit);
+  if (!Number.isSafeInteger(limitParam) || limitParam < 1) {
     return res.status(400).json({ error: "limit must be a positive integer" });
   }
   if (limitParam > 100) {
     return res.status(400).json({ error: "maximum limit is 100; use offset for pagination" });
   }
+  const offsetParam = req.query.offset === void 0 ? 0 : Number(req.query.offset);
+  if (!Number.isSafeInteger(offsetParam) || offsetParam < 0 || offsetParam > 1e4) {
+    return res.status(400).json({ error: "offset must be an integer between 0 and 10000" });
+  }
   const conditions = [];
-  if (params.success && params.data.status) {
+  if (params.data.status) {
     conditions.push(eq(requestsTable.status, params.data.status));
   }
-  if (params.success && params.data.category) {
+  if (params.data.category) {
     conditions.push(eq(requestsTable.category, params.data.category));
   }
-  if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
-  if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));
-  if (params.success && params.data.lat && params.data.lng) {
+  if (helperId !== null) conditions.push(eq(requestsTable.helper_id, helperId));
+  if (requesterId !== null) conditions.push(eq(requestsTable.requester_id, requesterId));
+  const requestLat = params.data.lat;
+  const requestLng = params.data.lng;
+  const hasLocation = requestLat != null && requestLng != null;
+  if (hasLocation) {
     const radius = params.data.radius_miles ?? 10;
     const latDelta = radius / 69;
-    const lngDelta = radius / (69 * Math.cos(params.data.lat * Math.PI / 180));
-    conditions.push(sql`${requestsTable.lat} BETWEEN ${params.data.lat - latDelta} AND ${params.data.lat + latDelta}`);
-    conditions.push(sql`${requestsTable.lng} BETWEEN ${params.data.lng - lngDelta} AND ${params.data.lng + lngDelta}`);
+    const lngDelta = radius / (69 * Math.max(0.25, Math.cos(requestLat * Math.PI / 180)));
+    conditions.push(sql`${requestsTable.lat} BETWEEN ${requestLat - latDelta} AND ${requestLat + latDelta}`);
+    conditions.push(sql`${requestsTable.lng} BETWEEN ${requestLng - lngDelta} AND ${requestLng + lngDelta}`);
   }
-  let rows = await db.select().from(requestsTable).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(sql`${requestsTable.created_at} DESC`).limit(limitParam);
-  if (params.success && params.data.lat && params.data.lng) {
+  let rows = await db.select().from(requestsTable).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(sql`${requestsTable.created_at} DESC`).limit(hasLocation ? Math.min(1e3, (offsetParam + limitParam) * 4) : limitParam).offset(hasLocation ? 0 : offsetParam);
+  if (hasLocation) {
     const radius = params.data.radius_miles ?? 10;
-    rows = rows.filter((r2) => distanceMiles2(params.data.lat, params.data.lng, r2.lat, r2.lng) <= radius);
+    rows = rows.filter((r2) => distanceMiles2(requestLat, requestLng, r2.lat, r2.lng) <= radius);
+    rows = rows.slice(offsetParam, offsetParam + limitParam);
   }
   const allUserIds = [.../* @__PURE__ */ new Set([
     ...rows.map((r2) => r2.requester_id),
@@ -181978,9 +182016,10 @@ function decodeListingCursor(value) {
     return null;
   }
 }
-function clampRadius(value) {
-  const parsed = typeof value === "string" ? Number(value) : NaN;
-  return Number.isFinite(parsed) ? Math.min(50, Math.max(1, parsed)) : 15;
+function parseRadius(value) {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 50 ? parsed : null;
 }
 async function isBlockedBetween2(firstUserId, secondUserId) {
   const [block] = await db.select({ blocker_id: directMessageBlocksTable.blocker_id }).from(directMessageBlocksTable).where(or(
@@ -182023,12 +182062,15 @@ router65.get("/community/exchange/listings", requireAuth, requireApproved, gener
   if (cursorValue != null && !cursor) return res.status(400).json({ error: "Invalid listing cursor" });
   let viewerLocation = null;
   if (nearby) {
+    if (req.query.radius_miles !== void 0 && parseRadius(req.query.radius_miles) == null) {
+      return res.status(400).json({ error: "radius_miles must be between 1 and 50" });
+    }
     const [viewer] = await db.select({ lat: usersTable.lat, lng: usersTable.lng }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     viewerLocation = viewer ?? null;
   }
   let locationCondition;
   if (nearby && viewerLocation?.lat != null && viewerLocation.lng != null && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
-    const radius = clampRadius(req.query.radius_miles);
+    const radius = req.query.radius_miles === void 0 ? 15 : parseRadius(req.query.radius_miles);
     const latDelta = radius / 69;
     const lngDelta = radius / (69 * Math.max(0.25, Math.cos(viewerLocation.lat * Math.PI / 180)));
     locationCondition = and(
