@@ -73,3 +73,16 @@ until its raw timezone offset was preserved.
 **How to apply:** Compare every changed blob SHA and tree SHA first. If a shell
 fetch cannot authenticate, use the connection-backed commit metadata and only
 move local refs after the independently computed commit SHA matches GitHub.
+
+When publishing source changes through the connector, leave the transient API
+server bundle out of the source commit when the deployment build regenerates it
+from `artifacts/api-server/src`. Keep migrations, contracts, generated client
+types, and application source in the published tree.
+
+**Why:** The deployment build already runs the API build from source, while
+large generated bundles are needlessly costly and risk transport truncation
+through connector-backed Git Data writes.
+
+**How to apply:** Verify the source tree and all changed blobs against local
+`HEAD` before advancing `main`; do not treat a locally regenerated bundle as a
+required release artifact for this path.
