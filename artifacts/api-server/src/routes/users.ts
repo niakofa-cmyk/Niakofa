@@ -1,6 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable } from "@workspace/db";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable } from "@workspace/db";
 import { eq, and, or, sql, inArray } from "drizzle-orm";
 import {
   GetUserParams,
@@ -1087,44 +1087,106 @@ async function findBlockingPledges(userId: number) {
     .limit(5);
 }
 
-// Self-delete: authenticated user deletes their own account. Uses the token
-// subject (authenticatedUserId) as the canonical source — never a path param —
-// so there is no way to delete another user's account via this route.
+// Self-delete: authenticated user requests account deletion. Personal data is
+// anonymized immediately, tokens are revoked in the same transaction, and
+// historical community/financial rows remain available for their required
+// retention period. Uses the token subject as the canonical source — never a
+// path parameter.
 router.delete("/users/me", requireAuth, async (req, res) => {
   const userId = req.authenticatedUserId as number;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const blocking = await findBlockingActiveRequests(userId);
-    if (blocking.length > 0) {
-      return res.status(409).json({
-        error: "You have help request history on your account (open, ongoing, or completed). This is a real record other people may rely on, so it can't be deleted — cancel/complete any live ones, then contact support if you need the account itself removed.",
-        blocking_request_ids: blocking.map(r => r.id),
-      });
-    }
-    const blockingPledges = await findBlockingPledges(userId);
-    if (blockingPledges.length > 0) {
-      return res.status(409).json({
-        error: "You have hub pledge history on your account. This is a financial record we can't delete, so we can't delete your account while it exists — contact support if you need help with this.",
-        blocking_pledge_ids: blockingPledges.map(p => p.id),
-      });
-    }
-    // Keep the cleanup atomic. Newer audit/history tables intentionally use
-    // RESTRICT, so an unhandled reference must roll back every earlier delete
-    // and return a controlled conflict instead of a partial account removal.
+    const now = new Date();
+    const deletionScheduledAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const ownedMedia = await db
+      .select({
+        original_key: mediaAssetsTable.original_key,
+        thumbnail_key: mediaAssetsTable.thumbnail_key,
+        variant_key: mediaAssetsTable.variant_key,
+      })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.owner_user_id, userId))
+      .limit(1000);
+
+    // Keep the privacy transition atomic. Financial/community history is not
+    // deleted; the account row becomes a non-login pseudonymous record instead.
     await db.transaction(async (tx) => {
-      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-      await tx.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
-      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+      await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
+      await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
+      await tx.update(scheduledPaymentsTable)
+        .set({ status: "cancelled" })
+        .where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
+      await tx.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
       await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-      await tx.delete(usersTable).where(eq(usersTable.id, userId));
+      const [updated] = await tx.update(usersTable)
+        .set({
+          name: "Deleted account",
+          email: `deleted-user-${userId}@deleted.niakofa.invalid`,
+          avatar_url: null,
+          lat: null,
+          lng: null,
+          heading: null,
+          speed: null,
+          location_updated_at: null,
+          neighborhood: null,
+          city: null,
+          phone_masked: null,
+          panic_contacts: null,
+          password_hash: null,
+          password_reset_code: null,
+          password_reset_expires_at: null,
+          google_id: null,
+          oauth_provider: null,
+          is_helper: false,
+          helper_mode_active: false,
+          helper_status: "offline",
+          helper_languages: null,
+          helper_qualifications: null,
+          helper_bio: null,
+          helper_vehicle: null,
+          helper_social_links: null,
+          helper_skills: null,
+          specialties: null,
+          quick_replies: null,
+          organization_name: null,
+          organization_description: null,
+          account_type: "individual",
+          is_suspended: true,
+          suspended_at: now,
+          suspended_reason: "Account deletion requested",
+          approval_status: "denied",
+          token_version: sql`${usersTable.token_version} + 1`,
+          deletion_status: "pending_purge",
+          deletion_requested_at: now,
+          deletion_scheduled_at: deletionScheduledAt,
+          updated_at: now,
+        })
+        .where(eq(usersTable.id, userId))
+        .returning({ id: usersTable.id });
+      if (!updated) throw Object.assign(new Error("User not found"), { code: "USER_NOT_FOUND" });
     });
-    return res.json({ ok: true, message: "Account deleted successfully" });
+
+    // Storage providers are outside the database transaction. The DB rows are
+    // already hidden; best-effort object cleanup prevents orphaned personal
+    // media without allowing a storage outage to undo the privacy transition.
+    const { deleteAsset } = await import("../lib/storage.js");
+    await Promise.allSettled(
+      ownedMedia.flatMap((asset) =>
+        [asset.original_key, asset.thumbnail_key, asset.variant_key]
+          .filter((key): key is string => Boolean(key))
+          .map((key) => deleteAsset(key)),
+      ),
+    );
+
+    return res.status(202).json({
+      ok: true,
+      status: "pending_purge",
+      deletion_scheduled_at: deletionScheduledAt.toISOString(),
+      message: "Your personal account data has been removed from active use. Required community and financial records will be retained as anonymous history and the account will be purged within 30 days.",
+    });
   } catch (error) {
-    if ((error as { code?: string })?.code === "23503") {
-      return res.status(409).json({
-        error: "This account has records that must be retained for community, moderation, or financial history. Contact support to complete the deletion request.",
-      });
+    if ((error as { code?: string })?.code === "USER_NOT_FOUND") {
+      return res.status(404).json({ error: "User not found" });
     }
     logger.error({ err: error }, "self-delete: failed");
     return res.status(500).json({ error: "Failed to delete account" });

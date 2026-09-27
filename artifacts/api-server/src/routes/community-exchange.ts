@@ -69,6 +69,15 @@ function safeCoarseText(value: string): boolean {
   return !NO_PRIVATE_CONTACT.test(value);
 }
 
+function safeListingLabel(value: string): string {
+  return value
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[^\p{L}\p{N}\s.,!?'"’()-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80) || "an Exchange post";
+}
+
 function exchangeMessagesActionUrl(recipientId: number, listingId: number, pickupRequestId?: number): string {
   const params = new URLSearchParams({
     mode: "direct",
@@ -297,7 +306,7 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
   const parsed = listingBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid listing", details: parsed.error.issues });
   const data = parsed.data;
-  if (![data.neighborhood, data.pickup_notes].every(safeCoarseText)) {
+  if (![data.title, data.description, data.neighborhood, data.pickup_notes].every(safeCoarseText)) {
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
   const moderation = moderatePostText(`${data.title}\n${data.description}\n${data.pickup_notes}`);
@@ -342,7 +351,9 @@ router.patch("/community/exchange/listings/:id", requireAuth, requireApproved, c
   if (listing.status !== "active") {
     return res.status(409).json({ error: "A listing can only be edited before pickup coordination is accepted." });
   }
-  if ([data.neighborhood, data.pickup_notes].filter((value): value is string => value !== undefined).some((value) => !safeCoarseText(value))) {
+  if ([data.title, data.description, data.neighborhood, data.pickup_notes]
+    .filter((value): value is string => value !== undefined)
+    .some((value) => !safeCoarseText(value))) {
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
   const nextTitle = data.title ?? listing.title;
@@ -382,7 +393,7 @@ router.patch("/community/exchange/listings/:id", requireAuth, requireApproved, c
     listingId: updated.id,
     pickupRequestId: request.id,
     title: "An Exchange post changed",
-    body: `The owner updated “${updated.title}”. Open Messages to review the current coordination details.`,
+    body: `The owner updated “${safeListingLabel(updated.title)}”. Open Messages to review the current coordination details.`,
     action: "listing_updated",
   })));
 
@@ -436,7 +447,7 @@ router.post("/community/exchange/listings/:id/renew", requireAuth, requireApprov
     userId: updated.seller_id,
     type: "exchange",
     title: "Your Exchange post is active again",
-    body: `“${updated.title}” is visible to neighbors again.`,
+    body: `“${safeListingLabel(updated.title)}” is visible to neighbors again.`,
     actionUrl: "/community?section=exchange&mine=true",
     metadata: { exchange_listing_id: updated.id, action: "renewed" },
   }).catch(() => {});
@@ -499,25 +510,38 @@ router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, req
     ))
     .limit(1);
   if (existing) return res.status(409).json({ error: "You already have a pickup request for this listing." });
-  const [pickupRequest] = await db.insert(exchangePickupRequestsTable).values({
-    listing_id: listingId,
-    buyer_id: userId,
-    note: parsed.data.note,
-    pickup_area: parsed.data.pickup_area,
-    proposed_window: parsed.data.proposed_window,
-  }).returning();
+  let pickupRequest: typeof exchangePickupRequestsTable.$inferSelect;
+  try {
+    // The partial unique index is the concurrency guard. The preflight query
+    // above is only a friendly fast path; two requests can still arrive
+    // simultaneously and one must become a controlled 409, not a 500.
+    const [inserted] = await db.insert(exchangePickupRequestsTable).values({
+      listing_id: listingId,
+      buyer_id: userId,
+      note: parsed.data.note,
+      pickup_area: parsed.data.pickup_area,
+      proposed_window: parsed.data.proposed_window,
+    }).returning();
+    if (!inserted) return res.status(500).json({ error: "Could not create pickup request." });
+    pickupRequest = inserted;
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return res.status(409).json({ error: "You already have a pickup request for this listing." });
+    }
+    throw error;
+  }
   void notifyExchangeParticipant({
     recipientId: listing.seller_id,
     actorUserId: userId,
     listingId: listing.id,
     pickupRequestId: pickupRequest.id,
     title: "A neighbor wants to coordinate",
-    body: `Someone responded to “${listing.title}”. Open Messages to review the request.`,
+    body: `Someone responded to “${safeListingLabel(listing.title)}”. Open Messages to review the request.`,
     action: "request_created",
   }).catch(() => {});
   void sendPushToUser(listing.seller_id, {
     title: "A neighbor wants to coordinate",
-    body: `Someone responded to “${listing.title}”. Open Exchange to review the request.`,
+    body: `Someone responded to “${safeListingLabel(listing.title)}”. Open Exchange to review the request.`,
     notifType: "task_accepted",
   }).catch(() => {});
   return res.status(201).json({ pickup_request: serializeListing(pickupRequest as unknown as Record<string, unknown>) });

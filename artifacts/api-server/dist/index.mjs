@@ -55741,6 +55741,12 @@ var init_users = __esm({
       highest_tier_reached: text("highest_tier_reached").notNull().default("member"),
       // No-show counter (migration 0059)
       no_show_count: integer("no_show_count").notNull().default(0),
+      // Account deletion lifecycle. Personal fields are anonymized immediately;
+      // community/financial history remains attached until the retention process
+      // completes the scheduled purge.
+      deletion_status: text("deletion_status").notNull().default("active"),
+      deletion_requested_at: timestamp("deletion_requested_at", { withTimezone: true }),
+      deletion_scheduled_at: timestamp("deletion_scheduled_at", { withTimezone: true }),
       created_at: timestamp("created_at").defaultNow().notNull(),
       updated_at: timestamp("updated_at").defaultNow().notNull()
     }, (t2) => [
@@ -115916,6 +115922,315 @@ var init_src2 = __esm({
   }
 });
 
+// src/lib/storage.ts
+var storage_exports = {};
+__export(storage_exports, {
+  UPLOADS_BASE: () => UPLOADS_BASE,
+  assetExists: () => assetExists,
+  deleteAsset: () => deleteAsset,
+  deleteAssetStrict: () => deleteAssetStrict,
+  getAssetBuffer: () => getAssetBuffer,
+  getAssetInfo: () => getAssetInfo,
+  getAssetUploadUrl: () => getAssetUploadUrl,
+  getAssetUrl: () => getAssetUrl,
+  getPrivateAssetUrl: () => getPrivateAssetUrl,
+  getStorageBackend: () => getStorageBackend,
+  getStorageDescription: () => getStorageDescription,
+  isCloudStorageConfigured: () => isCloudStorageConfigured,
+  putAsset: () => putAsset,
+  streamAssetSameOrigin: () => streamAssetSameOrigin,
+  streamOrRedirectAsset: () => streamOrRedirectAsset,
+  streamOrRedirectPrivateAsset: () => streamOrRedirectPrivateAsset
+});
+import { existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
+import path from "path";
+function isCloudStorageConfigured(env = process.env) {
+  return Boolean(env["STORAGE_BUCKET"]?.trim());
+}
+function getStorageBackend(env = process.env) {
+  return isCloudStorageConfigured(env) ? "s3" : "local";
+}
+function getStorageDescription(env = process.env) {
+  if (!isCloudStorageConfigured(env)) return "local-disk";
+  const endpoint = env["STORAGE_ENDPOINT"]?.trim();
+  const bucket = env["STORAGE_BUCKET"].trim();
+  if (endpoint?.includes("r2.cloudflarestorage.com")) return `cloudflare-r2:${bucket}`;
+  if (endpoint) return `s3-compatible:${bucket}`;
+  return `aws-s3:${bucket}`;
+}
+async function getS3Client() {
+  if (_s3Client) return _s3Client;
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  const endpoint = process.env["STORAGE_ENDPOINT"];
+  const region = process.env["STORAGE_REGION"] ?? (endpoint ? "auto" : "us-east-1");
+  _s3Client = new S3Client({
+    region,
+    ...endpoint ? { endpoint, forcePathStyle: false } : {}
+  });
+  return _s3Client;
+}
+async function putAsset(key, buffer, mimeType) {
+  if (isCloudStorageConfigured()) {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key,
+        Body: buffer,
+        ContentType: mimeType
+      })
+    );
+    logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 s3");
+  } else {
+    const abs = path.resolve(UPLOADS_BASE, key);
+    const destDir = path.dirname(abs);
+    mkdirSync(destDir, { recursive: true });
+    writeFileSync(abs, buffer);
+    logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 local");
+  }
+}
+async function getAssetUploadUrl(key, mimeType, expiresInSeconds = 900) {
+  if (!isCloudStorageConfigured()) return null;
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  const client = await getS3Client();
+  return getSignedUrl(
+    client,
+    new PutObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"],
+      Key: key,
+      ContentType: mimeType
+    }),
+    { expiresIn: expiresInSeconds }
+  );
+}
+async function getAssetInfo(key) {
+  if (isCloudStorageConfigured()) {
+    try {
+      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getS3Client();
+      const result = await client.send(new HeadObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key
+      }));
+      return {
+        contentLength: Number(result.ContentLength ?? 0),
+        contentType: result.ContentType ?? null
+      };
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const stat2 = await fs.stat(path.resolve(UPLOADS_BASE, key));
+    return { contentLength: stat2.size, contentType: null };
+  } catch {
+    return null;
+  }
+}
+async function getAssetUrl(key) {
+  if (isCloudStorageConfigured()) {
+    const cdnBase = process.env["STORAGE_CDN_URL"];
+    if (cdnBase) {
+      return `${cdnBase.replace(/\/$/, "")}/${key}`;
+    }
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    const client = await getS3Client();
+    return getSignedUrl(
+      client,
+      new GetObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key
+      }),
+      { expiresIn: 300 }
+      // 5 minutes
+    );
+  }
+  return `/api/family/assets/${key}`;
+}
+async function getPrivateAssetUrl(key, expiresInSeconds = 300) {
+  if (!isCloudStorageConfigured()) {
+    return `/api/audio-circle-recording-assets?key=${encodeURIComponent(key)}`;
+  }
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  const client = await getS3Client();
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"],
+      Key: key
+    }),
+    { expiresIn: expiresInSeconds }
+  );
+}
+async function assetExists(key) {
+  if (isCloudStorageConfigured()) {
+    try {
+      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getS3Client();
+      await client.send(
+        new HeadObjectCommand({
+          Bucket: process.env["STORAGE_BUCKET"],
+          Key: key
+        })
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return existsSync(path.resolve(UPLOADS_BASE, key));
+}
+async function getAssetBuffer(key) {
+  if (isCloudStorageConfigured()) {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    const result = await client.send(new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"],
+      Key: key
+    }));
+    if (!result.Body) throw new Error(`Storage object is empty: ${key}`);
+    const chunks = [];
+    for await (const chunk of result.Body) {
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+  return fs.readFile(path.resolve(UPLOADS_BASE, key));
+}
+async function streamOrRedirectAsset(key, res) {
+  res.setHeader("Cache-Control", "private, no-store");
+  if (isCloudStorageConfigured()) {
+    const url2 = await getAssetUrl(key);
+    res.redirect(307, url2);
+    return;
+  }
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!existsSync(abs)) {
+    res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  res.sendFile(abs);
+}
+async function streamAssetSameOrigin(key, res) {
+  res.setHeader("Cache-Control", "private, no-store");
+  if (isCloudStorageConfigured()) {
+    try {
+      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getS3Client();
+      const result = await client.send(new GetObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key
+      }));
+      if (!result.Body) {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      if (result.ContentType) res.setHeader("Content-Type", result.ContentType);
+      if (result.ContentLength != null) res.setHeader("Content-Length", String(result.ContentLength));
+      for await (const chunk of result.Body) {
+        res.write(Buffer.from(chunk));
+      }
+      res.end();
+    } catch (error40) {
+      const status = error40.$metadata?.httpStatusCode;
+      if (status === 404) {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      throw error40;
+    }
+    return;
+  }
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (!existsSync(abs)) {
+    res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+  res.sendFile(abs);
+}
+async function streamOrRedirectPrivateAsset(key, res) {
+  res.setHeader("Cache-Control", "private, no-store");
+  if (isCloudStorageConfigured()) {
+    res.redirect(307, await getPrivateAssetUrl(key));
+    return;
+  }
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (!existsSync(abs)) {
+    res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+  res.sendFile(abs);
+}
+async function deleteAsset(key) {
+  if (isCloudStorageConfigured()) {
+    try {
+      const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getS3Client();
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: process.env["STORAGE_BUCKET"],
+          Key: key
+        })
+      );
+      logger.debug({ key }, "storage: deleteAsset \u2192 s3");
+    } catch (err) {
+      logger.warn({ err, key }, "storage: deleteAsset \u2192 s3 error (ignored)");
+    }
+    return;
+  }
+  try {
+    const { unlinkSync } = await import("fs");
+    unlinkSync(path.resolve(UPLOADS_BASE, key));
+  } catch {
+  }
+}
+async function deleteAssetStrict(key) {
+  if (isCloudStorageConfigured()) {
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key
+      })
+    );
+    logger.debug({ key }, "storage: deleteAssetStrict \u2192 s3");
+    return;
+  }
+  try {
+    const { unlinkSync } = await import("fs");
+    unlinkSync(path.resolve(UPLOADS_BASE, key));
+  } catch (err) {
+    const code = err.code;
+    if (code !== "ENOENT") throw err;
+  }
+}
+var UPLOADS_BASE, _s3Client;
+var init_storage = __esm({
+  "src/lib/storage.ts"() {
+    "use strict";
+    init_logger2();
+    UPLOADS_BASE = path.resolve(process.cwd(), "uploads");
+    _s3Client = null;
+  }
+});
+
 // ../../node_modules/.pnpm/stripe@17.7.0/node_modules/stripe/esm/crypto/CryptoProvider.js
 var CryptoProvider, CryptoProviderOnlySupportsAsyncError;
 var init_CryptoProvider = __esm({
@@ -147306,273 +147621,11 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
 });
 var navigation_default = router;
 
-// src/lib/storage.ts
-init_logger2();
-import { existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
-import path from "path";
-var UPLOADS_BASE = path.resolve(process.cwd(), "uploads");
-function isCloudStorageConfigured(env = process.env) {
-  return Boolean(env["STORAGE_BUCKET"]?.trim());
-}
-function getStorageBackend(env = process.env) {
-  return isCloudStorageConfigured(env) ? "s3" : "local";
-}
-function getStorageDescription(env = process.env) {
-  if (!isCloudStorageConfigured(env)) return "local-disk";
-  const endpoint = env["STORAGE_ENDPOINT"]?.trim();
-  const bucket = env["STORAGE_BUCKET"].trim();
-  if (endpoint?.includes("r2.cloudflarestorage.com")) return `cloudflare-r2:${bucket}`;
-  if (endpoint) return `s3-compatible:${bucket}`;
-  return `aws-s3:${bucket}`;
-}
-var _s3Client = null;
-async function getS3Client() {
-  if (_s3Client) return _s3Client;
-  const { S3Client } = await import("@aws-sdk/client-s3");
-  const endpoint = process.env["STORAGE_ENDPOINT"];
-  const region = process.env["STORAGE_REGION"] ?? (endpoint ? "auto" : "us-east-1");
-  _s3Client = new S3Client({
-    region,
-    ...endpoint ? { endpoint, forcePathStyle: false } : {}
-  });
-  return _s3Client;
-}
-async function putAsset(key, buffer, mimeType) {
-  if (isCloudStorageConfigured()) {
-    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-    const client = await getS3Client();
-    await client.send(
-      new PutObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key,
-        Body: buffer,
-        ContentType: mimeType
-      })
-    );
-    logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 s3");
-  } else {
-    const abs = path.resolve(UPLOADS_BASE, key);
-    const destDir = path.dirname(abs);
-    mkdirSync(destDir, { recursive: true });
-    writeFileSync(abs, buffer);
-    logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 local");
-  }
-}
-async function getAssetUploadUrl(key, mimeType, expiresInSeconds = 900) {
-  if (!isCloudStorageConfigured()) return null;
-  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-  const client = await getS3Client();
-  return getSignedUrl(
-    client,
-    new PutObjectCommand({
-      Bucket: process.env["STORAGE_BUCKET"],
-      Key: key,
-      ContentType: mimeType
-    }),
-    { expiresIn: expiresInSeconds }
-  );
-}
-async function getAssetInfo(key) {
-  if (isCloudStorageConfigured()) {
-    try {
-      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
-      const client = await getS3Client();
-      const result = await client.send(new HeadObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key
-      }));
-      return {
-        contentLength: Number(result.ContentLength ?? 0),
-        contentType: result.ContentType ?? null
-      };
-    } catch {
-      return null;
-    }
-  }
-  try {
-    const stat2 = await fs.stat(path.resolve(UPLOADS_BASE, key));
-    return { contentLength: stat2.size, contentType: null };
-  } catch {
-    return null;
-  }
-}
-async function getAssetUrl(key) {
-  if (isCloudStorageConfigured()) {
-    const cdnBase = process.env["STORAGE_CDN_URL"];
-    if (cdnBase) {
-      return `${cdnBase.replace(/\/$/, "")}/${key}`;
-    }
-    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-    const client = await getS3Client();
-    return getSignedUrl(
-      client,
-      new GetObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key
-      }),
-      { expiresIn: 300 }
-      // 5 minutes
-    );
-  }
-  return `/api/family/assets/${key}`;
-}
-async function getPrivateAssetUrl(key, expiresInSeconds = 300) {
-  if (!isCloudStorageConfigured()) {
-    return `/api/audio-circle-recording-assets?key=${encodeURIComponent(key)}`;
-  }
-  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-  const client = await getS3Client();
-  return getSignedUrl(
-    client,
-    new GetObjectCommand({
-      Bucket: process.env["STORAGE_BUCKET"],
-      Key: key
-    }),
-    { expiresIn: expiresInSeconds }
-  );
-}
-async function getAssetBuffer(key) {
-  if (isCloudStorageConfigured()) {
-    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-    const client = await getS3Client();
-    const result = await client.send(new GetObjectCommand({
-      Bucket: process.env["STORAGE_BUCKET"],
-      Key: key
-    }));
-    if (!result.Body) throw new Error(`Storage object is empty: ${key}`);
-    const chunks = [];
-    for await (const chunk of result.Body) {
-      chunks.push(Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks);
-  }
-  return fs.readFile(path.resolve(UPLOADS_BASE, key));
-}
-async function streamOrRedirectAsset(key, res) {
-  res.setHeader("Cache-Control", "private, no-store");
-  if (isCloudStorageConfigured()) {
-    const url2 = await getAssetUrl(key);
-    res.redirect(307, url2);
-    return;
-  }
-  const abs = path.resolve(UPLOADS_BASE, key);
-  if (!existsSync(abs)) {
-    res.status(404).json({ error: "Asset not found" });
-    return;
-  }
-  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  res.sendFile(abs);
-}
-async function streamAssetSameOrigin(key, res) {
-  res.setHeader("Cache-Control", "private, no-store");
-  if (isCloudStorageConfigured()) {
-    try {
-      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-      const client = await getS3Client();
-      const result = await client.send(new GetObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key
-      }));
-      if (!result.Body) {
-        res.status(404).json({ error: "Asset not found" });
-        return;
-      }
-      if (result.ContentType) res.setHeader("Content-Type", result.ContentType);
-      if (result.ContentLength != null) res.setHeader("Content-Length", String(result.ContentLength));
-      for await (const chunk of result.Body) {
-        res.write(Buffer.from(chunk));
-      }
-      res.end();
-    } catch (error40) {
-      const status = error40.$metadata?.httpStatusCode;
-      if (status === 404) {
-        res.status(404).json({ error: "Asset not found" });
-        return;
-      }
-      throw error40;
-    }
-    return;
-  }
-  const abs = path.resolve(UPLOADS_BASE, key);
-  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  if (!existsSync(abs)) {
-    res.status(404).json({ error: "Asset not found" });
-    return;
-  }
-  res.sendFile(abs);
-}
-async function streamOrRedirectPrivateAsset(key, res) {
-  res.setHeader("Cache-Control", "private, no-store");
-  if (isCloudStorageConfigured()) {
-    res.redirect(307, await getPrivateAssetUrl(key));
-    return;
-  }
-  const abs = path.resolve(UPLOADS_BASE, key);
-  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  if (!existsSync(abs)) {
-    res.status(404).json({ error: "Asset not found" });
-    return;
-  }
-  res.sendFile(abs);
-}
-async function deleteAsset(key) {
-  if (isCloudStorageConfigured()) {
-    try {
-      const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
-      const client = await getS3Client();
-      await client.send(
-        new DeleteObjectCommand({
-          Bucket: process.env["STORAGE_BUCKET"],
-          Key: key
-        })
-      );
-      logger.debug({ key }, "storage: deleteAsset \u2192 s3");
-    } catch (err) {
-      logger.warn({ err, key }, "storage: deleteAsset \u2192 s3 error (ignored)");
-    }
-    return;
-  }
-  try {
-    const { unlinkSync } = await import("fs");
-    unlinkSync(path.resolve(UPLOADS_BASE, key));
-  } catch {
-  }
-}
-async function deleteAssetStrict(key) {
-  if (isCloudStorageConfigured()) {
-    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
-    const client = await getS3Client();
-    await client.send(
-      new DeleteObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key
-      })
-    );
-    logger.debug({ key }, "storage: deleteAssetStrict \u2192 s3");
-    return;
-  }
-  try {
-    const { unlinkSync } = await import("fs");
-    unlinkSync(path.resolve(UPLOADS_BASE, key));
-  } catch (err) {
-    const code = err.code;
-    if (code !== "ENOENT") throw err;
-  }
-}
+// src/routes/health.ts
+init_storage();
 
 // src/lib/storageReadiness.ts
+init_storage();
 function getStorageReadiness(env = process.env) {
   const bucket = Boolean(env["STORAGE_BUCKET"]?.trim());
   const endpoint = Boolean(env["STORAGE_ENDPOINT"]?.trim());
@@ -147700,7 +147753,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "c86f5ab9ed7b8ff86dfb93114d85a801596f35c3";
+var GIT_COMMIT = "b99f41ca08dbaf2cfdbc7576b201dc75f4a38f99";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -151421,34 +151474,78 @@ router6.delete("/users/me", requireAuth, async (req, res) => {
   const userId = req.authenticatedUserId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const blocking = await findBlockingActiveRequests(userId);
-    if (blocking.length > 0) {
-      return res.status(409).json({
-        error: "You have help request history on your account (open, ongoing, or completed). This is a real record other people may rely on, so it can't be deleted \u2014 cancel/complete any live ones, then contact support if you need the account itself removed.",
-        blocking_request_ids: blocking.map((r2) => r2.id)
-      });
-    }
-    const blockingPledges = await findBlockingPledges(userId);
-    if (blockingPledges.length > 0) {
-      return res.status(409).json({
-        error: "You have hub pledge history on your account. This is a financial record we can't delete, so we can't delete your account while it exists \u2014 contact support if you need help with this.",
-        blocking_pledge_ids: blockingPledges.map((p) => p.id)
-      });
-    }
+    const now = /* @__PURE__ */ new Date();
+    const deletionScheduledAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1e3);
+    const ownedMedia = await db.select({
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId)).limit(1e3);
     await db.transaction(async (tx) => {
-      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-      await tx.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
-      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+      await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
+      await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
+      await tx.update(scheduledPaymentsTable).set({ status: "cancelled" }).where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
+      await tx.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
       await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-      await tx.delete(usersTable).where(eq(usersTable.id, userId));
+      const [updated] = await tx.update(usersTable).set({
+        name: "Deleted account",
+        email: `deleted-user-${userId}@deleted.niakofa.invalid`,
+        avatar_url: null,
+        lat: null,
+        lng: null,
+        heading: null,
+        speed: null,
+        location_updated_at: null,
+        neighborhood: null,
+        city: null,
+        phone_masked: null,
+        panic_contacts: null,
+        password_hash: null,
+        password_reset_code: null,
+        password_reset_expires_at: null,
+        google_id: null,
+        oauth_provider: null,
+        is_helper: false,
+        helper_mode_active: false,
+        helper_status: "offline",
+        helper_languages: null,
+        helper_qualifications: null,
+        helper_bio: null,
+        helper_vehicle: null,
+        helper_social_links: null,
+        helper_skills: null,
+        specialties: null,
+        quick_replies: null,
+        organization_name: null,
+        organization_description: null,
+        account_type: "individual",
+        is_suspended: true,
+        suspended_at: now,
+        suspended_reason: "Account deletion requested",
+        approval_status: "denied",
+        token_version: sql`${usersTable.token_version} + 1`,
+        deletion_status: "pending_purge",
+        deletion_requested_at: now,
+        deletion_scheduled_at: deletionScheduledAt,
+        updated_at: now
+      }).where(eq(usersTable.id, userId)).returning({ id: usersTable.id });
+      if (!updated) throw Object.assign(new Error("User not found"), { code: "USER_NOT_FOUND" });
     });
-    return res.json({ ok: true, message: "Account deleted successfully" });
+    const { deleteAsset: deleteAsset2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    await Promise.allSettled(
+      ownedMedia.flatMap(
+        (asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key) => Boolean(key)).map((key) => deleteAsset2(key))
+      )
+    );
+    return res.status(202).json({
+      ok: true,
+      status: "pending_purge",
+      deletion_scheduled_at: deletionScheduledAt.toISOString(),
+      message: "Your personal account data has been removed from active use. Required community and financial records will be retained as anonymous history and the account will be purged within 30 days."
+    });
   } catch (error40) {
-    if (error40?.code === "23503") {
-      return res.status(409).json({
-        error: "This account has records that must be retained for community, moderation, or financial history. Contact support to complete the deletion request."
-      });
+    if (error40?.code === "USER_NOT_FOUND") {
+      return res.status(404).json({ error: "User not found" });
     }
     logger.error({ err: error40 }, "self-delete: failed");
     return res.status(500).json({ error: "Failed to delete account" });
@@ -152038,6 +152135,7 @@ function moderateRequestText(title, description) {
 
 // src/routes/requests.ts
 init_stripe_esm_node();
+init_storage();
 
 // src/lib/media-validation.ts
 import { spawn } from "node:child_process";
@@ -155653,6 +155751,7 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
+init_storage();
 init_ws_hub();
 init_zod();
 import { randomUUID as randomUUID4 } from "node:crypto";
@@ -163917,12 +164016,14 @@ var global_village_pulse_default = router37;
 // src/routes/audio-circles.ts
 var import_express40 = __toESM(require_express2(), 1);
 init_zod();
+init_storage();
 
 // src/lib/circleRecordingPolicy.ts
 init_drizzle_orm();
 init_src();
-import { createHash as createHash3, randomUUID as randomUUID6 } from "node:crypto";
+init_storage();
 init_logger2();
+import { createHash as createHash3, randomUUID as randomUUID6 } from "node:crypto";
 var RECORDING_RETENTION_DAYS = 90;
 function calculateRetentionUntil(createdAt = /* @__PURE__ */ new Date(), retentionDays = Number(
   process.env["CIRCLES_RECORDING_RETENTION_DAYS"] ?? process.env["CIRCLE_RECORDING_RETENTION_DAYS"]
@@ -165888,6 +165989,7 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
+init_storage();
 init_ws_hub();
 var router40 = (0, import_express42.Router)();
 var activeStatuses = [
@@ -177013,6 +177115,7 @@ var coverage_interest_default = router45;
 
 // src/routes/family.ts
 var import_express48 = __toESM(require_express2(), 1);
+init_storage();
 init_src();
 init_auth();
 init_rate_limit();
@@ -180063,8 +180166,9 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
-import { randomUUID as randomUUID8 } from "node:crypto";
+init_storage();
 init_ws_hub();
+import { randomUUID as randomUUID8 } from "node:crypto";
 init_src();
 init_queue();
 init_logger2();
@@ -181017,6 +181121,7 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
+init_storage();
 init_ws_hub();
 init_zod();
 import { randomUUID as randomUUID9 } from "node:crypto";
@@ -181681,6 +181786,7 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
+init_storage();
 init_queue();
 init_zod();
 import { randomUUID as randomUUID10 } from "node:crypto";
@@ -181963,6 +182069,9 @@ function parseId2(value) {
 function safeCoarseText(value) {
   return !NO_PRIVATE_CONTACT.test(value);
 }
+function safeListingLabel(value) {
+  return value.replace(/[\r\n\t]+/g, " ").replace(/[^\p{L}\p{N}\s.,!?'"’()-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 80) || "an Exchange post";
+}
 function exchangeMessagesActionUrl(recipientId, listingId, pickupRequestId) {
   const params = new URLSearchParams({
     mode: "direct",
@@ -182124,7 +182233,7 @@ router65.post("/community/exchange/listings", requireAuth, requireApproved, comm
   const parsed = listingBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid listing", details: parsed.error.issues });
   const data = parsed.data;
-  if (![data.neighborhood, data.pickup_notes].every(safeCoarseText)) {
+  if (![data.title, data.description, data.neighborhood, data.pickup_notes].every(safeCoarseText)) {
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
   const moderation = moderatePostText(`${data.title}
@@ -182165,7 +182274,7 @@ router65.patch("/community/exchange/listings/:id", requireAuth, requireApproved,
   if (listing.status !== "active") {
     return res.status(409).json({ error: "A listing can only be edited before pickup coordination is accepted." });
   }
-  if ([data.neighborhood, data.pickup_notes].filter((value) => value !== void 0).some((value) => !safeCoarseText(value))) {
+  if ([data.title, data.description, data.neighborhood, data.pickup_notes].filter((value) => value !== void 0).some((value) => !safeCoarseText(value))) {
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
   const nextTitle = data.title ?? listing.title;
@@ -182203,7 +182312,7 @@ ${nextPickupNotes}`);
     listingId: updated.id,
     pickupRequestId: request.id,
     title: "An Exchange post changed",
-    body: `The owner updated \u201C${updated.title}\u201D. Open Messages to review the current coordination details.`,
+    body: `The owner updated \u201C${safeListingLabel(updated.title)}\u201D. Open Messages to review the current coordination details.`,
     action: "listing_updated"
   })));
   return res.json({
@@ -182246,7 +182355,7 @@ router65.post("/community/exchange/listings/:id/renew", requireAuth, requireAppr
     userId: updated.seller_id,
     type: "exchange",
     title: "Your Exchange post is active again",
-    body: `\u201C${updated.title}\u201D is visible to neighbors again.`,
+    body: `\u201C${safeListingLabel(updated.title)}\u201D is visible to neighbors again.`,
     actionUrl: "/community?section=exchange&mine=true",
     metadata: { exchange_listing_id: updated.id, action: "renewed" }
   }).catch(() => {
@@ -182297,26 +182406,36 @@ router65.post("/community/exchange/listings/:id/pickup-requests", requireAuth, r
     inArray(exchangePickupRequestsTable.status, ["requested", "accepted"])
   )).limit(1);
   if (existing) return res.status(409).json({ error: "You already have a pickup request for this listing." });
-  const [pickupRequest] = await db.insert(exchangePickupRequestsTable).values({
-    listing_id: listingId,
-    buyer_id: userId,
-    note: parsed.data.note,
-    pickup_area: parsed.data.pickup_area,
-    proposed_window: parsed.data.proposed_window
-  }).returning();
+  let pickupRequest;
+  try {
+    const [inserted] = await db.insert(exchangePickupRequestsTable).values({
+      listing_id: listingId,
+      buyer_id: userId,
+      note: parsed.data.note,
+      pickup_area: parsed.data.pickup_area,
+      proposed_window: parsed.data.proposed_window
+    }).returning();
+    if (!inserted) return res.status(500).json({ error: "Could not create pickup request." });
+    pickupRequest = inserted;
+  } catch (error40) {
+    if (error40.code === "23505") {
+      return res.status(409).json({ error: "You already have a pickup request for this listing." });
+    }
+    throw error40;
+  }
   void notifyExchangeParticipant({
     recipientId: listing.seller_id,
     actorUserId: userId,
     listingId: listing.id,
     pickupRequestId: pickupRequest.id,
     title: "A neighbor wants to coordinate",
-    body: `Someone responded to \u201C${listing.title}\u201D. Open Messages to review the request.`,
+    body: `Someone responded to \u201C${safeListingLabel(listing.title)}\u201D. Open Messages to review the request.`,
     action: "request_created"
   }).catch(() => {
   });
   void sendPushToUser(listing.seller_id, {
     title: "A neighbor wants to coordinate",
-    body: `Someone responded to \u201C${listing.title}\u201D. Open Exchange to review the request.`,
+    body: `Someone responded to \u201C${safeListingLabel(listing.title)}\u201D. Open Exchange to review the request.`,
     notifType: "task_accepted"
   }).catch(() => {
   });
@@ -183636,6 +183755,7 @@ init_stripe_config();
 init_stripe_errors();
 import { randomUUID as randomUUID11 } from "node:crypto";
 init_worker_registry();
+init_storage();
 init_ws_hub();
 var SIX_HOURS_MS = 6 * 60 * 60 * 1e3;
 var STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1e3;
@@ -185904,6 +186024,7 @@ var import_bullmq7 = __toESM(require_cjs(), 1);
 init_src();
 init_drizzle_orm();
 init_queue();
+init_storage();
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";

@@ -6,7 +6,7 @@ const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("notification delivery remains server-enforced and preserves essential paths", async () => {
   const push = await read("artifacts/api-server/src/routes/push.ts");
-  assert.match(push, /if \(!\(await userAllowsNotif\(userId, payload\.notifType\)\)\)/);
+  assert.match(push, /if \(!\(await userAllowsNotif\(userId, payload\)\)\)/);
   assert.match(push, /notif_optional_paused/);
   assert.match(push, /notifType === "emergency" \|\| notifType === "task_accepted" \|\| notifType === "nia_checkin"/);
   assert.match(push, /case "exchange_digest":/);
@@ -95,6 +95,10 @@ test("Exchange safety uses moderator-confirmed holds and durable review history"
   const schema = await read("lib/db/src/schema/exchange.ts");
   const migration = await read("lib/db/migrations/0166_exchange_category_moderation.sql");
   assert.match(exchange, /EXCHANGE_HOLD_REPORT_THRESHOLD = 3/);
+  assert.match(exchange, /safeListingLabel/);
+  assert.match(exchange, /data\.title, data\.description, data\.neighborhood, data\.pickup_notes/);
+  assert.match(exchange, /partial unique index is the concurrency guard/);
+  assert.match(exchange, /code === "23505"/);
   assert.match(exchange, /moderation_status: "held"/);
   assert.match(exchange, /temporary_hold_after_three_unique_reports/);
   assert.match(reports, /\/reports\/exchange/);

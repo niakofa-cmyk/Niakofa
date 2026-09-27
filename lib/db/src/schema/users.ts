@@ -84,6 +84,12 @@ export const usersTable = pgTable("users", {
   highest_tier_reached: text("highest_tier_reached").notNull().default("member"),
   // No-show counter (migration 0059)
   no_show_count: integer("no_show_count").notNull().default(0),
+  // Account deletion lifecycle. Personal fields are anonymized immediately;
+  // community/financial history remains attached until the retention process
+  // completes the scheduled purge.
+  deletion_status: text("deletion_status").notNull().default("active"),
+  deletion_requested_at: timestamp("deletion_requested_at", { withTimezone: true }),
+  deletion_scheduled_at: timestamp("deletion_scheduled_at", { withTimezone: true }),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
