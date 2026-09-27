@@ -118,6 +118,14 @@ jest.unstable_mockModule("@workspace/db", () => ({
     status: "status",
     updated_at: "updated_at",
   },
+  exchangePickupRequestsTable: {
+    id: "id",
+    listing_id: "listing_id",
+    buyer_id: "buyer_id",
+    status: "status",
+    coordination_expires_at: "coordination_expires_at",
+    expiry_notified_at: "expiry_notified_at",
+  },
   exchangeDigestDeliveriesTable: {
     id: "id",
     user_id: "user_id",
