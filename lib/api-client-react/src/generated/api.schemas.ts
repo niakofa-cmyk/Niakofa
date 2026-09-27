@@ -581,6 +581,17 @@ export const UserSettingsSpiritAnimal = {
   fish_eagle: 'fish_eagle',
 } as const;
 
+/**
+ * User location marker; the blue puck is the accessible default
+ */
+export type UserSettingsLocationMarkerStyle = typeof UserSettingsLocationMarkerStyle[keyof typeof UserSettingsLocationMarkerStyle];
+
+
+export const UserSettingsLocationMarkerStyle = {
+  puck: 'puck',
+  spirit: 'spirit',
+} as const;
+
 export interface UserSettings {
   id: number;
   user_id: number;
@@ -590,6 +601,9 @@ export interface UserSettings {
   notif_wallet_updates: boolean;
   notif_community_activity: boolean;
   notif_pledge_reminders: boolean;
+  notif_exchange_activity: boolean;
+  notif_exchange_digest: boolean;
+  notif_optional_paused: boolean;
   privacy_profile_visible: boolean;
   privacy_live_location: boolean;
   privacy_activity_sharing: boolean;
@@ -602,6 +616,8 @@ export interface UserSettings {
   preferred_language: UserSettingsPreferredLanguage;
   /** Map avatar / navigation companion selected by the user */
   spirit_animal: UserSettingsSpiritAnimal;
+  /** User location marker; the blue puck is the accessible default */
+  location_marker_style: UserSettingsLocationMarkerStyle;
   updated_at: string;
 }
 
@@ -632,6 +648,14 @@ export const UserSettingsUpdateSpiritAnimal = {
   fish_eagle: 'fish_eagle',
 } as const;
 
+export type UserSettingsUpdateLocationMarkerStyle = typeof UserSettingsUpdateLocationMarkerStyle[keyof typeof UserSettingsUpdateLocationMarkerStyle];
+
+
+export const UserSettingsUpdateLocationMarkerStyle = {
+  puck: 'puck',
+  spirit: 'spirit',
+} as const;
+
 /**
  * All fields optional — only provided keys are persisted (upsert)
  */
@@ -642,6 +666,10 @@ export interface UserSettingsUpdate {
   notif_wallet_updates?: boolean;
   notif_community_activity?: boolean;
   notif_pledge_reminders?: boolean;
+  notif_exchange_activity?: boolean;
+  notif_exchange_digest?: boolean;
+  notif_optional_paused?: boolean;
+  expected_updated_at?: string;
   privacy_profile_visible?: boolean;
   privacy_live_location?: boolean;
   privacy_activity_sharing?: boolean;
@@ -651,6 +679,7 @@ export interface UserSettingsUpdate {
   specialties?: string;
   preferred_language?: UserSettingsUpdatePreferredLanguage;
   spirit_animal?: UserSettingsUpdateSpiritAnimal;
+  location_marker_style?: UserSettingsUpdateLocationMarkerStyle;
 }
 
 export interface AvailabilityWindow {

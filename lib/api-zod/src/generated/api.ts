@@ -1530,6 +1530,9 @@ export const GetUserSettingsResponse = zod.object({
   "notif_wallet_updates": zod.boolean(),
   "notif_community_activity": zod.boolean(),
   "notif_pledge_reminders": zod.boolean(),
+  "notif_exchange_activity": zod.boolean(),
+  "notif_exchange_digest": zod.boolean(),
+  "notif_optional_paused": zod.boolean(),
   "privacy_profile_visible": zod.boolean(),
   "privacy_live_location": zod.boolean(),
   "privacy_activity_sharing": zod.boolean(),
@@ -1539,6 +1542,7 @@ export const GetUserSettingsResponse = zod.object({
   "specialties": zod.string().nullish(),
   "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']),
   "spirit_animal": zod.enum(['sankofa_bird', 'black_panther', 'elephant', 'lion', 'fish_eagle']).describe('Map avatar \/ navigation companion selected by the user'),
+  "location_marker_style": zod.enum(['puck', 'spirit']).describe('User location marker; the blue puck is the accessible default'),
   "updated_at": zod.coerce.date()
 })
 
@@ -1557,6 +1561,10 @@ export const UpdateUserSettingsBody = zod.object({
   "notif_wallet_updates": zod.boolean().optional(),
   "notif_community_activity": zod.boolean().optional(),
   "notif_pledge_reminders": zod.boolean().optional(),
+  "notif_exchange_activity": zod.boolean().optional(),
+  "notif_exchange_digest": zod.boolean().optional(),
+  "notif_optional_paused": zod.boolean().optional(),
+  "expected_updated_at": zod.coerce.date().optional(),
   "privacy_profile_visible": zod.boolean().optional(),
   "privacy_live_location": zod.boolean().optional(),
   "privacy_activity_sharing": zod.boolean().optional(),
@@ -1565,7 +1573,8 @@ export const UpdateUserSettingsBody = zod.object({
   "max_travel_miles": zod.number().optional(),
   "specialties": zod.string().optional(),
   "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']).optional(),
-  "spirit_animal": zod.enum(['sankofa_bird', 'black_panther', 'elephant', 'lion', 'fish_eagle']).optional()
+  "spirit_animal": zod.enum(['sankofa_bird', 'black_panther', 'elephant', 'lion', 'fish_eagle']).optional(),
+  "location_marker_style": zod.enum(['puck', 'spirit']).optional()
 }).describe('All fields optional — only provided keys are persisted (upsert)')
 
 export const UpdateUserSettingsResponse = zod.object({
@@ -1577,6 +1586,9 @@ export const UpdateUserSettingsResponse = zod.object({
   "notif_wallet_updates": zod.boolean(),
   "notif_community_activity": zod.boolean(),
   "notif_pledge_reminders": zod.boolean(),
+  "notif_exchange_activity": zod.boolean(),
+  "notif_exchange_digest": zod.boolean(),
+  "notif_optional_paused": zod.boolean(),
   "privacy_profile_visible": zod.boolean(),
   "privacy_live_location": zod.boolean(),
   "privacy_activity_sharing": zod.boolean(),
@@ -1586,6 +1598,7 @@ export const UpdateUserSettingsResponse = zod.object({
   "specialties": zod.string().nullish(),
   "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']),
   "spirit_animal": zod.enum(['sankofa_bird', 'black_panther', 'elephant', 'lion', 'fish_eagle']).describe('Map avatar \/ navigation companion selected by the user'),
+  "location_marker_style": zod.enum(['puck', 'spirit']).describe('User location marker; the blue puck is the accessible default'),
   "updated_at": zod.coerce.date()
 })
 

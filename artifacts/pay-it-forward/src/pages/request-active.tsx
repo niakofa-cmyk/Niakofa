@@ -28,7 +28,7 @@ import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
 import { useTweenedPosition } from "@/hooks/useTweenedPosition";
 import { usePulse } from "@/hooks/usePulse";
-import { SpiritAnimalAvatar } from "@/components/SpiritAnimal/SpiritAnimalAvatar";
+import { UserLocationMarker } from "@/components/UserLocationMarker";
 import { useSolarTier } from "@/hooks/useTimeOfDay";
 import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -886,7 +886,8 @@ export default function ActiveRequestScreen() {
       {!MAPBOX_TOKEN && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-background gap-3 px-6 z-10">
           <ErrorBoundary fallback={<div className="w-10 h-10 rounded-full bg-primary/20" />}>
-            <SpiritAnimalAvatar
+            <UserLocationMarker
+              markerStyle={userSettings?.location_marker_style}
               species={userSettings?.spirit_animal}
               heading={heldHeading} mapBearing={0} speed={0} navigating={false} size={56}
               celebrating={false} newNotification={false} accepted={false}
@@ -926,7 +927,8 @@ export default function ActiveRequestScreen() {
           {/* ErrorBoundary: a CSS/SVG crash in SankofaBird shows a teal dot
               instead of unmounting the entire navigation screen. */}
           <ErrorBoundary fallback={<div className="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,212,255,0.9)]" />}>
-            <SpiritAnimalAvatar
+            <UserLocationMarker
+              markerStyle={userSettings?.location_marker_style}
               species={userSettings?.spirit_animal}
               heading={heldHeading}
               mapBearing={mode === "heading-up" ? (fusedHeading ?? 0) : 0}

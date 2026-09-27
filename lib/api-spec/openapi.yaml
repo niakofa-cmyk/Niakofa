@@ -3358,6 +3358,7 @@ components:
         - service_radius_miles
         - preferred_language
         - spirit_animal
+        - location_marker_style
         - updated_at
       properties:
         id:
@@ -3403,6 +3404,10 @@ components:
           type: string
           description: Map avatar / navigation companion selected by the user
           enum: [sankofa_bird, black_panther, elephant, lion, fish_eagle]
+        location_marker_style:
+          type: string
+          description: User location marker; the blue puck is the accessible default
+          enum: [puck, spirit]
         updated_at:
           type: string
           format: date-time
@@ -3452,6 +3457,9 @@ components:
         spirit_animal:
           type: string
           enum: [sankofa_bird, black_panther, elephant, lion, fish_eagle]
+        location_marker_style:
+          type: string
+          enum: [puck, spirit]
 
     AvailabilityWindow:
       type: object

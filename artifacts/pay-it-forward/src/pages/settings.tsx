@@ -17,6 +17,7 @@ import {
   Mic,
   PawPrint,
   HeartHandshake,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
@@ -33,6 +34,11 @@ import {
   type SpiritAnimalId,
 } from "@/components/SpiritAnimal/types";
 import { getSpiritEnvironment } from "@/components/SpiritAnimal/environments";
+import { LocationPuck } from "@/components/LocationPuck";
+import {
+  isLocationMarkerStyle,
+  type LocationMarkerStyle,
+} from "@/lib/location-marker";
 
 // ── API helpers (kept in sync with profile.tsx) ───────────────────────────────
 
@@ -211,6 +217,7 @@ function NotificationPreferences({ userId }: { userId: number }) {
 
 function SpiritAnimalSettings({ userId }: { userId: number }) {
   const [selected, setSelected] = useState<SpiritAnimalId>("sankofa_bird");
+  const [markerStyle, setMarkerStyle] = useState<LocationMarkerStyle>("puck");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -220,6 +227,9 @@ function SpiritAnimalSettings({ userId }: { userId: number }) {
         const animal = data?.spirit_animal;
         if (typeof animal === "string" && SPIRIT_ANIMAL_IDS.includes(animal as SpiritAnimalId)) {
           setSelected(animal as SpiritAnimalId);
+        }
+        if (isLocationMarkerStyle(data?.location_marker_style)) {
+          setMarkerStyle(data.location_marker_style);
         }
       })
       .finally(() => setLoading(false));
@@ -241,6 +251,22 @@ function SpiritAnimalSettings({ userId }: { userId: number }) {
     }
   };
 
+  const handleMarkerStyleSelect = async (style: LocationMarkerStyle) => {
+    if (style === markerStyle || saving) return;
+    const previous = markerStyle;
+    setMarkerStyle(style);
+    setSaving(true);
+    try {
+      await saveSettings(userId, { location_marker_style: style });
+      toast({ title: style === "puck" ? "Blue location puck enabled" : "Spirit companion enabled" });
+    } catch {
+      setMarkerStyle(previous);
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold">Spirit Animal</h2>
@@ -253,6 +279,39 @@ function SpiritAnimalSettings({ userId }: { userId: number }) {
           <p className="text-sm text-muted-foreground">
             Each companion changes the entire feel of the app — shadows, transitions, palette, and more. Choose the one that moves with you.
           </p>
+          <div className="space-y-2 border-b border-border pb-4">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-bold">Location marker</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The blue puck is the default directional marker. A Spirit Animal is optional and may switch back to the puck when reduced motion or battery saver is active.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleMarkerStyleSelect("puck")}
+                disabled={saving}
+                className={`flex min-h-24 flex-col items-center justify-center gap-1 rounded-xl border p-3 text-xs font-bold transition-colors disabled:opacity-60 ${
+                  markerStyle === "puck" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card hover:border-primary/40"
+                }`}
+              >
+                <LocationPuck heading={0} mapBearing={0} size={42} />
+                Blue puck
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMarkerStyleSelect("spirit")}
+                disabled={saving}
+                className={`flex min-h-24 flex-col items-center justify-center gap-1 rounded-xl border p-3 text-xs font-bold transition-colors disabled:opacity-60 ${
+                  markerStyle === "spirit" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card hover:border-primary/40"
+                }`}
+              >
+                <SpiritAnimalAvatar species={selected} heading={0} size={42} mapZoom={16} />
+                Spirit companion
+              </button>
+            </div>
+          </div>
           {SPIRIT_ANIMAL_IDS.map((id) => {
             const env = getSpiritEnvironment(id);
             const isSelected = selected === id;

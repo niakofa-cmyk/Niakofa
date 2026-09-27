@@ -5,6 +5,7 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+import type { UserSettingsUpdateLocationMarkerStyle } from './userSettingsUpdateLocationMarkerStyle';
 import type { UserSettingsUpdatePreferredLanguage } from './userSettingsUpdatePreferredLanguage';
 import type { UserSettingsUpdateSpiritAnimal } from './userSettingsUpdateSpiritAnimal';
 
@@ -18,6 +19,10 @@ export interface UserSettingsUpdate {
   notif_wallet_updates?: boolean;
   notif_community_activity?: boolean;
   notif_pledge_reminders?: boolean;
+  notif_exchange_activity?: boolean;
+  notif_exchange_digest?: boolean;
+  notif_optional_paused?: boolean;
+  expected_updated_at?: Date;
   privacy_profile_visible?: boolean;
   privacy_live_location?: boolean;
   privacy_activity_sharing?: boolean;
@@ -27,4 +32,5 @@ export interface UserSettingsUpdate {
   specialties?: string;
   preferred_language?: UserSettingsUpdatePreferredLanguage;
   spirit_animal?: UserSettingsUpdateSpiritAnimal;
+  location_marker_style?: UserSettingsUpdateLocationMarkerStyle;
 }

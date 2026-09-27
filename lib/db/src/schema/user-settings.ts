@@ -43,6 +43,8 @@ export const userSettingsTable = pgTable("user_settings", {
   // Map avatar / navigation companion. Existing users remain on the original
   // Sankofa Bird when migration 0079 adds this field.
   spirit_animal: text("spirit_animal").notNull().default("sankofa_bird"),
+  // The accessible blue puck is the default; Spirit Animals remain optional.
+  location_marker_style: text("location_marker_style").notNull().default("puck"),
 
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

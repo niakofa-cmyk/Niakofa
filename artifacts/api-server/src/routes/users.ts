@@ -30,6 +30,12 @@ import {
 } from "../lib/community-pool";
 import { isValidSpiritAnimal } from "../lib/spirit-animal";
 
+const VALID_LOCATION_MARKER_STYLES = ["puck", "spirit"] as const;
+function isValidLocationMarkerStyle(value: unknown): value is typeof VALID_LOCATION_MARKER_STYLES[number] {
+  return typeof value === "string" &&
+    (VALID_LOCATION_MARKER_STYLES as readonly string[]).includes(value);
+}
+
 // Constant-time string comparison to prevent timing-based enumeration of
 // short reset codes. Compares character-by-character and always processes
 // the full length of the expected value, even on early mismatch.
@@ -960,7 +966,7 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
     "exchange_digest_area", "exchange_digest_timezone",
     "privacy_profile_visible", "privacy_live_location", "privacy_activity_sharing",
     "privacy_anonymous_giving", "service_radius_miles", "max_travel_miles", "specialties",
-    "preferred_language", "spirit_animal",
+    "preferred_language", "spirit_animal", "location_marker_style",
   ];
   const VALID_LANGUAGES = ["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"];
   const updates: Record<string, unknown> = { updated_at: new Date() };
@@ -985,6 +991,7 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
     }
     if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
     if (key === "spirit_animal" && !isValidSpiritAnimal(req.body[key])) continue;
+    if (key === "location_marker_style" && !isValidLocationMarkerStyle(req.body[key])) continue;
     updates[key] = req.body[key];
   }
   // Atomic upsert on the user_id unique constraint. The previous
