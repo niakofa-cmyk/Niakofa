@@ -121,7 +121,11 @@ function serialize(value: unknown): unknown {
 }
 
 function serializeListing(listing: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(\n    Object.entries(listing)\n      .filter(([key]) => key !== "latitude" && key !== "longitude")\n      .map(([key, value]) => [key, serialize(value)]),\n  );
+  return Object.fromEntries(
+    Object.entries(listing)
+      .filter(([key]) => key !== "latitude" && key !== "longitude")
+      .map(([key, value]) => [key, serialize(value)]),
+  );
 }
 
 const EXCHANGE_LISTING_PAGE_SIZE = 24;
