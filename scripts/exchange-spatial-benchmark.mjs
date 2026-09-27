@@ -109,7 +109,7 @@ async function runFallbackBenchmark(client) {
     CENTER_LAT,
     CENTER_LNG,
     RADIUS_MILES,
-  ], "Indexed bounding box + Haversine");
+  ], "Production route: bounding box + Haversine");
 }
 
 async function main() {
@@ -126,7 +126,9 @@ async function main() {
     console.log("");
 
     const results = [];
-    if (postgis) results.push(await runPostgisBenchmark(client));
+    // Benchmark the exact production route predicate. PostGIS parity is
+    // covered separately by the disposable integration test; the route itself
+    // currently uses bounding-box + Haversine, not ST_DWithin.
     results.push(await runFallbackBenchmark(client));
 
     for (const result of results) {
@@ -148,7 +150,7 @@ async function main() {
       console.error("FAIL: exchange_listings_geo_idx is missing.");
       process.exitCode = 1;
     } else {
-      console.log("PASS: exchange_listings_geo_idx is present.");
+      console.log("PASS: migration-defined exchange_listings_geo_idx is present.");
     }
 
     const explain = await client.query(
