@@ -295,7 +295,6 @@ export function CommunityExchangeView() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportForm, setReportForm] = useState<{ type: ExchangeReportType; description: string }>({ type: "other", description: "" });
   const [reportSubmitting, setReportSubmitting] = useState(false);
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState("");
@@ -593,7 +592,6 @@ export function CommunityExchangeView() {
   };
 
   const renewListing = async (listing: ExchangeListing) => {
-    setActionLoading(listing.id);
     setNotice("");
     try {
       await renewExchangeListing(listing.id);
@@ -602,8 +600,6 @@ export function CommunityExchangeView() {
       setRefreshTick((tick) => tick + 1);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "This post could not be renewed.");
-    } finally {
-      setActionLoading(null);
     }
   };
 

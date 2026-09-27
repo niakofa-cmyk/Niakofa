@@ -322,7 +322,6 @@ try {
     [raceListing.id],
   );
   assert.equal(concurrentRows.rows.filter((r) => r.status === "accepted").reduce((n, r) => n + r.count, 0), 1);
-  const winner = concurrentAccepts.find((r) => r.status === 200).body.pickup_request;
   const raceActions = await waitForActions(raceListing.id, { request_created: 2, request_accepted: 1 });
   assert.equal(raceActions.request_accepted, 1, "only the winning acceptance notifies its buyer");
 
