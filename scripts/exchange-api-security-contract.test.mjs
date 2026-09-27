@@ -28,7 +28,7 @@ test("Exchange moderator queue and decisions require admin middleware and bind a
   assert.match(reports, /router\.get\("\/reports\/exchange", requireAuth, requireAdmin\(\), adminLimiter/);
   assert.match(reports, /router\.patch\("\/reports\/:id\/review", requireAuth, requireAdmin\(\), adminLimiter/);
   assert.match(reports, /requireAdmin\(\)/);
-  assert.match(reports, /reviewed_by: req\.authenticatedUserId/);
+  assert.match(reports, /const reviewed_by = req\.authenticatedUserId!/);
   assert.match(reports, /exchangeModerationReviewHistoryTable/);
   assert.match(reports, /moderation_reviewed_by: reviewed_by/);
 });
