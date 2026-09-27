@@ -72,6 +72,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
     thumbnail_key: "thumbnail_key",
     variant_key: "variant_key",
   },
+  mediaProcessingJobsTable: { id: "id" },
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({
