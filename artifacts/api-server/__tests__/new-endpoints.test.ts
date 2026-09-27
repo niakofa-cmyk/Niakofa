@@ -61,6 +61,8 @@ jest.unstable_mockModule("@workspace/db", () => ({
   reportsTable:            { id: "id" },
   chatMessagesTable:       { id: "id", request_id: "request_id", sender_id: "sender_id", content: "content", sent_at: "sent_at", read_at: "read_at" },
   mediaAssetsTable:        { id: "id", owner_user_id: "owner_user_id", context_kind: "context_kind", context_id: "context_id", media_type: "media_type", mime_type: "mime_type", original_key: "original_key", status: "status", byte_size: "byte_size" },
+  niaConversationsTable:   { id: "id", user_id: "user_id", session_id: "session_id", user_message: "user_message", nia_response: "nia_response", is_crisis: "is_crisis", created_at: "created_at" },
+  niaMemoriesTable:        { user_id: "user_id", memory: "memory", structured: "structured", created_at: "created_at", updated_at: "updated_at" },
   pushSubscriptionsTable:  { id: "id", user_id: "user_id", endpoint: "endpoint", subscription: "subscription" },
   mediaProcessingJobsTable: { id: "id", media_asset_id: "media_asset_id", job_type: "job_type", status: "status" },
   requestMessageAttachmentsTable: { id: "id", message_id: "message_id", media_asset_id: "media_asset_id", storage_key: "storage_key", mime_type: "mime_type" },
