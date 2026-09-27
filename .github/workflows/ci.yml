@@ -72,6 +72,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           DATABASE_SSL: "false"
+      - name: Exchange PostGIS and Haversine integration
+        run: node scripts/exchange-spatial.integration.test.mjs
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+      - name: Exchange API privacy and authorization contracts
+        run: node --test scripts/exchange-api-security-contract.test.mjs
       - name: Run civic seed regression
         run: pnpm --filter @workspace/scripts run test:civic-seed
         env:

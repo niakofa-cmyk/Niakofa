@@ -86,6 +86,17 @@ jobs:
           echo "Railway did not converge to ${expected_commit} within the 20-minute verification window."
           exit 1
 
+      - name: Smoke-test Exchange discovery route boundary
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --output /tmp/exchange-smoke.json --write-out '%{http_code}' --max-time 15 \
+            "${PRODUCTION_URL}/api/community/exchange/listings?nearby=true&radius_miles=5")"
+          echo "Unauthenticated Exchange listing request returned HTTP ${status}"
+          # Exchange discovery is authenticated. This verifies the deployed
+          # route is mounted and protected without writing production data.
+          test "${status}" = "401" -o "${status}" = "403"
+          jq -e '(.error | type == "string") or (.message | type == "string")' /tmp/exchange-smoke.json
+
       - name: Inspect bounded Nia compatibility health
         run: |
           set -euo pipefail
