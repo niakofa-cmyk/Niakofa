@@ -63,6 +63,8 @@ jest.unstable_mockModule("@workspace/db", () => ({
   systemSettingsTable: { key: "key", value: "value" },
   diasporaHubsTable: { id: "id", community_id: "community_id", name: "name", status: "status", is_seed: "is_seed", reserved_balance: "reserved_balance" },
   diasporaHubPledgesTable: { id: "id", pledged_by: "pledged_by", status: "status" },
+  mediaAssetsTable: { id: "id" },
+  mediaProcessingJobsTable: { id: "id" },
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({
