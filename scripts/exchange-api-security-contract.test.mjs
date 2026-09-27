@@ -10,7 +10,7 @@ const reports = await readFile(new URL("../artifacts/api-server/src/routes/repor
 test("public Exchange list requires authenticated approved members and filters moderation", () => {
   assert.match(route, /router\.get\("\/community\/exchange\/listings", requireAuth, requireApproved/);
   assert.match(route, /const conditions = mine[\s\S]*?eq\(exchangeListingsTable\.status, "active"\), eq\(exchangeListingsTable\.moderation_status, "approved"\)/);
-  assert.match(route, /nearby request without coordinates must not silently become a community-wide feed/);
+  assert.match(route, /else if \(nearby\)[\s\S]*?locationCondition = sql`FALSE`;/);
 });
 
 test("Exchange listing serializers never select or return stored coordinates", () => {
@@ -25,7 +25,7 @@ test("Exchange listing serializers never select or return stored coordinates", (
 
 test("Exchange moderator queue and decisions require admin middleware and bind actor to session", () => {
   assert.match(reports, /router\.get\("\/reports\/exchange", requireAuth, requireAdmin\(\), adminLimiter/);
-  assert.match(reports, /router\.post\("\/reports\/exchange/);
+  assert.match(reports, /router\.patch\("\/reports\/exchange\/\:id/);
   assert.match(reports, /requireAdmin\(\)/);
   assert.match(reports, /reviewed_by: req\.authenticatedUserId/);
   assert.match(reports, /exchangeModerationReviewHistoryTable/);
