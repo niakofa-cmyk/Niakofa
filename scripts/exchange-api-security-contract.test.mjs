@@ -20,13 +20,15 @@ test("Exchange listing serializers never select or return stored coordinates", (
   assert.doesNotMatch(selected, /latitude|longitude/);
   assert.match(route, /latitude: roundedCoordinate\(seller\?\.lat\)/);
   assert.match(route, /longitude: roundedCoordinate\(seller\?\.lng\)/);
+  assert.match(route, /filter\(\(\[key\]\) => key !== "latitude" && key !== "longitude"\)/);
   assert.match(route, /Use a neighborhood or public pickup area only/);
 });
 
 test("Exchange moderator queue and decisions require admin middleware and bind actor to session", () => {
   assert.match(reports, /router\.get\("\/reports\/exchange", requireAuth, requireAdmin\(\), adminLimiter/);
-  assert.match(reports, /router\.patch\("\/reports\/exchange\/\:id/);
+  assert.match(reports, /router\.patch\("\/reports\/:id\/review", requireAuth, requireAdmin\(\), adminLimiter/);
   assert.match(reports, /requireAdmin\(\)/);
   assert.match(reports, /reviewed_by: req\.authenticatedUserId/);
-  assert.match(reports, /exchangeModerationReviewHistoryTable/);\n  assert.match(reports, /moderation_reviewed_by: reviewed_by/);
+  assert.match(reports, /exchangeModerationReviewHistoryTable/);
+  assert.match(reports, /moderation_reviewed_by: reviewed_by/);
 });
