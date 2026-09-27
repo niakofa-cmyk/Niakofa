@@ -16,7 +16,7 @@ try {
   await client.query(`
     CREATE TEMP TABLE exchange_spatial_fixture (
       id integer PRIMARY KEY, status text NOT NULL, moderation_status text NOT NULL,
-      latitude real, longitude real
+      latitude double precision, longitude double precision
     ) ON COMMIT DROP
   `);
   const center = { lat: 32.7555, lng: -97.3308 };
@@ -26,8 +26,8 @@ try {
   const milesLng = 1 / (69 * Math.cos(center.lat * Math.PI / 180));
   const rows = [
     [1, "active", "approved", center.lat, center.lng], // center
-    [2, "active", "approved", center.lat + radiusMiles * milesLat, center.lng], // approx boundary
-    [3, "active", "approved", center.lat + (radiusMiles + 0.3) * milesLat, center.lng], // outside
+    [2, "active", "approved", center.lat + 4.9 * milesLat, center.lng], // safely inside the five-mile boundary
+    [3, "active", "approved", center.lat + 5.1 * milesLat, center.lng], // safely outside
     [4, "active", "pending", center.lat, center.lng], // not approved
     [5, "archived", "approved", center.lat, center.lng], // inactive
     [6, "active", "approved", center.lat, center.lng + 2 * milesLng], // nearby
