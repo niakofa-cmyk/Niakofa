@@ -5,6 +5,13 @@ export type LocationMarkerStyle = typeof LOCATION_MARKER_STYLES[number];
 export type LocationSource = "gps" | "ip" | "approximate" | "privacy";
 export type LocationSignal = "live" | "approximate" | "stale" | "privacy";
 
+export interface LocationMarkerInput {
+  source?: LocationSource;
+  accuracy?: number | null;
+  capturedAt?: number;
+  privacyProtected?: boolean;
+}
+
 export interface LocationMarkerState {
   source: LocationSource;
   signal: LocationSignal;
@@ -12,14 +19,49 @@ export interface LocationMarkerState {
   capturedAt: number | null;
 }
 
-interface LocationLike {
-  source?: LocationSource;
-  accuracy?: number | null;
-  capturedAt?: number;
-  privacyProtected?: boolean;
-}
-
 const LOCATION_STALE_AFTER_MS = 90_000;
+const MAX_DISPLAYED_ACCURACY_METERS = 5_000;
+const WEB_MERCATOR_METERS_PER_PIXEL_AT_ZOOM_0 = 156543.03392;
+
+/**
+ * Return a screen-space diameter for a horizontal GPS accuracy radius.
+ *
+ * Mapbox DOM markers stay a constant size while the map zooms, so the
+ * accuracy area has to be converted from meters using the current latitude
+ * and zoom. A bounded fallback keeps the puck useful in non-map previews.
+ */
+export function getAccuracyRingDiameterPx(options: {
+  accuracyMeters: number | null | undefined;
+  size: number;
+  latitude?: number | null;
+  mapZoom?: number | null;
+}): number {
+  const { accuracyMeters, size, latitude, mapZoom } = options;
+  if (!Number.isFinite(accuracyMeters) || (accuracyMeters as number) <= 0) return 0;
+
+  const accuracy = Math.min(accuracyMeters as number, MAX_DISPLAYED_ACCURACY_METERS);
+  if (
+    Number.isFinite(latitude) &&
+    Number.isFinite(mapZoom) &&
+    Math.abs(latitude as number) <= 90
+  ) {
+    const metersPerPixel =
+      (WEB_MERCATOR_METERS_PER_PIXEL_AT_ZOOM_0 *
+        Math.cos(((latitude as number) * Math.PI) / 180)) /
+      2 ** (mapZoom as number);
+    if (metersPerPixel > 0) {
+      return Math.max(
+        size * 1.2,
+        Math.min(size * 12, (2 * accuracy) / metersPerPixel),
+      );
+    }
+  }
+
+  // Keep non-map renderers honest: this is only a bounded visual fallback,
+  // never a claim that the ring is geographically to scale.
+  const accuracyRatio = Math.min(1, accuracy / 200);
+  return size * (1.2 + accuracyRatio * 2.3);
+}
 
 /**
  * Turn the browser location stream into an explicit rendering state.
@@ -30,7 +72,7 @@ const LOCATION_STALE_AFTER_MS = 90_000;
  * the same behavior.
  */
 export function getLocationMarkerState(
-  location: LocationLike | null | undefined,
+  location: LocationMarkerInput | null | undefined,
   now = Date.now(),
 ): LocationMarkerState {
   const source = location?.privacyProtected ? "privacy" : (location?.source ?? "approximate");

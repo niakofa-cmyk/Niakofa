@@ -1094,11 +1094,13 @@ const GROUP_LABELS: Record<SettingsSection["group"], string> = {
 
 export default function SettingsPage() {
   const [, setLocation] = useLocation();
-  const { currentUser } = useAppContext();
+  const { currentUser, logout } = useAppContext();
 
   // Read ?section= query param to allow deep-linking from profile page
   const initialSection = new URLSearchParams(window.location.search).get("section");
   const [activeSection, setActiveSection] = useState<string | null>(initialSection);
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   if (!currentUser) {
     setLocation("/login");
@@ -1301,18 +1303,51 @@ export default function SettingsPage() {
                 >
                   📧 privacy@niakofa.community
                 </a>
+                <label className="flex items-start gap-3 rounded-2xl border border-border bg-muted/40 p-4 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={deleteConfirmed}
+                    onChange={(event) => setDeleteConfirmed(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-destructive"
+                  />
+                  <span>I understand that this action is permanent and cannot be undone.</span>
+                </label>
                 <Button
                   variant="destructive"
                   className="w-full h-12 text-sm font-bold"
-                  onClick={() => {
-                    toast({
-                      title: "Deletion request submitted",
-                      description:
-                        "You will receive a confirmation email within 24 hours.",
-                    });
+                  disabled={!deleteConfirmed || deletingAccount}
+                  onClick={async () => {
+                    if (!deleteConfirmed || deletingAccount) return;
+                    setDeletingAccount(true);
+                    try {
+                      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+                      const response = await fetch(`${base}/api/users/me`, {
+                        method: "DELETE",
+                        headers: { ...authHeaders() },
+                      });
+                      const payload = await response.json().catch(() => ({})) as { error?: string };
+                      if (!response.ok) {
+                        toast({
+                          title: response.status === 409 ? "Deletion needs support" : "Could not delete account",
+                          description: payload.error ?? "Please try again.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      toast({ title: "Account deleted", description: "You have been signed out." });
+                      logout();
+                    } catch {
+                      toast({
+                        title: "Could not delete account",
+                        description: "Check your connection and try again.",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setDeletingAccount(false);
+                    }
                   }}
                 >
-                  Request Account Deletion
+                  {deletingAccount ? "Deleting…" : "Delete My Account"}
                 </Button>
               </div>
             )}

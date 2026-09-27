@@ -1,10 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  getAccuracyRingDiameterPx,
   getLocationMarkerState,
   isLocationMarkerStyle,
   resolveLocationMarkerStyle,
 } from "../location-marker.js";
+
+test("accuracy ring uses map scale when coordinates and zoom are available", () => {
+  const close = getAccuracyRingDiameterPx({
+    accuracyMeters: 200,
+    size: 34,
+    latitude: 32.75,
+    mapZoom: 15,
+  });
+  const far = getAccuracyRingDiameterPx({
+    accuracyMeters: 200,
+    size: 34,
+    latitude: 32.75,
+    mapZoom: 12,
+  });
+  assert.ok(close > far);
+  assert.equal(getAccuracyRingDiameterPx({
+    accuracyMeters: null,
+    size: 34,
+    latitude: 32.75,
+    mapZoom: 15,
+  }), 0);
+});
 
 test("location marker defaults to the blue puck", () => {
   assert.equal(resolveLocationMarkerStyle(undefined), "puck");

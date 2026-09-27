@@ -11,6 +11,7 @@ export interface UserLocationMarkerProps extends SpiritCompanionProps {
   markerStyle?: unknown;
   species?: SpiritAnimalId;
   locationState?: LocationMarkerState;
+  latitude?: number | null;
 }
 
 /**
@@ -27,6 +28,8 @@ export function UserLocationMarker({
   batterySaver,
   size = 34,
   locationState,
+  latitude,
+  mapZoom,
   ...spiritProps
 }: UserLocationMarkerProps) {
   const animationSuppressed = useIsAnimationSuppressed();
@@ -42,6 +45,8 @@ export function UserLocationMarker({
         mapBearing={spiritProps.mapBearing ?? 0}
         size={size}
         locationState={locationState}
+        latitude={latitude}
+        mapZoom={mapZoom}
       />
     );
   }
@@ -54,6 +59,8 @@ export function UserLocationMarker({
           mapBearing={spiritProps.mapBearing ?? 0}
           size={size}
           locationState={locationState}
+          latitude={latitude}
+          mapZoom={mapZoom}
         />
       }
     >

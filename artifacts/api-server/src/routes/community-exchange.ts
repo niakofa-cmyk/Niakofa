@@ -141,9 +141,10 @@ function decodeListingCursor(value: unknown): ListingCursor | null {
   }
 }
 
-function clampRadius(value: unknown): number {
-  const parsed = typeof value === "string" ? Number(value) : NaN;
-  return Number.isFinite(parsed) ? Math.min(50, Math.max(1, parsed)) : 15;
+function parseRadius(value: unknown): number | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 50 ? parsed : null;
 }
 
 async function isBlockedBetween(firstUserId: number, secondUserId: number): Promise<boolean> {
@@ -202,6 +203,9 @@ router.get("/community/exchange/listings", requireAuth, requireApproved, general
 
   let viewerLocation: { lat: number | null; lng: number | null } | null = null;
   if (nearby) {
+    if (req.query.radius_miles !== undefined && parseRadius(req.query.radius_miles) == null) {
+      return res.status(400).json({ error: "radius_miles must be between 1 and 50" });
+    }
     const [viewer] = await db.select({ lat: usersTable.lat, lng: usersTable.lng })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
@@ -216,7 +220,7 @@ router.get("/community/exchange/listings", requireAuth, requireApproved, general
     | undefined;
   if (nearby && viewerLocation?.lat != null && viewerLocation.lng != null
       && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
-    const radius = clampRadius(req.query.radius_miles);
+    const radius = req.query.radius_miles === undefined ? 15 : parseRadius(req.query.radius_miles)!;
     const latDelta = radius / 69;
     const lngDelta = radius / (69 * Math.max(0.25, Math.cos((viewerLocation.lat * Math.PI) / 180)));
     // The bounding box uses the composite geo index; the Haversine expression

@@ -1,5 +1,5 @@
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
-import type { LocationMarkerState } from "@/lib/location-marker";
+import { getAccuracyRingDiameterPx, type LocationMarkerState } from "@/lib/location-marker";
 
 interface LocationPuckProps {
   /** World-frame heading in degrees (0 = true north), or null if unknown. */
@@ -9,6 +9,9 @@ interface LocationPuckProps {
   size?: number;
   /** GPS/fallback state used to distinguish live, stale, and approximate fixes. */
   locationState?: LocationMarkerState;
+  /** Current map position, used to render the accuracy radius in map scale. */
+  latitude?: number | null;
+  mapZoom?: number | null;
 }
 
 /**
@@ -36,20 +39,19 @@ export function LocationPuck({
   mapBearing,
   size = 34,
   locationState,
+  latitude,
+  mapZoom,
 }: LocationPuckProps) {
   const hasHeading = typeof heading === "number" && !Number.isNaN(heading);
   const suppressed = useIsAnimationSuppressed();
   const signal = locationState?.signal ?? "live";
   const accuracyMeters = locationState?.accuracyMeters ?? null;
-  const accuracyRatio = accuracyMeters == null
-    ? 0
-    : Math.min(1, Math.max(0, accuracyMeters) / 200);
-  // The ring is proportional to the reported horizontal accuracy, capped so a
-  // poor fix cannot cover the whole map. It is intentionally not a map-scale
-  // circle: its job is to communicate confidence at marker size.
-  const accuracyDiameter = accuracyMeters == null
-    ? 0
-    : size * (1.2 + accuracyRatio * 2.3);
+  const accuracyDiameter = getAccuracyRingDiameterPx({
+    accuracyMeters,
+    size,
+    latitude,
+    mapZoom,
+  });
   const signalLabel =
     signal === "live" ? "Live GPS location" :
     signal === "stale" ? "Stale GPS location" :

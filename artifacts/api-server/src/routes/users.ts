@@ -1108,14 +1108,24 @@ router.delete("/users/me", requireAuth, async (req, res) => {
         blocking_pledge_ids: blockingPledges.map(p => p.id),
       });
     }
-    await db.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-    await db.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
-    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
-    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-    await db.delete(usersTable).where(eq(usersTable.id, userId));
+    // Keep the cleanup atomic. Newer audit/history tables intentionally use
+    // RESTRICT, so an unhandled reference must roll back every earlier delete
+    // and return a controlled conflict instead of a partial account removal.
+    await db.transaction(async (tx) => {
+      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
+      await tx.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
+      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+      await tx.delete(usersTable).where(eq(usersTable.id, userId));
+    });
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error) {
+    if ((error as { code?: string })?.code === "23503") {
+      return res.status(409).json({
+        error: "This account has records that must be retained for community, moderation, or financial history. Contact support to complete the deletion request.",
+      });
+    }
     logger.error({ err: error }, "self-delete: failed");
     return res.status(500).json({ error: "Failed to delete account" });
   }
@@ -1144,15 +1154,22 @@ router.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (re
     }
     // Delete user from all related tables. help_requests.requester_id is ON DELETE
     // RESTRICT (migration 0070) so the database itself backs up the check above.
-    await db.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-    await db.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
-    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
-    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-    await db.delete(usersTable).where(eq(usersTable.id, userId));
+    await db.transaction(async (tx) => {
+      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
+      await tx.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
+      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+      await tx.delete(usersTable).where(eq(usersTable.id, userId));
+    });
 
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error) {
+    if ((error as { code?: string })?.code === "23503") {
+      return res.status(409).json({
+        error: "This account has records that must be retained for community, moderation, or financial history. Resolve or export those records before deleting the account.",
+      });
+    }
     logger.error({ err: error }, "delete-account: failed");
     return res.status(500).json({ error: "Failed to delete account" });
   }

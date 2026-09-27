@@ -59,7 +59,7 @@ import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { getRequestNavigationPath } from "@/lib/request-navigation";
 import { ActiveHelpCard } from "@/components/request/ActiveHelpCard";
 import { LocationPuck } from "@/components/LocationPuck";
-import { getLocationMarkerState } from "@/lib/location-marker";
+import { useLocationMarkerState } from "@/hooks/useLocationMarkerState";
 
 // Module-level: resolved once at import time, not on every render.
 // Detecting a missing token here (rather than inside the component) means
@@ -706,7 +706,7 @@ export default function MapScreen() {
     ipFallback ? { lat: ipFallback.lat, lng: ipFallback.lng, source: "ip" as const } : null
   );
   const markerLocation = tweenedPosition ?? locationBase;
-  const locationMarkerState = getLocationMarkerState(locationBase);
+  const locationMarkerState = useLocationMarkerState(locationBase);
   const {
     mode: orientMode,
     setMode: setOrientMode,
@@ -1561,12 +1561,15 @@ export default function MapScreen() {
                 mapBearing={0}
                 size={64}
                 locationState={locationMarkerState}
+                latitude={locationBase?.lat}
+                mapZoom={14}
               />
             }>
               <UserLocationMarker
                 markerStyle={userSettings?.location_marker_style}
                 species={userSettings?.spirit_animal}
                 locationState={locationMarkerState}
+                latitude={locationBase?.lat}
                 heading={heldHeading}
                 mapBearing={0}
                 speed={0}
@@ -1691,12 +1694,16 @@ export default function MapScreen() {
                 mapBearing={orientMode === "heading-up" ? (fusedHeading ?? 0) : 0}
                 size={34}
                 locationState={locationMarkerState}
+                latitude={markerLocation.lat}
+                mapZoom={mapZoom}
               />
             }>
               <UserLocationMarker
                 markerStyle={userSettings?.location_marker_style}
                 species={userSettings?.spirit_animal}
                 locationState={locationMarkerState}
+                latitude={markerLocation.lat}
+                mapZoom={mapZoom}
                 heading={
                   // locked-north: bird always faces north regardless of GPS.
                   // Doc: "Tap three times: Bird locks to North."
@@ -1721,7 +1728,6 @@ export default function MapScreen() {
                 donated={pulseDonated}
                 nearbyUser={birdNearbyUser}
                 approaching={birdApproaching}
-                mapZoom={mapZoom}
                 upcomingTurnDirection={birdUpcomingTurn}
                 isHelping={helperModeActive && !!activeRequestId}
                 batterySaver={batterySaverActive}

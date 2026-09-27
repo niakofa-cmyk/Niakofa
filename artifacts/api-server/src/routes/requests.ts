@@ -158,6 +158,13 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function parseQueryNumber(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.trim() === "") return NaN;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 router.get("/requests/stats", async (_req, res) => {
   // All counts done in the DB — never load the full table into memory.
   const [openRow] = await db
@@ -320,47 +327,64 @@ router.get("/requests", requireAuth, async (req, res) => {
   const params = GetRequestsQueryParams.safeParse({
     status: req.query.status,
     category: req.query.category,
-    lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
-    lng: req.query.lng ? parseFloat(req.query.lng as string) : undefined,
-    radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles as string) : undefined,
+    lat: parseQueryNumber(req.query.lat),
+    lng: parseQueryNumber(req.query.lng),
+    radius_miles: parseQueryNumber(req.query.radius_miles),
   });
 
-  const helperIdRaw = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
-  const requesterIdRaw = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
-  // Guard against parseInt("abc") === NaN producing a malformed SQL query
-  if (helperIdRaw !== null && isNaN(helperIdRaw)) return res.status(400).json({ error: "helper_id must be a valid integer" });
-  if (requesterIdRaw !== null && isNaN(requesterIdRaw)) return res.status(400).json({ error: "requester_id must be a valid integer" });
+  if ((req.query.lat === undefined) !== (req.query.lng === undefined)) {
+    return res.status(400).json({ error: "lat and lng must be supplied together" });
+  }
+  if (!params.success) {
+    return res.status(400).json({ error: "Invalid request filters", details: params.error.issues });
+  }
+
+  const helperIdRaw = req.query.helper_id === undefined ? null : Number(req.query.helper_id);
+  const requesterIdRaw = req.query.requester_id === undefined ? null : Number(req.query.requester_id);
+  if (helperIdRaw !== null && (!Number.isSafeInteger(helperIdRaw) || helperIdRaw < 1)) {
+    return res.status(400).json({ error: "helper_id must be a valid integer" });
+  }
+  if (requesterIdRaw !== null && (!Number.isSafeInteger(requesterIdRaw) || requesterIdRaw < 1)) {
+    return res.status(400).json({ error: "requester_id must be a valid integer" });
+  }
   const helperId = helperIdRaw;
   const requesterId = requesterIdRaw;
-  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 100;
+  const limitParam = req.query.limit === undefined ? 100 : Number(req.query.limit);
   // Reject out-of-range limits explicitly rather than silently clamping, so
   // callers get a clear error instead of truncated results they didn't expect.
-  if (isNaN(limitParam) || limitParam < 1) {
+  if (!Number.isSafeInteger(limitParam) || limitParam < 1) {
     return res.status(400).json({ error: "limit must be a positive integer" });
   }
   if (limitParam > 100) {
     return res.status(400).json({ error: "maximum limit is 100; use offset for pagination" });
   }
+  const offsetParam = req.query.offset === undefined ? 0 : Number(req.query.offset);
+  if (!Number.isSafeInteger(offsetParam) || offsetParam < 0 || offsetParam > 10_000) {
+    return res.status(400).json({ error: "offset must be an integer between 0 and 10000" });
+  }
 
   // Build WHERE conditions in the DB — never load the full table.
   const conditions = [];
-  if (params.success && params.data.status) {
+  if (params.data.status) {
     conditions.push(eq(requestsTable.status, params.data.status));
   }
-  if (params.success && params.data.category) {
+  if (params.data.category) {
     conditions.push(eq(requestsTable.category, params.data.category));
   }
-  if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
-  if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));
+  if (helperId !== null) conditions.push(eq(requestsTable.helper_id, helperId));
+  if (requesterId !== null) conditions.push(eq(requestsTable.requester_id, requesterId));
 
   // Bounding-box pre-filter when lat/lng provided (PostGIS not required).
   // Exact haversine filter applied in JS after for accuracy.
-  if (params.success && params.data.lat && params.data.lng) {
+  const requestLat = params.data.lat;
+  const requestLng = params.data.lng;
+  const hasLocation = requestLat != null && requestLng != null;
+  if (hasLocation) {
     const radius = params.data.radius_miles ?? 10;
     const latDelta = radius / 69;
-    const lngDelta = radius / (69 * Math.cos((params.data.lat * Math.PI) / 180));
-    conditions.push(sql`${requestsTable.lat} BETWEEN ${params.data.lat - latDelta} AND ${params.data.lat + latDelta}`);
-    conditions.push(sql`${requestsTable.lng} BETWEEN ${params.data.lng - lngDelta} AND ${params.data.lng + lngDelta}`);
+    const lngDelta = radius / (69 * Math.max(0.25, Math.cos((requestLat * Math.PI) / 180)));
+    conditions.push(sql`${requestsTable.lat} BETWEEN ${requestLat - latDelta} AND ${requestLat + latDelta}`);
+    conditions.push(sql`${requestsTable.lng} BETWEEN ${requestLng - lngDelta} AND ${requestLng + lngDelta}`);
   }
 
   let rows = await db
@@ -368,12 +392,16 @@ router.get("/requests", requireAuth, async (req, res) => {
     .from(requestsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(sql`${requestsTable.created_at} DESC`)
-    .limit(limitParam); // already validated to be 1–100 above
+    // Over-fetch spatial candidates before the exact Haversine filter so
+    // corner false positives do not silently consume the requested page.
+    .limit(hasLocation ? Math.min(1000, (offsetParam + limitParam) * 4) : limitParam)
+    .offset(hasLocation ? 0 : offsetParam);
 
   // Exact radius filter in JS (bounding box above is a fast pre-filter)
-  if (params.success && params.data.lat && params.data.lng) {
+  if (hasLocation) {
     const radius = params.data.radius_miles ?? 10;
-    rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
+    rows = rows.filter(r => distanceMiles(requestLat, requestLng, r.lat, r.lng) <= radius);
+    rows = rows.slice(offsetParam, offsetParam + limitParam);
   }
 
   const allUserIds = [...new Set([

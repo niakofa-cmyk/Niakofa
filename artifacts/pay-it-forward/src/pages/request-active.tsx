@@ -42,7 +42,7 @@ import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline"
 import { ArrivalState } from "@/components/request/ArrivalState";
 import { HelperContextCard } from "@/components/request/HelperContextCard";
 import { NavigationContext } from "@/components/request/NavigationContext";
-import { getLocationMarkerState } from "@/lib/location-marker";
+import { useLocationMarkerState } from "@/hooks/useLocationMarkerState";
 import { LocationPuck } from "@/components/LocationPuck";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
@@ -242,7 +242,7 @@ export default function ActiveRequestScreen() {
   // Smooth GPS glide — interpolates between position fixes (1-3 s apart) so
   // the SankofaBird marker flies to each new GPS coordinate rather than snapping.
   const tweenedPosition = useTweenedPosition(myLocation ?? null, 800);
-  const locationMarkerState = getLocationMarkerState(myLocation);
+  const locationMarkerState = useLocationMarkerState(myLocation);
 
   useEffect(() => {
     if (fusedHeading != null) applyHeading(fusedHeading);
@@ -894,12 +894,15 @@ export default function ActiveRequestScreen() {
               mapBearing={0}
               size={56}
               locationState={locationMarkerState}
+              latitude={myLocation.lat}
+              mapZoom={navMapZoom}
             />
           }>
             <UserLocationMarker
               markerStyle={userSettings?.location_marker_style}
               species={userSettings?.spirit_animal}
               locationState={locationMarkerState}
+              latitude={myLocation.lat}
               heading={heldHeading} mapBearing={0} speed={0} navigating={false} size={56}
               celebrating={false} newNotification={false} accepted={false}
               donated={false} nearbyUser={false} mapZoom={14} upcomingTurnDirection={null}
@@ -943,12 +946,15 @@ export default function ActiveRequestScreen() {
               mapBearing={mode === "heading-up" ? (fusedHeading ?? 0) : 0}
               size={40}
               locationState={locationMarkerState}
+              latitude={(tweenedPosition ?? myLocation).lat}
+              mapZoom={navMapZoom}
             />
           }>
             <UserLocationMarker
               markerStyle={userSettings?.location_marker_style}
               species={userSettings?.spirit_animal}
               locationState={locationMarkerState}
+              latitude={(tweenedPosition ?? myLocation).lat}
               heading={heldHeading}
               mapBearing={mode === "heading-up" ? (fusedHeading ?? 0) : 0}
               speed={myLocation.speed ?? 0}
