@@ -45,6 +45,40 @@ test("stale Exchange archival is guarded against active coordination", async () 
   assert.match(scheduler, /exchange_listing_id: listing\.id/);
 });
 
+test("accepted Exchange coordination expires and releases the listing", async () => {
+  const scheduler = await read("artifacts/api-server/src/lib/scheduler.ts");
+  const exchange = await read("artifacts/api-server/src/routes/community-exchange.ts");
+  const schema = await read("lib/db/src/schema/exchange.ts");
+  const migration = await read("lib/db/migrations/0169_exchange_pickup_coordination_expiry.sql");
+  const retryMigration = await read("lib/db/migrations/0170_exchange_expiry_notification_retry.sql");
+  const notifications = await read("artifacts/api-server/src/lib/message-notifications.ts");
+  assert.match(exchange, /EXCHANGE_PICKUP_COORDINATION_HOURS = 48/);
+  assert.match(exchange, /coordination_expires_at/);
+  assert.match(scheduler, /expireAbandonedExchangePickups/);
+  assert.match(scheduler, /return db\.transaction\(async \(tx\) =>/);
+  assert.match(scheduler, /\.for\("update", \{ skipLocked: true \}\)/);
+  assert.match(scheduler, /status: "expired"/);
+  assert.match(scheduler, /eq\(exchangeListingsTable\.status, "reserved"\)/);
+  assert.match(scheduler, /status: "active"/);
+  assert.match(scheduler, /notifyExpiredExchangePickups/);
+  assert.match(scheduler, /isNull\(exchangePickupRequestsTable\.expiry_notified_at\)/);
+  assert.match(schema, /coordination_expires_at/);
+  assert.match(schema, /expired_at/);
+  assert.match(schema, /expiry_notified_at/);
+  assert.match(migration, /CREATE INDEX IF NOT EXISTS exchange_pickup_requests_expiry_idx/);
+  assert.match(migration, /COALESCE\(accepted_at, updated_at, created_at\) \+ INTERVAL '48 hours'/);
+  assert.match(retryMigration, /message_notifications_exchange_expiry_once_idx/);
+  assert.match(notifications, /\.onConflictDoNothing\(\)/);
+});
+
+test("Exchange matching uses a coarse location abstraction", async () => {
+  const exchange = await read("artifacts/api-server/src/routes/community-exchange.ts");
+  const location = await read("artifacts/api-server/src/lib/exchange-location.ts");
+  assert.match(exchange, /getExchangeMatchingLocation/);
+  assert.match(location, /privacy-rounded coordinates/);
+  assert.match(location, /Math\.round\(value \* 100\) \/ 100/);
+});
+
 test("archived Exchange posts can be renewed without rewriting their history", async () => {
   const exchange = await read("artifacts/api-server/src/routes/community-exchange.ts");
   const client = await read("artifacts/pay-it-forward/src/lib/community-exchange-client.ts");
@@ -96,7 +130,9 @@ test("Exchange safety uses moderator-confirmed holds and durable review history"
   const migration = await read("lib/db/migrations/0166_exchange_category_moderation.sql");
   assert.match(exchange, /EXCHANGE_HOLD_REPORT_THRESHOLD = 3/);
   assert.match(exchange, /safeListingLabel/);
-  assert.match(exchange, /data\.title, data\.description, data\.neighborhood, data\.pickup_notes/);
+  assert.match(exchange, /data\.title, data\.description/);
+  assert.match(exchange, /safePublicListingArea\(data\.neighborhood\)/);
+  assert.match(exchange, /safePublicListingArea\(data\.pickup_notes\)/);
   assert.match(exchange, /partial unique index is the concurrency guard/);
   assert.match(exchange, /code === "23505"/);
   assert.match(exchange, /moderation_status: "held"/);

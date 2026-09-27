@@ -2,7 +2,7 @@ export type ExchangeListingType = "offer" | "need";
 export type ExchangeResourceType = "goods" | "services";
 export type ExchangeCategory = "household" | "clothing" | "food" | "books" | "electronics" | "children" | "urgent_aid" | "other";
 export type ExchangeCondition = "new" | "like_new" | "good" | "well_loved";
-export type PickupStatus = "requested" | "accepted" | "declined" | "cancelled" | "completed";
+export type PickupStatus = "requested" | "accepted" | "declined" | "cancelled" | "expired" | "completed";
 
 export interface ExchangeListing {
   id: number;
@@ -34,7 +34,9 @@ export interface ExchangePickupRequest {
   buyer_confirmed_at?: string | null;
   seller_confirmed_at?: string | null;
   accepted_at?: string | null;
+  coordination_expires_at?: string | null;
   cancelled_at?: string | null;
+  expired_at?: string | null;
   completed_at?: string | null;
   created_at: string;
   updated_at: string;

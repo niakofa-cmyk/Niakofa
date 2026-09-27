@@ -18,10 +18,11 @@ import {
   communityStoriesTable,
   communityStoryMediaTable,
   exchangeListingsTable,
+  exchangePickupRequestsTable,
   exchangeDigestDeliveriesTable,
 } from "@workspace/db";
 import { randomUUID } from "node:crypto";
-import { eq, and, lte, sql, inArray } from "drizzle-orm";
+import { eq, and, isNull, lte, sql, inArray } from "drizzle-orm";
 import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "./logger";
@@ -69,6 +70,12 @@ type ArchivedExchangeListing = {
   id: number;
   seller_id: number;
   title: string;
+};
+
+type ExpiredExchangePickup = {
+  id: number;
+  listing_id: number;
+  buyer_id: number;
 };
 
 function safeTimeZone(timeZone: string | null | undefined): string {
@@ -140,6 +147,99 @@ async function archiveStaleExchangeListings(now = new Date()): Promise<ArchivedE
       title: exchangeListingsTable.title,
     });
   return archived;
+}
+
+async function expireAbandonedExchangePickups(now = new Date()): Promise<ExpiredExchangePickup[]> {
+  return db.transaction(async (tx) => {
+    const due = await tx.select({
+      id: exchangePickupRequestsTable.id,
+      listing_id: exchangePickupRequestsTable.listing_id,
+      buyer_id: exchangePickupRequestsTable.buyer_id,
+    }).from(exchangePickupRequestsTable)
+      .where(and(
+        eq(exchangePickupRequestsTable.status, "accepted"),
+        lte(exchangePickupRequestsTable.coordination_expires_at, now),
+      ))
+      .orderBy(exchangePickupRequestsTable.coordination_expires_at, exchangePickupRequestsTable.id)
+      .limit(100)
+      .for("update", { skipLocked: true });
+    const expired: ExpiredExchangePickup[] = [];
+    for (const pickup of due) {
+      const [updated] = await tx.update(exchangePickupRequestsTable)
+        .set({ status: "expired", expired_at: now, updated_at: now })
+        .where(and(eq(exchangePickupRequestsTable.id, pickup.id), eq(exchangePickupRequestsTable.status, "accepted")))
+        .returning({ id: exchangePickupRequestsTable.id });
+      if (!updated) continue;
+      await tx.update(exchangeListingsTable)
+        .set({ status: "active", updated_at: now })
+        .where(and(
+          eq(exchangeListingsTable.id, pickup.listing_id),
+          eq(exchangeListingsTable.status, "reserved"),
+        ));
+      expired.push(pickup);
+    }
+    return expired;
+  });
+}
+
+async function notifyExpiredExchangePickups(): Promise<number> {
+  // Recovery and notification are separate durable stages. A failed send
+  // leaves this marker empty so another hourly run can retry both recipients.
+  const pending = await db.select({
+    id: exchangePickupRequestsTable.id,
+    listing_id: exchangePickupRequestsTable.listing_id,
+    buyer_id: exchangePickupRequestsTable.buyer_id,
+    seller_id: exchangeListingsTable.seller_id,
+    title: exchangeListingsTable.title,
+  }).from(exchangePickupRequestsTable)
+    .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id))
+    .where(and(
+      eq(exchangePickupRequestsTable.status, "expired"),
+      isNull(exchangePickupRequestsTable.expiry_notified_at),
+    ))
+    .orderBy(exchangePickupRequestsTable.id)
+    .limit(100);
+  const results = await Promise.allSettled(pending.map(async (pickup) => {
+    const body = `The 48-hour coordination window for “${pickup.title}” expired without both participants closing the loop. The listing is available again.`;
+    const metadata = {
+      exchange_listing_id: pickup.listing_id,
+      exchange_pickup_request_id: pickup.id,
+      action: "coordination_expired",
+    };
+    await Promise.all([
+      createMessageNotification({
+        userId: pickup.buyer_id,
+        type: "exchange",
+        title: "Exchange coordination expired",
+        body,
+        actionUrl: "/community?section=exchange",
+        metadata,
+      }),
+      createMessageNotification({
+        userId: pickup.seller_id,
+        type: "exchange",
+        title: "Exchange coordination expired",
+        body,
+        actionUrl: "/community?section=exchange&mine=true",
+        metadata,
+      }),
+    ]);
+    await db.update(exchangePickupRequestsTable)
+      .set({ expiry_notified_at: new Date() })
+      .where(and(
+        eq(exchangePickupRequestsTable.id, pickup.id),
+        eq(exchangePickupRequestsTable.status, "expired"),
+        isNull(exchangePickupRequestsTable.expiry_notified_at),
+      ));
+    await Promise.allSettled([
+      sendPushToUser(pickup.buyer_id, { title: "Exchange coordination expired", body, notifType: "task_accepted" }),
+      sendPushToUser(pickup.seller_id, { title: "Exchange coordination expired", body, notifType: "task_accepted" }),
+    ]);
+  }));
+  for (const result of results) {
+    if (result.status === "rejected") logger.warn({ err: result.reason }, "exchange-maintenance: expiry notification will retry");
+  }
+  return results.filter((result) => result.status === "fulfilled").length;
 }
 
 function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -404,6 +504,11 @@ async function processExchangeDigest(now = new Date()): Promise<void> {
 
 async function processExchangeMaintenance(): Promise<void> {
   try {
+    const expiredPickups = await expireAbandonedExchangePickups();
+    const notifiedCount = await notifyExpiredExchangePickups();
+    if (expiredPickups.length > 0 || notifiedCount > 0) {
+      logger.info({ count: expiredPickups.length, notified: notifiedCount }, "exchange-maintenance: abandoned accepted pickups expired");
+    }
     const archivedListings = await archiveStaleExchangeListings();
     await processExchangeDigest();
     if (archivedListings.length > 0) {

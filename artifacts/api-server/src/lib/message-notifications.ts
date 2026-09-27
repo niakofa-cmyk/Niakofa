@@ -31,7 +31,7 @@ export async function createMessageNotification(input: {
     body: input.body.slice(0, 500),
     action_url: input.actionUrl ?? null,
     metadata: input.metadata ?? {},
-  }).returning({
+  }).onConflictDoNothing().returning({
     id: messageNotificationsTable.id,
     type: messageNotificationsTable.type,
     title: messageNotificationsTable.title,
