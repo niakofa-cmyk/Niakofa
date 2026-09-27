@@ -10,7 +10,7 @@ const { Pool } = pg;
 const CENTER_LAT = Number(process.env.BENCHMARK_LAT ?? "32.7555");
 const CENTER_LNG = Number(process.env.BENCHMARK_LNG ?? "-97.3308");
 const RADIUS_MILES = Number(process.env.BENCHMARK_RADIUS_MILES ?? "5");
-const ITERATIONS = Math.max(5, Number(process.env.BENCHMARK_ITERATIONS ?? "25"));
+const ITERATIONS = Math.max(5, Math.min(200, Number(process.env.BENCHMARK_ITERATIONS ?? "25")));\nconst LAT_DELTA = RADIUS_MILES / 69;\nconst LNG_DELTA = RADIUS_MILES / (69 * Math.max(0.25, Math.cos((CENTER_LAT * Math.PI) / 180)));\nconst BOUNDS = [CENTER_LAT - LAT_DELTA, CENTER_LAT + LAT_DELTA, CENTER_LNG - LNG_DELTA, CENTER_LNG + LNG_DELTA];
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is required.");
@@ -68,12 +68,17 @@ async function runPostgisBenchmark(client) {
     "WHERE status = 'active'",
     "AND moderation_status = 'approved'",
     "AND latitude IS NOT NULL AND longitude IS NOT NULL",
+    "AND latitude BETWEEN $1 AND $2",
+    "AND longitude BETWEEN $3 AND $4",
     "AND ST_DWithin(",
-    "ST_MakePoint($1, $2)::geography,",
-    "ST_MakePoint(longitude, latitude)::geography, $3",
+    "ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography,",
+    "ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography, $7",
     ")",
   ].join(" ");
-  return benchmark(client, query, [CENTER_LNG, CENTER_LAT, RADIUS_MILES * 1609.344], "PostGIS ST_DWithin");
+  return benchmark(client, query, [
+    BOUNDS[0], BOUNDS[1], BOUNDS[2], BOUNDS[3],
+    CENTER_LNG, CENTER_LAT, RADIUS_MILES * 1609.344,
+  ], "Indexed bounds + PostGIS exact distance");
 }
 
 async function runFallbackBenchmark(client) {
@@ -113,7 +118,7 @@ async function main() {
     console.log("Anchor:", CENTER_LAT, CENTER_LNG);
     console.log("Radius:", RADIUS_MILES, "miles");
     console.log("Iterations:", ITERATIONS);
-    console.log("PostGIS enabled:", postgis ? "yes" : "no");
+    console.log("PostGIS enabled:", postgis ? "yes" : "no");\n    console.log("Synthetic data: not seeded; benchmark measures existing canonical Exchange rows");
     console.log("");
 
     const results = [];
