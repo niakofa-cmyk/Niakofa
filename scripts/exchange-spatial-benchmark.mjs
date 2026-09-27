@@ -64,26 +64,6 @@ async function benchmark(client, query, params, label) {
   };
 }
 
-async function runPostgisBenchmark(client) {
-  const query = [
-    "SELECT COUNT(*)::int AS count",
-    "FROM exchange_listings",
-    "WHERE status = 'active'",
-    "AND moderation_status = 'approved'",
-    "AND latitude IS NOT NULL AND longitude IS NOT NULL",
-    "AND latitude BETWEEN $1 AND $2",
-    "AND longitude BETWEEN $3 AND $4",
-    "AND ST_DWithin(",
-    "ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography,",
-    "ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography, $7",
-    ")",
-  ].join(" ");
-  return benchmark(client, query, [
-    BOUNDS[0], BOUNDS[1], BOUNDS[2], BOUNDS[3],
-    CENTER_LNG, CENTER_LAT, RADIUS_MILES * 1609.344,
-  ], "Indexed bounds + PostGIS exact distance");
-}
-
 async function runFallbackBenchmark(client) {
   const latDelta = RADIUS_MILES / 69;
   const lngDelta = RADIUS_MILES / (69 * Math.max(0.25, Math.cos((CENTER_LAT * Math.PI) / 180)));
