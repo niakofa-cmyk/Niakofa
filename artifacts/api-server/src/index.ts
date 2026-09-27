@@ -3,7 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { getStripeSecretKey, getStripeWebhookSecret } from "./lib/stripe-config";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startNet30InvoiceReminderWorker, startCommunityStoryCleanupWorker, startExchangeMaintenanceWorker } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startNet30InvoiceReminderWorker, startCommunityStoryCleanupWorker, startExchangeMaintenanceWorker, startScheduledAccountPurgeWorker } from "./lib/scheduler";
 import { startLedgerDriftMonitor } from "./lib/ledger-stripe-drift";
 import {
   isRedisConfigured,
@@ -160,6 +160,7 @@ server.listen(port, async () => {
   registerWorker("payment-reminder",    "Payment Reminder",       false);
   registerWorker("community-story-cleanup", "Community Story Cleanup", false);
   registerWorker("exchange-maintenance", "Exchange Maintenance", false);
+  registerWorker("account-purge", "Scheduled Account Purge", false);
   registerWorker("pool-settlement",     "Pool Settlement Status",  false);
   if (isMediaPlatformV21Enabled()) {
     registerWorker("media-processing", "Universal Media Processing", true);
@@ -239,6 +240,7 @@ server.listen(port, async () => {
   startPoolSettlementStatusWorker(); workerStarted("pool-settlement", "Pool Settlement Status", false);
   startCommunityStoryCleanupWorker(); workerStarted("community-story-cleanup", "Community Story Cleanup", false);
   startExchangeMaintenanceWorker(); workerStarted("exchange-maintenance", "Exchange Maintenance", false);
+  startScheduledAccountPurgeWorker(); workerStarted("account-purge", "Scheduled Account Purge", false);
   // Recurring requests — fire any due recurring requests every hour
   processRecurringRequests().catch((err: unknown) =>
     logger.error({ err }, "recurring-worker: initial run failed — non-fatal")

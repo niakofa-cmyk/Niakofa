@@ -1154,6 +1154,57 @@ export declare const usersTable: import("drizzle-orm/pg-core").PgTableWithColumn
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        deletion_status: import("drizzle-orm/pg-core").PgColumn<{
+            name: "deletion_status";
+            tableName: "users";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        deletion_requested_at: import("drizzle-orm/pg-core").PgColumn<{
+            name: "deletion_requested_at";
+            tableName: "users";
+            dataType: "date";
+            columnType: "PgTimestamp";
+            data: Date;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        deletion_scheduled_at: import("drizzle-orm/pg-core").PgColumn<{
+            name: "deletion_scheduled_at";
+            tableName: "users";
+            dataType: "date";
+            columnType: "PgTimestamp";
+            data: Date;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         created_at: import("drizzle-orm/pg-core").PgColumn<{
             name: "created_at";
             tableName: "users";
@@ -1248,6 +1299,9 @@ export declare const insertUserSchema: z.ZodObject<{
     diaspora_hub_id: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
     highest_tier_reached: z.ZodOptional<z.ZodString>;
     no_show_count: z.ZodOptional<z.ZodInt>;
+    deletion_status: z.ZodOptional<z.ZodString>;
+    deletion_requested_at: z.ZodOptional<z.ZodNullable<z.ZodDate>>;
+    deletion_scheduled_at: z.ZodOptional<z.ZodNullable<z.ZodDate>>;
 }, {
     out: {};
     in: {};

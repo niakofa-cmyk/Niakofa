@@ -1,6 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable } from "@workspace/db";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable, niaConversationsTable, niaMemoriesTable } from "@workspace/db";
 import { eq, and, or, sql, inArray } from "drizzle-orm";
 import {
   GetUserParams,
@@ -1113,6 +1113,11 @@ router.delete("/users/me", requireAuth, async (req, res) => {
     await db.transaction(async (tx) => {
       await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
       await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
+      // Nia memory and conversation text is personal data, not community or
+      // financial history. Remove it in the same privacy transition rather
+      // than leaving it attached to the anonymized account row.
+      await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
+      await tx.delete(niaMemoriesTable).where(eq(niaMemoriesTable.user_id, userId));
       await tx.update(scheduledPaymentsTable)
         .set({ status: "cancelled" })
         .where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));

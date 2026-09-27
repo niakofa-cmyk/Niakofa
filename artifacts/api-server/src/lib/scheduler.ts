@@ -36,6 +36,7 @@ import { createMessageNotification } from "./message-notifications";
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const ACCOUNT_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 // Run hourly so a user's local weekly delivery window is not missed by a
 // six-hour UTC cadence. The archival query remains idempotent and indexed.
 const EXCHANGE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
@@ -465,6 +466,54 @@ export function startCommunityStoryCleanupWorker(): () => void {
   }, STORY_CLEANUP_INTERVAL_MS);
   logger.info({ intervalMs: STORY_CLEANUP_INTERVAL_MS }, "scheduler: Community Story cleanup worker started");
   return () => clearInterval(interval);
+}
+
+/**
+ * Completes the delayed account-deletion lifecycle.
+ *
+ * The deletion route anonymizes the account immediately so it cannot log in
+ * or appear as an active person. This pass records the end of the 30-day
+ * retention window. It is intentionally an atomic status transition: if
+ * multiple API instances run the pass, only one can claim each row.
+ */
+export async function processScheduledAccountPurges(now = new Date()): Promise<number> {
+  const purged = await db
+    .update(usersTable)
+    .set({ deletion_status: "purged", updated_at: now })
+    .where(and(
+      eq(usersTable.deletion_status, "pending_purge"),
+      lte(usersTable.deletion_scheduled_at, now),
+    ))
+    .returning({ id: usersTable.id });
+
+  if (purged.length > 0) {
+    logger.info({ count: purged.length }, "account-purge: completed scheduled deletions");
+  }
+  return purged.length;
+}
+
+/** Start the scheduled account purge pass. Runs hourly on every API instance. */
+export function startScheduledAccountPurgeWorker(): () => void {
+  processScheduledAccountPurges()
+    .then(() => workerRan("account-purge", true))
+    .catch((err) => {
+      logger.error({ err }, "account-purge: initial run failed");
+      workerRan("account-purge", false);
+    });
+  const interval = setInterval(() => {
+    processScheduledAccountPurges()
+      .then(() => workerRan("account-purge", true))
+      .catch((err) => {
+        logger.error({ err }, "account-purge: scheduled run failed");
+        workerRan("account-purge", false);
+      });
+  }, ACCOUNT_PURGE_INTERVAL_MS);
+
+  logger.info({ intervalMs: ACCOUNT_PURGE_INTERVAL_MS }, "account-purge: worker started");
+  return () => {
+    clearInterval(interval);
+    logger.info("account-purge: worker stopped");
+  };
 }
 
 async function processScheduledReminders(): Promise<void> {

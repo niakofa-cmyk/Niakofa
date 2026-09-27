@@ -65,6 +65,8 @@ jest.unstable_mockModule("@workspace/db", () => ({
   diasporaHubsTable: { id: "id", community_id: "community_id", name: "name", status: "status", is_seed: "is_seed", reserved_balance: "reserved_balance" },
   diasporaHubPledgesTable: { id: "id", pledged_by: "pledged_by", status: "status" },
   pushSubscriptionsTable: { id: "id", user_id: "user_id", endpoint: "endpoint", subscription: "subscription" },
+  niaConversationsTable: { id: "id", user_id: "user_id" },
+  niaMemoriesTable: { user_id: "user_id" },
   mediaAssetsTable: {
     id: "id",
     owner_user_id: "owner_user_id",
@@ -296,5 +298,6 @@ describe("DELETE /api/users/me", () => {
     });
     expect(res.body.deletion_scheduled_at).toEqual(expect.any(String));
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockDb.delete).toHaveBeenCalled();
   });
 });

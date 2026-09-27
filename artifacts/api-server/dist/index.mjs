@@ -147755,7 +147755,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "1ba3553ae8c74255733b98c3c7e7045bf319081c";
+var GIT_COMMIT = "168ccc03c32c35f9a40e67101ccbab29f0aabbcf";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -151486,6 +151486,8 @@ router6.delete("/users/me", requireAuth, async (req, res) => {
     await db.transaction(async (tx) => {
       await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
       await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
+      await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
+      await tx.delete(niaMemoriesTable).where(eq(niaMemoriesTable.user_id, userId));
       await tx.update(scheduledPaymentsTable).set({ status: "cancelled" }).where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
       await tx.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
       await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
@@ -183761,6 +183763,7 @@ init_storage();
 init_ws_hub();
 var SIX_HOURS_MS = 6 * 60 * 60 * 1e3;
 var STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1e3;
+var ACCOUNT_PURGE_INTERVAL_MS = 60 * 60 * 1e3;
 var EXCHANGE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1e3;
 var EXCHANGE_STALE_DAYS = 30;
 var EXCHANGE_DIGEST_RADIUS_MILES = 15;
@@ -184092,6 +184095,33 @@ function startCommunityStoryCleanupWorker() {
   }, STORY_CLEANUP_INTERVAL_MS);
   logger.info({ intervalMs: STORY_CLEANUP_INTERVAL_MS }, "scheduler: Community Story cleanup worker started");
   return () => clearInterval(interval2);
+}
+async function processScheduledAccountPurges(now = /* @__PURE__ */ new Date()) {
+  const purged = await db.update(usersTable).set({ deletion_status: "purged", updated_at: now }).where(and(
+    eq(usersTable.deletion_status, "pending_purge"),
+    lte(usersTable.deletion_scheduled_at, now)
+  )).returning({ id: usersTable.id });
+  if (purged.length > 0) {
+    logger.info({ count: purged.length }, "account-purge: completed scheduled deletions");
+  }
+  return purged.length;
+}
+function startScheduledAccountPurgeWorker() {
+  processScheduledAccountPurges().then(() => workerRan("account-purge", true)).catch((err) => {
+    logger.error({ err }, "account-purge: initial run failed");
+    workerRan("account-purge", false);
+  });
+  const interval2 = setInterval(() => {
+    processScheduledAccountPurges().then(() => workerRan("account-purge", true)).catch((err) => {
+      logger.error({ err }, "account-purge: scheduled run failed");
+      workerRan("account-purge", false);
+    });
+  }, ACCOUNT_PURGE_INTERVAL_MS);
+  logger.info({ intervalMs: ACCOUNT_PURGE_INTERVAL_MS }, "account-purge: worker started");
+  return () => {
+    clearInterval(interval2);
+    logger.info("account-purge: worker stopped");
+  };
 }
 async function processScheduledReminders() {
   const now = /* @__PURE__ */ new Date();
@@ -186487,6 +186517,7 @@ server.listen(port, async () => {
   registerWorker("payment-reminder", "Payment Reminder", false);
   registerWorker("community-story-cleanup", "Community Story Cleanup", false);
   registerWorker("exchange-maintenance", "Exchange Maintenance", false);
+  registerWorker("account-purge", "Scheduled Account Purge", false);
   registerWorker("pool-settlement", "Pool Settlement Status", false);
   if (isMediaPlatformV21Enabled()) {
     registerWorker("media-processing", "Universal Media Processing", true);
@@ -186561,6 +186592,8 @@ server.listen(port, async () => {
   workerStarted("community-story-cleanup", "Community Story Cleanup", false);
   startExchangeMaintenanceWorker();
   workerStarted("exchange-maintenance", "Exchange Maintenance", false);
+  startScheduledAccountPurgeWorker();
+  workerStarted("account-purge", "Scheduled Account Purge", false);
   processRecurringRequests().catch(
     (err) => logger.error({ err }, "recurring-worker: initial run failed \u2014 non-fatal")
   );
