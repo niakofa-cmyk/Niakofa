@@ -129122,6 +129122,7 @@ var init_mailer = __esm({
 var push_exports = {};
 __export(push_exports, {
   default: () => push_default,
+  deliverToSubs: () => deliverToSubs,
   sendPushToAllHelpers: () => sendPushToAllHelpers,
   sendPushToNearbyHelpers: () => sendPushToNearbyHelpers,
   sendPushToUser: () => sendPushToUser,
@@ -129154,7 +129155,8 @@ async function deliverToSubs(subs, payload) {
       (sub) => import_web_push.default.sendNotification(sub, data, opts).then(() => {
         delivered++;
       }).catch((err) => {
-        if (err.statusCode === 410) {
+        const statusCode = err.statusCode;
+        if (statusCode === 404 || statusCode === 410) {
           db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.endpoint, sub.endpoint)).catch(() => {
           });
         }
@@ -147753,7 +147755,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "b99f41ca08dbaf2cfdbc7576b201dc75f4a38f99";
+var GIT_COMMIT = "1ba3553ae8c74255733b98c3c7e7045bf319081c";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {

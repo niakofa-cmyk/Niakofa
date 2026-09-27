@@ -37,6 +37,7 @@ const mockDb: Record<string, jest.Mock> = {
   orderBy: jest.fn().mockReturnThis(),
   leftJoin: jest.fn().mockReturnThis(),
   groupBy: jest.fn().mockReturnValue([]),
+  transaction: jest.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(mockDb)),
 };
 
 jest.unstable_mockModule("@workspace/db", () => ({
@@ -63,6 +64,14 @@ jest.unstable_mockModule("@workspace/db", () => ({
   systemSettingsTable: { key: "key", value: "value" },
   diasporaHubsTable: { id: "id", community_id: "community_id", name: "name", status: "status", is_seed: "is_seed", reserved_balance: "reserved_balance" },
   diasporaHubPledgesTable: { id: "id", pledged_by: "pledged_by", status: "status" },
+  pushSubscriptionsTable: { id: "id", user_id: "user_id", endpoint: "endpoint", subscription: "subscription" },
+  mediaAssetsTable: {
+    id: "id",
+    owner_user_id: "owner_user_id",
+    original_key: "original_key",
+    thumbnail_key: "thumbnail_key",
+    variant_key: "variant_key",
+  },
 }));
 
 jest.unstable_mockModule("drizzle-orm", () => ({
@@ -111,6 +120,21 @@ jest.unstable_mockModule("../lib/logger.js", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+jest.unstable_mockModule("../middlewares/auth.js", () => ({
+  requireAuth: jest.fn((req: { authenticatedUserId?: number }, _res: unknown, next: () => void) => {
+    req.authenticatedUserId = 42;
+    next();
+  }),
+  requireApproved: jest.fn((_req: unknown, _res: unknown, next: () => void) => next()),
+  signTokenById: jest.fn().mockReturnValue("test-token"),
+  verifyToken: jest.fn().mockReturnValue({ userId: 42, valid: true, tokenVersion: 0 }),
+  isSelf: jest.fn().mockReturnValue(true),
+}));
+
+jest.unstable_mockModule("../lib/storage.js", () => ({
+  deleteAsset: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.unstable_mockModule("../routes/push.js", () => ({
   sendPushToNearbyHelpers: jest.fn().mockResolvedValue(undefined),
   sendPushToAllHelpers: jest.fn().mockResolvedValue(undefined),
@@ -140,6 +164,7 @@ beforeEach(() => {
   mockDb.orderBy.mockReset().mockReturnThis();
   mockDb.leftJoin.mockReset().mockReturnThis();
   mockDb.groupBy.mockReset().mockReturnValue([]);
+  mockDb.transaction.mockReset().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(mockDb));
   mockDb.limit.mockReset().mockResolvedValue([]);
   mockDb.returning.mockReset().mockResolvedValue([]);
 });
@@ -251,5 +276,24 @@ describe("POST /api/users/login", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error_code).toBe("LEGACY_PASSWORD_REQUIRED");
+  });
+});
+
+describe("DELETE /api/users/me", () => {
+  it("anonymizes the account and returns the scheduled purge state", async () => {
+    mockDb.limit.mockResolvedValueOnce([]);
+    mockDb.returning.mockResolvedValueOnce([{ id: 42 }]);
+
+    const res = await request(app)
+      .delete("/api/users/me")
+      .set("Authorization", "Bearer test");
+
+    expect(res.status).toBe(202);
+    expect(res.body).toMatchObject({
+      ok: true,
+      status: "pending_purge",
+    });
+    expect(res.body.deletion_scheduled_at).toEqual(expect.any(String));
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
   });
 });
