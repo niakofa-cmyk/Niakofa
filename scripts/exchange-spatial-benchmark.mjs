@@ -10,7 +10,10 @@ const { Pool } = pg;
 const CENTER_LAT = Number(process.env.BENCHMARK_LAT ?? "32.7555");
 const CENTER_LNG = Number(process.env.BENCHMARK_LNG ?? "-97.3308");
 const RADIUS_MILES = Number(process.env.BENCHMARK_RADIUS_MILES ?? "5");
-const ITERATIONS = Math.max(5, Math.min(200, Number(process.env.BENCHMARK_ITERATIONS ?? "25")));\nconst LAT_DELTA = RADIUS_MILES / 69;\nconst LNG_DELTA = RADIUS_MILES / (69 * Math.max(0.25, Math.cos((CENTER_LAT * Math.PI) / 180)));\nconst BOUNDS = [CENTER_LAT - LAT_DELTA, CENTER_LAT + LAT_DELTA, CENTER_LNG - LNG_DELTA, CENTER_LNG + LNG_DELTA];
+const ITERATIONS = Math.max(5, Math.min(200, Number(process.env.BENCHMARK_ITERATIONS ?? "25")));
+const LAT_DELTA = RADIUS_MILES / 69;
+const LNG_DELTA = RADIUS_MILES / (69 * Math.max(0.25, Math.cos((CENTER_LAT * Math.PI) / 180)));
+const BOUNDS = [CENTER_LAT - LAT_DELTA, CENTER_LAT + LAT_DELTA, CENTER_LNG - LNG_DELTA, CENTER_LNG + LNG_DELTA];
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is required.");
@@ -118,7 +121,8 @@ async function main() {
     console.log("Anchor:", CENTER_LAT, CENTER_LNG);
     console.log("Radius:", RADIUS_MILES, "miles");
     console.log("Iterations:", ITERATIONS);
-    console.log("PostGIS enabled:", postgis ? "yes" : "no");\n    console.log("Synthetic data: not seeded; benchmark measures existing canonical Exchange rows");
+    console.log("PostGIS enabled:", postgis ? "yes" : "no");
+    console.log("Synthetic data: not seeded; benchmark measures existing canonical Exchange rows");
     console.log("");
 
     const results = [];
@@ -147,8 +151,25 @@ async function main() {
       console.log("PASS: exchange_listings_geo_idx is present.");
     }
 
-    // Latency is reported, not used as a hard correctness gate: network and
-    // database load make a universal sub-50ms production requirement unsafe.
+    const explain = await client.query(
+      `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+       SELECT COUNT(*)::int FROM exchange_listings
+       WHERE status = 'active' AND moderation_status = 'approved'
+         AND latitude IS NOT NULL AND longitude IS NOT NULL
+         AND latitude BETWEEN $1 AND $2 AND longitude BETWEEN $3 AND $4
+         AND 3958.8 * 2 * ASIN(SQRT(
+           POWER(SIN(RADIANS(latitude - $5) / 2), 2) +
+           COS(RADIANS($5)) * COS(RADIANS(latitude)) *
+           POWER(SIN(RADIANS(longitude - $6) / 2), 2)
+         )) <= $7`,
+      [...BOUNDS, CENTER_LAT, CENTER_LNG, RADIUS_MILES],
+    );
+    console.log("");
+    console.log("Fallback EXPLAIN ANALYZE:");
+    console.log(explain.rows.map((row) => row["QUERY PLAN"]).join("\n"));
+
+    // Latency is diagnostic, not a hard correctness gate. Production SLOs
+    // should be set from measured percentiles under representative load.
   } finally {
     client.release();
     await pool.end();
