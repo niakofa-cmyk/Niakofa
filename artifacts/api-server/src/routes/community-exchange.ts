@@ -16,6 +16,8 @@ import { sendPushToUser } from "./push";
 import { createMessageNotification } from "../lib/message-notifications";
 import { getExchangeMatchingLocation } from "../lib/exchange-location";
 import { sanitizePublicPickupArea } from "../lib/exchange-privacy";
+import { exchangePickupDisputesTable } from "@workspace/db/schema";
+import { requireAdmin } from "../middlewares/authz";
 
 const router = Router();
 
@@ -23,6 +25,7 @@ const CATEGORY_VALUES = ["household", "clothing", "food", "books", "electronics"
 const CONDITION_VALUES = ["new", "like_new", "good", "well_loved"] as const;
 const LISTING_TYPE_VALUES = ["offer", "need"] as const;
 const RESOURCE_TYPE_VALUES = ["goods", "services"] as const;
+const PICKUP_LOCATION_TYPE_VALUES = ["public_place", "community_center", "library", "park", "business_parking", "other_public"] as const;
 const EXCHANGE_IMPACT_PRIVACY_THRESHOLD = 5;
 const EXCHANGE_HOLD_REPORT_THRESHOLD = 3;
 const EXCHANGE_PICKUP_COORDINATION_HOURS = 48;
@@ -35,6 +38,7 @@ const listingBody = z.object({
   category: z.enum(CATEGORY_VALUES),
   condition: z.enum(CONDITION_VALUES),
   neighborhood: z.string().trim().min(2).max(80),
+  pickup_location_type: z.enum(PICKUP_LOCATION_TYPE_VALUES).default("other_public"),
   pickup_notes: z.string().trim().max(500).optional().default(""),
 });
 
@@ -46,6 +50,7 @@ const listingEditBody = z.object({
   category: z.enum(CATEGORY_VALUES).optional(),
   condition: z.enum(CONDITION_VALUES).optional(),
   neighborhood: z.string().trim().min(2).max(80).optional(),
+  pickup_location_type: z.enum(PICKUP_LOCATION_TYPE_VALUES).optional(),
   pickup_notes: z.string().trim().max(500).optional(),
 }).refine((value) => Object.keys(value).length > 0, {
   message: "At least one listing field is required.",
@@ -54,7 +59,19 @@ const listingEditBody = z.object({
 const pickupBody = z.object({
   note: z.string().trim().min(3).max(1000),
   pickup_area: z.string().trim().min(2).max(100),
+  pickup_location_type: z.enum(PICKUP_LOCATION_TYPE_VALUES).default("other_public"),
+  pickup_note: z.string().trim().max(500).optional(),
   proposed_window: z.string().trim().min(2).max(120),
+});
+
+const disputeBody = z.object({
+  reason: z.string().trim().min(10).max(2000),
+  evidence: z.string().trim().max(4000).optional(),
+});
+
+const resolveDisputeBody = z.object({
+  outcome: z.enum(["complete", "cancel"]),
+  resolution: z.string().trim().min(10).max(2000),
 });
 
 const reportBody = z.object({
@@ -68,7 +85,8 @@ function parseId(value: unknown): number | null {
 }
 
 function safePublicListingArea(value: string): boolean {
-  return sanitizePublicPickupArea(value);
+  const coordinatePair = /[+-]?\d{1,2}\.\d+\s*[,/]\s*[+-]?\d{1,3}\.\d+/;
+  return sanitizePublicPickupArea(value) && !coordinatePair.test(value);
 }
 
 function safeListingLabel(value: string): string {
@@ -181,6 +199,7 @@ const listingSelect = {
   condition: exchangeListingsTable.condition,
   neighborhood: exchangeListingsTable.neighborhood,
   pickup_notes: exchangeListingsTable.pickup_notes,
+  pickup_location_type: exchangeListingsTable.pickup_location_type,
   status: exchangeListingsTable.status,
   moderation_status: exchangeListingsTable.moderation_status,
   created_at: exchangeListingsTable.created_at,
@@ -323,6 +342,7 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
     category: data.category,
     condition: data.condition,
     neighborhood: data.neighborhood,
+    pickup_location_type: data.pickup_location_type,
     pickup_notes: data.pickup_notes || null,
     latitude: sellerLocation?.lat ?? null,
     longitude: sellerLocation?.lng ?? null,
@@ -471,6 +491,8 @@ router.get("/community/exchange/pickup-requests", requireAuth, requireApproved, 
       buyer_id: exchangePickupRequestsTable.buyer_id,
       note: exchangePickupRequestsTable.note,
       pickup_area: exchangePickupRequestsTable.pickup_area,
+      pickup_location_type: exchangePickupRequestsTable.pickup_location_type,
+      pickup_note: exchangePickupRequestsTable.pickup_note,
       proposed_window: exchangePickupRequestsTable.proposed_window,
       status: exchangePickupRequestsTable.status,
       buyer_confirmed_at: exchangePickupRequestsTable.buyer_confirmed_at,
@@ -495,7 +517,62 @@ router.get("/community/exchange/pickup-requests", requireAuth, requireApproved, 
     .where(or(eq(exchangePickupRequestsTable.buyer_id, userId), eq(exchangeListingsTable.seller_id, userId)))
     .orderBy(desc(exchangePickupRequestsTable.updated_at), desc(exchangePickupRequestsTable.id))
     .limit(100);
-  return res.json({ pickup_requests: rows.map((row) => serializeListing(row as unknown as Record<string, unknown>)) });
+  const disputes = rows.length
+    ? await db.select({
+      pickup_request_id: exchangePickupDisputesTable.pickup_request_id,
+      status: exchangePickupDisputesTable.status,
+      outcome: exchangePickupDisputesTable.outcome,
+      opened_at: exchangePickupDisputesTable.opened_at,
+      resolved_at: exchangePickupDisputesTable.resolved_at,
+      created_at: exchangePickupDisputesTable.created_at,
+      updated_at: exchangePickupDisputesTable.updated_at,
+    }).from(exchangePickupDisputesTable)
+      .where(inArray(exchangePickupDisputesTable.pickup_request_id, rows.map((row) => row.id)))
+      .orderBy(desc(exchangePickupDisputesTable.opened_at), desc(exchangePickupDisputesTable.id))
+    : [];
+  const latestDispute = new Map<number, typeof disputes[number]>();
+  for (const dispute of disputes) {
+    if (!latestDispute.has(dispute.pickup_request_id)) latestDispute.set(dispute.pickup_request_id, dispute);
+  }
+  return res.json({ pickup_requests: rows.map((row) => {
+    const current = latestDispute.get(row.id);
+    return {
+      ...serializeListing(row as unknown as Record<string, unknown>) as Record<string, unknown>,
+      dispute: current ? serializeListing({
+        status: current.status,
+        outcome: current.outcome,
+        opened_at: current.opened_at,
+        resolved_at: current.resolved_at,
+        created_at: current.created_at,
+        updated_at: current.updated_at,
+      }) : null,
+    };
+  }) });
+});
+
+router.get("/community/exchange/disputes", requireAuth, requireAdmin(), generalApiLimiter, async (_req, res) => {
+  const disputes = await db.select({
+    id: exchangePickupDisputesTable.id,
+    pickup_request_id: exchangePickupDisputesTable.pickup_request_id,
+    listing_id: exchangeListingsTable.id,
+    listing_title: exchangeListingsTable.title,
+    opened_by: exchangePickupDisputesTable.opened_by,
+    buyer_id: exchangePickupRequestsTable.buyer_id,
+    seller_id: exchangeListingsTable.seller_id,
+    reason: exchangePickupDisputesTable.reason,
+    evidence: exchangePickupDisputesTable.evidence,
+    status: exchangePickupDisputesTable.status,
+    outcome: exchangePickupDisputesTable.outcome,
+    resolution: exchangePickupDisputesTable.resolution,
+    opened_at: exchangePickupDisputesTable.opened_at,
+    resolved_at: exchangePickupDisputesTable.resolved_at,
+  }).from(exchangePickupDisputesTable)
+    .innerJoin(exchangePickupRequestsTable, eq(exchangePickupRequestsTable.id, exchangePickupDisputesTable.pickup_request_id))
+    .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id))
+    .where(eq(exchangePickupDisputesTable.status, "open"))
+    .orderBy(desc(exchangePickupDisputesTable.opened_at))
+    .limit(100);
+  return res.json({ disputes: disputes.map((dispute) => serializeListing(dispute as unknown as Record<string, unknown>)) });
 });
 
 router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
@@ -503,10 +580,11 @@ router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, req
   if (!listingId) return res.status(400).json({ error: "Invalid listing id" });
   const parsed = pickupBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid pickup request", details: parsed.error.issues });
-  if (!sanitizePublicPickupArea(parsed.data.note)
-    || !sanitizePublicPickupArea(parsed.data.pickup_area)
-    || !sanitizePublicPickupArea(parsed.data.proposed_window)) {
-    return res.status(400).json({ error: "Keep pickup coordination inside Niakofa and use a coarse public area. Do not include phone numbers, email addresses, links, or exact addresses." });
+  if (!safePublicListingArea(parsed.data.note)
+    || !safePublicListingArea(parsed.data.pickup_area)
+    || !safePublicListingArea(parsed.data.pickup_note ?? "")
+    || !safePublicListingArea(parsed.data.proposed_window)) {
+    return res.status(400).json({ error: "Keep pickup coordination inside Niakofa and use a coarse public area. Do not include phone numbers, email addresses, links, exact addresses, or coordinates." });
   }
   const userId = req.authenticatedUserId!;
   const [listing] = await db.select().from(exchangeListingsTable).where(eq(exchangeListingsTable.id, listingId)).limit(1);
@@ -541,6 +619,8 @@ router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, req
         buyer_id: userId,
         note: parsed.data.note,
         pickup_area: parsed.data.pickup_area,
+        pickup_location_type: parsed.data.pickup_location_type,
+        pickup_note: parsed.data.pickup_note || null,
         proposed_window: parsed.data.proposed_window,
       }).returning();
       return created ?? null;
@@ -588,6 +668,191 @@ async function loadPickupRequest(id: number) {
   return row ?? null;
 }
 
+router.post("/community/exchange/pickup-requests/:id/dispute", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid pickup request id" });
+  const parsed = disputeBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid dispute", details: parsed.error.issues });
+  if (!safePublicListingArea(parsed.data.reason)
+    || !safePublicListingArea(parsed.data.evidence ?? "")) {
+    return res.status(400).json({ error: "Dispute details must not include phone numbers, email addresses, links, exact addresses, or coordinates." });
+  }
+  const userId = req.authenticatedUserId!;
+  type OpenDisputeResult =
+    | { error: string; status: 403 | 404 | 409 }
+    | { dispute: typeof exchangePickupDisputesTable.$inferSelect; pickup: typeof exchangePickupRequestsTable.$inferSelect; sellerId: number };
+  let result: OpenDisputeResult;
+  try {
+    result = await db.transaction(async (tx): Promise<OpenDisputeResult> => {
+      // All lifecycle transitions acquire request then listing to avoid a
+      // dispute racing confirmation, cancellation, or the expiry worker.
+      const [pickup] = await tx.select().from(exchangePickupRequestsTable)
+        .where(eq(exchangePickupRequestsTable.id, id)).for("update").limit(1);
+      if (!pickup) return { error: "Pickup request not found", status: 404 as const };
+      const [listing] = await tx.select({
+        seller_id: exchangeListingsTable.seller_id,
+        status: exchangeListingsTable.status,
+      }).from(exchangeListingsTable)
+        .where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+      if (!listing) return { error: "Listing not found", status: 404 as const };
+      if (pickup.buyer_id !== userId && listing?.seller_id !== userId) {
+        return { error: "Only an accepted pickup participant can open a dispute.", status: 403 as const };
+      }
+      if (pickup.status !== "accepted" || listing?.status !== "reserved") {
+        return { error: "A dispute can only be opened for an accepted pickup.", status: 409 as const };
+      }
+      const now = new Date();
+      if (pickup.coordination_expires_at && pickup.coordination_expires_at <= now) {
+        return { error: "The 48-hour coordination window has expired; this pickup can no longer be disputed.", status: 409 as const };
+      }
+      const [dispute] = await tx.insert(exchangePickupDisputesTable).values({
+        pickup_request_id: pickup.id,
+        opened_by: userId,
+        reason: parsed.data.reason,
+        evidence: parsed.data.evidence || null,
+        opened_at: now,
+        created_at: now,
+        updated_at: now,
+      }).returning();
+      const [updatedPickup] = await tx.update(exchangePickupRequestsTable)
+        .set({ status: "disputed", updated_at: now })
+        .where(and(
+          eq(exchangePickupRequestsTable.id, pickup.id),
+          eq(exchangePickupRequestsTable.status, "accepted"),
+        )).returning();
+      if (!updatedPickup) throw new Error("EXCHANGE_DISPUTE_PICKUP_CONFLICT");
+      return { dispute, pickup: updatedPickup, sellerId: listing.seller_id };
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return res.status(409).json({ error: "An active dispute already exists for this pickup." });
+    }
+    if (error instanceof Error && error.message === "EXCHANGE_DISPUTE_PICKUP_CONFLICT") {
+      return res.status(409).json({ error: "This pickup changed before the dispute could be opened." });
+    }
+    throw error;
+  }
+  if ("error" in result) return res.status(result.status).json({ error: result.error });
+  const participants = [result.pickup.buyer_id, result.sellerId];
+  void Promise.allSettled(participants.map((recipientId) => notifyExchangeParticipant({
+    recipientId,
+    actorUserId: userId,
+    listingId: result.pickup.listing_id,
+    pickupRequestId: result.pickup.id,
+    title: "An Exchange pickup is under dispute",
+    body: "A participant opened a dispute. The pickup is on hold while the safety team reviews it.",
+    action: "dispute_opened",
+  })));
+  return res.status(201).json({
+    pickup_request: serializeListing(result.pickup as unknown as Record<string, unknown>),
+    dispute: serializeListing(result.dispute as unknown as Record<string, unknown>),
+  });
+});
+
+router.post("/community/exchange/pickup-requests/:id/resolve-dispute", requireAuth, requireAdmin(), generalApiLimiter, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid pickup request id" });
+  const parsed = resolveDisputeBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid dispute resolution", details: parsed.error.issues });
+  if (!safePublicListingArea(parsed.data.resolution)) {
+    return res.status(400).json({ error: "Resolution must not include phone numbers, email addresses, links, exact addresses, or coordinates." });
+  }
+  const moderatorId = req.authenticatedUserId!;
+  type ResolveDisputeResult =
+    | { error: string; status: 404 | 409 }
+    | { dispute: typeof exchangePickupDisputesTable.$inferSelect; pickup: typeof exchangePickupRequestsTable.$inferSelect; buyerId: number; sellerId: number; listingAvailableAgain: boolean };
+  const result = await db.transaction(async (tx): Promise<ResolveDisputeResult> => {
+    const [pickup] = await tx.select().from(exchangePickupRequestsTable)
+      .where(eq(exchangePickupRequestsTable.id, id)).for("update").limit(1);
+    if (!pickup) return { error: "Pickup request not found", status: 404 as const };
+    const [listing] = await tx.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status,
+    }).from(exchangeListingsTable)
+      .where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+    const [dispute] = await tx.select().from(exchangePickupDisputesTable)
+      .where(and(
+        eq(exchangePickupDisputesTable.pickup_request_id, pickup.id),
+        eq(exchangePickupDisputesTable.status, "open"),
+      )).for("update").limit(1);
+    if (!dispute || pickup.status !== "disputed") {
+      return { error: "There is no active dispute for this pickup.", status: 409 as const };
+    }
+    if (!listing) return { error: "Listing not found", status: 404 as const };
+    if (listing.status !== "reserved") {
+      return { error: "The held listing state changed; this dispute cannot be resolved safely.", status: 409 as const };
+    }
+    const now = new Date();
+    const [resolved] = await tx.update(exchangePickupDisputesTable)
+      .set({
+        status: "resolved",
+        outcome: parsed.data.outcome,
+        resolution: parsed.data.resolution,
+        resolved_by: moderatorId,
+        resolved_at: now,
+        updated_at: now,
+      }).where(and(
+        eq(exchangePickupDisputesTable.id, dispute.id),
+        eq(exchangePickupDisputesTable.status, "open"),
+      )).returning();
+    if (!resolved) return { error: "This dispute was already resolved.", status: 409 as const };
+    const [updatedPickup] = await tx.update(exchangePickupRequestsTable)
+      .set(parsed.data.outcome === "complete"
+        ? { status: "completed", completed_at: now, updated_at: now }
+        : { status: "cancelled", cancelled_at: now, updated_at: now })
+      .where(and(
+        eq(exchangePickupRequestsTable.id, pickup.id),
+        eq(exchangePickupRequestsTable.status, "disputed"),
+      )).returning();
+    if (!updatedPickup) throw new Error("EXCHANGE_DISPUTE_RESOLUTION_CONFLICT");
+    const listingUpdate = parsed.data.outcome === "complete"
+      ? { status: "completed", updated_at: now }
+      : listing.moderation_status === "approved"
+        ? { status: "active", archived_at: null, archive_reason: null, updated_at: now }
+        : {
+          status: "archived",
+          archived_at: now,
+          archive_reason: "pickup_dispute_cancelled_while_listing_unapproved",
+          updated_at: now,
+        };
+    const [updatedListing] = await tx.update(exchangeListingsTable)
+      .set(listingUpdate)
+      .where(and(
+        eq(exchangeListingsTable.id, pickup.listing_id),
+        eq(exchangeListingsTable.status, "reserved"),
+        eq(exchangeListingsTable.moderation_status, listing.moderation_status),
+      )).returning({ id: exchangeListingsTable.id });
+    if (!updatedListing) throw new Error("EXCHANGE_DISPUTE_LISTING_CONFLICT");
+    return {
+      dispute: resolved,
+      pickup: updatedPickup,
+      buyerId: pickup.buyer_id,
+      sellerId: listing.seller_id,
+      listingAvailableAgain: parsed.data.outcome === "cancel" && listing.moderation_status === "approved",
+    };
+  });
+  if ("error" in result) return res.status(result.status).json({ error: result.error });
+  const participants = [result.buyerId, result.sellerId];
+  void Promise.allSettled(participants.map((recipientId) => notifyExchangeParticipant({
+    recipientId,
+    actorUserId: moderatorId,
+    listingId: result.pickup.listing_id,
+    pickupRequestId: result.pickup.id,
+    title: parsed.data.outcome === "complete" ? "Exchange dispute resolved" : "Exchange pickup dispute resolved",
+    body: parsed.data.outcome === "complete"
+      ? "The moderator resolved this pickup as complete."
+      : result.listingAvailableAgain
+        ? "The moderator cancelled this pickup. The approved listing is available again."
+        : "The moderator cancelled this pickup. The listing remains archived and hidden; its owner can renew it after safety approval.",
+    action: "dispute_resolved",
+  })));
+  return res.json({
+    pickup_request: serializeListing(result.pickup as unknown as Record<string, unknown>),
+    dispute: serializeListing(result.dispute as unknown as Record<string, unknown>),
+  });
+});
+
 type AcceptPickupResult =
   | { error: string; status: 403 | 404 | 409 }
   | { pickup_request: typeof exchangePickupRequestsTable.$inferSelect };
@@ -606,7 +871,7 @@ router.post("/community/exchange/pickup-requests/:id/accept", requireAuth, requi
       seller_id: exchangeListingsTable.seller_id,
       status: exchangeListingsTable.status,
       moderation_status: exchangeListingsTable.moderation_status,
-    }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).limit(1);
+    }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
     if (currentListing?.seller_id !== userId) return { error: "Only the seller can accept this request.", status: 403 as const };
     if (pickup.status !== "requested" || currentListing.status !== "active" || currentListing.moderation_status !== "approved") {
       return { error: "This request is no longer available to accept.", status: 409 as const };
@@ -668,22 +933,21 @@ router.post("/community/exchange/pickup-requests/:id/decline", requireAuth, requ
   const [updated] = await db.update(exchangePickupRequestsTable)
     .set({ status: "declined", cancelled_at: new Date(), updated_at: new Date() })
     .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, "requested"))).returning();
-  if (updated) {
-    void notifyExchangeParticipant({
-      recipientId: updated.buyer_id,
-      actorUserId: req.authenticatedUserId!,
-      listingId: pickup.listing_id,
-      pickupRequestId: updated.id,
-      title: "Your Exchange request was declined",
-      body: "This coordination request was declined. Open Messages for the update, or browse Exchange for another neighbor.",
-      action: "request_declined",
-    }).catch(() => {});
-    void sendPushToUser(updated.buyer_id, {
-      title: "Your Exchange request was declined",
-      body: "This coordination request was declined. You can browse Exchange for other ways to connect with a neighbor.",
-      notifType: "task_accepted",
-    }).catch(() => {});
-  }
+  if (!updated) return res.status(409).json({ error: "This request was already changed." });
+  void notifyExchangeParticipant({
+    recipientId: updated.buyer_id,
+    actorUserId: req.authenticatedUserId!,
+    listingId: pickup.listing_id,
+    pickupRequestId: updated.id,
+    title: "Your Exchange request was declined",
+    body: "This coordination request was declined. Open Messages for the update, or browse Exchange for another neighbor.",
+    action: "request_declined",
+  }).catch(() => {});
+  void sendPushToUser(updated.buyer_id, {
+    title: "Your Exchange request was declined",
+    body: "This coordination request was declined. You can browse Exchange for other ways to connect with a neighbor.",
+    notifType: "task_accepted",
+  }).catch(() => {});
   return res.json({ pickup_request: serializeListing(updated as unknown as Record<string, unknown>) });
 });
 
@@ -692,28 +956,59 @@ router.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requi
   if (!id) return res.status(400).json({ error: "Invalid pickup request id" });
   type CancelPickupResult =
     | { error: string; status: 403 | 404 | 409 }
-    | { pickup_request: typeof exchangePickupRequestsTable.$inferSelect; otherParticipantId: number };
+    | { pickup_request: typeof exchangePickupRequestsTable.$inferSelect; otherParticipantId: number; listingAvailableAgain: boolean };
   const result = await db.transaction(async (tx): Promise<CancelPickupResult> => {
     const [pickup] = await tx.select().from(exchangePickupRequestsTable)
       .where(eq(exchangePickupRequestsTable.id, id)).for("update").limit(1);
     if (!pickup) return { error: "Pickup request not found", status: 404 as const };
-    const [listing] = await tx.select({ seller_id: exchangeListingsTable.seller_id })
-      .from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).limit(1);
+    const [listing] = await tx.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status,
+    })
+      .from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+    if (!listing) return { error: "Listing not found", status: 404 as const };
     if (pickup.buyer_id !== req.authenticatedUserId && listing?.seller_id !== req.authenticatedUserId) {
       return { error: "Only the pickup participants can cancel.", status: 403 as const };
     }
     if (!["requested", "accepted"].includes(pickup.status)) {
       return { error: "This pickup cannot be cancelled.", status: 409 as const };
     }
-    const [updated] = await tx.update(exchangePickupRequestsTable)
-      .set({ status: "cancelled", cancelled_at: new Date(), updated_at: new Date() })
-      .where(and(eq(exchangePickupRequestsTable.id, id), inArray(exchangePickupRequestsTable.status, ["requested", "accepted"]))).returning();
-    if (updated && pickup.status === "accepted") {
-      await tx.update(exchangeListingsTable).set({ status: "active", updated_at: new Date() })
-        .where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
+    if (pickup.status === "accepted" && listing.status !== "reserved") {
+      return { error: "The reserved listing state changed; this pickup cannot be cancelled safely.", status: 409 as const };
     }
-    return updated ? { pickup_request: updated, otherParticipantId: req.authenticatedUserId === pickup.buyer_id ? listing!.seller_id : pickup.buyer_id }
-      : { error: "This pickup was already changed.", status: 409 as const };
+    const now = new Date();
+    const [updated] = await tx.update(exchangePickupRequestsTable)
+      .set({ status: "cancelled", cancelled_at: now, updated_at: now })
+      .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, pickup.status))).returning();
+    if (!updated) return { error: "This pickup was already changed.", status: 409 as const };
+    let listingAvailableAgain = pickup.status === "requested"
+      && listing.status === "active"
+      && listing.moderation_status === "approved";
+    if (pickup.status === "accepted") {
+      const approved = listing.moderation_status === "approved";
+      const [updatedListing] = await tx.update(exchangeListingsTable)
+        .set(approved
+          ? { status: "active", archived_at: null, archive_reason: null, updated_at: now }
+          : {
+            status: "archived",
+            archived_at: now,
+            archive_reason: "pickup_cancelled_while_listing_unapproved",
+            updated_at: now,
+          })
+        .where(and(
+          eq(exchangeListingsTable.id, pickup.listing_id),
+          eq(exchangeListingsTable.status, "reserved"),
+          eq(exchangeListingsTable.moderation_status, listing.moderation_status),
+        )).returning({ id: exchangeListingsTable.id });
+      if (!updatedListing) throw new Error("EXCHANGE_CANCEL_LISTING_CONFLICT");
+      listingAvailableAgain = approved;
+    }
+    return {
+      pickup_request: updated,
+      otherParticipantId: req.authenticatedUserId === pickup.buyer_id ? listing.seller_id : pickup.buyer_id,
+      listingAvailableAgain,
+    };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
   const otherParticipantId = result.otherParticipantId;
@@ -728,7 +1023,9 @@ router.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requi
   }).catch(() => {});
   void sendPushToUser(otherParticipantId, {
     title: "Exchange coordination was cancelled",
-    body: "The other participant cancelled this pickup coordination. The listing is available again if it is still active.",
+    body: result.listingAvailableAgain
+      ? "The other participant cancelled this pickup coordination. The approved listing is available again."
+      : "The other participant cancelled this pickup coordination. Listing visibility remains subject to safety review; if archived, its owner can renew it after approval.",
     notifType: "task_accepted",
   }).catch(() => {});
   return res.json({ pickup_request: serializeListing(result.pickup_request as unknown as Record<string, unknown>) });
@@ -751,12 +1048,21 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
       .for("update")
       .limit(1);
     if (!pickup) return { error: "Pickup request not found", status: 404 as const };
-    const [listing] = await tx.select({ seller_id: exchangeListingsTable.seller_id })
-      .from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).limit(1);
+    const [listing] = await tx.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status,
+    })
+      .from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+    if (!listing) return { error: "Listing not found", status: 404 as const };
     const isBuyer = pickup.buyer_id === userId;
     const isSeller = listing?.seller_id === userId;
     if (!isBuyer && !isSeller) return { error: "Only the pickup participants can confirm completion.", status: 403 as const };
     if (pickup.status !== "accepted") return { error: "Completion can only be confirmed for an accepted pickup.", status: 409 as const };
+    if (listing.status !== "reserved") return { error: "The reserved listing state changed; completion cannot be confirmed safely.", status: 409 as const };
+    if (isBuyer ? pickup.buyer_confirmed_at : pickup.seller_confirmed_at) {
+      return { error: "Your handoff confirmation was already recorded.", status: 409 as const };
+    }
     const now = new Date();
     if (pickup.coordination_expires_at && pickup.coordination_expires_at <= now) {
       return { error: "The coordination window expired. This listing will be available again shortly.", status: 409 as const };
@@ -770,19 +1076,24 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
         .set({ status: "completed", completed_at: now, updated_at: now })
         .where(and(eq(exchangePickupRequestsTable.id, id), eq(exchangePickupRequestsTable.status, "accepted")))
         .returning();
-      if (completed) {
-        await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now })
-          .where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
-      }
+      if (!completed) throw new Error("EXCHANGE_CONFIRM_PICKUP_CONFLICT");
+      const [completedListing] = await tx.update(exchangeListingsTable)
+        .set({ status: "completed", updated_at: now })
+        .where(and(
+          eq(exchangeListingsTable.id, pickup.listing_id),
+          eq(exchangeListingsTable.status, "reserved"),
+          eq(exchangeListingsTable.moderation_status, listing.moderation_status),
+        )).returning({ id: exchangeListingsTable.id });
+      if (!completedListing) throw new Error("EXCHANGE_CONFIRM_LISTING_CONFLICT");
       return {
-        pickup_request: completed ?? updated,
-        notifyUserIds: [pickup.buyer_id, listing!.seller_id],
+        pickup_request: completed,
+        notifyUserIds: [pickup.buyer_id, listing.seller_id],
       };
     }
     return {
       pickup_request: updated,
       awaiting_other_confirmation: true as const,
-      notifyUserIds: [isBuyer ? listing!.seller_id : pickup.buyer_id],
+      notifyUserIds: [isBuyer ? listing.seller_id : pickup.buyer_id],
     };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
@@ -817,9 +1128,9 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
 
 router.get("/community/exchange/impact", requireAuth, requireApproved, generalApiLimiter, async (_req, res) => {
   const [activity] = await db.select({
-    completed: sql<number>`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed')::int`,
-    unique_neighbors: sql<number>`COUNT(DISTINCT CASE WHEN ${exchangePickupRequestsTable.status} = 'completed' THEN ${exchangePickupRequestsTable.buyer_id} END)::int`,
-    last_30_days: sql<number>`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.completed_at} >= NOW() - INTERVAL '30 days')::int`,
+    completed: sql<number>`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.buyer_confirmed_at} IS NOT NULL AND ${exchangePickupRequestsTable.seller_confirmed_at} IS NOT NULL)::int`,
+    unique_neighbors: sql<number>`COUNT(DISTINCT CASE WHEN ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.buyer_confirmed_at} IS NOT NULL AND ${exchangePickupRequestsTable.seller_confirmed_at} IS NOT NULL THEN ${exchangePickupRequestsTable.buyer_id} END)::int`,
+    last_30_days: sql<number>`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.buyer_confirmed_at} IS NOT NULL AND ${exchangePickupRequestsTable.seller_confirmed_at} IS NOT NULL AND ${exchangePickupRequestsTable.completed_at} >= NOW() - INTERVAL '30 days')::int`,
   }).from(exchangePickupRequestsTable);
   const [live] = await db.select({
     active_offers: sql<number>`COUNT(*) FILTER (WHERE ${exchangeListingsTable.listing_type} = 'offer')::int`,

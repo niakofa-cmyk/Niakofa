@@ -1,6 +1,15 @@
 import { sql } from "drizzle-orm";
-import { index, integer, pgTable, serial, text, timestamp, uniqueIndex, real, boolean } from "drizzle-orm/pg-core";
+import { index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, real, boolean } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+
+export const exchangePickupLocationType = pgEnum("exchange_pickup_location_type", [
+  "public_place",
+  "community_center",
+  "library",
+  "park",
+  "business_parking",
+  "other_public",
+]);
 
 /**
  * Local Exchange deliberately stores only a coarse pickup area. Exact
@@ -18,6 +27,7 @@ export const exchangeListingsTable = pgTable("exchange_listings", {
   condition: text("condition").notNull().default("good"),
   neighborhood: text("neighborhood").notNull(),
   pickup_notes: text("pickup_notes"),
+  pickup_location_type: exchangePickupLocationType("pickup_location_type"),
   // Privacy-rounded coordinates used only for server-side local matching.
   // These are never returned by the Exchange API.
   latitude: real("latitude"),
@@ -41,6 +51,8 @@ export const exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
   buyer_id: integer("buyer_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
   note: text("note").notNull(),
   pickup_area: text("pickup_area").notNull(),
+  pickup_location_type: exchangePickupLocationType("pickup_location_type"),
+  pickup_note: text("pickup_note"),
   proposed_window: text("proposed_window").notNull(),
   status: text("status").notNull().default("requested"),
   buyer_confirmed_at: timestamp("buyer_confirmed_at", { withTimezone: true }),
@@ -60,6 +72,29 @@ export const exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
     .on(table.listing_id, table.buyer_id)
     .where(sql`${table.status} IN ('requested', 'accepted')`),
 ]);
+
+export const exchangePickupDisputesTable = pgTable("exchange_pickup_disputes", {
+  id: serial("id").primaryKey(),
+  pickup_request_id: integer("pickup_request_id").notNull().references(() => exchangePickupRequestsTable.id, { onDelete: "restrict" }),
+  opened_by: integer("opened_by").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+  reason: text("reason").notNull(),
+  evidence: text("evidence"),
+  status: text("status").notNull().default("open"),
+  outcome: text("outcome"),
+  resolution: text("resolution"),
+  resolved_by: integer("resolved_by").references(() => usersTable.id, { onDelete: "restrict" }),
+  opened_at: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+  resolved_at: timestamp("resolved_at", { withTimezone: true }),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("exchange_pickup_disputes_request_idx").on(table.pickup_request_id, table.created_at),
+  uniqueIndex("exchange_pickup_disputes_one_open_per_request_idx")
+    .on(table.pickup_request_id)
+    .where(sql`${table.status} = 'open'`),
+]);
+
+export type ExchangePickupDispute = typeof exchangePickupDisputesTable.$inferSelect;
 
 export type ExchangeListing = typeof exchangeListingsTable.$inferSelect;
 export type ExchangePickupRequest = typeof exchangePickupRequestsTable.$inferSelect;

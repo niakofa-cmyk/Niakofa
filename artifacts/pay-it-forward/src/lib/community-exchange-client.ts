@@ -5,6 +5,7 @@ import type {
   ExchangeListing,
   ExchangeListingType,
   ExchangeListingsResponse,
+  ExchangePickupLocationType,
   ExchangePickupRequest,
   ExchangePickupRequestsResponse,
   ExchangeResourceType,
@@ -80,6 +81,7 @@ export interface CreateListingInput {
   category: ExchangeCategory;
   condition: ExchangeCondition;
   neighborhood: string;
+  pickup_location_type: ExchangePickupLocationType;
   pickup_notes?: string;
 }
 
@@ -113,6 +115,8 @@ export interface CreatePickupRequestInput {
   note: string;
   pickup_area: string;
   proposed_window: string;
+  pickup_location_type: ExchangePickupLocationType;
+  pickup_note?: string;
 }
 
 export async function createExchangePickupRequest(id: number, data: CreatePickupRequestInput): Promise<{ pickup_request: ExchangePickupRequest }> {
@@ -130,6 +134,16 @@ export async function updateExchangePickupRequest(
 ): Promise<{ pickup_request: ExchangePickupRequest; awaiting_other_confirmation?: boolean }> {
   return request<{ pickup_request: ExchangePickupRequest; awaiting_other_confirmation?: boolean }>(`/api/community/exchange/pickup-requests/${id}/${action}`, {
     method: "POST",
+  });
+}
+
+export async function disputeExchangePickupRequest(
+  id: number,
+  data: { reason: string; evidence?: string },
+): Promise<{ pickup_request: ExchangePickupRequest; message?: string }> {
+  return request<{ pickup_request: ExchangePickupRequest; message?: string }>(`/api/community/exchange/pickup-requests/${id}/dispute`, {
+    method: "POST",
+    body: JSON.stringify(data),
   });
 }
 

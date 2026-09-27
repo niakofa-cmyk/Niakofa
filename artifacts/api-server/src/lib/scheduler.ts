@@ -149,7 +149,10 @@ async function archiveStaleExchangeListings(now = new Date()): Promise<ArchivedE
   return archived;
 }
 
-async function expireAbandonedExchangePickups(now = new Date()): Promise<ExpiredExchangePickup[]> {
+export async function expireAbandonedExchangePickups(
+  now = new Date(),
+  pickupRequestId?: number,
+): Promise<ExpiredExchangePickup[]> {
   return db.transaction(async (tx) => {
     const due = await tx.select({
       id: exchangePickupRequestsTable.id,
@@ -159,23 +162,45 @@ async function expireAbandonedExchangePickups(now = new Date()): Promise<Expired
       .where(and(
         eq(exchangePickupRequestsTable.status, "accepted"),
         lte(exchangePickupRequestsTable.coordination_expires_at, now),
+        pickupRequestId === undefined ? undefined : eq(exchangePickupRequestsTable.id, pickupRequestId),
       ))
       .orderBy(exchangePickupRequestsTable.coordination_expires_at, exchangePickupRequestsTable.id)
       .limit(100)
       .for("update", { skipLocked: true });
     const expired: ExpiredExchangePickup[] = [];
     for (const pickup of due) {
+      const [listing] = await tx.select({
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status,
+      }).from(exchangeListingsTable)
+        .where(eq(exchangeListingsTable.id, pickup.listing_id))
+        .for("update")
+        .limit(1);
+      if (!listing || listing.status !== "reserved") {
+        throw new Error(`EXCHANGE_EXPIRY_LISTING_STATE_CONFLICT:${pickup.listing_id}`);
+      }
+      const listingAvailableAgain = listing.moderation_status === "approved";
       const [updated] = await tx.update(exchangePickupRequestsTable)
         .set({ status: "expired", expired_at: now, updated_at: now })
         .where(and(eq(exchangePickupRequestsTable.id, pickup.id), eq(exchangePickupRequestsTable.status, "accepted")))
         .returning({ id: exchangePickupRequestsTable.id });
-      if (!updated) continue;
-      await tx.update(exchangeListingsTable)
-        .set({ status: "active", updated_at: now })
+      if (!updated) throw new Error(`EXCHANGE_EXPIRY_PICKUP_STATE_CONFLICT:${pickup.id}`);
+      const [updatedListing] = await tx.update(exchangeListingsTable)
+        .set(listingAvailableAgain
+          ? { status: "active", archived_at: null, archive_reason: null, updated_at: now }
+          : {
+            status: "archived",
+            archived_at: now,
+            archive_reason: "coordination_expired_while_listing_unapproved",
+            updated_at: now,
+          })
         .where(and(
           eq(exchangeListingsTable.id, pickup.listing_id),
           eq(exchangeListingsTable.status, "reserved"),
-        ));
+          eq(exchangeListingsTable.moderation_status, listing.moderation_status),
+        ))
+        .returning({ id: exchangeListingsTable.id });
+      if (!updatedListing) throw new Error(`EXCHANGE_EXPIRY_LISTING_STATE_CONFLICT:${pickup.listing_id}`);
       expired.push(pickup);
     }
     return expired;
@@ -191,6 +216,8 @@ async function notifyExpiredExchangePickups(): Promise<number> {
     buyer_id: exchangePickupRequestsTable.buyer_id,
     seller_id: exchangeListingsTable.seller_id,
     title: exchangeListingsTable.title,
+    listing_status: exchangeListingsTable.status,
+    moderation_status: exchangeListingsTable.moderation_status,
   }).from(exchangePickupRequestsTable)
     .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id))
     .where(and(
@@ -200,7 +227,10 @@ async function notifyExpiredExchangePickups(): Promise<number> {
     .orderBy(exchangePickupRequestsTable.id)
     .limit(100);
   const results = await Promise.allSettled(pending.map(async (pickup) => {
-    const body = `The 48-hour coordination window for “${pickup.title}” expired without both participants closing the loop. The listing is available again.`;
+    const availableAgain = pickup.listing_status === "active" && pickup.moderation_status === "approved";
+    const body = availableAgain
+      ? `The 48-hour coordination window for “${pickup.title}” expired without both participants closing the loop. The approved listing is available again.`
+      : `The 48-hour coordination window for “${pickup.title}” expired without both participants closing the loop. The listing remains archived and hidden; its owner can renew it after safety approval.`;
     const metadata = {
       exchange_listing_id: pickup.listing_id,
       exchange_pickup_request_id: pickup.id,

@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { getToken } from "@/lib/auth";
+import { authHeaders, getToken } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { BackgroundCheckAdmin } from "@/components/BackgroundCheckAdmin";
 import { detectUnits } from "@/lib/locale-utils";
@@ -3369,6 +3369,193 @@ function ReportsTab({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?
 }
 
 
+// ── Exchange pickup dispute queue ────────────────────────────────────────────
+interface ExchangePickupDispute {
+  id: number;
+  pickup_request_id: number;
+  listing_id: number;
+  listing_title: string;
+  reason: string;
+  evidence: string | null;
+  opened_by: number;
+  status: string;
+  opened_at: string;
+  buyer_id: number;
+  seller_id: number;
+  outcome: string | null;
+  resolution: string | null;
+  resolved_at: string | null;
+}
+
+function redactDisputeText(value: string): string {
+  return value
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[contact details hidden]")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[contact details hidden]")
+    .replace(/\b\d{1,6}\s+[\w.'-]+(?:\s+[\w.'-]+){0,3}\s+(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?)\b[^,\n;]*/gi, "[location hidden]")
+    .replace(/\b(address|street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|apartment|apt\.?|unit|postal code|zip code)\s*[:#-]?\s*[^,\n;]*/gi, "$1 [location hidden]");
+}
+
+function ExchangePickupDisputesTab() {
+  const [disputes, setDisputes] = useState<ExchangePickupDispute[]>([]);
+  const [notes, setNotes] = useState<Record<number, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<number | null>(null);
+
+  const loadDisputes = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const response = await fetch(`${BASE}/api/community/exchange/disputes`, {
+        headers: authHeaders(),
+      });
+      if (!response.ok) throw new Error("Could not load Exchange pickup disputes.");
+      const data = await response.json() as { disputes?: ExchangePickupDispute[] };
+      setDisputes(Array.isArray(data.disputes) ? data.disputes.filter(dispute => dispute.status === "open") : []);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Could not load Exchange pickup disputes.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadDisputes(); }, [loadDisputes]);
+
+  const resolve = async (dispute: ExchangePickupDispute, outcome: "complete" | "cancel") => {
+    const resolution = (notes[dispute.id] ?? "").trim();
+    if (!resolution) {
+      toast({ title: "Resolution note required", description: "Add a note before resolving this pickup dispute.", variant: "destructive" });
+      return;
+    }
+
+    setSubmitting(dispute.id);
+    try {
+      const response = await fetch(`${BASE}/api/community/exchange/pickup-requests/${dispute.pickup_request_id}/resolve-dispute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ outcome, resolution }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(error.error ?? "Could not resolve this pickup dispute.");
+      }
+      setNotes(current => {
+        const next = { ...current };
+        delete next[dispute.id];
+        return next;
+      });
+      toast({ title: "Pickup dispute resolved", description: `Pickup request #${dispute.pickup_request_id} marked ${outcome}.` });
+      await loadDisputes();
+    } catch (error) {
+      toast({
+        title: "Could not resolve pickup dispute",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-black uppercase tracking-wider">Exchange Pickup Disputes</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Review open pickup cases and record a resolution.</p>
+        </div>
+        <button onClick={() => void loadDisputes()} disabled={loading} style={{ touchAction: "manipulation" }}
+          className="p-2 rounded-xl border border-border bg-card active:bg-muted disabled:opacity-50" aria-label="Refresh pickup disputes">
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading pickup disputes…
+        </div>
+      )}
+
+      {!loading && loadError && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          {loadError}
+          <button onClick={() => void loadDisputes()} className="ml-2 font-bold underline">Try again</button>
+        </div>
+      )}
+
+      {!loading && !loadError && disputes.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Gavel className="w-8 h-8 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No open Exchange pickup disputes</p>
+        </div>
+      )}
+
+      {!loading && !loadError && disputes.map(dispute => {
+        const evidencePresent = Boolean(dispute.evidence?.trim());
+        return (
+          <article key={dispute.id} className="bg-card border border-border rounded-2xl p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-black">Pickup request #{dispute.pickup_request_id}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Exchange listing #{dispute.listing_id}</div>
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full border bg-destructive/10 text-destructive border-destructive/30">
+                Open
+              </span>
+            </div>
+
+            <div className="rounded-xl bg-muted/40 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Dispute reason</p>
+              <p className="text-sm whitespace-pre-wrap break-words">{redactDisputeText(dispute.reason || "No reason provided.")}</p>
+            </div>
+            {evidencePresent && (
+              <details className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3">
+                <summary className="cursor-pointer text-xs font-black text-yellow-700 dark:text-yellow-300">
+                  Private evidence · admin review only
+                </summary>
+                <div className="mt-2 border-t border-yellow-500/20 pt-2">
+                  <p className="text-[10px] text-muted-foreground mb-1">Submitted evidence. Treat as confidential; do not share outside the review.</p>
+                  <p className="text-sm whitespace-pre-wrap break-words">{dispute.evidence}</p>
+                </div>
+              </details>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              {evidencePresent ? "Evidence available in the private review panel." : "No evidence attached."}
+              {dispute.opened_at && <> · Opened {new Date(dispute.opened_at).toLocaleDateString()}</>}
+            </p>
+
+            <div>
+              <label htmlFor={`exchange-dispute-note-${dispute.id}`} className="block text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">
+                Required resolution note
+              </label>
+              <textarea
+                id={`exchange-dispute-note-${dispute.id}`}
+                value={notes[dispute.id] ?? ""}
+                onChange={event => setNotes(current => ({ ...current, [dispute.id]: event.target.value }))}
+                placeholder="Record the reason for your decision…"
+                rows={3}
+                maxLength={2000}
+                style={{ fontSize: 16 }}
+                className="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => void resolve(dispute, "complete")} disabled={submitting === dispute.id}
+                className="py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-primary/15 border border-primary/30 text-primary disabled:opacity-50">
+                {submitting === dispute.id ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Mark Complete"}
+              </button>
+              <button onClick={() => void resolve(dispute, "cancel")} disabled={submitting === dispute.id}
+                className="py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-destructive/10 border border-destructive/30 text-destructive disabled:opacity-50">
+                {submitting === dispute.id ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Cancel Pickup"}
+              </button>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Disputes Tab ─────────────────────────────────────────────────────────────
 interface AdminDispute {
   id: number;
@@ -3394,7 +3581,7 @@ const DISPUTE_STATUS_COLORS: Record<string, string> = {
   dismissed:    "bg-muted text-muted-foreground border-border",
 };
 
-function DisputesTab() {
+function HelpRequestDisputesSection() {
   const [disputes, setDisputes] = useState<AdminDispute[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"open" | "under_review" | "resolved" | "dismissed" | "all">("open");
@@ -3501,9 +3688,9 @@ function DisputesTab() {
                 </span>
                 <span className="text-xs text-muted-foreground">Request #{d.request_id}</span>
               </div>
-              <p className="text-sm font-bold text-foreground truncate">{d.reason}</p>
+              <p className="text-sm font-bold text-foreground truncate">{redactDisputeText(d.reason)}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                By {d.opener_name ?? "Unknown"} ({d.opener_email ?? "—"})
+                By {d.opener_name ?? "Unknown"}
                 {d.against_user_name && <> · vs {d.against_user_name}</>}
               </p>
             </div>
@@ -3523,13 +3710,13 @@ function DisputesTab() {
                   {d.details && (
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Details</p>
-                      <p className="text-sm text-foreground bg-muted/40 rounded-xl p-3 whitespace-pre-wrap">{d.details}</p>
+                      <p className="text-sm text-foreground bg-muted/40 rounded-xl p-3 whitespace-pre-wrap">{redactDisputeText(d.details)}</p>
                     </div>
                   )}
                   {d.resolution && (
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Admin resolution</p>
-                      <p className="text-sm text-foreground bg-primary/5 border border-primary/20 rounded-xl p-3">{d.resolution}</p>
+                      <p className="text-sm text-foreground bg-primary/5 border border-primary/20 rounded-xl p-3">{redactDisputeText(d.resolution)}</p>
                     </div>
                   )}
 
@@ -3591,6 +3778,35 @@ function DisputesTab() {
           </AnimatePresence>
         </div>
       ))}
+    </div>
+  );
+}
+
+function DisputesTab() {
+  const [section, setSection] = useState<"help-requests" | "exchange-pickups">("help-requests");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1" role="tablist" aria-label="Dispute queues">
+        {([
+          { key: "help-requests", label: "Help-request disputes" },
+          { key: "exchange-pickups", label: "Exchange pickup disputes" },
+        ] as const).map(({ key, label }) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={section === key}
+            onClick={() => setSection(key)}
+            style={{ touchAction: "manipulation" }}
+            className={`shrink-0 text-[11px] font-bold px-3.5 py-2 rounded-full border transition-all ${
+              section === key ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {section === "help-requests" ? <HelpRequestDisputesSection /> : <ExchangePickupDisputesTab />}
     </div>
   );
 }

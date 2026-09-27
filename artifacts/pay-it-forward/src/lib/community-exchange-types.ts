@@ -2,7 +2,8 @@ export type ExchangeListingType = "offer" | "need";
 export type ExchangeResourceType = "goods" | "services";
 export type ExchangeCategory = "household" | "clothing" | "food" | "books" | "electronics" | "children" | "urgent_aid" | "other";
 export type ExchangeCondition = "new" | "like_new" | "good" | "well_loved";
-export type PickupStatus = "requested" | "accepted" | "declined" | "cancelled" | "expired" | "completed";
+export type ExchangePickupLocationType = "public_place" | "community_center" | "library" | "park" | "business_parking" | "other_public";
+export type PickupStatus = "requested" | "accepted" | "declined" | "cancelled" | "expired" | "completed" | "disputed";
 
 export interface ExchangeListing {
   id: number;
@@ -14,6 +15,7 @@ export interface ExchangeListing {
   category: ExchangeCategory;
   condition: ExchangeCondition;
   neighborhood: string;
+  pickup_location_type?: ExchangePickupLocationType | null;
   pickup_notes?: string | null;
   status: string;
   moderation_status: string;
@@ -30,6 +32,8 @@ export interface ExchangePickupRequest {
   note: string;
   pickup_area: string;
   proposed_window: string;
+  pickup_location_type?: ExchangePickupLocationType | null;
+  pickup_note?: string | null;
   status: PickupStatus;
   buyer_confirmed_at?: string | null;
   seller_confirmed_at?: string | null;
@@ -45,6 +49,20 @@ export interface ExchangePickupRequest {
   seller_id?: number | null;
   seller_name?: string | null;
   buyer_name?: string | null;
+  dispute?: {
+    status?: string | null;
+    reason?: string | null;
+    evidence?: string | null;
+    opened_at?: string | null;
+    resolution?: string | null;
+    resolved_at?: string | null;
+  } | null;
+  dispute_status?: string | null;
+  dispute_reason?: string | null;
+  dispute_evidence?: string | null;
+  dispute_opened_at?: string | null;
+  dispute_resolution?: string | null;
+  dispute_resolved_at?: string | null;
 }
 
 export interface ExchangeListingResponse {

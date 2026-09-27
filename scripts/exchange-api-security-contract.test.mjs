@@ -33,15 +33,16 @@ test("Exchange listing serializers never select or return stored coordinates", (
   assert.match(privacy, /EXACT_STREET_ADDRESS/);
   assert.match(route, /\[data\.title, data\.description\]\.every\(safePublicListingArea\)/);
   assert.match(route, /\.some\(\(value\) => !safePublicListingArea\(value\)\)/);
-  assert.match(route, /sanitizePublicPickupArea\(parsed\.data\.note\)/);
-  assert.match(route, /sanitizePublicPickupArea\(parsed\.data\.proposed_window\)/);
+  assert.match(route, /safePublicListingArea\(parsed\.data\.note\)/);
+  assert.match(route, /safePublicListingArea\(parsed\.data\.proposed_window\)/);
 });
 
 test("acceptance and cancellation serialize on the request and honor moderation", () => {
   assert.match(route, /const \[pickup\] = await tx\.select\(\)\.from\(exchangePickupRequestsTable\)[\s\S]*?\.for\("update"\)/);
   assert.match(route, /eq\(exchangeListingsTable\.moderation_status, "approved"\)/);
   assert.match(route, /throw new Error\("EXCHANGE_LISTING_RESERVATION_CONFLICT"\)/);
-  assert.match(route, /if \(updated && pickup\.status === "accepted"\)/);
+  assert.match(route, /if \(pickup\.status === "accepted"\) \{[\s\S]*?eq\(exchangeListingsTable\.status, "reserved"\)/);
+  assert.match(route, /if \(!updatedListing\) throw new Error\("EXCHANGE_CANCEL_LISTING_CONFLICT"\)/);
 });
 
 test("pickup creation locks and refreshes eligible listings before inserting", () => {

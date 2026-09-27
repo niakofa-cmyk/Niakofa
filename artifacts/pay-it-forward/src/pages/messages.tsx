@@ -15,6 +15,7 @@ import { NewMessageDialog } from "@/components/messages/NewMessageDialog";
 import { RequestConversationContext } from "@/components/request/RequestConversationContext";
 import { SharedMediaPanel } from "@/components/messages/SharedMediaPanel";
 import { DirectCallPanel } from "@/components/messages/DirectCallPanel";
+import { ExchangePickupContextPanel } from "@/components/messages/ExchangePickupContextPanel";
 import { MessengerMobileHome } from "@/components/messages/MessengerMobileHome";
 import { MobileNavDrawer } from "@/components/MobileNavDrawer";
 import { NotificationsDrawer } from "@/components/NotificationsDrawer";
@@ -79,6 +80,7 @@ type RequestConversation = {
 type Counts = { all: number; direct: number; requests: number; hubs: number };
 type ApiError = { error?: string };
 type DirectMessageEvent = { conversation_id?: number; message?: DirectMessage };
+type ExchangeContext = { listingId: number; pickupRequestId: number | null };
 
 function browserNotify(title: string, body: string, tag: string): void {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
@@ -179,6 +181,7 @@ export default function MessagesPage() {
   const [showMobileNotifications, setShowMobileNotifications] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showSharedMedia, setShowSharedMedia] = useState(false);
+  const [exchangeContext, setExchangeContext] = useState<ExchangeContext | null>(null);
   const [callMode, setCallMode] = useState<"voice" | "video" | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -577,6 +580,7 @@ export default function MessagesPage() {
     setDirectMessages([]);
     setHighlightedMessageId(null);
     setShowInfo(false);
+    setExchangeContext(null);
     navigate(messagesPath(activeMode));
   }
 
@@ -597,6 +601,7 @@ export default function MessagesPage() {
     setDirectMessages([]);
     setBody(initialBody);
     setContexts([]);
+    setExchangeContext(null);
     setSearch("");
     setSearchResults([]);
     setShowInfo(false);
@@ -627,6 +632,10 @@ export default function MessagesPage() {
             url: `${window.location.origin}/community?${params.toString()}`,
             label: `Exchange coordination · Post #${exchangeListingId}`,
           }]);
+          setExchangeContext({
+            listingId: exchangeListingId,
+            pickupRequestId: Number.isSafeInteger(exchangePickupRequestId) && exchangePickupRequestId > 0 ? exchangePickupRequestId : null,
+          });
         }
       }
     };
@@ -757,18 +766,26 @@ export default function MessagesPage() {
               list={<ConversationList activeMode={activeMode} counts={unreadCounts} onModeChange={(mode) => { clearSelection(); navigate(messagesPath(mode)); }} items={visibleItems} selectedKey={selectedKey} search={search} searchResults={searchResults} messageSearchResults={messageSearchResults} onSearchChange={setSearch} onSelect={selectUnified} onSelectPerson={startDirectWithUser} onSelectMessageSearch={selectSearchMessage} onCompose={() => setShowNewMessage(true)} emptyLabel="No conversations yet." />}
               thread={thread}
               info={
-            activeRecipient ? (
-              <ConversationInfoPanel
-                name={activeRecipient.name}
-                avatarUrl={activeRecipient.avatar_url}
-                active={realtimeState === "connected"}
-                sharedAttachments={sharedAttachments}
-                onViewProfile={() => navigate(`/helper/${activeRecipient.id}`)}
-                onViewSharedMedia={() => setShowSharedMedia(true)}
-                onBlock={() => void blockRecipient()}
-                onReport={() => setShowReport(true)}
-                onClose={() => setShowInfo(false)}
-              />
+             activeRecipient ? (
+               <>
+                 {exchangeContext?.pickupRequestId && currentUser && <ExchangePickupContextPanel
+                   listingId={exchangeContext.listingId}
+                   pickupRequestId={exchangeContext.pickupRequestId}
+                   currentUserId={currentUser.id}
+                   peerId={activeRecipient.id}
+                 />}
+                 <ConversationInfoPanel
+                   name={activeRecipient.name}
+                   avatarUrl={activeRecipient.avatar_url}
+                   active={realtimeState === "connected"}
+                   sharedAttachments={sharedAttachments}
+                   onViewProfile={() => navigate(`/helper/${activeRecipient.id}`)}
+                   onViewSharedMedia={() => setShowSharedMedia(true)}
+                   onBlock={() => void blockRecipient()}
+                   onReport={() => setShowReport(true)}
+                   onClose={() => setShowInfo(false)}
+                 />
+               </>
             ) : selectedRequest ? (
               <ConversationInfoPanel
                 name={selectedRequest.requester_id === currentUser?.id ? selectedRequest.helper_name || "Your helper" : selectedRequest.requester_name || "Request owner"}

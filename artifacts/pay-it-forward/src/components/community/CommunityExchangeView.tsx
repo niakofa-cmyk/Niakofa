@@ -33,7 +33,6 @@ import {
   reportExchangeListing,
   renewExchangeListing,
   updateExchangeListing,
-  updateExchangePickupRequest,
   type ExchangeReportType,
 } from "@/lib/community-exchange-client";
 import type {
@@ -41,6 +40,7 @@ import type {
   ExchangeCondition,
   ExchangeListing,
   ExchangeListingType,
+  ExchangePickupLocationType,
   ExchangePickupRequest,
   ExchangeResourceType,
 } from "@/lib/community-exchange-types";
@@ -82,6 +82,14 @@ const conditions: Array<{ value: ExchangeCondition; label: string }> = [
   { value: "like_new", label: "Like new" },
   { value: "good", label: "Good" },
   { value: "well_loved", label: "Well loved" },
+];
+const pickupLocationTypes: Array<{ value: ExchangePickupLocationType; label: string }> = [
+  { value: "public_place", label: "Public place" },
+  { value: "community_center", label: "Community center" },
+  { value: "library", label: "Library" },
+  { value: "park", label: "Park" },
+  { value: "business_parking", label: "Business parking lot" },
+  { value: "other_public", label: "Other public location" },
 ];
 
 function readLocation(): LocalLocation | null {
@@ -125,6 +133,22 @@ function formatDate(date: string) {
 
 function statusLabel(status: string) {
   return status.replaceAll("_", " ");
+}
+
+function pickupRequestForParticipantView(request: ExchangePickupRequest): ExchangePickupRequest {
+  return {
+    ...request,
+    pickup_area: "Public pickup area",
+    dispute: request.dispute ? {
+      ...request.dispute,
+      reason: null,
+      evidence: null,
+      resolution: null,
+    } : request.dispute,
+    dispute_reason: undefined,
+    dispute_evidence: undefined,
+    dispute_resolution: undefined,
+  };
 }
 
 function formatExpiry(date: string | null | undefined) {
@@ -260,7 +284,13 @@ export function CommunityExchangeView() {
   const [postSubmitting, setPostSubmitting] = useState(false);
   const [postError, setPostError] = useState("");
   const [notice, setNotice] = useState("");
-  const [requestForm, setRequestForm] = useState({ note: "", pickup_area: "", proposed_window: "" });
+  const [requestForm, setRequestForm] = useState({
+    note: "",
+    pickup_area: "",
+    proposed_window: "",
+    pickup_location_type: "public_place" as ExchangePickupLocationType,
+    pickup_note: "",
+  });
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportForm, setReportForm] = useState<{ type: ExchangeReportType; description: string }>({ type: "other", description: "" });
@@ -278,6 +308,7 @@ export function CommunityExchangeView() {
     category: "household" as ExchangeCategory,
     condition: "good" as ExchangeCondition,
     neighborhood: initialLocation?.label ?? "",
+    pickup_location_type: "public_place" as ExchangePickupLocationType,
     pickup_notes: "",
   });
   const [editForm, setEditForm] = useState({
@@ -288,6 +319,7 @@ export function CommunityExchangeView() {
     category: "household" as ExchangeCategory,
     condition: "good" as ExchangeCondition,
     neighborhood: "",
+    pickup_location_type: "public_place" as ExchangePickupLocationType,
     pickup_notes: "",
   });
 
@@ -366,7 +398,7 @@ export function CommunityExchangeView() {
     setRequestsError("");
     getExchangePickupRequests()
       .then((result) => {
-        if (!cancelled) setPickupRequests(result.pickup_requests ?? []);
+        if (!cancelled) setPickupRequests((result.pickup_requests ?? []).map(pickupRequestForParticipantView));
       })
       .catch((error: unknown) => {
         if (!cancelled) setRequestsError(error instanceof Error ? error.message : "Coordination requests could not be loaded.");
@@ -406,7 +438,13 @@ export function CommunityExchangeView() {
       .then((result) => {
         if (!cancelled) {
           setSelectedListing(result.listing);
-          setRequestForm({ note: "", pickup_area: location?.label ?? result.listing.neighborhood, proposed_window: "" });
+          setRequestForm({
+            note: "",
+            pickup_area: location?.label ?? result.listing.neighborhood,
+            proposed_window: "",
+            pickup_location_type: "public_place",
+            pickup_note: "",
+          });
         }
       })
       .catch((error: unknown) => {
@@ -525,7 +563,7 @@ export function CommunityExchangeView() {
     try {
       await createExchangePickupRequest(selectedListing.id, requestForm);
       setNotice("Your note was sent to the neighbor. Keep coordination inside Niakofa.");
-      setRequestForm((current) => ({ ...current, note: "", proposed_window: "" }));
+      setRequestForm((current) => ({ ...current, note: "", proposed_window: "", pickup_note: "" }));
       setRefreshTick((tick) => tick + 1);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "The coordination note could not be sent.");
@@ -551,26 +589,6 @@ export function CommunityExchangeView() {
       setEditError(error instanceof Error ? error.message : "The listing could not be updated.");
     } finally {
       setEditSubmitting(false);
-    }
-  };
-
-  const runPickupAction = async (request: ExchangePickupRequest, action: "accept" | "decline" | "cancel" | "confirm-complete") => {
-    setActionLoading(request.id);
-    setNotice("");
-    try {
-      const result = await updateExchangePickupRequest(request.id, action);
-      setNotice(
-        result.awaiting_other_confirmation
-          ? "Your confirmation is recorded. We are waiting for the other participant to confirm the handoff."
-          : action === "confirm-complete"
-            ? "Both participants confirmed the handoff. Thank you for closing the loop."
-            : "Coordination updated.",
-      );
-      setRefreshTick((tick) => tick + 1);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "That coordination update could not be made.");
-    } finally {
-      setActionLoading(null);
     }
   };
 
@@ -683,7 +701,7 @@ export function CommunityExchangeView() {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2" data-testid="listings-grid">
-            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} onRenew={mineOnly ? renewListing : undefined} onEdit={mineOnly ? (item) => {
+            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} onRenew={mineOnly ? renewListing : undefined} onEdit={mineOnly && !requestsLoading && !pickupRequests.some((request) => request.listing_id === listing.id && request.status === "accepted") ? (item) => {
               setEditError("");
               setEditForm({
                 listing_type: item.listing_type,
@@ -693,6 +711,7 @@ export function CommunityExchangeView() {
                 category: item.category,
                 condition: item.condition,
                 neighborhood: item.neighborhood,
+                pickup_location_type: item.pickup_location_type ?? "public_place",
                 pickup_notes: item.pickup_notes ?? "",
               });
               setEditOpen(true);
@@ -723,7 +742,7 @@ export function CommunityExchangeView() {
             {pickupRequests.map((request) => (
               <div key={request.id} className="rounded-xl border border-border bg-background/45 p-3" data-testid={`pickup-request-${request.id}`}>
                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-bold">{request.listing_title || `Exchange listing #${request.listing_id}`}</p><p className="mt-1 text-xs text-muted-foreground">{request.pickup_area} · {request.proposed_window}</p>{request.status === "accepted" && formatExpiry(request.coordination_expires_at) && <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-300">Coordinate by {formatExpiry(request.coordination_expires_at)} or this reservation will be released.</p>}</div><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black uppercase ${request.status === "completed" ? "bg-primary/15 text-primary" : request.status === "expired" ? "bg-amber-400/15 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"}`} data-testid={`status-pickup-${request.id}`}>{statusLabel(request.status)}</span></div>
-                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{request.note}</p>
+                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{request.note}</p>
                  {request.status === "accepted" && (request.buyer_confirmed_at || request.seller_confirmed_at) && (
                    <p className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-2 text-xs font-semibold text-primary" data-testid={`awaiting-confirmation-${request.id}`}>
                      One participant has confirmed the handoff. Waiting for the other participant to confirm.
@@ -738,9 +757,7 @@ export function CommunityExchangeView() {
                        window.location.assign(`/messages?${params.toString()}`);
                      }} className="min-h-8 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-open-exchange-messages-${request.id}`}><MessageSquare className="mr-1 inline h-3.5 w-3.5" /> Open Messages</button>
                    ) : null}
-                  {request.status === "requested" && <><button type="button" disabled={actionLoading === request.id} onClick={() => runPickupAction(request, "accept")} className="min-h-8 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-accept-pickup-${request.id}`}>Accept</button><button type="button" disabled={actionLoading === request.id} onClick={() => runPickupAction(request, "decline")} className="min-h-8 rounded-lg border border-border px-2.5 py-1.5 text-xs font-bold hover:bg-muted disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-decline-pickup-${request.id}`}>Decline</button></>}
-                  {(request.status === "requested" || request.status === "accepted") && <button type="button" disabled={actionLoading === request.id} onClick={() => runPickupAction(request, "cancel")} className="min-h-8 rounded-lg border border-border px-2.5 py-1.5 text-xs font-bold text-muted-foreground hover:bg-muted disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-cancel-pickup-${request.id}`}>Cancel</button>}
-                  {request.status === "accepted" && <button type="button" disabled={actionLoading === request.id} onClick={() => runPickupAction(request, "confirm-complete")} className="min-h-8 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-complete-pickup-${request.id}`}>{actionLoading === request.id ? "Updating…" : "Confirm complete"}</button>}
+                   <span className="text-xs text-muted-foreground">Manage pickup actions in the Exchange panel in Messages.</span>
                 </div>
               </div>
             ))}
@@ -799,7 +816,7 @@ export function CommunityExchangeView() {
           <form onSubmit={submitPost} className="space-y-5">
             {postStep === 1 && <div className="space-y-5"><div><h3 className="text-lg font-black">What kind of solidarity is this?</h3><p className="mt-1 text-sm text-muted-foreground">Choose whether you are offering something or naming a need.</p></div><div className="grid gap-3 sm:grid-cols-2">{([["offer", "I can offer", "Share a free item or skill.", HandHeart], ["need", "I need", "Ask neighbors for practical support.", HeartHandshake]] as const).map(([value, label, description, Icon]) => <button key={value} type="button" onClick={() => setPostForm((current) => ({ ...current, listing_type: value }))} className={`rounded-2xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-primary ${postForm.listing_type === value ? "border-primary bg-primary/10" : "border-border hover:bg-muted"}`} data-testid={`button-post-type-${value}`}><Icon className={`h-6 w-6 ${postForm.listing_type === value ? "text-primary" : "text-muted-foreground"}`} aria-hidden="true" /><p className="mt-3 font-black">{label}</p><p className="mt-1 text-sm text-muted-foreground">{description}</p></button>)}</div><div><p className="mb-2 text-xs font-bold">Is it a thing or a skill?</p><div className="grid grid-cols-2 gap-2">{([["goods", "Goods", Package], ["services", "Services", Wrench]] as const).map(([value, label, Icon]) => <button key={value} type="button" onClick={() => setPostForm((current) => ({ ...current, resource_type: value }))} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary ${postForm.resource_type === value ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`} data-testid={`button-post-resource-${value}`}><Icon className="h-4 w-4" /> {label}</button>)}</div></div></div>}
             {postStep === 2 && <div className="space-y-4"><div><h3 className="text-lg font-black">Add the useful details</h3><p className="mt-1 text-sm text-muted-foreground">Be specific and kind. Do not include phone numbers, addresses, links, or payment details.</p></div><div className="space-y-2"><FieldLabel htmlFor="post-title">Short title</FieldLabel><input id="post-title" required minLength={3} maxLength={100} value={postForm.title} onChange={(event) => setPostForm((current) => ({ ...current, title: event.target.value }))} placeholder={postForm.resource_type === "services" ? "Help with basic bike repairs" : "Clean winter coats, mixed sizes"} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-title" /></div><div className="space-y-2"><FieldLabel htmlFor="post-description">Description</FieldLabel><textarea id="post-description" required minLength={10} maxLength={2000} rows={5} value={postForm.description} onChange={(event) => setPostForm((current) => ({ ...current, description: event.target.value }))} placeholder="What should a neighbor know?" className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-description" /></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><FieldLabel htmlFor="post-category">Category</FieldLabel><select id="post-category" value={postForm.category} onChange={(event) => setPostForm((current) => ({ ...current, category: event.target.value as ExchangeCategory }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="select-post-category">{categories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select></div><div className="space-y-2"><FieldLabel htmlFor="post-condition">Condition / format</FieldLabel><select id="post-condition" value={postForm.condition} onChange={(event) => setPostForm((current) => ({ ...current, condition: event.target.value as ExchangeCondition }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="select-post-condition">{conditions.map((condition) => <option key={condition.value} value={condition.value}>{condition.label}</option>)}</select></div></div></div>}
-            {postStep === 3 && <div className="space-y-4"><div><h3 className="text-lg font-black">Set a coarse handoff area</h3><p className="mt-1 text-sm text-muted-foreground">Keep the first exchange public and general. You can coordinate a safer detail later inside Niakofa.</p></div><div className="space-y-2"><FieldLabel htmlFor="post-neighborhood">Neighborhood or ZIP</FieldLabel><input id="post-neighborhood" required minLength={2} maxLength={80} value={postForm.neighborhood} onChange={(event) => setPostForm((current) => ({ ...current, neighborhood: event.target.value }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-neighborhood" /></div><div className="space-y-2"><FieldLabel htmlFor="post-pickup-notes">Public pickup notes (optional)</FieldLabel><textarea id="post-pickup-notes" maxLength={500} rows={3} value={postForm.pickup_notes} onChange={(event) => setPostForm((current) => ({ ...current, pickup_notes: event.target.value }))} placeholder="Example: daytime handoff near the library" className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-pickup-notes" /></div><div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm leading-relaxed text-muted-foreground"><ShieldCheck className="mr-2 inline h-4 w-4 text-primary" aria-hidden="true" /> Your post is free to the community and may be held for a quick safety review before it appears.</div></div>}
+             {postStep === 3 && <div className="space-y-4"><div><h3 className="text-lg font-black">Set a coarse handoff area</h3><p className="mt-1 text-sm text-muted-foreground">Keep the first exchange public and general. You can coordinate a safer detail later inside Niakofa.</p></div><div className="space-y-2"><FieldLabel htmlFor="post-neighborhood">Neighborhood or ZIP</FieldLabel><input id="post-neighborhood" required minLength={2} maxLength={80} value={postForm.neighborhood} onChange={(event) => setPostForm((current) => ({ ...current, neighborhood: event.target.value }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-neighborhood" /></div><div className="space-y-2"><FieldLabel htmlFor="post-pickup-location-type">Public pickup location type</FieldLabel><select id="post-pickup-location-type" required value={postForm.pickup_location_type} onChange={(event) => setPostForm((current) => ({ ...current, pickup_location_type: event.target.value as ExchangePickupLocationType }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="select-post-pickup-location-type">{pickupLocationTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div><div className="space-y-2"><FieldLabel htmlFor="post-pickup-notes">Public pickup notes (optional)</FieldLabel><textarea id="post-pickup-notes" maxLength={500} rows={3} value={postForm.pickup_notes} onChange={(event) => setPostForm((current) => ({ ...current, pickup_notes: event.target.value }))} placeholder="Example: daytime handoff near the library" className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-pickup-notes" /></div><div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm leading-relaxed text-muted-foreground"><ShieldCheck className="mr-2 inline h-4 w-4 text-primary" aria-hidden="true" /> Your post is free to the community and may be held for a quick safety review before it appears.</div></div>}
             {postError && <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert" data-testid="error-post">{postError}</p>}
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4"><button type="button" onClick={() => postStep === 1 ? setPostOpen(false) : setPostStep((step) => step - 1)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-bold hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary" data-testid="button-post-back">{postStep === 1 ? "Cancel" : <><ArrowLeft className="h-4 w-4" /> Back</>}</button><button type="submit" disabled={postSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary" data-testid="button-post-next">{postSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{postStep === 3 ? "Share with neighbors" : "Continue"} {!postSubmitting && <ChevronRight className="h-4 w-4" />}</button></div>
           </form>
@@ -809,8 +826,8 @@ export function CommunityExchangeView() {
        {editOpen && (
          <ModalFrame title="Edit Exchange post" eyebrow="Before pickup coordination is accepted" onClose={() => setEditOpen(false)} wide>
            <form onSubmit={submitEdit} className="space-y-4">
-             <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm leading-relaxed text-muted-foreground">
-               Updates go through the same safety review as a new post. Keep exact addresses, phone numbers, links, and payment details out of the post.
+              <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm leading-relaxed text-muted-foreground">
+                You can edit while this listing is active and before pickup coordination is accepted or held. Editing stops once a request is accepted or the listing is held for review. Updates go through the same safety review as a new post. Keep exact addresses, phone numbers, links, and payment details out of the post.
              </div>
              <div className="grid gap-3 sm:grid-cols-2">
                <div className="space-y-2"><FieldLabel htmlFor="edit-listing-type">Post type</FieldLabel><select id="edit-listing-type" value={editForm.listing_type} onChange={(event) => setEditForm((current) => ({ ...current, listing_type: event.target.value as ExchangeListingType }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"><option value="offer">Offer</option><option value="need">Need</option></select></div>
@@ -823,6 +840,7 @@ export function CommunityExchangeView() {
                <div className="space-y-2"><FieldLabel htmlFor="edit-condition">Condition / format</FieldLabel><select id="edit-condition" value={editForm.condition} onChange={(event) => setEditForm((current) => ({ ...current, condition: event.target.value as ExchangeCondition }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm">{conditions.map((condition) => <option key={condition.value} value={condition.value}>{condition.label}</option>)}</select></div>
              </div>
              <div className="space-y-2"><FieldLabel htmlFor="edit-neighborhood">Neighborhood or ZIP</FieldLabel><input id="edit-neighborhood" required minLength={2} maxLength={80} value={editForm.neighborhood} onChange={(event) => setEditForm((current) => ({ ...current, neighborhood: event.target.value }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="input-edit-neighborhood" /></div>
+              <div className="space-y-2"><FieldLabel htmlFor="edit-pickup-location-type">Public pickup location type</FieldLabel><select id="edit-pickup-location-type" required value={editForm.pickup_location_type} onChange={(event) => setEditForm((current) => ({ ...current, pickup_location_type: event.target.value as ExchangePickupLocationType }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="select-edit-pickup-location-type">{pickupLocationTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
              <div className="space-y-2"><FieldLabel htmlFor="edit-pickup-notes">Public pickup notes (optional)</FieldLabel><textarea id="edit-pickup-notes" maxLength={500} rows={3} value={editForm.pickup_notes} onChange={(event) => setEditForm((current) => ({ ...current, pickup_notes: event.target.value }))} className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm" data-testid="input-edit-pickup-notes" /></div>
              {editError && <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert" data-testid="error-edit-listing">{editError}</p>}
              <div className="flex justify-end gap-2 border-t border-border pt-4"><button type="button" onClick={() => setEditOpen(false)} className="min-h-10 rounded-xl border border-border px-4 py-2 text-sm font-bold hover:bg-muted">Cancel</button><button type="submit" disabled={editSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-60" data-testid="button-save-edit-listing">{editSubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Save changes</button></div>
@@ -831,7 +849,27 @@ export function CommunityExchangeView() {
        )}
 
       {selectedId !== null && (
-        <ModalFrame title={selectedListing?.title || "Listing details"} eyebrow="Community post" onClose={() => setSelectedId(null)} wide>
+       <ModalFrame title={selectedListing?.title || "Listing details"} eyebrow="Community post" onClose={() => setSelectedId(null)} wide>
+           {selectedListing && selectedListing.seller_id === currentUser?.id && selectedListing.status === "active" && !requestsLoading && !pickupRequests.some((request) => request.listing_id === selectedListing.id && request.status === "accepted") && <button type="button" onClick={() => {
+             setEditError("");
+             setEditForm({
+               listing_type: selectedListing.listing_type,
+               resource_type: selectedListing.resource_type,
+               title: selectedListing.title,
+               description: selectedListing.description,
+               category: selectedListing.category,
+               condition: selectedListing.condition,
+               neighborhood: selectedListing.neighborhood,
+               pickup_location_type: selectedListing.pickup_location_type ?? "public_place",
+               pickup_notes: selectedListing.pickup_notes ?? "",
+             });
+             setEditOpen(true);
+           }} className="mb-4 inline-flex min-h-9 items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-edit-listing-detail-${selectedListing.id}`}><Tag className="h-3.5 w-3.5" /> Edit this post</button>}
+           {selectedListing && selectedListing.seller_id === currentUser?.id && (selectedListing.status === "held" || pickupRequests.some((request) => request.listing_id === selectedListing.id && request.status === "accepted")) && <p className="mb-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">Editing is available only while the listing is active. It stops after a pickup request is accepted or the listing is held for review.</p>}
+           {selectedListing?.status === "active" && selectedListing.seller_id !== currentUser?.id && <div className="mb-4 grid gap-3 rounded-xl border border-border bg-background/50 p-3 sm:grid-cols-2">
+             <div className="space-y-2"><FieldLabel htmlFor="request-pickup-location-type">Public pickup location type</FieldLabel><select id="request-pickup-location-type" required value={requestForm.pickup_location_type} onChange={(event) => setRequestForm((current) => ({ ...current, pickup_location_type: event.target.value as ExchangePickupLocationType }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="select-request-pickup-location-type">{pickupLocationTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+             <div className="space-y-2"><FieldLabel htmlFor="request-public-pickup-note">Pickup note (optional)</FieldLabel><input id="request-public-pickup-note" maxLength={300} value={requestForm.pickup_note} onChange={(event) => setRequestForm((current) => ({ ...current, pickup_note: event.target.value }))} placeholder="General public-place detail only" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="input-request-public-pickup-note" /><p className="text-[11px] text-muted-foreground">No exact address, phone number, or private contact details.</p></div>
+           </div>}
           {detailLoading ? <div className="space-y-3" data-testid="loading-listing-detail"><div className="h-6 w-2/3 animate-pulse rounded bg-muted" /><div className="h-20 animate-pulse rounded-xl bg-muted" /><div className="h-12 animate-pulse rounded-xl bg-muted" /></div> : detailError ? <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm" role="alert" data-testid="error-listing-detail">{detailError}</div> : selectedListing && <div className="space-y-5"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-primary/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-primary">{selectedListing.listing_type === "need" ? "Need" : "Offer"}</span><span className="rounded-full bg-muted px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{selectedListing.resource_type}</span><span className="text-xs text-muted-foreground">Posted {formatDate(selectedListing.created_at)}</span></div><div><h3 className="text-2xl font-black tracking-tight">{selectedListing.title}</h3><p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{selectedListing.description}</p></div><div className="grid gap-2 text-sm sm:grid-cols-2"><div className="rounded-xl border border-border bg-background/50 p-3"><span className="text-xs text-muted-foreground">Category</span><p className="mt-1 font-bold"><Tag className="mr-1.5 inline h-3.5 w-3.5 text-primary" />{selectedListing.category}</p></div><div className="rounded-xl border border-border bg-background/50 p-3"><span className="text-xs text-muted-foreground">Condition</span><p className="mt-1 font-bold">{selectedListing.condition.replaceAll("_", " ")}</p></div><div className="rounded-xl border border-border bg-background/50 p-3 sm:col-span-2"><span className="text-xs text-muted-foreground">Coarse area</span><p className="mt-1 font-bold"><MapPin className="mr-1.5 inline h-3.5 w-3.5 text-primary" />{selectedListing.neighborhood}</p>{selectedListing.pickup_notes && <p className="mt-2 text-xs text-muted-foreground">{selectedListing.pickup_notes}</p>}</div></div><div className="flex items-center gap-2 border-t border-border pt-4 text-xs text-muted-foreground"><UserRound className="h-4 w-4 text-primary" /> Shared by {selectedListing.seller_name || "a verified neighbor"}</div>{selectedListing.status === "active" && <form onSubmit={submitPickupRequest} className="space-y-3 rounded-2xl border border-primary/25 bg-primary/5 p-4"><div><h4 className="font-black">{selectedListing.listing_type === "need" ? "Offer support" : "Ask to coordinate"}</h4><p className="mt-1 text-xs text-muted-foreground">Send a short note. Keep phone numbers, exact addresses, links, and payment details out of this space.</p></div><textarea required minLength={3} maxLength={1000} rows={3} value={requestForm.note} onChange={(event) => setRequestForm((current) => ({ ...current, note: event.target.value }))} placeholder={selectedListing.listing_type === "need" ? "I may be able to help with this…" : "I would be grateful to receive this…" } className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-pickup-note" /><div className="grid gap-3 sm:grid-cols-2"><input required minLength={2} maxLength={100} value={requestForm.pickup_area} onChange={(event) => setRequestForm((current) => ({ ...current, pickup_area: event.target.value }))} placeholder="Public pickup area" className="h-10 rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" aria-label="Public pickup area" data-testid="input-pickup-area" /><input required minLength={2} maxLength={120} value={requestForm.proposed_window} onChange={(event) => setRequestForm((current) => ({ ...current, proposed_window: event.target.value }))} placeholder="A time window" className="h-10 rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" aria-label="Proposed time window" data-testid="input-pickup-window" /></div><button type="submit" disabled={requestSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary" data-testid="button-send-pickup-request">{requestSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />} Send coordination note</button></form>}<div className="flex justify-between gap-3 border-t border-border pt-4"><button type="button" onClick={() => setReportOpen(true)} className="text-xs font-bold text-muted-foreground underline-offset-4 hover:text-destructive hover:underline focus:outline-none focus:ring-2 focus:ring-primary" data-testid="button-report-listing">Report a safety concern</button><span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><ShieldCheck className="h-3.5 w-3.5 text-primary" /> Keep it inside Niakofa</span></div></div>}
         </ModalFrame>
       )}

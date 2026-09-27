@@ -108,10 +108,16 @@ test("Exchange completion and impact metrics use verified, privacy-safe semantic
 
 test("Exchange client surfaces the two-party completion state", async () => {
   const client = await read("artifacts/pay-it-forward/src/lib/community-exchange-client.ts");
-  const view = await read("artifacts/pay-it-forward/src/components/community/CommunityExchangeView.tsx");
+  const view = await read("artifacts/pay-it-forward/src/components/messages/ExchangePickupContextPanel.tsx");
   assert.match(client, /awaiting_other_confirmation\?: boolean/);
   assert.match(view, /awaiting_other_confirmation/);
-  assert.match(view, /Waiting for the other participant to confirm/);
+  assert.match(view, /Waiting for the other participant/);
+});
+
+test("admin keeps both dispute queues available", async () => {
+  const admin = await read("artifacts/pay-it-forward/src/pages/admin.tsx");
+  assert.match(admin, /activeTab === "disputes"\s+&& <DisputesTab \/>/);
+  assert.match(admin, /<ExchangePickupDisputesTab \/>/);
 });
 
 test("digest location persistence is coarse and timezone-aware", async () => {
