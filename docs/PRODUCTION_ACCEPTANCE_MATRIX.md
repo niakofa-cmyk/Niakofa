@@ -76,6 +76,7 @@ Only after Gates 2 and 3:
 - [ ] Thumbnail/variant objects are written to the intended bucket
 - [ ] Shared media retrieval is authorized for the owning context
 - [ ] An unauthorized user cannot retrieve the object or variant
+- [ ] Owner deletes a disposable asset; original and thumbnail return 404 and the shared list no longer includes it
 - [ ] Failure paths leave no temporary processing files or orphaned probe objects
 
 The live browser certification is deliberately double-gated. It must be run

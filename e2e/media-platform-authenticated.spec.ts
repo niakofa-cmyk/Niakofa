@@ -230,5 +230,28 @@ test.describe("authenticated universal media smoke", () => {
       const response = await request.get(url, { headers: unauthorizedHeaders });
       expect(response.status(), `USER_B_STATE must not retrieve ${url}`).toBe(404);
     }
+
+    // Use a separate disposable photo to exercise user-facing deletion while
+    // leaving the two retained playback fixtures available for review.
+    const deletionId = await uploadAndComplete(request, headers, {
+      body: png,
+      mediaType: "photo",
+      mimeType: "image/png",
+      originalName: "production-media-delete-smoke.png",
+    });
+    const deletionAsset = await waitForAsset(request, headers, deletionId, false);
+    const deletion = await request.delete(`/api/media-assets/${deletionId}`, { headers });
+    expect(deletion.status(), "the owner should be able to delete the disposable media asset").toBe(204);
+    const deletedOriginal = await request.get(deletionAsset.media_url, { headers });
+    expect(deletedOriginal.status(), "deleted original media must not be playable").toBe(404);
+    if (!deletionAsset.thumbnail_url) throw new Error("The deletion fixture has no thumbnail.");
+    const deletedThumbnail = await request.get(deletionAsset.thumbnail_url, { headers });
+    expect(deletedThumbnail.status(), "deleted thumbnails must not be playable").toBe(404);
+    const remaining = await jsonResponse<{ assets?: MediaAsset[] }>(
+      request,
+      `/api/media-assets/shared?contextKind=${encodeURIComponent(String(contextKind))}&contextId=${contextId}`,
+      headers,
+    );
+    expect(remaining.assets?.some((asset) => asset.id === deletionId)).toBe(false);
   });
 });

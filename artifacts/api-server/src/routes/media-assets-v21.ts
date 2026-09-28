@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { and, desc, eq, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
   communityStoriesTable,
   db,
@@ -33,7 +33,15 @@ import {
 } from "../lib/community-story-policy";
 
 const router = Router();
-const CONTEXT_KINDS = new Set(["story", "exchange_spark", "direct", "request", "hub"]);
+const CONTEXT_KINDS = new Set([
+  "story",
+  "exchange_spark",
+  "direct",
+  "request",
+  "hub",
+  "community_moment",
+  "hub_moment",
+]);
 
 function positiveId(value: unknown): number | null {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -485,23 +493,39 @@ router.put("/media-assets/:id/upload", requireAuth, requireApproved, generalApiL
   if (!isMediaPlatformV21Enabled()) return disabled(res);
   const assetId = positiveId(req.params.id);
   if (!assetId || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: "A raw media body is required." });
-  const [asset] = await db.select().from(mediaAssetsTable)
-    .where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!)))
-    .limit(1);
-  if (!asset || asset.status !== "pending") return res.status(404).json({ error: "Upload session not found." });
-  if (!(await canWriteContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
-    return res.status(404).json({ error: "Upload session not found." });
-  }
-  if (!isAllowedMediaSize(asset.byte_size) || req.body.length > MAX_MEDIA_BYTES) {
+  const result = await db.transaction(async (tx) => {
+    // Hold the row lock through the object PUT. Deletion locks the same row,
+    // so either this write finishes before tombstoning/cleanup, or it sees the
+    // tombstone and cannot recreate the deleted object afterward.
+    const [asset] = await tx.select().from(mediaAssetsTable)
+      .where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!)))
+      .limit(1)
+      .for("update");
+    if (!asset || asset.status !== "pending") return "not-found" as const;
+    if (!(await canWriteContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
+      return "not-found" as const;
+    }
+    if (!isAllowedMediaSize(asset.byte_size) || req.body.length > MAX_MEDIA_BYTES) return "too-large" as const;
+    if (req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !== asset.mime_type.toLowerCase()) {
+      return "wrong-type" as const;
+    }
+    if (req.body.length !== asset.byte_size) return "wrong-size" as const;
+    try {
+      await putAsset(asset.original_key, req.body, asset.mime_type);
+    } catch {
+      return "storage-failed" as const;
+    }
+    return "stored" as const;
+  });
+  if (result === "not-found") return res.status(404).json({ error: "Upload session not found." });
+  if (result === "too-large") {
     return res.status(413).json({ error: "Media upload exceeds the 64 MiB limit.", error_code: "MEDIA_SIZE_INVALID" });
   }
-  if (req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !== asset.mime_type.toLowerCase()) {
+  if (result === "wrong-type") {
     return res.status(415).json({ error: "Upload content type does not match the declared media type.", error_code: "MEDIA_TYPE_INVALID" });
   }
-  if (req.body.length !== asset.byte_size) return res.status(409).json({ error: "Uploaded byte size does not match the declared size." });
-  try {
-    await putAsset(asset.original_key, req.body, asset.mime_type);
-  } catch {
+  if (result === "wrong-size") return res.status(409).json({ error: "Uploaded byte size does not match the declared size." });
+  if (result === "storage-failed") {
     return res.status(503).json({ error: "Media storage is unavailable. Retry the upload.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
   }
   return res.status(204).send();
@@ -539,13 +563,20 @@ router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalA
       return res.status(409).json({ error: "Uploaded object size does not match the declared size.", request_id: requestId });
     }
     const metadata = await validateMediaBuffer(bytes, asset.media_type, asset.mime_type);
-    await db.update(mediaAssetsTable).set({
+    const [validatedAsset] = await db.update(mediaAssetsTable).set({
       width: metadata.width,
       height: metadata.height,
       duration_ms: metadata.duration_ms,
       metadata: { ...asset.metadata, signature_validated: true },
       updated_at: new Date(),
-    }).where(eq(mediaAssetsTable.id, asset.id));
+    }).where(and(
+      eq(mediaAssetsTable.id, asset.id),
+      eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+      inArray(mediaAssetsTable.status, ["pending", "failed"]),
+    )).returning({ id: mediaAssetsTable.id });
+    if (!validatedAsset) {
+      return res.status(404).json({ error: "Upload session not found." });
+    }
   } catch (error) {
     if (error instanceof Error && error.message === "STORAGE_OBJECT_TOO_LARGE") {
       logger.warn({ requestId, mediaAssetId: asset.id, code: "MEDIA_SIZE_INVALID" }, "media-upload: object exceeded bounded read");
@@ -611,7 +642,11 @@ router.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimit
       .for("update");
     if (!locked) return null;
     const [updated] = await tx.update(mediaAssetsTable)
-      .set({ status: "deleted", updated_at: new Date() })
+      .set({
+        status: "deleted",
+        metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true)`,
+        updated_at: new Date(),
+      })
       .where(and(
         eq(mediaAssetsTable.id, assetId),
         eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
@@ -639,6 +674,12 @@ router.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimit
       error_code: "MEDIA_STORAGE_CLEANUP_INCOMPLETE",
     });
   }
+  await db.update(mediaAssetsTable)
+    .set({
+      metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+      updated_at: new Date(),
+    })
+    .where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.status, "deleted")));
   return res.status(204).send();
 });
 

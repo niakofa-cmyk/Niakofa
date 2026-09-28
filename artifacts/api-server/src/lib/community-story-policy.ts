@@ -88,6 +88,10 @@ export function isLinkedStoryVideoAssetReady(input: {
   assetStatus: string | null;
   variantKey: string | null;
 }): boolean {
+  // Any V21-linked media must remain ready before it is included in a Story,
+  // regardless of whether the Story is Exchange-linked. This also makes a
+  // deleted asset unavailable if object cleanup is waiting for a retry.
+  if (input.mediaAssetId !== null && input.assetStatus !== "ready") return false;
   if (!input.linked) return true;
   if (input.mediaType !== "video") return false;
   return input.mediaAssetId === null

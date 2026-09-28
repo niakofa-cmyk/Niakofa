@@ -18910,13 +18910,13 @@ var require_view = __commonJS({
     View2.prototype.resolve = function resolve2(dir, file2) {
       var ext = this.ext;
       var path6 = join(dir, file2);
-      var stat2 = tryStat(path6);
-      if (stat2 && stat2.isFile()) {
+      var stat3 = tryStat(path6);
+      if (stat3 && stat3.isFile()) {
         return path6;
       }
       path6 = join(dir, basename2(file2, ext), "index" + ext);
-      stat2 = tryStat(path6);
-      if (stat2 && stat2.isFile()) {
+      stat3 = tryStat(path6);
+      if (stat3 && stat3.isFile()) {
         return path6;
       }
     };
@@ -19069,9 +19069,9 @@ var require_etag = __commonJS({
       }
       return obj && typeof obj === "object" && "ctime" in obj && toString.call(obj.ctime) === "[object Date]" && "mtime" in obj && toString.call(obj.mtime) === "[object Date]" && "ino" in obj && typeof obj.ino === "number" && "size" in obj && typeof obj.size === "number";
     }
-    function stattag(stat2) {
-      var mtime = stat2.mtime.getTime().toString(16);
-      var size = stat2.size.toString(16);
+    function stattag(stat3) {
+      var mtime = stat3.mtime.getTime().toString(16);
+      var size = stat3.size.toString(16);
       return '"' + size + "-" + mtime + '"';
     }
   }
@@ -20770,27 +20770,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router67;
+    module.exports = Router69;
     module.exports.Route = Route;
-    function Router67(options) {
-      if (!(this instanceof Router67)) {
-        return new Router67(options);
+    function Router69(options) {
+      if (!(this instanceof Router69)) {
+        return new Router69(options);
       }
       const opts = options || {};
-      function router67(req, res, next) {
-        router67.handle(req, res, next);
+      function router69(req, res, next) {
+        router69.handle(req, res, next);
       }
-      Object.setPrototypeOf(router67, this);
-      router67.caseSensitive = opts.caseSensitive;
-      router67.mergeParams = opts.mergeParams;
-      router67.params = {};
-      router67.strict = opts.strict;
-      router67.stack = [];
-      return router67;
+      Object.setPrototypeOf(router69, this);
+      router69.caseSensitive = opts.caseSensitive;
+      router69.mergeParams = opts.mergeParams;
+      router69.params = {};
+      router69.strict = opts.strict;
+      router69.stack = [];
+      return router69;
     }
-    Router67.prototype = function() {
+    Router69.prototype = function() {
     };
-    Router67.prototype.param = function param2(name2, fn) {
+    Router69.prototype.param = function param2(name2, fn) {
       if (!name2) {
         throw new TypeError("argument name is required");
       }
@@ -20810,7 +20810,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router67.prototype.handle = function handle(req, res, callback) {
+    Router69.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20937,7 +20937,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router67.prototype.use = function use(handler) {
+    Router69.prototype.use = function use(handler) {
       let offset = 0;
       let path5 = "/";
       if (typeof handler !== "function") {
@@ -20970,7 +20970,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router67.prototype.route = function route(path5) {
+    Router69.prototype.route = function route(path5) {
       const route2 = new Route(path5);
       const layer = new Layer(path5, {
         sensitive: this.caseSensitive,
@@ -20985,7 +20985,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router67.prototype[method] = function(path5) {
+      Router69.prototype[method] = function(path5) {
         const route = this.route(path5);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21168,13 +21168,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router67 = require_router();
+    var Router69 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router67 = null;
+      var router69 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21183,13 +21183,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router67 === null) {
-            router67 = new Router67({
+          if (router69 === null) {
+            router69 = new Router69({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router67;
+          return router69;
         }
       });
     };
@@ -21260,15 +21260,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router67 = this.router;
+      var router69 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router67.use(path5, fn2);
+          return router69.use(path5, fn2);
         }
         debug(".use app under %s", path5);
         fn2.mountpath = path5;
         fn2.parent = this;
-        router67.use(path5, function mounted_app(req, res, next) {
+        router69.use(path5, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -22926,8 +22926,8 @@ var require_send = __commonJS({
       this.sendFile(path6);
       return res;
     };
-    SendStream.prototype.send = function send2(path6, stat2) {
-      var len = stat2.size;
+    SendStream.prototype.send = function send2(path6, stat3) {
+      var len = stat3.size;
       var options = this.options;
       var opts = {};
       var res = this.res;
@@ -22939,7 +22939,7 @@ var require_send = __commonJS({
         return;
       }
       debug('pipe "%s"', path6);
-      this.setHeader(path6, stat2);
+      this.setHeader(path6, stat3);
       this.type(path6);
       if (this.isConditionalGET()) {
         if (this.isPreconditionFailure()) {
@@ -22995,16 +22995,16 @@ var require_send = __commonJS({
       var i2 = 0;
       var self2 = this;
       debug('stat "%s"', path6);
-      fs3.stat(path6, function onstat(err, stat2) {
+      fs3.stat(path6, function onstat(err, stat3) {
         var pathEndsWithSep = path6[path6.length - 1] === sep;
         if (err && err.code === "ENOENT" && !extname(path6) && !pathEndsWithSep) {
           return next(err);
         }
         if (err) return self2.onStatError(err);
-        if (stat2.isDirectory()) return self2.redirect(path6);
+        if (stat3.isDirectory()) return self2.redirect(path6);
         if (pathEndsWithSep) return self2.error(404);
-        self2.emit("file", path6, stat2);
-        self2.send(path6, stat2);
+        self2.emit("file", path6, stat3);
+        self2.send(path6, stat3);
       });
       function next(err) {
         if (self2._extensions.length <= i2) {
@@ -23012,11 +23012,11 @@ var require_send = __commonJS({
         }
         var p = path6 + "." + self2._extensions[i2++];
         debug('stat "%s"', p);
-        fs3.stat(p, function(err2, stat2) {
+        fs3.stat(p, function(err2, stat3) {
           if (err2) return next(err2);
-          if (stat2.isDirectory()) return next();
-          self2.emit("file", p, stat2);
-          self2.send(p, stat2);
+          if (stat3.isDirectory()) return next();
+          self2.emit("file", p, stat3);
+          self2.send(p, stat3);
         });
       }
     };
@@ -23030,11 +23030,11 @@ var require_send = __commonJS({
         }
         var p = join(path6, self2._index[i2]);
         debug('stat "%s"', p);
-        fs3.stat(p, function(err2, stat2) {
+        fs3.stat(p, function(err2, stat3) {
           if (err2) return next(err2);
-          if (stat2.isDirectory()) return next();
-          self2.emit("file", p, stat2);
-          self2.send(p, stat2);
+          if (stat3.isDirectory()) return next();
+          self2.emit("file", p, stat3);
+          self2.send(p, stat3);
         });
       }
       next();
@@ -23065,9 +23065,9 @@ var require_send = __commonJS({
       debug("content-type %s", type2);
       res.setHeader("Content-Type", type2);
     };
-    SendStream.prototype.setHeader = function setHeader(path6, stat2) {
+    SendStream.prototype.setHeader = function setHeader(path6, stat3) {
       var res = this.res;
-      this.emit("headers", res, path6, stat2);
+      this.emit("headers", res, path6, stat3);
       if (this._acceptRanges && !res.getHeader("Accept-Ranges")) {
         debug("accept ranges");
         res.setHeader("Accept-Ranges", "bytes");
@@ -23081,12 +23081,12 @@ var require_send = __commonJS({
         res.setHeader("Cache-Control", cacheControl);
       }
       if (this._lastModified && !res.getHeader("Last-Modified")) {
-        var modified = stat2.mtime.toUTCString();
+        var modified = stat3.mtime.toUTCString();
         debug("modified %s", modified);
         res.setHeader("Last-Modified", modified);
       }
       if (this._etag && !res.getHeader("ETag")) {
-        var val = etag(stat2);
+        var val = etag(stat3);
         debug("etag %s", val);
         res.setHeader("ETag", val);
       }
@@ -23841,7 +23841,7 @@ var require_express = __commonJS({
     var EventEmitter2 = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router67 = require_router();
+    var Router69 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23863,8 +23863,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router67.Route;
-    exports.Router = Router67;
+    exports.Route = Router69.Route;
+    exports.Router = Router69;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -26626,7 +26626,7 @@ var require_transport = __commonJS({
       stream.flushSync();
     }
     function transport(fullOptions) {
-      const { pipeline: pipeline2, targets, levels, dedupe, worker = {}, caller = getCallers(), sync = false } = fullOptions;
+      const { pipeline: pipeline3, targets, levels, dedupe, worker = {}, caller = getCallers(), sync = false } = fullOptions;
       const options = {
         ...fullOptions.options
       };
@@ -26654,9 +26654,9 @@ var require_transport = __commonJS({
             };
           });
         });
-      } else if (pipeline2) {
+      } else if (pipeline3) {
         target = bundlerOverrides["pino-worker"] || join(__dirname, "worker.js");
-        options.pipelines = [pipeline2.map((dest) => {
+        options.pipelines = [pipeline3.map((dest) => {
           return {
             ...dest,
             target: fixTarget(dest.target)
@@ -33545,8 +33545,8 @@ var require_lib4 = __commonJS({
     var helper = require_helper();
     module.exports = function(connInfo, cb) {
       var file2 = helper.getFileName();
-      fs3.stat(file2, function(err, stat2) {
-        if (err || !helper.usePgPass(stat2, file2)) {
+      fs3.stat(file2, function(err, stat3) {
+        if (err || !helper.usePgPass(stat3, file2)) {
           return cb(void 0);
         }
         var st = fs3.createReadStream(file2);
@@ -56244,6 +56244,128 @@ var init_diaspora_hubs = __esm({
   }
 });
 
+// ../../lib/db/src/schema/exchange.ts
+var exchangePickupLocationType, exchangeListingsTable, exchangePickupRequestsTable, exchangePickupDisputesTable, exchangeDigestDeliveriesTable, exchangeModerationReviewHistoryTable;
+var init_exchange = __esm({
+  "../../lib/db/src/schema/exchange.ts"() {
+    "use strict";
+    init_drizzle_orm();
+    init_pg_core();
+    init_users();
+    exchangePickupLocationType = pgEnum("exchange_pickup_location_type", [
+      "public_place",
+      "community_center",
+      "library",
+      "park",
+      "business_parking",
+      "other_public"
+    ]);
+    exchangeListingsTable = pgTable("exchange_listings", {
+      id: serial("id").primaryKey(),
+      seller_id: integer("seller_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+      listing_type: text("listing_type").notNull().default("offer"),
+      resource_type: text("resource_type").notNull().default("goods"),
+      title: text("title").notNull(),
+      description: text("description").notNull(),
+      category: text("category").notNull().default("other"),
+      condition: text("condition").notNull().default("good"),
+      neighborhood: text("neighborhood").notNull(),
+      pickup_notes: text("pickup_notes"),
+      pickup_location_type: exchangePickupLocationType("pickup_location_type"),
+      // Privacy-rounded coordinates used only for server-side local matching.
+      // These are never returned by the Exchange API.
+      latitude: real("latitude"),
+      longitude: real("longitude"),
+      status: text("status").notNull().default("active"),
+      moderation_status: text("moderation_status").notNull().default("approved"),
+      moderation_reason: text("moderation_reason"),
+      moderation_hold_at: timestamp("moderation_hold_at", { withTimezone: true }),
+      moderation_hold_reason: text("moderation_hold_reason"),
+      moderation_reviewed_by: integer("moderation_reviewed_by"),
+      moderation_reviewed_at: timestamp("moderation_reviewed_at", { withTimezone: true }),
+      archived_at: timestamp("archived_at", { withTimezone: true }),
+      archive_reason: text("archive_reason"),
+      created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+      updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+    });
+    exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
+      id: serial("id").primaryKey(),
+      listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
+      buyer_id: integer("buyer_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+      note: text("note").notNull(),
+      pickup_area: text("pickup_area").notNull(),
+      pickup_location_type: exchangePickupLocationType("pickup_location_type"),
+      pickup_note: text("pickup_note"),
+      proposed_window: text("proposed_window").notNull(),
+      status: text("status").notNull().default("requested"),
+      buyer_confirmed_at: timestamp("buyer_confirmed_at", { withTimezone: true }),
+      seller_confirmed_at: timestamp("seller_confirmed_at", { withTimezone: true }),
+      accepted_at: timestamp("accepted_at", { withTimezone: true }),
+      coordination_expires_at: timestamp("coordination_expires_at", { withTimezone: true }),
+      cancelled_at: timestamp("cancelled_at", { withTimezone: true }),
+      expired_at: timestamp("expired_at", { withTimezone: true }),
+      expiry_notified_at: timestamp("expiry_notified_at", { withTimezone: true }),
+      completed_at: timestamp("completed_at", { withTimezone: true }),
+      created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+      updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+    }, (table) => [
+      index("exchange_pickup_requests_listing_idx").on(table.listing_id, table.created_at),
+      index("exchange_pickup_requests_buyer_idx").on(table.buyer_id, table.updated_at),
+      uniqueIndex("exchange_pickup_requests_one_active_per_buyer_listing_idx").on(table.listing_id, table.buyer_id).where(sql`${table.status} IN ('requested', 'accepted')`)
+    ]);
+    exchangePickupDisputesTable = pgTable("exchange_pickup_disputes", {
+      id: serial("id").primaryKey(),
+      pickup_request_id: integer("pickup_request_id").notNull().references(() => exchangePickupRequestsTable.id, { onDelete: "restrict" }),
+      opened_by: integer("opened_by").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+      reason: text("reason").notNull(),
+      evidence: text("evidence"),
+      status: text("status").notNull().default("open"),
+      outcome: text("outcome"),
+      resolution: text("resolution"),
+      resolved_by: integer("resolved_by").references(() => usersTable.id, { onDelete: "restrict" }),
+      opened_at: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+      resolved_at: timestamp("resolved_at", { withTimezone: true }),
+      created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+      updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+    }, (table) => [
+      index("exchange_pickup_disputes_request_idx").on(table.pickup_request_id, table.created_at),
+      uniqueIndex("exchange_pickup_disputes_one_open_per_request_idx").on(table.pickup_request_id).where(sql`${table.status} = 'open'`)
+    ]);
+    exchangeDigestDeliveriesTable = pgTable("exchange_digest_deliveries", {
+      id: serial("id").primaryKey(),
+      user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+      week_key: text("week_key").notNull(),
+      listing_count: integer("listing_count").notNull().default(0),
+      sent_at: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+      delivered: boolean("delivered").notNull().default(false),
+      attempt_count: integer("attempt_count").notNull().default(0),
+      claim_token: text("claim_token"),
+      claim_expires_at: timestamp("claim_expires_at", { withTimezone: true }),
+      next_attempt_at: timestamp("next_attempt_at", { withTimezone: true }),
+      terminal_failure: boolean("terminal_failure").notNull().default(false),
+      last_error: text("last_error")
+    }, (table) => [
+      uniqueIndex("exchange_digest_deliveries_user_week_idx").on(table.user_id, table.week_key),
+      index("exchange_digest_deliveries_sent_idx").on(table.sent_at),
+      index("exchange_digest_deliveries_retry_idx").on(table.next_attempt_at, table.claim_expires_at)
+    ]);
+    exchangeModerationReviewHistoryTable = pgTable("exchange_moderation_review_history", {
+      id: serial("id").primaryKey(),
+      report_id: integer("report_id").notNull(),
+      listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
+      moderator_id: integer("moderator_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+      action: text("action").notNull(),
+      previous_moderation_status: text("previous_moderation_status"),
+      next_moderation_status: text("next_moderation_status"),
+      notes: text("notes"),
+      created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+    }, (table) => [
+      index("exchange_moderation_review_history_listing_idx").on(table.listing_id, table.created_at),
+      index("exchange_moderation_review_history_report_idx").on(table.report_id, table.created_at)
+    ]);
+  }
+});
+
 // ../../lib/db/src/schema/community-stories.ts
 var communityStoriesTable, communityStoryMediaTable, communityStoryElementsTable, communityStoryViewsTable, communityStoryReactionsTable, communityStorySharesTable;
 var init_community_stories = __esm({
@@ -56254,11 +56376,13 @@ var init_community_stories = __esm({
     init_communities();
     init_diaspora_hubs();
     init_media_assets();
+    init_exchange();
     communityStoriesTable = pgTable("community_stories", {
       id: serial("id").primaryKey(),
       author_user_id: integer("author_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
       hub_id: integer("hub_id").references(() => diasporaHubsTable.id, { onDelete: "set null" }),
       community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
+      exchange_listing_id: integer("exchange_listing_id").references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
       caption: text("caption"),
       audience: text("audience").notNull().default("community"),
       status: text("status").notNull().default("published"),
@@ -56270,7 +56394,8 @@ var init_community_stories = __esm({
       index("community_stories_author_expires_idx").on(table.author_user_id, table.expires_at),
       index("community_stories_hub_expires_idx").on(table.hub_id, table.expires_at),
       index("community_stories_status_expires_idx").on(table.status, table.expires_at),
-      index("community_stories_community_expires_idx").on(table.community_id, table.expires_at)
+      index("community_stories_community_expires_idx").on(table.community_id, table.expires_at),
+      index("community_stories_exchange_listing_idx").on(table.exchange_listing_id, table.created_at)
     ]);
     communityStoryMediaTable = pgTable("community_story_media", {
       id: serial("id").primaryKey(),
@@ -58693,92 +58818,47 @@ var init_community_media_saves = __esm({
   }
 });
 
-// ../../lib/db/src/schema/exchange.ts
-var exchangeListingsTable, exchangePickupRequestsTable, exchangeDigestDeliveriesTable, exchangeModerationReviewHistoryTable;
-var init_exchange = __esm({
-  "../../lib/db/src/schema/exchange.ts"() {
+// ../../lib/db/src/schema/exchange-sparks.ts
+var exchangeSparksTable, exchangeSparkModerationHistoryTable;
+var init_exchange_sparks = __esm({
+  "../../lib/db/src/schema/exchange-sparks.ts"() {
     "use strict";
-    init_drizzle_orm();
     init_pg_core();
+    init_drizzle_orm();
+    init_communities();
+    init_exchange();
     init_users();
-    exchangeListingsTable = pgTable("exchange_listings", {
+    exchangeSparksTable = pgTable("exchange_sparks", {
       id: serial("id").primaryKey(),
-      seller_id: integer("seller_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
-      listing_type: text("listing_type").notNull().default("offer"),
-      resource_type: text("resource_type").notNull().default("goods"),
-      title: text("title").notNull(),
-      description: text("description").notNull(),
-      category: text("category").notNull().default("other"),
-      condition: text("condition").notNull().default("good"),
-      neighborhood: text("neighborhood").notNull(),
-      pickup_notes: text("pickup_notes"),
-      // Privacy-rounded coordinates used only for server-side local matching.
-      // These are never returned by the Exchange API.
-      latitude: real("latitude"),
-      longitude: real("longitude"),
-      status: text("status").notNull().default("active"),
-      moderation_status: text("moderation_status").notNull().default("approved"),
+      listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "cascade" }),
+      author_user_id: integer("author_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+      community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
+      caption: text("caption"),
+      status: text("status").notNull().default("draft"),
       moderation_reason: text("moderation_reason"),
-      moderation_hold_at: timestamp("moderation_hold_at", { withTimezone: true }),
-      moderation_hold_reason: text("moderation_hold_reason"),
-      moderation_reviewed_by: integer("moderation_reviewed_by"),
+      moderation_reviewed_by: integer("moderation_reviewed_by").references(() => usersTable.id, { onDelete: "restrict" }),
       moderation_reviewed_at: timestamp("moderation_reviewed_at", { withTimezone: true }),
-      archived_at: timestamp("archived_at", { withTimezone: true }),
-      archive_reason: text("archive_reason"),
-      created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-      updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
-    });
-    exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
-      id: serial("id").primaryKey(),
-      listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
-      buyer_id: integer("buyer_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
-      note: text("note").notNull(),
-      pickup_area: text("pickup_area").notNull(),
-      proposed_window: text("proposed_window").notNull(),
-      status: text("status").notNull().default("requested"),
-      buyer_confirmed_at: timestamp("buyer_confirmed_at", { withTimezone: true }),
-      seller_confirmed_at: timestamp("seller_confirmed_at", { withTimezone: true }),
-      accepted_at: timestamp("accepted_at", { withTimezone: true }),
-      cancelled_at: timestamp("cancelled_at", { withTimezone: true }),
-      completed_at: timestamp("completed_at", { withTimezone: true }),
+      draft_expires_at: timestamp("draft_expires_at", { withTimezone: true }).notNull().default(sql`(now() + interval '24 hours')`),
       created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
       updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
     }, (table) => [
-      index("exchange_pickup_requests_listing_idx").on(table.listing_id, table.created_at),
-      index("exchange_pickup_requests_buyer_idx").on(table.buyer_id, table.updated_at),
-      uniqueIndex("exchange_pickup_requests_one_active_per_buyer_listing_idx").on(table.listing_id, table.buyer_id).where(sql`${table.status} IN ('requested', 'accepted')`)
+      index("exchange_sparks_listing_created_idx").on(table.listing_id, table.created_at),
+      index("exchange_sparks_author_created_idx").on(table.author_user_id, table.created_at),
+      index("exchange_sparks_status_created_idx").on(table.status, table.created_at),
+      index("exchange_sparks_draft_expiry_idx").on(table.status, table.draft_expires_at)
     ]);
-    exchangeDigestDeliveriesTable = pgTable("exchange_digest_deliveries", {
+    exchangeSparkModerationHistoryTable = pgTable("exchange_spark_moderation_history", {
       id: serial("id").primaryKey(),
-      user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-      week_key: text("week_key").notNull(),
-      listing_count: integer("listing_count").notNull().default(0),
-      sent_at: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
-      delivered: boolean("delivered").notNull().default(false),
-      attempt_count: integer("attempt_count").notNull().default(0),
-      claim_token: text("claim_token"),
-      claim_expires_at: timestamp("claim_expires_at", { withTimezone: true }),
-      next_attempt_at: timestamp("next_attempt_at", { withTimezone: true }),
-      terminal_failure: boolean("terminal_failure").notNull().default(false),
-      last_error: text("last_error")
-    }, (table) => [
-      uniqueIndex("exchange_digest_deliveries_user_week_idx").on(table.user_id, table.week_key),
-      index("exchange_digest_deliveries_sent_idx").on(table.sent_at),
-      index("exchange_digest_deliveries_retry_idx").on(table.next_attempt_at, table.claim_expires_at)
-    ]);
-    exchangeModerationReviewHistoryTable = pgTable("exchange_moderation_review_history", {
-      id: serial("id").primaryKey(),
-      report_id: integer("report_id").notNull(),
-      listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
+      // Intentionally not an FK: moderation history must survive Spark media cleanup.
+      spark_id: integer("spark_id").notNull(),
       moderator_id: integer("moderator_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
       action: text("action").notNull(),
-      previous_moderation_status: text("previous_moderation_status"),
-      next_moderation_status: text("next_moderation_status"),
-      notes: text("notes"),
+      previous_status: text("previous_status").notNull(),
+      next_status: text("next_status").notNull(),
+      reason: text("reason"),
       created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
     }, (table) => [
-      index("exchange_moderation_review_history_listing_idx").on(table.listing_id, table.created_at),
-      index("exchange_moderation_review_history_report_idx").on(table.report_id, table.created_at)
+      index("exchange_spark_moderation_history_spark_idx").on(table.spark_id, table.created_at)
     ]);
   }
 });
@@ -58844,7 +58924,11 @@ __export(schema_exports, {
   exchangeDigestDeliveriesTable: () => exchangeDigestDeliveriesTable,
   exchangeListingsTable: () => exchangeListingsTable,
   exchangeModerationReviewHistoryTable: () => exchangeModerationReviewHistoryTable,
+  exchangePickupDisputesTable: () => exchangePickupDisputesTable,
+  exchangePickupLocationType: () => exchangePickupLocationType,
   exchangePickupRequestsTable: () => exchangePickupRequestsTable,
+  exchangeSparkModerationHistoryTable: () => exchangeSparkModerationHistoryTable,
+  exchangeSparksTable: () => exchangeSparksTable,
   familiesTable: () => familiesTable,
   familyAssetProcessingStatusEnum: () => familyAssetProcessingStatusEnum,
   familyAssetTypeEnum: () => familyAssetTypeEnum,
@@ -59009,6 +59093,7 @@ var init_schema2 = __esm({
     init_media_assets();
     init_community_media_saves();
     init_exchange();
+    init_exchange_sparks();
   }
 });
 
@@ -59074,7 +59159,11 @@ __export(src_exports, {
   exchangeDigestDeliveriesTable: () => exchangeDigestDeliveriesTable,
   exchangeListingsTable: () => exchangeListingsTable,
   exchangeModerationReviewHistoryTable: () => exchangeModerationReviewHistoryTable,
+  exchangePickupDisputesTable: () => exchangePickupDisputesTable,
+  exchangePickupLocationType: () => exchangePickupLocationType,
   exchangePickupRequestsTable: () => exchangePickupRequestsTable,
+  exchangeSparkModerationHistoryTable: () => exchangeSparkModerationHistoryTable,
+  exchangeSparksTable: () => exchangeSparksTable,
   familiesTable: () => familiesTable,
   familyAssetProcessingStatusEnum: () => familyAssetProcessingStatusEnum,
   familyAssetTypeEnum: () => familyAssetTypeEnum,
@@ -59176,6 +59265,7 @@ var init_src = __esm({
     init_media_assets();
     init_request_message_attachments();
     init_exchange();
+    init_exchange_sparks();
     ({ Pool: Pool3 } = esm_default);
     if (!process.env.DATABASE_URL) {
       throw new Error(
@@ -64156,11 +64246,11 @@ var require_autoPipelining = __commonJS({
         return;
       }
       client._runningAutoPipelines.add(slotKey);
-      const pipeline2 = client._autoPipelines.get(slotKey);
+      const pipeline3 = client._autoPipelines.get(slotKey);
       client._autoPipelines.delete(slotKey);
-      const callbacks = pipeline2[exports.kCallbacks];
-      pipeline2[exports.kCallbacks] = null;
-      pipeline2.exec(function(err, results) {
+      const callbacks = pipeline3[exports.kCallbacks];
+      pipeline3[exports.kCallbacks] = null;
+      pipeline3.exec(function(err, results) {
         client._runningAutoPipelines.delete(slotKey);
         if (err) {
           for (let i2 = 0; i2 < callbacks.length; i2++) {
@@ -64232,18 +64322,18 @@ var require_autoPipelining = __commonJS({
         slotKey += isReadOnly ? ":read" : ":write";
       }
       if (!client._autoPipelines.has(slotKey)) {
-        const pipeline3 = client.pipeline();
-        pipeline3[exports.kExec] = false;
-        pipeline3[exports.kCallbacks] = [];
-        client._autoPipelines.set(slotKey, pipeline3);
+        const pipeline4 = client.pipeline();
+        pipeline4[exports.kExec] = false;
+        pipeline4[exports.kCallbacks] = [];
+        client._autoPipelines.set(slotKey, pipeline4);
       }
-      const pipeline2 = client._autoPipelines.get(slotKey);
-      if (!pipeline2[exports.kExec]) {
-        pipeline2[exports.kExec] = true;
+      const pipeline3 = client._autoPipelines.get(slotKey);
+      if (!pipeline3[exports.kExec]) {
+        pipeline3[exports.kExec] = true;
         setImmediate(executeAutoPipeline, client, slotKey);
       }
       const autoPipelinePromise = new Promise(function(resolve, reject) {
-        pipeline2[exports.kCallbacks].push(function(err, value) {
+        pipeline3[exports.kCallbacks].push(function(err, value) {
           if (err) {
             reject(err);
             return;
@@ -64253,7 +64343,7 @@ var require_autoPipelining = __commonJS({
         if (functionName === "call") {
           args.unshift(commandName);
         }
-        pipeline2[functionName](...args);
+        pipeline3[functionName](...args);
       });
       return (0, standard_as_callback_1.default)(autoPipelinePromise, callback);
     }
@@ -64855,11 +64945,11 @@ var require_transaction = __commonJS({
     var tracing_1 = require_tracing();
     function addTransactionSupport(redis) {
       redis.pipeline = function(commands) {
-        const pipeline2 = new Pipeline_1.default(this);
+        const pipeline3 = new Pipeline_1.default(this);
         if (Array.isArray(commands)) {
-          pipeline2.addBatch(commands);
+          pipeline3.addBatch(commands);
         }
-        return pipeline2;
+        return pipeline3;
       };
       const { multi } = redis;
       redis.multi = function(commands, options) {
@@ -64870,13 +64960,13 @@ var require_transaction = __commonJS({
         if (options && options.pipeline === false) {
           return multi.call(this);
         }
-        const pipeline2 = new Pipeline_1.default(this);
-        pipeline2.multi();
+        const pipeline3 = new Pipeline_1.default(this);
+        pipeline3.multi();
         if (Array.isArray(commands)) {
-          pipeline2.addBatch(commands);
+          pipeline3.addBatch(commands);
         }
-        const exec3 = pipeline2.exec;
-        pipeline2.exec = function(callback) {
+        const exec3 = pipeline3.exec;
+        pipeline3.exec = function(callback) {
           if (this.isCluster && !this.redis.slots.length) {
             if (this.redis.status === "wait")
               this.redis.connect().catch(utils_1.noop);
@@ -64886,18 +64976,18 @@ var require_transaction = __commonJS({
                   reject(err);
                   return;
                 }
-                this.exec(pipeline2).then(resolve, reject);
+                this.exec(pipeline3).then(resolve, reject);
               });
             }), callback);
           }
           if (this._transactions > 0) {
-            exec3.call(pipeline2);
+            exec3.call(pipeline3);
           }
           if (this.nodeifiedPromise) {
-            return exec3.call(pipeline2);
+            return exec3.call(pipeline3);
           }
-          const batchSize = Math.max(pipeline2.length - 2, 0);
-          const execAndUnwrap = () => exec3.call(pipeline2).then(function(result) {
+          const batchSize = Math.max(pipeline3.length - 2, 0);
+          const execAndUnwrap = () => exec3.call(pipeline3).then(function(result) {
             const execResult = result[result.length - 1];
             if (typeof execResult === "undefined") {
               throw new Error("Pipeline cannot be used to send any commands when the `exec()` has been called on it.");
@@ -64916,14 +65006,14 @@ var require_transaction = __commonJS({
           const promise2 = "_buildBatchContext" in this.redis ? (0, tracing_1.traceBatch)(execAndUnwrap, () => this.redis._buildBatchContext(batchSize)) : execAndUnwrap();
           return (0, standard_as_callback_1.default)(promise2, callback);
         };
-        const { execBuffer } = pipeline2;
-        pipeline2.execBuffer = function(callback) {
+        const { execBuffer } = pipeline3;
+        pipeline3.execBuffer = function(callback) {
           if (this._transactions > 0) {
-            execBuffer.call(pipeline2);
+            execBuffer.call(pipeline3);
           }
-          return pipeline2.exec(callback);
+          return pipeline3.exec(callback);
         };
-        return pipeline2;
+        return pipeline3;
       };
       const { exec: exec2 } = redis;
       redis.exec = function(callback) {
@@ -66522,8 +66612,8 @@ var require_cluster = __commonJS({
        */
       get autoPipelineQueueSize() {
         let queued = 0;
-        for (const pipeline2 of this._autoPipelines.values()) {
-          queued += pipeline2.length;
+        for (const pipeline3 of this._autoPipelines.values()) {
+          queued += pipeline3.length;
         }
         return queued;
       }
@@ -68670,8 +68760,8 @@ var require_Redis = __commonJS({
       }
       get autoPipelineQueueSize() {
         let queued = 0;
-        for (const pipeline2 of this._autoPipelines.values()) {
-          queued += pipeline2.length;
+        for (const pipeline3 of this._autoPipelines.values()) {
+          queued += pipeline3.length;
         }
         return queued;
       }
@@ -72652,7 +72742,7 @@ var require_utils8 = __commonJS({
     exports.isNotConnectionError = isNotConnectionError;
     exports.removeUndefinedFields = removeUndefinedFields;
     exports.trace = trace;
-    exports.randomUUID = randomUUID12;
+    exports.randomUUID = randomUUID13;
     var crypto_1 = __require("crypto");
     var utils_1 = require_utils7();
     var connection_closed_error_1 = require_connection_closed_error();
@@ -72754,11 +72844,11 @@ var require_utils8 = __commonJS({
         });
         stream.on("data", (keys) => {
           if (keys.length) {
-            const pipeline2 = client.pipeline();
+            const pipeline3 = client.pipeline();
             keys.forEach((key) => {
-              pipeline2.del(key);
+              pipeline3.del(key);
             });
-            const execPromise = pipeline2.exec().catch((error40) => {
+            const execPromise = pipeline3.exec().catch((error40) => {
               reject(error40);
               throw error40;
             });
@@ -72915,7 +73005,7 @@ var require_utils8 = __commonJS({
         }
       }
     }
-    function randomUUID12() {
+    function randomUUID13() {
       if (typeof crypto_1.randomUUID === "function") {
         return (0, crypto_1.randomUUID)();
       }
@@ -77626,14 +77716,14 @@ var require_job = __commonJS({
           var _a;
           return new this(queue, job.name, job.data, job.opts, (_a = job.opts) === null || _a === void 0 ? void 0 : _a.jobId);
         });
-        const pipeline2 = client.pipeline();
+        const pipeline3 = client.pipeline();
         for (const job of jobInstances) {
-          job.addJob(pipeline2, {
+          job.addJob(pipeline3, {
             parentKey: job.parentKey,
             parentDependenciesKey: job.parentKey ? `${job.parentKey}:dependencies` : ""
           });
         }
-        const results = await pipeline2.exec();
+        const results = await pipeline3.exec();
         for (let index2 = 0; index2 < results.length; ++index2) {
           const [err, id3] = results[index2];
           if (err) {
@@ -106007,7 +106097,7 @@ var require_websocket = __commonJS({
     var net2 = __require("net");
     var tls = __require("tls");
     var { randomBytes: randomBytes2, createHash: createHash6 } = __require("crypto");
-    var { Duplex, Readable } = __require("stream");
+    var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver2();
@@ -115927,23 +116017,26 @@ var storage_exports = {};
 __export(storage_exports, {
   UPLOADS_BASE: () => UPLOADS_BASE,
   assetExists: () => assetExists,
+  collectAssetBuffer: () => collectAssetBuffer,
   deleteAsset: () => deleteAsset,
   deleteAssetStrict: () => deleteAssetStrict,
   getAssetBuffer: () => getAssetBuffer,
   getAssetInfo: () => getAssetInfo,
-  getAssetUploadUrl: () => getAssetUploadUrl,
   getAssetUrl: () => getAssetUrl,
   getPrivateAssetUrl: () => getPrivateAssetUrl,
   getStorageBackend: () => getStorageBackend,
   getStorageDescription: () => getStorageDescription,
   isCloudStorageConfigured: () => isCloudStorageConfigured,
   putAsset: () => putAsset,
+  streamAssetRange: () => streamAssetRange,
   streamAssetSameOrigin: () => streamAssetSameOrigin,
   streamOrRedirectAsset: () => streamOrRedirectAsset,
   streamOrRedirectPrivateAsset: () => streamOrRedirectPrivateAsset
 });
-import { existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
+import { createReadStream, existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
 import path from "path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 function isCloudStorageConfigured(env = process.env) {
   return Boolean(env["STORAGE_BUCKET"]?.trim());
 }
@@ -115990,21 +116083,6 @@ async function putAsset(key, buffer, mimeType) {
     logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 local");
   }
 }
-async function getAssetUploadUrl(key, mimeType, expiresInSeconds = 900) {
-  if (!isCloudStorageConfigured()) return null;
-  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-  const client = await getS3Client();
-  return getSignedUrl(
-    client,
-    new PutObjectCommand({
-      Bucket: process.env["STORAGE_BUCKET"],
-      Key: key,
-      ContentType: mimeType
-    }),
-    { expiresIn: expiresInSeconds }
-  );
-}
 async function getAssetInfo(key) {
   if (isCloudStorageConfigured()) {
     try {
@@ -116023,8 +116101,8 @@ async function getAssetInfo(key) {
     }
   }
   try {
-    const stat2 = await fs.stat(path.resolve(UPLOADS_BASE, key));
-    return { contentLength: stat2.size, contentType: null };
+    const stat3 = await fs.stat(path.resolve(UPLOADS_BASE, key));
+    return { contentLength: stat3.size, contentType: null };
   } catch {
     return null;
   }
@@ -116084,7 +116162,26 @@ async function assetExists(key) {
   }
   return existsSync(path.resolve(UPLOADS_BASE, key));
 }
-async function getAssetBuffer(key) {
+async function collectAssetBuffer(source, maxBytes, cancel) {
+  if (maxBytes !== void 0 && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+    throw new Error("STORAGE_INVALID_MAX_BYTES");
+  }
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of source) {
+    totalBytes += chunk.byteLength;
+    if (maxBytes !== void 0 && totalBytes > maxBytes) {
+      cancel?.();
+      throw new Error("STORAGE_OBJECT_TOO_LARGE");
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, totalBytes);
+}
+async function getAssetBuffer(key, maxBytes) {
+  if (maxBytes !== void 0 && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+    throw new Error("STORAGE_INVALID_MAX_BYTES");
+  }
   if (isCloudStorageConfigured()) {
     const { GetObjectCommand } = await import("@aws-sdk/client-s3");
     const client = await getS3Client();
@@ -116092,14 +116189,16 @@ async function getAssetBuffer(key) {
       Bucket: process.env["STORAGE_BUCKET"],
       Key: key
     }));
-    if (!result.Body) throw new Error(`Storage object is empty: ${key}`);
-    const chunks = [];
-    for await (const chunk of result.Body) {
-      chunks.push(Buffer.from(chunk));
+    if (!result.Body) throw new Error("STORAGE_OBJECT_EMPTY");
+    const body = result.Body;
+    if (maxBytes !== void 0 && result.ContentLength != null && result.ContentLength > maxBytes) {
+      body.destroy?.();
+      throw new Error("STORAGE_OBJECT_TOO_LARGE");
     }
-    return Buffer.concat(chunks);
+    return collectAssetBuffer(body, maxBytes, () => body.destroy?.());
   }
-  return fs.readFile(path.resolve(UPLOADS_BASE, key));
+  const stream = createReadStream(path.resolve(UPLOADS_BASE, key));
+  return collectAssetBuffer(stream, maxBytes, () => stream.destroy());
 }
 async function streamOrRedirectAsset(key, res) {
   res.setHeader("Cache-Control", "private, no-store");
@@ -116118,6 +116217,126 @@ async function streamOrRedirectAsset(key, res) {
     return;
   }
   res.sendFile(abs);
+}
+async function streamAssetRange(key, req, res, contentType) {
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  if (contentType) res.setHeader("Content-Type", contentType);
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  let size;
+  let localFile = false;
+  if (isCloudStorageConfigured()) {
+    const info = await getAssetInfo(key);
+    if (!info) {
+      res.status(404).json({ error: "Asset not found" });
+      return;
+    }
+    size = info.contentLength;
+    if (!contentType && info.contentType) res.setHeader("Content-Type", info.contentType);
+  } else {
+    try {
+      size = (await fs.stat(abs)).size;
+      localFile = true;
+    } catch (error40) {
+      if (error40.code === "ENOENT") {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      throw error40;
+    }
+  }
+  let start = 0;
+  let end = size - 1;
+  const range = req.headers.range;
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!match || !match[1] && !match[2] || size === 0) {
+      res.setHeader("Content-Range", `bytes */${size}`);
+      res.status(416).end();
+      return;
+    }
+    if (!match[1]) {
+      const suffixLength = Number(match[2]);
+      if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+        res.setHeader("Content-Range", `bytes */${size}`);
+        res.status(416).end();
+        return;
+      }
+      start = Math.max(size - suffixLength, 0);
+    } else {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : size - 1;
+    }
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= size) {
+      res.setHeader("Content-Range", `bytes */${size}`);
+      res.status(416).end();
+      return;
+    }
+    end = Math.min(end, size - 1);
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+  }
+  res.setHeader("Content-Length", String(end - start + 1));
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+  if (size === 0) {
+    res.end();
+    return;
+  }
+  if (localFile) {
+    try {
+      await pipeline(createReadStream(abs, { start, end }), res);
+    } catch (error40) {
+      if (req.aborted || res.destroyed) return;
+      logger.warn({ errorType: error40 instanceof Error ? error40.name : "unknown" }, "storage: local media stream failed");
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    }
+    return;
+  }
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getS3Client();
+  const abortController = new AbortController();
+  const abortForDisconnect = () => abortController.abort();
+  const abortForResponseClose = () => {
+    if (!res.writableEnded) abortController.abort();
+  };
+  req.once("aborted", abortForDisconnect);
+  res.once("close", abortForResponseClose);
+  try {
+    const result = await client.send(new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"],
+      Key: key,
+      Range: range ? `bytes=${start}-${end}` : void 0
+    }), { abortSignal: abortController.signal });
+    if (result.ContentType && !contentType) res.setHeader("Content-Type", result.ContentType);
+    if (!result.Body) {
+      res.removeHeader("Content-Length");
+      res.status(404).end();
+      return;
+    }
+    await pipeline(Readable.from(result.Body), res, {
+      signal: abortController.signal
+    });
+  } catch (error40) {
+    if (abortController.signal.aborted || req.aborted) return;
+    logger.warn({ errorType: error40 instanceof Error ? error40.name : "unknown" }, "storage: cloud media stream failed");
+    if (res.headersSent || res.destroyed) {
+      if (!res.destroyed) res.destroy();
+      return;
+    }
+    throw error40;
+  } finally {
+    req.off("aborted", abortForDisconnect);
+    res.off("close", abortForResponseClose);
+  }
 }
 async function streamAssetSameOrigin(key, res) {
   res.setHeader("Cache-Control", "private, no-store");
@@ -116286,8 +116505,8 @@ var init_NodeCryptoProvider = __esm({
       }
       /** @override */
       async computeHMACSignatureAsync(payload, secret) {
-        const signature = await this.computeHMACSignature(payload, secret);
-        return signature;
+        const signature2 = await this.computeHMACSignature(payload, secret);
+        return signature2;
       }
       /** @override */
       async computeSHA256Async(data) {
@@ -118028,16 +118247,16 @@ function createWebhooks(platformFunctions) {
      */
     generateTestHeaderString: function(opts) {
       const preparedOpts = prepareOptions(opts);
-      const signature2 = preparedOpts.signature || preparedOpts.cryptoProvider.computeHMACSignature(preparedOpts.payloadString, preparedOpts.secret);
-      return preparedOpts.generateHeaderString(signature2);
+      const signature3 = preparedOpts.signature || preparedOpts.cryptoProvider.computeHMACSignature(preparedOpts.payloadString, preparedOpts.secret);
+      return preparedOpts.generateHeaderString(signature3);
     },
     generateTestHeaderStringAsync: async function(opts) {
       const preparedOpts = prepareOptions(opts);
-      const signature2 = preparedOpts.signature || await preparedOpts.cryptoProvider.computeHMACSignatureAsync(preparedOpts.payloadString, preparedOpts.secret);
-      return preparedOpts.generateHeaderString(signature2);
+      const signature3 = preparedOpts.signature || await preparedOpts.cryptoProvider.computeHMACSignatureAsync(preparedOpts.payloadString, preparedOpts.secret);
+      return preparedOpts.generateHeaderString(signature3);
     }
   };
-  const signature = {
+  const signature2 = {
     EXPECTED_SCHEME: "v1",
     verifyHeader(encodedPayload, encodedHeader, secret, tolerance, cryptoProvider, receivedAt) {
       const { decodedHeader: header, decodedPayload: payload, details, suspectPayloadType } = parseEventDetails(encodedPayload, encodedHeader, this.EXPECTED_SCHEME);
@@ -118148,11 +118367,11 @@ function createWebhooks(platformFunctions) {
       });
     }
     const timestamp2 = Math.floor(opts.timestamp) || Math.floor(Date.now() / 1e3);
-    const scheme = opts.scheme || signature.EXPECTED_SCHEME;
+    const scheme = opts.scheme || signature2.EXPECTED_SCHEME;
     const cryptoProvider = opts.cryptoProvider || getCryptoProvider();
     const payloadString = `${timestamp2}.${opts.payload}`;
-    const generateHeaderString = (signature2) => {
-      return `t=${timestamp2},${scheme}=${signature2}`;
+    const generateHeaderString = (signature3) => {
+      return `t=${timestamp2},${scheme}=${signature3}`;
     };
     return Object.assign(Object.assign({}, opts), {
       timestamp: timestamp2,
@@ -118162,7 +118381,7 @@ function createWebhooks(platformFunctions) {
       generateHeaderString
     });
   }
-  Webhook.signature = signature;
+  Webhook.signature = signature2;
   return Webhook;
 }
 var init_Webhooks = __esm({
@@ -126838,34 +127057,34 @@ var require_ecdsa_sig_formatter = __commonJS({
     function base64Url(base643) {
       return base643.replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
     }
-    function signatureAsBuffer(signature) {
-      if (Buffer6.isBuffer(signature)) {
-        return signature;
-      } else if ("string" === typeof signature) {
-        return Buffer6.from(signature, "base64");
+    function signatureAsBuffer(signature2) {
+      if (Buffer6.isBuffer(signature2)) {
+        return signature2;
+      } else if ("string" === typeof signature2) {
+        return Buffer6.from(signature2, "base64");
       }
       throw new TypeError("ECDSA signature must be a Base64 string or a Buffer");
     }
-    function derToJose(signature, alg) {
-      signature = signatureAsBuffer(signature);
+    function derToJose(signature2, alg) {
+      signature2 = signatureAsBuffer(signature2);
       var paramBytes = getParamBytesForAlg(alg);
       var maxEncodedParamLength = paramBytes + 1;
-      var inputLength = signature.length;
+      var inputLength = signature2.length;
       var offset = 0;
-      if (signature[offset++] !== ENCODED_TAG_SEQ) {
+      if (signature2[offset++] !== ENCODED_TAG_SEQ) {
         throw new Error('Could not find expected "seq"');
       }
-      var seqLength = signature[offset++];
+      var seqLength = signature2[offset++];
       if (seqLength === (MAX_OCTET | 1)) {
-        seqLength = signature[offset++];
+        seqLength = signature2[offset++];
       }
       if (inputLength - offset < seqLength) {
         throw new Error('"seq" specified length of "' + seqLength + '", only "' + (inputLength - offset) + '" remaining');
       }
-      if (signature[offset++] !== ENCODED_TAG_INT) {
+      if (signature2[offset++] !== ENCODED_TAG_INT) {
         throw new Error('Could not find expected "int" for "r"');
       }
-      var rLength = signature[offset++];
+      var rLength = signature2[offset++];
       if (inputLength - offset - 2 < rLength) {
         throw new Error('"r" specified length of "' + rLength + '", only "' + (inputLength - offset - 2) + '" available');
       }
@@ -126874,10 +127093,10 @@ var require_ecdsa_sig_formatter = __commonJS({
       }
       var rOffset = offset;
       offset += rLength;
-      if (signature[offset++] !== ENCODED_TAG_INT) {
+      if (signature2[offset++] !== ENCODED_TAG_INT) {
         throw new Error('Could not find expected "int" for "s"');
       }
-      var sLength = signature[offset++];
+      var sLength = signature2[offset++];
       if (inputLength - offset !== sLength) {
         throw new Error('"s" specified length of "' + sLength + '", expected "' + (inputLength - offset) + '"');
       }
@@ -126894,12 +127113,12 @@ var require_ecdsa_sig_formatter = __commonJS({
       for (offset = 0; offset < rPadding; ++offset) {
         dst[offset] = 0;
       }
-      signature.copy(dst, offset, rOffset + Math.max(-rPadding, 0), rOffset + rLength);
+      signature2.copy(dst, offset, rOffset + Math.max(-rPadding, 0), rOffset + rLength);
       offset = paramBytes;
       for (var o = offset; offset < o + sPadding; ++offset) {
         dst[offset] = 0;
       }
-      signature.copy(dst, offset, sOffset + Math.max(-sPadding, 0), sOffset + sLength);
+      signature2.copy(dst, offset, sOffset + Math.max(-sPadding, 0), sOffset + sLength);
       dst = dst.toString("base64");
       dst = base64Url(dst);
       return dst;
@@ -126915,15 +127134,15 @@ var require_ecdsa_sig_formatter = __commonJS({
       }
       return padding;
     }
-    function joseToDer(signature, alg) {
-      signature = signatureAsBuffer(signature);
+    function joseToDer(signature2, alg) {
+      signature2 = signatureAsBuffer(signature2);
       var paramBytes = getParamBytesForAlg(alg);
-      var signatureBytes = signature.length;
+      var signatureBytes = signature2.length;
       if (signatureBytes !== paramBytes * 2) {
         throw new TypeError('"' + alg + '" signatures must be "' + paramBytes * 2 + '" bytes, saw "' + signatureBytes + '"');
       }
-      var rPadding = countPadding(signature, 0, paramBytes);
-      var sPadding = countPadding(signature, paramBytes, signature.length);
+      var rPadding = countPadding(signature2, 0, paramBytes);
+      var sPadding = countPadding(signature2, paramBytes, signature2.length);
       var rLength = paramBytes - rPadding;
       var sLength = paramBytes - sPadding;
       var rsBytes = 1 + 1 + rLength + 1 + 1 + sLength;
@@ -126941,17 +127160,17 @@ var require_ecdsa_sig_formatter = __commonJS({
       dst[offset++] = rLength;
       if (rPadding < 0) {
         dst[offset++] = 0;
-        offset += signature.copy(dst, offset, 0, paramBytes);
+        offset += signature2.copy(dst, offset, 0, paramBytes);
       } else {
-        offset += signature.copy(dst, offset, rPadding, paramBytes);
+        offset += signature2.copy(dst, offset, rPadding, paramBytes);
       }
       dst[offset++] = ENCODED_TAG_INT;
       dst[offset++] = sLength;
       if (sPadding < 0) {
         dst[offset++] = 0;
-        signature.copy(dst, offset, paramBytes);
+        signature2.copy(dst, offset, paramBytes);
       } else {
-        signature.copy(dst, offset, paramBytes + sPadding);
+        signature2.copy(dst, offset, paramBytes + sPadding);
       }
       return dst;
     }
@@ -127103,21 +127322,21 @@ var require_jwa = __commonJS({
       };
     }
     var bufferEqual;
-    var timingSafeEqual3 = "timingSafeEqual" in crypto7 ? function timingSafeEqual4(a, b) {
+    var timingSafeEqual5 = "timingSafeEqual" in crypto7 ? function timingSafeEqual6(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
       return crypto7.timingSafeEqual(a, b);
-    } : function timingSafeEqual4(a, b) {
+    } : function timingSafeEqual6(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
       }
       return bufferEqual(a, b);
     };
     function createHmacVerifier(bits) {
-      return function verify(thing, signature, secret) {
+      return function verify(thing, signature2, secret) {
         var computedSig = createHmacSigner(bits)(thing, secret);
-        return timingSafeEqual3(Buffer6.from(signature), Buffer6.from(computedSig));
+        return timingSafeEqual5(Buffer6.from(signature2), Buffer6.from(computedSig));
       };
     }
     function createKeySigner(bits) {
@@ -127130,13 +127349,13 @@ var require_jwa = __commonJS({
       };
     }
     function createKeyVerifier(bits) {
-      return function verify(thing, signature, publicKey) {
+      return function verify(thing, signature2, publicKey) {
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
-        signature = toBase64(signature);
+        signature2 = toBase64(signature2);
         var verifier = crypto7.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
-        return verifier.verify(publicKey, signature, "base64");
+        return verifier.verify(publicKey, signature2, "base64");
       };
     }
     function createPSSKeySigner(bits) {
@@ -127153,32 +127372,32 @@ var require_jwa = __commonJS({
       };
     }
     function createPSSKeyVerifier(bits) {
-      return function verify(thing, signature, publicKey) {
+      return function verify(thing, signature2, publicKey) {
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
-        signature = toBase64(signature);
+        signature2 = toBase64(signature2);
         var verifier = crypto7.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
           padding: crypto7.constants.RSA_PKCS1_PSS_PADDING,
           saltLength: crypto7.constants.RSA_PSS_SALTLEN_DIGEST
-        }, signature, "base64");
+        }, signature2, "base64");
       };
     }
     function createECDSASigner(bits) {
       var inner = createKeySigner(bits);
       return function sign3() {
-        var signature = inner.apply(null, arguments);
-        signature = formatEcdsa.derToJose(signature, "ES" + bits);
-        return signature;
+        var signature2 = inner.apply(null, arguments);
+        signature2 = formatEcdsa.derToJose(signature2, "ES" + bits);
+        return signature2;
       };
     }
     function createECDSAVerifer(bits) {
       var inner = createKeyVerifier(bits);
-      return function verify(thing, signature, publicKey) {
-        signature = formatEcdsa.joseToDer(signature, "ES" + bits).toString("base64");
-        var result = inner(thing, signature, publicKey);
+      return function verify(thing, signature2, publicKey) {
+        signature2 = formatEcdsa.joseToDer(signature2, "ES" + bits).toString("base64");
+        var result = inner(thing, signature2, publicKey);
         return result;
       };
     }
@@ -127188,8 +127407,8 @@ var require_jwa = __commonJS({
       };
     }
     function createNoneVerifier() {
-      return function verify(thing, signature) {
-        return signature === "";
+      return function verify(thing, signature2) {
+        return signature2 === "";
       };
     }
     module.exports = function jwa(algorithm) {
@@ -127259,8 +127478,8 @@ var require_sign_stream = __commonJS({
       var encoding = opts.encoding;
       var algo = jwa(header.alg);
       var securedInput = jwsSecuredInput(header, payload, encoding);
-      var signature = algo.sign(securedInput, secretOrKey);
-      return util4.format("%s.%s", securedInput, signature);
+      var signature2 = algo.sign(securedInput, secretOrKey);
+      return util4.format("%s.%s", securedInput, signature2);
     }
     function SignStream(opts) {
       var secret = opts.secret;
@@ -127287,17 +127506,17 @@ var require_sign_stream = __commonJS({
     util4.inherits(SignStream, Stream3);
     SignStream.prototype.sign = function sign3() {
       try {
-        var signature = jwsSign({
+        var signature2 = jwsSign({
           header: this.header,
           payload: this.payload.buffer,
           secret: this.secret.buffer,
           encoding: this.encoding
         });
-        this.emit("done", signature);
-        this.emit("data", signature);
+        this.emit("done", signature2);
+        this.emit("data", signature2);
         this.emit("end");
         this.readable = false;
-        return signature;
+        return signature2;
       } catch (e2) {
         this.readable = false;
         this.emit("error", e2);
@@ -127356,10 +127575,10 @@ var require_verify_stream = __commonJS({
         throw err;
       }
       jwsSig = toString(jwsSig);
-      var signature = signatureFromJWS(jwsSig);
+      var signature2 = signatureFromJWS(jwsSig);
       var securedInput = securedInputFromJWS(jwsSig);
       var algo = jwa(algorithm);
-      return algo.verify(securedInput, signature, secretOrKey);
+      return algo.verify(securedInput, signature2, secretOrKey);
     }
     function jwsDecode(jwsSig, opts) {
       opts = opts || {};
@@ -129145,7 +129364,7 @@ async function getSubsForUser(userId) {
   const rows = await db.select({ subscription: pushSubscriptionsTable.subscription }).from(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
   return rows.map((r2) => r2.subscription);
 }
-async function deliverToSubs(subs, payload) {
+async function deliverToSubs(subs, payload, ownerUserId) {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE || subs.length === 0) return 0;
   const data = JSON.stringify(payload);
   const opts = pushOptions(payload.urgency);
@@ -129154,10 +129373,13 @@ async function deliverToSubs(subs, payload) {
     subs.map(
       (sub) => import_web_push.default.sendNotification(sub, data, opts).then(() => {
         delivered++;
-      }).catch((err) => {
+      }).catch(async (err) => {
         const statusCode = err.statusCode;
         if (statusCode === 404 || statusCode === 410) {
-          db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.endpoint, sub.endpoint)).catch(() => {
+          await db.delete(pushSubscriptionsTable).where(and(
+            eq(pushSubscriptionsTable.user_id, ownerUserId),
+            eq(pushSubscriptionsTable.endpoint, sub.endpoint)
+          )).catch(() => {
           });
         }
       })
@@ -129264,7 +129486,7 @@ async function sendPushToUser(userId, payload, options) {
       fallbackEmailSent: false
     };
   }
-  const delivered = await deliverToSubs(subs, payload);
+  const delivered = await deliverToSubs(subs, payload, userId);
   if (delivered === 0 && options?.fallbackEmail) {
     logger.info({ userId }, "push: no delivery \u2014 falling back to email");
     const fallbackEmailSent = await sendAlertEmail({
@@ -129348,7 +129570,7 @@ async function sendPushToNearbyHelpers(lat, lng, radiusMiles, payload) {
         return;
       }
       const subs = await getSubsForUser(h2.id);
-      const delivered = await deliverToSubs(subs, payload);
+      const delivered = await deliverToSubs(subs, payload, h2.id);
       if (delivered === 0 && isEmergency && h2.email) {
         await sendAlertEmail({
           to: h2.email,
@@ -129365,9 +129587,19 @@ Open the Niakofa app to respond.`
 }
 async function sendPushToAllHelpers(payload) {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
-  const rows = await db.select({ subscription: pushSubscriptionsTable.subscription }).from(pushSubscriptionsTable);
-  const subs = rows.map((r2) => r2.subscription);
-  await deliverToSubs(subs, payload);
+  const rows = await db.select({
+    user_id: pushSubscriptionsTable.user_id,
+    subscription: pushSubscriptionsTable.subscription
+  }).from(pushSubscriptionsTable);
+  const subscriptionsByUser = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const subscriptions = subscriptionsByUser.get(row.user_id) ?? [];
+    subscriptions.push(row.subscription);
+    subscriptionsByUser.set(row.user_id, subscriptions);
+  }
+  await Promise.allSettled(
+    [...subscriptionsByUser].map(([userId, subs]) => deliverToSubs(subs, payload, userId))
+  );
 }
 var import_express5, import_web_push, router4, VAPID_PUBLIC, VAPID_PRIVATE, push_default;
 var init_push = __esm({
@@ -129402,26 +129634,27 @@ var init_push = __esm({
     router4.post("/push/subscribe", requireAuth, requireOwnership("userId"), async (req, res) => {
       const { userId, subscription } = req.body;
       if (!userId || !subscription?.endpoint) return res.status(400).json({ error: "userId and subscription required" });
-      const existing = await db.select({ id: pushSubscriptionsTable.id }).from(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.endpoint, subscription.endpoint)).limit(1);
-      if (existing.length > 0) {
-        await db.update(pushSubscriptionsTable).set({ user_id: userId, subscription, updated_at: /* @__PURE__ */ new Date() }).where(eq(pushSubscriptionsTable.endpoint, subscription.endpoint));
-      } else {
-        await db.insert(pushSubscriptionsTable).values({
+      await db.insert(pushSubscriptionsTable).values({
+        user_id: userId,
+        endpoint: subscription.endpoint,
+        subscription
+      }).onConflictDoUpdate({
+        target: pushSubscriptionsTable.endpoint,
+        set: {
           user_id: userId,
-          endpoint: subscription.endpoint,
-          subscription
-        });
-      }
+          subscription,
+          updated_at: /* @__PURE__ */ new Date()
+        }
+      });
       return res.json({ ok: true });
     });
     router4.post("/push/unsubscribe", requireAuth, requireOwnership("userId"), async (req, res) => {
       const { userId, endpoint } = req.body;
       if (!userId) return res.status(400).json({ error: "userId required" });
-      if (endpoint) {
-        await db.delete(pushSubscriptionsTable).where(and(eq(pushSubscriptionsTable.user_id, userId), eq(pushSubscriptionsTable.endpoint, endpoint)));
-      } else {
-        await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
+      if (typeof endpoint !== "string" || endpoint.length === 0) {
+        return res.status(400).json({ error: "endpoint required" });
       }
+      await db.delete(pushSubscriptionsTable).where(and(eq(pushSubscriptionsTable.user_id, userId), eq(pushSubscriptionsTable.endpoint, endpoint)));
       return res.json({ ok: true });
     });
     push_default = router4;
@@ -136100,7 +136333,7 @@ var require_node_domexception = __commonJS({
 });
 
 // ../../node_modules/.pnpm/fetch-blob@3.2.0/node_modules/fetch-blob/from.js
-import { statSync, createReadStream, promises as fs2 } from "node:fs";
+import { statSync, createReadStream as createReadStream2, promises as fs2 } from "node:fs";
 import { basename } from "node:path";
 var import_node_domexception, stat, blobFromSync, blobFrom, fileFrom, fileFromSync, fromBlob, fromFile, BlobDataItem;
 var init_from = __esm({
@@ -136110,21 +136343,21 @@ var init_from = __esm({
     init_fetch_blob();
     ({ stat } = fs2);
     blobFromSync = (path5, type) => fromBlob(statSync(path5), path5, type);
-    blobFrom = (path5, type) => stat(path5).then((stat2) => fromBlob(stat2, path5, type));
-    fileFrom = (path5, type) => stat(path5).then((stat2) => fromFile(stat2, path5, type));
+    blobFrom = (path5, type) => stat(path5).then((stat3) => fromBlob(stat3, path5, type));
+    fileFrom = (path5, type) => stat(path5).then((stat3) => fromFile(stat3, path5, type));
     fileFromSync = (path5, type) => fromFile(statSync(path5), path5, type);
-    fromBlob = (stat2, path5, type = "") => new fetch_blob_default([new BlobDataItem({
+    fromBlob = (stat3, path5, type = "") => new fetch_blob_default([new BlobDataItem({
       path: path5,
-      size: stat2.size,
-      lastModified: stat2.mtimeMs,
+      size: stat3.size,
+      lastModified: stat3.mtimeMs,
       start: 0
     })], { type });
-    fromFile = (stat2, path5, type = "") => new file_default([new BlobDataItem({
+    fromFile = (stat3, path5, type = "") => new file_default([new BlobDataItem({
       path: path5,
-      size: stat2.size,
-      lastModified: stat2.mtimeMs,
+      size: stat3.size,
+      lastModified: stat3.mtimeMs,
       start: 0
-    })], basename(path5), { type, lastModified: stat2.mtimeMs });
+    })], basename(path5), { type, lastModified: stat3.mtimeMs });
     BlobDataItem = class _BlobDataItem {
       #path;
       #start;
@@ -136151,7 +136384,7 @@ var init_from = __esm({
         if (mtimeMs > this.lastModified) {
           throw new import_node_domexception.default("The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.", "NotReadableError");
         }
-        yield* createReadStream(this.#path, {
+        yield* createReadStream2(this.#path, {
           start: this.#start,
           end: this.#start + this.size - 1
         });
@@ -136573,7 +136806,7 @@ async function consumeBody(data) {
     throw new FetchError(`Premature close of server response while trying to fetch ${data.url}`);
   }
 }
-var pipeline, INTERNALS, Body, clone2, getNonSpecFormDataBoundary, extractContentType, getTotalBytes, writeToStream;
+var pipeline2, INTERNALS, Body, clone2, getNonSpecFormDataBoundary, extractContentType, getTotalBytes, writeToStream;
 var init_body = __esm({
   "../../node_modules/.pnpm/node-fetch@3.3.2/node_modules/node-fetch/src/body.js"() {
     init_fetch_blob();
@@ -136581,7 +136814,7 @@ var init_body = __esm({
     init_fetch_error();
     init_base();
     init_is();
-    pipeline = promisify(Stream.pipeline);
+    pipeline2 = promisify(Stream.pipeline);
     INTERNALS = /* @__PURE__ */ Symbol("Body internals");
     Body = class {
       constructor(body, {
@@ -136777,7 +137010,7 @@ var init_body = __esm({
       if (body === null) {
         dest.end();
       } else {
-        await pipeline(body, dest);
+        await pipeline2(body, dest);
       }
     };
   }
@@ -137808,7 +138041,7 @@ var require_gaxios = __commonJS({
     var retry_js_1 = require_retry();
     var stream_1 = __require("stream");
     var interceptor_js_1 = require_interceptor();
-    var randomUUID12 = async () => globalThis.crypto?.randomUUID() || (await import("crypto")).randomUUID();
+    var randomUUID13 = async () => globalThis.crypto?.randomUUID() || (await import("crypto")).randomUUID();
     var HTTP_STATUS_NO_CONTENT = 204;
     var Gaxios = class {
       agentCache = /* @__PURE__ */ new Map();
@@ -138081,7 +138314,7 @@ var require_gaxios = __commonJS({
          */
         ["Blob", "File", "FormData"].includes(opts.data?.constructor?.name || "");
         if (opts.multipart?.length) {
-          const boundary = await randomUUID12();
+          const boundary = await randomUUID13();
           preparedHeaders.set("content-type", `multipart/related; boundary=${boundary}`);
           opts.body = stream_1.Readable.from(this.getMultipartRequest(opts.multipart, boundary));
         } else if (shouldDirectlyPassData) {
@@ -140897,13 +141130,13 @@ var require_crypto = __commonJS({
         }
         return base643;
       }
-      async verify(pubkey, data, signature) {
+      async verify(pubkey, data, signature2) {
         const algo = {
           name: "RSASSA-PKCS1-v1_5",
           hash: { name: "SHA-256" }
         };
         const dataArray = new TextEncoder().encode(data);
-        const signatureArray = base64js.toByteArray(_BrowserCrypto.padBase64(signature));
+        const signatureArray = base64js.toByteArray(_BrowserCrypto.padBase64(signature2));
         const cryptoKey = await window.crypto.subtle.importKey("jwk", pubkey, algo, true, ["verify"]);
         const result = await window.crypto.subtle.verify(algo, cryptoKey, Buffer.from(signatureArray), dataArray);
         return result;
@@ -140977,11 +141210,11 @@ var require_crypto2 = __commonJS({
       randomBytesBase64(count2) {
         return crypto7.randomBytes(count2).toString("base64");
       }
-      async verify(pubkey, data, signature) {
+      async verify(pubkey, data, signature2) {
         const verifier = crypto7.createVerify("RSA-SHA256");
         verifier.update(data);
         verifier.end();
-        return verifier.verify(pubkey, signature, "base64");
+        return verifier.verify(pubkey, signature2, "base64");
       }
       async sign(privateKey, data) {
         const signer = crypto7.createSign("RSA-SHA256");
@@ -142158,7 +142391,7 @@ var require_oauth2client = __commonJS({
           throw new Error("Wrong number of segments in token: " + jwt2);
         }
         const signed = segments[0] + "." + segments[1];
-        let signature = segments[2];
+        let signature2 = segments[2];
         let envelope;
         let payload;
         try {
@@ -142188,9 +142421,9 @@ var require_oauth2client = __commonJS({
         }
         const cert = certs[envelope.kid];
         if (envelope.alg === "ES256") {
-          signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
+          signature2 = formatEcdsa.joseToDer(signature2, "ES256").toString("base64");
         }
-        const verified = await crypto7.verify(cert, signed, signature);
+        const verified = await crypto7.verify(cert, signed, signature2);
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt2);
         }
@@ -144811,8 +145044,8 @@ ${amzDate}
 ${credentialScope}
 ` + await options.crypto.sha256DigestHex(canonicalRequest);
       const signingKey = await getSigningKey(options.crypto, options.securityCredentials.secretAccessKey, dateStamp, options.region, serviceName);
-      const signature = await sign3(options.crypto, signingKey, stringToSign);
-      const authorizationHeader = `${AWS_ALGORITHM} Credential=${options.securityCredentials.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${(0, crypto_1.fromArrayBufferToHex)(signature)}`;
+      const signature2 = await sign3(options.crypto, signingKey, stringToSign);
+      const authorizationHeader = `${AWS_ALGORITHM} Credential=${options.securityCredentials.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${(0, crypto_1.fromArrayBufferToHex)(signature2)}`;
       return {
         // Do not return x-amz-date if date is available.
         amzDate: additionalAmzHeaders.has("date") ? void 0 : amzDate,
@@ -145924,11 +146157,11 @@ var require_gdchclient = __commonJS({
         const encodedHeader = this.base64UrlEncode(JSON.stringify(header));
         const encodedPayload = this.base64UrlEncode(JSON.stringify(payload));
         const signingInput = `${encodedHeader}.${encodedPayload}`;
-        const signature = crypto7.sign("sha256", Buffer.from(signingInput), {
+        const signature2 = crypto7.sign("sha256", Buffer.from(signingInput), {
           key: this.privateKey,
           dsaEncoding: "ieee-p1363"
         });
-        const encodedSignature = this.base64UrlEncode(signature);
+        const encodedSignature = this.base64UrlEncode(signature2);
         return `${signingInput}.${encodedSignature}`;
       }
       async requestAsync(opts, retry = false) {
@@ -147222,14 +147455,14 @@ var require_src7 = __commonJS({
 import http4 from "http";
 
 // src/app.ts
-var import_express69 = __toESM(require_express2(), 1);
+var import_express71 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 var import_compression = __toESM(require_compression(), 1);
 import path2 from "path";
 
 // src/routes/index.ts
-var import_express68 = __toESM(require_express2(), 1);
+var import_express70 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express3 = __toESM(require_express2(), 1);
@@ -147755,7 +147988,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "1e4e8994684cfc6c00903ea8b934dcb34be0d34d";
+var GIT_COMMIT = "0f55727de0eb03e461373655dac069cbc992e5ff";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -151505,7 +151738,14 @@ async function anonymizeAccount(userId) {
   let effectiveScheduledAt = deletionScheduledAt;
   await db.transaction(async (tx) => {
     await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
-    await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
+    await tx.update(exchangeSparksTable).set({
+      status: "deletion_pending",
+      updated_at: now
+    }).where(eq(exchangeSparksTable.author_user_id, userId));
+    await tx.delete(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.owner_user_id, userId),
+      sql`${mediaAssetsTable.context_kind} <> 'exchange_spark'`
+    ));
     await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
     await tx.delete(niaMemoriesTable).where(eq(niaMemoriesTable.user_id, userId));
     await tx.update(scheduledPaymentsTable).set({ status: "cancelled" }).where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
@@ -152166,6 +152406,10 @@ init_storage();
 
 // src/lib/media-validation.ts
 import { spawn } from "node:child_process";
+var MAX_MEDIA_BYTES = 64 * 1024 * 1024;
+function isAllowedMediaSize(size) {
+  return Number.isSafeInteger(size) && size > 0 && size <= MAX_MEDIA_BYTES;
+}
 function hasExpectedSignature(buffer, mimeType) {
   if (mimeType === "image/jpeg") return buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255;
   if (mimeType === "image/png") return buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
@@ -152205,38 +152449,49 @@ function imageDimensions(buffer, mimeType) {
   }
   return null;
 }
-function probeVideo(buffer) {
+function probeMedia(buffer) {
   return new Promise((resolve) => {
     const child = spawn(process.env["FFPROBE_PATH"] || "ffprobe", [
       "-v",
       "error",
       "-i",
       "pipe:0",
-      "-select_streams",
-      "v:0",
       "-show_entries",
-      "stream=width,height,duration",
+      "stream=codec_type,width,height,duration:format=duration",
       "-of",
       "json"
     ]);
     const chunks = [];
-    let stderr = "";
-    child.stdout.on("data", (chunk) => chunks.push(chunk));
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+    let outputBytes = 0;
+    let hasStderr = false;
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 15e3);
+    child.stdout.on("data", (chunk) => {
+      outputBytes += chunk.length;
+      if (outputBytes > 64 * 1024) child.kill("SIGKILL");
+      else chunks.push(chunk);
     });
-    child.on("error", () => resolve(null));
+    child.stderr.on("data", () => {
+      hasStderr = true;
+    });
+    child.on("error", () => {
+      clearTimeout(timeout);
+      resolve(null);
+    });
     child.on("close", (code) => {
-      if (code !== 0 || stderr || !chunks.length) return resolve(null);
+      clearTimeout(timeout);
+      if (code !== 0 || hasStderr || !chunks.length) return resolve(null);
       try {
         const parsed = JSON.parse(Buffer.concat(chunks).toString());
-        const stream = parsed.streams?.find((item) => Number.isFinite(item.width) && Number.isFinite(item.height) && Number(item.width) > 0 && Number(item.height) > 0);
+        const video = parsed.streams?.find((item) => item.codec_type === "video" && (Number.isFinite(item.width) && Number.isFinite(item.height) && Number(item.width) > 0 && Number(item.height) > 0));
+        const stream = video ?? parsed.streams?.find((item) => item.codec_type === "audio");
         if (!stream) return resolve(null);
-        const duration3 = stream.duration ? Math.round(Number(stream.duration) * 1e3) : null;
+        const streamSeconds = Number(stream.duration);
+        const seconds = Number.isFinite(streamSeconds) && streamSeconds > 0 ? streamSeconds : Number(parsed.format?.duration);
+        const duration3 = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1e3) : null;
         resolve({
-          width: Number.isFinite(stream.width) ? Number(stream.width) : null,
-          height: Number.isFinite(stream.height) ? Number(stream.height) : null,
-          duration_ms: duration3 && duration3 > 0 ? duration3 : null
+          width: video ? Number(video.width) : null,
+          height: video ? Number(video.height) : null,
+          duration_ms: duration3
         });
       } catch {
         resolve(null);
@@ -152250,8 +152505,32 @@ async function inspectMedia(buffer, mimeType) {
     const dimensions = imageDimensions(buffer, mimeType);
     return dimensions ? { ...dimensions, duration_ms: null } : null;
   }
-  if (mimeType.startsWith("video/")) return probeVideo(buffer);
-  return { width: null, height: null, duration_ms: null };
+  if (mimeType.startsWith("video/") || mimeType.startsWith("audio/")) return probeMedia(buffer);
+  if (mimeType === "application/pdf" && hasExpectedSignature(buffer, mimeType)) {
+    return { width: null, height: null, duration_ms: null };
+  }
+  return null;
+}
+async function validateMediaBuffer(buffer, mediaType, mimeType) {
+  const supported = {
+    photo: ["image/jpeg", "image/png", "image/gif", "image/webp"],
+    video: ["video/mp4", "video/webm"],
+    audio: ["audio/ogg", "audio/wav", "audio/mpeg"],
+    document: ["application/pdf"]
+  };
+  if (!supported[mediaType]?.includes(mimeType)) throw new Error("MEDIA_TYPE_NOT_SUPPORTED");
+  if (!hasExpectedSignature(buffer, mimeType)) throw new Error("MEDIA_SIGNATURE_INVALID");
+  const metadata = await inspectMedia(buffer, mimeType);
+  if (!metadata) throw new Error("MEDIA_METADATA_INVALID");
+  if (mediaType === "photo" || mediaType === "video") {
+    if (!metadata.width || !metadata.height || metadata.width > 16384 || metadata.height > 16384) {
+      throw new Error("MEDIA_DIMENSIONS_INVALID");
+    }
+  }
+  if ((mediaType === "video" || mediaType === "audio") && (!metadata.duration_ms || metadata.duration_ms <= 0)) {
+    throw new Error("MEDIA_DURATION_INVALID");
+  }
+  return metadata;
 }
 
 // src/lib/media-platform.ts
@@ -152280,19 +152559,53 @@ init_src();
 init_drizzle_orm();
 init_queue();
 init_logger2();
-async function enqueueMediaAssetProcessing(mediaAssetId, mediaType, compositionManifest) {
-  if (!mediaProcessingQueue) {
+async function enqueueMediaAssetProcessing(mediaAssetId, mediaType, compositionManifest, publisher = mediaProcessingQueue, database = db) {
+  if (!publisher) {
     logger.warn({ mediaAssetId }, "media-processing: Redis unavailable; asset remains pending");
     return false;
   }
   const jobTypes = mediaJobsForType(mediaType, compositionManifest);
+  const [assetContext] = await database.select({
+    context_kind: mediaAssetsTable.context_kind,
+    context_id: mediaAssetsTable.context_id
+  }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
+  if (!assetContext) return false;
+  const transitionAsset = async (executor) => {
+    const conditions = [
+      eq(mediaAssetsTable.id, mediaAssetId),
+      eq(mediaAssetsTable.context_kind, assetContext.context_kind),
+      eq(mediaAssetsTable.context_id, assetContext.context_id),
+      inArray(mediaAssetsTable.status, ["pending", "failed", "processing"])
+    ];
+    const [transitioned] = await executor.update(mediaAssetsTable).set({ status: "processing", failure_reason: null, updated_at: /* @__PURE__ */ new Date() }).where(and(...conditions)).returning({ id: mediaAssetsTable.id });
+    if (transitioned) return true;
+    const [asset] = await executor.select({ status: mediaAssetsTable.status }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
+    return asset?.status === "ready";
+  };
+  if (assetContext.context_kind === "story") {
+    const canTransition2 = await database.transaction(async (tx) => {
+      const [story] = await tx.select({ status: communityStoriesTable.status }).from(communityStoriesTable).where(eq(communityStoriesTable.id, assetContext.context_id)).limit(1).for("share");
+      if (!story || story.status === "deletion_pending") return false;
+      return transitionAsset(tx);
+    });
+    if (!canTransition2) return false;
+  } else if (assetContext.context_kind === "exchange_spark") {
+    const canTransition2 = await database.transaction(async (tx) => {
+      const [spark] = await tx.select({ status: exchangeSparksTable.status }).from(exchangeSparksTable).where(eq(exchangeSparksTable.id, assetContext.context_id)).limit(1).for("share");
+      if (!spark || spark.status === "deletion_pending") return false;
+      return transitionAsset(tx);
+    });
+    if (!canTransition2) return false;
+  } else if (!await transitionAsset(database)) {
+    return false;
+  }
   for (const jobType of jobTypes) {
     assertSupportedMediaJob(jobType);
-    await db.insert(mediaProcessingJobsTable).values({ media_asset_id: mediaAssetId, job_type: jobType }).onConflictDoNothing({
+    await database.insert(mediaProcessingJobsTable).values({ media_asset_id: mediaAssetId, job_type: jobType }).onConflictDoNothing({
       target: [mediaProcessingJobsTable.media_asset_id, mediaProcessingJobsTable.job_type]
     });
     try {
-      await mediaProcessingQueue.add(
+      await publisher.add(
         jobType,
         { mediaAssetId, jobType },
         { jobId: `media-${mediaAssetId}-${jobType}` }
@@ -152302,7 +152615,6 @@ async function enqueueMediaAssetProcessing(mediaAssetId, mediaType, compositionM
       throw error40;
     }
   }
-  await db.update(mediaAssetsTable).set({ status: "processing", updated_at: /* @__PURE__ */ new Date() }).where(eq(mediaAssetsTable.id, mediaAssetId));
   return true;
 }
 async function requeueStaleMediaAssets(limit = 100) {
@@ -155803,7 +156115,7 @@ var CreateCommunityMediaBody = external_exports2.object({
 var CommunityReactionBody = external_exports2.object({
   reaction: external_exports2.enum(["heart", "support", "celebrate"]).default("heart")
 });
-var MAX_MEDIA_BYTES = 5 * 1024 * 1024;
+var MAX_MEDIA_BYTES2 = 5 * 1024 * 1024;
 var MEDIA_MIME_TYPES = /* @__PURE__ */ new Set([
   "image/jpeg",
   "image/png",
@@ -155819,7 +156131,7 @@ function decodeMediaDataUrl(value) {
   const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(value);
   if (!match || !MEDIA_MIME_TYPES.has(match[1])) return null;
   const buffer = Buffer.from(match[2], "base64");
-  if (!buffer.length || buffer.length > MAX_MEDIA_BYTES) return null;
+  if (!buffer.length || buffer.length > MAX_MEDIA_BYTES2) return null;
   return { buffer, mimeType: match[1] };
 }
 async function isApprovedHubMember(userId, hubId) {
@@ -156495,7 +156807,7 @@ async function createMessageNotification(input) {
     body: input.body.slice(0, 500),
     action_url: input.actionUrl ?? null,
     metadata: input.metadata ?? {}
-  }).returning({
+  }).onConflictDoNothing().returning({
     id: messageNotificationsTable.id,
     type: messageNotificationsTable.type,
     title: messageNotificationsTable.title,
@@ -161798,12 +162110,12 @@ router29.post("/background-checks/webhook", async (req, res) => {
     return res.status(503).json({ error: "Webhook endpoint not configured" });
   }
   const sigHeader = req.headers["x-checkr-signature"];
-  const signature = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
-  if (!signature) {
+  const signature2 = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
+  if (!signature2) {
     return res.status(401).json({ error: "Missing webhook signature" });
   }
   const expected = crypto4.createHmac("sha256", CHECKR_WEBHOOK_SECRET).update(rawBuffer).digest("hex");
-  const sigBuf = Buffer.from(signature, "utf8");
+  const sigBuf = Buffer.from(signature2, "utf8");
   const expBuf = Buffer.from(expected, "utf8");
   if (sigBuf.length !== expBuf.length || !crypto4.timingSafeEqual(sigBuf, expBuf)) {
     return res.status(401).json({ error: "Invalid webhook signature" });
@@ -174650,9 +174962,9 @@ var FlattenedSign = class {
       protectedHeader = encoder.encode("");
     }
     const data = concat2(protectedHeader, encoder.encode("."), payload);
-    const signature = await sign_default(alg, key, data);
+    const signature2 = await sign_default(alg, key, data);
     const jws = {
-      signature: encode(signature),
+      signature: encode(signature2),
       payload: ""
     };
     if (b64) {
@@ -181154,8 +181466,102 @@ init_zod();
 import { randomUUID as randomUUID9 } from "node:crypto";
 init_queue();
 init_logger2();
+
+// src/lib/community-story-policy.ts
+function canReadCommunityStoryAudience(audience, viewerCommunityId, storyCommunityId) {
+  return audience === "community" && viewerCommunityId === storyCommunityId;
+}
+function canWriteStoryMediaContext(input) {
+  if (input.authorUserId !== input.userId || input.expiresAt <= input.now) return false;
+  if (input.exchangeListingId === null) return true;
+  return input.storyStatus === "draft" && input.listingSellerId === input.userId && input.listingStatus === "active" && input.listingModerationStatus === "approved" && input.sellerApprovalStatus === "approved" && input.sellerIsSuspended === false;
+}
+function isDuplicateExchangeStoryVideoSession(input) {
+  return input.contextKind === "story" && input.mediaType === "video" && input.exchangeListingId !== null && input.existingVideoSession;
+}
+function canReadExchangeLinkedStory(input) {
+  if (input.listingSellerId !== input.authorUserId || input.listingStatus !== "active" || input.listingModerationStatus !== "approved" || input.sellerApprovalStatus !== "approved" || input.sellerIsSuspended || input.blocks.some((block) => block.blocker_id === input.viewerUserId && block.blocked_id === input.authorUserId || block.blocker_id === input.authorUserId && block.blocked_id === input.viewerUserId)) return false;
+  if (input.viewerUserId === input.authorUserId) return true;
+  return canReadCommunityStoryAudience(input.audience, input.viewerCommunityId, input.authorCommunityId);
+}
+function isLinkedStoryVideoAssetReady(input) {
+  if (input.mediaAssetId !== null && input.assetStatus !== "ready") return false;
+  if (!input.linked) return true;
+  if (input.mediaType !== "video") return false;
+  return input.mediaAssetId === null || input.assetStatus === "ready" && Boolean(input.variantKey);
+}
+function storyVideoStreamContentType(variantKey, originalMimeType) {
+  return variantKey ? "video/mp4" : originalMimeType;
+}
+
+// src/lib/community-story-playback.ts
+import { createHmac as createHmac5, timingSafeEqual as timingSafeEqual3 } from "node:crypto";
+var STORY_PLAYBACK_COOKIE_NAME = "niakofa_story_playback";
+var STORY_PLAYBACK_TTL_SECONDS = 120;
+var PLAYBACK_PURPOSE = "community-story-video-playback-v1";
+function isPositiveSafeInteger(value) {
+  return Number.isSafeInteger(value) && value > 0;
+}
+function playbackSignature(claims, secret) {
+  return createHmac5("sha256", secret).update([
+    PLAYBACK_PURPOSE,
+    claims.mediaId,
+    claims.userId,
+    claims.tokenVersion,
+    claims.expiresAt
+  ].join("\n")).digest("base64url");
+}
+function issueStoryPlaybackGrant(input, secret, now = Date.now()) {
+  if (!secret || secret.length < 32) throw new Error("SESSION_SECRET must contain at least 32 characters.");
+  if (!isPositiveSafeInteger(input.mediaId) || !isPositiveSafeInteger(input.userId) || !Number.isSafeInteger(input.tokenVersion) || input.tokenVersion < 0) {
+    throw new Error("Invalid Story playback grant claims.");
+  }
+  const claims = {
+    ...input,
+    expiresAt: now + STORY_PLAYBACK_TTL_SECONDS * 1e3
+  };
+  const value = `v1.${claims.mediaId}.${claims.userId}.${claims.tokenVersion}.${claims.expiresAt}.${playbackSignature(claims, secret)}`;
+  return { value, claims };
+}
+function verifyStoryPlaybackGrant(value, expectedMediaId, secret, now = Date.now()) {
+  if (typeof value !== "string" || value.length > 256 || !secret || secret.length < 32 || !isPositiveSafeInteger(expectedMediaId)) return null;
+  const parts = value.split(".");
+  if (parts.length !== 6 || parts[0] !== "v1") return null;
+  const [, mediaRaw, userRaw, versionRaw, expiryRaw, suppliedSignature] = parts;
+  if (![mediaRaw, userRaw, versionRaw, expiryRaw].every((part) => /^\d+$/.test(part))) return null;
+  const claims = {
+    mediaId: Number(mediaRaw),
+    userId: Number(userRaw),
+    tokenVersion: Number(versionRaw),
+    expiresAt: Number(expiryRaw)
+  };
+  if (!isPositiveSafeInteger(claims.mediaId) || !isPositiveSafeInteger(claims.userId) || !Number.isSafeInteger(claims.tokenVersion) || claims.tokenVersion < 0 || !Number.isSafeInteger(claims.expiresAt) || String(claims.mediaId) !== mediaRaw || String(claims.userId) !== userRaw || String(claims.tokenVersion) !== versionRaw || String(claims.expiresAt) !== expiryRaw || claims.mediaId !== expectedMediaId || claims.expiresAt <= now || claims.expiresAt > now + STORY_PLAYBACK_TTL_SECONDS * 1e3) return null;
+  const supplied = Buffer.from(suppliedSignature, "base64url");
+  const expected = Buffer.from(playbackSignature(claims, secret), "base64url");
+  if (supplied.length !== expected.length || !timingSafeEqual3(supplied, expected)) return null;
+  return claims;
+}
+function buildStoryPlaybackSetCookie(value, mediaId, secure) {
+  if (!isPositiveSafeInteger(mediaId) || !/^[A-Za-z0-9._-]{1,256}$/.test(value)) {
+    throw new Error("Invalid Story playback cookie.");
+  }
+  const secureAttribute = secure ? "; Secure" : "";
+  return `${STORY_PLAYBACK_COOKIE_NAME}=${value}; Path=/api/community/stories/media/${mediaId}/play; HttpOnly; SameSite=Strict; Max-Age=${STORY_PLAYBACK_TTL_SECONDS}${secureAttribute}`;
+}
+function readStoryPlaybackCookie(cookieHeader) {
+  if (typeof cookieHeader !== "string" || cookieHeader.length > 8192) return null;
+  const matches = cookieHeader.split(";").flatMap((part) => {
+    const separator = part.indexOf("=");
+    if (separator < 0 || part.slice(0, separator).trim() !== STORY_PLAYBACK_COOKIE_NAME) return [];
+    const value = part.slice(separator + 1).trim();
+    return /^[A-Za-z0-9._-]{1,256}$/.test(value) ? [value] : [""];
+  });
+  return matches.length === 1 && matches[0] ? matches[0] : null;
+}
+
+// src/routes/community-stories.ts
 var router59 = (0, import_express61.Router)();
-var MAX_MEDIA_BYTES2 = 12 * 1024 * 1024;
+var MAX_MEDIA_BYTES3 = 12 * 1024 * 1024;
 var MAX_MEDIA_ITEMS = 6;
 var MAX_MEDIA_DIMENSION = 1e4;
 var ALLOWED_MEDIA = /* @__PURE__ */ new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm"]);
@@ -181173,6 +181579,7 @@ var storyElementSchema = external_exports2.object({
 var createStorySchema = external_exports2.object({
   caption: external_exports2.string().trim().max(1e3).optional().default(""),
   hub_id: external_exports2.number().int().positive().nullable().optional(),
+  exchange_listing_id: external_exports2.number().int().positive().optional(),
   audience: external_exports2.enum(STORY_AUDIENCES).default("community"),
   reply_enabled: external_exports2.boolean().default(true),
   media: external_exports2.array(external_exports2.object({
@@ -181183,6 +181590,7 @@ var createStorySchema = external_exports2.object({
     width: external_exports2.number().int().positive().max(1e4).nullable().optional(),
     height: external_exports2.number().int().positive().max(1e4).nullable().optional()
   })).min(0).max(MAX_MEDIA_ITEMS).default([]),
+  media_asset_ids: external_exports2.array(external_exports2.number().int().positive()).max(MAX_MEDIA_ITEMS).optional(),
   elements: external_exports2.array(storyElementSchema).max(30).default([]),
   composition_manifest: external_exports2.object({
     version: external_exports2.literal(1),
@@ -181237,7 +181645,7 @@ function decodeMediaDataUrl2(value) {
   const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(value);
   if (!match || !ALLOWED_MEDIA.has(match[1])) return null;
   const buffer = Buffer.from(match[2], "base64");
-  if (!buffer.length || buffer.length > MAX_MEDIA_BYTES2 || !hasExpectedSignature(buffer, match[1])) return null;
+  if (!buffer.length || buffer.length > MAX_MEDIA_BYTES3 || !hasExpectedSignature(buffer, match[1])) return null;
   return { buffer, mimeType: match[1] };
 }
 async function approvedHubMember(userId, hubId) {
@@ -181259,16 +181667,47 @@ async function approvedCanonicalHub(hubId) {
   return Boolean(hub);
 }
 async function viewerCanReadStory(userId, story) {
-  if (story.author_user_id === userId || story.audience === "community" && story.community_id === null) return true;
-  if (story.audience === "hub") return story.hub_id !== null && await approvedHubMember(userId, story.hub_id);
   const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  return story.audience === "community" && story.community_id !== null && viewer?.community_id === story.community_id;
+  if (story.exchange_listing_id != null) {
+    const [listing] = await db.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status,
+      seller_approval_status: usersTable.approval_status,
+      seller_is_suspended: usersTable.is_suspended
+    }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(eq(exchangeListingsTable.id, story.exchange_listing_id)).limit(1);
+    const blocks = await db.select({
+      blocker_id: directMessageBlocksTable.blocker_id,
+      blocked_id: directMessageBlocksTable.blocked_id
+    }).from(directMessageBlocksTable).where(or(
+      and(eq(directMessageBlocksTable.blocker_id, userId), eq(directMessageBlocksTable.blocked_id, story.author_user_id)),
+      and(eq(directMessageBlocksTable.blocker_id, story.author_user_id), eq(directMessageBlocksTable.blocked_id, userId))
+    )).limit(1);
+    if (!listing || !canReadExchangeLinkedStory({
+      viewerUserId: userId,
+      viewerCommunityId: viewer?.community_id ?? null,
+      authorUserId: story.author_user_id,
+      authorCommunityId: story.community_id,
+      listingSellerId: listing.seller_id,
+      listingStatus: listing.status,
+      listingModerationStatus: listing.moderation_status,
+      sellerApprovalStatus: listing.seller_approval_status,
+      sellerIsSuspended: listing.seller_is_suspended,
+      audience: story.audience,
+      blocks
+    })) return false;
+    return true;
+  }
+  if (story.author_user_id === userId) return true;
+  if (story.audience === "hub") return story.hub_id !== null && await approvedHubMember(userId, story.hub_id);
+  return canReadCommunityStoryAudience(story.audience, viewer?.community_id ?? null, story.community_id);
 }
 function publicStory(row, media, elements) {
   return {
     id: row.id,
     author_user_id: row.author_user_id,
     hub_id: row.hub_id,
+    exchange_listing_id: row.exchange_listing_id,
     community_id: row.community_id,
     caption: row.caption,
     audience: row.audience,
@@ -181298,23 +181737,79 @@ function publicStory(row, media, elements) {
     }))
   };
 }
+async function readableStoryVideoMedia(mediaId, userId) {
+  const [row] = await db.select({
+    storage_key: communityStoryMediaTable.storage_key,
+    media_type: communityStoryMediaTable.media_type,
+    mime_type: communityStoryMediaTable.mime_type,
+    variant_key: mediaAssetsTable.variant_key,
+    media_asset_id: communityStoryMediaTable.media_asset_id,
+    asset_status: mediaAssetsTable.status,
+    author_user_id: communityStoriesTable.author_user_id,
+    hub_id: communityStoriesTable.hub_id,
+    community_id: communityStoriesTable.community_id,
+    audience: communityStoriesTable.audience,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
+    status: communityStoriesTable.status,
+    expires_at: communityStoriesTable.expires_at
+  }).from(communityStoryMediaTable).innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id)).leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id)).where(eq(communityStoryMediaTable.id, mediaId)).limit(1);
+  if (!row || row.media_type !== "video" || !row.mime_type.startsWith("video/") || row.status !== "published" || row.expires_at <= /* @__PURE__ */ new Date() || !await viewerCanReadStory(userId, row)) return null;
+  if (!isLinkedStoryVideoAssetReady({
+    linked: row.exchange_listing_id !== null,
+    mediaType: row.media_type,
+    mediaAssetId: row.media_asset_id,
+    assetStatus: row.asset_status,
+    variantKey: row.variant_key
+  })) return null;
+  return row;
+}
 router59.get("/community/stories", requireAuth, requireApproved, async (req, res) => {
   const userId = req.authenticatedUserId;
   const requestedHubId = req.query.hubId ? positiveId3(req.query.hubId) : null;
   if (req.query.hubId && !requestedHubId) return res.status(400).json({ error: "hubId must be a positive integer." });
   if (requestedHubId && !await approvedCanonicalHub(requestedHubId)) return res.status(404).json({ error: "Canonical Hub not found." });
   if (requestedHubId && !await approvedHubMember(userId, requestedHubId)) return res.status(403).json({ error: "Approved Hub membership is required to view this Hub's Stories." });
-  const [viewer] = await db.select({ community_id: usersTable.community_id, diaspora_hub_id: usersTable.diaspora_hub_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const requestedLimit = req.query.limit === void 0 ? 100 : Number(req.query.limit);
+  if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+    return res.status(400).json({ error: "limit must be an integer between 1 and 100." });
+  }
+  let cursor = null;
+  if (req.query.cursor !== void 0) {
+    try {
+      const value = String(req.query.cursor);
+      if (!/^[A-Za-z0-9_-]{1,512}$/.test(value)) throw new Error("invalid cursor");
+      const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+      const createdAt = typeof parsed.created_at === "string" ? new Date(parsed.created_at) : /* @__PURE__ */ new Date(NaN);
+      if (!Number.isFinite(createdAt.getTime()) || !Number.isSafeInteger(parsed.id) || Number(parsed.id) < 1) {
+        throw new Error("invalid cursor");
+      }
+      cursor = { createdAt, id: Number(parsed.id) };
+    } catch {
+      return res.status(400).json({ error: "cursor is invalid." });
+    }
+  }
+  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const approvedHubIds = (await db.select({ hub_id: hubMembershipsTable.hub_id }).from(hubMembershipsTable).where(and(
+    eq(hubMembershipsTable.user_id, userId),
+    eq(hubMembershipsTable.status, "approved")
+  ))).map((membership) => membership.hub_id);
   const now = /* @__PURE__ */ new Date();
   const visibility = requestedHubId ? and(eq(communityStoriesTable.hub_id, requestedHubId), eq(communityStoriesTable.audience, "hub")) : or(
-    and(eq(communityStoriesTable.audience, "community"), viewer?.community_id ? eq(communityStoriesTable.community_id, viewer.community_id) : sql`true`),
-    and(eq(communityStoriesTable.audience, "hub"), viewer?.diaspora_hub_id ? eq(communityStoriesTable.hub_id, viewer.diaspora_hub_id) : sql`false`),
+    and(
+      eq(communityStoriesTable.audience, "community"),
+      or(
+        eq(communityStoriesTable.author_user_id, userId),
+        viewer?.community_id == null ? isNull(communityStoriesTable.community_id) : eq(communityStoriesTable.community_id, viewer.community_id)
+      )
+    ),
+    approvedHubIds.length ? and(eq(communityStoriesTable.audience, "hub"), inArray(communityStoriesTable.hub_id, approvedHubIds)) : sql`false`,
     eq(communityStoriesTable.author_user_id, userId)
   );
-  const rows = await db.select({
+  const queriedRows = await db.select({
     id: communityStoriesTable.id,
     author_user_id: communityStoriesTable.author_user_id,
     hub_id: communityStoriesTable.hub_id,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
     community_id: communityStoriesTable.community_id,
     caption: communityStoriesTable.caption,
     audience: communityStoriesTable.audience,
@@ -181329,13 +181824,68 @@ router59.get("/community/stories", requireAuth, requireApproved, async (req, res
     sql`${communityStoriesTable.expires_at} > ${now}`,
     eq(usersTable.approval_status, "approved"),
     eq(usersTable.is_suspended, false),
-    visibility
-  )).orderBy(desc(communityStoriesTable.created_at)).limit(100);
+    visibility,
+    or(
+      isNull(communityStoriesTable.exchange_listing_id),
+      sql`EXISTS (
+          SELECT 1
+          FROM exchange_listings linked_listing
+          WHERE linked_listing.id = ${communityStoriesTable.exchange_listing_id}
+            AND linked_listing.seller_id = ${communityStoriesTable.author_user_id}
+            AND linked_listing.status = 'active'
+            AND linked_listing.moderation_status = 'approved'
+            AND (
+              ${communityStoriesTable.author_user_id} = ${userId}
+              OR ${communityStoriesTable.community_id} IS NOT DISTINCT FROM ${viewer?.community_id ?? null}
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM direct_message_blocks listing_block
+              WHERE (listing_block.blocker_id = ${userId} AND listing_block.blocked_id = linked_listing.seller_id)
+                 OR (listing_block.blocker_id = linked_listing.seller_id AND listing_block.blocked_id = ${userId})
+            )
+        )`
+    ),
+    or(
+      isNull(communityStoriesTable.exchange_listing_id),
+      sql`EXISTS (
+          SELECT 1
+          FROM community_story_media linked_media
+          LEFT JOIN media_assets linked_asset ON linked_asset.id = linked_media.media_asset_id
+          WHERE linked_media.story_id = ${communityStoriesTable.id}
+            AND linked_media.media_type = 'video'
+            AND (
+              linked_media.media_asset_id IS NULL
+              OR (linked_asset.status = 'ready' AND linked_asset.variant_key IS NOT NULL)
+            )
+        )`
+    ),
+    cursor ? or(
+      lt(communityStoriesTable.created_at, cursor.createdAt),
+      and(
+        eq(communityStoriesTable.created_at, cursor.createdAt),
+        lt(communityStoriesTable.id, cursor.id)
+      )
+    ) : void 0
+  )).orderBy(desc(communityStoriesTable.created_at), desc(communityStoriesTable.id)).limit(requestedLimit + 1);
+  const hasMore = queriedRows.length > requestedLimit;
+  const rows = queriedRows.slice(0, requestedLimit);
   const ids = rows.map((row) => row.id);
-  const [media, elements] = ids.length ? await Promise.all([
-    db.select().from(communityStoryMediaTable).where(inArray(communityStoryMediaTable.story_id, ids)),
+  const [mediaRows, elements] = ids.length ? await Promise.all([
+    db.select({
+      media: communityStoryMediaTable,
+      linked_listing_id: communityStoriesTable.exchange_listing_id,
+      asset_status: mediaAssetsTable.status,
+      asset_variant_key: mediaAssetsTable.variant_key
+    }).from(communityStoryMediaTable).innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id)).leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id)).where(inArray(communityStoryMediaTable.story_id, ids)).orderBy(asc(communityStoryMediaTable.id)),
     db.select().from(communityStoryElementsTable).where(inArray(communityStoryElementsTable.story_id, ids)).orderBy(communityStoryElementsTable.z_index)
   ]) : [[], []];
+  const media = mediaRows.filter((item) => (item.media.media_asset_id === null || item.asset_status === "ready") && isLinkedStoryVideoAssetReady({
+    linked: item.linked_listing_id !== null,
+    mediaType: item.media.media_type,
+    mediaAssetId: item.media.media_asset_id,
+    assetStatus: item.asset_status,
+    variantKey: item.asset_variant_key
+  })).map((item) => item.media);
   const mediaByStory = /* @__PURE__ */ new Map();
   media.forEach((item) => mediaByStory.set(item.story_id, [...mediaByStory.get(item.story_id) ?? [], item]));
   const elementsByStory = /* @__PURE__ */ new Map();
@@ -181343,7 +181893,49 @@ router59.get("/community/stories", requireAuth, requireApproved, async (req, res
   return res.json({
     stories: rows.map((row) => publicStory(row, mediaByStory.get(row.id) ?? [], elementsByStory.get(row.id) ?? [])),
     viewer_user_id: userId,
-    expires_after_hours: 24
+    expires_after_hours: 24,
+    next_cursor: hasMore && rows.length ? Buffer.from(JSON.stringify({
+      created_at: rows[rows.length - 1].created_at?.toISOString(),
+      id: rows[rows.length - 1].id
+    })).toString("base64url") : null
+  });
+});
+router59.get("/community/stories/moment-media-status", requireAuth, requireApproved, async (req, res) => {
+  const userId = req.authenticatedUserId;
+  const contextKind = String(req.query.contextKind ?? "");
+  const contextId = positiveId3(req.query.contextId);
+  const rawIds = String(req.query.ids ?? "");
+  const ids = rawIds ? rawIds.split(",").map(Number) : [];
+  if (!["community_moment", "hub_moment"].includes(contextKind) || !contextId || !ids.length || ids.length > MAX_MEDIA_ITEMS || ids.some((id3) => !Number.isSafeInteger(id3) || id3 < 1) || new Set(ids).size !== ids.length) {
+    return res.status(400).json({ error: "Moment media context and up to six unique asset ids are required." });
+  }
+  if (contextKind === "community_moment" && contextId !== userId) {
+    return res.status(404).json({ error: "Moment upload context not found." });
+  }
+  if (contextKind === "hub_moment" && (!await approvedCanonicalHub(contextId) || !await approvedHubMember(userId, contextId))) {
+    return res.status(404).json({ error: "Moment upload context not found." });
+  }
+  const assets = await db.select({
+    id: mediaAssetsTable.id,
+    status: mediaAssetsTable.status,
+    media_type: mediaAssetsTable.media_type,
+    variant_key: mediaAssetsTable.variant_key,
+    failure_reason: mediaAssetsTable.failure_reason
+  }).from(mediaAssetsTable).where(and(
+    inArray(mediaAssetsTable.id, ids),
+    eq(mediaAssetsTable.owner_user_id, userId),
+    eq(mediaAssetsTable.context_kind, contextKind),
+    eq(mediaAssetsTable.context_id, contextId)
+  ));
+  if (assets.length !== ids.length) return res.status(404).json({ error: "One or more Moment uploads are unavailable." });
+  return res.json({
+    assets: assets.map((asset) => ({
+      id: asset.id,
+      status: asset.status,
+      media_type: asset.media_type,
+      variant_ready: Boolean(asset.variant_key),
+      failure_code: asset.status === "failed" ? asset.failure_reason?.match(/^MEDIA_[A-Z_]+/)?.[0] ?? "MEDIA_PROCESSING_FAILED" : null
+    }))
   });
 });
 router59.post("/community/stories", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
@@ -181351,12 +181943,101 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
   if (!parsed.success) return res.status(400).json({ error: "Story data is invalid. Add a photo, video, or caption and try again." });
   const userId = req.authenticatedUserId;
   const hubId = parsed.data.hub_id ?? null;
+  const exchangeListingId = parsed.data.exchange_listing_id ?? null;
+  const mediaAssetIds = parsed.data.media_asset_ids ?? [];
+  if (mediaAssetIds.length && parsed.data.media.length) {
+    return res.status(400).json({ error: "Use either uploaded media assets or inline Story media, not both." });
+  }
+  if (new Set(mediaAssetIds).size !== mediaAssetIds.length) {
+    return res.status(400).json({ error: "Moment media asset ids must be unique." });
+  }
+  if (mediaAssetIds.length && exchangeListingId !== null) {
+    return res.status(400).json({ error: "Exchange-linked Sparks must use their dedicated media upload flow." });
+  }
+  if (mediaAssetIds.length) {
+    const attachedAssets = await db.select({
+      story_id: communityStoryMediaTable.story_id,
+      media_asset_id: communityStoryMediaTable.media_asset_id,
+      author_user_id: communityStoriesTable.author_user_id,
+      caption: communityStoriesTable.caption,
+      audience: communityStoriesTable.audience,
+      hub_id: communityStoriesTable.hub_id,
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at
+    }).from(communityStoryMediaTable).innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id)).where(inArray(communityStoryMediaTable.media_asset_id, mediaAssetIds));
+    if (attachedAssets.length) {
+      const first = attachedAssets[0];
+      const isSameCompletedCreate = attachedAssets.length === mediaAssetIds.length && attachedAssets.every((asset) => asset.story_id === first?.story_id && asset.author_user_id === userId && asset.caption === (cleanText2(parsed.data.caption, 1e3) || null) && asset.audience === parsed.data.audience && asset.hub_id === hubId && (asset.status === "published" || asset.status === "pending") && asset.expires_at > /* @__PURE__ */ new Date()) && new Set(attachedAssets.map((asset) => asset.media_asset_id)).size === mediaAssetIds.length;
+      if (!isSameCompletedCreate || !first) {
+        return res.status(409).json({ error: "One or more uploaded assets have already been attached to a Moment." });
+      }
+      return res.status(200).json({
+        story: {
+          id: first.story_id,
+          status: first.status,
+          expires_at: first.expires_at.toISOString()
+        }
+      });
+    }
+  }
   if (hubId && (!await approvedCanonicalHub(hubId) || !await approvedHubMember(userId, hubId))) {
     return res.status(403).json({ error: "Approved Hub membership is required to publish a Hub Story." });
   }
   if (parsed.data.audience === "hub" && !hubId) return res.status(400).json({ error: "Choose a Hub before sharing with a Hub audience." });
-  if (!parsed.data.caption && parsed.data.media.length === 0 && parsed.data.elements.length === 0) {
+  if (exchangeListingId !== null) {
+    if (parsed.data.audience !== "community") {
+      return res.status(400).json({ error: "An Exchange Spark must use the community audience." });
+    }
+    if (parsed.data.media.length !== 1 || parsed.data.media[0]?.media_type !== "video") {
+      return res.status(400).json({ error: "An Exchange Spark must contain one video." });
+    }
+    const [listing] = await db.select({
+      id: exchangeListingsTable.id,
+      seller_id: exchangeListingsTable.seller_id
+    }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(and(
+      eq(exchangeListingsTable.id, exchangeListingId),
+      eq(exchangeListingsTable.seller_id, userId),
+      eq(exchangeListingsTable.status, "active"),
+      eq(exchangeListingsTable.moderation_status, "approved"),
+      eq(usersTable.approval_status, "approved"),
+      eq(usersTable.is_suspended, false)
+    )).limit(1);
+    if (!listing) return res.status(404).json({ error: "An active, approved Exchange listing you own is required." });
+  }
+  if (!parsed.data.caption && parsed.data.media.length === 0 && mediaAssetIds.length === 0 && parsed.data.elements.length === 0) {
     return res.status(400).json({ error: "A Story needs media, text, or a creative element." });
+  }
+  const stagedContextKind = parsed.data.audience === "hub" ? "hub_moment" : "community_moment";
+  const stagedContextId = parsed.data.audience === "hub" ? hubId : userId;
+  if (mediaAssetIds.length) {
+    const stagedAssets = await db.select({
+      id: mediaAssetsTable.id,
+      status: mediaAssetsTable.status,
+      media_type: mediaAssetsTable.media_type,
+      mime_type: mediaAssetsTable.mime_type,
+      variant_key: mediaAssetsTable.variant_key,
+      duration_ms: mediaAssetsTable.duration_ms
+    }).from(mediaAssetsTable).where(and(
+      inArray(mediaAssetsTable.id, mediaAssetIds),
+      eq(mediaAssetsTable.owner_user_id, userId),
+      eq(mediaAssetsTable.context_kind, stagedContextKind),
+      eq(mediaAssetsTable.context_id, stagedContextId)
+    ));
+    if (stagedAssets.length !== mediaAssetIds.length) {
+      return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
+    }
+    if (stagedAssets.some((asset) => asset.status === "failed")) {
+      return res.status(409).json({ error: "One or more uploaded assets failed processing. Retry processing or choose another file.", error_code: "MOMENT_MEDIA_FAILED" });
+    }
+    if (stagedAssets.some((asset) => asset.media_type === "video" && (asset.duration_ms ?? 0) > 6e4)) {
+      return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    }
+    if (stagedAssets.some((asset) => asset.status !== "ready" || asset.media_type === "video" && (!asset.variant_key || !asset.duration_ms) || !["photo", "video", "audio"].includes(asset.media_type))) {
+      return res.status(409).json({ error: "Moment media is still processing. Wait until every file is ready, then retry.", error_code: "MOMENT_MEDIA_NOT_READY" });
+    }
+    if (stagedAssets.some((asset) => asset.media_type === "photo" && !asset.mime_type.startsWith("image/") || asset.media_type === "video" && !asset.mime_type.startsWith("video/") || asset.media_type === "audio" && !asset.mime_type.startsWith("audio/"))) {
+      return res.status(400).json({ error: "Uploaded media type does not match its file format." });
+    }
   }
   const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   const caption = cleanText2(parsed.data.caption, 1e3) || null;
@@ -181400,10 +182081,25 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
     const mentionUsers = mentionIds.length ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(and(inArray(usersTable.id, mentionIds), eq(usersTable.approval_status, "approved"), eq(usersTable.is_suspended, false))) : [];
     if (mentionUsers.length !== mentionIds.length) return res.status(400).json({ error: "One or more Story mentions are no longer available." });
     const result = await db.transaction(async (tx) => {
+      const stagedAssets = mediaAssetIds.length ? await tx.select().from(mediaAssetsTable).where(and(
+        inArray(mediaAssetsTable.id, mediaAssetIds),
+        eq(mediaAssetsTable.owner_user_id, userId),
+        eq(mediaAssetsTable.context_kind, stagedContextKind),
+        eq(mediaAssetsTable.context_id, stagedContextId)
+      )).for("update") : [];
+      if (stagedAssets.length !== mediaAssetIds.length) return { kind: "media_not_found" };
+      if (stagedAssets.some((asset) => asset.status === "failed")) return { kind: "media_failed" };
+      if (stagedAssets.some((asset) => asset.media_type === "video" && (asset.duration_ms ?? 0) > 6e4)) {
+        return { kind: "media_too_long" };
+      }
+      if (stagedAssets.some((asset) => asset.status !== "ready" || asset.media_type === "video" && (!asset.variant_key || !asset.duration_ms) || !["photo", "video", "audio"].includes(asset.media_type))) {
+        return { kind: "media_not_ready" };
+      }
       const [story] = await tx.insert(communityStoriesTable).values({
         author_user_id: userId,
         hub_id: hubId,
         community_id: viewer?.community_id ?? null,
+        exchange_listing_id: exchangeListingId,
         caption,
         audience: parsed.data.audience,
         status: moderation.status === "approved" ? "published" : "pending",
@@ -181450,6 +182146,29 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
           height: item.metadata?.height ?? null
         });
       }
+      if (stagedAssets.length) {
+        await tx.insert(communityStoryMediaTable).values(stagedAssets.map((asset) => ({
+          story_id: story.id,
+          media_asset_id: asset.id,
+          storage_key: asset.original_key,
+          media_type: asset.media_type,
+          mime_type: asset.mime_type,
+          byte_size: asset.byte_size,
+          duration_ms: asset.duration_ms,
+          width: asset.width,
+          height: asset.height
+        })));
+        await tx.update(mediaAssetsTable).set({
+          context_kind: "story",
+          context_id: story.id,
+          updated_at: /* @__PURE__ */ new Date()
+        }).where(and(
+          inArray(mediaAssetsTable.id, mediaAssetIds),
+          eq(mediaAssetsTable.owner_user_id, userId),
+          eq(mediaAssetsTable.context_kind, stagedContextKind),
+          eq(mediaAssetsTable.context_id, stagedContextId)
+        ));
+      }
       if (parsed.data.elements.length) {
         await tx.insert(communityStoryElementsTable).values(parsed.data.elements.map((element) => ({
           story_id: story.id,
@@ -181462,8 +182181,12 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
           z_index: element.z_index
         })));
       }
-      return { story, mediaAssetJobs };
+      return { kind: "created", story, mediaAssetJobs };
     });
+    if (result.kind === "media_not_found") return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
+    if (result.kind === "media_failed") return res.status(409).json({ error: "One or more uploaded assets failed processing.", error_code: "MOMENT_MEDIA_FAILED" });
+    if (result.kind === "media_too_long") return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    if (result.kind === "media_not_ready") return res.status(409).json({ error: "Moment media is still processing. Retry after every file is ready.", error_code: "MOMENT_MEDIA_NOT_READY" });
     if (result.mediaAssetJobs.length) {
       try {
         await Promise.all(result.mediaAssetJobs.map((job) => enqueueMediaAssetProcessing(job.id, job.mediaType, job.manifest)));
@@ -181499,30 +182222,191 @@ router59.get("/community/stories/media/:id", requireAuth, requireApproved, async
   if (!mediaId) return res.status(400).json({ error: "Invalid Story media id." });
   const [row] = await db.select({
     storage_key: communityStoryMediaTable.storage_key,
+    thumbnail_storage_key: communityStoryMediaTable.thumbnail_storage_key,
+    media_type: communityStoryMediaTable.media_type,
+    mime_type: communityStoryMediaTable.mime_type,
     media_asset_id: communityStoryMediaTable.media_asset_id,
     variant_key: mediaAssetsTable.variant_key,
+    asset_status: mediaAssetsTable.status,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
     author_user_id: communityStoriesTable.author_user_id,
     hub_id: communityStoriesTable.hub_id,
     community_id: communityStoriesTable.community_id,
     audience: communityStoriesTable.audience,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
     status: communityStoriesTable.status,
     expires_at: communityStoriesTable.expires_at
   }).from(communityStoryMediaTable).innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id)).leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id)).where(eq(communityStoryMediaTable.id, mediaId)).limit(1);
-  if (!row || row.status !== "published" || row.expires_at <= /* @__PURE__ */ new Date() || !await viewerCanReadStory(req.authenticatedUserId, row)) {
+  if (!row || row.status !== "published" || row.expires_at <= /* @__PURE__ */ new Date() || row.media_asset_id !== null && row.asset_status !== "ready" || !await viewerCanReadStory(req.authenticatedUserId, row)) {
     return res.status(404).json({ error: "Story media not found." });
   }
+  if (!isLinkedStoryVideoAssetReady({
+    linked: row.exchange_listing_id !== null,
+    mediaType: row.media_type,
+    mediaAssetId: row.media_asset_id,
+    assetStatus: row.asset_status,
+    variantKey: row.variant_key
+  })) return res.status(404).json({ error: "Story media not found." });
+  const thumbnail = req.query.thumbnail === "true";
+  if (thumbnail) {
+    if (row.thumbnail_storage_key || row.thumbnail_key) {
+      return streamAssetSameOrigin(row.thumbnail_storage_key ?? row.thumbnail_key, res);
+    }
+    return res.status(404).json({ error: "Story thumbnail not found." });
+  }
+  if (row.media_type === "video") return streamAssetRange(
+    row.variant_key ?? row.storage_key,
+    req,
+    res,
+    storyVideoStreamContentType(row.variant_key, row.mime_type)
+  );
   return streamAssetSameOrigin(row.variant_key ?? row.storage_key, res);
+});
+router59.post("/community/stories/media/:id/playback-grant", requireAuth, requireApproved, async (req, res) => {
+  const mediaId = positiveId3(req.params.id);
+  if (!mediaId) return res.status(404).json({ error: "Story video not found." });
+  const userId = req.authenticatedUserId;
+  const media = await readableStoryVideoMedia(mediaId, userId);
+  if (!media) return res.status(404).json({ error: "Story video not found." });
+  const [viewer] = await db.select({
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score
+  }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const secret = process.env["SESSION_SECRET"];
+  if (!viewer || viewer.approval_status !== "approved" || viewer.is_suspended || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Story video not found." });
+  }
+  if (req.authenticatedTokenVersion !== viewer.token_version) {
+    return res.status(401).json({ error: "Session expired \u2014 please log in again", error_code: "TOKEN_REVOKED" });
+  }
+  if (!secret || secret.length < 32) {
+    return res.status(503).json({ error: "Secure Story playback is temporarily unavailable." });
+  }
+  const grant = issueStoryPlaybackGrant({ mediaId, userId, tokenVersion: viewer.token_version }, secret);
+  const cookiePath = `/api/community/stories/media/${mediaId}/play`;
+  res.setHeader("Set-Cookie", buildStoryPlaybackSetCookie(grant.value, mediaId, req.secure || req.protocol === "https"));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
+  return res.json({
+    playback_url: cookiePath,
+    expires_at: new Date(grant.claims.expiresAt).toISOString()
+  });
+});
+router59.get("/community/stories/media/:id/play", async (req, res) => {
+  const mediaId = positiveId3(req.params.id);
+  const cookieValue = readStoryPlaybackCookie(req.headers.cookie);
+  const secret = process.env["SESSION_SECRET"];
+  const claims = mediaId && secret ? verifyStoryPlaybackGrant(cookieValue, mediaId, secret) : null;
+  if (!mediaId || !claims) return res.status(404).json({ error: "Story video not found." });
+  const [viewer] = await db.select({
+    id: usersTable.id,
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score
+  }).from(usersTable).where(eq(usersTable.id, claims.userId)).limit(1);
+  if (!viewer || viewer.token_version !== claims.tokenVersion || viewer.approval_status !== "approved" || viewer.is_suspended || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Story video not found." });
+  }
+  const media = await readableStoryVideoMedia(mediaId, claims.userId);
+  if (!media) return res.status(404).json({ error: "Story video not found." });
+  return streamAssetRange(
+    media.variant_key ?? media.storage_key,
+    req,
+    res,
+    storyVideoStreamContentType(media.variant_key, media.mime_type)
+  );
 });
 router59.delete("/community/stories/:id", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
   const storyId2 = positiveId3(req.params.id);
   if (!storyId2) return res.status(400).json({ error: "Invalid Story id." });
-  const media = await db.select({ storage_key: communityStoryMediaTable.storage_key }).from(communityStoryMediaTable).where(eq(communityStoryMediaTable.story_id, storyId2));
-  const deleted = await db.delete(communityStoriesTable).where(and(
+  const [ownedStory] = await db.update(communityStoriesTable).set({ status: "deletion_pending" }).where(and(
     eq(communityStoriesTable.id, storyId2),
     eq(communityStoriesTable.author_user_id, req.authenticatedUserId)
   )).returning({ id: communityStoriesTable.id });
-  if (deleted.length) await Promise.all(media.map((item) => deleteAsset(item.storage_key)));
-  return res.json({ deleted: deleted.length > 0 });
+  if (!ownedStory) return res.json({ deleted: false });
+  const universalAssets = await db.select({
+    id: mediaAssetsTable.id,
+    original_key: mediaAssetsTable.original_key,
+    variant_key: mediaAssetsTable.variant_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key
+  }).from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.context_kind, "story"),
+    eq(mediaAssetsTable.context_id, storyId2)
+  ));
+  const assetIds = universalAssets.map((asset) => asset.id);
+  if (assetIds.length) {
+    await db.update(mediaProcessingJobsTable).set({
+      status: "cancelled",
+      updated_at: /* @__PURE__ */ new Date()
+    }).where(and(
+      inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+      inArray(mediaProcessingJobsTable.status, ["queued", "failed"])
+    ));
+    const [processingJob] = await db.select({ id: mediaProcessingJobsTable.id }).from(mediaProcessingJobsTable).where(and(
+      inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+      eq(mediaProcessingJobsTable.status, "processing")
+    )).limit(1);
+    if (processingJob) {
+      return res.status(409).json({
+        deleted: false,
+        status: "deletion_pending",
+        error: "Story media processing must finish before cleanup can complete. Retry shortly.",
+        error_code: "STORY_MEDIA_PROCESSING"
+      });
+    }
+    await db.update(mediaAssetsTable).set({
+      status: "deletion_pending",
+      updated_at: /* @__PURE__ */ new Date()
+    }).where(inArray(mediaAssetsTable.id, assetIds));
+  }
+  const media = await db.select({
+    storage_key: communityStoryMediaTable.storage_key,
+    thumbnail_storage_key: communityStoryMediaTable.thumbnail_storage_key,
+    original_key: mediaAssetsTable.original_key,
+    variant_key: mediaAssetsTable.variant_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key
+  }).from(communityStoryMediaTable).leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id)).where(eq(communityStoryMediaTable.story_id, storyId2));
+  const storageKeys = [...new Set([
+    ...media.flatMap((item) => [
+      item.storage_key,
+      item.thumbnail_storage_key,
+      item.original_key,
+      item.variant_key,
+      item.thumbnail_key
+    ]),
+    ...universalAssets.flatMap((asset) => [
+      asset.original_key,
+      asset.variant_key,
+      asset.thumbnail_key
+    ])
+  ].filter((key) => Boolean(key)))];
+  const cleanup = await Promise.allSettled(storageKeys.map((key) => deleteAssetStrict(key)));
+  const cleanupFailure = cleanup.find((result) => result.status === "rejected");
+  if (cleanupFailure?.status === "rejected") {
+    logger.error({ err: cleanupFailure.reason, storyId: storyId2 }, "community-story: storage cleanup failed; Story kept for retry");
+    return res.status(503).json({
+      deleted: false,
+      error: "Story media could not be fully removed. The Story was kept so cleanup can be retried.",
+      error_code: "STORY_MEDIA_CLEANUP_FAILED"
+    });
+  }
+  try {
+    const deleted = await db.delete(communityStoriesTable).where(and(
+      eq(communityStoriesTable.id, storyId2),
+      eq(communityStoriesTable.author_user_id, req.authenticatedUserId)
+    )).returning({ id: communityStoriesTable.id });
+    return res.json({ deleted: deleted.length > 0 });
+  } catch (error40) {
+    logger.error({ err: error40, storyId: storyId2 }, "community-story: row cleanup failed; Story kept for retry");
+    return res.status(503).json({
+      deleted: false,
+      error: "Story cleanup could not be completed. The Story was kept so cleanup can be retried.",
+      error_code: "STORY_MEDIA_CLEANUP_FAILED"
+    });
+  }
 });
 var community_stories_default = router59;
 
@@ -181544,6 +182428,7 @@ async function readableStory(id3, userId) {
     author_user_id: communityStoriesTable.author_user_id,
     hub_id: communityStoriesTable.hub_id,
     community_id: communityStoriesTable.community_id,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
     audience: communityStoriesTable.audience,
     status: communityStoriesTable.status,
     expires_at: communityStoriesTable.expires_at
@@ -181817,8 +182702,59 @@ init_storage();
 init_queue();
 init_zod();
 import { randomUUID as randomUUID10 } from "node:crypto";
+init_logger2();
+
+// src/lib/exchange-spark-playback.ts
+import { createHmac as createHmac6, timingSafeEqual as timingSafeEqual4 } from "node:crypto";
+var COOKIE = "niakofa_exchange_spark_playback";
+var PURPOSE = "exchange-spark-video-playback-v1";
+var TTL_SECONDS = 120;
+function signature(claims, secret) {
+  return createHmac6("sha256", secret).update([PURPOSE, claims.assetId, claims.userId, claims.tokenVersion, claims.expiresAt].join("\n")).digest("base64url");
+}
+function issueExchangeSparkPlaybackGrant(assetId, userId, tokenVersion, secret, secure) {
+  if (!secret || secret.length < 32 || !Number.isSafeInteger(assetId) || assetId <= 0 || !Number.isSafeInteger(userId) || userId <= 0 || !Number.isSafeInteger(tokenVersion) || tokenVersion < 0) {
+    throw new Error("Invalid secure Spark playback grant.");
+  }
+  const claims = { assetId, userId, tokenVersion, expiresAt: Date.now() + TTL_SECONDS * 1e3 };
+  const value = `v1.${assetId}.${userId}.${tokenVersion}.${claims.expiresAt}.${signature(claims, secret)}`;
+  const cookie = `${COOKIE}=${value}; Path=/api/media-assets/${assetId}/play; HttpOnly; SameSite=Strict; Max-Age=${TTL_SECONDS}${secure ? "; Secure" : ""}`;
+  return { cookie, expiresAt: claims.expiresAt };
+}
+function verifyExchangeSparkPlaybackGrant(header, assetId, secret) {
+  if (typeof header !== "string" || header.length > 8192 || !secret || secret.length < 32 || !Number.isSafeInteger(assetId) || assetId <= 0) return null;
+  const values = header.split(";").flatMap((part) => {
+    const separator = part.indexOf("=");
+    if (separator < 0 || part.slice(0, separator).trim() !== COOKIE) return [];
+    const value = part.slice(separator + 1).trim();
+    return /^[A-Za-z0-9._-]{1,256}$/.test(value) ? [value] : [""];
+  });
+  if (values.length !== 1 || !values[0]) return null;
+  const parts = values[0].split(".");
+  if (parts.length !== 6 || parts[0] !== "v1" || !parts.slice(1, 5).every((part) => /^\d+$/.test(part))) return null;
+  const claims = {
+    assetId: Number(parts[1]),
+    userId: Number(parts[2]),
+    tokenVersion: Number(parts[3]),
+    expiresAt: Number(parts[4])
+  };
+  if (claims.assetId !== assetId || !Number.isSafeInteger(claims.userId) || claims.userId <= 0 || !Number.isSafeInteger(claims.tokenVersion) || claims.tokenVersion < 0 || !Number.isSafeInteger(claims.expiresAt) || claims.expiresAt <= Date.now() || claims.expiresAt > Date.now() + TTL_SECONDS * 1e3 || String(claims.assetId) !== parts[1] || String(claims.userId) !== parts[2] || String(claims.tokenVersion) !== parts[3] || String(claims.expiresAt) !== parts[4]) return null;
+  const actual = Buffer.from(parts[5], "base64url");
+  const expected = Buffer.from(signature(claims, secret), "base64url");
+  return actual.length === expected.length && timingSafeEqual4(actual, expected) ? claims : null;
+}
+
+// src/routes/media-assets-v21.ts
 var router64 = (0, import_express66.Router)();
-var CONTEXT_KINDS = /* @__PURE__ */ new Set(["story", "direct", "request", "hub"]);
+var CONTEXT_KINDS = /* @__PURE__ */ new Set([
+  "story",
+  "exchange_spark",
+  "direct",
+  "request",
+  "hub",
+  "community_moment",
+  "hub_moment"
+]);
 function positiveId6(value) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
@@ -181833,6 +182769,7 @@ async function isApprovedUser(userId) {
 }
 async function canReadContext(userId, contextKind, contextId) {
   if (!await isApprovedUser(userId)) return false;
+  if (contextKind === "community_moment" || contextKind === "hub_moment") return false;
   if (contextKind === "direct") {
     const [member] = await db.select({ user_id: directConversationMembersTable.user_id }).from(directConversationMembersTable).innerJoin(directConversationsTable, eq(directConversationsTable.id, directConversationMembersTable.conversation_id)).where(and(
       eq(directConversationMembersTable.conversation_id, contextId),
@@ -181846,11 +182783,43 @@ async function canReadContext(userId, contextKind, contextId) {
       author_user_id: communityStoriesTable.author_user_id,
       hub_id: communityStoriesTable.hub_id,
       community_id: communityStoriesTable.community_id,
+      exchange_listing_id: communityStoriesTable.exchange_listing_id,
       audience: communityStoriesTable.audience,
       status: communityStoriesTable.status,
       expires_at: communityStoriesTable.expires_at
     }).from(communityStoriesTable).where(eq(communityStoriesTable.id, contextId)).limit(1);
     if (!story || story.status !== "published" || story.expires_at <= /* @__PURE__ */ new Date()) return false;
+    if (story.exchange_listing_id !== null) {
+      const [viewer2] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+      const [listing] = await db.select({
+        seller_id: exchangeListingsTable.seller_id,
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status,
+        seller_approval_status: usersTable.approval_status,
+        seller_is_suspended: usersTable.is_suspended
+      }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(eq(exchangeListingsTable.id, story.exchange_listing_id)).limit(1);
+      if (!listing) return false;
+      const blocks = await db.select({
+        blocker_id: directMessageBlocksTable.blocker_id,
+        blocked_id: directMessageBlocksTable.blocked_id
+      }).from(directMessageBlocksTable).where(or(
+        and(eq(directMessageBlocksTable.blocker_id, userId), eq(directMessageBlocksTable.blocked_id, story.author_user_id)),
+        and(eq(directMessageBlocksTable.blocker_id, story.author_user_id), eq(directMessageBlocksTable.blocked_id, userId))
+      )).limit(1);
+      return canReadExchangeLinkedStory({
+        viewerUserId: userId,
+        viewerCommunityId: viewer2?.community_id ?? null,
+        authorUserId: story.author_user_id,
+        authorCommunityId: story.community_id,
+        listingSellerId: listing.seller_id,
+        listingStatus: listing.status,
+        listingModerationStatus: listing.moderation_status,
+        sellerApprovalStatus: listing.seller_approval_status,
+        sellerIsSuspended: listing.seller_is_suspended,
+        audience: story.audience,
+        blocks
+      });
+    }
     if (story.author_user_id === userId) return true;
     if (story.audience === "hub") {
       if (!story.hub_id) return false;
@@ -181863,7 +182832,32 @@ async function canReadContext(userId, contextKind, contextId) {
       return Boolean(membership);
     }
     const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-    return story.audience === "community" && (story.community_id === null || viewer?.community_id === story.community_id);
+    return canReadCommunityStoryAudience(
+      story.audience,
+      viewer?.community_id ?? null,
+      story.community_id
+    );
+  }
+  if (contextKind === "exchange_spark") {
+    const [spark] = await db.select({
+      author_user_id: exchangeSparksTable.author_user_id,
+      community_id: exchangeSparksTable.community_id,
+      status: exchangeSparksTable.status,
+      listing_seller_id: exchangeListingsTable.seller_id,
+      listing_status: exchangeListingsTable.status,
+      listing_moderation_status: exchangeListingsTable.moderation_status,
+      seller_approval_status: usersTable.approval_status,
+      seller_is_suspended: usersTable.is_suspended
+    }).from(exchangeSparksTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangeSparksTable.listing_id)).innerJoin(usersTable, eq(usersTable.id, exchangeSparksTable.author_user_id)).where(eq(exchangeSparksTable.id, contextId)).limit(1);
+    if (!spark || spark.status !== "published" || spark.listing_status !== "active" || spark.listing_moderation_status !== "approved" || spark.listing_seller_id !== spark.author_user_id || spark.seller_approval_status !== "approved" || spark.seller_is_suspended) return false;
+    if (spark.author_user_id === userId) return true;
+    const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (viewer?.community_id !== spark.community_id) return false;
+    const blocks = await db.select({ blocker_id: directMessageBlocksTable.blocker_id }).from(directMessageBlocksTable).where(or(
+      and(eq(directMessageBlocksTable.blocker_id, userId), eq(directMessageBlocksTable.blocked_id, spark.author_user_id)),
+      and(eq(directMessageBlocksTable.blocker_id, spark.author_user_id), eq(directMessageBlocksTable.blocked_id, userId))
+    )).limit(1);
+    return blocks.length === 0;
   }
   if (contextKind === "hub") {
     const [membership] = await db.select({ id: hubMembershipsTable.id }).from(hubMembershipsTable).innerJoin(diasporaHubsTable, eq(diasporaHubsTable.id, hubMembershipsTable.hub_id)).where(and(
@@ -181888,9 +182882,50 @@ async function canReadContext(userId, contextKind, contextId) {
   return false;
 }
 async function canWriteContext(userId, contextKind, contextId) {
+  if (contextKind === "community_moment") return contextId === userId && await isApprovedUser(userId);
+  if (contextKind === "hub_moment") return canReadContext(userId, "hub", contextId);
   if (contextKind === "story") {
-    const [story] = await db.select({ author_user_id: communityStoriesTable.author_user_id }).from(communityStoriesTable).where(eq(communityStoriesTable.id, contextId)).limit(1);
-    return story?.author_user_id === userId;
+    const [story] = await db.select({
+      author_user_id: communityStoriesTable.author_user_id,
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at,
+      exchange_listing_id: communityStoriesTable.exchange_listing_id
+    }).from(communityStoriesTable).where(eq(communityStoriesTable.id, contextId)).limit(1);
+    if (!story) return false;
+    const [listing] = story.exchange_listing_id === null ? [void 0] : await db.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status,
+      seller_approval_status: usersTable.approval_status,
+      seller_is_suspended: usersTable.is_suspended
+    }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(eq(exchangeListingsTable.id, story.exchange_listing_id)).limit(1);
+    return canWriteStoryMediaContext({
+      userId,
+      authorUserId: story.author_user_id,
+      expiresAt: story.expires_at,
+      now: /* @__PURE__ */ new Date(),
+      storyStatus: story.status,
+      exchangeListingId: story.exchange_listing_id,
+      listingSellerId: listing?.seller_id ?? null,
+      listingStatus: listing?.status ?? null,
+      listingModerationStatus: listing?.moderation_status ?? null,
+      sellerApprovalStatus: listing?.seller_approval_status ?? null,
+      sellerIsSuspended: listing?.seller_is_suspended ?? null
+    });
+  }
+  if (contextKind === "exchange_spark") {
+    const [spark] = await db.select({
+      author_user_id: exchangeSparksTable.author_user_id,
+      status: exchangeSparksTable.status,
+      draft_expires_at: exchangeSparksTable.draft_expires_at,
+      listing_id: exchangeSparksTable.listing_id,
+      listing_seller_id: exchangeListingsTable.seller_id,
+      listing_status: exchangeListingsTable.status,
+      listing_moderation_status: exchangeListingsTable.moderation_status,
+      seller_approval_status: usersTable.approval_status,
+      seller_is_suspended: usersTable.is_suspended
+    }).from(exchangeSparksTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangeSparksTable.listing_id)).innerJoin(usersTable, eq(usersTable.id, exchangeSparksTable.author_user_id)).where(eq(exchangeSparksTable.id, contextId)).limit(1);
+    return Boolean(spark && spark.author_user_id === userId && spark.status === "draft" && spark.draft_expires_at > /* @__PURE__ */ new Date() && spark.listing_seller_id === userId && spark.listing_status === "active" && spark.listing_moderation_status === "approved" && spark.seller_approval_status === "approved" && !spark.seller_is_suspended);
   }
   return canReadContext(userId, contextKind, contextId);
 }
@@ -181901,12 +182936,12 @@ function disabled(res) {
   });
 }
 var uploadRequestSchema = external_exports2.object({
-  contextKind: external_exports2.enum(["story", "direct", "request", "hub"]),
+  contextKind: external_exports2.enum(["story", "exchange_spark", "direct", "request", "hub", "community_moment", "hub_moment"]),
   contextId: external_exports2.number().int().positive(),
   mediaType: external_exports2.enum(["photo", "video", "audio", "document"]),
   mimeType: external_exports2.string().trim().min(3).max(120),
   originalName: external_exports2.string().trim().max(255).optional(),
-  byteSize: external_exports2.number().int().positive().max(500 * 1024 * 1024)
+  byteSize: external_exports2.number().int().refine(isAllowedMediaSize, `Must be between 1 and ${MAX_MEDIA_BYTES} bytes.`)
 });
 function extensionForMime(mimeType) {
   const value = mimeType.split("/")[1]?.replace(/[^a-z0-9]+/gi, "").toLowerCase();
@@ -181927,7 +182962,7 @@ router64.post("/media-assets/uploads", requireAuth, requireApproved, generalApiL
     });
   }
   const key = `media-assets/incoming/${req.authenticatedUserId}/${randomUUID10()}.${extensionForMime(input.mimeType)}`;
-  const [asset] = await db.insert(mediaAssetsTable).values({
+  const values = {
     owner_user_id: req.authenticatedUserId,
     context_kind: input.contextKind,
     context_id: input.contextId,
@@ -181936,33 +182971,149 @@ router64.post("/media-assets/uploads", requireAuth, requireApproved, generalApiL
     original_name: input.originalName ?? null,
     original_key: key,
     byte_size: input.byteSize
-  }).returning({ id: mediaAssetsTable.id });
-  if (!asset) return res.status(500).json({ error: "Media upload could not be initialized." });
-  try {
-    const signedUrl = await getAssetUploadUrl(key, input.mimeType);
-    return res.status(201).json({
-      media_asset_id: asset.id,
-      upload: {
-        method: "PUT",
-        url: signedUrl ?? `/api/media-assets/${asset.id}/upload`,
-        headers: { "Content-Type": input.mimeType },
-        expires_in_seconds: signedUrl ? 900 : null
-      },
-      complete_url: `/api/media-assets/${asset.id}/complete`
+  };
+  let asset;
+  if (input.contextKind === "exchange_spark" && input.mediaType === "video") {
+    const result = await db.transaction(async (tx) => {
+      const [spark] = await tx.select({
+        author_user_id: exchangeSparksTable.author_user_id,
+        listing_id: exchangeSparksTable.listing_id,
+        status: exchangeSparksTable.status,
+        draft_expires_at: exchangeSparksTable.draft_expires_at
+      }).from(exchangeSparksTable).where(eq(exchangeSparksTable.id, input.contextId)).limit(1).for("update");
+      if (!spark || spark.author_user_id !== req.authenticatedUserId || spark.status !== "draft" || spark.draft_expires_at <= /* @__PURE__ */ new Date()) {
+        return { kind: "not-found" };
+      }
+      const [listing] = await tx.select({
+        seller_id: exchangeListingsTable.seller_id,
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status,
+        seller_approval_status: usersTable.approval_status,
+        seller_is_suspended: usersTable.is_suspended
+      }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(eq(exchangeListingsTable.id, spark.listing_id)).limit(1).for("update");
+      if (!listing || listing.seller_id !== req.authenticatedUserId || listing.status !== "active" || listing.moderation_status !== "approved" || listing.seller_approval_status !== "approved" || listing.seller_is_suspended) return { kind: "not-found" };
+      const [existingVideo] = await tx.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable).where(and(
+        eq(mediaAssetsTable.context_kind, "exchange_spark"),
+        eq(mediaAssetsTable.context_id, input.contextId),
+        eq(mediaAssetsTable.media_type, "video"),
+        ne(mediaAssetsTable.status, "deleted")
+      )).limit(1).for("update");
+      if (existingVideo) return { kind: "duplicate" };
+      const [created] = await tx.insert(mediaAssetsTable).values(values).returning({ id: mediaAssetsTable.id });
+      return created ? { kind: "created", asset: created } : { kind: "failed" };
     });
-  } catch {
-    await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
-    return res.status(503).json({ error: "Object storage is not ready.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
+    if (result.kind === "not-found") return res.status(404).json({ error: "Media context not found." });
+    if (result.kind === "duplicate") {
+      return res.status(409).json({
+        error: "This Exchange Spark draft already has a video upload session.",
+        error_code: "SPARK_VIDEO_SESSION_EXISTS"
+      });
+    }
+    if (result.kind === "failed") return res.status(500).json({ error: "Media upload could not be initialized." });
+    asset = result.asset;
+  } else if (input.contextKind === "story" && input.mediaType === "video") {
+    const result = await db.transaction(async (tx) => {
+      const [story] = await tx.select({
+        author_user_id: communityStoriesTable.author_user_id,
+        status: communityStoriesTable.status,
+        expires_at: communityStoriesTable.expires_at,
+        exchange_listing_id: communityStoriesTable.exchange_listing_id
+      }).from(communityStoriesTable).where(eq(communityStoriesTable.id, input.contextId)).limit(1).for("update");
+      if (!story) return { kind: "not-found" };
+      const [listing] = story.exchange_listing_id === null ? [void 0] : await tx.select({
+        seller_id: exchangeListingsTable.seller_id,
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status,
+        seller_approval_status: usersTable.approval_status,
+        seller_is_suspended: usersTable.is_suspended
+      }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(eq(exchangeListingsTable.id, story.exchange_listing_id)).limit(1).for("update");
+      const canWrite = canWriteStoryMediaContext({
+        userId: req.authenticatedUserId,
+        authorUserId: story.author_user_id,
+        expiresAt: story.expires_at,
+        now: /* @__PURE__ */ new Date(),
+        storyStatus: story.status,
+        exchangeListingId: story.exchange_listing_id,
+        listingSellerId: listing?.seller_id ?? null,
+        listingStatus: listing?.status ?? null,
+        listingModerationStatus: listing?.moderation_status ?? null,
+        sellerApprovalStatus: listing?.seller_approval_status ?? null,
+        sellerIsSuspended: listing?.seller_is_suspended ?? null
+      });
+      if (!canWrite) return { kind: "not-found" };
+      const [existingVideo] = await tx.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable).where(and(
+        eq(mediaAssetsTable.context_kind, "story"),
+        eq(mediaAssetsTable.context_id, input.contextId),
+        eq(mediaAssetsTable.media_type, "video"),
+        ne(mediaAssetsTable.status, "deleted")
+      )).limit(1).for("update");
+      if (isDuplicateExchangeStoryVideoSession({
+        contextKind: input.contextKind,
+        mediaType: input.mediaType,
+        exchangeListingId: story.exchange_listing_id,
+        existingVideoSession: Boolean(existingVideo)
+      })) return { kind: "duplicate" };
+      const [created] = await tx.insert(mediaAssetsTable).values(values).returning({ id: mediaAssetsTable.id });
+      return created ? { kind: "created", asset: created } : { kind: "failed" };
+    });
+    if (result.kind === "not-found") return res.status(404).json({ error: "Media context not found." });
+    if (result.kind === "duplicate") {
+      return res.status(409).json({
+        error: "This Exchange Spark draft already has a video upload session.",
+        error_code: "SPARK_VIDEO_SESSION_EXISTS"
+      });
+    }
+    if (result.kind === "failed") return res.status(500).json({ error: "Media upload could not be initialized." });
+    asset = result.asset;
+  } else {
+    const [created] = await db.insert(mediaAssetsTable).values(values).returning({ id: mediaAssetsTable.id });
+    asset = created;
   }
+  if (!asset) return res.status(500).json({ error: "Media upload could not be initialized." });
+  return res.status(201).json({
+    media_asset_id: asset.id,
+    upload: {
+      method: "PUT",
+      url: `/api/media-assets/${asset.id}/upload`,
+      headers: { "Content-Type": input.mimeType },
+      expires_in_seconds: null
+    },
+    complete_url: `/api/media-assets/${asset.id}/complete`
+  });
 });
 router64.put("/media-assets/:id/upload", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   if (!isMediaPlatformV21Enabled()) return disabled(res);
   const assetId = positiveId6(req.params.id);
   if (!assetId || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: "A raw media body is required." });
-  const [asset] = await db.select().from(mediaAssetsTable).where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId))).limit(1);
-  if (!asset || asset.status !== "pending") return res.status(404).json({ error: "Upload session not found." });
-  if (req.body.length !== asset.byte_size) return res.status(409).json({ error: "Uploaded byte size does not match the declared size." });
-  await putAsset(asset.original_key, req.body, asset.mime_type);
+  const result = await db.transaction(async (tx) => {
+    const [asset] = await tx.select().from(mediaAssetsTable).where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId))).limit(1).for("update");
+    if (!asset || asset.status !== "pending") return "not-found";
+    if (!await canWriteContext(req.authenticatedUserId, asset.context_kind, asset.context_id)) {
+      return "not-found";
+    }
+    if (!isAllowedMediaSize(asset.byte_size) || req.body.length > MAX_MEDIA_BYTES) return "too-large";
+    if (req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !== asset.mime_type.toLowerCase()) {
+      return "wrong-type";
+    }
+    if (req.body.length !== asset.byte_size) return "wrong-size";
+    try {
+      await putAsset(asset.original_key, req.body, asset.mime_type);
+    } catch {
+      return "storage-failed";
+    }
+    return "stored";
+  });
+  if (result === "not-found") return res.status(404).json({ error: "Upload session not found." });
+  if (result === "too-large") {
+    return res.status(413).json({ error: "Media upload exceeds the 64 MiB limit.", error_code: "MEDIA_SIZE_INVALID" });
+  }
+  if (result === "wrong-type") {
+    return res.status(415).json({ error: "Upload content type does not match the declared media type.", error_code: "MEDIA_TYPE_INVALID" });
+  }
+  if (result === "wrong-size") return res.status(409).json({ error: "Uploaded byte size does not match the declared size." });
+  if (result === "storage-failed") {
+    return res.status(503).json({ error: "Media storage is unavailable. Retry the upload.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
+  }
   return res.status(204).send();
 });
 router64.post("/media-assets/:id/complete", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
@@ -181970,26 +183121,184 @@ router64.post("/media-assets/:id/complete", requireAuth, requireApproved, genera
   const assetId = positiveId6(req.params.id);
   if (!assetId) return res.status(400).json({ error: "Invalid media asset id." });
   const [asset] = await db.select().from(mediaAssetsTable).where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId))).limit(1);
-  if (!asset || !await canWriteContext(req.authenticatedUserId, asset.context_kind, asset.context_id)) {
-    return res.status(404).json({ error: "Upload session not found." });
-  }
+  if (!asset) return res.status(404).json({ error: "Upload session not found." });
   if (asset.status !== "pending" && asset.status !== "failed") {
     return res.json({ media_asset_id: asset.id, status: asset.status });
   }
+  if (!await canWriteContext(req.authenticatedUserId, asset.context_kind, asset.context_id)) {
+    return res.status(404).json({ error: "Upload session not found." });
+  }
+  if (!isAllowedMediaSize(asset.byte_size)) {
+    return res.status(413).json({ error: "Media upload exceeds the 64 MiB limit.", error_code: "MEDIA_SIZE_INVALID" });
+  }
   const info = await getAssetInfo(asset.original_key);
   if (!info) return res.status(409).json({ error: "Uploaded object is not available yet." });
+  if (!isAllowedMediaSize(info.contentLength)) {
+    return res.status(413).json({ error: "Uploaded object exceeds the 64 MiB limit.", error_code: "MEDIA_SIZE_INVALID" });
+  }
   if (info.contentLength !== asset.byte_size) {
     return res.status(409).json({ error: "Uploaded object size does not match the declared size." });
+  }
+  const requestId = randomUUID10();
+  try {
+    const bytes = await getAssetBuffer(asset.original_key, MAX_MEDIA_BYTES);
+    if (bytes.length !== asset.byte_size) {
+      return res.status(409).json({ error: "Uploaded object size does not match the declared size.", request_id: requestId });
+    }
+    const metadata = await validateMediaBuffer(bytes, asset.media_type, asset.mime_type);
+    const [validatedAsset] = await db.update(mediaAssetsTable).set({
+      width: metadata.width,
+      height: metadata.height,
+      duration_ms: metadata.duration_ms,
+      metadata: { ...asset.metadata, signature_validated: true },
+      updated_at: /* @__PURE__ */ new Date()
+    }).where(and(
+      eq(mediaAssetsTable.id, asset.id),
+      eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId),
+      inArray(mediaAssetsTable.status, ["pending", "failed"])
+    )).returning({ id: mediaAssetsTable.id });
+    if (!validatedAsset) {
+      return res.status(404).json({ error: "Upload session not found." });
+    }
+  } catch (error40) {
+    if (error40 instanceof Error && error40.message === "STORAGE_OBJECT_TOO_LARGE") {
+      logger.warn({ requestId, mediaAssetId: asset.id, code: "MEDIA_SIZE_INVALID" }, "media-upload: object exceeded bounded read");
+      return res.status(413).json({
+        media_asset_id: asset.id,
+        status: "pending",
+        error: "Uploaded object exceeds the 64 MiB limit.",
+        error_code: "MEDIA_SIZE_INVALID",
+        request_id: requestId
+      });
+    }
+    const code = error40 instanceof Error && /^MEDIA_[A-Z_]+$/.test(error40.message) ? error40.message : "MEDIA_VALIDATION_FAILED";
+    logger.warn({ requestId, mediaAssetId: asset.id, code }, "media-upload: validation rejected");
+    return res.status(422).json({
+      media_asset_id: asset.id,
+      status: "pending",
+      error: "Uploaded file does not match supported media content.",
+      error_code: code,
+      request_id: requestId
+    });
   }
   try {
     const queued = await enqueueMediaAssetProcessing(asset.id, asset.media_type, asset.composition_manifest);
     if (!queued) {
-      return res.status(503).json({ error: "Media processing is not available.", error_code: "MEDIA_PROCESSING_UNAVAILABLE" });
+      logger.warn({ requestId, mediaAssetId: asset.id }, "media-upload: processing queue unavailable");
+      return res.status(503).json({
+        error: "Media processing is not available.",
+        error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+        request_id: requestId
+      });
     }
     return res.status(202).json({ media_asset_id: asset.id, status: "processing" });
   } catch {
-    return res.status(503).json({ error: "Media processing could not be queued.", error_code: "MEDIA_PROCESSING_UNAVAILABLE" });
+    logger.error({ requestId, mediaAssetId: asset.id }, "media-upload: processing enqueue failed");
+    return res.status(503).json({
+      error: "Media processing could not be queued.",
+      error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+      request_id: requestId
+    });
   }
+});
+router64.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId6(req.params.id);
+  if (!assetId) return res.status(400).json({ error: "Invalid media asset id." });
+  const asset = await db.transaction(async (tx) => {
+    const [locked] = await tx.select({
+      original_key: mediaAssetsTable.original_key,
+      variant_key: mediaAssetsTable.variant_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.id, assetId),
+      eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId)
+    )).limit(1).for("update");
+    if (!locked) return null;
+    const [updated] = await tx.update(mediaAssetsTable).set({
+      status: "deleted",
+      metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true)`,
+      updated_at: /* @__PURE__ */ new Date()
+    }).where(and(
+      eq(mediaAssetsTable.id, assetId),
+      eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId)
+    )).returning({
+      original_key: mediaAssetsTable.original_key,
+      variant_key: mediaAssetsTable.variant_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key
+    });
+    return updated ?? locked;
+  });
+  if (!asset) return res.status(404).json({ error: "Media asset not found." });
+  try {
+    for (const key of new Set([asset.original_key, asset.variant_key, asset.thumbnail_key].filter(
+      (value) => Boolean(value)
+    ))) {
+      await deleteAssetStrict(key);
+    }
+  } catch {
+    return res.status(503).json({
+      error: "Media was removed but storage cleanup is incomplete. Retry deletion.",
+      error_code: "MEDIA_STORAGE_CLEANUP_INCOMPLETE"
+    });
+  }
+  await db.update(mediaAssetsTable).set({
+    metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+    updated_at: /* @__PURE__ */ new Date()
+  }).where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.status, "deleted")));
+  return res.status(204).send();
+});
+router64.post("/media-assets/:id/playback-grant", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId6(req.params.id);
+  if (!assetId) return res.status(404).json({ error: "Spark video not found." });
+  const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, assetId)).limit(1);
+  if (!asset || asset.context_kind !== "exchange_spark" || asset.media_type !== "video" || asset.status !== "ready" || !asset.variant_key || !await canReadContext(req.authenticatedUserId, asset.context_kind, asset.context_id)) {
+    return res.status(404).json({ error: "Spark video not found." });
+  }
+  const [viewer] = await db.select({
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score
+  }).from(usersTable).where(eq(usersTable.id, req.authenticatedUserId)).limit(1);
+  if (!viewer || viewer.approval_status !== "approved" || viewer.is_suspended || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Spark video not found." });
+  }
+  if (req.authenticatedTokenVersion !== viewer.token_version) {
+    return res.status(401).json({ error: "Session expired \u2014 please log in again.", error_code: "TOKEN_REVOKED" });
+  }
+  const secret = process.env["SESSION_SECRET"];
+  if (!secret || secret.length < 32) {
+    return res.status(503).json({ error: "Secure Spark playback is temporarily unavailable." });
+  }
+  const grant = issueExchangeSparkPlaybackGrant(assetId, req.authenticatedUserId, viewer.token_version, secret, req.secure || req.protocol === "https");
+  res.setHeader("Set-Cookie", grant.cookie);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
+  return res.json({ playback_url: `/api/media-assets/${assetId}/play`, expires_at: new Date(grant.expiresAt).toISOString() });
+});
+router64.get("/media-assets/:id/play", async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId6(req.params.id);
+  const claims = assetId ? verifyExchangeSparkPlaybackGrant(req.headers.cookie, assetId, process.env["SESSION_SECRET"]) : null;
+  if (!assetId || !claims) return res.status(404).json({ error: "Spark video not found." });
+  const [viewer] = await db.select({
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score
+  }).from(usersTable).where(eq(usersTable.id, claims.userId)).limit(1);
+  if (!viewer || viewer.token_version !== claims.tokenVersion || viewer.approval_status !== "approved" || viewer.is_suspended || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Spark video not found." });
+  }
+  const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, assetId)).limit(1);
+  if (!asset || asset.context_kind !== "exchange_spark" || asset.media_type !== "video" || asset.status !== "ready" || !asset.variant_key || !await canReadContext(claims.userId, asset.context_kind, asset.context_id)) {
+    return res.status(404).json({ error: "Spark video not found." });
+  }
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
+  return streamAssetRange(asset.variant_key, req, res, "video/mp4");
 });
 router64.get("/media-assets/shared", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   if (!isMediaPlatformV21Enabled()) return disabled(res);
@@ -182019,6 +183328,8 @@ router64.get("/media-assets/shared", requireAuth, requireApproved, generalApiLim
       height: asset.height,
       duration_ms: asset.duration_ms,
       status: asset.status,
+      failure_code: asset.status === "failed" ? asset.failure_reason?.match(/^MEDIA_[A-Z_]+/)?.[0] ?? "MEDIA_PROCESSING_FAILED" : null,
+      request_id: asset.status === "failed" ? asset.failure_reason?.match(/request_id=([a-f0-9-]+)/i)?.[1] ?? null : null,
       media_url: `/api/media-assets/${asset.id}`,
       thumbnail_url: asset.thumbnail_key ? `/api/media-assets/${asset.id}/thumbnail` : null,
       variant_ready: Boolean(asset.variant_key),
@@ -182034,9 +183345,12 @@ async function streamMediaAsset(req, res, thumbnail) {
   if (!asset || asset.status === "deleted" || !await canReadContext(req.authenticatedUserId, asset.context_kind, asset.context_id)) {
     return res.status(404).json({ error: "Media asset not found." });
   }
+  if (asset.status !== "ready") {
+    return res.status(409).json({ error: "Media is not ready for playback.", status: asset.status });
+  }
   const key = thumbnail ? asset.thumbnail_key : asset.variant_key ?? asset.original_key;
   if (!key) return res.status(409).json({ error: "Media variant is still processing." });
-  return streamOrRedirectAsset(key, res);
+  return streamAssetRange(key, req, res, thumbnail ? "image/jpeg" : asset.variant_key ? "video/mp4" : asset.mime_type);
 }
 router64.get("/media-assets/:id/thumbnail", requireAuth, requireApproved, generalApiLimiter, (req, res) => streamMediaAsset(req, res, true));
 router64.get("/media-assets/:id", requireAuth, requireApproved, generalApiLimiter, (req, res) => streamMediaAsset(req, res, false));
@@ -182050,14 +183364,41 @@ init_zod();
 init_auth();
 init_rate_limit();
 init_push();
+
+// src/lib/exchange-location.ts
+init_src();
+init_drizzle_orm();
+function coarseCoordinate(value) {
+  return value == null || !Number.isFinite(value) ? null : Math.round(value * 100) / 100;
+}
+async function getExchangeMatchingLocation(userId) {
+  const [user] = await db.select({ lat: usersTable.lat, lng: usersTable.lng }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) return null;
+  return { lat: coarseCoordinate(user.lat), lng: coarseCoordinate(user.lng) };
+}
+
+// src/lib/exchange-privacy.ts
+var NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\b(?:text|call|email|venmo|cash\s*app|zelle|whatsapp|telegram)\b)/i;
+var EXACT_STREET_ADDRESS = /\b\d{1,6}[A-Za-z]?\s+(?:(?:[A-Za-z][\w.'-]*|\d+(?:st|nd|rd|th)?)\s+){0,5}(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|boulevard|blvd|way|court|ct|parkway|pkwy|highway|hwy|terrace|ter|place|pl|circle|cir|trail|trl|route|rt)\b/i;
+var PRIVATE_RESIDENCE = /\b(?:my|your|their|our)\s+(?:house|home|apartment|residence|place)\b|\b(?:apartment|apt|unit|suite|ste|front|back)\s*(?:#?\s*[a-z0-9-]+)?\b|\b(?:front|back)\s+(?:door|porch|yard)\b|\bdriveway\b/i;
+function sanitizePublicPickupArea(value) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return true;
+  return !NO_PRIVATE_CONTACT.test(normalized) && !EXACT_STREET_ADDRESS.test(normalized) && !PRIVATE_RESIDENCE.test(normalized);
+}
+
+// src/routes/community-exchange.ts
+init_schema2();
+init_authz();
 var router65 = (0, import_express67.Router)();
 var CATEGORY_VALUES = ["household", "clothing", "food", "books", "electronics", "children", "urgent_aid", "other"];
 var CONDITION_VALUES = ["new", "like_new", "good", "well_loved"];
 var LISTING_TYPE_VALUES = ["offer", "need"];
 var RESOURCE_TYPE_VALUES = ["goods", "services"];
-var NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\b(?:text|call|email|venmo|cash\s*app|zelle|whatsapp|telegram)\b)/i;
+var PICKUP_LOCATION_TYPE_VALUES = ["public_place", "community_center", "library", "park", "business_parking", "other_public"];
 var EXCHANGE_IMPACT_PRIVACY_THRESHOLD = 5;
 var EXCHANGE_HOLD_REPORT_THRESHOLD = 3;
+var EXCHANGE_PICKUP_COORDINATION_HOURS = 48;
 var listingBody = external_exports2.object({
   listing_type: external_exports2.enum(LISTING_TYPE_VALUES).default("offer"),
   resource_type: external_exports2.enum(RESOURCE_TYPE_VALUES).default("goods"),
@@ -182066,6 +183407,7 @@ var listingBody = external_exports2.object({
   category: external_exports2.enum(CATEGORY_VALUES),
   condition: external_exports2.enum(CONDITION_VALUES),
   neighborhood: external_exports2.string().trim().min(2).max(80),
+  pickup_location_type: external_exports2.enum(PICKUP_LOCATION_TYPE_VALUES).default("other_public"),
   pickup_notes: external_exports2.string().trim().max(500).optional().default("")
 });
 var listingEditBody = external_exports2.object({
@@ -182076,6 +183418,7 @@ var listingEditBody = external_exports2.object({
   category: external_exports2.enum(CATEGORY_VALUES).optional(),
   condition: external_exports2.enum(CONDITION_VALUES).optional(),
   neighborhood: external_exports2.string().trim().min(2).max(80).optional(),
+  pickup_location_type: external_exports2.enum(PICKUP_LOCATION_TYPE_VALUES).optional(),
   pickup_notes: external_exports2.string().trim().max(500).optional()
 }).refine((value) => Object.keys(value).length > 0, {
   message: "At least one listing field is required."
@@ -182083,7 +183426,17 @@ var listingEditBody = external_exports2.object({
 var pickupBody = external_exports2.object({
   note: external_exports2.string().trim().min(3).max(1e3),
   pickup_area: external_exports2.string().trim().min(2).max(100),
+  pickup_location_type: external_exports2.enum(PICKUP_LOCATION_TYPE_VALUES).default("other_public"),
+  pickup_note: external_exports2.string().trim().max(500).optional(),
   proposed_window: external_exports2.string().trim().min(2).max(120)
+});
+var disputeBody = external_exports2.object({
+  reason: external_exports2.string().trim().min(10).max(2e3),
+  evidence: external_exports2.string().trim().max(4e3).optional()
+});
+var resolveDisputeBody = external_exports2.object({
+  outcome: external_exports2.enum(["complete", "cancel"]),
+  resolution: external_exports2.string().trim().min(10).max(2e3)
 });
 var reportBody = external_exports2.object({
   type: external_exports2.enum(["fraud", "harassment", "dangerous_behavior", "spam", "commercial_pricing", "spam_or_solicitation", "unsafe_or_harmful", "other"]),
@@ -182093,8 +183446,9 @@ function parseId2(value) {
   const id3 = Number(value);
   return Number.isSafeInteger(id3) && id3 > 0 ? id3 : null;
 }
-function safeCoarseText(value) {
-  return !NO_PRIVATE_CONTACT.test(value);
+function safePublicListingArea(value) {
+  const coordinatePair = /[+-]?\d{1,2}\.\d+\s*[,/]\s*[+-]?\d{1,3}\.\d+/;
+  return sanitizePublicPickupArea(value) && !coordinatePair.test(value);
 }
 function safeListingLabel(value) {
   return value.replace(/[\r\n\t]+/g, " ").replace(/[^\p{L}\p{N}\s.,!?'"’()-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 80) || "an Exchange post";
@@ -182123,17 +183477,17 @@ function notifyExchangeParticipant(input) {
     }
   });
 }
-function roundedCoordinate(value) {
-  return value == null || !Number.isFinite(value) ? null : Math.round(value * 100) / 100;
-}
 function serialize(value) {
   return value instanceof Date ? value.toISOString() : value;
 }
 function serializeListing(listing) {
-  return Object.fromEntries(Object.entries(listing).map(([key, value]) => [key, serialize(value)]));
+  return Object.fromEntries(
+    Object.entries(listing).filter(([key]) => key !== "latitude" && key !== "longitude").map(([key, value]) => [key, serialize(value)])
+  );
 }
 var EXCHANGE_LISTING_PAGE_SIZE = 24;
 var EXCHANGE_LISTING_MAX_PAGE_SIZE = 50;
+var EXCHANGE_SPARK_MAX_PAGE_SIZE = 40;
 function encodeListingCursor(listing) {
   return Buffer.from(JSON.stringify({
     created_at: listing.created_at.toISOString(),
@@ -182152,6 +183506,205 @@ function decodeListingCursor(value) {
     return null;
   }
 }
+function decodeSparkCursor(value) {
+  const base = decodeListingCursor(value);
+  if (!base) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    if (payload.source !== void 0 && payload.source !== "durable" && payload.source !== "legacy") return null;
+    return { ...base, source: payload.source === "durable" ? "durable" : "legacy" };
+  } catch {
+    return null;
+  }
+}
+function encodeSparkCursor(cursor) {
+  return Buffer.from(JSON.stringify({
+    created_at: cursor.created_at.toISOString(),
+    id: cursor.id,
+    source: cursor.source
+  })).toString("base64url");
+}
+router65.get("/community/exchange/sparks", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId;
+  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const communityVisibility = or(
+    eq(exchangeSparksTable.author_user_id, userId),
+    viewer?.community_id == null ? isNull(exchangeSparksTable.community_id) : eq(exchangeSparksTable.community_id, viewer.community_id)
+  );
+  const legacyCommunityVisibility = or(
+    eq(communityStoriesTable.author_user_id, userId),
+    viewer?.community_id == null ? isNull(communityStoriesTable.community_id) : eq(communityStoriesTable.community_id, viewer.community_id)
+  );
+  const nearby = req.query.nearby === "true";
+  if (nearby && req.query.radius_miles !== void 0 && parseRadius(req.query.radius_miles) == null) {
+    return res.status(400).json({ error: "radius_miles must be between 1 and 50" });
+  }
+  const requestedLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : 24;
+  const pageSize = Number.isSafeInteger(requestedLimit) ? Math.min(EXCHANGE_SPARK_MAX_PAGE_SIZE, Math.max(1, requestedLimit)) : 24;
+  const cursorValue = req.query.cursor;
+  const cursor = cursorValue == null ? null : decodeSparkCursor(cursorValue);
+  if (cursorValue != null && !cursor) return res.status(400).json({ error: "Invalid Spark cursor" });
+  let locationCondition;
+  if (nearby) {
+    const viewerLocation = await getExchangeMatchingLocation(userId);
+    if (viewerLocation?.lat != null && viewerLocation.lng != null && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
+      const radius = req.query.radius_miles === void 0 ? 15 : parseRadius(req.query.radius_miles);
+      const latDelta = radius / 69;
+      const lngDelta = radius / (69 * Math.max(0.25, Math.cos(viewerLocation.lat * Math.PI / 180)));
+      locationCondition = and(
+        sql`${exchangeListingsTable.latitude} IS NOT NULL AND ${exchangeListingsTable.longitude} IS NOT NULL`,
+        sql`${exchangeListingsTable.latitude} BETWEEN ${viewerLocation.lat - latDelta} AND ${viewerLocation.lat + latDelta}`,
+        sql`${exchangeListingsTable.longitude} BETWEEN ${viewerLocation.lng - lngDelta} AND ${viewerLocation.lng + lngDelta}`,
+        sql`3958.8 * 2 * ASIN(SQRT(
+          POWER(SIN(RADIANS(${exchangeListingsTable.latitude} - ${viewerLocation.lat}) / 2), 2) +
+          COS(RADIANS(${viewerLocation.lat})) * COS(RADIANS(${exchangeListingsTable.latitude})) *
+          POWER(SIN(RADIANS(${exchangeListingsTable.longitude} - ${viewerLocation.lng}) / 2), 2)
+        )) <= ${radius}`
+      );
+    } else {
+      locationCondition = sql`FALSE`;
+    }
+  }
+  const durableRows = await db.select({
+    spark_id: exchangeSparksTable.id,
+    created_at: exchangeSparksTable.created_at,
+    listing_id: exchangeListingsTable.id,
+    author_user_id: exchangeSparksTable.author_user_id,
+    author_name: usersTable.name,
+    author_avatar_url: usersTable.avatar_url,
+    caption: exchangeSparksTable.caption,
+    neighborhood: exchangeListingsTable.neighborhood,
+    media_asset_id: mediaAssetsTable.id,
+    thumbnail_key: mediaAssetsTable.thumbnail_key
+  }).from(exchangeSparksTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangeSparksTable.listing_id)).innerJoin(usersTable, eq(usersTable.id, exchangeSparksTable.author_user_id)).innerJoin(mediaAssetsTable, and(
+    eq(mediaAssetsTable.context_kind, "exchange_spark"),
+    eq(mediaAssetsTable.context_id, exchangeSparksTable.id)
+  )).where(and(
+    eq(exchangeSparksTable.status, "published"),
+    communityVisibility,
+    eq(mediaAssetsTable.status, "ready"),
+    sql`${mediaAssetsTable.variant_key} IS NOT NULL`,
+    eq(mediaAssetsTable.media_type, "video"),
+    sql`${mediaAssetsTable.mime_type} LIKE 'video/%'`,
+    eq(exchangeListingsTable.status, "active"),
+    eq(exchangeListingsTable.moderation_status, "approved"),
+    eq(exchangeListingsTable.seller_id, exchangeSparksTable.author_user_id),
+    eq(usersTable.approval_status, "approved"),
+    eq(usersTable.is_suspended, false),
+    locationCondition,
+    sql`NOT EXISTS (
+        SELECT 1 FROM direct_message_blocks spark_block
+        WHERE (spark_block.blocker_id = ${userId} AND spark_block.blocked_id = ${exchangeSparksTable.author_user_id})
+           OR (spark_block.blocker_id = ${exchangeSparksTable.author_user_id} AND spark_block.blocked_id = ${userId})
+      )`,
+    cursor ? or(
+      lt(exchangeSparksTable.created_at, new Date(cursor.created_at)),
+      and(
+        eq(exchangeSparksTable.created_at, new Date(cursor.created_at)),
+        cursor.source === "durable" ? lt(exchangeSparksTable.id, cursor.id) : sql`FALSE`
+      )
+    ) : void 0
+  )).orderBy(desc(exchangeSparksTable.created_at), desc(exchangeSparksTable.id)).limit(pageSize + 1);
+  const legacyRows = await db.select({
+    story_id: communityStoriesTable.id,
+    created_at: communityStoriesTable.created_at,
+    expires_at: communityStoriesTable.expires_at,
+    listing_id: exchangeListingsTable.id,
+    caption: communityStoriesTable.caption,
+    author_name: usersTable.name,
+    author_avatar_url: usersTable.avatar_url,
+    neighborhood: exchangeListingsTable.neighborhood,
+    media_id: communityStoryMediaTable.id,
+    thumbnail_storage_key: communityStoryMediaTable.thumbnail_storage_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key
+  }).from(communityStoriesTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, communityStoriesTable.exchange_listing_id)).innerJoin(usersTable, eq(usersTable.id, communityStoriesTable.author_user_id)).innerJoin(communityStoryMediaTable, eq(communityStoryMediaTable.story_id, communityStoriesTable.id)).leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id)).where(and(
+    eq(communityStoriesTable.status, "published"),
+    eq(communityStoriesTable.audience, "community"),
+    legacyCommunityVisibility,
+    sql`${communityStoriesTable.expires_at} > NOW()`,
+    eq(communityStoryMediaTable.media_type, "video"),
+    sql`${communityStoryMediaTable.mime_type} LIKE 'video/%'`,
+    or(
+      isNull(mediaAssetsTable.id),
+      and(eq(mediaAssetsTable.status, "ready"), sql`${mediaAssetsTable.variant_key} IS NOT NULL`)
+    ),
+    eq(exchangeListingsTable.status, "active"),
+    eq(exchangeListingsTable.moderation_status, "approved"),
+    eq(exchangeListingsTable.seller_id, communityStoriesTable.author_user_id),
+    eq(usersTable.approval_status, "approved"),
+    eq(usersTable.is_suspended, false),
+    locationCondition,
+    sql`NOT EXISTS (
+        SELECT 1 FROM direct_message_blocks spark_block
+        WHERE (spark_block.blocker_id = ${userId} AND spark_block.blocked_id = ${communityStoriesTable.author_user_id})
+           OR (spark_block.blocker_id = ${communityStoriesTable.author_user_id} AND spark_block.blocked_id = ${userId})
+      )`,
+    cursor ? or(
+      lt(communityStoriesTable.created_at, new Date(cursor.created_at)),
+      and(
+        eq(communityStoriesTable.created_at, new Date(cursor.created_at)),
+        cursor.source === "legacy" ? lt(communityStoriesTable.id, cursor.id) : sql`TRUE`
+      )
+    ) : void 0
+  )).orderBy(desc(communityStoriesTable.created_at), desc(communityStoriesTable.id)).limit(pageSize + 1);
+  const items = [
+    ...durableRows.map((row) => ({
+      id: row.spark_id,
+      source: "durable",
+      created_at: row.created_at,
+      listing_id: row.listing_id,
+      caption: row.caption,
+      author_name: row.author_name,
+      author_avatar_url: row.author_avatar_url,
+      neighborhood: row.neighborhood,
+      expires_at: null,
+      media_asset_id: row.media_asset_id,
+      media_url: `/api/media-assets/${row.media_asset_id}`,
+      thumbnail_url: row.thumbnail_key ? `/api/media-assets/${row.media_asset_id}/thumbnail` : null
+    })),
+    ...legacyRows.map((row) => ({
+      id: row.story_id,
+      source: "legacy",
+      created_at: row.created_at,
+      listing_id: row.listing_id,
+      caption: row.caption,
+      author_name: row.author_name,
+      author_avatar_url: row.author_avatar_url,
+      neighborhood: row.neighborhood,
+      expires_at: row.expires_at.toISOString(),
+      media_asset_id: null,
+      media_url: `/api/community/stories/media/${row.media_id}`,
+      thumbnail_url: row.thumbnail_storage_key || row.thumbnail_key ? `/api/community/stories/media/${row.media_id}?thumbnail=true` : null
+    }))
+  ].sort((a, b) => b.created_at.getTime() - a.created_at.getTime() || (a.source === b.source ? 0 : a.source === "durable" ? -1 : 1) || b.id - a.id);
+  const hasMore = items.length > pageSize;
+  const pageRows = items.slice(0, pageSize);
+  return res.json({
+    sparks: pageRows.map((row) => ({
+      listingId: row.listing_id,
+      sparkId: row.source === "durable" ? row.id : null,
+      storyId: row.source === "legacy" ? row.id : null,
+      id: row.id,
+      listing_id: row.listing_id,
+      spark_id: row.source === "durable" ? row.id : null,
+      caption: row.caption,
+      created_at: row.created_at.toISOString(),
+      expires_at: row.expires_at,
+      durable: row.source === "durable",
+      neighborhood: row.neighborhood,
+      author_name: row.author_name,
+      author_avatar_url: row.author_avatar_url,
+      media_asset_id: row.media_asset_id,
+      media_url: row.media_url,
+      thumbnail_url: row.thumbnail_url
+    })),
+    next_cursor: hasMore ? encodeSparkCursor({
+      created_at: pageRows[pageRows.length - 1].created_at,
+      id: pageRows[pageRows.length - 1].id,
+      source: pageRows[pageRows.length - 1].source
+    }) : null
+  });
+});
 function parseRadius(value) {
   if (typeof value !== "string" || value.trim() === "") return null;
   const parsed = Number(value);
@@ -182175,6 +183728,7 @@ var listingSelect = {
   condition: exchangeListingsTable.condition,
   neighborhood: exchangeListingsTable.neighborhood,
   pickup_notes: exchangeListingsTable.pickup_notes,
+  pickup_location_type: exchangeListingsTable.pickup_location_type,
   status: exchangeListingsTable.status,
   moderation_status: exchangeListingsTable.moderation_status,
   created_at: exchangeListingsTable.created_at,
@@ -182201,8 +183755,7 @@ router65.get("/community/exchange/listings", requireAuth, requireApproved, gener
     if (req.query.radius_miles !== void 0 && parseRadius(req.query.radius_miles) == null) {
       return res.status(400).json({ error: "radius_miles must be between 1 and 50" });
     }
-    const [viewer] = await db.select({ lat: usersTable.lat, lng: usersTable.lng }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-    viewerLocation = viewer ?? null;
+    viewerLocation = await getExchangeMatchingLocation(userId);
   }
   let locationCondition;
   if (nearby && viewerLocation?.lat != null && viewerLocation.lng != null && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
@@ -182251,7 +183804,8 @@ router65.get("/community/exchange/listings/:id", requireAuth, requireApproved, g
   const id3 = parseId2(req.params.id);
   if (!id3) return res.status(400).json({ error: "Invalid listing id" });
   const [listing] = await db.select(listingSelect).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(eq(exchangeListingsTable.id, id3)).limit(1);
-  if (!listing || listing.moderation_status !== "approved" && listing.seller_id !== req.authenticatedUserId) {
+  const isOwner = listing?.seller_id === req.authenticatedUserId;
+  if (!listing || !isOwner && (listing.status !== "active" || listing.moderation_status !== "approved")) {
     return res.status(404).json({ error: "Listing not found" });
   }
   return res.json({ listing: serializeListing(listing) });
@@ -182260,13 +183814,13 @@ router65.post("/community/exchange/listings", requireAuth, requireApproved, comm
   const parsed = listingBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid listing", details: parsed.error.issues });
   const data = parsed.data;
-  if (![data.title, data.description, data.neighborhood, data.pickup_notes].every(safeCoarseText)) {
+  if (![data.title, data.description].every(safePublicListingArea) || !safePublicListingArea(data.neighborhood) || !safePublicListingArea(data.pickup_notes)) {
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
   const moderation = moderatePostText(`${data.title}
 ${data.description}
 ${data.pickup_notes}`);
-  const [seller] = await db.select({ lat: usersTable.lat, lng: usersTable.lng }).from(usersTable).where(eq(usersTable.id, req.authenticatedUserId)).limit(1);
+  const sellerLocation = await getExchangeMatchingLocation(req.authenticatedUserId);
   const [listing] = await db.insert(exchangeListingsTable).values({
     seller_id: req.authenticatedUserId,
     listing_type: data.listing_type,
@@ -182276,9 +183830,10 @@ ${data.pickup_notes}`);
     category: data.category,
     condition: data.condition,
     neighborhood: data.neighborhood,
+    pickup_location_type: data.pickup_location_type,
     pickup_notes: data.pickup_notes || null,
-    latitude: roundedCoordinate(seller?.lat),
-    longitude: roundedCoordinate(seller?.lng),
+    latitude: sellerLocation?.lat ?? null,
+    longitude: sellerLocation?.lng ?? null,
     moderation_status: moderation.status,
     moderation_reason: moderation.reason
   }).returning();
@@ -182301,7 +183856,13 @@ router65.patch("/community/exchange/listings/:id", requireAuth, requireApproved,
   if (listing.status !== "active") {
     return res.status(409).json({ error: "A listing can only be edited before pickup coordination is accepted." });
   }
-  if ([data.title, data.description, data.neighborhood, data.pickup_notes].filter((value) => value !== void 0).some((value) => !safeCoarseText(value))) {
+  if (listing.moderation_status === "held") {
+    return res.status(409).json({ error: "This listing is under safety review and cannot be edited until a moderator resolves the hold." });
+  }
+  if ([data.title, data.description].filter((value) => value !== void 0).some((value) => !safePublicListingArea(value))) {
+    return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
+  }
+  if (data.neighborhood !== void 0 && !safePublicListingArea(data.neighborhood) || data.pickup_notes !== void 0 && !safePublicListingArea(data.pickup_notes)) {
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
   const nextTitle = data.title ?? listing.title;
@@ -182323,7 +183884,8 @@ ${nextPickupNotes}`);
   }).where(and(
     eq(exchangeListingsTable.id, id3),
     eq(exchangeListingsTable.seller_id, req.authenticatedUserId),
-    eq(exchangeListingsTable.status, "active")
+    eq(exchangeListingsTable.status, "active"),
+    eq(exchangeListingsTable.moderation_status, listing.moderation_status)
   )).returning();
   if (!updated) return res.status(409).json({ error: "This listing changed before it could be edited." });
   const activeRequests = await db.select({
@@ -182397,12 +183959,16 @@ router65.get("/community/exchange/pickup-requests", requireAuth, requireApproved
     buyer_id: exchangePickupRequestsTable.buyer_id,
     note: exchangePickupRequestsTable.note,
     pickup_area: exchangePickupRequestsTable.pickup_area,
+    pickup_location_type: exchangePickupRequestsTable.pickup_location_type,
+    pickup_note: exchangePickupRequestsTable.pickup_note,
     proposed_window: exchangePickupRequestsTable.proposed_window,
     status: exchangePickupRequestsTable.status,
     buyer_confirmed_at: exchangePickupRequestsTable.buyer_confirmed_at,
     seller_confirmed_at: exchangePickupRequestsTable.seller_confirmed_at,
     accepted_at: exchangePickupRequestsTable.accepted_at,
+    coordination_expires_at: exchangePickupRequestsTable.coordination_expires_at,
     cancelled_at: exchangePickupRequestsTable.cancelled_at,
+    expired_at: exchangePickupRequestsTable.expired_at,
     completed_at: exchangePickupRequestsTable.completed_at,
     created_at: exchangePickupRequestsTable.created_at,
     updated_at: exchangePickupRequestsTable.updated_at,
@@ -182412,15 +183978,60 @@ router65.get("/community/exchange/pickup-requests", requireAuth, requireApproved
     seller_name: sql`seller.name`,
     buyer_name: sql`buyer.name`
   }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).innerJoin(sql`users seller`, sql`seller.id = ${exchangeListingsTable.seller_id}`).innerJoin(sql`users buyer`, sql`buyer.id = ${exchangePickupRequestsTable.buyer_id}`).where(or(eq(exchangePickupRequestsTable.buyer_id, userId), eq(exchangeListingsTable.seller_id, userId))).orderBy(desc(exchangePickupRequestsTable.updated_at), desc(exchangePickupRequestsTable.id)).limit(100);
-  return res.json({ pickup_requests: rows.map((row) => serializeListing(row)) });
+  const disputes = rows.length ? await db.select({
+    pickup_request_id: exchangePickupDisputesTable.pickup_request_id,
+    status: exchangePickupDisputesTable.status,
+    outcome: exchangePickupDisputesTable.outcome,
+    opened_at: exchangePickupDisputesTable.opened_at,
+    resolved_at: exchangePickupDisputesTable.resolved_at,
+    created_at: exchangePickupDisputesTable.created_at,
+    updated_at: exchangePickupDisputesTable.updated_at
+  }).from(exchangePickupDisputesTable).where(inArray(exchangePickupDisputesTable.pickup_request_id, rows.map((row) => row.id))).orderBy(desc(exchangePickupDisputesTable.opened_at), desc(exchangePickupDisputesTable.id)) : [];
+  const latestDispute = /* @__PURE__ */ new Map();
+  for (const dispute of disputes) {
+    if (!latestDispute.has(dispute.pickup_request_id)) latestDispute.set(dispute.pickup_request_id, dispute);
+  }
+  return res.json({ pickup_requests: rows.map((row) => {
+    const current = latestDispute.get(row.id);
+    return {
+      ...serializeListing(row),
+      dispute: current ? serializeListing({
+        status: current.status,
+        outcome: current.outcome,
+        opened_at: current.opened_at,
+        resolved_at: current.resolved_at,
+        created_at: current.created_at,
+        updated_at: current.updated_at
+      }) : null
+    };
+  }) });
+});
+router65.get("/community/exchange/disputes", requireAuth, requireAdmin(), generalApiLimiter, async (_req, res) => {
+  const disputes = await db.select({
+    id: exchangePickupDisputesTable.id,
+    pickup_request_id: exchangePickupDisputesTable.pickup_request_id,
+    listing_id: exchangeListingsTable.id,
+    listing_title: exchangeListingsTable.title,
+    opened_by: exchangePickupDisputesTable.opened_by,
+    buyer_id: exchangePickupRequestsTable.buyer_id,
+    seller_id: exchangeListingsTable.seller_id,
+    reason: exchangePickupDisputesTable.reason,
+    evidence: exchangePickupDisputesTable.evidence,
+    status: exchangePickupDisputesTable.status,
+    outcome: exchangePickupDisputesTable.outcome,
+    resolution: exchangePickupDisputesTable.resolution,
+    opened_at: exchangePickupDisputesTable.opened_at,
+    resolved_at: exchangePickupDisputesTable.resolved_at
+  }).from(exchangePickupDisputesTable).innerJoin(exchangePickupRequestsTable, eq(exchangePickupRequestsTable.id, exchangePickupDisputesTable.pickup_request_id)).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).where(eq(exchangePickupDisputesTable.status, "open")).orderBy(desc(exchangePickupDisputesTable.opened_at)).limit(100);
+  return res.json({ disputes: disputes.map((dispute) => serializeListing(dispute)) });
 });
 router65.post("/community/exchange/listings/:id/pickup-requests", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const listingId = parseId2(req.params.id);
   if (!listingId) return res.status(400).json({ error: "Invalid listing id" });
   const parsed = pickupBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid pickup request", details: parsed.error.issues });
-  if (![parsed.data.note, parsed.data.pickup_area, parsed.data.proposed_window].every(safeCoarseText)) {
-    return res.status(400).json({ error: "Keep pickup coordination inside Niakofa and use a coarse public area. Do not include phone numbers, email addresses, links, or exact addresses." });
+  if (!safePublicListingArea(parsed.data.note) || !safePublicListingArea(parsed.data.pickup_area) || !safePublicListingArea(parsed.data.pickup_note ?? "") || !safePublicListingArea(parsed.data.proposed_window)) {
+    return res.status(400).json({ error: "Keep pickup coordination inside Niakofa and use a coarse public area. Do not include phone numbers, email addresses, links, exact addresses, or coordinates." });
   }
   const userId = req.authenticatedUserId;
   const [listing] = await db.select().from(exchangeListingsTable).where(eq(exchangeListingsTable.id, listingId)).limit(1);
@@ -182435,14 +184046,22 @@ router65.post("/community/exchange/listings/:id/pickup-requests", requireAuth, r
   if (existing) return res.status(409).json({ error: "You already have a pickup request for this listing." });
   let pickupRequest;
   try {
-    const [inserted] = await db.insert(exchangePickupRequestsTable).values({
-      listing_id: listingId,
-      buyer_id: userId,
-      note: parsed.data.note,
-      pickup_area: parsed.data.pickup_area,
-      proposed_window: parsed.data.proposed_window
-    }).returning();
-    if (!inserted) return res.status(500).json({ error: "Could not create pickup request." });
+    const inserted = await db.transaction(async (tx) => {
+      const [available] = await tx.select().from(exchangeListingsTable).where(eq(exchangeListingsTable.id, listingId)).for("update").limit(1);
+      if (!available || available.status !== "active" || available.moderation_status !== "approved") return null;
+      await tx.update(exchangeListingsTable).set({ updated_at: /* @__PURE__ */ new Date() }).where(eq(exchangeListingsTable.id, listingId));
+      const [created] = await tx.insert(exchangePickupRequestsTable).values({
+        listing_id: listingId,
+        buyer_id: userId,
+        note: parsed.data.note,
+        pickup_area: parsed.data.pickup_area,
+        pickup_location_type: parsed.data.pickup_location_type,
+        pickup_note: parsed.data.pickup_note || null,
+        proposed_window: parsed.data.proposed_window
+      }).returning();
+      return created ?? null;
+    });
+    if (!inserted) return res.status(404).json({ error: "Listing is not available." });
     pickupRequest = inserted;
   } catch (error40) {
     if (error40.code === "23505") {
@@ -182476,32 +184095,203 @@ async function loadPickupRequest(id3) {
     status: exchangePickupRequestsTable.status,
     buyer_confirmed_at: exchangePickupRequestsTable.buyer_confirmed_at,
     seller_confirmed_at: exchangePickupRequestsTable.seller_confirmed_at,
+    coordination_expires_at: exchangePickupRequestsTable.coordination_expires_at,
+    expired_at: exchangePickupRequestsTable.expired_at,
     seller_id: exchangeListingsTable.seller_id,
     listing_status: exchangeListingsTable.status
   }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).where(eq(exchangePickupRequestsTable.id, id3)).limit(1);
   return row ?? null;
 }
+router65.post("/community/exchange/pickup-requests/:id/dispute", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id3 = parseId2(req.params.id);
+  if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
+  const parsed = disputeBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid dispute", details: parsed.error.issues });
+  if (!safePublicListingArea(parsed.data.reason) || !safePublicListingArea(parsed.data.evidence ?? "")) {
+    return res.status(400).json({ error: "Dispute details must not include phone numbers, email addresses, links, exact addresses, or coordinates." });
+  }
+  const userId = req.authenticatedUserId;
+  let result;
+  try {
+    result = await db.transaction(async (tx) => {
+      const [pickup] = await tx.select().from(exchangePickupRequestsTable).where(eq(exchangePickupRequestsTable.id, id3)).for("update").limit(1);
+      if (!pickup) return { error: "Pickup request not found", status: 404 };
+      const [listing] = await tx.select({
+        seller_id: exchangeListingsTable.seller_id,
+        status: exchangeListingsTable.status
+      }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+      if (!listing) return { error: "Listing not found", status: 404 };
+      if (pickup.buyer_id !== userId && listing?.seller_id !== userId) {
+        return { error: "Only an accepted pickup participant can open a dispute.", status: 403 };
+      }
+      if (pickup.status !== "accepted" || listing?.status !== "reserved") {
+        return { error: "A dispute can only be opened for an accepted pickup.", status: 409 };
+      }
+      const now = /* @__PURE__ */ new Date();
+      if (pickup.coordination_expires_at && pickup.coordination_expires_at <= now) {
+        return { error: "The 48-hour coordination window has expired; this pickup can no longer be disputed.", status: 409 };
+      }
+      const [dispute] = await tx.insert(exchangePickupDisputesTable).values({
+        pickup_request_id: pickup.id,
+        opened_by: userId,
+        reason: parsed.data.reason,
+        evidence: parsed.data.evidence || null,
+        opened_at: now,
+        created_at: now,
+        updated_at: now
+      }).returning();
+      const [updatedPickup] = await tx.update(exchangePickupRequestsTable).set({ status: "disputed", updated_at: now }).where(and(
+        eq(exchangePickupRequestsTable.id, pickup.id),
+        eq(exchangePickupRequestsTable.status, "accepted")
+      )).returning();
+      if (!updatedPickup) throw new Error("EXCHANGE_DISPUTE_PICKUP_CONFLICT");
+      return { dispute, pickup: updatedPickup, sellerId: listing.seller_id };
+    });
+  } catch (error40) {
+    if (error40.code === "23505") {
+      return res.status(409).json({ error: "An active dispute already exists for this pickup." });
+    }
+    if (error40 instanceof Error && error40.message === "EXCHANGE_DISPUTE_PICKUP_CONFLICT") {
+      return res.status(409).json({ error: "This pickup changed before the dispute could be opened." });
+    }
+    throw error40;
+  }
+  if ("error" in result) return res.status(result.status).json({ error: result.error });
+  const participants = [result.pickup.buyer_id, result.sellerId];
+  void Promise.allSettled(participants.map((recipientId) => notifyExchangeParticipant({
+    recipientId,
+    actorUserId: userId,
+    listingId: result.pickup.listing_id,
+    pickupRequestId: result.pickup.id,
+    title: "An Exchange pickup is under dispute",
+    body: "A participant opened a dispute. The pickup is on hold while the safety team reviews it.",
+    action: "dispute_opened"
+  })));
+  return res.status(201).json({
+    pickup_request: serializeListing(result.pickup),
+    dispute: serializeListing(result.dispute)
+  });
+});
+router65.post("/community/exchange/pickup-requests/:id/resolve-dispute", requireAuth, requireAdmin(), generalApiLimiter, async (req, res) => {
+  const id3 = parseId2(req.params.id);
+  if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
+  const parsed = resolveDisputeBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid dispute resolution", details: parsed.error.issues });
+  if (!safePublicListingArea(parsed.data.resolution)) {
+    return res.status(400).json({ error: "Resolution must not include phone numbers, email addresses, links, exact addresses, or coordinates." });
+  }
+  const moderatorId = req.authenticatedUserId;
+  const result = await db.transaction(async (tx) => {
+    const [pickup] = await tx.select().from(exchangePickupRequestsTable).where(eq(exchangePickupRequestsTable.id, id3)).for("update").limit(1);
+    if (!pickup) return { error: "Pickup request not found", status: 404 };
+    const [listing] = await tx.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status
+    }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+    const [dispute] = await tx.select().from(exchangePickupDisputesTable).where(and(
+      eq(exchangePickupDisputesTable.pickup_request_id, pickup.id),
+      eq(exchangePickupDisputesTable.status, "open")
+    )).for("update").limit(1);
+    if (!dispute || pickup.status !== "disputed") {
+      return { error: "There is no active dispute for this pickup.", status: 409 };
+    }
+    if (!listing) return { error: "Listing not found", status: 404 };
+    if (listing.status !== "reserved") {
+      return { error: "The held listing state changed; this dispute cannot be resolved safely.", status: 409 };
+    }
+    const now = /* @__PURE__ */ new Date();
+    const [resolved] = await tx.update(exchangePickupDisputesTable).set({
+      status: "resolved",
+      outcome: parsed.data.outcome,
+      resolution: parsed.data.resolution,
+      resolved_by: moderatorId,
+      resolved_at: now,
+      updated_at: now
+    }).where(and(
+      eq(exchangePickupDisputesTable.id, dispute.id),
+      eq(exchangePickupDisputesTable.status, "open")
+    )).returning();
+    if (!resolved) return { error: "This dispute was already resolved.", status: 409 };
+    const [updatedPickup] = await tx.update(exchangePickupRequestsTable).set(parsed.data.outcome === "complete" ? { status: "completed", completed_at: now, updated_at: now } : { status: "cancelled", cancelled_at: now, updated_at: now }).where(and(
+      eq(exchangePickupRequestsTable.id, pickup.id),
+      eq(exchangePickupRequestsTable.status, "disputed")
+    )).returning();
+    if (!updatedPickup) throw new Error("EXCHANGE_DISPUTE_RESOLUTION_CONFLICT");
+    const listingUpdate = parsed.data.outcome === "complete" ? { status: "completed", updated_at: now } : listing.moderation_status === "approved" ? { status: "active", archived_at: null, archive_reason: null, updated_at: now } : {
+      status: "archived",
+      archived_at: now,
+      archive_reason: "pickup_dispute_cancelled_while_listing_unapproved",
+      updated_at: now
+    };
+    const [updatedListing] = await tx.update(exchangeListingsTable).set(listingUpdate).where(and(
+      eq(exchangeListingsTable.id, pickup.listing_id),
+      eq(exchangeListingsTable.status, "reserved"),
+      eq(exchangeListingsTable.moderation_status, listing.moderation_status)
+    )).returning({ id: exchangeListingsTable.id });
+    if (!updatedListing) throw new Error("EXCHANGE_DISPUTE_LISTING_CONFLICT");
+    return {
+      dispute: resolved,
+      pickup: updatedPickup,
+      buyerId: pickup.buyer_id,
+      sellerId: listing.seller_id,
+      listingAvailableAgain: parsed.data.outcome === "cancel" && listing.moderation_status === "approved"
+    };
+  });
+  if ("error" in result) return res.status(result.status).json({ error: result.error });
+  const participants = [result.buyerId, result.sellerId];
+  void Promise.allSettled(participants.map((recipientId) => notifyExchangeParticipant({
+    recipientId,
+    actorUserId: moderatorId,
+    listingId: result.pickup.listing_id,
+    pickupRequestId: result.pickup.id,
+    title: parsed.data.outcome === "complete" ? "Exchange dispute resolved" : "Exchange pickup dispute resolved",
+    body: parsed.data.outcome === "complete" ? "The moderator resolved this pickup as complete." : result.listingAvailableAgain ? "The moderator cancelled this pickup. The approved listing is available again." : "The moderator cancelled this pickup. The listing remains archived and hidden; its owner can renew it after safety approval.",
+    action: "dispute_resolved"
+  })));
+  return res.json({
+    pickup_request: serializeListing(result.pickup),
+    dispute: serializeListing(result.dispute)
+  });
+});
 router65.post("/community/exchange/pickup-requests/:id/accept", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id3 = parseId2(req.params.id);
   if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
   const userId = req.authenticatedUserId;
   const result = await db.transaction(async (tx) => {
-    const [pickup] = await tx.select({
-      id: exchangePickupRequestsTable.id,
-      listing_id: exchangePickupRequestsTable.listing_id,
-      buyer_id: exchangePickupRequestsTable.buyer_id,
-      status: exchangePickupRequestsTable.status,
-      seller_id: exchangeListingsTable.seller_id,
-      listing_status: exchangeListingsTable.status
-    }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).where(eq(exchangePickupRequestsTable.id, id3)).limit(1);
+    const [pickup] = await tx.select().from(exchangePickupRequestsTable).where(eq(exchangePickupRequestsTable.id, id3)).for("update").limit(1);
     if (!pickup) return { error: "Pickup request not found", status: 404 };
-    if (pickup.seller_id !== userId) return { error: "Only the seller can accept this request.", status: 403 };
-    if (pickup.status !== "requested" || pickup.listing_status !== "active") return { error: "This request is no longer available to accept.", status: 409 };
-    const [listing] = await tx.update(exchangeListingsTable).set({ status: "reserved", updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "active"))).returning({ id: exchangeListingsTable.id });
-    if (!listing) return { error: "Another pickup request was accepted first.", status: 409 };
-    const [updated] = await tx.update(exchangePickupRequestsTable).set({ status: "accepted", accepted_at: /* @__PURE__ */ new Date(), updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "requested"))).returning();
+    const [currentListing] = await tx.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status
+    }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+    if (currentListing?.seller_id !== userId) return { error: "Only the seller can accept this request.", status: 403 };
+    if (pickup.status !== "requested" || currentListing.status !== "active" || currentListing.moderation_status !== "approved") {
+      return { error: "This request is no longer available to accept.", status: 409 };
+    }
+    const acceptedAt = /* @__PURE__ */ new Date();
+    const [updated] = await tx.update(exchangePickupRequestsTable).set({
+      status: "accepted",
+      accepted_at: acceptedAt,
+      coordination_expires_at: new Date(acceptedAt.getTime() + EXCHANGE_PICKUP_COORDINATION_HOURS * 60 * 60 * 1e3),
+      updated_at: acceptedAt
+    }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "requested"))).returning();
     if (!updated) return { error: "This pickup request was already changed.", status: 409 };
+    const [listing] = await tx.update(exchangeListingsTable).set({ status: "reserved", updated_at: acceptedAt }).where(and(
+      eq(exchangeListingsTable.id, pickup.listing_id),
+      eq(exchangeListingsTable.status, "active"),
+      eq(exchangeListingsTable.moderation_status, "approved")
+    )).returning({ id: exchangeListingsTable.id });
+    if (!listing) {
+      throw new Error("EXCHANGE_LISTING_RESERVATION_CONFLICT");
+    }
     return { pickup_request: updated };
+  }).catch((error40) => {
+    if (error40 instanceof Error && error40.message === "EXCHANGE_LISTING_RESERVATION_CONFLICT") {
+      return { error: "Another pickup request was accepted first, or the listing is under review.", status: 409 };
+    }
+    throw error40;
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
   void notifyExchangeParticipant({
@@ -182510,7 +184300,7 @@ router65.post("/community/exchange/pickup-requests/:id/accept", requireAuth, req
     listingId: result.pickup_request.listing_id,
     pickupRequestId: result.pickup_request.id,
     title: "Your Exchange request was accepted",
-    body: "Your neighbor accepted the coordination request. Continue the handoff in Messages.",
+    body: `Your neighbor accepted the coordination request. Continue the handoff in Messages within ${EXCHANGE_PICKUP_COORDINATION_HOURS} hours.`,
     action: "request_accepted"
   }).catch(() => {
   });
@@ -182530,47 +184320,78 @@ router65.post("/community/exchange/pickup-requests/:id/decline", requireAuth, re
   if (pickup.seller_id !== req.authenticatedUserId) return res.status(403).json({ error: "Only the seller can decline this request." });
   if (pickup.status !== "requested") return res.status(409).json({ error: "This request is no longer awaiting a response." });
   const [updated] = await db.update(exchangePickupRequestsTable).set({ status: "declined", cancelled_at: /* @__PURE__ */ new Date(), updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "requested"))).returning();
-  if (updated) {
-    void notifyExchangeParticipant({
-      recipientId: updated.buyer_id,
-      actorUserId: req.authenticatedUserId,
-      listingId: pickup.listing_id,
-      pickupRequestId: updated.id,
-      title: "Your Exchange request was declined",
-      body: "This coordination request was declined. Open Messages for the update, or browse Exchange for another neighbor.",
-      action: "request_declined"
-    }).catch(() => {
-    });
-    void sendPushToUser(updated.buyer_id, {
-      title: "Your Exchange request was declined",
-      body: "This coordination request was declined. You can browse Exchange for other ways to connect with a neighbor.",
-      notifType: "task_accepted"
-    }).catch(() => {
-    });
-  }
+  if (!updated) return res.status(409).json({ error: "This request was already changed." });
+  void notifyExchangeParticipant({
+    recipientId: updated.buyer_id,
+    actorUserId: req.authenticatedUserId,
+    listingId: pickup.listing_id,
+    pickupRequestId: updated.id,
+    title: "Your Exchange request was declined",
+    body: "This coordination request was declined. Open Messages for the update, or browse Exchange for another neighbor.",
+    action: "request_declined"
+  }).catch(() => {
+  });
+  void sendPushToUser(updated.buyer_id, {
+    title: "Your Exchange request was declined",
+    body: "This coordination request was declined. You can browse Exchange for other ways to connect with a neighbor.",
+    notifType: "task_accepted"
+  }).catch(() => {
+  });
   return res.json({ pickup_request: serializeListing(updated) });
 });
 router65.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id3 = parseId2(req.params.id);
   if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
-  const pickup = await loadPickupRequest(id3);
-  if (!pickup) return res.status(404).json({ error: "Pickup request not found" });
-  if (pickup.buyer_id !== req.authenticatedUserId && pickup.seller_id !== req.authenticatedUserId) return res.status(403).json({ error: "Only the pickup participants can cancel." });
-  if (!["requested", "accepted"].includes(pickup.status)) return res.status(409).json({ error: "This pickup cannot be cancelled." });
   const result = await db.transaction(async (tx) => {
-    const [updated] = await tx.update(exchangePickupRequestsTable).set({ status: "cancelled", cancelled_at: /* @__PURE__ */ new Date(), updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangePickupRequestsTable.id, id3), inArray(exchangePickupRequestsTable.status, ["requested", "accepted"]))).returning();
-    if (updated?.status === "cancelled" && pickup.status === "accepted") {
-      await tx.update(exchangeListingsTable).set({ status: "active", updated_at: /* @__PURE__ */ new Date() }).where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
+    const [pickup] = await tx.select().from(exchangePickupRequestsTable).where(eq(exchangePickupRequestsTable.id, id3)).for("update").limit(1);
+    if (!pickup) return { error: "Pickup request not found", status: 404 };
+    const [listing] = await tx.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status
+    }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+    if (!listing) return { error: "Listing not found", status: 404 };
+    if (pickup.buyer_id !== req.authenticatedUserId && listing?.seller_id !== req.authenticatedUserId) {
+      return { error: "Only the pickup participants can cancel.", status: 403 };
     }
-    return updated;
+    if (!["requested", "accepted"].includes(pickup.status)) {
+      return { error: "This pickup cannot be cancelled.", status: 409 };
+    }
+    if (pickup.status === "accepted" && listing.status !== "reserved") {
+      return { error: "The reserved listing state changed; this pickup cannot be cancelled safely.", status: 409 };
+    }
+    const now = /* @__PURE__ */ new Date();
+    const [updated] = await tx.update(exchangePickupRequestsTable).set({ status: "cancelled", cancelled_at: now, updated_at: now }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, pickup.status))).returning();
+    if (!updated) return { error: "This pickup was already changed.", status: 409 };
+    let listingAvailableAgain = pickup.status === "requested" && listing.status === "active" && listing.moderation_status === "approved";
+    if (pickup.status === "accepted") {
+      const approved = listing.moderation_status === "approved";
+      const [updatedListing] = await tx.update(exchangeListingsTable).set(approved ? { status: "active", archived_at: null, archive_reason: null, updated_at: now } : {
+        status: "archived",
+        archived_at: now,
+        archive_reason: "pickup_cancelled_while_listing_unapproved",
+        updated_at: now
+      }).where(and(
+        eq(exchangeListingsTable.id, pickup.listing_id),
+        eq(exchangeListingsTable.status, "reserved"),
+        eq(exchangeListingsTable.moderation_status, listing.moderation_status)
+      )).returning({ id: exchangeListingsTable.id });
+      if (!updatedListing) throw new Error("EXCHANGE_CANCEL_LISTING_CONFLICT");
+      listingAvailableAgain = approved;
+    }
+    return {
+      pickup_request: updated,
+      otherParticipantId: req.authenticatedUserId === pickup.buyer_id ? listing.seller_id : pickup.buyer_id,
+      listingAvailableAgain
+    };
   });
-  if (!result) return res.status(409).json({ error: "This pickup was already changed." });
-  const otherParticipantId = req.authenticatedUserId === pickup.buyer_id ? pickup.seller_id : pickup.buyer_id;
+  if ("error" in result) return res.status(result.status).json({ error: result.error });
+  const otherParticipantId = result.otherParticipantId;
   void notifyExchangeParticipant({
     recipientId: otherParticipantId,
     actorUserId: req.authenticatedUserId,
-    listingId: pickup.listing_id,
-    pickupRequestId: result.id,
+    listingId: result.pickup_request.listing_id,
+    pickupRequestId: result.pickup_request.id,
     title: "Exchange coordination was cancelled",
     body: "The other participant cancelled this pickup coordination. Open Messages for the update.",
     action: "request_cancelled"
@@ -182578,50 +184399,59 @@ router65.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, req
   });
   void sendPushToUser(otherParticipantId, {
     title: "Exchange coordination was cancelled",
-    body: "The other participant cancelled this pickup coordination. The listing is available again if it is still active.",
+    body: result.listingAvailableAgain ? "The other participant cancelled this pickup coordination. The approved listing is available again." : "The other participant cancelled this pickup coordination. Listing visibility remains subject to safety review; if archived, its owner can renew it after approval.",
     notifType: "task_accepted"
   }).catch(() => {
   });
-  return res.json({ pickup_request: serializeListing(result) });
+  return res.json({ pickup_request: serializeListing(result.pickup_request) });
 });
 router65.post("/community/exchange/pickup-requests/:id/confirm-complete", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id3 = parseId2(req.params.id);
   if (!id3) return res.status(400).json({ error: "Invalid pickup request id" });
   const userId = req.authenticatedUserId;
   const result = await db.transaction(async (tx) => {
-    const [pickup] = await tx.select({
-      id: exchangePickupRequestsTable.id,
-      listing_id: exchangePickupRequestsTable.listing_id,
-      buyer_id: exchangePickupRequestsTable.buyer_id,
-      seller_id: exchangeListingsTable.seller_id,
-      status: exchangePickupRequestsTable.status,
-      buyer_confirmed_at: exchangePickupRequestsTable.buyer_confirmed_at,
-      seller_confirmed_at: exchangePickupRequestsTable.seller_confirmed_at
-    }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).where(eq(exchangePickupRequestsTable.id, id3)).for("update").limit(1);
+    const [pickup] = await tx.select().from(exchangePickupRequestsTable).where(eq(exchangePickupRequestsTable.id, id3)).for("update").limit(1);
     if (!pickup) return { error: "Pickup request not found", status: 404 };
+    const [listing] = await tx.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status
+    }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+    if (!listing) return { error: "Listing not found", status: 404 };
     const isBuyer = pickup.buyer_id === userId;
-    const isSeller = pickup.seller_id === userId;
+    const isSeller = listing?.seller_id === userId;
     if (!isBuyer && !isSeller) return { error: "Only the pickup participants can confirm completion.", status: 403 };
     if (pickup.status !== "accepted") return { error: "Completion can only be confirmed for an accepted pickup.", status: 409 };
+    if (listing.status !== "reserved") return { error: "The reserved listing state changed; completion cannot be confirmed safely.", status: 409 };
+    if (isBuyer ? pickup.buyer_confirmed_at : pickup.seller_confirmed_at) {
+      return { error: "Your handoff confirmation was already recorded.", status: 409 };
+    }
     const now = /* @__PURE__ */ new Date();
+    if (pickup.coordination_expires_at && pickup.coordination_expires_at <= now) {
+      return { error: "The coordination window expired. This listing will be available again shortly.", status: 409 };
+    }
     const [updated] = await tx.update(exchangePickupRequestsTable).set(
       isBuyer ? { buyer_confirmed_at: now, updated_at: now } : { seller_confirmed_at: now, updated_at: now }
     ).where(eq(exchangePickupRequestsTable.id, id3)).returning();
     if (!updated) return { error: "This pickup was already changed.", status: 409 };
     if (updated.buyer_confirmed_at && updated.seller_confirmed_at) {
       const [completed] = await tx.update(exchangePickupRequestsTable).set({ status: "completed", completed_at: now, updated_at: now }).where(and(eq(exchangePickupRequestsTable.id, id3), eq(exchangePickupRequestsTable.status, "accepted"))).returning();
-      if (completed) {
-        await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now }).where(and(eq(exchangeListingsTable.id, pickup.listing_id), eq(exchangeListingsTable.status, "reserved")));
-      }
+      if (!completed) throw new Error("EXCHANGE_CONFIRM_PICKUP_CONFLICT");
+      const [completedListing] = await tx.update(exchangeListingsTable).set({ status: "completed", updated_at: now }).where(and(
+        eq(exchangeListingsTable.id, pickup.listing_id),
+        eq(exchangeListingsTable.status, "reserved"),
+        eq(exchangeListingsTable.moderation_status, listing.moderation_status)
+      )).returning({ id: exchangeListingsTable.id });
+      if (!completedListing) throw new Error("EXCHANGE_CONFIRM_LISTING_CONFLICT");
       return {
-        pickup_request: completed ?? updated,
-        notifyUserIds: [pickup.buyer_id, pickup.seller_id]
+        pickup_request: completed,
+        notifyUserIds: [pickup.buyer_id, listing.seller_id]
       };
     }
     return {
       pickup_request: updated,
       awaiting_other_confirmation: true,
-      notifyUserIds: [isBuyer ? pickup.seller_id : pickup.buyer_id]
+      notifyUserIds: [isBuyer ? listing.seller_id : pickup.buyer_id]
     };
   });
   if ("error" in result) return res.status(result.status).json({ error: result.error });
@@ -182652,9 +184482,9 @@ router65.post("/community/exchange/pickup-requests/:id/confirm-complete", requir
 });
 router65.get("/community/exchange/impact", requireAuth, requireApproved, generalApiLimiter, async (_req, res) => {
   const [activity] = await db.select({
-    completed: sql`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed')::int`,
-    unique_neighbors: sql`COUNT(DISTINCT CASE WHEN ${exchangePickupRequestsTable.status} = 'completed' THEN ${exchangePickupRequestsTable.buyer_id} END)::int`,
-    last_30_days: sql`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.completed_at} >= NOW() - INTERVAL '30 days')::int`
+    completed: sql`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.buyer_confirmed_at} IS NOT NULL AND ${exchangePickupRequestsTable.seller_confirmed_at} IS NOT NULL)::int`,
+    unique_neighbors: sql`COUNT(DISTINCT CASE WHEN ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.buyer_confirmed_at} IS NOT NULL AND ${exchangePickupRequestsTable.seller_confirmed_at} IS NOT NULL THEN ${exchangePickupRequestsTable.buyer_id} END)::int`,
+    last_30_days: sql`COUNT(*) FILTER (WHERE ${exchangePickupRequestsTable.status} = 'completed' AND ${exchangePickupRequestsTable.buyer_confirmed_at} IS NOT NULL AND ${exchangePickupRequestsTable.seller_confirmed_at} IS NOT NULL AND ${exchangePickupRequestsTable.completed_at} >= NOW() - INTERVAL '30 days')::int`
   }).from(exchangePickupRequestsTable);
   const [live] = await db.select({
     active_offers: sql`COUNT(*) FILTER (WHERE ${exchangeListingsTable.listing_type} = 'offer')::int`,
@@ -182741,6 +184571,450 @@ router65.post("/community/exchange/listings/:id/report", requireAuth, requireApp
   });
 });
 var community_exchange_default = router65;
+
+// src/routes/community-exchange-spark-drafts.ts
+var import_express68 = __toESM(require_express2(), 1);
+init_drizzle_orm();
+init_src();
+init_auth();
+init_rate_limit();
+init_queue();
+
+// src/lib/community-exchange-spark-drafts.ts
+function exchangeSparkFeatureUnavailableCode(readiness) {
+  if (!readiness.v21Enabled) return "MEDIA_PLATFORM_DISABLED";
+  if (!readiness.cloudStorageReady) return "MEDIA_STORAGE_UNAVAILABLE";
+  if (!readiness.queueReady) return "MEDIA_PROCESSING_UNAVAILABLE";
+  return null;
+}
+function isPublishableExchangeSparkAsset(asset, ownerUserId, sparkId) {
+  return asset.owner_user_id === ownerUserId && asset.context_kind === "exchange_spark" && asset.context_id === sparkId && asset.media_type === "video" && asset.mime_type.startsWith("video/") && Number.isSafeInteger(asset.byte_size) && asset.byte_size > 0 && asset.status === "ready" && typeof asset.variant_key === "string" && asset.variant_key.length > 0 && asset.duration_ms !== null && Number.isSafeInteger(asset.duration_ms) && asset.duration_ms > 0 && asset.duration_ms <= 6e4 && asset.metadata.signature_validated === true;
+}
+function singlePublishableExchangeSparkAsset(assets, ownerUserId, sparkId) {
+  if (assets.length !== 1 || !isPublishableExchangeSparkAsset(assets[0], ownerUserId, sparkId)) return null;
+  return assets[0];
+}
+function safeExchangeSparkFailureCode(failureReason) {
+  if (!failureReason) return null;
+  return failureReason.match(/^MEDIA_[A-Z0-9_]+/)?.[0] ?? "MEDIA_PROCESSING_FAILED";
+}
+
+// src/routes/community-exchange-spark-drafts.ts
+init_zod();
+var router66 = (0, import_express68.Router)();
+function positiveId7(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+function cleanCaption(value) {
+  return typeof value === "string" ? value.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 1e3) : "";
+}
+function featureUnavailableCode() {
+  const storage = getStorageReadiness();
+  return exchangeSparkFeatureUnavailableCode({
+    v21Enabled: isMediaPlatformV21Enabled(),
+    cloudStorageReady: storage.cloud_configured && storage.credentials_present && storage.missing.length === 0,
+    queueReady: Boolean(mediaProcessingQueue)
+  });
+}
+var createDraftSchema = external_exports2.object({
+  caption: external_exports2.string().trim().max(1e3).optional().default("")
+});
+var publishSchema = external_exports2.object({
+  caption: external_exports2.string().trim().max(1e3).optional()
+});
+var updateDraftSchema = external_exports2.object({
+  caption: external_exports2.string().trim().max(1e3)
+});
+async function eligibleListing(listingId, userId) {
+  const [listing] = await db.select({
+    id: exchangeListingsTable.id,
+    seller_id: exchangeListingsTable.seller_id,
+    community_id: usersTable.community_id
+  }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(and(
+    eq(exchangeListingsTable.id, listingId),
+    eq(exchangeListingsTable.seller_id, userId),
+    eq(exchangeListingsTable.status, "active"),
+    eq(exchangeListingsTable.moderation_status, "approved"),
+    eq(usersTable.approval_status, "approved"),
+    eq(usersTable.is_suspended, false)
+  )).limit(1);
+  return listing ?? null;
+}
+function featureUnavailableResponse(res, code) {
+  return res.status(503).json({
+    error: code === "MEDIA_PLATFORM_DISABLED" ? "Direct-binary Exchange Spark publishing is not enabled in this environment." : code === "MEDIA_STORAGE_UNAVAILABLE" ? "Cloud storage is not ready for Exchange Spark publishing." : "Media processing is not available for Exchange Spark publishing.",
+    error_code: code
+  });
+}
+router66.post(
+  "/community/exchange/listings/:listingId/sparks/drafts",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const code = featureUnavailableCode();
+    if (code) return featureUnavailableResponse(res, code);
+    const listingId = positiveId7(req.params.listingId);
+    if (!listingId) return res.status(400).json({ error: "Invalid Exchange listing id." });
+    const parsed = createDraftSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Spark draft data is invalid." });
+    const userId = req.authenticatedUserId;
+    const listing = await eligibleListing(listingId, userId);
+    if (!listing) return res.status(404).json({ error: "An active, approved Exchange listing you own is required." });
+    const [spark] = await db.insert(exchangeSparksTable).values({
+      listing_id: listing.id,
+      author_user_id: userId,
+      community_id: listing.community_id,
+      caption: cleanCaption(parsed.data.caption) || null,
+      status: "draft"
+    }).returning({ id: exchangeSparksTable.id });
+    if (!spark) return res.status(500).json({ error: "Spark draft could not be created." });
+    return res.status(201).json({
+      spark_id: spark.id,
+      status: "draft",
+      upload_context: { contextKind: "exchange_spark", contextId: spark.id }
+    });
+  }
+);
+router66.get(
+  "/community/exchange/sparks/drafts",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const now = /* @__PURE__ */ new Date();
+    const sparks = await db.select({
+      id: exchangeSparksTable.id,
+      listing_id: exchangeSparksTable.listing_id,
+      status: exchangeSparksTable.status,
+      caption: exchangeSparksTable.caption,
+      draft_expires_at: exchangeSparksTable.draft_expires_at,
+      created_at: exchangeSparksTable.created_at
+    }).from(exchangeSparksTable).where(and(
+      eq(exchangeSparksTable.author_user_id, req.authenticatedUserId),
+      eq(exchangeSparksTable.status, "draft")
+    ));
+    const activeDrafts = sparks.filter((spark) => spark.draft_expires_at > now);
+    const drafts = await Promise.all(activeDrafts.map(async (spark) => {
+      const assets = await db.select({
+        id: mediaAssetsTable.id,
+        media_type: mediaAssetsTable.media_type,
+        mime_type: mediaAssetsTable.mime_type,
+        byte_size: mediaAssetsTable.byte_size,
+        status: mediaAssetsTable.status,
+        duration_ms: mediaAssetsTable.duration_ms,
+        variant_key: mediaAssetsTable.variant_key,
+        failure_reason: mediaAssetsTable.failure_reason
+      }).from(mediaAssetsTable).where(and(
+        eq(mediaAssetsTable.context_kind, "exchange_spark"),
+        eq(mediaAssetsTable.context_id, spark.id),
+        eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId)
+      ));
+      return {
+        spark_id: spark.id,
+        listing_id: spark.listing_id,
+        status: spark.status,
+        caption: spark.caption,
+        created_at: spark.created_at.toISOString(),
+        expires_at: spark.draft_expires_at.toISOString(),
+        durable: true,
+        media_assets: assets.map((asset) => ({
+          media_asset_id: asset.id,
+          media_type: asset.media_type,
+          mime_type: asset.mime_type,
+          byte_size: asset.byte_size,
+          status: asset.status,
+          duration_ms: asset.duration_ms,
+          variant_ready: asset.status === "ready" && Boolean(asset.variant_key),
+          error_code: asset.status === "failed" ? safeExchangeSparkFailureCode(asset.failure_reason) : null
+        }))
+      };
+    }));
+    drafts.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    return res.json({ drafts });
+  }
+);
+router66.patch(
+  "/community/exchange/sparks/drafts/:sparkId",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const sparkId = positiveId7(req.params.sparkId);
+    if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
+    const parsed = updateDraftSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Spark draft data is invalid." });
+    const [spark] = await db.update(exchangeSparksTable).set({ caption: cleanCaption(parsed.data.caption) || null, updated_at: /* @__PURE__ */ new Date() }).where(and(
+      eq(exchangeSparksTable.id, sparkId),
+      eq(exchangeSparksTable.author_user_id, req.authenticatedUserId),
+      eq(exchangeSparksTable.status, "draft"),
+      gt(exchangeSparksTable.draft_expires_at, /* @__PURE__ */ new Date())
+    )).returning({ id: exchangeSparksTable.id, caption: exchangeSparksTable.caption });
+    if (!spark) return res.status(404).json({ error: "Spark draft not found." });
+    return res.json({ spark_id: spark.id, caption: spark.caption });
+  }
+);
+router66.get(
+  "/community/exchange/sparks/drafts/:sparkId",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const code = featureUnavailableCode();
+    if (code) return featureUnavailableResponse(res, code);
+    const sparkId = positiveId7(req.params.sparkId);
+    if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
+    const userId = req.authenticatedUserId;
+    const [spark] = await db.select({
+      id: exchangeSparksTable.id,
+      listing_id: exchangeSparksTable.listing_id,
+      status: exchangeSparksTable.status,
+      caption: exchangeSparksTable.caption,
+      draft_expires_at: exchangeSparksTable.draft_expires_at,
+      created_at: exchangeSparksTable.created_at
+    }).from(exchangeSparksTable).where(and(
+      eq(exchangeSparksTable.id, sparkId),
+      eq(exchangeSparksTable.author_user_id, userId)
+    )).limit(1);
+    if (!spark || spark.status !== "draft" || spark.draft_expires_at <= /* @__PURE__ */ new Date()) {
+      return res.status(404).json({ error: "Spark draft not found." });
+    }
+    const assets = await db.select({
+      id: mediaAssetsTable.id,
+      media_type: mediaAssetsTable.media_type,
+      mime_type: mediaAssetsTable.mime_type,
+      byte_size: mediaAssetsTable.byte_size,
+      status: mediaAssetsTable.status,
+      duration_ms: mediaAssetsTable.duration_ms,
+      variant_key: mediaAssetsTable.variant_key,
+      failure_reason: mediaAssetsTable.failure_reason
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.context_kind, "exchange_spark"),
+      eq(mediaAssetsTable.context_id, sparkId),
+      eq(mediaAssetsTable.owner_user_id, userId)
+    ));
+    return res.json({
+      spark_id: sparkId,
+      listing_id: spark.listing_id,
+      status: spark.status,
+      caption: spark.caption,
+      created_at: spark.created_at.toISOString(),
+      expires_at: spark.draft_expires_at.toISOString(),
+      durable: true,
+      media_assets: assets.map((asset) => ({
+        media_asset_id: asset.id,
+        media_type: asset.media_type,
+        mime_type: asset.mime_type,
+        byte_size: asset.byte_size,
+        status: asset.status,
+        duration_ms: asset.duration_ms,
+        variant_ready: asset.status === "ready" && Boolean(asset.variant_key),
+        error_code: asset.status === "failed" ? safeExchangeSparkFailureCode(asset.failure_reason) : null
+      }))
+    });
+  }
+);
+router66.post(
+  "/community/exchange/sparks/drafts/:sparkId/publish",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const code = featureUnavailableCode();
+    if (code) return featureUnavailableResponse(res, code);
+    const sparkId = positiveId7(req.params.sparkId);
+    if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
+    const parsed = publishSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "Spark publication data is invalid." });
+    const userId = req.authenticatedUserId;
+    const result = await db.transaction(async (tx) => {
+      const [sparkReference] = await tx.select({
+        id: exchangeSparksTable.id,
+        listing_id: exchangeSparksTable.listing_id
+      }).from(exchangeSparksTable).where(and(
+        eq(exchangeSparksTable.id, sparkId),
+        eq(exchangeSparksTable.author_user_id, userId)
+      )).limit(1);
+      if (!sparkReference) return { kind: "not-found" };
+      const [listing] = await tx.select({
+        id: exchangeListingsTable.id,
+        seller_id: exchangeListingsTable.seller_id,
+        community_id: usersTable.community_id
+      }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(and(
+        eq(exchangeListingsTable.id, sparkReference.listing_id),
+        eq(exchangeListingsTable.seller_id, userId),
+        eq(exchangeListingsTable.status, "active"),
+        eq(exchangeListingsTable.moderation_status, "approved"),
+        eq(usersTable.approval_status, "approved"),
+        eq(usersTable.is_suspended, false)
+      )).limit(1).for("update");
+      if (!listing) return { kind: "conflict", error: "The linked Exchange listing is no longer eligible." };
+      const [spark] = await tx.select({
+        id: exchangeSparksTable.id,
+        author_user_id: exchangeSparksTable.author_user_id,
+        community_id: exchangeSparksTable.community_id,
+        listing_id: exchangeSparksTable.listing_id,
+        status: exchangeSparksTable.status,
+        caption: exchangeSparksTable.caption,
+        draft_expires_at: exchangeSparksTable.draft_expires_at
+      }).from(exchangeSparksTable).where(and(
+        eq(exchangeSparksTable.id, sparkId),
+        eq(exchangeSparksTable.author_user_id, userId),
+        eq(exchangeSparksTable.listing_id, sparkReference.listing_id)
+      )).limit(1).for("update");
+      if (!spark || spark.status === "deletion_pending") return { kind: "not-found" };
+      if (spark.status === "draft" && spark.draft_expires_at <= /* @__PURE__ */ new Date()) {
+        return { kind: "conflict", error: "Spark draft has expired." };
+      }
+      const assets = await tx.select().from(mediaAssetsTable).where(and(
+        eq(mediaAssetsTable.context_kind, "exchange_spark"),
+        eq(mediaAssetsTable.context_id, sparkId)
+      )).for("update");
+      const asset = singlePublishableExchangeSparkAsset(assets, userId, sparkId);
+      if (!asset) {
+        return { kind: "conflict", error: "Exactly one ready, validated video asset under 60 seconds is required." };
+      }
+      const caption = cleanCaption(parsed.data.caption ?? spark.caption) || null;
+      const moderation = moderatePostText(caption ?? "");
+      if (spark.status !== "draft") {
+        if (spark.status === "published" || spark.status === "pending") {
+          return { kind: "published", status: spark.status, mediaAssetId: asset.id };
+        }
+        return { kind: "conflict", error: "Spark draft cannot be published in its current state." };
+      }
+      await tx.update(exchangeSparksTable).set({
+        caption,
+        community_id: listing.community_id,
+        status: moderation.status === "approved" ? "published" : "pending",
+        updated_at: /* @__PURE__ */ new Date()
+      }).where(eq(exchangeSparksTable.id, sparkId));
+      return {
+        kind: "published",
+        status: moderation.status === "approved" ? "published" : "pending",
+        mediaAssetId: asset.id
+      };
+    });
+    if (result.kind === "not-found") return res.status(404).json({ error: "Spark draft not found." });
+    if (result.kind === "conflict") return res.status(409).json({ error: result.error });
+    return res.status(201).json({
+      spark_id: sparkId,
+      status: result.status,
+      media_asset_id: result.mediaAssetId
+    });
+  }
+);
+router66.delete(
+  "/community/exchange/sparks/:sparkId",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const sparkId = positiveId7(req.params.sparkId);
+    if (!sparkId) return res.status(404).json({ error: "Spark not found." });
+    const [spark] = await db.update(exchangeSparksTable).set({ status: "deletion_pending", updated_at: /* @__PURE__ */ new Date() }).where(and(
+      eq(exchangeSparksTable.id, sparkId),
+      eq(exchangeSparksTable.author_user_id, req.authenticatedUserId)
+    )).returning({ id: exchangeSparksTable.id });
+    if (!spark) return res.status(404).json({ error: "Spark not found." });
+    return res.status(202).json({ spark_id: sparkId, status: "deletion_pending" });
+  }
+);
+var community_exchange_spark_drafts_default = router66;
+
+// src/routes/admin-exchange-sparks.ts
+var import_express69 = __toESM(require_express2(), 1);
+init_drizzle_orm();
+init_src();
+init_zod();
+init_auth();
+init_authz();
+init_rate_limit();
+var router67 = (0, import_express69.Router)();
+var decisionBody = external_exports2.object({
+  decision: external_exports2.enum(["approve", "reject"]),
+  reason: external_exports2.string().trim().min(3).max(500).optional()
+}).superRefine((value, context) => {
+  if (value.decision === "reject" && !value.reason) {
+    context.addIssue({
+      code: external_exports2.ZodIssueCode.custom,
+      path: ["reason"],
+      message: "A reason is required when rejecting a Spark."
+    });
+  }
+});
+function positiveId8(value) {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+router67.get("/admin/exchange/sparks/held", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const held = await db.select({
+    id: exchangeSparksTable.id,
+    listing_id: exchangeSparksTable.listing_id,
+    caption: exchangeSparksTable.caption,
+    status: exchangeSparksTable.status,
+    moderation_reason: exchangeSparksTable.moderation_reason,
+    created_at: exchangeSparksTable.created_at,
+    author_user_id: exchangeSparksTable.author_user_id,
+    author_name: usersTable.name,
+    listing_title: exchangeListingsTable.title
+  }).from(exchangeSparksTable).innerJoin(usersTable, eq(usersTable.id, exchangeSparksTable.author_user_id)).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangeSparksTable.listing_id)).where(eq(exchangeSparksTable.status, "pending")).orderBy(desc(exchangeSparksTable.created_at), desc(exchangeSparksTable.id)).limit(100);
+  return res.json({
+    sparks: held.map((spark) => ({
+      ...spark,
+      created_at: spark.created_at.toISOString(),
+      moderation_reason: spark.moderation_reason ?? moderatePostText(spark.caption ?? "").reason
+    }))
+  });
+});
+router67.post("/admin/exchange/sparks/:id/resolve", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const sparkId = positiveId8(req.params.id);
+  if (!sparkId) return res.status(400).json({ error: "Invalid Spark id." });
+  const parsed = decisionBody.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid moderation decision.", details: parsed.error.issues });
+  }
+  const moderatorId = req.authenticatedUserId;
+  const decision = parsed.data.decision;
+  const reason = parsed.data.reason ?? null;
+  const nextStatus = decision === "approve" ? "published" : "rejected";
+  const result = await db.transaction(async (tx) => {
+    const [spark] = await tx.select({
+      id: exchangeSparksTable.id,
+      status: exchangeSparksTable.status
+    }).from(exchangeSparksTable).where(eq(exchangeSparksTable.id, sparkId)).for("update").limit(1);
+    if (!spark) return { kind: "not-found" };
+    if (spark.status !== "pending") return { kind: "already-resolved" };
+    const now = /* @__PURE__ */ new Date();
+    const [updated] = await tx.update(exchangeSparksTable).set({
+      status: nextStatus,
+      moderation_reason: decision === "reject" ? reason : null,
+      moderation_reviewed_by: moderatorId,
+      moderation_reviewed_at: now,
+      updated_at: now
+    }).where(and(
+      eq(exchangeSparksTable.id, sparkId),
+      eq(exchangeSparksTable.status, "pending")
+    )).returning({ id: exchangeSparksTable.id, status: exchangeSparksTable.status });
+    if (!updated) return { kind: "already-resolved" };
+    await tx.insert(exchangeSparkModerationHistoryTable).values({
+      spark_id: sparkId,
+      moderator_id: moderatorId,
+      action: decision,
+      previous_status: spark.status,
+      next_status: updated.status,
+      reason
+    });
+    return { kind: "resolved", spark: updated };
+  });
+  if (result.kind === "not-found") return res.status(404).json({ error: "Exchange Spark not found." });
+  if (result.kind === "already-resolved") {
+    return res.status(409).json({ error: "This Spark is no longer awaiting moderation." });
+  }
+  return res.json({ ok: true, spark_id: sparkId, decision, status: result.spark.status });
+});
+var admin_exchange_sparks_default = router67;
 
 // src/middlewares/stamp-location-updated-at.ts
 init_src();
@@ -182846,79 +185120,81 @@ function messageActivityAudit(req, res, next) {
 }
 
 // src/routes/index.ts
-var router66 = (0, import_express68.Router)();
-router66.use((req, _res, next) => {
+var router68 = (0, import_express70.Router)();
+router68.use((req, _res, next) => {
   req.url = req.url.replace(/^\/audio-spiral-sessions(?=\/|$)/, "/audio-circle-sessions").replace(/^\/audio-spirals(?=\/|$)/, "/audio-circles");
   next();
 });
-router66.use(health_default);
-router66.use(verification_default);
-router66.use(stampLocationUpdatedAt);
-router66.use(messageActivityAudit);
-router66.use(users_default);
-router66.use(requests_default);
-router66.use(helpers_default);
-router66.use(navigation_default);
-router66.use(push_default);
-router66.use(stripe_default);
-router66.use(leaderboard_default);
-router66.use(gratitude_default);
-router66.use(community_hub_feed_default);
-router66.use(reports_default);
-router66.use(civic_default);
-router66.use(admin_analytics_default);
-router66.use(admin_communities_default);
-router66.use(communities_default);
-router66.use(crisis_default);
-router66.use(recurring_default);
-router66.use(community_neighborhoods_default);
-router66.use(region_crisis_resources_default);
-router66.use(nia_context_default);
-router66.use(nia_voice_default);
-router66.use(nia_proxy_default);
-router66.use(pool_default);
-router66.use(pool_stripe_reconciliation_default);
-router66.use(admin_pool_settlements_default);
-router66.use(businesses_default);
-router66.use(gov_sponsors_default);
-router66.use(background_checks_default);
-router66.use(wallet_default);
-router66.use(google_auth_default);
-router66.use("/checkin", checkin_default);
-router66.use(disputes_default);
-router66.use(impact_default);
-router66.use(griot_default);
-router66.use(global_village_pulse_default);
-router66.use(diaspora_live_presence_default);
-router66.use(audio_circles_default);
-router66.use(circle_location_default);
-router66.use(circle_recordings_default);
-router66.use(circle_heartbeat_default);
-router66.use(circle_media_token_default);
-router66.use(circle_livekit_health_default);
-router66.use(webrtc_ice_default);
-router66.use(coverage_interest_default);
-router66.use(family_default);
-router66.use(family_consent_default);
-router66.use(dna_matching_default);
-router66.use(diaspora_research_default);
-router66.use(diaspora_connections_default);
-router66.use(diaspora_completion_default);
-router66.use(diaspora_default);
-router66.use(diaspora_hub_memberships_default);
-router66.use(diaspora_hub_messages_default);
-router66.use(messages_context_default);
-router66.use(messages_social_default);
-router66.use(community_stories_default);
-router66.use(community_story_interactions_default);
-router66.use(messages_unread_summary_default);
-router66.use(message_media_default);
-router66.use(direct_call_default);
-router66.use(direct_messages_default);
-router66.use(realtime_events_default);
-router66.use(media_assets_v21_default);
-router66.use(community_exchange_default);
-var routes_default = router66;
+router68.use(health_default);
+router68.use(verification_default);
+router68.use(stampLocationUpdatedAt);
+router68.use(messageActivityAudit);
+router68.use(users_default);
+router68.use(requests_default);
+router68.use(helpers_default);
+router68.use(navigation_default);
+router68.use(push_default);
+router68.use(stripe_default);
+router68.use(leaderboard_default);
+router68.use(gratitude_default);
+router68.use(community_hub_feed_default);
+router68.use(reports_default);
+router68.use(civic_default);
+router68.use(admin_analytics_default);
+router68.use(admin_communities_default);
+router68.use(communities_default);
+router68.use(crisis_default);
+router68.use(recurring_default);
+router68.use(community_neighborhoods_default);
+router68.use(region_crisis_resources_default);
+router68.use(nia_context_default);
+router68.use(nia_voice_default);
+router68.use(nia_proxy_default);
+router68.use(pool_default);
+router68.use(pool_stripe_reconciliation_default);
+router68.use(admin_pool_settlements_default);
+router68.use(businesses_default);
+router68.use(gov_sponsors_default);
+router68.use(background_checks_default);
+router68.use(wallet_default);
+router68.use(google_auth_default);
+router68.use("/checkin", checkin_default);
+router68.use(disputes_default);
+router68.use(impact_default);
+router68.use(griot_default);
+router68.use(global_village_pulse_default);
+router68.use(diaspora_live_presence_default);
+router68.use(audio_circles_default);
+router68.use(circle_location_default);
+router68.use(circle_recordings_default);
+router68.use(circle_heartbeat_default);
+router68.use(circle_media_token_default);
+router68.use(circle_livekit_health_default);
+router68.use(webrtc_ice_default);
+router68.use(coverage_interest_default);
+router68.use(family_default);
+router68.use(family_consent_default);
+router68.use(dna_matching_default);
+router68.use(diaspora_research_default);
+router68.use(diaspora_connections_default);
+router68.use(diaspora_completion_default);
+router68.use(diaspora_default);
+router68.use(diaspora_hub_memberships_default);
+router68.use(diaspora_hub_messages_default);
+router68.use(messages_context_default);
+router68.use(messages_social_default);
+router68.use(community_stories_default);
+router68.use(community_story_interactions_default);
+router68.use(messages_unread_summary_default);
+router68.use(message_media_default);
+router68.use(direct_call_default);
+router68.use(direct_messages_default);
+router68.use(realtime_events_default);
+router68.use(media_assets_v21_default);
+router68.use(community_exchange_default);
+router68.use(community_exchange_spark_drafts_default);
+router68.use(admin_exchange_sparks_default);
+var routes_default = router68;
 
 // src/app.ts
 init_logger2();
@@ -183552,7 +185828,7 @@ var helmet = Object.assign(
 );
 
 // src/app.ts
-var app = (0, import_express69.default)();
+var app = (0, import_express71.default)();
 app.set("trust proxy", 1);
 app.use((0, import_compression.default)({ threshold: 1024 }));
 app.use(
@@ -183654,33 +185930,38 @@ app.use((0, import_pino_http.default)({ logger }));
 app.use(requestTimeout(3e4));
 app.use(parseAuth);
 app.use(apiTrafficLimiter);
-app.use("/api/stripe/webhook", import_express69.default.raw({ type: "application/json", limit: "1mb" }));
-app.use("/api/verification/identity/webhook", import_express69.default.raw({ type: "application/json", limit: "1mb" }));
-app.use("/api/background-checks/webhook", import_express69.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/stripe/webhook", import_express71.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/verification/identity/webhook", import_express71.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/background-checks/webhook", import_express71.default.raw({ type: "application/json", limit: "1mb" }));
 app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
-app.use("/api/audio-circle-sessions/:id/recording-upload", import_express69.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
-app.use("/api/audio-spiral-sessions/:id/recording-upload", import_express69.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+app.use("/api/audio-circle-sessions/:id/recording-upload", import_express71.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+app.use("/api/audio-spiral-sessions/:id/recording-upload", import_express71.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
 app.use(
   "/api/audio-circle-sessions/:sessionId/recording/:recordingId/finalize",
-  import_express69.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
+  import_express71.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
 );
 app.use(
   "/api/audio-spiral-sessions/:sessionId/recording/:recordingId/finalize",
-  import_express69.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
+  import_express71.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
 );
 app.use(
   "/api/media-assets/:id/upload",
-  import_express69.default.raw({ type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"], limit: "500mb" })
+  requireAuth,
+  requireApproved,
+  import_express71.default.raw({
+    type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"],
+    limit: `${MAX_MEDIA_BYTES}b`
+  })
 );
 app.use(
   "/api/diaspora/dna/import",
-  import_express69.default.raw({
+  import_express71.default.raw({
     type: ["text/csv", "text/plain", "application/json", "application/octet-stream"],
     limit: "30mb"
   })
 );
-app.use(import_express69.default.json({ limit: "40mb" }));
-app.use(import_express69.default.urlencoded({ extended: true, limit: "1mb" }));
+app.use(import_express71.default.json({ limit: "40mb" }));
+app.use(import_express71.default.urlencoded({ extended: true, limit: "1mb" }));
 app.use((_req, res, next) => {
   const id3 = _req.id;
   if (id3 != null) res.setHeader("X-Request-ID", String(id3));
@@ -183689,7 +185970,7 @@ app.use((_req, res, next) => {
 var uploadsDir = process.env.UPLOADS_DIR || (process.env.NODE_ENV === "production" ? "/data/uploads" : "uploads");
 app.use(
   "/uploads",
-  import_express69.default.static(uploadsDir, {
+  import_express71.default.static(uploadsDir, {
     maxAge: "7d",
     etag: true,
     lastModified: true,
@@ -183704,7 +185985,7 @@ var frontendDist = process.env.FRONTEND_DIST || path2.join(import.meta.dirname, 
 var shouldServeFrontend = process.env.NODE_ENV === "production" || process.env.SERVE_FRONTEND === "true";
 if (shouldServeFrontend) {
   app.use(
-    import_express69.default.static(frontendDist, {
+    import_express71.default.static(frontendDist, {
       maxAge: "1y",
       etag: true,
       lastModified: true,
@@ -183786,6 +186067,7 @@ init_storage();
 init_ws_hub();
 var SIX_HOURS_MS = 6 * 60 * 60 * 1e3;
 var STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1e3;
+var STORY_ORPHAN_MEDIA_RETENTION_MS = 24 * 60 * 60 * 1e3;
 var ACCOUNT_PURGE_INTERVAL_MS = 60 * 60 * 1e3;
 var EXCHANGE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1e3;
 var EXCHANGE_STALE_DAYS = 30;
@@ -183853,6 +186135,99 @@ async function archiveStaleExchangeListings(now = /* @__PURE__ */ new Date()) {
     title: exchangeListingsTable.title
   });
   return archived;
+}
+async function expireAbandonedExchangePickups(now = /* @__PURE__ */ new Date(), pickupRequestId) {
+  return db.transaction(async (tx) => {
+    const due = await tx.select({
+      id: exchangePickupRequestsTable.id,
+      listing_id: exchangePickupRequestsTable.listing_id,
+      buyer_id: exchangePickupRequestsTable.buyer_id
+    }).from(exchangePickupRequestsTable).where(and(
+      eq(exchangePickupRequestsTable.status, "accepted"),
+      lte(exchangePickupRequestsTable.coordination_expires_at, now),
+      pickupRequestId === void 0 ? void 0 : eq(exchangePickupRequestsTable.id, pickupRequestId)
+    )).orderBy(exchangePickupRequestsTable.coordination_expires_at, exchangePickupRequestsTable.id).limit(100).for("update", { skipLocked: true });
+    const expired = [];
+    for (const pickup of due) {
+      const [listing] = await tx.select({
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status
+      }).from(exchangeListingsTable).where(eq(exchangeListingsTable.id, pickup.listing_id)).for("update").limit(1);
+      if (!listing || listing.status !== "reserved") {
+        throw new Error(`EXCHANGE_EXPIRY_LISTING_STATE_CONFLICT:${pickup.listing_id}`);
+      }
+      const listingAvailableAgain = listing.moderation_status === "approved";
+      const [updated] = await tx.update(exchangePickupRequestsTable).set({ status: "expired", expired_at: now, updated_at: now }).where(and(eq(exchangePickupRequestsTable.id, pickup.id), eq(exchangePickupRequestsTable.status, "accepted"))).returning({ id: exchangePickupRequestsTable.id });
+      if (!updated) throw new Error(`EXCHANGE_EXPIRY_PICKUP_STATE_CONFLICT:${pickup.id}`);
+      const [updatedListing] = await tx.update(exchangeListingsTable).set(listingAvailableAgain ? { status: "active", archived_at: null, archive_reason: null, updated_at: now } : {
+        status: "archived",
+        archived_at: now,
+        archive_reason: "coordination_expired_while_listing_unapproved",
+        updated_at: now
+      }).where(and(
+        eq(exchangeListingsTable.id, pickup.listing_id),
+        eq(exchangeListingsTable.status, "reserved"),
+        eq(exchangeListingsTable.moderation_status, listing.moderation_status)
+      )).returning({ id: exchangeListingsTable.id });
+      if (!updatedListing) throw new Error(`EXCHANGE_EXPIRY_LISTING_STATE_CONFLICT:${pickup.listing_id}`);
+      expired.push(pickup);
+    }
+    return expired;
+  });
+}
+async function notifyExpiredExchangePickups() {
+  const pending = await db.select({
+    id: exchangePickupRequestsTable.id,
+    listing_id: exchangePickupRequestsTable.listing_id,
+    buyer_id: exchangePickupRequestsTable.buyer_id,
+    seller_id: exchangeListingsTable.seller_id,
+    title: exchangeListingsTable.title,
+    listing_status: exchangeListingsTable.status,
+    moderation_status: exchangeListingsTable.moderation_status
+  }).from(exchangePickupRequestsTable).innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id)).where(and(
+    eq(exchangePickupRequestsTable.status, "expired"),
+    isNull(exchangePickupRequestsTable.expiry_notified_at)
+  )).orderBy(exchangePickupRequestsTable.id).limit(100);
+  const results = await Promise.allSettled(pending.map(async (pickup) => {
+    const availableAgain = pickup.listing_status === "active" && pickup.moderation_status === "approved";
+    const body = availableAgain ? `The 48-hour coordination window for \u201C${pickup.title}\u201D expired without both participants closing the loop. The approved listing is available again.` : `The 48-hour coordination window for \u201C${pickup.title}\u201D expired without both participants closing the loop. The listing remains archived and hidden; its owner can renew it after safety approval.`;
+    const metadata = {
+      exchange_listing_id: pickup.listing_id,
+      exchange_pickup_request_id: pickup.id,
+      action: "coordination_expired"
+    };
+    await Promise.all([
+      createMessageNotification({
+        userId: pickup.buyer_id,
+        type: "exchange",
+        title: "Exchange coordination expired",
+        body,
+        actionUrl: "/community?section=exchange",
+        metadata
+      }),
+      createMessageNotification({
+        userId: pickup.seller_id,
+        type: "exchange",
+        title: "Exchange coordination expired",
+        body,
+        actionUrl: "/community?section=exchange&mine=true",
+        metadata
+      })
+    ]);
+    await db.update(exchangePickupRequestsTable).set({ expiry_notified_at: /* @__PURE__ */ new Date() }).where(and(
+      eq(exchangePickupRequestsTable.id, pickup.id),
+      eq(exchangePickupRequestsTable.status, "expired"),
+      isNull(exchangePickupRequestsTable.expiry_notified_at)
+    ));
+    await Promise.allSettled([
+      sendPushToUser(pickup.buyer_id, { title: "Exchange coordination expired", body, notifType: "task_accepted" }),
+      sendPushToUser(pickup.seller_id, { title: "Exchange coordination expired", body, notifType: "task_accepted" })
+    ]);
+  }));
+  for (const result of results) {
+    if (result.status === "rejected") logger.warn({ err: result.reason }, "exchange-maintenance: expiry notification will retry");
+  }
+  return results.filter((result) => result.status === "fulfilled").length;
 }
 function haversineMiles2(lat1, lng1, lat2, lng2) {
   const radius = 3958.8;
@@ -184058,6 +186433,11 @@ async function processExchangeDigest(now = /* @__PURE__ */ new Date()) {
 }
 async function processExchangeMaintenance() {
   try {
+    const expiredPickups = await expireAbandonedExchangePickups();
+    const notifiedCount = await notifyExpiredExchangePickups();
+    if (expiredPickups.length > 0 || notifiedCount > 0) {
+      logger.info({ count: expiredPickups.length, notified: notifiedCount }, "exchange-maintenance: abandoned accepted pickups expired");
+    }
     const archivedListings = await archiveStaleExchangeListings();
     await processExchangeDigest();
     if (archivedListings.length > 0) {
@@ -184098,12 +186478,175 @@ async function processCommunityStoryCleanup() {
     thumbnail_key: communityStoryMediaTable.thumbnail_storage_key
   }).from(communityStoriesTable).leftJoin(communityStoryMediaTable, eq(communityStoryMediaTable.story_id, communityStoriesTable.id)).where(lte(communityStoriesTable.expires_at, /* @__PURE__ */ new Date()));
   const ids = [...new Set(expired.map((row) => row.id))];
-  if (!ids.length) return;
-  await db.delete(communityStoriesTable).where(inArray(communityStoriesTable.id, ids));
-  await Promise.all(expired.flatMap((row) => [row.media_key, row.thumbnail_key].filter((key) => Boolean(key)).map((key) => deleteAsset(key).catch(() => {
-  }))));
-  broadcast({ type: "community_story_expired", payload: { story_ids: ids } });
-  logger.info({ count: ids.length }, "community-story cleanup: expired stories and assets removed");
+  const deletedIds = [];
+  let cleanupFailed = false;
+  const tombstones = await db.select({
+    id: mediaAssetsTable.id,
+    original_key: mediaAssetsTable.original_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key
+  }).from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.status, "deleted"),
+    sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`
+  ));
+  for (const asset of tombstones) {
+    try {
+      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key) => Boolean(key)))];
+      for (const key of keys) await deleteAssetStrict(key);
+      await db.update(mediaAssetsTable).set({
+        metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+        updated_at: /* @__PURE__ */ new Date()
+      }).where(and(eq(mediaAssetsTable.id, asset.id), eq(mediaAssetsTable.status, "deleted")));
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, mediaAssetId: asset.id }, "media cleanup: deleted object cleanup will retry");
+    }
+  }
+  for (const id3 of ids) {
+    await db.update(communityStoriesTable).set({ status: "deletion_pending" }).where(eq(communityStoriesTable.id, id3));
+    const universalAssets = await db.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.context_kind, "story"),
+      eq(mediaAssetsTable.context_id, id3)
+    ));
+    const assetIds = universalAssets.map((asset) => asset.id);
+    if (assetIds.length) {
+      await db.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        updated_at: /* @__PURE__ */ new Date()
+      }).where(and(
+        inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+        inArray(mediaProcessingJobsTable.status, ["queued", "failed"])
+      ));
+      const [processingJob] = await db.select({ id: mediaProcessingJobsTable.id }).from(mediaProcessingJobsTable).where(and(
+        inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+        eq(mediaProcessingJobsTable.status, "processing")
+      )).limit(1);
+      if (processingJob) {
+        cleanupFailed = true;
+        continue;
+      }
+      await db.update(mediaAssetsTable).set({
+        status: "deletion_pending",
+        updated_at: /* @__PURE__ */ new Date()
+      }).where(inArray(mediaAssetsTable.id, assetIds));
+    }
+    const legacyKeys = expired.filter((row) => row.id === id3).flatMap((row) => [row.media_key, row.thumbnail_key]);
+    const keys = [...new Set([
+      ...legacyKeys,
+      ...universalAssets.flatMap((asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key])
+    ].filter((key) => Boolean(key)))];
+    try {
+      for (const key of keys) await deleteAssetStrict(key);
+      await db.delete(communityStoriesTable).where(eq(communityStoriesTable.id, id3));
+      deletedIds.push(id3);
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, storyId: id3 }, "community-story cleanup: storage/database cleanup will retry");
+    }
+  }
+  const orphanedAssets = await db.select({
+    id: mediaAssetsTable.id,
+    original_key: mediaAssetsTable.original_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key
+  }).from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.context_kind, "story"),
+    sql`NOT EXISTS (SELECT 1 FROM community_stories WHERE community_stories.id = ${mediaAssetsTable.context_id})`,
+    lte(mediaAssetsTable.updated_at, new Date(Date.now() - STORY_ORPHAN_MEDIA_RETENTION_MS))
+  ));
+  for (const asset of orphanedAssets) {
+    try {
+      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key) => Boolean(key)))];
+      for (const key of keys) await deleteAssetStrict(key);
+      await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, mediaAssetId: asset.id }, "community-story cleanup: orphan media cleanup will retry");
+    }
+  }
+  await db.update(exchangeSparksTable).set({
+    status: "deletion_pending",
+    updated_at: /* @__PURE__ */ new Date()
+  }).where(and(
+    eq(exchangeSparksTable.status, "draft"),
+    lte(exchangeSparksTable.draft_expires_at, /* @__PURE__ */ new Date())
+  ));
+  const deletingSparks = await db.select({
+    id: exchangeSparksTable.id
+  }).from(exchangeSparksTable).where(eq(exchangeSparksTable.status, "deletion_pending"));
+  for (const spark of deletingSparks) {
+    const assets = await db.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.context_kind, "exchange_spark"),
+      eq(mediaAssetsTable.context_id, spark.id)
+    ));
+    const assetIds = assets.map((asset) => asset.id);
+    if (assetIds.length) {
+      await db.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        updated_at: /* @__PURE__ */ new Date()
+      }).where(and(
+        inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+        inArray(mediaProcessingJobsTable.status, ["queued", "failed"])
+      ));
+      const [processingJob] = await db.select({ id: mediaProcessingJobsTable.id }).from(mediaProcessingJobsTable).where(and(
+        inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+        eq(mediaProcessingJobsTable.status, "processing")
+      )).limit(1);
+      if (processingJob) {
+        cleanupFailed = true;
+        continue;
+      }
+      await db.update(mediaAssetsTable).set({
+        status: "deletion_pending",
+        updated_at: /* @__PURE__ */ new Date()
+      }).where(inArray(mediaAssetsTable.id, assetIds));
+    }
+    const keys = [...new Set(
+      assets.flatMap((asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key]).filter((key) => Boolean(key))
+    )];
+    try {
+      for (const key of keys) await deleteAssetStrict(key);
+      await db.delete(exchangeSparksTable).where(eq(exchangeSparksTable.id, spark.id));
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, sparkId: spark.id }, "Exchange Spark cleanup: storage/database cleanup will retry");
+    }
+  }
+  const orphanedSparkAssets = await db.select({
+    id: mediaAssetsTable.id,
+    original_key: mediaAssetsTable.original_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key
+  }).from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.context_kind, "exchange_spark"),
+    sql`NOT EXISTS (SELECT 1 FROM exchange_sparks WHERE exchange_sparks.id = ${mediaAssetsTable.context_id})`,
+    lte(mediaAssetsTable.updated_at, new Date(Date.now() - STORY_ORPHAN_MEDIA_RETENTION_MS))
+  ));
+  for (const asset of orphanedSparkAssets) {
+    try {
+      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key) => Boolean(key)))];
+      for (const key of keys) await deleteAssetStrict(key);
+      await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, mediaAssetId: asset.id }, "Exchange Spark cleanup: orphan media cleanup will retry");
+    }
+  }
+  if (deletedIds.length) {
+    broadcast({ type: "community_story_expired", payload: { story_ids: deletedIds } });
+    logger.info({ count: deletedIds.length }, "community-story cleanup: expired stories and assets removed");
+  }
+  if (cleanupFailed) throw new Error("COMMUNITY_STORY_STORAGE_CLEANUP_FAILED");
 }
 function startCommunityStoryCleanupWorker() {
   processCommunityStoryCleanup().then(() => workerRan("community-story-cleanup", true)).catch((err) => {
@@ -186081,18 +188624,40 @@ init_drizzle_orm();
 init_queue();
 init_storage();
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat as stat2, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path3 from "node:path";
 import { promisify as promisify3 } from "node:util";
 init_logger2();
+import { randomUUID as randomUUID12 } from "node:crypto";
 var execFileAsync = promisify3(execFile);
-var MAX_PROCESSING_BYTES = 100 * 1024 * 1024;
+async function storeGeneratedAsset(mediaAssetId, field, key, bytes, mimeType) {
+  return db.transaction(async (tx) => {
+    const [asset] = await tx.select({ status: mediaAssetsTable.status }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1).for("update");
+    if (!asset || asset.status === "deleted") return false;
+    await putAsset(key, bytes, mimeType);
+    const [updated] = await tx.update(mediaAssetsTable).set({ [field]: key, updated_at: /* @__PURE__ */ new Date() }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted"))).returning({ id: mediaAssetsTable.id });
+    if (!updated) {
+      await deleteAssetStrict(key);
+      return false;
+    }
+    return true;
+  });
+}
 async function runFfmpeg(args) {
   await execFileAsync(process.env["FFMPEG_PATH"] ?? "ffmpeg", args, {
     timeout: 12e4,
     maxBuffer: 2 * 1024 * 1024
   });
+}
+async function readBoundedOutput(filePath) {
+  const fileInfo = await stat2(filePath);
+  if (!isAllowedMediaSize(fileInfo.size)) throw new Error("MEDIA_SIZE_INVALID");
+  const buffer = await readFile(filePath);
+  if (buffer.length !== fileInfo.size || !isAllowedMediaSize(buffer.length)) {
+    throw new Error("MEDIA_SIZE_INVALID");
+  }
+  return buffer;
 }
 async function markReadyIfComplete(mediaAssetId, mediaType, compositionManifest) {
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
@@ -186100,7 +188665,7 @@ async function markReadyIfComplete(mediaAssetId, mediaType, compositionManifest)
   const jobs = await db.select({ job_type: mediaProcessingJobsTable.job_type, status: mediaProcessingJobsTable.status }).from(mediaProcessingJobsTable).where(eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId));
   const required2 = new Set(mediaJobsForType(mediaType, compositionManifest));
   if ([...required2].every((type) => jobs.some((job) => job.job_type === type && job.status === "completed"))) {
-    await db.update(mediaAssetsTable).set({ status: "ready", failure_reason: null, updated_at: /* @__PURE__ */ new Date() }).where(eq(mediaAssetsTable.id, mediaAssetId));
+    await db.update(mediaAssetsTable).set({ status: "ready", failure_reason: null, updated_at: /* @__PURE__ */ new Date() }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
   }
 }
 async function processMediaJob(job) {
@@ -186118,30 +188683,37 @@ async function processMediaJob(job) {
   )).returning();
   if (!claimed) return;
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
-  if (!asset) throw new Error(`media asset ${mediaAssetId} not found`);
-  await db.update(mediaAssetsTable).set({
-    status: "processing",
-    failure_reason: null,
-    updated_at: /* @__PURE__ */ new Date()
-  }).where(eq(mediaAssetsTable.id, mediaAssetId));
+  if (!asset || asset.status === "deleted") return;
   let tempDir;
+  const generatedKeys = [];
   try {
-    const original = await getAssetBuffer(asset.original_key);
-    if (original.length === 0 || original.length > MAX_PROCESSING_BYTES) {
-      throw new Error("media asset is empty or exceeds the processing limit");
+    if (!isAllowedMediaSize(asset.byte_size)) throw new Error("MEDIA_SIZE_INVALID");
+    const originalInfo = await getAssetInfo(asset.original_key);
+    if (!originalInfo || !isAllowedMediaSize(originalInfo.contentLength) || originalInfo.contentLength !== asset.byte_size) {
+      throw new Error("MEDIA_SIZE_INVALID");
     }
+    const original = await getAssetBuffer(asset.original_key, MAX_MEDIA_BYTES);
+    if (original.length !== asset.byte_size || !isAllowedMediaSize(original.length)) {
+      throw new Error("MEDIA_SIZE_INVALID");
+    }
+    const metadata = await validateMediaBuffer(original, asset.media_type, asset.mime_type);
+    await db.update(mediaAssetsTable).set({
+      status: "processing",
+      failure_reason: null,
+      width: metadata.width,
+      height: metadata.height,
+      duration_ms: metadata.duration_ms,
+      metadata: { ...asset.metadata, signature_validated: true },
+      updated_at: /* @__PURE__ */ new Date()
+    }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     if (jobType === "probe") {
-      const metadata = await inspectMedia(original, asset.mime_type);
-      if (!metadata && !asset.mime_type.startsWith("application/")) {
-        throw new Error("FFprobe or media inspection could not read the asset");
-      }
       await db.update(mediaAssetsTable).set({
-        width: metadata?.width ?? asset.width,
-        height: metadata?.height ?? asset.height,
-        duration_ms: metadata?.duration_ms ?? asset.duration_ms,
+        width: metadata.width,
+        height: metadata.height,
+        duration_ms: metadata.duration_ms,
         metadata: { ...asset.metadata, probed: true },
         updated_at: /* @__PURE__ */ new Date()
-      }).where(eq(mediaAssetsTable.id, mediaAssetId));
+      }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     } else {
       tempDir = await mkdtemp(path3.join(os.tmpdir(), "niakofa-media-"));
       const input = path3.join(tempDir, "original");
@@ -186161,8 +188733,12 @@ async function processMediaJob(job) {
           output
         ]);
         const key = `media-assets/${asset.id}/thumbnail.jpg`;
-        await putAsset(key, await readFile(output), "image/jpeg");
-        await db.update(mediaAssetsTable).set({ thumbnail_key: key, updated_at: /* @__PURE__ */ new Date() }).where(eq(mediaAssetsTable.id, mediaAssetId));
+        const outputBuffer = await readBoundedOutput(output);
+        await validateMediaBuffer(outputBuffer, "photo", "image/jpeg");
+        generatedKeys.push(key);
+        if (!await storeGeneratedAsset(mediaAssetId, "thumbnail_key", key, outputBuffer, "image/jpeg")) {
+          throw new Error("MEDIA_ASSET_DELETED");
+        }
       } else if (jobType === "transcode") {
         if (!asset.mime_type.startsWith("video/")) throw new Error("transcode is only valid for video assets");
         const output = path3.join(tempDir, "variant.mp4");
@@ -186189,8 +188765,12 @@ async function processMediaJob(job) {
           output
         ]);
         const key = `media-assets/${asset.id}/variant.mp4`;
-        await putAsset(key, await readFile(output), "video/mp4");
-        await db.update(mediaAssetsTable).set({ variant_key: key, updated_at: /* @__PURE__ */ new Date() }).where(eq(mediaAssetsTable.id, mediaAssetId));
+        const outputBuffer = await readBoundedOutput(output);
+        await validateMediaBuffer(outputBuffer, "video", "video/mp4");
+        generatedKeys.push(key);
+        if (!await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4")) {
+          throw new Error("MEDIA_ASSET_DELETED");
+        }
       } else if (jobType === "audio_mix") {
         if (!asset.mime_type.startsWith("video/")) throw new Error("audio_mix is only valid for video assets");
         const music = asset.composition_manifest?.music;
@@ -186200,8 +188780,10 @@ async function processMediaJob(job) {
         if (!music.track_key.startsWith("media-assets/")) {
           throw new Error("audio_mix track_key is outside the media asset namespace");
         }
-        const musicBuffer = await getAssetBuffer(music.track_key);
-        if (musicBuffer.length === 0 || musicBuffer.length > MAX_PROCESSING_BYTES) {
+        const musicInfo = await getAssetInfo(music.track_key);
+        if (!musicInfo || !isAllowedMediaSize(musicInfo.contentLength)) throw new Error("MEDIA_SIZE_INVALID");
+        const musicBuffer = await getAssetBuffer(music.track_key, MAX_MEDIA_BYTES);
+        if (musicBuffer.length === 0 || musicBuffer.length !== musicInfo.contentLength || musicBuffer.length > MAX_MEDIA_BYTES) {
           throw new Error("audio track is empty or exceeds the processing limit");
         }
         const musicInput = path3.join(tempDir, "music");
@@ -186252,8 +188834,12 @@ async function processMediaJob(job) {
           output
         ]);
         const key = `media-assets/${asset.id}/variant-mixed.mp4`;
-        await putAsset(key, await readFile(output), "video/mp4");
-        await db.update(mediaAssetsTable).set({ variant_key: key, updated_at: /* @__PURE__ */ new Date() }).where(eq(mediaAssetsTable.id, mediaAssetId));
+        const outputBuffer = await readBoundedOutput(output);
+        await validateMediaBuffer(outputBuffer, "video", "video/mp4");
+        generatedKeys.push(key);
+        if (!await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4")) {
+          throw new Error("MEDIA_ASSET_DELETED");
+        }
       }
     }
     await db.update(mediaProcessingJobsTable).set({
@@ -186265,18 +188851,36 @@ async function processMediaJob(job) {
     await markReadyIfComplete(mediaAssetId, asset.media_type, asset.composition_manifest);
     logger.info({ mediaAssetId, jobType }, "media-processing: job completed");
   } catch (error40) {
-    const message2 = error40 instanceof Error ? error40.message : String(error40);
+    const requestId = randomUUID12();
+    const message2 = error40 instanceof Error && error40.message === "STORAGE_OBJECT_TOO_LARGE" ? "MEDIA_SIZE_INVALID" : error40 instanceof Error && /^MEDIA_[A-Z_]+$/.test(error40.message) ? error40.message : "MEDIA_PROCESSING_FAILED";
+    let generatedCleanupSucceeded = true;
+    for (const key of generatedKeys) {
+      try {
+        await deleteAssetStrict(key);
+      } catch {
+        generatedCleanupSucceeded = false;
+        logger.error({ requestId, mediaAssetId, jobType }, "media-processing: generated variant cleanup failed");
+      }
+    }
+    if (generatedKeys.length && generatedCleanupSucceeded) {
+      await db.update(mediaAssetsTable).set({
+        ...generatedKeys.some((key) => key.endsWith("/thumbnail.jpg")) ? { thumbnail_key: null } : {},
+        ...generatedKeys.some((key) => key.endsWith("/variant.mp4") || key.endsWith("/variant-mixed.mp4")) ? { variant_key: null } : {},
+        updated_at: /* @__PURE__ */ new Date()
+      }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+    }
     await db.update(mediaProcessingJobsTable).set({
       status: "failed",
-      error: message2.slice(0, 2e3),
+      error: message2,
       updated_at: /* @__PURE__ */ new Date()
     }).where(eq(mediaProcessingJobsTable.id, claimed.id));
     await db.update(mediaAssetsTable).set({
       status: "failed",
-      failure_reason: message2.slice(0, 2e3),
+      failure_reason: `${message2};request_id=${requestId}`,
       updated_at: /* @__PURE__ */ new Date()
-    }).where(eq(mediaAssetsTable.id, mediaAssetId));
-    throw error40;
+    }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+    logger.error({ requestId, mediaAssetId, jobType, failureCode: message2 }, "media-processing: job failed");
+    throw new Error(`${message2}; request_id=${requestId}`);
   } finally {
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
   }
@@ -186286,10 +188890,10 @@ function startMediaProcessWorker() {
   if (!connection) return null;
   const worker = new import_bullmq7.Worker(QUEUE.MEDIA_PROCESSING, processMediaJob, {
     connection,
-    concurrency: 2
+    concurrency: 1
   });
   worker.on("failed", (job, error40) => {
-    logger.error({ err: error40, mediaAssetId: job?.data.mediaAssetId, jobType: job?.data.jobType }, "media-processing: BullMQ job failed");
+    logger.error({ mediaAssetId: job?.data.mediaAssetId, jobType: job?.data.jobType, failureCode: error40.message.split(";")[0] }, "media-processing: BullMQ job failed");
   });
   return trackWorker(worker) ?? null;
 }

@@ -54,6 +54,14 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /muted playsInline controls/);
   });
 
+  test("every attachment on a multi-media Moment can be browsed", () => {
+    assert.match(moments, /activeSpark\?\.media\[Math\.min\(activeMediaIndex/);
+    assert.match(moments, /spark\.media\.length > 1/);
+    assert.match(moments, /button-moment-media-previous-/);
+    assert.match(moments, /button-moment-media-next-/);
+    assert.match(moments, /itemIndex \+ 1\} of \{spark\.media\.length/);
+  });
+
   test("Exchange Sparks retains its own accessible mobile browse feed", () => {
     assert.match(exchange, /role="feed"/);
     assert.match(exchange, /overscroll-contain/);

@@ -593,6 +593,31 @@ async function processCommunityStoryCleanup(): Promise<void> {
   const ids = [...new Set(expired.map((row) => row.id))];
   const deletedIds: number[] = [];
   let cleanupFailed = false;
+  const tombstones = await db.select({
+    id: mediaAssetsTable.id,
+    original_key: mediaAssetsTable.original_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key,
+  }).from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.status, "deleted"),
+    sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`,
+  ));
+  for (const asset of tombstones) {
+    try {
+      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key]
+        .filter((key): key is string => Boolean(key)))];
+      for (const key of keys) await deleteAssetStrict(key);
+      await db.update(mediaAssetsTable)
+        .set({
+          metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+          updated_at: new Date(),
+        })
+        .where(and(eq(mediaAssetsTable.id, asset.id), eq(mediaAssetsTable.status, "deleted")));
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, mediaAssetId: asset.id }, "media cleanup: deleted object cleanup will retry");
+    }
+  }
   for (const id of ids) {
     await db.update(communityStoriesTable)
       .set({ status: "deletion_pending" })

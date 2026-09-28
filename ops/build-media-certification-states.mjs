@@ -25,7 +25,9 @@ if (process.env.ALLOW_MEDIA_CERT_STATE_CREATION !== "1") {
   refuse("explicit operator approval is required.");
 } else if (!baseUrl || !/^https:\/\//.test(baseUrl) || !/^[0-9a-f]{40}$/.test(expectedCommit ?? "")) {
   refuse("an HTTPS BASE_URL and the full EXPECTED_COMMIT are required.");
-} else if (!outputDir || !path.isAbsolute(outputDir) || path.resolve(outputDir).startsWith(`${root}${path.sep}`)) {
+} else if (!outputDir || !path.isAbsolute(outputDir)
+  || path.resolve(outputDir) === root
+  || path.resolve(outputDir).startsWith(`${root}${path.sep}`)) {
   refuse("MEDIA_CERT_STATE_DIR must be an absolute directory outside the repository.");
 } else if (accounts.some(({ email, password }) => !email || !password) || accounts[0].email === accounts[1].email) {
   refuse("two distinct disposable account emails and securely supplied passwords are required.");

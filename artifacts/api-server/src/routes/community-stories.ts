@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   communityStoriesTable,
   communityStoryElementsTable,
@@ -434,10 +434,12 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
     }).from(communityStoryMediaTable)
       .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id))
       .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
-      .where(inArray(communityStoryMediaTable.story_id, ids)),
+      .where(inArray(communityStoryMediaTable.story_id, ids))
+      .orderBy(asc(communityStoryMediaTable.id)),
     db.select().from(communityStoryElementsTable).where(inArray(communityStoryElementsTable.story_id, ids)).orderBy(communityStoryElementsTable.z_index),
   ]) : [[], []];
-  const media = mediaRows.filter((item) => isLinkedStoryVideoAssetReady({
+  const media = mediaRows.filter((item) => (item.media.media_asset_id === null || item.asset_status === "ready")
+    && isLinkedStoryVideoAssetReady({
     linked: item.linked_listing_id !== null,
     mediaType: item.media.media_type,
     mediaAssetId: item.media.media_asset_id,
@@ -851,6 +853,7 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
     .where(eq(communityStoryMediaTable.id, mediaId))
     .limit(1);
   if (!row || row.status !== "published" || row.expires_at <= new Date()
+      || row.media_asset_id !== null && row.asset_status !== "ready"
       || !(await viewerCanReadStory(req.authenticatedUserId!, row))) {
     return res.status(404).json({ error: "Story media not found." });
   }

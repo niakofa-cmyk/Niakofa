@@ -99,7 +99,9 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, assetStatus: "ready", variantKey: "variants/story.mp4" })).toBe(true);
     expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, mediaAssetId: null })).toBe(true);
     expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, mediaType: "photo", mediaAssetId: null })).toBe(false);
-    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, linked: false })).toBe(true);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, linked: false })).toBe(false);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, linked: false, assetStatus: "ready" })).toBe(true);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, linked: false, mediaAssetId: null })).toBe(true);
 
     expect(storyVideoStreamContentType("variants/story.mp4", "video/webm")).toBe("video/mp4");
     expect(storyVideoStreamContentType(null, "video/webm")).toBe("video/webm");

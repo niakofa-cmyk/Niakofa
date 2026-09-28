@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, LoaderCircle, Play, RefreshCw } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, LoaderCircle, Play, RefreshCw } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { recordStoryView } from "@/lib/community-story-client";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
@@ -70,6 +70,7 @@ export function CommunityMomentsExperience({
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState("");
   const [mediaRetry, setMediaRetry] = useState(0);
@@ -80,7 +81,11 @@ export function CommunityMomentsExperience({
   const moreControllerRef = useRef<AbortController | null>(null);
   const viewedIdsRef = useRef(new Set<number>());
   const activeSpark = sparks[activeIndex] ?? null;
-  const activeMedia = activeSpark?.media[0] ?? null;
+  const activeMedia = activeSpark?.media[Math.min(activeMediaIndex, Math.max(0, activeSpark.media.length - 1))] ?? null;
+
+  useEffect(() => {
+    setActiveMediaIndex(0);
+  }, [activeSpark?.id]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -377,7 +382,8 @@ export function CommunityMomentsExperience({
             >
               {sparks.map((spark, index) => {
                 const current = index === activeIndex;
-                const media = spark.media[0];
+                const itemIndex = current ? Math.min(activeMediaIndex, Math.max(0, spark.media.length - 1)) : 0;
+                const media = spark.media[itemIndex];
                 return (
                   <article
                     key={spark.id}
@@ -421,6 +427,17 @@ export function CommunityMomentsExperience({
                       <div className="absolute left-4 right-4 top-4 z-20 rounded-xl border border-white/20 bg-black/80 p-3 text-sm text-white" role="alert" data-testid="status-spark-media-error">
                         <p>{mediaError}</p>
                         <button type="button" onClick={() => { setMediaError(""); setMediaRetry((value) => value + 1); }} className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 font-bold text-primary-foreground focus:outline-none focus:ring-2 focus:ring-white" data-testid="button-retry-spark-media"><RefreshCw className="h-4 w-4" aria-hidden="true" /> Retry video</button>
+                      </div>
+                    )}
+                    {current && spark.media.length > 1 && (
+                      <div className="absolute inset-x-4 top-1/2 z-20 flex -translate-y-1/2 items-center justify-between" aria-label="Moment attachments">
+                        <button type="button" onClick={() => setActiveMediaIndex((value) => Math.max(0, value - 1))} disabled={activeMediaIndex <= 0} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-black/70 text-white shadow-lg disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-white" aria-label="Show previous attachment" data-testid={`button-moment-media-previous-${spark.id}`}>
+                          <ChevronLeft className="h-6 w-6" aria-hidden="true" />
+                        </button>
+                        <span className="rounded-full bg-black/75 px-3 py-1 text-xs font-bold text-white" aria-live="polite" data-testid={`status-moment-media-index-${spark.id}`}>{itemIndex + 1} of {spark.media.length}</span>
+                        <button type="button" onClick={() => setActiveMediaIndex((value) => Math.min(spark.media.length - 1, value + 1))} disabled={activeMediaIndex >= spark.media.length - 1} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-black/70 text-white shadow-lg disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-white" aria-label="Show next attachment" data-testid={`button-moment-media-next-${spark.id}`}>
+                          <ChevronRight className="h-6 w-6" aria-hidden="true" />
+                        </button>
                       </div>
                     )}
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-5 pt-28 text-white sm:p-7 sm:pt-32">
