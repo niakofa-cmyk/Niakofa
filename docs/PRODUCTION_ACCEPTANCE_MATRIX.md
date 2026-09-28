@@ -24,9 +24,26 @@ Turning an already-live flag off requires an operational decision because it
 may interrupt existing media use. Do not treat its value or these two probes
 as approval of the full rollout.
 
+**Observed 2026-09-28 (authenticated media acceptance):** Production served
+`f8f761aafed2584b26d6daec8fb0467d0bb05183`; all five GitHub checks passed,
+including Release Validation and deployment verification. Two distinct approved
+disposable accounts authenticated through private, validated states. For the
+owner-approved direct conversation `1`, account A received 200 and account B
+received 404 before uploads. The first test attempt stopped at a 401 on its
+same-origin PUT because the test harness omitted the Bearer header; the resulting
+pending test asset `1` was owner-deleted (204) and confirmed absent from the
+shared list. After correcting the harness, the gated browser test passed:
+photo `2` and video `3` reached `ready`, the photo original and thumbnail and
+the video playback variant returned 200 to A, and all three returned 404 to B.
+Disposable asset `4` was deleted by A (204); its original and thumbnail returned
+404, and it disappeared from the shared list. Photo `2` and video `3` remain
+for review in that conversation. Temporary browser states and traces were
+removed. This pass does not certify physical devices, independently identify
+the stored bucket objects, or inspect the worker's temporary-file namespace.
+
 ## Gate 1 — Application and storage configuration
 
-- [ ] CI, typecheck, and tests are green on the intended commit
+- [x] CI, typecheck, and tests are green on the intended commit
 - [x] Deploy verification is green (owner-reported check for the probe revision)
 - [x] `/api/healthz` reports the intended S3-compatible backend
 - [x] `cloud_configured=true`, `credentials_present=true`, and `missing=[]`
@@ -70,13 +87,13 @@ Only after Gates 2 and 3:
 
 - [ ] Set `MEDIA_PLATFORM_V21=1` on the production API service
 - [ ] Redeploy and confirm the media worker starts without a toolchain/storage error
-- [ ] Authenticated photo upload initializes, uploads, completes, and queues
-- [ ] Authenticated video upload initializes, uploads, completes, and queues
-- [ ] The media asset reaches `ready`
+- [x] Authenticated photo upload initializes, uploads, completes, and queues
+- [x] Authenticated video upload initializes, uploads, completes, and queues
+- [x] The media asset reaches `ready`
 - [ ] Thumbnail/variant objects are written to the intended bucket
-- [ ] Shared media retrieval is authorized for the owning context
-- [ ] An unauthorized user cannot retrieve the object or variant
-- [ ] Owner deletes a disposable asset; original and thumbnail return 404 and the shared list no longer includes it
+- [x] Shared media retrieval is authorized for the owning context
+- [x] An unauthorized user cannot retrieve the object or variant
+- [x] Owner deletes a disposable asset; original and thumbnail return 404 and the shared list no longer includes it
 - [ ] Failure paths leave no temporary processing files or orphaned probe objects
 
 The live browser certification is deliberately double-gated. It must be run

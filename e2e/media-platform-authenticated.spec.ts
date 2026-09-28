@@ -140,15 +140,16 @@ async function uploadAndComplete(
     complete_url: string;
   };
 
-  const uploadUrl = new URL(
-    initialized.upload.url,
-    process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5000",
-  );
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5000";
+  const uploadUrl = new URL(initialized.upload.url, baseUrl);
   const upload = await request.put(uploadUrl.toString(), {
     data: input.body,
-    headers: initialized.upload.headers,
+    headers: {
+      ...initialized.upload.headers,
+      ...(uploadUrl.origin === new URL(baseUrl).origin ? headers : {}),
+    },
   });
-  expect(upload.status(), `${input.mediaType} object upload should succeed`).toBeLessThan(300);
+  expect(upload.status(), `${input.mediaType} object upload should succeed (asset ${initialized.media_asset_id})`).toBeLessThan(300);
 
   const complete = await request.post(initialized.complete_url, { headers });
   expect(complete.status(), `${input.mediaType} upload should queue processing`).toBe(202);
@@ -253,5 +254,6 @@ test.describe("authenticated universal media smoke", () => {
       headers,
     );
     expect(remaining.assets?.some((asset) => asset.id === deletionId)).toBe(false);
+    process.stdout.write(`MEDIA_CERT_RETAINED_ASSETS photo=${photoId} video=${videoId} deleted=${deletionId}\n`);
   });
 });
