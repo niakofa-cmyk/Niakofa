@@ -147944,7 +147944,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "55ec1760bfbe11ac4e00874cc807fb53187b0b18";
+var GIT_COMMIT = "be205e2a0353a6231d6f41d3c9a73aefae19ba0b";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -152443,11 +152443,25 @@ function hasExpectedSignature(buffer, mimeType) {
 function imageDimensions(buffer, mimeType) {
   if (mimeType === "image/png" && buffer.length >= 24) return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
   if (mimeType === "image/gif" && buffer.length >= 10) return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
-  if (mimeType === "image/webp" && buffer.length >= 30 && buffer.subarray(12, 16).toString("ascii") === "VP8X") {
-    return {
-      width: 1 + buffer[24] + (buffer[25] << 8) + (buffer[26] << 16),
-      height: 1 + buffer[27] + (buffer[28] << 8) + (buffer[29] << 16)
-    };
+  if (mimeType === "image/webp" && buffer.length >= 20) {
+    const chunk = buffer.subarray(12, 16).toString("ascii");
+    if (chunk === "VP8X" && buffer.length >= 30) {
+      return {
+        width: 1 + buffer[24] + (buffer[25] << 8) + (buffer[26] << 16),
+        height: 1 + buffer[27] + (buffer[28] << 8) + (buffer[29] << 16)
+      };
+    }
+    if (chunk === "VP8L" && buffer.length >= 25 && buffer[20] === 47) {
+      const widthMinusOne = buffer[21] | (buffer[22] & 63) << 8;
+      const heightMinusOne = buffer[22] >> 6 | buffer[23] << 2 | (buffer[24] & 63) << 10;
+      return { width: widthMinusOne + 1, height: heightMinusOne + 1 };
+    }
+    if (chunk === "VP8 " && buffer.length >= 30 && buffer[23] === 157 && buffer[24] === 1 && buffer[25] === 42) {
+      return {
+        width: buffer.readUInt16LE(26) & 16383,
+        height: buffer.readUInt16LE(28) & 16383
+      };
+    }
   }
   if (mimeType !== "image/jpeg") return null;
   let offset = 2;
@@ -152529,6 +152543,7 @@ async function inspectMedia(buffer, mimeType) {
   return null;
 }
 async function validateMediaBuffer(buffer, mediaType, mimeType) {
+  mimeType = mimeType.trim().toLowerCase();
   const supported = {
     photo: ["image/jpeg", "image/png", "image/gif", "image/webp"],
     video: ["video/mp4", "video/webm"],
@@ -188864,6 +188879,14 @@ async function markReadyIfComplete(mediaAssetId, mediaType, compositionManifest)
     await db.update(mediaAssetsTable).set({ status: "ready", failure_reason: null, updated_at: /* @__PURE__ */ new Date() }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
   }
 }
+async function cancelClaimedJob(jobId) {
+  await db.update(mediaProcessingJobsTable).set({
+    status: "cancelled",
+    error: "MEDIA_ASSET_DELETED",
+    completed_at: /* @__PURE__ */ new Date(),
+    updated_at: /* @__PURE__ */ new Date()
+  }).where(eq(mediaProcessingJobsTable.id, jobId));
+}
 async function processMediaJob(job) {
   const { mediaAssetId, jobType } = job.data;
   assertSupportedMediaJob(jobType);
@@ -188879,7 +188902,10 @@ async function processMediaJob(job) {
   )).returning();
   if (!claimed) return;
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
-  if (!asset || asset.status === "deleted") return;
+  if (!asset || asset.status === "deleted") {
+    await cancelClaimedJob(claimed.id);
+    return;
+  }
   let tempDir;
   const generatedKeys = [];
   try {
@@ -189037,6 +189063,11 @@ async function processMediaJob(job) {
           throw new Error("MEDIA_ASSET_DELETED");
         }
       }
+    }
+    const [currentAsset] = await db.select({ status: mediaAssetsTable.status }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
+    if (!currentAsset || currentAsset.status === "deleted") {
+      await cancelClaimedJob(claimed.id);
+      return;
     }
     await db.update(mediaProcessingJobsTable).set({
       status: "completed",
