@@ -3,7 +3,7 @@ import { StoryElementLayer, storyEffectFilter, type StoryElement } from "./Story
 
 export type StoryPlayerMedia = {
   id: number;
-  media_type: "photo" | "video";
+  media_type: "photo" | "video" | "audio";
   mime_type: string;
   media_url: string;
   duration_ms: number | null;
@@ -27,11 +27,12 @@ export function StoryMediaPlayer({
   paused?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const photoElapsedRef = useRef(0);
   const photoLastTimeRef = useRef<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const durationMs = useMemo(
-    () => (media?.media_type === "video" && media.duration_ms ? Math.max(1_000, media.duration_ms) : DEFAULT_PHOTO_MS),
+    () => (media && media.media_type !== "photo" && media.duration_ms ? Math.max(1_000, media.duration_ms) : DEFAULT_PHOTO_MS),
     [media],
   );
   const filter = useMemo(() => storyEffectFilter(elements), [elements]);
@@ -45,7 +46,7 @@ export function StoryMediaPlayer({
 
   useEffect(() => {
     setLoaded(false);
-    if (!media || media.media_type === "video" || !media.media_url) return;
+    if (!media || media.media_type !== "photo" || !media.media_url) return;
     let raf = 0;
     const tick = (now: number) => {
       if (photoLastTimeRef.current === null) photoLastTimeRef.current = now;
@@ -78,16 +79,23 @@ export function StoryMediaPlayer({
   }, [media, paused]);
 
   useEffect(() => {
-    if (!media || media.media_type !== "video") return;
+    const audio = audioRef.current;
+    if (audio && paused) audio.pause();
+  }, [media, paused]);
+
+  useEffect(() => {
+    if (!media || media.media_type === "photo") return;
     const video = videoRef.current;
-    if (!video) return;
+    const audio = audioRef.current;
+    const player = media.media_type === "video" ? video : audio;
+    if (!player) return;
     const update = () => {
-      if (video.duration && Number.isFinite(video.duration)) {
-        onProgress?.(Math.min(1, video.currentTime / video.duration));
+      if (player.duration && Number.isFinite(player.duration)) {
+        onProgress?.(Math.min(1, player.currentTime / player.duration));
       }
     };
-    video.addEventListener("timeupdate", update);
-    return () => video.removeEventListener("timeupdate", update);
+    player.addEventListener("timeupdate", update);
+    return () => player.removeEventListener("timeupdate", update);
   }, [media, onProgress]);
 
   if (!media || !media.media_url) {
@@ -116,6 +124,21 @@ export function StoryMediaPlayer({
           className="max-h-full max-w-full object-contain"
           style={{ filter }}
         />
+      ) : media.media_type === "audio" ? (
+        <div className="grid h-full w-full place-items-center bg-gradient-to-br from-slate-950 via-indigo-950 to-emerald-950 p-6">
+          <audio
+            ref={audioRef}
+            key={media.id}
+            src={media.media_url}
+            controls
+            preload="metadata"
+            onCanPlay={() => setLoaded(true)}
+            onEnded={onComplete}
+            onError={() => setLoaded(true)}
+            className="w-full max-w-lg"
+            aria-label={fallbackText || "Community Moment audio"}
+          />
+        </div>
       ) : (
         <img
           key={media.id}

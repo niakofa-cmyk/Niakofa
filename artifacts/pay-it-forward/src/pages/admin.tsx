@@ -143,6 +143,18 @@ interface GratitudePost {
   created_at: string;
 }
 
+interface HeldExchangeSpark {
+  id: number;
+  listing_id: number;
+  caption: string | null;
+  status: string;
+  moderation_reason: string | null;
+  created_at: string;
+  author_user_id: number;
+  author_name: string;
+  listing_title: string;
+}
+
 interface CivicSuggestion {
   id: number;
   name: string;
@@ -2767,6 +2779,146 @@ function PostModerationSection() {
   );
 }
 
+function HeldExchangeSparksSection() {
+  const [sparks, setSparks] = useState<HeldExchangeSpark[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<number | null>(null);
+  const [reasonMap, setReasonMap] = useState<Record<number, string>>({});
+  const hasLoadedRef = useRef(false);
+
+  const load = useCallback(async () => {
+    if (!hasLoadedRef.current) setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/exchange/sparks/held`, {
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (res.ok) {
+        const body = await res.json() as { sparks?: HeldExchangeSpark[] };
+        setSparks(Array.isArray(body.sparks) ? body.sparks : []);
+        hasLoadedRef.current = true;
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setLoadError(body.error ?? `Error ${res.status}`);
+      }
+    } catch {
+      setLoadError("Could not reach server");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const decide = async (spark: HeldExchangeSpark, decision: "approve" | "reject") => {
+    const reason = reasonMap[spark.id]?.trim() ?? "";
+    if (decision === "reject" && reason.length < 3) {
+      toast({ title: "Add a reason before rejecting this Spark", variant: "destructive" });
+      return;
+    }
+    setProcessing(spark.id);
+    try {
+      const token = getToken();
+      const res = await fetch(`${BASE}/api/admin/exchange/sparks/${spark.id}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ decision, ...(reason ? { reason } : {}) }),
+      });
+      if (res.ok) {
+        const body = await res.json() as { status?: string };
+        toast({
+          title: decision === "approve"
+            ? "Exchange Spark approved and published"
+            : "Exchange Spark rejected and remains hidden",
+        });
+        setSparks((current) => current.filter((item) => item.id !== spark.id));
+        setReasonMap((current) => {
+          const next = { ...current };
+          delete next[spark.id];
+          return next;
+        });
+        if (body.status !== (decision === "approve" ? "published" : "rejected")) void load();
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: body.error ?? "Moderation action failed", variant: "destructive" });
+        if (res.status === 409) void load();
+      }
+    } catch {
+      toast({ title: "Network error", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  if (loading && !hasLoadedRef.current) {
+    return <div className="flex justify-center py-10"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+  }
+  if (loadError && sparks.length === 0) {
+    return <div className="flex items-center gap-2 text-sm text-destructive py-6 justify-center"><AlertCircle className="w-4 h-4 shrink-0" />{loadError}<button onClick={() => void load()} className="ml-2 underline text-xs">Retry</button></div>;
+  }
+  if (sparks.length === 0) {
+    return (
+      <div className="text-center py-14">
+        <Sparkles className="w-10 h-10 mx-auto mb-3 text-green-400/40" />
+        <div className="font-bold text-sm text-muted-foreground">No Exchange Sparks awaiting review</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">Held captions stay hidden until a moderator approves them</div>
+        <button onClick={() => void load()} className="mt-3 text-xs text-primary underline">Refresh queue</button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl px-4 py-3">
+        <ShieldAlert className="w-4 h-4 text-yellow-500 shrink-0" />
+        <span className="text-sm font-bold text-yellow-600 dark:text-yellow-400">{sparks.length} Exchange Spark{sparks.length === 1 ? "" : "s"} held for review</span>
+        <button onClick={() => void load()} className="ml-auto w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted" aria-label="Refresh held Exchange Sparks"><RefreshCw className="w-3 h-3" /></button>
+      </div>
+      {sparks.map((spark) => (
+        <div key={spark.id} className="bg-card border border-yellow-500/20 rounded-2xl p-4 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="font-bold text-sm">{spark.listing_title}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{spark.author_name} · Spark #{spark.id}</div>
+              {spark.moderation_reason && (
+                <div className="mt-1.5 flex items-start gap-1.5 bg-yellow-500/10 rounded-xl px-2.5 py-1.5">
+                  <AlertTriangle className="w-3 h-3 text-yellow-500 mt-0.5 shrink-0" />
+                  <span className="text-[11px] text-yellow-600 dark:text-yellow-400 leading-relaxed">{spark.moderation_reason}</span>
+                </div>
+              )}
+            </div>
+            <span className="text-[10px] text-muted-foreground shrink-0">{fmtDate(spark.created_at)}</span>
+          </div>
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{spark.caption || "No caption"}</p>
+          <label className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+            Moderator reason <span className="normal-case font-normal">(required to reject; retained in review history)</span>
+            <textarea
+              value={reasonMap[spark.id] ?? ""}
+              onChange={(event) => setReasonMap((current) => ({ ...current, [spark.id]: event.target.value }))}
+              maxLength={500}
+              rows={2}
+              placeholder="Explain the moderation decision"
+              className="mt-1.5 w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-normal normal-case tracking-normal text-foreground outline-none focus:border-primary"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => void decide(spark, "reject")}
+              disabled={processing === spark.id}
+              className="h-9 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50 active:scale-95 transition-all"
+            >{processing === spark.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto" /> : "✕ Reject"}</button>
+            <button
+              onClick={() => void decide(spark, "approve")}
+              disabled={processing === spark.id}
+              className="h-9 rounded-xl bg-green-500 text-white text-xs font-black disabled:opacity-50 active:scale-95 transition-all"
+            >{processing === spark.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto" /> : "✓ Approve & publish"}</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Griot Globe Tab — reported story moderation queue ──────────────────────────
 interface GriotStoryReport {
   id: number;
@@ -3340,11 +3492,12 @@ function ExchangeReportsSection({ authed, refreshTick = 0 }: { authed: boolean; 
 
 // ── Reports Tab — 3-section moderation hub ────────────────────────────────────
 function ReportsTab({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?: number }) {
-  const [section, setSection] = useState<"user-reports" | "exchange" | "flagged" | "posts">("user-reports");
+  const [section, setSection] = useState<"user-reports" | "exchange" | "flagged" | "posts" | "exchange-sparks">("user-reports");
 
   const SECTIONS = [
     { key: "user-reports", label: "User Reports", icon: Flag },
     { key: "exchange",     label: "Exchange Safety", icon: ShieldAlert },
+    { key: "exchange-sparks", label: "Exchange Sparks", icon: Sparkles },
     { key: "flagged",      label: "Flagged Requests", icon: ShieldAlert },
     { key: "posts",        label: "Post Moderation", icon: Megaphone },
   ] as const;
@@ -3362,6 +3515,7 @@ function ReportsTab({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?
       </div>
       {section === "user-reports" && <UserReportsSection authed={authed} refreshTick={refreshTick} />}
       {section === "exchange"    && <ExchangeReportsSection authed={authed} refreshTick={refreshTick} />}
+      {section === "exchange-sparks" && <HeldExchangeSparksSection />}
       {section === "flagged"      && <FlaggedRequestsSection />}
       {section === "posts"        && <PostModerationSection />}
     </div>

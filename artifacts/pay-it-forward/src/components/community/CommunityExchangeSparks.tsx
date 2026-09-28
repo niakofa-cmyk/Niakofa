@@ -271,13 +271,13 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
       ) : (
         <>
           <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2 text-xs text-muted-foreground">
-            <span aria-live="polite">Spark {activeIndex + 1} of {sparks.length}</span>
+            <span aria-live="polite" data-testid="text-exchange-spark-position">Spark {activeIndex + 1} of {sparks.length}</span>
             <div className="flex gap-1">
-              <button type="button" onClick={() => moveTo(Math.max(0, activeIndex - 1))} disabled={activeIndex === 0} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Previous Exchange Spark"><ArrowUp className="h-4 w-4" aria-hidden="true" /></button>
-              <button type="button" onClick={() => moveTo(Math.min(sparks.length - 1, activeIndex + 1))} disabled={activeIndex === sparks.length - 1} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Next Exchange Spark"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button>
+              <button type="button" onClick={() => moveTo(Math.max(0, activeIndex - 1))} disabled={activeIndex === 0} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Previous Exchange Spark" data-testid="button-previous-exchange-spark"><ArrowUp className="h-4 w-4" aria-hidden="true" /></button>
+              <button type="button" onClick={() => moveTo(Math.min(sparks.length - 1, activeIndex + 1))} disabled={activeIndex === sparks.length - 1} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Next Exchange Spark" data-testid="button-next-exchange-spark"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button>
             </div>
           </div>
-          <div ref={cardListRef} className="mx-auto flex h-[min(72dvh,680px)] max-h-[680px] max-w-md snap-y snap-mandatory flex-col overflow-y-auto bg-black sm:my-5 sm:rounded-2xl" aria-label="Swipe or scroll through Exchange videos">
+          <div ref={cardListRef} className="mx-auto flex h-[min(78dvh,780px)] max-h-[780px] max-w-md snap-y snap-mandatory flex-col overflow-y-auto overscroll-contain bg-black scroll-smooth sm:my-5 sm:rounded-2xl" aria-label="Swipe or scroll through Exchange videos" role="feed" aria-busy={loadingMore} data-testid="list-exchange-sparks">
             {sparks.map((spark, index) => (
               <article
                  key={`${spark.durable ? "durable" : "legacy"}:${spark.id}`}
@@ -288,6 +288,9 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
                 data-spark-index={index}
                 className="relative flex h-full min-h-full w-full shrink-0 snap-start items-center justify-center overflow-hidden bg-neutral-950"
                 aria-label={`Exchange Spark ${index + 1}`}
+                aria-posinset={index + 1}
+                aria-setsize={cursor ? -1 : sparks.length}
+                data-testid={`card-exchange-spark-${spark.id}`}
               >
                 {index === activeIndex && activeThumbnailUrl && <img src={activeThumbnailUrl} alt="" className={`absolute inset-0 h-full w-full object-cover transition-opacity ${playbackUrl ? "opacity-0" : "opacity-100"}`} />}
                 {index === activeIndex && playbackUrl ? (
@@ -309,7 +312,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
               </article>
             ))}
           </div>
-          {cursor && <div className="flex justify-center p-4"><button type="button" onClick={() => void loadMore()} disabled={loadingMore} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold disabled:opacity-60">{loadingMore ? "Loading…" : "Load more Sparks"}</button></div>}
+          {cursor && <div className="flex justify-center p-4"><button type="button" onClick={() => void loadMore()} disabled={loadingMore} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold disabled:opacity-60" data-testid="button-load-more-exchange-sparks">{loadingMore ? "Loading…" : "Load more Sparks"}</button></div>}
         </>
       )}
       <p className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">Videos start muted. Only the Spark in view plays; moving away stops and releases its media. Location is shown as a neighborhood area only.</p>

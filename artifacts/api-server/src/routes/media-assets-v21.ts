@@ -16,7 +16,7 @@ import {
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { getAssetBuffer, getAssetInfo, putAsset, streamAssetRange } from "../lib/storage";
+import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset, streamAssetRange } from "../lib/storage";
 import { isMediaPlatformV21Enabled } from "../lib/media-platform";
 import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
 import { mediaProcessingQueue } from "../lib/queue";
@@ -54,6 +54,11 @@ async function isApprovedUser(userId: number): Promise<boolean> {
 
 async function canReadContext(userId: number, contextKind: string, contextId: number): Promise<boolean> {
   if (!(await isApprovedUser(userId))) return false;
+
+  // Staging assets are intentionally not shared with a Community or Hub.
+  // They become readable only after the Story create transaction rebinds them
+  // to a persisted Story context.
+  if (contextKind === "community_moment" || contextKind === "hub_moment") return false;
 
   if (contextKind === "direct") {
     const [member] = await db.select({ user_id: directConversationMembersTable.user_id })
@@ -213,6 +218,8 @@ async function canReadContext(userId: number, contextKind: string, contextId: nu
 }
 
 async function canWriteContext(userId: number, contextKind: string, contextId: number): Promise<boolean> {
+  if (contextKind === "community_moment") return contextId === userId && await isApprovedUser(userId);
+  if (contextKind === "hub_moment") return canReadContext(userId, "hub", contextId);
   if (contextKind === "story") {
     const [story] = await db.select({
       author_user_id: communityStoriesTable.author_user_id,
@@ -287,7 +294,7 @@ function disabled(res: Response) {
 }
 
 const uploadRequestSchema = z.object({
-  contextKind: z.enum(["story", "exchange_spark", "direct", "request", "hub"]),
+  contextKind: z.enum(["story", "exchange_spark", "direct", "request", "hub", "community_moment", "hub_moment"]),
   contextId: z.number().int().positive(),
   mediaType: z.enum(["photo", "video", "audio", "document"]),
   mimeType: z.string().trim().min(3).max(120),
@@ -581,6 +588,58 @@ router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalA
       request_id: requestId,
     });
   }
+});
+
+router.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId(req.params.id);
+  if (!assetId) return res.status(400).json({ error: "Invalid media asset id." });
+
+  // Mark it deleted before touching storage. This hides the asset immediately
+  // and makes worker writes conditional on a state that can no longer advance.
+  const asset = await db.transaction(async (tx) => {
+    const [locked] = await tx.select({
+      original_key: mediaAssetsTable.original_key,
+      variant_key: mediaAssetsTable.variant_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+    }).from(mediaAssetsTable)
+      .where(and(
+        eq(mediaAssetsTable.id, assetId),
+        eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+      ))
+      .limit(1)
+      .for("update");
+    if (!locked) return null;
+    const [updated] = await tx.update(mediaAssetsTable)
+      .set({ status: "deleted", updated_at: new Date() })
+      .where(and(
+        eq(mediaAssetsTable.id, assetId),
+        eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+      ))
+      .returning({
+        original_key: mediaAssetsTable.original_key,
+        variant_key: mediaAssetsTable.variant_key,
+        thumbnail_key: mediaAssetsTable.thumbnail_key,
+      });
+    return updated ?? locked;
+  });
+  if (!asset) return res.status(404).json({ error: "Media asset not found." });
+
+  try {
+    for (const key of new Set([asset.original_key, asset.variant_key, asset.thumbnail_key].filter(
+      (value): value is string => Boolean(value),
+    ))) {
+      await deleteAssetStrict(key);
+    }
+  } catch {
+    // Retain the deleted row and its object keys, so an authorized retry can
+    // finish cleanup. Never restore visibility after a partial cleanup.
+    return res.status(503).json({
+      error: "Media was removed but storage cleanup is incomplete. Retry deletion.",
+      error_code: "MEDIA_STORAGE_CLEANUP_INCOMPLETE",
+    });
+  }
+  return res.status(204).send();
 });
 
 router.post("/media-assets/:id/playback-grant", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {

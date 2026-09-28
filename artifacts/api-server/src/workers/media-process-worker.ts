@@ -10,7 +10,7 @@ import {
   mediaProcessingJobsTable,
   type MediaJobType,
 } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset } from "../lib/storage";
 import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
@@ -21,6 +21,36 @@ import { randomUUID } from "node:crypto";
 
 const execFileAsync = promisify(execFile);
 type MediaJobData = { mediaAssetId: number; jobType: MediaJobType };
+
+async function storeGeneratedAsset(
+  mediaAssetId: number,
+  field: "thumbnail_key" | "variant_key",
+  key: string,
+  bytes: Buffer,
+  mimeType: string,
+): Promise<boolean> {
+  // Serialize object creation with deletion's media-row lock. Either the
+  // worker registers the new key before deletion snapshots keys, or it sees
+  // the deleted state and never creates the object.
+  return db.transaction(async (tx) => {
+    const [asset] = await tx.select({ status: mediaAssetsTable.status })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1)
+      .for("update");
+    if (!asset || asset.status === "deleted") return false;
+    await putAsset(key, bytes, mimeType);
+    const [updated] = await tx.update(mediaAssetsTable)
+      .set({ [field]: key, updated_at: new Date() })
+      .where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")))
+      .returning({ id: mediaAssetsTable.id });
+    if (!updated) {
+      await deleteAssetStrict(key);
+      return false;
+    }
+    return true;
+  });
+}
 
 async function runFfmpeg(args: string[]): Promise<void> {
   await execFileAsync(process.env["FFMPEG_PATH"] ?? "ffmpeg", args, {
@@ -49,7 +79,7 @@ async function markReadyIfComplete(mediaAssetId: number, mediaType: string, comp
   if ([...required].every((type) => jobs.some((job) => job.job_type === type && job.status === "completed"))) {
     await db.update(mediaAssetsTable)
       .set({ status: "ready", failure_reason: null, updated_at: new Date() })
-      .where(eq(mediaAssetsTable.id, mediaAssetId));
+      .where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
   }
 }
 
@@ -73,7 +103,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
   if (!claimed) return;
 
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
-  if (!asset) throw new Error(`media asset ${mediaAssetId} not found`);
+  if (!asset || asset.status === "deleted") return;
   let tempDir: string | undefined;
   const generatedKeys: string[] = [];
   try {
@@ -95,7 +125,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       duration_ms: metadata.duration_ms,
       metadata: { ...asset.metadata, signature_validated: true },
       updated_at: new Date(),
-    }).where(eq(mediaAssetsTable.id, mediaAssetId));
+    }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
 
     if (jobType === "probe") {
       await db.update(mediaAssetsTable).set({
@@ -104,7 +134,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         duration_ms: metadata.duration_ms,
         metadata: { ...asset.metadata, probed: true },
         updated_at: new Date(),
-      }).where(eq(mediaAssetsTable.id, mediaAssetId));
+      }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     } else {
       tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-media-"));
       const input = path.join(tempDir, "original");
@@ -120,10 +150,10 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         const key = `media-assets/${asset.id}/thumbnail.jpg`;
         const outputBuffer = await readBoundedOutput(output);
         await validateMediaBuffer(outputBuffer, "photo", "image/jpeg");
-        await putAsset(key, outputBuffer, "image/jpeg");
         generatedKeys.push(key);
-        await db.update(mediaAssetsTable).set({ thumbnail_key: key, updated_at: new Date() })
-          .where(eq(mediaAssetsTable.id, mediaAssetId));
+        if (!(await storeGeneratedAsset(mediaAssetId, "thumbnail_key", key, outputBuffer, "image/jpeg"))) {
+          throw new Error("MEDIA_ASSET_DELETED");
+        }
       } else if (jobType === "transcode") {
         if (!asset.mime_type.startsWith("video/")) throw new Error("transcode is only valid for video assets");
         const output = path.join(tempDir, "variant.mp4");
@@ -147,10 +177,10 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         const key = `media-assets/${asset.id}/variant.mp4`;
         const outputBuffer = await readBoundedOutput(output);
         await validateMediaBuffer(outputBuffer, "video", "video/mp4");
-        await putAsset(key, outputBuffer, "video/mp4");
         generatedKeys.push(key);
-        await db.update(mediaAssetsTable).set({ variant_key: key, updated_at: new Date() })
-          .where(eq(mediaAssetsTable.id, mediaAssetId));
+        if (!(await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4"))) {
+          throw new Error("MEDIA_ASSET_DELETED");
+        }
       } else if (jobType === "audio_mix") {
         if (!asset.mime_type.startsWith("video/")) throw new Error("audio_mix is only valid for video assets");
         const music = asset.composition_manifest?.music;
@@ -194,10 +224,10 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         const key = `media-assets/${asset.id}/variant-mixed.mp4`;
         const outputBuffer = await readBoundedOutput(output);
         await validateMediaBuffer(outputBuffer, "video", "video/mp4");
-        await putAsset(key, outputBuffer, "video/mp4");
         generatedKeys.push(key);
-        await db.update(mediaAssetsTable).set({ variant_key: key, updated_at: new Date() })
-          .where(eq(mediaAssetsTable.id, mediaAssetId));
+        if (!(await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4"))) {
+          throw new Error("MEDIA_ASSET_DELETED");
+        }
       }
     }
 
@@ -216,19 +246,21 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       : error instanceof Error && /^MEDIA_[A-Z_]+$/.test(error.message)
       ? error.message
       : "MEDIA_PROCESSING_FAILED";
+    let generatedCleanupSucceeded = true;
     for (const key of generatedKeys) {
       try {
         await deleteAssetStrict(key);
       } catch {
+        generatedCleanupSucceeded = false;
         logger.error({ requestId, mediaAssetId, jobType }, "media-processing: generated variant cleanup failed");
       }
     }
-    if (generatedKeys.length) {
+    if (generatedKeys.length && generatedCleanupSucceeded) {
       await db.update(mediaAssetsTable).set({
         ...(generatedKeys.some((key) => key.endsWith("/thumbnail.jpg")) ? { thumbnail_key: null } : {}),
         ...(generatedKeys.some((key) => key.endsWith("/variant.mp4") || key.endsWith("/variant-mixed.mp4")) ? { variant_key: null } : {}),
         updated_at: new Date(),
-      }).where(eq(mediaAssetsTable.id, mediaAssetId));
+      }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     }
     await db.update(mediaProcessingJobsTable).set({
       status: "failed",
@@ -239,7 +271,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       status: "failed",
       failure_reason: `${message};request_id=${requestId}`,
       updated_at: new Date(),
-    }).where(eq(mediaAssetsTable.id, mediaAssetId));
+    }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     logger.error({ requestId, mediaAssetId, jobType, failureCode: message }, "media-processing: job failed");
     throw new Error(`${message}; request_id=${requestId}`);
   } finally {

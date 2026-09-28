@@ -102,6 +102,43 @@ deployed commit, and explicit V21 activation confirmation. It does not set
 `MEDIA_PLATFORM_V21` itself. Cross-account original and thumbnail retrieval
 must return 404.
 
+If existing storage states are missing or malformed, **do not** retry the
+production runner. After rotating any credentials exposed in chat, enter the
+new disposable-account passwords through the secure secrets form (never in
+chat). The accounts must be distinct and approved. Build states from those
+credentials only in a private directory outside the checkout:
+
+```bash
+state_dir="$(mktemp -d /tmp/niakofa-media-states.XXXXXX)"
+chmod 700 "$state_dir"
+ALLOW_MEDIA_CERT_STATE_CREATION=1 \
+MEDIA_CERT_STATE_DIR="$state_dir" \
+BASE_URL=https://<canonical-production-origin> \
+EXPECTED_COMMIT=<full-served-commit> \
+MEDIA_CERT_A_EMAIL=<approved-disposable-account-a> \
+MEDIA_CERT_B_EMAIL=<approved-disposable-account-b> \
+node ops/build-media-certification-states.mjs
+node ops/validate-user-a-state.mjs "$state_dir/media-cert-a.json" USER_A_STATE
+node ops/validate-user-a-state.mjs "$state_dir/media-cert-b.json" USER_B_STATE
+```
+
+The builder refuses non-HTTPS origins, wrong commits, unapproved/duplicate
+accounts, non-private directories, or invalid state shapes. It never prints
+passwords or session tokens. Pass the two validated paths as `USER_A_STATE`
+and `USER_B_STATE` to the gated runner. Remove the temporary directory when
+the approved session ends; never commit, upload, or paste these files. The
+LiveKit connection secrets are separate from browser storage states and
+cannot replace them.
+
+**Deletion and devices:** The upload smoke intentionally leaves its two
+test assets in the approved disposable conversation for review. A successful
+PUT–HEAD–DELETE probe certifies the temporary storage probe only, not
+user-facing media deletion. Test deletion through the authorized app/API
+path using disposable media and verify the object is gone; retain any
+evidence the owner requests until the session is declared complete.
+Desktop Playwright or mobile viewport emulation cannot certify real iOS or
+Android camera, gallery, playback, or accessibility behavior.
+
 ## Security rule
 
 Do not add a permanent HTTP endpoint whose sole purpose is credential-backed

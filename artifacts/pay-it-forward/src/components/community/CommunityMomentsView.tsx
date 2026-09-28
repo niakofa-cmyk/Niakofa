@@ -14,11 +14,11 @@ export function CommunityMomentsView({
   useEffect(() => {
     if (openedRef.current) return;
     openedRef.current = true;
-    trackCommunityContent("moment_opened", {});
-  }, []);
+    trackCommunityContent("moment_opened", hubId === null ? {} : { hub_id: hubId });
+  }, [hubId]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-testid="community-moments-view">
       <CommunityMomentsExperience hubId={hubId} openSparkId={openSparkId} />
     </div>
   );

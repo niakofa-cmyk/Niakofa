@@ -1,5 +1,5 @@
 import { Router, type Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import {
   db,
   exchangeSparksTable,
@@ -47,6 +47,9 @@ const createDraftSchema = z.object({
 });
 const publishSchema = z.object({
   caption: z.string().trim().max(1000).optional(),
+});
+const updateDraftSchema = z.object({
+  caption: z.string().trim().max(1000),
 });
 
 async function eligibleListing(listingId: number, userId: number) {
@@ -114,6 +117,91 @@ router.post(
 );
 
 router.get(
+  "/community/exchange/sparks/drafts",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const now = new Date();
+    const sparks = await db.select({
+      id: exchangeSparksTable.id,
+      listing_id: exchangeSparksTable.listing_id,
+      status: exchangeSparksTable.status,
+      caption: exchangeSparksTable.caption,
+      draft_expires_at: exchangeSparksTable.draft_expires_at,
+      created_at: exchangeSparksTable.created_at,
+    }).from(exchangeSparksTable)
+      .where(and(
+        eq(exchangeSparksTable.author_user_id, req.authenticatedUserId!),
+        eq(exchangeSparksTable.status, "draft"),
+      ));
+    const activeDrafts = sparks.filter((spark) => spark.draft_expires_at > now);
+    const drafts = await Promise.all(activeDrafts.map(async (spark) => {
+      const assets = await db.select({
+        id: mediaAssetsTable.id,
+        media_type: mediaAssetsTable.media_type,
+        mime_type: mediaAssetsTable.mime_type,
+        byte_size: mediaAssetsTable.byte_size,
+        status: mediaAssetsTable.status,
+        duration_ms: mediaAssetsTable.duration_ms,
+        variant_key: mediaAssetsTable.variant_key,
+        failure_reason: mediaAssetsTable.failure_reason,
+      }).from(mediaAssetsTable)
+        .where(and(
+          eq(mediaAssetsTable.context_kind, "exchange_spark"),
+          eq(mediaAssetsTable.context_id, spark.id),
+          eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+        ));
+      return {
+        spark_id: spark.id,
+        listing_id: spark.listing_id,
+        status: spark.status,
+        caption: spark.caption,
+        created_at: spark.created_at.toISOString(),
+        expires_at: spark.draft_expires_at.toISOString(),
+        durable: true,
+        media_assets: assets.map((asset) => ({
+          media_asset_id: asset.id,
+          media_type: asset.media_type,
+          mime_type: asset.mime_type,
+          byte_size: asset.byte_size,
+          status: asset.status,
+          duration_ms: asset.duration_ms,
+          variant_ready: asset.status === "ready" && Boolean(asset.variant_key),
+          error_code: asset.status === "failed" ? safeExchangeSparkFailureCode(asset.failure_reason) : null,
+        })),
+      };
+    }));
+    drafts.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    return res.json({ drafts });
+  },
+);
+
+router.patch(
+  "/community/exchange/sparks/drafts/:sparkId",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const sparkId = positiveId(req.params.sparkId);
+    if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
+    const parsed = updateDraftSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Spark draft data is invalid." });
+    const [spark] = await db.update(exchangeSparksTable)
+      .set({ caption: cleanCaption(parsed.data.caption) || null, updated_at: new Date() })
+      .where(and(
+        eq(exchangeSparksTable.id, sparkId),
+        eq(exchangeSparksTable.author_user_id, req.authenticatedUserId!),
+        eq(exchangeSparksTable.status, "draft"),
+        gt(exchangeSparksTable.draft_expires_at, new Date()),
+      ))
+      .returning({ id: exchangeSparksTable.id, caption: exchangeSparksTable.caption });
+    if (!spark) return res.status(404).json({ error: "Spark draft not found." });
+    return res.json({ spark_id: spark.id, caption: spark.caption });
+  },
+);
+
+router.get(
   "/community/exchange/sparks/drafts/:sparkId",
   requireAuth,
   requireApproved,
@@ -127,6 +215,7 @@ router.get(
     const userId = req.authenticatedUserId!;
     const [spark] = await db.select({
       id: exchangeSparksTable.id,
+      listing_id: exchangeSparksTable.listing_id,
       status: exchangeSparksTable.status,
       caption: exchangeSparksTable.caption,
       draft_expires_at: exchangeSparksTable.draft_expires_at,
@@ -145,6 +234,7 @@ router.get(
       id: mediaAssetsTable.id,
       media_type: mediaAssetsTable.media_type,
       mime_type: mediaAssetsTable.mime_type,
+      byte_size: mediaAssetsTable.byte_size,
       status: mediaAssetsTable.status,
       duration_ms: mediaAssetsTable.duration_ms,
       variant_key: mediaAssetsTable.variant_key,
@@ -157,6 +247,7 @@ router.get(
       ));
     return res.json({
       spark_id: sparkId,
+      listing_id: spark.listing_id,
       status: spark.status,
       caption: spark.caption,
       created_at: spark.created_at.toISOString(),
@@ -166,6 +257,7 @@ router.get(
         media_asset_id: asset.id,
         media_type: asset.media_type,
         mime_type: asset.mime_type,
+        byte_size: asset.byte_size,
         status: asset.status,
         duration_ms: asset.duration_ms,
         variant_ready: asset.status === "ready" && Boolean(asset.variant_key),

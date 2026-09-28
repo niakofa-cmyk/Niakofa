@@ -35,14 +35,68 @@ export interface UploadSessionResponse {
 export interface SparkDraftStatus {
   spark_id: number;
   status: string;
+  listing_id: number;
+  caption: string | null;
   media_assets: Array<{
     media_asset_id: number;
     media_type: string;
     mime_type: string;
+    byte_size: number;
     status: string;
     variant_ready: boolean;
     error_code?: string | null;
   }>;
+}
+
+export function listExchangeSparkDrafts(signal: AbortSignal) {
+  return apiRequest<{ drafts: SparkDraftStatus[] }>("/api/community/exchange/sparks/drafts", { signal });
+}
+
+export function discardExchangeSparkDraft(sparkId: number, signal: AbortSignal) {
+  return apiRequest<{ spark_id: number; status: string }>(`/api/community/exchange/sparks/${sparkId}`, {
+    method: "DELETE",
+    signal,
+  });
+}
+
+export function updateExchangeSparkDraftCaption(sparkId: number, caption: string, signal: AbortSignal) {
+  return apiRequest<{ spark_id: number; caption: string | null }>(`/api/community/exchange/sparks/drafts/${sparkId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ caption }),
+    signal,
+  });
+}
+
+const SAVED_DRAFT_STORAGE_KEY = "community.exchange-spark.draft.v1";
+
+export function saveExchangeSparkDraftId(sparkId: number): void {
+  if (!Number.isSafeInteger(sparkId) || sparkId <= 0) {
+    throw new ExchangeSparkUploadError("The server returned an invalid Spark draft id.");
+  }
+  try {
+    window.localStorage.setItem(SAVED_DRAFT_STORAGE_KEY, String(sparkId));
+  } catch {
+    throw new ExchangeSparkUploadError("Your Spark draft could not be saved on this device. Keep this page open until publishing finishes.");
+  }
+}
+
+export function loadExchangeSparkDraftId(): number | null {
+  try {
+    const value = window.localStorage.getItem(SAVED_DRAFT_STORAGE_KEY);
+    if (!value || !/^[1-9]\d*$/.test(value)) return null;
+    const sparkId = Number(value);
+    return Number.isSafeInteger(sparkId) ? sparkId : null;
+  } catch {
+    throw new ExchangeSparkUploadError("Saved Spark drafts could not be read from this device.");
+  }
+}
+
+export function clearExchangeSparkDraftId(): void {
+  try {
+    window.localStorage.removeItem(SAVED_DRAFT_STORAGE_KEY);
+  } catch {
+    throw new ExchangeSparkUploadError("The completed Spark draft reference could not be cleared from this device.");
+  }
 }
 
 export interface SparkPublishResponse {
@@ -107,6 +161,22 @@ export function createSparkUploadSession(input: {
     }),
     signal,
   });
+}
+
+export function resumeSparkUploadSession(mediaAssetId: number, file: File): UploadSessionResponse {
+  if (!Number.isSafeInteger(mediaAssetId) || mediaAssetId <= 0) {
+    throw new ExchangeSparkUploadError("The saved Spark upload session is invalid.");
+  }
+  return {
+    media_asset_id: mediaAssetId,
+    upload: {
+      method: "PUT",
+      url: `/api/media-assets/${mediaAssetId}/upload`,
+      headers: { "Content-Type": file.type },
+      expires_in_seconds: null,
+    },
+    complete_url: `/api/media-assets/${mediaAssetId}/complete`,
+  };
 }
 
 export function putRawSparkFile(

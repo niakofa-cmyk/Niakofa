@@ -10,6 +10,9 @@ import {
   normalizeCommunityRoute,
 } from "./CommunityExperienceContract";
 
+export { CommunityMomentsUploader } from "./CommunityMomentsUploader";
+export type { CommunityMomentContext } from "@/lib/community-moments-upload";
+
 export const COMMUNITY_CONTENT_LANGUAGE = COMMUNITY_EXPERIENCE.vocabulary;
 
 export const MOMENTS_ROUTE = COMMUNITY_EXPERIENCE.routes.moments;

@@ -48,7 +48,7 @@ import {
 
 type StoryMedia = {
   id: number;
-  media_type: "photo" | "video";
+  media_type: "photo" | "video" | "audio";
   mime_type: string;
   duration_ms: number | null;
   media_url: string;

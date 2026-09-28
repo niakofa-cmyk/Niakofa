@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   communityStoriesTable,
   communityStoryElementsTable,
@@ -72,6 +72,7 @@ const createStorySchema = z.object({
     width: z.number().int().positive().max(10_000).nullable().optional(),
     height: z.number().int().positive().max(10_000).nullable().optional(),
   })).min(0).max(MAX_MEDIA_ITEMS).default([]),
+  media_asset_ids: z.array(z.number().int().positive()).max(MAX_MEDIA_ITEMS).optional(),
   elements: z.array(storyElementSchema).max(30).default([]),
   composition_manifest: z.object({
     version: z.literal(1),
@@ -307,8 +308,33 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
   if (req.query.hubId && !requestedHubId) return res.status(400).json({ error: "hubId must be a positive integer." });
   if (requestedHubId && !(await approvedCanonicalHub(requestedHubId))) return res.status(404).json({ error: "Canonical Hub not found." });
   if (requestedHubId && !(await approvedHubMember(userId, requestedHubId))) return res.status(403).json({ error: "Approved Hub membership is required to view this Hub's Stories." });
+  const requestedLimit = req.query.limit === undefined ? 100 : Number(req.query.limit);
+  if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+    return res.status(400).json({ error: "limit must be an integer between 1 and 100." });
+  }
+  let cursor: { createdAt: Date; id: number } | null = null;
+  if (req.query.cursor !== undefined) {
+    try {
+      const value = String(req.query.cursor);
+      if (!/^[A-Za-z0-9_-]{1,512}$/.test(value)) throw new Error("invalid cursor");
+      const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { created_at?: unknown; id?: unknown };
+      const createdAt = typeof parsed.created_at === "string" ? new Date(parsed.created_at) : new Date(NaN);
+      if (!Number.isFinite(createdAt.getTime()) || !Number.isSafeInteger(parsed.id) || Number(parsed.id) < 1) {
+        throw new Error("invalid cursor");
+      }
+      cursor = { createdAt, id: Number(parsed.id) };
+    } catch {
+      return res.status(400).json({ error: "cursor is invalid." });
+    }
+  }
 
-  const [viewer] = await db.select({ community_id: usersTable.community_id, diaspora_hub_id: usersTable.diaspora_hub_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const approvedHubIds = (await db.select({ hub_id: hubMembershipsTable.hub_id })
+    .from(hubMembershipsTable)
+    .where(and(
+      eq(hubMembershipsTable.user_id, userId),
+      eq(hubMembershipsTable.status, "approved"),
+    ))).map((membership) => membership.hub_id);
   const now = new Date();
   const visibility = requestedHubId
     ? and(eq(communityStoriesTable.hub_id, requestedHubId), eq(communityStoriesTable.audience, "hub"))
@@ -322,10 +348,12 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
             : eq(communityStoriesTable.community_id, viewer.community_id),
         ),
       ),
-      and(eq(communityStoriesTable.audience, "hub"), viewer?.diaspora_hub_id ? eq(communityStoriesTable.hub_id, viewer.diaspora_hub_id) : sql`false`),
+      approvedHubIds.length
+        ? and(eq(communityStoriesTable.audience, "hub"), inArray(communityStoriesTable.hub_id, approvedHubIds))
+        : sql`false`,
       eq(communityStoriesTable.author_user_id, userId),
     );
-  const rows = await db.select({
+  const queriedRows = await db.select({
     id: communityStoriesTable.id,
     author_user_id: communityStoriesTable.author_user_id,
     hub_id: communityStoriesTable.hub_id,
@@ -381,9 +409,20 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
             )
         )`,
       ),
+      cursor
+        ? or(
+          lt(communityStoriesTable.created_at, cursor.createdAt),
+          and(
+            eq(communityStoriesTable.created_at, cursor.createdAt),
+            lt(communityStoriesTable.id, cursor.id),
+          ),
+        )
+        : undefined,
     ))
-    .orderBy(desc(communityStoriesTable.created_at))
-    .limit(100);
+    .orderBy(desc(communityStoriesTable.created_at), desc(communityStoriesTable.id))
+    .limit(requestedLimit + 1);
+  const hasMore = queriedRows.length > requestedLimit;
+  const rows = queriedRows.slice(0, requestedLimit);
 
   const ids = rows.map((row) => row.id);
   const [mediaRows, elements] = ids.length ? await Promise.all([
@@ -413,6 +452,58 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
     stories: rows.map((row) => publicStory(row, mediaByStory.get(row.id) ?? [], elementsByStory.get(row.id) ?? [])),
     viewer_user_id: userId,
     expires_after_hours: 24,
+    next_cursor: hasMore && rows.length
+      ? Buffer.from(JSON.stringify({
+        created_at: rows[rows.length - 1].created_at?.toISOString(),
+        id: rows[rows.length - 1].id,
+      })).toString("base64url")
+      : null,
+  });
+});
+
+router.get("/community/stories/moment-media-status", requireAuth, requireApproved, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const contextKind = String(req.query.contextKind ?? "");
+  const contextId = positiveId(req.query.contextId);
+  const rawIds = String(req.query.ids ?? "");
+  const ids = rawIds ? rawIds.split(",").map(Number) : [];
+  if (!["community_moment", "hub_moment"].includes(contextKind)
+    || !contextId || !ids.length || ids.length > MAX_MEDIA_ITEMS
+    || ids.some((id) => !Number.isSafeInteger(id) || id < 1)
+    || new Set(ids).size !== ids.length) {
+    return res.status(400).json({ error: "Moment media context and up to six unique asset ids are required." });
+  }
+  if (contextKind === "community_moment" && contextId !== userId) {
+    return res.status(404).json({ error: "Moment upload context not found." });
+  }
+  if (contextKind === "hub_moment"
+    && (!(await approvedCanonicalHub(contextId)) || !(await approvedHubMember(userId, contextId)))) {
+    return res.status(404).json({ error: "Moment upload context not found." });
+  }
+  const assets = await db.select({
+    id: mediaAssetsTable.id,
+    status: mediaAssetsTable.status,
+    media_type: mediaAssetsTable.media_type,
+    variant_key: mediaAssetsTable.variant_key,
+    failure_reason: mediaAssetsTable.failure_reason,
+  }).from(mediaAssetsTable)
+    .where(and(
+      inArray(mediaAssetsTable.id, ids),
+      eq(mediaAssetsTable.owner_user_id, userId),
+      eq(mediaAssetsTable.context_kind, contextKind),
+      eq(mediaAssetsTable.context_id, contextId),
+    ));
+  if (assets.length !== ids.length) return res.status(404).json({ error: "One or more Moment uploads are unavailable." });
+  return res.json({
+    assets: assets.map((asset) => ({
+      id: asset.id,
+      status: asset.status,
+      media_type: asset.media_type,
+      variant_ready: Boolean(asset.variant_key),
+      failure_code: asset.status === "failed"
+        ? asset.failure_reason?.match(/^MEDIA_[A-Z_]+/)?.[0] ?? "MEDIA_PROCESSING_FAILED"
+        : null,
+    })),
   });
 });
 
@@ -422,6 +513,52 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   const userId = req.authenticatedUserId!;
   const hubId = parsed.data.hub_id ?? null;
   const exchangeListingId = parsed.data.exchange_listing_id ?? null;
+  const mediaAssetIds = parsed.data.media_asset_ids ?? [];
+  if (mediaAssetIds.length && parsed.data.media.length) {
+    return res.status(400).json({ error: "Use either uploaded media assets or inline Story media, not both." });
+  }
+  if (new Set(mediaAssetIds).size !== mediaAssetIds.length) {
+    return res.status(400).json({ error: "Moment media asset ids must be unique." });
+  }
+  if (mediaAssetIds.length && exchangeListingId !== null) {
+    return res.status(400).json({ error: "Exchange-linked Sparks must use their dedicated media upload flow." });
+  }
+  if (mediaAssetIds.length) {
+    const attachedAssets = await db.select({
+      story_id: communityStoryMediaTable.story_id,
+      media_asset_id: communityStoryMediaTable.media_asset_id,
+      author_user_id: communityStoriesTable.author_user_id,
+      caption: communityStoriesTable.caption,
+      audience: communityStoriesTable.audience,
+      hub_id: communityStoriesTable.hub_id,
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at,
+    }).from(communityStoryMediaTable)
+      .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id))
+      .where(inArray(communityStoryMediaTable.media_asset_id, mediaAssetIds));
+    if (attachedAssets.length) {
+      const first = attachedAssets[0];
+      const isSameCompletedCreate = attachedAssets.length === mediaAssetIds.length
+        && attachedAssets.every((asset) => asset.story_id === first?.story_id
+          && asset.author_user_id === userId
+          && asset.caption === (cleanText(parsed.data.caption, 1000) || null)
+          && asset.audience === parsed.data.audience
+          && asset.hub_id === hubId
+          && (asset.status === "published" || asset.status === "pending")
+          && asset.expires_at > new Date())
+        && new Set(attachedAssets.map((asset) => asset.media_asset_id)).size === mediaAssetIds.length;
+      if (!isSameCompletedCreate || !first) {
+        return res.status(409).json({ error: "One or more uploaded assets have already been attached to a Moment." });
+      }
+      return res.status(200).json({
+        story: {
+          id: first.story_id,
+          status: first.status,
+          expires_at: first.expires_at.toISOString(),
+        },
+      });
+    }
+  }
   if (hubId && (!(await approvedCanonicalHub(hubId)) || !(await approvedHubMember(userId, hubId)))) {
     return res.status(403).json({ error: "Approved Hub membership is required to publish a Hub Story." });
   }
@@ -449,8 +586,45 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       .limit(1);
     if (!listing) return res.status(404).json({ error: "An active, approved Exchange listing you own is required." });
   }
-  if (!parsed.data.caption && parsed.data.media.length === 0 && parsed.data.elements.length === 0) {
+  if (!parsed.data.caption && parsed.data.media.length === 0 && mediaAssetIds.length === 0 && parsed.data.elements.length === 0) {
     return res.status(400).json({ error: "A Story needs media, text, or a creative element." });
+  }
+  const stagedContextKind = parsed.data.audience === "hub" ? "hub_moment" : "community_moment";
+  const stagedContextId = parsed.data.audience === "hub" ? hubId : userId;
+  if (mediaAssetIds.length) {
+    const stagedAssets = await db.select({
+      id: mediaAssetsTable.id,
+      status: mediaAssetsTable.status,
+      media_type: mediaAssetsTable.media_type,
+      mime_type: mediaAssetsTable.mime_type,
+      variant_key: mediaAssetsTable.variant_key,
+      duration_ms: mediaAssetsTable.duration_ms,
+    }).from(mediaAssetsTable)
+      .where(and(
+        inArray(mediaAssetsTable.id, mediaAssetIds),
+        eq(mediaAssetsTable.owner_user_id, userId),
+        eq(mediaAssetsTable.context_kind, stagedContextKind),
+        eq(mediaAssetsTable.context_id, stagedContextId!),
+      ));
+    if (stagedAssets.length !== mediaAssetIds.length) {
+      return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
+    }
+    if (stagedAssets.some((asset) => asset.status === "failed")) {
+      return res.status(409).json({ error: "One or more uploaded assets failed processing. Retry processing or choose another file.", error_code: "MOMENT_MEDIA_FAILED" });
+    }
+    if (stagedAssets.some((asset) => asset.media_type === "video" && (asset.duration_ms ?? 0) > 60_000)) {
+      return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    }
+    if (stagedAssets.some((asset) => asset.status !== "ready"
+      || asset.media_type === "video" && (!asset.variant_key || !asset.duration_ms)
+      || !["photo", "video", "audio"].includes(asset.media_type))) {
+      return res.status(409).json({ error: "Moment media is still processing. Wait until every file is ready, then retry.", error_code: "MOMENT_MEDIA_NOT_READY" });
+    }
+    if (stagedAssets.some((asset) => asset.media_type === "photo" && !asset.mime_type.startsWith("image/")
+      || asset.media_type === "video" && !asset.mime_type.startsWith("video/")
+      || asset.media_type === "audio" && !asset.mime_type.startsWith("audio/"))) {
+      return res.status(400).json({ error: "Uploaded media type does not match its file format." });
+    }
   }
   const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   const caption = cleanText(parsed.data.caption, 1000) || null;
@@ -505,6 +679,26 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       .where(and(inArray(usersTable.id, mentionIds), eq(usersTable.approval_status, "approved"), eq(usersTable.is_suspended, false))) : [];
     if (mentionUsers.length !== mentionIds.length) return res.status(400).json({ error: "One or more Story mentions are no longer available." });
     const result = await db.transaction(async (tx) => {
+      const stagedAssets = mediaAssetIds.length
+        ? await tx.select().from(mediaAssetsTable)
+          .where(and(
+            inArray(mediaAssetsTable.id, mediaAssetIds),
+            eq(mediaAssetsTable.owner_user_id, userId),
+            eq(mediaAssetsTable.context_kind, stagedContextKind),
+            eq(mediaAssetsTable.context_id, stagedContextId!),
+          ))
+          .for("update")
+        : [];
+      if (stagedAssets.length !== mediaAssetIds.length) return { kind: "media_not_found" as const };
+      if (stagedAssets.some((asset) => asset.status === "failed")) return { kind: "media_failed" as const };
+      if (stagedAssets.some((asset) => asset.media_type === "video" && (asset.duration_ms ?? 0) > 60_000)) {
+        return { kind: "media_too_long" as const };
+      }
+      if (stagedAssets.some((asset) => asset.status !== "ready"
+        || asset.media_type === "video" && (!asset.variant_key || !asset.duration_ms)
+        || !["photo", "video", "audio"].includes(asset.media_type))) {
+        return { kind: "media_not_ready" as const };
+      }
       const [story] = await tx.insert(communityStoriesTable).values({
         author_user_id: userId,
         hub_id: hubId,
@@ -556,6 +750,31 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           height: item.metadata?.height ?? null,
         });
       }
+      if (stagedAssets.length) {
+        await tx.insert(communityStoryMediaTable).values(stagedAssets.map((asset) => ({
+          story_id: story.id,
+          media_asset_id: asset.id,
+          storage_key: asset.original_key,
+          media_type: asset.media_type,
+          mime_type: asset.mime_type,
+          byte_size: asset.byte_size,
+          duration_ms: asset.duration_ms,
+          width: asset.width,
+          height: asset.height,
+        })));
+        await tx.update(mediaAssetsTable)
+          .set({
+            context_kind: "story",
+            context_id: story.id,
+            updated_at: new Date(),
+          })
+          .where(and(
+            inArray(mediaAssetsTable.id, mediaAssetIds),
+            eq(mediaAssetsTable.owner_user_id, userId),
+            eq(mediaAssetsTable.context_kind, stagedContextKind),
+            eq(mediaAssetsTable.context_id, stagedContextId!),
+          ));
+      }
       if (parsed.data.elements.length) {
         await tx.insert(communityStoryElementsTable).values(parsed.data.elements.map((element) => ({
           story_id: story.id,
@@ -568,8 +787,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           z_index: element.z_index,
         })));
       }
-      return { story, mediaAssetJobs };
+      return { kind: "created" as const, story, mediaAssetJobs };
     });
+    if (result.kind === "media_not_found") return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
+    if (result.kind === "media_failed") return res.status(409).json({ error: "One or more uploaded assets failed processing.", error_code: "MOMENT_MEDIA_FAILED" });
+    if (result.kind === "media_too_long") return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    if (result.kind === "media_not_ready") return res.status(409).json({ error: "Moment media is still processing. Retry after every file is ready.", error_code: "MOMENT_MEDIA_NOT_READY" });
     if (result.mediaAssetJobs.length) {
       try {
         await Promise.all(result.mediaAssetJobs.map((job) => enqueueMediaAssetProcessing(job.id, job.mediaType, job.manifest)));
