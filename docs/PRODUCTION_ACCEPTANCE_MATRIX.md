@@ -4,6 +4,17 @@ This is the release gate for the universal media foundation. A healthy
 deployment or a configured bucket is not enough to enable `MEDIA_PLATFORM_V21`.
 Record evidence for every checked row from the production runtime.
 
+**Observed 2026-09-28 (not a passed gate):** Production `/api/healthz`
+reported `media_platform_flag=true`, a configured S3-compatible
+`niakofa-production-media` bucket, and credential presence both before and
+after the Sparks deployment. `/api/readiness` reported healthy on the deployed
+commit. The flag was already on; this review did not activate it. There is no
+recorded production PUT/HEAD/DELETE probe, worker FFmpeg/FFprobe execution,
+approved-account media round trip, cleanup verification, or real-device
+evidence. Leave the unchecked gates unchecked. Turning an already-live flag
+off requires an operational decision because it may interrupt existing media
+use; do not interpret its current value as approval to expand the rollout.
+
 ## Gate 1 — Application and storage configuration
 
 - [ ] CI, typecheck, and tests are green on the intended commit

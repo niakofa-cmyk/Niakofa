@@ -71,10 +71,13 @@ schemas, assets, credentials, or deployment configuration into the app.
   Protected durable playback uses a short-lived, asset-scoped cookie grant and
   byte-range streaming. Draft expiry and account removal retain storage
   tombstones for retryable cleanup.
-- **Not certified for production:** `MEDIA_PLATFORM_V21` remains off. The
-  deployed storage, queue, processing worker, authenticated upload/playback,
-  deletion, and device journeys have not passed the release checks above.
-  A working development build and schema migration do not enable this flag.
+- **Not certified for production:** On 2026-09-28, the production
+  `/api/healthz` response reported `media_platform_flag=true` both before
+  and after this rebuild deployed. This was already enabled externally, not
+  activated by this work. The deployed storage I/O, processing worker,
+  authenticated upload/playback, deletion, and device journeys have not passed
+  the release checks above. A healthy deployment and schema migration are not
+  certification; do not infer that the live flag is safe from its current value.
 - **Not completed:** ordinary Community/Hub Moments still send Base64 media
   through the legacy Story API; their direct-binary path and a dedicated
   vertical Moments browsing experience remain separate work. Legacy

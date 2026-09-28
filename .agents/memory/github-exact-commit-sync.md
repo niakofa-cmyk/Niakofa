@@ -158,8 +158,8 @@ workspace-synced object with identical source content.
 already points to the same-parent, same-tree local commit object, align local
 tracking refs to that published SHA instead of force-updating the branch.
 
-The bound GitHub connector can truncate Git Data API blob requests for larger generated files (observed above roughly 60 KB); its SDK uses the same transport, and gzip request bodies are rejected. Never create a tree or advance a ref after a blob SHA mismatch.
+The bound GitHub connector has previously truncated Git Data API blob requests for larger generated files; later 79 KB text uploads succeeded. The transport behavior is not stable enough to infer success from file size or HTTP status alone. Its SDK uses the same transport, and gzip request bodies are rejected. Never create a tree or advance a ref after a blob SHA mismatch.
 
-**Why:** A successful 201 response is not proof that the full blob arrived; a truncated generated contract file produces a different SHA while leaving the remote branch untouched.
+**Why:** A successful 201 response is not proof that the full blob arrived; prior truncated uploads produced a different SHA even when the remote branch was untouched. More recent larger uploads happened to match, but do not remove this gate.
 
 **How to apply:** Upload sequentially, compare every returned blob SHA, and stop at the first mismatch. Use a transport with full Git object support for large generated artifacts rather than publishing a partial tree.
