@@ -70,15 +70,17 @@ MEDIA_PLATFORM_V21_BROWSER_SMOKE=1 \
 BASE_URL=https://... \
 EXPECTED_COMMIT=<deployed-commit> \
 USER_A_STATE=/private/path/user-a-state.json \
+USER_B_STATE=/private/path/user-b-state.json \
 MEDIA_SMOKE_CONTEXT_KIND=direct \
 MEDIA_SMOKE_CONTEXT_ID=<approved-context-id> \
 pnpm test:media-production
 ```
 
-The runner refuses to start without an approved disposable storage state,
-positive context ID, exact deployed commit intent, and explicit V21
-activation confirmation. It does not set `MEDIA_PLATFORM_V21` itself. The
-optional `USER_B_STATE` enables the cross-account isolation assertion.
+The runner refuses to start without two approved disposable storage states
+(owner and unauthorized user), a positive context ID, the full 40-character
+deployed commit, and explicit V21 activation confirmation. It does not set
+`MEDIA_PLATFORM_V21` itself. Cross-account original and thumbnail retrieval
+must return 404.
 
 ## Security rule
 

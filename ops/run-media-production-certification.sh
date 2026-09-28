@@ -42,6 +42,7 @@ if [[ -n "${USER_B_STATE_JSON:-}" ]]; then
 fi
 
 : "${USER_A_STATE:?USER_A_STATE or USER_A_STATE_JSON is required}"
+: "${USER_B_STATE:?USER_B_STATE or USER_B_STATE_JSON is required for isolation certification}"
 : "${MEDIA_SMOKE_CONTEXT_KIND:?MEDIA_SMOKE_CONTEXT_KIND is required}"
 : "${MEDIA_SMOKE_CONTEXT_ID:?MEDIA_SMOKE_CONTEXT_ID is required}"
 
@@ -61,8 +62,8 @@ if [[ "${MEDIA_PLATFORM_V21_BROWSER_SMOKE:-}" != "1" ]]; then
   echo "Refusing production media E2E: set MEDIA_PLATFORM_V21_BROWSER_SMOKE=1 explicitly." >&2
   exit 2
 fi
-if [[ ! "$EXPECTED_COMMIT" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
-  echo "Refusing production media E2E: EXPECTED_COMMIT must be a 7-40 character Git commit SHA." >&2
+if [[ ! "$EXPECTED_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  echo "Refusing production media E2E: EXPECTED_COMMIT must be a full 40-character Git commit SHA." >&2
   exit 2
 fi
 if [[ ! "$MEDIA_SMOKE_CONTEXT_ID" =~ ^[1-9][0-9]*$ ]]; then
@@ -71,9 +72,7 @@ if [[ ! "$MEDIA_SMOKE_CONTEXT_ID" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 node ops/validate-user-a-state.mjs "$USER_A_STATE" USER_A_STATE
-if [[ -n "${USER_B_STATE:-}" ]]; then
-  node ops/validate-user-a-state.mjs "$USER_B_STATE" USER_B_STATE
-fi
+node ops/validate-user-a-state.mjs "$USER_B_STATE" USER_B_STATE
 
 export PLAYWRIGHT_BASE_URL="$BASE_URL"
 if [[ -z "${PLAYWRIGHT_EXECUTABLE_PATH:-}" && -x "/repl/tools/bin/chromium" ]]; then
