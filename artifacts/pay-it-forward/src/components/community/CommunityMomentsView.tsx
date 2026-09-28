@@ -5,9 +5,11 @@ import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 export function CommunityMomentsView({
   hubId,
   openSparkId,
+  openComposerSignal,
 }: {
   hubId: number | null;
   openSparkId: number | null;
+  openComposerSignal?: number;
 }) {
   const openedRef = useRef(false);
 
@@ -19,7 +21,7 @@ export function CommunityMomentsView({
 
   return (
     <div className="space-y-3" data-testid="community-moments-view">
-      <CommunityMomentsExperience hubId={hubId} openSparkId={openSparkId} />
+      <CommunityMomentsExperience hubId={hubId} openSparkId={openSparkId} openComposerSignal={openComposerSignal} />
     </div>
   );
 }

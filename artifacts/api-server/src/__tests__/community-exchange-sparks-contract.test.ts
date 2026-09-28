@@ -62,10 +62,11 @@ describe("Exchange Sparks authorization and discovery contract", () => {
   });
 
   it("denies access for a stale, moderated, unsafe, or blocked Exchange listing", () => {
-    for (const listingStatus of ["reserved", "withdrawn", "archived"]) {
+    for (const listingStatus of ["paused", "reserved", "withdrawn", "archived"]) {
       expect(canReadExchangeLinkedStory({ ...visibleStory, listingStatus })).toBe(false);
     }
     expect(canReadExchangeLinkedStory({ ...visibleStory, listingModerationStatus: "held" })).toBe(false);
+    expect(canReadExchangeLinkedStory({ ...visibleStory, listingModerationStatus: "rejected" })).toBe(false);
     expect(canReadExchangeLinkedStory({ ...visibleStory, sellerApprovalStatus: "pending" })).toBe(false);
     expect(canReadExchangeLinkedStory({ ...visibleStory, sellerIsSuspended: true })).toBe(false);
     expect(canReadExchangeLinkedStory({ ...visibleStory, listingSellerId: 999 })).toBe(false);
@@ -206,6 +207,25 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(route).toMatch(/communityStoriesTable\.expires_at} > NOW\(\)/);
     expect(route).toMatch(/encodeSparkCursor/);
     expect(route).toMatch(/next_cursor: hasMore/);
+  });
+
+  it("exposes durable Sparks and legacy Stories only while their linked listing is active and approved", async () => {
+    const route = await fs.readFile(exchangeRoutePath, "utf8");
+    const durableFeed = route.slice(route.indexOf("const durableRows ="), route.indexOf("// Old listing-linked Stories"));
+    const legacyFeed = route.slice(route.indexOf("const legacyRows ="), route.indexOf("const items ="));
+
+    for (const query of [durableFeed, legacyFeed]) {
+      expect(query).toMatch(/eq\(exchangeListingsTable\.status, "active"\)/);
+      expect(query).toMatch(/eq\(exchangeListingsTable\.moderation_status, "approved"\)/);
+      expect(query).toMatch(/eq\(exchangeListingsTable\.seller_id,/);
+      expect(query).toMatch(/eq\(usersTable\.approval_status, "approved"\)/);
+      expect(query).toMatch(/eq\(usersTable\.is_suspended, false\)/);
+    }
+
+    expect(legacyFeed).toMatch(/communityStoriesTable\.expires_at\} > NOW\(\)/);
+    expect(legacyFeed).toMatch(/expires_at: communityStoriesTable\.expires_at/);
+    expect(route).toMatch(/expires_at: row\.expires_at\.toISOString\(\)/);
+    expect(legacyFeed).not.toMatch(/communityStoriesTable\.status, "draft"/);
   });
 
   it("keeps durable Sparks separate from expiring Stories and retries media deletion", async () => {

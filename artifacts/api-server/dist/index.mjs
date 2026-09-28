@@ -56372,6 +56372,7 @@ var init_community_stories = __esm({
   "../../lib/db/src/schema/community-stories.ts"() {
     "use strict";
     init_pg_core();
+    init_drizzle_orm();
     init_users();
     init_communities();
     init_diaspora_hubs();
@@ -56383,6 +56384,8 @@ var init_community_stories = __esm({
       hub_id: integer("hub_id").references(() => diasporaHubsTable.id, { onDelete: "set null" }),
       community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
       exchange_listing_id: integer("exchange_listing_id").references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
+      client_publish_id: varchar("client_publish_id", { length: 36 }),
+      publish_payload_hash: varchar("publish_payload_hash", { length: 64 }),
       caption: text("caption"),
       audience: text("audience").notNull().default("community"),
       status: text("status").notNull().default("published"),
@@ -56395,7 +56398,8 @@ var init_community_stories = __esm({
       index("community_stories_hub_expires_idx").on(table.hub_id, table.expires_at),
       index("community_stories_status_expires_idx").on(table.status, table.expires_at),
       index("community_stories_community_expires_idx").on(table.community_id, table.expires_at),
-      index("community_stories_exchange_listing_idx").on(table.exchange_listing_id, table.created_at)
+      index("community_stories_exchange_listing_idx").on(table.exchange_listing_id, table.created_at),
+      uniqueIndex("community_stories_author_client_publish_uidx").on(table.author_user_id, table.client_publish_id).where(sql`${table.client_publish_id} IS NOT NULL`)
     ]);
     communityStoryMediaTable = pgTable("community_story_media", {
       id: serial("id").primaryKey(),
@@ -106096,7 +106100,7 @@ var require_websocket = __commonJS({
     var http5 = __require("http");
     var net2 = __require("net");
     var tls = __require("tls");
-    var { randomBytes: randomBytes2, createHash: createHash6 } = __require("crypto");
+    var { randomBytes: randomBytes2, createHash: createHash7 } = __require("crypto");
     var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -106764,7 +106768,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest2 = createHash6("sha1").update(key + GUID).digest("base64");
+        const digest2 = createHash7("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest2) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -107133,7 +107137,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter2 = __require("events");
     var http5 = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash: createHash6 } = __require("crypto");
+    var { createHash: createHash7 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -107440,7 +107444,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest2 = createHash6("sha1").update(key + GUID).digest("base64");
+        const digest2 = createHash7("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -116009,444 +116013,6 @@ var init_src2 = __esm({
     "use strict";
     init_api2();
     init_types2();
-  }
-});
-
-// src/lib/storage.ts
-var storage_exports = {};
-__export(storage_exports, {
-  UPLOADS_BASE: () => UPLOADS_BASE,
-  assetExists: () => assetExists,
-  collectAssetBuffer: () => collectAssetBuffer,
-  deleteAsset: () => deleteAsset,
-  deleteAssetStrict: () => deleteAssetStrict,
-  getAssetBuffer: () => getAssetBuffer,
-  getAssetInfo: () => getAssetInfo,
-  getAssetUrl: () => getAssetUrl,
-  getPrivateAssetUrl: () => getPrivateAssetUrl,
-  getStorageBackend: () => getStorageBackend,
-  getStorageDescription: () => getStorageDescription,
-  isCloudStorageConfigured: () => isCloudStorageConfigured,
-  putAsset: () => putAsset,
-  streamAssetRange: () => streamAssetRange,
-  streamAssetSameOrigin: () => streamAssetSameOrigin,
-  streamOrRedirectAsset: () => streamOrRedirectAsset,
-  streamOrRedirectPrivateAsset: () => streamOrRedirectPrivateAsset
-});
-import { createReadStream, existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
-import path from "path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-function isCloudStorageConfigured(env = process.env) {
-  return Boolean(env["STORAGE_BUCKET"]?.trim());
-}
-function getStorageBackend(env = process.env) {
-  return isCloudStorageConfigured(env) ? "s3" : "local";
-}
-function getStorageDescription(env = process.env) {
-  if (!isCloudStorageConfigured(env)) return "local-disk";
-  const endpoint = env["STORAGE_ENDPOINT"]?.trim();
-  const bucket = env["STORAGE_BUCKET"].trim();
-  if (endpoint?.includes("r2.cloudflarestorage.com")) return `cloudflare-r2:${bucket}`;
-  if (endpoint) return `s3-compatible:${bucket}`;
-  return `aws-s3:${bucket}`;
-}
-async function getS3Client() {
-  if (_s3Client) return _s3Client;
-  const { S3Client } = await import("@aws-sdk/client-s3");
-  const endpoint = process.env["STORAGE_ENDPOINT"];
-  const region = process.env["STORAGE_REGION"] ?? (endpoint ? "auto" : "us-east-1");
-  _s3Client = new S3Client({
-    region,
-    ...endpoint ? { endpoint, forcePathStyle: false } : {}
-  });
-  return _s3Client;
-}
-async function putAsset(key, buffer, mimeType) {
-  if (isCloudStorageConfigured()) {
-    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-    const client = await getS3Client();
-    await client.send(
-      new PutObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key,
-        Body: buffer,
-        ContentType: mimeType
-      })
-    );
-    logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 s3");
-  } else {
-    const abs = path.resolve(UPLOADS_BASE, key);
-    const destDir = path.dirname(abs);
-    mkdirSync(destDir, { recursive: true });
-    writeFileSync(abs, buffer);
-    logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 local");
-  }
-}
-async function getAssetInfo(key) {
-  if (isCloudStorageConfigured()) {
-    try {
-      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
-      const client = await getS3Client();
-      const result = await client.send(new HeadObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key
-      }));
-      return {
-        contentLength: Number(result.ContentLength ?? 0),
-        contentType: result.ContentType ?? null
-      };
-    } catch {
-      return null;
-    }
-  }
-  try {
-    const stat3 = await fs.stat(path.resolve(UPLOADS_BASE, key));
-    return { contentLength: stat3.size, contentType: null };
-  } catch {
-    return null;
-  }
-}
-async function getAssetUrl(key) {
-  if (isCloudStorageConfigured()) {
-    const cdnBase = process.env["STORAGE_CDN_URL"];
-    if (cdnBase) {
-      return `${cdnBase.replace(/\/$/, "")}/${key}`;
-    }
-    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-    const client = await getS3Client();
-    return getSignedUrl(
-      client,
-      new GetObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key
-      }),
-      { expiresIn: 300 }
-      // 5 minutes
-    );
-  }
-  return `/api/family/assets/${key}`;
-}
-async function getPrivateAssetUrl(key, expiresInSeconds = 300) {
-  if (!isCloudStorageConfigured()) {
-    return `/api/audio-circle-recording-assets?key=${encodeURIComponent(key)}`;
-  }
-  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-  const client = await getS3Client();
-  return getSignedUrl(
-    client,
-    new GetObjectCommand({
-      Bucket: process.env["STORAGE_BUCKET"],
-      Key: key
-    }),
-    { expiresIn: expiresInSeconds }
-  );
-}
-async function assetExists(key) {
-  if (isCloudStorageConfigured()) {
-    try {
-      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
-      const client = await getS3Client();
-      await client.send(
-        new HeadObjectCommand({
-          Bucket: process.env["STORAGE_BUCKET"],
-          Key: key
-        })
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  return existsSync(path.resolve(UPLOADS_BASE, key));
-}
-async function collectAssetBuffer(source, maxBytes, cancel) {
-  if (maxBytes !== void 0 && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
-    throw new Error("STORAGE_INVALID_MAX_BYTES");
-  }
-  const chunks = [];
-  let totalBytes = 0;
-  for await (const chunk of source) {
-    totalBytes += chunk.byteLength;
-    if (maxBytes !== void 0 && totalBytes > maxBytes) {
-      cancel?.();
-      throw new Error("STORAGE_OBJECT_TOO_LARGE");
-    }
-    chunks.push(Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks, totalBytes);
-}
-async function getAssetBuffer(key, maxBytes) {
-  if (maxBytes !== void 0 && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
-    throw new Error("STORAGE_INVALID_MAX_BYTES");
-  }
-  if (isCloudStorageConfigured()) {
-    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-    const client = await getS3Client();
-    const result = await client.send(new GetObjectCommand({
-      Bucket: process.env["STORAGE_BUCKET"],
-      Key: key
-    }));
-    if (!result.Body) throw new Error("STORAGE_OBJECT_EMPTY");
-    const body = result.Body;
-    if (maxBytes !== void 0 && result.ContentLength != null && result.ContentLength > maxBytes) {
-      body.destroy?.();
-      throw new Error("STORAGE_OBJECT_TOO_LARGE");
-    }
-    return collectAssetBuffer(body, maxBytes, () => body.destroy?.());
-  }
-  const stream = createReadStream(path.resolve(UPLOADS_BASE, key));
-  return collectAssetBuffer(stream, maxBytes, () => stream.destroy());
-}
-async function streamOrRedirectAsset(key, res) {
-  res.setHeader("Cache-Control", "private, no-store");
-  if (isCloudStorageConfigured()) {
-    const url2 = await getAssetUrl(key);
-    res.redirect(307, url2);
-    return;
-  }
-  const abs = path.resolve(UPLOADS_BASE, key);
-  if (!existsSync(abs)) {
-    res.status(404).json({ error: "Asset not found" });
-    return;
-  }
-  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  res.sendFile(abs);
-}
-async function streamAssetRange(key, req, res, contentType) {
-  res.setHeader("Cache-Control", "private, no-store");
-  res.setHeader("Accept-Ranges", "bytes");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  if (contentType) res.setHeader("Content-Type", contentType);
-  const abs = path.resolve(UPLOADS_BASE, key);
-  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  let size;
-  let localFile = false;
-  if (isCloudStorageConfigured()) {
-    const info = await getAssetInfo(key);
-    if (!info) {
-      res.status(404).json({ error: "Asset not found" });
-      return;
-    }
-    size = info.contentLength;
-    if (!contentType && info.contentType) res.setHeader("Content-Type", info.contentType);
-  } else {
-    try {
-      size = (await fs.stat(abs)).size;
-      localFile = true;
-    } catch (error40) {
-      if (error40.code === "ENOENT") {
-        res.status(404).json({ error: "Asset not found" });
-        return;
-      }
-      throw error40;
-    }
-  }
-  let start = 0;
-  let end = size - 1;
-  const range = req.headers.range;
-  if (range) {
-    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
-    if (!match || !match[1] && !match[2] || size === 0) {
-      res.setHeader("Content-Range", `bytes */${size}`);
-      res.status(416).end();
-      return;
-    }
-    if (!match[1]) {
-      const suffixLength = Number(match[2]);
-      if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
-        res.setHeader("Content-Range", `bytes */${size}`);
-        res.status(416).end();
-        return;
-      }
-      start = Math.max(size - suffixLength, 0);
-    } else {
-      start = Number(match[1]);
-      end = match[2] ? Number(match[2]) : size - 1;
-    }
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= size) {
-      res.setHeader("Content-Range", `bytes */${size}`);
-      res.status(416).end();
-      return;
-    }
-    end = Math.min(end, size - 1);
-    res.status(206);
-    res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
-  }
-  res.setHeader("Content-Length", String(end - start + 1));
-  if (req.method === "HEAD") {
-    res.end();
-    return;
-  }
-  if (size === 0) {
-    res.end();
-    return;
-  }
-  if (localFile) {
-    try {
-      await pipeline(createReadStream(abs, { start, end }), res);
-    } catch (error40) {
-      if (req.aborted || res.destroyed) return;
-      logger.warn({ errorType: error40 instanceof Error ? error40.name : "unknown" }, "storage: local media stream failed");
-      if (!res.headersSent) res.status(500).end();
-      else res.destroy();
-    }
-    return;
-  }
-  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-  const client = await getS3Client();
-  const abortController = new AbortController();
-  const abortForDisconnect = () => abortController.abort();
-  const abortForResponseClose = () => {
-    if (!res.writableEnded) abortController.abort();
-  };
-  req.once("aborted", abortForDisconnect);
-  res.once("close", abortForResponseClose);
-  try {
-    const result = await client.send(new GetObjectCommand({
-      Bucket: process.env["STORAGE_BUCKET"],
-      Key: key,
-      Range: range ? `bytes=${start}-${end}` : void 0
-    }), { abortSignal: abortController.signal });
-    if (result.ContentType && !contentType) res.setHeader("Content-Type", result.ContentType);
-    if (!result.Body) {
-      res.removeHeader("Content-Length");
-      res.status(404).end();
-      return;
-    }
-    await pipeline(Readable.from(result.Body), res, {
-      signal: abortController.signal
-    });
-  } catch (error40) {
-    if (abortController.signal.aborted || req.aborted) return;
-    logger.warn({ errorType: error40 instanceof Error ? error40.name : "unknown" }, "storage: cloud media stream failed");
-    if (res.headersSent || res.destroyed) {
-      if (!res.destroyed) res.destroy();
-      return;
-    }
-    throw error40;
-  } finally {
-    req.off("aborted", abortForDisconnect);
-    res.off("close", abortForResponseClose);
-  }
-}
-async function streamAssetSameOrigin(key, res) {
-  res.setHeader("Cache-Control", "private, no-store");
-  if (isCloudStorageConfigured()) {
-    try {
-      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-      const client = await getS3Client();
-      const result = await client.send(new GetObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key
-      }));
-      if (!result.Body) {
-        res.status(404).json({ error: "Asset not found" });
-        return;
-      }
-      if (result.ContentType) res.setHeader("Content-Type", result.ContentType);
-      if (result.ContentLength != null) res.setHeader("Content-Length", String(result.ContentLength));
-      for await (const chunk of result.Body) {
-        res.write(Buffer.from(chunk));
-      }
-      res.end();
-    } catch (error40) {
-      const status = error40.$metadata?.httpStatusCode;
-      if (status === 404) {
-        res.status(404).json({ error: "Asset not found" });
-        return;
-      }
-      throw error40;
-    }
-    return;
-  }
-  const abs = path.resolve(UPLOADS_BASE, key);
-  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  if (!existsSync(abs)) {
-    res.status(404).json({ error: "Asset not found" });
-    return;
-  }
-  res.sendFile(abs);
-}
-async function streamOrRedirectPrivateAsset(key, res) {
-  res.setHeader("Cache-Control", "private, no-store");
-  if (isCloudStorageConfigured()) {
-    res.redirect(307, await getPrivateAssetUrl(key));
-    return;
-  }
-  const abs = path.resolve(UPLOADS_BASE, key);
-  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  if (!existsSync(abs)) {
-    res.status(404).json({ error: "Asset not found" });
-    return;
-  }
-  res.sendFile(abs);
-}
-async function deleteAsset(key) {
-  if (isCloudStorageConfigured()) {
-    try {
-      const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
-      const client = await getS3Client();
-      await client.send(
-        new DeleteObjectCommand({
-          Bucket: process.env["STORAGE_BUCKET"],
-          Key: key
-        })
-      );
-      logger.debug({ key }, "storage: deleteAsset \u2192 s3");
-    } catch (err) {
-      logger.warn({ err, key }, "storage: deleteAsset \u2192 s3 error (ignored)");
-    }
-    return;
-  }
-  try {
-    const { unlinkSync } = await import("fs");
-    unlinkSync(path.resolve(UPLOADS_BASE, key));
-  } catch {
-  }
-}
-async function deleteAssetStrict(key) {
-  if (isCloudStorageConfigured()) {
-    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
-    const client = await getS3Client();
-    await client.send(
-      new DeleteObjectCommand({
-        Bucket: process.env["STORAGE_BUCKET"],
-        Key: key
-      })
-    );
-    logger.debug({ key }, "storage: deleteAssetStrict \u2192 s3");
-    return;
-  }
-  try {
-    const { unlinkSync } = await import("fs");
-    unlinkSync(path.resolve(UPLOADS_BASE, key));
-  } catch (err) {
-    const code = err.code;
-    if (code !== "ENOENT") throw err;
-  }
-}
-var UPLOADS_BASE, _s3Client;
-var init_storage = __esm({
-  "src/lib/storage.ts"() {
-    "use strict";
-    init_logger2();
-    UPLOADS_BASE = path.resolve(process.cwd(), "uploads");
-    _s3Client = null;
   }
 });
 
@@ -136760,7 +136326,7 @@ var init_multipart_parser = __esm({
 
 // ../../node_modules/.pnpm/node-fetch@3.3.2/node_modules/node-fetch/src/body.js
 import Stream, { PassThrough } from "node:stream";
-import { types as types3, deprecate, promisify } from "node:util";
+import { types as types3, deprecate, promisify as promisify2 } from "node:util";
 import { Buffer as Buffer3 } from "node:buffer";
 async function consumeBody(data) {
   if (data[INTERNALS].disturbed) {
@@ -136814,7 +136380,7 @@ var init_body = __esm({
     init_fetch_error();
     init_base();
     init_is();
-    pipeline2 = promisify(Stream.pipeline);
+    pipeline2 = promisify2(Stream.pipeline);
     INTERNALS = /* @__PURE__ */ Symbol("Body internals");
     Body = class {
       constructor(body, {
@@ -147455,11 +147021,11 @@ var require_src7 = __commonJS({
 import http4 from "http";
 
 // src/app.ts
-var import_express71 = __toESM(require_express2(), 1);
+var import_express72 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 var import_compression = __toESM(require_compression(), 1);
-import path2 from "path";
+import path3 from "path";
 
 // src/routes/index.ts
 var import_express70 = __toESM(require_express2(), 1);
@@ -147856,11 +147422,401 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
 });
 var navigation_default = router;
 
-// src/routes/health.ts
-init_storage();
+// src/lib/storage.ts
+init_logger2();
+import { createReadStream, existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
+import path from "path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+var UPLOADS_BASE = path.resolve(process.cwd(), "uploads");
+function isCloudStorageConfigured(env = process.env) {
+  return Boolean(env["STORAGE_BUCKET"]?.trim());
+}
+function getStorageBackend(env = process.env) {
+  return isCloudStorageConfigured(env) ? "s3" : "local";
+}
+function getStorageDescription(env = process.env) {
+  if (!isCloudStorageConfigured(env)) return "local-disk";
+  const endpoint = env["STORAGE_ENDPOINT"]?.trim();
+  const bucket = env["STORAGE_BUCKET"].trim();
+  if (endpoint?.includes("r2.cloudflarestorage.com")) return `cloudflare-r2:${bucket}`;
+  if (endpoint) return `s3-compatible:${bucket}`;
+  return `aws-s3:${bucket}`;
+}
+var _s3Client = null;
+async function getS3Client() {
+  if (_s3Client) return _s3Client;
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  const endpoint = process.env["STORAGE_ENDPOINT"];
+  const region = process.env["STORAGE_REGION"] ?? (endpoint ? "auto" : "us-east-1");
+  _s3Client = new S3Client({
+    region,
+    ...endpoint ? { endpoint, forcePathStyle: false } : {}
+  });
+  return _s3Client;
+}
+async function putAsset(key, buffer, mimeType) {
+  if (isCloudStorageConfigured()) {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key,
+        Body: buffer,
+        ContentType: mimeType
+      })
+    );
+    logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 s3");
+  } else {
+    const abs = path.resolve(UPLOADS_BASE, key);
+    const destDir = path.dirname(abs);
+    mkdirSync(destDir, { recursive: true });
+    writeFileSync(abs, buffer);
+    logger.debug({ key, bytes: buffer.length }, "storage: putAsset \u2192 local");
+  }
+}
+async function getAssetInfo(key) {
+  if (isCloudStorageConfigured()) {
+    try {
+      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getS3Client();
+      const result = await client.send(new HeadObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key
+      }));
+      return {
+        contentLength: Number(result.ContentLength ?? 0),
+        contentType: result.ContentType ?? null
+      };
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const stat3 = await fs.stat(path.resolve(UPLOADS_BASE, key));
+    return { contentLength: stat3.size, contentType: null };
+  } catch {
+    return null;
+  }
+}
+async function getAssetUrl(key) {
+  if (isCloudStorageConfigured()) {
+    const cdnBase = process.env["STORAGE_CDN_URL"];
+    if (cdnBase) {
+      return `${cdnBase.replace(/\/$/, "")}/${key}`;
+    }
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    const client = await getS3Client();
+    return getSignedUrl(
+      client,
+      new GetObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key
+      }),
+      { expiresIn: 300 }
+      // 5 minutes
+    );
+  }
+  return `/api/family/assets/${key}`;
+}
+async function getPrivateAssetUrl(key, expiresInSeconds = 300) {
+  if (!isCloudStorageConfigured()) {
+    return `/api/audio-circle-recording-assets?key=${encodeURIComponent(key)}`;
+  }
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  const client = await getS3Client();
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"],
+      Key: key
+    }),
+    { expiresIn: expiresInSeconds }
+  );
+}
+async function collectAssetBuffer(source, maxBytes, cancel) {
+  if (maxBytes !== void 0 && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+    throw new Error("STORAGE_INVALID_MAX_BYTES");
+  }
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of source) {
+    totalBytes += chunk.byteLength;
+    if (maxBytes !== void 0 && totalBytes > maxBytes) {
+      cancel?.();
+      throw new Error("STORAGE_OBJECT_TOO_LARGE");
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, totalBytes);
+}
+async function getAssetBuffer(key, maxBytes) {
+  if (maxBytes !== void 0 && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+    throw new Error("STORAGE_INVALID_MAX_BYTES");
+  }
+  if (isCloudStorageConfigured()) {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    const result = await client.send(new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"],
+      Key: key
+    }));
+    if (!result.Body) throw new Error("STORAGE_OBJECT_EMPTY");
+    const body = result.Body;
+    if (maxBytes !== void 0 && result.ContentLength != null && result.ContentLength > maxBytes) {
+      body.destroy?.();
+      throw new Error("STORAGE_OBJECT_TOO_LARGE");
+    }
+    return collectAssetBuffer(body, maxBytes, () => body.destroy?.());
+  }
+  const stream = createReadStream(path.resolve(UPLOADS_BASE, key));
+  return collectAssetBuffer(stream, maxBytes, () => stream.destroy());
+}
+async function streamOrRedirectAsset(key, res) {
+  res.setHeader("Cache-Control", "private, no-store");
+  if (isCloudStorageConfigured()) {
+    const url2 = await getAssetUrl(key);
+    res.redirect(307, url2);
+    return;
+  }
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!existsSync(abs)) {
+    res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  res.sendFile(abs);
+}
+async function streamAssetRange(key, req, res, contentType) {
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  if (contentType) res.setHeader("Content-Type", contentType);
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  let size;
+  let localFile = false;
+  if (isCloudStorageConfigured()) {
+    const info = await getAssetInfo(key);
+    if (!info) {
+      res.status(404).json({ error: "Asset not found" });
+      return;
+    }
+    size = info.contentLength;
+    if (!contentType && info.contentType) res.setHeader("Content-Type", info.contentType);
+  } else {
+    try {
+      size = (await fs.stat(abs)).size;
+      localFile = true;
+    } catch (error40) {
+      if (error40.code === "ENOENT") {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      throw error40;
+    }
+  }
+  let start = 0;
+  let end = size - 1;
+  const range = req.headers.range;
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!match || !match[1] && !match[2] || size === 0) {
+      res.setHeader("Content-Range", `bytes */${size}`);
+      res.status(416).end();
+      return;
+    }
+    if (!match[1]) {
+      const suffixLength = Number(match[2]);
+      if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+        res.setHeader("Content-Range", `bytes */${size}`);
+        res.status(416).end();
+        return;
+      }
+      start = Math.max(size - suffixLength, 0);
+    } else {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : size - 1;
+    }
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= size) {
+      res.setHeader("Content-Range", `bytes */${size}`);
+      res.status(416).end();
+      return;
+    }
+    end = Math.min(end, size - 1);
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+  }
+  res.setHeader("Content-Length", String(end - start + 1));
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+  if (size === 0) {
+    res.end();
+    return;
+  }
+  if (localFile) {
+    try {
+      await pipeline(createReadStream(abs, { start, end }), res);
+    } catch (error40) {
+      if (req.aborted || res.destroyed) return;
+      logger.warn({ errorType: error40 instanceof Error ? error40.name : "unknown" }, "storage: local media stream failed");
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    }
+    return;
+  }
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getS3Client();
+  const abortController = new AbortController();
+  const abortForDisconnect = () => abortController.abort();
+  const abortForResponseClose = () => {
+    if (!res.writableEnded) abortController.abort();
+  };
+  req.once("aborted", abortForDisconnect);
+  res.once("close", abortForResponseClose);
+  try {
+    const result = await client.send(new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"],
+      Key: key,
+      Range: range ? `bytes=${start}-${end}` : void 0
+    }), { abortSignal: abortController.signal });
+    if (result.ContentType && !contentType) res.setHeader("Content-Type", result.ContentType);
+    if (!result.Body) {
+      res.removeHeader("Content-Length");
+      res.status(404).end();
+      return;
+    }
+    await pipeline(Readable.from(result.Body), res, {
+      signal: abortController.signal
+    });
+  } catch (error40) {
+    if (abortController.signal.aborted || req.aborted) return;
+    logger.warn({ errorType: error40 instanceof Error ? error40.name : "unknown" }, "storage: cloud media stream failed");
+    if (res.headersSent || res.destroyed) {
+      if (!res.destroyed) res.destroy();
+      return;
+    }
+    throw error40;
+  } finally {
+    req.off("aborted", abortForDisconnect);
+    res.off("close", abortForResponseClose);
+  }
+}
+async function streamAssetSameOrigin(key, res) {
+  res.setHeader("Cache-Control", "private, no-store");
+  if (isCloudStorageConfigured()) {
+    try {
+      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getS3Client();
+      const result = await client.send(new GetObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key
+      }));
+      if (!result.Body) {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      if (result.ContentType) res.setHeader("Content-Type", result.ContentType);
+      if (result.ContentLength != null) res.setHeader("Content-Length", String(result.ContentLength));
+      for await (const chunk of result.Body) {
+        res.write(Buffer.from(chunk));
+      }
+      res.end();
+    } catch (error40) {
+      const status = error40.$metadata?.httpStatusCode;
+      if (status === 404) {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      throw error40;
+    }
+    return;
+  }
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (!existsSync(abs)) {
+    res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+  res.sendFile(abs);
+}
+async function streamOrRedirectPrivateAsset(key, res) {
+  res.setHeader("Cache-Control", "private, no-store");
+  if (isCloudStorageConfigured()) {
+    res.redirect(307, await getPrivateAssetUrl(key));
+    return;
+  }
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (!existsSync(abs)) {
+    res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+  res.sendFile(abs);
+}
+async function deleteAsset(key) {
+  if (isCloudStorageConfigured()) {
+    try {
+      const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getS3Client();
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: process.env["STORAGE_BUCKET"],
+          Key: key
+        })
+      );
+      logger.debug({ key }, "storage: deleteAsset \u2192 s3");
+    } catch (err) {
+      logger.warn({ err, key }, "storage: deleteAsset \u2192 s3 error (ignored)");
+    }
+    return;
+  }
+  try {
+    const { unlinkSync } = await import("fs");
+    unlinkSync(path.resolve(UPLOADS_BASE, key));
+  } catch {
+  }
+}
+async function deleteAssetStrict(key) {
+  if (isCloudStorageConfigured()) {
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"],
+        Key: key
+      })
+    );
+    logger.debug({ key }, "storage: deleteAssetStrict \u2192 s3");
+    return;
+  }
+  try {
+    const { unlinkSync } = await import("fs");
+    unlinkSync(path.resolve(UPLOADS_BASE, key));
+  } catch (err) {
+    const code = err.code;
+    if (code !== "ENOENT") throw err;
+  }
+}
 
 // src/lib/storageReadiness.ts
-init_storage();
 function getStorageReadiness(env = process.env) {
   const bucket = Boolean(env["STORAGE_BUCKET"]?.trim());
   const endpoint = Boolean(env["STORAGE_ENDPOINT"]?.trim());
@@ -147988,7 +147944,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "e8ff8637d4dd98877ddff4e3579ce427c4fcc329";
+var GIT_COMMIT = "9bf2ded001148877f5d9a324e8288878236a79ca";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -151729,11 +151685,6 @@ async function anonymizeAccount(userId) {
   }
   const now = /* @__PURE__ */ new Date();
   const deletionScheduledAt = new Date(now.getTime() + ACCOUNT_RETENTION_MS);
-  const ownedMedia = await db.select({
-    original_key: mediaAssetsTable.original_key,
-    thumbnail_key: mediaAssetsTable.thumbnail_key,
-    variant_key: mediaAssetsTable.variant_key
-  }).from(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId)).limit(1e3);
   let updated = false;
   let effectiveScheduledAt = deletionScheduledAt;
   await db.transaction(async (tx) => {
@@ -151742,10 +151693,11 @@ async function anonymizeAccount(userId) {
       status: "deletion_pending",
       updated_at: now
     }).where(eq(exchangeSparksTable.author_user_id, userId));
-    await tx.delete(mediaAssetsTable).where(and(
-      eq(mediaAssetsTable.owner_user_id, userId),
-      sql`${mediaAssetsTable.context_kind} <> 'exchange_spark'`
-    ));
+    await tx.update(mediaAssetsTable).set({
+      status: "deleted",
+      metadata: sql`jsonb_set(jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true), '{account_cleanup_pending}', 'true'::jsonb, true)`,
+      updated_at: now
+    }).where(eq(mediaAssetsTable.owner_user_id, userId));
     await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
     await tx.delete(niaMemoriesTable).where(eq(niaMemoriesTable.user_id, userId));
     await tx.update(scheduledPaymentsTable).set({ status: "cancelled" }).where(and(eq(scheduledPaymentsTable.user_id, userId), eq(scheduledPaymentsTable.status, "pending")));
@@ -151806,14 +151758,6 @@ async function anonymizeAccount(userId) {
     if (!existing) throw deletionError("USER_NOT_FOUND", "User not found");
     effectiveScheduledAt = existing.deletion_scheduled_at ?? deletionScheduledAt;
   });
-  if (updated) {
-    const { deleteAsset: deleteAsset2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
-    await Promise.allSettled(
-      ownedMedia.flatMap(
-        (asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key) => Boolean(key)).map((key) => deleteAsset2(key))
-      )
-    );
-  }
   return { deletionScheduledAt: effectiveScheduledAt, alreadyPending: !updated };
 }
 function sendDeletionAccepted(res, result, requestedByAdmin) {
@@ -152402,10 +152346,83 @@ function moderateRequestText(title, description) {
 
 // src/routes/requests.ts
 init_stripe_esm_node();
-init_storage();
 
 // src/lib/media-validation.ts
 import { spawn } from "node:child_process";
+
+// src/lib/mediaCapabilities.ts
+import { execFile } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path2 from "node:path";
+import { promisify } from "node:util";
+var execFileAsync = promisify(execFile);
+var getMediaToolPaths = () => ({
+  ffmpeg: process.env["FFMPEG_PATH"]?.trim() || "ffmpeg",
+  ffprobe: process.env["FFPROBE_PATH"]?.trim() || "ffprobe"
+});
+async function verifyExecutable(name2, executable) {
+  try {
+    await execFileAsync(executable, ["-version"], { timeout: 1e4 });
+  } catch (error40) {
+    const detail = error40 instanceof Error ? error40.message : String(error40);
+    throw new Error(
+      `MEDIA_PLATFORM_V21 requires an executable FFmpeg/FFprobe toolchain. ${name2} "${executable}" could not be executed. Install the ffmpeg runtime package in the production image or set ${name2 === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"} to an executable binary. Original error: ${detail}`
+    );
+  }
+}
+async function verifyMediaToolchain() {
+  const { ffmpeg, ffprobe } = getMediaToolPaths();
+  await verifyExecutable("ffmpeg", ffmpeg);
+  await verifyExecutable("ffprobe", ffprobe);
+  const tempDir = await mkdtemp(path2.join(os.tmpdir(), "niakofa-media-toolchain-"));
+  const output = path2.join(tempDir, "probe.mp4");
+  try {
+    await execFileAsync(
+      ffmpeg,
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=16x16:d=0.1",
+        "-frames:v",
+        "1",
+        "-pix_fmt",
+        "yuv420p",
+        "-y",
+        output
+      ],
+      { timeout: 15e3 }
+    );
+    const { stdout } = await execFileAsync(
+      ffprobe,
+      [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "json",
+        output
+      ],
+      { timeout: 15e3 }
+    );
+    const parsed = JSON.parse(String(stdout));
+    const stream = parsed.streams?.[0];
+    if (!stream?.width || !stream.height) {
+      throw new Error("FFprobe did not return a usable video stream.");
+    }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+// src/lib/media-validation.ts
 var MAX_MEDIA_BYTES = 64 * 1024 * 1024;
 function isAllowedMediaSize(size) {
   return Number.isSafeInteger(size) && size > 0 && size <= MAX_MEDIA_BYTES;
@@ -152451,7 +152468,7 @@ function imageDimensions(buffer, mimeType) {
 }
 function probeMedia(buffer) {
   return new Promise((resolve) => {
-    const child = spawn(process.env["FFPROBE_PATH"] || "ffprobe", [
+    const child = spawn(getMediaToolPaths().ffprobe, [
       "-v",
       "error",
       "-i",
@@ -156090,7 +156107,6 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
-init_storage();
 init_ws_hub();
 init_zod();
 import { randomUUID as randomUUID4 } from "node:crypto";
@@ -164355,14 +164371,12 @@ var global_village_pulse_default = router37;
 // src/routes/audio-circles.ts
 var import_express40 = __toESM(require_express2(), 1);
 init_zod();
-init_storage();
 
 // src/lib/circleRecordingPolicy.ts
 init_drizzle_orm();
 init_src();
-init_storage();
-init_logger2();
 import { createHash as createHash3, randomUUID as randomUUID6 } from "node:crypto";
+init_logger2();
 var RECORDING_RETENTION_DAYS = 90;
 function calculateRetentionUntil(createdAt = /* @__PURE__ */ new Date(), retentionDays = Number(
   process.env["CIRCLES_RECORDING_RETENTION_DAYS"] ?? process.env["CIRCLE_RECORDING_RETENTION_DAYS"]
@@ -166328,7 +166342,6 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
-init_storage();
 init_ws_hub();
 var router40 = (0, import_express42.Router)();
 var activeStatuses = [
@@ -174788,7 +174801,7 @@ function keyForCrypto(alg, key) {
 
 // ../../node_modules/.pnpm/jose@5.10.0/node_modules/jose/dist/node/esm/runtime/sign.js
 import * as crypto6 from "node:crypto";
-import { promisify as promisify2 } from "node:util";
+import { promisify as promisify3 } from "node:util";
 
 // ../../node_modules/.pnpm/jose@5.10.0/node_modules/jose/dist/node/esm/runtime/hmac_digest.js
 function hmacDigest(alg) {
@@ -174830,7 +174843,7 @@ function getSignVerifyKey(alg, key, usage) {
 }
 
 // ../../node_modules/.pnpm/jose@5.10.0/node_modules/jose/dist/node/esm/runtime/sign.js
-var oneShotSign = promisify2(crypto6.sign);
+var oneShotSign = promisify3(crypto6.sign);
 var sign2 = async (alg, key, data) => {
   const k = getSignVerifyKey(alg, key, "sign");
   if (alg.startsWith("HS")) {
@@ -177454,7 +177467,6 @@ var coverage_interest_default = router45;
 
 // src/routes/family.ts
 var import_express48 = __toESM(require_express2(), 1);
-init_storage();
 init_src();
 init_auth();
 init_rate_limit();
@@ -180505,9 +180517,8 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
-init_storage();
-init_ws_hub();
 import { randomUUID as randomUUID8 } from "node:crypto";
+init_ws_hub();
 init_src();
 init_queue();
 init_logger2();
@@ -181460,10 +181471,9 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
-init_storage();
 init_ws_hub();
 init_zod();
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { createHash as createHash6, randomUUID as randomUUID9 } from "node:crypto";
 init_queue();
 init_logger2();
 
@@ -181577,6 +181587,7 @@ var storyElementSchema = external_exports2.object({
   z_index: external_exports2.number().int().min(0).max(100).default(0)
 });
 var createStorySchema = external_exports2.object({
+  client_publish_id: external_exports2.string().uuid().optional(),
   caption: external_exports2.string().trim().max(1e3).optional().default(""),
   hub_id: external_exports2.number().int().positive().nullable().optional(),
   exchange_listing_id: external_exports2.number().int().positive().optional(),
@@ -181612,6 +181623,20 @@ var createStorySchema = external_exports2.object({
     effects: external_exports2.array(external_exports2.enum(["grayscale", "sepia", "blur"])).max(6).optional()
   }).optional()
 });
+function communityStoryPublishPayloadHash(payload) {
+  const canonicalPayload = JSON.stringify({
+    caption: payload.caption,
+    audience: payload.audience,
+    hub_id: payload.hubId,
+    exchange_listing_id: payload.exchangeListingId,
+    community_id: payload.communityId,
+    reply_enabled: payload.replyEnabled,
+    elements: payload.elements,
+    composition_manifest: payload.compositionManifest,
+    media_asset_ids: payload.mediaAssetIds
+  }, (_key2, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) : value);
+  return createHash6("sha256").update(canonicalPayload).digest("hex");
+}
 function positiveId3(value) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
@@ -181945,8 +181970,44 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
   const hubId = parsed.data.hub_id ?? null;
   const exchangeListingId = parsed.data.exchange_listing_id ?? null;
   const mediaAssetIds = parsed.data.media_asset_ids ?? [];
+  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const caption = cleanText2(parsed.data.caption, 1e3) || null;
+  const compositionManifest = normalizeCompositionManifest(parsed.data.composition_manifest, parsed.data.elements);
+  const publishPayloadHash = parsed.data.client_publish_id ? communityStoryPublishPayloadHash({
+    caption,
+    audience: parsed.data.audience,
+    hubId,
+    exchangeListingId,
+    communityId: viewer?.community_id ?? null,
+    replyEnabled: parsed.data.reply_enabled,
+    elements: parsed.data.elements,
+    compositionManifest,
+    mediaAssetIds
+  }) : null;
+  if (parsed.data.client_publish_id) {
+    const [existing] = await db.select({
+      id: communityStoriesTable.id,
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at,
+      publish_payload_hash: communityStoriesTable.publish_payload_hash
+    }).from(communityStoriesTable).where(and(
+      eq(communityStoriesTable.author_user_id, userId),
+      eq(communityStoriesTable.client_publish_id, parsed.data.client_publish_id)
+    )).limit(1);
+    if (existing) {
+      if (parsed.data.media.length || existing.publish_payload_hash !== publishPayloadHash) {
+        return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
+      }
+      return res.status(200).json({
+        story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() }
+      });
+    }
+  }
   if (mediaAssetIds.length && parsed.data.media.length) {
     return res.status(400).json({ error: "Use either uploaded media assets or inline Story media, not both." });
+  }
+  if (parsed.data.client_publish_id && parsed.data.media.length) {
+    return res.status(400).json({ error: "client_publish_id is not supported with inline Base64 Story media." });
   }
   if (new Set(mediaAssetIds).size !== mediaAssetIds.length) {
     return res.status(400).json({ error: "Moment media asset ids must be unique." });
@@ -181966,6 +182027,9 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
       expires_at: communityStoriesTable.expires_at
     }).from(communityStoryMediaTable).innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id)).where(inArray(communityStoryMediaTable.media_asset_id, mediaAssetIds));
     if (attachedAssets.length) {
+      if (parsed.data.client_publish_id) {
+        return res.status(409).json({ error: "One or more uploaded assets have already been attached to a Moment." });
+      }
       const first = attachedAssets[0];
       const isSameCompletedCreate = attachedAssets.length === mediaAssetIds.length && attachedAssets.every((asset) => asset.story_id === first?.story_id && asset.author_user_id === userId && asset.caption === (cleanText2(parsed.data.caption, 1e3) || null) && asset.audience === parsed.data.audience && asset.hub_id === hubId && (asset.status === "published" || asset.status === "pending") && asset.expires_at > /* @__PURE__ */ new Date()) && new Set(attachedAssets.map((asset) => asset.media_asset_id)).size === mediaAssetIds.length;
       if (!isSameCompletedCreate || !first) {
@@ -182039,11 +182103,8 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
       return res.status(400).json({ error: "Uploaded media type does not match its file format." });
     }
   }
-  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  const caption = cleanText2(parsed.data.caption, 1e3) || null;
   const moderation = moderatePostText(caption ?? "");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3);
-  const compositionManifest = normalizeCompositionManifest(parsed.data.composition_manifest, parsed.data.elements);
   const storedKeys = [];
   if (isMediaPlatformV21Enabled() && !mediaProcessingQueue) {
     return res.status(503).json({
@@ -182100,6 +182161,8 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
         hub_id: hubId,
         community_id: viewer?.community_id ?? null,
         exchange_listing_id: exchangeListingId,
+        client_publish_id: parsed.data.client_publish_id ?? null,
+        publish_payload_hash: publishPayloadHash,
         caption,
         audience: parsed.data.audience,
         status: moderation.status === "approved" ? "published" : "pending",
@@ -182183,7 +182246,28 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
       }
       return { kind: "created", story, mediaAssetJobs };
     });
-    if (result.kind === "media_not_found") return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
+    if (result.kind === "media_not_found") {
+      if (parsed.data.client_publish_id) {
+        const [existing] = await db.select({
+          id: communityStoriesTable.id,
+          status: communityStoriesTable.status,
+          expires_at: communityStoriesTable.expires_at,
+          publish_payload_hash: communityStoriesTable.publish_payload_hash
+        }).from(communityStoriesTable).where(and(
+          eq(communityStoriesTable.author_user_id, userId),
+          eq(communityStoriesTable.client_publish_id, parsed.data.client_publish_id)
+        )).limit(1);
+        if (existing) {
+          if (existing.publish_payload_hash !== publishPayloadHash) {
+            return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
+          }
+          return res.status(200).json({
+            story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() }
+          });
+        }
+      }
+      return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
+    }
     if (result.kind === "media_failed") return res.status(409).json({ error: "One or more uploaded assets failed processing.", error_code: "MOMENT_MEDIA_FAILED" });
     if (result.kind === "media_too_long") return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
     if (result.kind === "media_not_ready") return res.status(409).json({ error: "Moment media is still processing. Retry after every file is ready.", error_code: "MOMENT_MEDIA_NOT_READY" });
@@ -182214,6 +182298,26 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
     return res.status(201).json({ story: { id: result.story.id, status: result.story.status, expires_at: result.story.expires_at.toISOString() } });
   } catch (error40) {
     await Promise.all(storedKeys.map((key) => deleteAsset(key)));
+    const databaseError = error40;
+    if (parsed.data.client_publish_id && databaseError.code === "23505") {
+      const [existing] = await db.select({
+        id: communityStoriesTable.id,
+        status: communityStoriesTable.status,
+        expires_at: communityStoriesTable.expires_at,
+        publish_payload_hash: communityStoriesTable.publish_payload_hash
+      }).from(communityStoriesTable).where(and(
+        eq(communityStoriesTable.author_user_id, userId),
+        eq(communityStoriesTable.client_publish_id, parsed.data.client_publish_id)
+      )).limit(1);
+      if (existing) {
+        if (existing.publish_payload_hash !== publishPayloadHash) {
+          return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
+        }
+        return res.status(200).json({
+          story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() }
+        });
+      }
+    }
     throw error40;
   }
 });
@@ -182698,7 +182802,6 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
-init_storage();
 init_queue();
 init_zod();
 import { randomUUID as randomUUID10 } from "node:crypto";
@@ -184761,8 +184864,6 @@ router66.get(
   requireApproved,
   generalApiLimiter,
   async (req, res) => {
-    const code = featureUnavailableCode();
-    if (code) return featureUnavailableResponse(res, code);
     const sparkId = positiveId7(req.params.sparkId);
     if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
     const userId = req.authenticatedUserId;
@@ -184822,7 +184923,6 @@ router66.post(
   generalApiLimiter,
   async (req, res) => {
     const code = featureUnavailableCode();
-    if (code) return featureUnavailableResponse(res, code);
     const sparkId = positiveId7(req.params.sparkId);
     if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
     const parsed = publishSchema.safeParse(req.body ?? {});
@@ -184840,14 +184940,14 @@ router66.post(
       const [listing] = await tx.select({
         id: exchangeListingsTable.id,
         seller_id: exchangeListingsTable.seller_id,
-        community_id: usersTable.community_id
+        community_id: usersTable.community_id,
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status,
+        seller_approval_status: usersTable.approval_status,
+        seller_is_suspended: usersTable.is_suspended
       }).from(exchangeListingsTable).innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id)).where(and(
         eq(exchangeListingsTable.id, sparkReference.listing_id),
-        eq(exchangeListingsTable.seller_id, userId),
-        eq(exchangeListingsTable.status, "active"),
-        eq(exchangeListingsTable.moderation_status, "approved"),
-        eq(usersTable.approval_status, "approved"),
-        eq(usersTable.is_suspended, false)
+        eq(exchangeListingsTable.seller_id, userId)
       )).limit(1).for("update");
       if (!listing) return { kind: "conflict", error: "The linked Exchange listing is no longer eligible." };
       const [spark] = await tx.select({
@@ -184864,8 +184964,30 @@ router66.post(
         eq(exchangeSparksTable.listing_id, sparkReference.listing_id)
       )).limit(1).for("update");
       if (!spark || spark.status === "deletion_pending") return { kind: "not-found" };
+      if (spark.status === "published" || spark.status === "pending") {
+        const [asset2] = await tx.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable).where(and(
+          eq(mediaAssetsTable.context_kind, "exchange_spark"),
+          eq(mediaAssetsTable.context_id, sparkId),
+          eq(mediaAssetsTable.owner_user_id, userId)
+        )).limit(1);
+        return {
+          kind: "published",
+          status: spark.status,
+          mediaAssetId: asset2?.id ?? null
+        };
+      }
+      if (spark.status !== "draft") {
+        return {
+          kind: "conflict",
+          error: spark.status === "rejected" ? "This Spark was rejected and cannot be published again." : "Spark draft cannot be published in its current state."
+        };
+      }
       if (spark.status === "draft" && spark.draft_expires_at <= /* @__PURE__ */ new Date()) {
         return { kind: "conflict", error: "Spark draft has expired." };
+      }
+      if (code) return { kind: "unavailable", code };
+      if (!listing || listing.status !== "active" || listing.moderation_status !== "approved" || listing.seller_approval_status !== "approved" || listing.seller_is_suspended) {
+        return { kind: "conflict", error: "The linked Exchange listing is no longer eligible." };
       }
       const assets = await tx.select().from(mediaAssetsTable).where(and(
         eq(mediaAssetsTable.context_kind, "exchange_spark"),
@@ -184877,12 +184999,6 @@ router66.post(
       }
       const caption = cleanCaption(parsed.data.caption ?? spark.caption) || null;
       const moderation = moderatePostText(caption ?? "");
-      if (spark.status !== "draft") {
-        if (spark.status === "published" || spark.status === "pending") {
-          return { kind: "published", status: spark.status, mediaAssetId: asset.id };
-        }
-        return { kind: "conflict", error: "Spark draft cannot be published in its current state." };
-      }
       await tx.update(exchangeSparksTable).set({
         caption,
         community_id: listing.community_id,
@@ -184897,6 +185013,7 @@ router66.post(
     });
     if (result.kind === "not-found") return res.status(404).json({ error: "Spark draft not found." });
     if (result.kind === "conflict") return res.status(409).json({ error: result.error });
+    if (result.kind === "unavailable") return featureUnavailableResponse(res, result.code);
     return res.status(201).json({
       spark_id: sparkId,
       status: result.status,
@@ -185827,8 +185944,18 @@ var helmet = Object.assign(
   }
 );
 
+// src/lib/media-upload-parser.ts
+var import_express71 = __toESM(require_express2(), 1);
+function createMediaUploadParser(limitBytes = MAX_MEDIA_BYTES) {
+  if (!Number.isSafeInteger(limitBytes) || limitBytes < 1) {
+    throw new Error("Media upload parser limit must be a positive safe integer.");
+  }
+  return import_express71.default.raw({ type: () => true, limit: `${limitBytes}b` });
+}
+var mediaUploadParser = createMediaUploadParser();
+
 // src/app.ts
-var app = (0, import_express71.default)();
+var app = (0, import_express72.default)();
 app.set("trust proxy", 1);
 app.use((0, import_compression.default)({ threshold: 1024 }));
 app.use(
@@ -185930,38 +186057,45 @@ app.use((0, import_pino_http.default)({ logger }));
 app.use(requestTimeout(3e4));
 app.use(parseAuth);
 app.use(apiTrafficLimiter);
-app.use("/api/stripe/webhook", import_express71.default.raw({ type: "application/json", limit: "1mb" }));
-app.use("/api/verification/identity/webhook", import_express71.default.raw({ type: "application/json", limit: "1mb" }));
-app.use("/api/background-checks/webhook", import_express71.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/stripe/webhook", import_express72.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/verification/identity/webhook", import_express72.default.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/background-checks/webhook", import_express72.default.raw({ type: "application/json", limit: "1mb" }));
 app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
-app.use("/api/audio-circle-sessions/:id/recording-upload", import_express71.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
-app.use("/api/audio-spiral-sessions/:id/recording-upload", import_express71.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+app.use("/api/audio-circle-sessions/:id/recording-upload", import_express72.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+app.use("/api/audio-spiral-sessions/:id/recording-upload", import_express72.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
 app.use(
   "/api/audio-circle-sessions/:sessionId/recording/:recordingId/finalize",
-  import_express71.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
+  import_express72.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
 );
 app.use(
   "/api/audio-spiral-sessions/:sessionId/recording/:recordingId/finalize",
-  import_express71.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
+  import_express72.default.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" })
 );
 app.use(
   "/api/media-assets/:id/upload",
   requireAuth,
   requireApproved,
-  import_express71.default.raw({
-    type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"],
-    limit: `${MAX_MEDIA_BYTES}b`
-  })
+  mediaUploadParser,
+  (err, _req, res, next) => {
+    const parserError = err;
+    if (parserError?.type === "entity.too.large" || parserError?.status === 413) {
+      return res.status(413).json({
+        error: "Media upload exceeds the 64 MiB limit.",
+        error_code: "MEDIA_SIZE_INVALID"
+      });
+    }
+    return next(err);
+  }
 );
 app.use(
   "/api/diaspora/dna/import",
-  import_express71.default.raw({
+  import_express72.default.raw({
     type: ["text/csv", "text/plain", "application/json", "application/octet-stream"],
     limit: "30mb"
   })
 );
-app.use(import_express71.default.json({ limit: "40mb" }));
-app.use(import_express71.default.urlencoded({ extended: true, limit: "1mb" }));
+app.use(import_express72.default.json({ limit: "40mb" }));
+app.use(import_express72.default.urlencoded({ extended: true, limit: "1mb" }));
 app.use((_req, res, next) => {
   const id3 = _req.id;
   if (id3 != null) res.setHeader("X-Request-ID", String(id3));
@@ -185970,7 +186104,7 @@ app.use((_req, res, next) => {
 var uploadsDir = process.env.UPLOADS_DIR || (process.env.NODE_ENV === "production" ? "/data/uploads" : "uploads");
 app.use(
   "/uploads",
-  import_express71.default.static(uploadsDir, {
+  import_express72.default.static(uploadsDir, {
     maxAge: "7d",
     etag: true,
     lastModified: true,
@@ -185981,11 +186115,11 @@ app.use(
 );
 app.use("/api/nia/voice", voiceAudioRawParser);
 app.use("/api", routes_default);
-var frontendDist = process.env.FRONTEND_DIST || path2.join(import.meta.dirname, "..", "..", "pay-it-forward", "dist", "public");
+var frontendDist = process.env.FRONTEND_DIST || path3.join(import.meta.dirname, "..", "..", "pay-it-forward", "dist", "public");
 var shouldServeFrontend = process.env.NODE_ENV === "production" || process.env.SERVE_FRONTEND === "true";
 if (shouldServeFrontend) {
   app.use(
-    import_express71.default.static(frontendDist, {
+    import_express72.default.static(frontendDist, {
       maxAge: "1y",
       etag: true,
       lastModified: true,
@@ -186010,7 +186144,7 @@ if (shouldServeFrontend) {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.sendFile(path2.join(frontendDist, "index.html"));
+    res.sendFile(path3.join(frontendDist, "index.html"));
   });
 }
 app.use((err, _req, res, _next) => {
@@ -186063,11 +186197,12 @@ init_stripe_config();
 init_stripe_errors();
 import { randomUUID as randomUUID11 } from "node:crypto";
 init_worker_registry();
-init_storage();
 init_ws_hub();
 var SIX_HOURS_MS = 6 * 60 * 60 * 1e3;
 var STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1e3;
 var STORY_ORPHAN_MEDIA_RETENTION_MS = 24 * 60 * 60 * 1e3;
+var MEDIA_UPLOAD_SESSION_RETENTION_MS = 24 * 60 * 60 * 1e3;
+var MEDIA_CLEANUP_BATCH_SIZE = 100;
 var ACCOUNT_PURGE_INTERVAL_MS = 60 * 60 * 1e3;
 var EXCHANGE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1e3;
 var EXCHANGE_STALE_DAYS = 30;
@@ -186480,27 +186615,79 @@ async function processCommunityStoryCleanup() {
   const ids = [...new Set(expired.map((row) => row.id))];
   const deletedIds = [];
   let cleanupFailed = false;
-  const tombstones = await db.select({
-    id: mediaAssetsTable.id,
-    original_key: mediaAssetsTable.original_key,
-    thumbnail_key: mediaAssetsTable.thumbnail_key,
-    variant_key: mediaAssetsTable.variant_key
-  }).from(mediaAssetsTable).where(and(
-    eq(mediaAssetsTable.status, "deleted"),
-    sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`
-  ));
-  for (const asset of tombstones) {
-    try {
-      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key) => Boolean(key)))];
-      for (const key of keys) await deleteAssetStrict(key);
-      await db.update(mediaAssetsTable).set({
-        metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+  const staleUploadCutoff = new Date(Date.now() - MEDIA_UPLOAD_SESSION_RETENTION_MS);
+  const staleUploads = await db.transaction(async (tx) => {
+    const due = await tx.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.status, "pending"),
+      lte(mediaAssetsTable.updated_at, staleUploadCutoff)
+    )).orderBy(mediaAssetsTable.updated_at, mediaAssetsTable.id).limit(MEDIA_CLEANUP_BATCH_SIZE).for("update", { skipLocked: true });
+    const expiredUploads = [];
+    for (const asset of due) {
+      const [tombstone] = await tx.update(mediaAssetsTable).set({
+        status: "deleted",
+        metadata: sql`jsonb_set(jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true), '{stale_upload_cleanup_pending}', 'true'::jsonb, true)`,
         updated_at: /* @__PURE__ */ new Date()
-      }).where(and(eq(mediaAssetsTable.id, asset.id), eq(mediaAssetsTable.status, "deleted")));
-    } catch (err) {
-      cleanupFailed = true;
-      logger.error({ err, mediaAssetId: asset.id }, "media cleanup: deleted object cleanup will retry");
+      }).where(and(
+        eq(mediaAssetsTable.id, asset.id),
+        eq(mediaAssetsTable.status, "pending")
+      )).returning({ id: mediaAssetsTable.id });
+      if (tombstone) expiredUploads.push(asset);
     }
+    return expiredUploads;
+  });
+  if (staleUploads.length > 0) {
+    logger.info({ count: staleUploads.length }, "media cleanup: stale pending upload sessions expired");
+  }
+  const tombstoneCleanup = await db.transaction(async (tx) => {
+    const tombstones = await tx.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+      metadata: mediaAssetsTable.metadata
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.status, "deleted"),
+      sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`
+    )).orderBy(mediaAssetsTable.updated_at, mediaAssetsTable.id).limit(MEDIA_CLEANUP_BATCH_SIZE).for("update", { skipLocked: true });
+    const failedAssetIds = [];
+    for (const asset of tombstones) {
+      try {
+        const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key) => Boolean(key)))];
+        for (const key of keys) await deleteAssetStrict(key);
+        if (asset.metadata?.["account_cleanup_pending"] === true || asset.metadata?.["stale_upload_cleanup_pending"] === true) {
+          await tx.delete(mediaAssetsTable).where(and(
+            eq(mediaAssetsTable.id, asset.id),
+            eq(mediaAssetsTable.status, "deleted")
+          ));
+        } else {
+          await tx.update(mediaAssetsTable).set({
+            metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+            updated_at: /* @__PURE__ */ new Date()
+          }).where(and(eq(mediaAssetsTable.id, asset.id), eq(mediaAssetsTable.status, "deleted")));
+        }
+      } catch (err) {
+        failedAssetIds.push(asset.id);
+        await tx.update(mediaAssetsTable).set({ updated_at: /* @__PURE__ */ new Date() }).where(and(
+          eq(mediaAssetsTable.id, asset.id),
+          eq(mediaAssetsTable.status, "deleted"),
+          sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`
+        ));
+        logger.error({ err, mediaAssetId: asset.id }, "media cleanup: deleted object cleanup will retry");
+      }
+    }
+    return { count: tombstones.length, failedAssetIds };
+  });
+  if (tombstoneCleanup.failedAssetIds.length > 0) cleanupFailed = true;
+  if (tombstoneCleanup.count > 0) {
+    logger.info({
+      processed: tombstoneCleanup.count,
+      failed: tombstoneCleanup.failedAssetIds.length
+    }, "media cleanup: durable tombstones processed");
   }
   for (const id3 of ids) {
     await db.update(communityStoriesTable).set({ status: "deletion_pending" }).where(eq(communityStoriesTable.id, id3));
@@ -186665,7 +186852,16 @@ function startCommunityStoryCleanupWorker() {
 async function processScheduledAccountPurges(now = /* @__PURE__ */ new Date()) {
   const purged = await db.update(usersTable).set({ deletion_status: "purged", updated_at: now }).where(and(
     eq(usersTable.deletion_status, "pending_purge"),
-    lte(usersTable.deletion_scheduled_at, now)
+    lte(usersTable.deletion_scheduled_at, now),
+    sql`NOT EXISTS (
+        SELECT 1
+        FROM media_assets
+        WHERE media_assets.owner_user_id = ${usersTable.id}
+          AND (
+            media_assets.metadata->>'storage_cleanup_pending' = 'true'
+            OR media_assets.metadata->>'account_cleanup_pending' = 'true'
+          )
+      )`
   )).returning({ id: usersTable.id });
   if (purged.length > 0) {
     logger.info({ count: purged.length }, "account-purge: completed scheduled deletions");
@@ -188622,15 +188818,15 @@ var import_bullmq7 = __toESM(require_cjs(), 1);
 init_src();
 init_drizzle_orm();
 init_queue();
-init_storage();
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, stat as stat2, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path3 from "node:path";
-import { promisify as promisify3 } from "node:util";
+import { execFile as execFile2 } from "node:child_process";
+import { mkdtemp as mkdtemp2, readFile, rm as rm2, stat as stat2, writeFile } from "node:fs/promises";
+import os2 from "node:os";
+import path4 from "node:path";
+import { promisify as promisify4 } from "node:util";
 init_logger2();
 import { randomUUID as randomUUID12 } from "node:crypto";
-var execFileAsync = promisify3(execFile);
+var execFileAsync2 = promisify4(execFile2);
+var mediaToolPaths = getMediaToolPaths();
 async function storeGeneratedAsset(mediaAssetId, field, key, bytes, mimeType) {
   return db.transaction(async (tx) => {
     const [asset] = await tx.select({ status: mediaAssetsTable.status }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1).for("update");
@@ -188645,7 +188841,7 @@ async function storeGeneratedAsset(mediaAssetId, field, key, bytes, mimeType) {
   });
 }
 async function runFfmpeg(args) {
-  await execFileAsync(process.env["FFMPEG_PATH"] ?? "ffmpeg", args, {
+  await execFileAsync2(mediaToolPaths.ffmpeg, args, {
     timeout: 12e4,
     maxBuffer: 2 * 1024 * 1024
   });
@@ -188715,11 +188911,11 @@ async function processMediaJob(job) {
         updated_at: /* @__PURE__ */ new Date()
       }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     } else {
-      tempDir = await mkdtemp(path3.join(os.tmpdir(), "niakofa-media-"));
-      const input = path3.join(tempDir, "original");
+      tempDir = await mkdtemp2(path4.join(os2.tmpdir(), "niakofa-media-"));
+      const input = path4.join(tempDir, "original");
       await writeFile(input, original);
       if (jobType === "thumbnail") {
-        const output = path3.join(tempDir, "thumbnail.jpg");
+        const output = path4.join(tempDir, "thumbnail.jpg");
         await runFfmpeg([
           "-y",
           "-i",
@@ -188741,7 +188937,7 @@ async function processMediaJob(job) {
         }
       } else if (jobType === "transcode") {
         if (!asset.mime_type.startsWith("video/")) throw new Error("transcode is only valid for video assets");
-        const output = path3.join(tempDir, "variant.mp4");
+        const output = path4.join(tempDir, "variant.mp4");
         const allowedEffects = /* @__PURE__ */ new Set(["grayscale", "sepia", "blur"]);
         const effects = (asset.composition_manifest?.effects ?? []).filter((effect) => typeof effect === "string" && allowedEffects.has(effect));
         const filter = effects.length ? effects.map((effect) => effect === "grayscale" ? "hue=s=0" : effect === "sepia" ? "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131" : "boxblur=2:1").join(",") : null;
@@ -188786,13 +188982,13 @@ async function processMediaJob(job) {
         if (musicBuffer.length === 0 || musicBuffer.length !== musicInfo.contentLength || musicBuffer.length > MAX_MEDIA_BYTES) {
           throw new Error("audio track is empty or exceeds the processing limit");
         }
-        const musicInput = path3.join(tempDir, "music");
-        const output = path3.join(tempDir, "variant-mixed.mp4");
+        const musicInput = path4.join(tempDir, "music");
+        const output = path4.join(tempDir, "variant-mixed.mp4");
         await writeFile(musicInput, musicBuffer);
         const volume = Math.min(Math.max(Number(music.volume ?? 1), 0), 2);
         let hasOriginalAudio = false;
         try {
-          const probe = await execFileAsync(process.env["FFPROBE_PATH"] ?? "ffprobe", [
+          const probe = await execFileAsync2(mediaToolPaths.ffprobe, [
             "-v",
             "error",
             "-select_streams",
@@ -188882,7 +189078,7 @@ async function processMediaJob(job) {
     logger.error({ requestId, mediaAssetId, jobType, failureCode: message2 }, "media-processing: job failed");
     throw new Error(`${message2}; request_id=${requestId}`);
   } finally {
-    if (tempDir) await rm(tempDir, { recursive: true, force: true });
+    if (tempDir) await rm2(tempDir, { recursive: true, force: true });
   }
 }
 function startMediaProcessWorker() {
@@ -188896,78 +189092,6 @@ function startMediaProcessWorker() {
     logger.error({ mediaAssetId: job?.data.mediaAssetId, jobType: job?.data.jobType, failureCode: error40.message.split(";")[0] }, "media-processing: BullMQ job failed");
   });
   return trackWorker(worker) ?? null;
-}
-
-// src/lib/mediaCapabilities.ts
-import { execFile as execFile2 } from "node:child_process";
-import { mkdtemp as mkdtemp2, rm as rm2 } from "node:fs/promises";
-import os2 from "node:os";
-import path4 from "node:path";
-import { promisify as promisify4 } from "node:util";
-var execFileAsync2 = promisify4(execFile2);
-var getToolPaths = () => ({
-  ffmpeg: process.env["FFMPEG_PATH"]?.trim() || "ffmpeg",
-  ffprobe: process.env["FFPROBE_PATH"]?.trim() || "ffprobe"
-});
-async function verifyExecutable(name2, executable) {
-  try {
-    await execFileAsync2(executable, ["-version"], { timeout: 1e4 });
-  } catch (error40) {
-    const detail = error40 instanceof Error ? error40.message : String(error40);
-    throw new Error(
-      `MEDIA_PLATFORM_V21 requires an executable FFmpeg/FFprobe toolchain. ${name2} "${executable}" could not be executed. Install the ffmpeg runtime package in the production image or set ${name2 === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"} to an executable binary. Original error: ${detail}`
-    );
-  }
-}
-async function verifyMediaToolchain() {
-  const { ffmpeg, ffprobe } = getToolPaths();
-  await verifyExecutable("ffmpeg", ffmpeg);
-  await verifyExecutable("ffprobe", ffprobe);
-  const tempDir = await mkdtemp2(path4.join(os2.tmpdir(), "niakofa-media-toolchain-"));
-  const output = path4.join(tempDir, "probe.mp4");
-  try {
-    await execFileAsync2(
-      ffmpeg,
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "lavfi",
-        "-i",
-        "color=c=black:s=16x16:d=0.1",
-        "-frames:v",
-        "1",
-        "-pix_fmt",
-        "yuv420p",
-        "-y",
-        output
-      ],
-      { timeout: 15e3 }
-    );
-    const { stdout } = await execFileAsync2(
-      ffprobe,
-      [
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=width,height",
-        "-of",
-        "json",
-        output
-      ],
-      { timeout: 15e3 }
-    );
-    const parsed = JSON.parse(String(stdout));
-    const stream = parsed.streams?.[0];
-    if (!stream?.width || !stream.height) {
-      throw new Error("FFprobe did not return a usable video stream.");
-    }
-  } finally {
-    await rm2(tempDir, { recursive: true, force: true });
-  }
 }
 
 // src/lib/advance-pool-settlement-status.ts

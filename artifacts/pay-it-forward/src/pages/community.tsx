@@ -72,6 +72,10 @@ export default function CommunityScreen() {
     const value = Number(new URLSearchParams(search).get("postId"));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
   }, [search]);
+  const openMomentsComposerSignal = useMemo(() => {
+    const composerValues = new URLSearchParams(search).getAll("composer");
+    return composerValues.length === 1 && composerValues[0] === "1" ? 1 : 0;
+  }, [search]);
 
   const [defaultHubId, setDefaultHubId] = useState<number | null>(null);
   const [defaultHubResolved, setDefaultHubResolved] = useState(hubContextId !== null);
@@ -125,7 +129,13 @@ export default function CommunityScreen() {
             searchQuery={communitySearch}
           />
         )}
-        {normalizedSection === "moments" && <CommunityMomentsView hubId={effectiveHubId} openSparkId={openSparkId} />}
+        {normalizedSection === "moments" && (
+          <CommunityMomentsView
+            hubId={effectiveHubId}
+            openSparkId={openSparkId}
+            openComposerSignal={openMomentsComposerSignal}
+          />
+        )}
         {normalizedSection === "people" && <CommunityPeopleView hubId={effectiveHubId} />}
         {normalizedSection === "exchange" && <CommunityExchangeView />}
         {normalizedSection === "hubs" && <CommunityHubsView hubId={effectiveHubId} />}

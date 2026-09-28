@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, MapPin, Play, RefreshCw, Store } from "lucide-react";
+import { Link } from "wouter";
+import { ArrowDown, ArrowUp, MapPin, Play, RefreshCw, Store, Volume2, VolumeX } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { getExchangeSparks, type ExchangeSpark } from "@/lib/community-exchange-client";
 import { CommunityExchangeSparkComposer } from "./CommunityExchangeSparkComposer";
@@ -18,10 +19,20 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
   const [publishNotice, setPublishNotice] = useState("");
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
   const [playbackError, setPlaybackError] = useState("");
+  const [playbackLoading, setPlaybackLoading] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [pageVisible, setPageVisible] = useState(() => typeof document === "undefined" || !document.hidden);
+  const [activeCardVisible, setActiveCardVisible] = useState(true);
   const [grantRetry, setGrantRetry] = useState(0);
   const [activeThumbnailUrl, setActiveThumbnailUrl] = useState<string | null>(null);
+  const [nextThumbnailUrl, setNextThumbnailUrl] = useState<string | null>(null);
   const cardRefs = useRef(new Map<number, HTMLElement>());
   const cardListRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const savedPositionRef = useRef<{ key: string | null; scrollTop: number }>({ key: null, scrollTop: 0 });
+  const restoredPositionRef = useRef(false);
   const feedGenerationRef = useRef(0);
   const feedControllerRef = useRef<AbortController | null>(null);
   const moreControllerRef = useRef<AbortController | null>(null);
@@ -30,6 +41,18 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
   const activeSparkId = activeSpark?.id;
   const activeSparkKey = activeSpark ? `${activeSpark.durable ? "durable" : "legacy"}:${activeSpark.id}` : null;
   const activeSparkMediaUrl = activeSpark?.media_url;
+  const nextSpark = sparks[activeIndex + 1] ?? null;
+  const shouldPlay = viewerVisible && pageVisible && activeCardVisible;
+
+  const savePosition = (key = activeSparkKey) => {
+    const position = { key, scrollTop: cardListRef.current?.scrollTop ?? savedPositionRef.current.scrollTop };
+    savedPositionRef.current = position;
+    try {
+      sessionStorage.setItem("exchange-sparks-viewer-position", JSON.stringify(position));
+    } catch {
+      // The in-memory position still works when browser storage is unavailable.
+    }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -43,6 +66,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
     setCursor(null);
     setActiveIndex(0);
     setLoadingMore(false);
+    restoredPositionRef.current = false;
     void getExchangeSparks({
         nearby: true,
         radius_miles: radius,
@@ -97,14 +121,63 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
     if (!root || !sparks.length) return;
     const observer = new IntersectionObserver((entries) => {
       const mostVisible = entries
-        .filter((entry) => entry.isIntersecting)
+        .filter((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.45)
         .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
       const index = mostVisible ? Number((mostVisible.target as HTMLElement).dataset.sparkIndex) : NaN;
-      if (Number.isInteger(index)) setActiveIndex(index);
+      if (Number.isInteger(index)) {
+        setActiveIndex(index);
+        setActiveCardVisible(true);
+      } else if (entries.some((entry) => entry.target === cardRefs.current.get(activeIndex))) {
+        setActiveCardVisible(false);
+      }
     }, { root, threshold: [0.45, 0.65, 0.85] });
     cardRefs.current.forEach((card) => observer.observe(card));
     return () => observer.disconnect();
-  }, [sparks]);
+  }, [sparks, activeIndex]);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    const observer = typeof IntersectionObserver === "undefined" || !section
+      ? null
+      : new IntersectionObserver(([entry]) => setViewerVisible(Boolean(entry?.isIntersecting)), { threshold: 0.01 });
+    if (observer && section) observer.observe(section);
+    else setViewerVisible(true);
+    const updatePageVisibility = () => setPageVisible(!document.hidden);
+    document.addEventListener("visibilitychange", updatePageVisibility);
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener("visibilitychange", updatePageVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!shouldPlay) {
+      video.pause();
+      return;
+    }
+    void video.play().catch(() => {
+      // Autoplay can be blocked by the browser; native controls remain available.
+    });
+  }, [shouldPlay, playbackUrl]);
+
+  useEffect(() => {
+    if (loading || restoredPositionRef.current || !sparks.length) return;
+    restoredPositionRef.current = true;
+    let saved = savedPositionRef.current;
+    try {
+      const stored = sessionStorage.getItem("exchange-sparks-viewer-position");
+      if (stored) saved = JSON.parse(stored) as typeof saved;
+    } catch {
+      // Ignore malformed or unavailable session storage.
+    }
+    if (saved.key) {
+      const restoredIndex = sparks.findIndex((spark) => `${spark.durable ? "durable" : "legacy"}:${spark.id}` === saved.key);
+      if (restoredIndex >= 0) setActiveIndex(restoredIndex);
+    }
+    if (cardListRef.current && Number.isFinite(saved.scrollTop)) cardListRef.current.scrollTop = saved.scrollTop;
+  }, [loading, sparks]);
 
   useEffect(() => {
     grantAttemptsRef.current = 0;
@@ -115,11 +188,17 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
     if (!activeSparkId || !activeSparkMediaUrl) {
       setPlaybackUrl(null);
       setPlaybackError("");
+      setPlaybackLoading(false);
+      return;
+    }
+    if (!shouldPlay) {
+      setPlaybackLoading(false);
       return;
     }
     const controller = new AbortController();
     setPlaybackUrl(null);
     setPlaybackError("");
+    setPlaybackLoading(true);
     let mediaId: number;
     let grantPath: string;
     try {
@@ -133,6 +212,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
       grantPath = `${mediaUrl.pathname.replace(/\/$/, "")}/playback-grant`;
     } catch (reason) {
       setPlaybackError(reason instanceof Error ? reason.message : "This Spark does not have a valid media reference.");
+      setPlaybackLoading(false);
       return () => controller.abort();
     }
     void fetch(grantPath, {
@@ -160,9 +240,58 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
         if (!controller.signal.aborted) {
           setPlaybackError(reason instanceof Error ? reason.message : "The Spark video could not be opened.");
         }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPlaybackLoading(false);
       });
     return () => controller.abort();
-  }, [activeSparkKey, activeSparkId, activeSparkMediaUrl, grantRetry]);
+  }, [activeSparkKey, activeSparkId, activeSparkMediaUrl, grantRetry, shouldPlay]);
+
+  useEffect(() => {
+    if (!shouldPlay || !nextSpark?.thumbnail_url) {
+      setNextThumbnailUrl(null);
+      return;
+    }
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    let thumbnailUrl: URL;
+    try {
+      thumbnailUrl = new URL(nextSpark.thumbnail_url, window.location.origin);
+      const oldStoryThumbnail = /^\/api\/community\/stories\/media\/\d+\/?$/.test(thumbnailUrl.pathname)
+        && Array.from(thumbnailUrl.searchParams.keys()).every((key) => key === "thumbnail")
+        && thumbnailUrl.searchParams.get("thumbnail") === "true";
+      const durableThumbnail = /^\/api\/media-assets\/\d+\/thumbnail\/?$/.test(thumbnailUrl.pathname)
+        && !thumbnailUrl.search;
+      if (thumbnailUrl.origin !== window.location.origin || thumbnailUrl.hash || thumbnailUrl.username
+        || thumbnailUrl.password || !(oldStoryThumbnail || durableThumbnail)) {
+        throw new Error("Invalid next Spark preview URL.");
+      }
+    } catch {
+      setNextThumbnailUrl(null);
+      return () => controller.abort();
+    }
+    void fetch(`${thumbnailUrl.pathname}${thumbnailUrl.search}`, {
+      headers: authHeaders(),
+      credentials: "same-origin",
+      signal: controller.signal,
+    })
+      .then(async (response) => response.ok ? URL.createObjectURL(await response.blob()) : null)
+      .then((url) => {
+        if (!url) return;
+        if (controller.signal.aborted) URL.revokeObjectURL(url);
+        else {
+          objectUrl = url;
+          setNextThumbnailUrl(url);
+        }
+      })
+      .catch(() => {
+        // The next preview is optional; do not interrupt current playback.
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [nextSpark?.id, nextSpark?.durable, nextSpark?.thumbnail_url, shouldPlay]);
 
   useEffect(() => {
     if (!activeSpark?.thumbnail_url) {
@@ -231,10 +360,11 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
     const target = cardRefs.current.get(index);
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
     setActiveIndex(index);
+    savePosition(sparks[index] ? `${sparks[index].durable ? "durable" : "legacy"}:${sparks[index].id}` : activeSparkKey);
   };
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-border bg-card" aria-label="Exchange Sparks" data-testid="exchange-sparks">
+    <section ref={sectionRef} className="overflow-hidden rounded-3xl border border-border bg-card" aria-label="Exchange Sparks" data-testid="exchange-sparks">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4 sm:p-5">
         <div>
           <p className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-primary"><Play className="h-3.5 w-3.5" aria-hidden="true" /> Exchange Sparks</p>
@@ -252,6 +382,15 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
 
       <div className="space-y-3 p-4 sm:p-5">
         {publishNotice && <p role="status" className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm">{publishNotice}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-4">
+          <div>
+            <p className="text-sm font-black">Create an Exchange Spark</p>
+            <p className="mt-1 text-xs text-muted-foreground">Use the unified Sparks Studio to create a Moment or connect a video to an active Exchange post you own.</p>
+          </div>
+          <Link href="/community/moments?composer=1" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground transition hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background" data-testid="button-create-exchange-spark-studio">
+            Create in Studio
+          </Link>
+        </div>
         <CommunityExchangeSparkComposer onPublished={(status) => {
           setPublishNotice(status === "pending"
             ? "Your video Spark was submitted for review and is not visible until approved."
@@ -277,7 +416,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
               <button type="button" onClick={() => moveTo(Math.min(sparks.length - 1, activeIndex + 1))} disabled={activeIndex === sparks.length - 1} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Next Exchange Spark" data-testid="button-next-exchange-spark"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button>
             </div>
           </div>
-          <div ref={cardListRef} className="mx-auto flex h-[min(78dvh,780px)] max-h-[780px] max-w-md snap-y snap-mandatory flex-col overflow-y-auto overscroll-contain bg-black scroll-smooth sm:my-5 sm:rounded-2xl" aria-label="Swipe or scroll through Exchange videos" role="feed" aria-busy={loadingMore} data-testid="list-exchange-sparks">
+          <div ref={cardListRef} onScroll={() => savePosition()} className="mx-auto flex h-[min(78dvh,780px)] max-h-[780px] max-w-md snap-y snap-mandatory flex-col overflow-y-auto overscroll-contain bg-black scroll-smooth sm:my-5 sm:rounded-2xl" aria-label="Swipe or scroll through Exchange videos" role="feed" aria-busy={loadingMore} data-testid="list-exchange-sparks">
             {sparks.map((spark, index) => (
               <article
                  key={`${spark.durable ? "durable" : "legacy"}:${spark.id}`}
@@ -293,20 +432,31 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
                 data-testid={`card-exchange-spark-${spark.id}`}
               >
                 {index === activeIndex && activeThumbnailUrl && <img src={activeThumbnailUrl} alt="" className={`absolute inset-0 h-full w-full object-cover transition-opacity ${playbackUrl ? "opacity-0" : "opacity-100"}`} />}
-                {index === activeIndex && playbackUrl ? (
-                   <video key={`${spark.durable ? "durable" : "legacy"}:${spark.id}`} src={playbackUrl} autoPlay muted playsInline controls preload="metadata" onError={handlePlaybackError} className="relative z-10 h-full w-full object-contain" aria-label={spark.caption || "Exchange Spark video"} />
+                 {index === activeIndex + 1 && nextThumbnailUrl && <img src={nextThumbnailUrl} alt="" className="hidden" />}
+                 {index === activeIndex && playbackUrl ? (
+                    <video ref={videoRef} key={`${spark.durable ? "durable" : "legacy"}:${spark.id}`} src={playbackUrl} autoPlay={shouldPlay} muted={muted} playsInline controls preload="metadata" onError={handlePlaybackError} onWaiting={() => setPlaybackLoading(true)} onCanPlay={() => setPlaybackLoading(false)} className="relative z-10 h-full w-full object-contain" aria-label={spark.caption || "Exchange Spark video"} />
                 ) : (
                   <div className="relative z-10 flex h-full w-full items-center justify-center bg-gradient-to-b from-black/10 via-transparent to-black/65">
                     {!activeThumbnailUrl && <span className="rounded-full bg-black/45 p-4 text-white"><Play className="h-8 w-8" aria-hidden="true" /></span>}
                   </div>
                 )}
+                 {index === activeIndex && (
+                   <div className="absolute right-4 top-4 z-30 flex items-center gap-2">
+                     <button type="button" onClick={() => setMuted((value) => !value)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-black/75 px-3 text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-white" aria-label={muted ? "Unmute Exchange Spark" : "Mute Exchange Spark"} aria-pressed={!muted} data-testid="button-toggle-exchange-spark-sound">
+                       {muted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
+                       {muted ? "Sound off" : "Sound on"}
+                     </button>
+                   </div>
+                 )}
+                 {index === activeIndex && playbackLoading && <p role="status" className="absolute left-4 top-16 z-30 rounded-lg bg-black/75 px-3 py-2 text-xs text-white">Loading video…</p>}
+                 {index === activeIndex && !spark.media_url && <p role="status" className="absolute left-4 right-4 top-16 z-30 rounded-lg bg-black/75 px-3 py-2 text-xs text-white">This Spark video is no longer available.</p>}
                 {index === activeIndex && playbackError && <div className="absolute left-4 right-4 top-4 z-30 rounded-xl border border-white/20 bg-black/80 p-3 text-sm text-white" role="status"><p>{playbackError}</p>{playbackError !== "Refreshing secure playback…" && <button type="button" onClick={retryPlayback} className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 font-bold text-primary-foreground focus:outline-none focus:ring-2 focus:ring-white"><RefreshCw className="h-4 w-4" aria-hidden="true" /> Retry video</button>}</div>}
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-5 pt-24 text-white">
                    <p className="mb-1 text-xs font-black">{spark.author_name || "A neighbor"}</p>
                   <p className="flex items-center gap-1.5 text-xs font-bold text-white/80"><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{spark.neighborhood}</p>
                   {spark.caption && <p className="mt-2 text-sm font-semibold leading-relaxed">{spark.caption}</p>}
                 </div>
-                <button type="button" onClick={() => onOpenListing(spark.listing_id)} className="absolute bottom-4 right-4 z-30 inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground shadow-lg focus:outline-none focus:ring-2 focus:ring-white" aria-label="Open connected Exchange listing">
+                 <button type="button" onClick={() => { savePosition(`${spark.durable ? "durable" : "legacy"}:${spark.id}`); onOpenListing(spark.listing_id); }} className="absolute bottom-4 right-4 z-30 inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground shadow-lg focus:outline-none focus:ring-2 focus:ring-white" aria-label="Open connected Exchange listing">
                   <Store className="h-4 w-4" aria-hidden="true" /> View Exchange post
                 </button>
               </article>

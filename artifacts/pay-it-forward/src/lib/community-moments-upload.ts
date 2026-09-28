@@ -1,4 +1,5 @@
 import { authHeaders } from "@/lib/auth";
+import { ensureSameOriginMediaPath, uploadBinaryMedia } from "./media-upload-client";
 
 export const COMMUNITY_MOMENTS_MAX_BYTES = 64 * 1024 * 1024;
 export const COMMUNITY_MOMENTS_ALLOWED_TYPES = new Set([
@@ -40,14 +41,6 @@ function validateContextId(contextId: number): void {
   if (!Number.isSafeInteger(contextId) || contextId <= 0) throw new Error("Invalid media context.");
 }
 
-function apiPath(path: string): string {
-  const url = new URL(path, window.location.origin);
-  if (url.origin !== window.location.origin || url.username || url.password || url.hash) {
-    throw new Error("The media service returned an unsafe Niakofa endpoint.");
-  }
-  return `${url.pathname}${url.search}`;
-}
-
 async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...options,
@@ -68,66 +61,6 @@ type UploadSession = {
   upload: { method: "PUT"; url: string; headers: Record<string, string> };
   complete_url: string;
 };
-
-function uploadRawFile(
-  upload: UploadSession["upload"],
-  file: File,
-  signal: AbortSignal,
-  onProgress: (percent: number) => void,
-): Promise<void> {
-  if (upload.method !== "PUT") return Promise.reject(new Error("The media service did not provide a PUT upload."));
-  let url: URL;
-  try {
-    url = new URL(upload.url, window.location.origin);
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
-  } catch {
-    return Promise.reject(new Error("The media service returned an invalid upload URL."));
-  }
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException("Upload cancelled.", "AbortError"));
-      return;
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.timeout = 180_000;
-    let settled = false;
-    const cleanup = () => {
-      signal.removeEventListener("abort", abort);
-      xhr.upload.onprogress = null;
-      xhr.onload = null;
-      xhr.onerror = null;
-      xhr.ontimeout = null;
-      xhr.onabort = null;
-    };
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      callback();
-    };
-    const abort = () => xhr.abort();
-    xhr.open("PUT", url.href);
-    const headers = { ...upload.headers };
-    if (url.origin === window.location.origin) {
-      Object.entries(authHeaders()).forEach(([name, value]) => {
-        if (!Object.keys(headers).some((key) => key.toLowerCase() === name.toLowerCase())) headers[name] = value;
-      });
-    }
-    Object.entries(headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
-    xhr.upload.onprogress = (event) => {
-      const total = event.lengthComputable ? event.total : file.size;
-      onProgress(total > 0 ? Math.round(event.loaded / total * 100) : 0);
-    };
-    xhr.onload = () => xhr.status >= 200 && xhr.status < 300
-      ? finish(resolve)
-      : finish(() => reject(new Error("Media bytes could not be uploaded. Check your connection and retry.")));
-    xhr.onerror = () => finish(() => reject(new Error("Storage upload failed. Check your connection and retry.")));
-    xhr.ontimeout = () => finish(() => reject(new Error("Storage upload timed out. You can retry.")));
-    xhr.onabort = () => finish(() => reject(new DOMException("Upload cancelled.", "AbortError")));
-    signal.addEventListener("abort", abort, { once: true });
-    xhr.send(file);
-  });
-}
 
 export async function uploadCommunityMomentMedia(input: {
   contextKind: CommunityMomentContext;
@@ -160,8 +93,13 @@ export async function uploadCommunityMomentMedia(input: {
   if (!Number.isSafeInteger(session.media_asset_id) || session.media_asset_id <= 0) {
     throw new Error("The media service returned an invalid upload session.");
   }
-  await uploadRawFile(session.upload, input.file, input.signal, input.onProgress ?? (() => {}));
-  await requestJson<{ media_asset_id: number; status: string }>(apiPath(session.complete_url), {
+  await uploadBinaryMedia({
+    upload: session.upload,
+    file: input.file,
+    signal: input.signal,
+    onProgress: (loaded, total) => input.onProgress?.(total > 0 ? Math.round(loaded / total * 100) : 0),
+  });
+  await requestJson<{ media_asset_id: number; status: string }>(ensureSameOriginMediaPath(session.complete_url), {
     method: "POST",
     body: JSON.stringify({}),
     signal: input.signal,

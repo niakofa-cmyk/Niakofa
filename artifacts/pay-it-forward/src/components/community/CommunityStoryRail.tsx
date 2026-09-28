@@ -11,12 +11,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
+import { useAppContext } from "@/lib/AppContext";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
 import { StoryMediaPlayer } from "./StoryMediaPlayer";
 import { StoryShareSheet } from "./StoryShareSheet";
-import { normalizeStoryFiles, useObjectUrls, validateStoryFiles } from "./StoryComposerMedia";
+import { useObjectUrls } from "./StoryComposerMedia";
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
-import { readStoryMediaMetadata } from "@/lib/storyMediaPipeline";
+import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, newStudioPublishId, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
+import { chooseStudioFiles, publishStudioMoment, selectedStudioFiles, validateStudioFiles } from "./story-studio-publish";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { getExchangeListings } from "@/lib/community-exchange-client";
 import type { ExchangeListing } from "@/lib/community-exchange-types";
@@ -24,9 +26,14 @@ import {
   completeSparkUpload,
   createExchangeSparkDraft,
   createSparkUploadSession,
+  discardExchangeSparkDraft,
+  ExchangeSparkUploadError,
+  getExchangeSparkDraftStatus,
   publishExchangeSparkDraft,
   putRawSparkFile,
   readExchangeSparkVideoDuration,
+  resumeSparkUploadSession,
+  updateExchangeSparkDraftCaption,
   waitForExchangeSparkMediaReady,
 } from "@/lib/exchange-spark-upload-client";
 import { validateExchangeSparkVideo } from "@/lib/exchange-spark-upload-rules";
@@ -77,15 +84,6 @@ type Tool = "music" | "stickers" | "text" | "effects" | "mention";
 type Effect = "none" | "warmth" | "contrast" | "grayscale" | "vignette";
 const TEXT_STORY_BACKGROUNDS = ["#172554", "#0f766e", "#7c2d12", "#701a75", "#111827"] as const;
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Could not read this media."));
-    reader.readAsDataURL(file);
-  });
-}
-
 function groupStories(stories: CommunityStory[]): StoryAuthor[] {
   const byAuthor = new Map<number, StoryAuthor>();
   for (const story of [...stories].sort((a, b) => Date.parse(a.created_at ?? "") - Date.parse(b.created_at ?? ""))) {
@@ -109,6 +107,8 @@ export function CommunityStoryRail({
   compact?: boolean;
 }) {
   const [, navigate] = useLocation();
+  const { currentUser } = useAppContext();
+  const userId = currentUser?.id ?? null;
   const [stories, setStories] = useState<CommunityStory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,8 +155,28 @@ export function CommunityStoryRail({
   const [exchangeListingsLoading, setExchangeListingsLoading] = useState(false);
   const [exchangeListingsError, setExchangeListingsError] = useState("");
   const [exchangeListingId, setExchangeListingId] = useState("");
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftError, setDraftError] = useState("");
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [uploadedIds, setUploadedIds] = useState<Array<number | null>>([]);
+  const uploadedIdsRef = useRef<Array<number | null>>([]);
+  const publishAssetIdsRef = useRef<number[]>([]);
+  const [trimPreview, setTrimPreview] = useState<Record<number, { start: number; end: number }>>({});
+  const exchangeDraftRef = useRef<{ id: number; listingId: string; fingerprint: string } | null>(null);
+  const clientPublishIdRef = useRef<string>(newStudioPublishId());
+  const publishAttemptRef = useRef<string | null>(null);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const draftGenerationRef = useRef(0);
+  const draftWriteVersionRef = useRef(0);
+  const scopeKey = userId && Number.isSafeInteger(userId) && userId > 0 ? studioDraftKey(userId, hubId) : null;
+  const activeScopeRef = useRef(scopeKey);
+  const recoveredScopeRef = useRef<string | null>(null);
+  const scopeSnapshotsRef = useRef(new Map<string, StudioDraft>());
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
+  const previewVideo = useRef<HTMLVideoElement>(null);
   const autoOpenedRef = useRef(false);
   const deepLinkedStoryRef = useRef<number | null>(null);
 
@@ -169,10 +189,7 @@ export function CommunityStoryRail({
   const previewUrls = useObjectUrls(files);
   const selectedPreviewFile = files[previewFileIndex] ?? files[0] ?? null;
   const selectedFileUrl = previewUrls[previewFileIndex] ?? previewUrls[0] ?? null;
-  const selectedFiles = gallerySelection
-    .filter((index) => Number.isInteger(index) && index >= 0 && index < files.length)
-    .map((index) => files[index])
-    .filter((file): file is File => Boolean(file));
+  const selectedFiles = selectedStudioFiles(files, gallerySelection);
   const selectedVideo = selectedFiles.some((file) => file.type.startsWith("video/"));
   const visualAuthors = useMemo<StoryVisualAuthor[]>(
     () => authors.map((author) => ({
@@ -262,6 +279,157 @@ export function CommunityStoryRail({
   }, [hubId, refreshNonce]);
 
   useEffect(() => {
+    const scopeSnapshots = scopeSnapshotsRef.current;
+    // A new authenticated scope must never inherit the previous scope's
+    // in-memory files, selection, destination or upload references.
+    draftGenerationRef.current++;
+    activeScopeRef.current = scopeKey;
+    recoveredScopeRef.current = null;
+    exchangeDraftRef.current = null;
+    clientPublishIdRef.current = newStudioPublishId();
+    publishAttemptRef.current = null;
+    uploadedIdsRef.current = [];
+    publishAssetIdsRef.current = [];
+    const empty = emptyStudioScope(hubId);
+    setDraftReady(false);
+    setDraftSaved(false);
+    setDraftError("");
+    setFiles(empty.files);
+    setGalleryOpen(false);
+    setStudioStep("source");
+    setGallerySelection(empty.selection);
+    setPreviewFileIndex(0);
+    setCaption(empty.caption);
+    setAudience(empty.audience);
+    setUploadedIds(empty.uploadedIds);
+    setEditorElements([]);
+    setEffect("none");
+    setTrimPreview({});
+    setExchangeListingId(empty.listingId);
+    setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
+    setTextColor("#ffffff");
+    setTextSize("18");
+    setTextAlign("center");
+    if (!userId || !Number.isSafeInteger(userId) || userId < 1) {
+      setDraftReady(true);
+      setDraftError("Sign in to recover or publish a Spark.");
+      return;
+    }
+    let active = true;
+    setDraftReady(false);
+    setDraftSaved(false);
+    void loadStudioDraft(userId, hubId).then((draft) => {
+      if (!active) return;
+      if (draft) {
+        exchangeDraftRef.current = draft.exchangeDraftId && Number.isSafeInteger(draft.exchangeDraftId)
+          ? { id: draft.exchangeDraftId, listingId: draft.destinationListingId, fingerprint: draft.exchangeFileFingerprint ?? "" }
+          : null;
+        clientPublishIdRef.current = draft.clientPublishId || newStudioPublishId();
+        publishAttemptRef.current = draft.attemptedSignature ?? null;
+        uploadedIdsRef.current = draft.uploadedMediaAssetIds ?? [];
+        publishAssetIdsRef.current = draft.publishAssetIds ?? [];
+        setFiles(draft.files ?? []);
+        setGallerySelection(draft.selection ?? []);
+        setPreviewFileIndex(draft.previewIndex ?? 0);
+        setCaption(draft.caption ?? "");
+        setAudience(draft.audience ?? (hubId ? "hub" : "community"));
+        setExchangeListingId(draft.destinationListingId ?? "");
+        setEditorElements((draft.elements ?? []) as EditableStoryElement[]);
+        setEffect(draft.effect ?? "none");
+        setTextBackground(draft.textBackground ?? TEXT_STORY_BACKGROUNDS[0]);
+        setTextColor(draft.textColor ?? "#ffffff");
+        setTextSize(draft.textSize ?? "18");
+        setTextAlign(draft.textAlign ?? "center");
+        setTrimPreview(draft.trimPreview ?? {});
+        setUploadedIds(draft.uploadedMediaAssetIds ?? []);
+        setDraftSaved(true);
+      }
+      recoveredScopeRef.current = scopeKey;
+      setDraftReady(true);
+    }).catch((reason: unknown) => {
+      if (active) { setDraftError(reason instanceof Error ? reason.message : "Draft recovery failed."); setDraftReady(true); }
+    });
+    return () => {
+      active = false;
+      publishControllerRef.current?.abort();
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      const outgoingKey = studioDraftKey(userId, hubId);
+      const outgoing = scopeSnapshots.get(outgoingKey);
+      scopeSnapshots.delete(outgoingKey);
+      if (outgoing && recoveredScopeRef.current === studioDraftKey(userId, hubId)) {
+        draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => persistStudioDraft(outgoing));
+        void draftQueueRef.current.catch(() => {});
+      }
+    };
+  }, [userId, hubId, scopeKey]);
+
+  const draftSnapshot = (): StudioDraft => ({
+    id: studioDraftKey(userId!, hubId), userId: userId!,
+    contextKind: hubId === null ? "community_moment" : "hub_moment",
+    contextId: hubId ?? userId!, caption, files,
+    selection: gallerySelection, previewIndex: previewFileIndex, audience,
+    destinationListingId: exchangeListingId, elements: editorElements,
+    exchangeDraftId: exchangeDraftRef.current?.id ?? null,
+    exchangeFileFingerprint: exchangeDraftRef.current?.fingerprint,
+    clientPublishId: clientPublishIdRef.current,
+    attemptedSignature: publishAttemptRef.current ?? undefined,
+    publishAssetIds: publishAssetIdsRef.current,
+    effect, textBackground, textColor, textSize, textAlign, trimPreview,
+    uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
+    updatedAt: Date.now(),
+  });
+  const snapshotRef = useRef(draftSnapshot);
+  if (scopeKey && activeScopeRef.current === scopeKey) {
+    snapshotRef.current = draftSnapshot;
+    scopeSnapshotsRef.current.set(scopeKey, draftSnapshot());
+  }
+  const queueDraftSave = () => {
+    if (!userId || !draftReady || activeScopeRef.current !== scopeKey) return draftQueueRef.current;
+    const snapshot = snapshotRef.current();
+    const generation = draftGenerationRef.current;
+    const version = draftWriteVersionRef.current;
+    draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(async () => {
+      if (generation !== draftGenerationRef.current || version !== draftWriteVersionRef.current) return;
+      await persistStudioDraft(snapshot);
+      if (generation === draftGenerationRef.current) { setDraftSaved(true); setDraftError(""); }
+    }).catch((reason: unknown) => {
+      setDraftError(`Draft not saved on this device: ${reason instanceof Error ? reason.message : "Storage unavailable."}`);
+      throw reason;
+    });
+    return draftQueueRef.current;
+  };
+  const queueDraftSaveRef = useRef(queueDraftSave);
+  queueDraftSaveRef.current = queueDraftSave;
+  const signature = studioPublishSignature({ files, selection: gallerySelection, caption, elements: editorElements, audience, hubId, textBackground });
+  const signatureRef = useRef(signature);
+  signatureRef.current = signature;
+  const rotateAttemptAfterEdit = () => {
+    if (!publishAttemptRef.current || publishAttemptRef.current === signature) return;
+    publishAttemptRef.current = null;
+    clientPublishIdRef.current = newStudioPublishId();
+    uploadedIdsRef.current = [];
+    publishAssetIdsRef.current = [];
+    draftWriteVersionRef.current++;
+    setUploadedIds([]);
+    setDraftSaved(false);
+  };
+  useEffect(() => {
+    if (!draftReady || activeScopeRef.current !== scopeKey) return;
+    // A changed story is a new publication, not a retry. Do not attach media
+    // assets that may already belong to the earlier committed publication.
+    rotateAttemptAfterEdit();
+  // This effect follows semantic content changes, not upload state changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, draftReady, scopeKey]);
+  useEffect(() => {
+    if (!draftReady || !userId || activeScopeRef.current !== scopeKey) return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    setDraftSaved(false);
+    draftTimerRef.current = setTimeout(() => { void queueDraftSaveRef.current().catch(() => {}); }, 300);
+    return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
+  }, [draftReady, userId, scopeKey, files, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, uploadedIds]);
+
+  useEffect(() => {
     if (!composerOpen) return;
     let cancelled = false;
     setExchangeListingsLoading(true);
@@ -271,7 +439,7 @@ export function CommunityStoryRail({
         if (!cancelled) {
           const eligible = (result.listings ?? []).filter((listing) => listing.status === "active");
           setOwnedExchangeListings(eligible);
-          setExchangeListingId((current) => eligible.some((listing) => String(listing.id) === current) ? current : "");
+          setExchangeListingId((current) => eligible.some((listing) => String(listing.id) === current) || exchangeDraftRef.current?.listingId === current ? current : "");
         }
       })
       .catch((reason: unknown) => {
@@ -315,8 +483,10 @@ export function CommunityStoryRail({
   useEffect(() => {
     if (previewFileIndex >= files.length && files.length > 0) setPreviewFileIndex(0);
   }, [files.length, previewFileIndex]);
+  useEffect(() => { setVideoDuration(0); }, [previewFileIndex, files]);
 
   const resetComposer = () => {
+    if (scopeKey) scopeSnapshotsRef.current.delete(scopeKey);
     setFiles([]);
     setPreviewFileIndex(0);
     setGalleryOpen(false);
@@ -336,7 +506,21 @@ export function CommunityStoryRail({
     setStudioStep("source");
     setAudience(hubId ? "hub" : "community");
     setExchangeListingId("");
+    exchangeDraftRef.current = null;
+    clientPublishIdRef.current = newStudioPublishId();
+    publishAttemptRef.current = null;
+    uploadedIdsRef.current = [];
+    publishAssetIdsRef.current = [];
     setExchangeListingsError("");
+    setUploadedIds([]);
+    setTrimPreview({});
+  };
+
+  const closeComposer = () => {
+    publishControllerRef.current?.abort();
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    void queueDraftSaveRef.current().catch(() => {});
+    setComposerOpen(false);
   };
 
   useEffect(() => {
@@ -349,9 +533,7 @@ export function CommunityStoryRail({
         event.preventDefault();
         if (galleryOpen) { setGalleryOpen(false); return; }
         if (studioStep !== "source") { setStudioStep(studioStep === "destination" ? "edit" : "source"); return; }
-        publishControllerRef.current?.abort();
-        resetComposer();
-        setComposerOpen(false);
+        closeComposer();
       }
       if (event.key !== "Tab") return;
       const controls = Array.from(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])') ?? []).filter((element) => element.getClientRects().length > 0);
@@ -364,9 +546,7 @@ export function CommunityStoryRail({
     dialog?.querySelector<HTMLElement>("button")?.focus();
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); };
-  // Reset is intentionally scoped to explicit close actions, not effect cleanup.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [composerOpen, galleryOpen, studioStep]);
+  }, [composerOpen, galleryOpen, studioStep, draftReady]);
 
   const publish = async () => {
     if (publishing || (!caption.trim() && gallerySelection.length === 0)) {
@@ -376,10 +556,21 @@ export function CommunityStoryRail({
     setPublishing(true);
     setError(null);
     try {
-      const selectedIndexes = gallerySelection
-        .filter((index) => Number.isInteger(index) && index >= 0 && index < files.length)
-        .sort((a, b) => a - b);
-      const publishFiles = selectedIndexes.map((index) => files[index]).filter((file): file is File => Boolean(file));
+      if (!userId || !Number.isSafeInteger(userId) || userId < 1 || !draftReady || activeScopeRef.current !== scopeKey) throw new Error("Confirm your account and wait for draft recovery before publishing.");
+      rotateAttemptAfterEdit();
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      await queueDraftSaveRef.current();
+      if (signatureRef.current !== signature) throw new Error("The Spark changed while preparing it. Review the draft and try again.");
+      const selectedIndexes = [...new Set(gallerySelection)].filter((index) => Number.isInteger(index) && index >= 0 && index < files.length);
+      const publishFiles = selectedStudioFiles(files, selectedIndexes);
+      if (exchangeDraftRef.current && !exchangeListingId) {
+        throw new Error("Your listing-owned Exchange Spark is still saved. Resume that listing and video, or explicitly discard the Exchange draft before sharing a Moment.");
+      }
+      const controller = new AbortController();
+      publishControllerRef.current = controller;
+      const attemptId = clientPublishIdRef.current;
+      const attemptSignature = signature;
+      const attemptSnapshot = snapshotRef.current();
       if (exchangeListingId) {
         if (audience !== "community" || publishFiles.length !== 1 || !publishFiles[0].type.startsWith("video/")) {
           throw new Error("An Exchange Spark needs one video shared with your Community. Remove other selected items or change the audience.");
@@ -388,29 +579,74 @@ export function CommunityStoryRail({
           throw new Error("Exchange video stickers, mentions, and effects are not rendered yet. Remove them or publish this as a 24-hour Moment.");
         }
         const file = publishFiles[0];
-        const controller = new AbortController();
-        publishControllerRef.current = controller;
         try {
           setPublishStatus("Checking your video…");
           const durationSeconds = await readExchangeSparkVideoDuration(file, controller.signal);
           const fileError = validateExchangeSparkVideo({ mimeType: file.type, byteSize: file.size, durationSeconds });
           if (fileError) throw new Error(fileError);
-          setPublishStatus("Creating your Exchange Spark…");
-          const draft = await createExchangeSparkDraft(Number(exchangeListingId), caption.trim(), controller.signal);
-          if (draft.upload_context.contextKind !== "exchange_spark" || draft.upload_context.contextId !== draft.spark_id) {
-            throw new Error("The server returned an invalid Spark upload context.");
+          const fingerprint = studioFileFingerprint(file);
+          const listingId = Number(exchangeListingId);
+          let remote = exchangeDraftRef.current;
+          if (remote && (remote.listingId !== exchangeListingId || remote.fingerprint !== fingerprint)) {
+            throw new Error("This saved Exchange Spark belongs to another listing or video. Resume the original or explicitly discard this draft first.");
           }
-          const session = await createSparkUploadSession({ contextId: draft.spark_id, file, signal: controller.signal });
-          setPublishStatus("Uploading video…");
-          await putRawSparkFile(session.upload, file, controller.signal, (loaded, total) => {
-            setPublishProgress(total > 0 ? Math.round(loaded / total * 100) : 0);
+          if (!remote) {
+            setPublishStatus("Creating your Exchange Spark…");
+            const draft = await createExchangeSparkDraft(listingId, caption.trim(), controller.signal);
+            if (draft.upload_context.contextKind !== "exchange_spark" || draft.upload_context.contextId !== draft.spark_id) {
+              throw new Error("The server returned an invalid Spark upload context.");
+            }
+            remote = { id: draft.spark_id, listingId: exchangeListingId, fingerprint };
+            exchangeDraftRef.current = remote;
+            if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+            const saved = { ...snapshotRef.current(), exchangeDraftId: remote.id, exchangeFileFingerprint: fingerprint };
+            if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, saved);
+            draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => saveStudioDraft(saved));
+            try { await draftQueueRef.current; } catch {
+              throw new Error("Exchange draft created, but its recovery ID could not be saved on this device. Keep this tab open and retry saving before leaving.");
+            }
+            setDraftSaved(true);
+          }
+          setPublishStatus("Checking your saved Exchange draft…");
+          let status: Awaited<ReturnType<typeof getExchangeSparkDraftStatus>> | null = null;
+          try {
+            status = await getExchangeSparkDraftStatus(remote.id, controller.signal);
+          } catch (reason) {
+            if (!(reason instanceof ExchangeSparkUploadError && reason.status === 404)) throw reason;
+          }
+          const action = exchangeResumeAction({
+            draftId: remote.id, listingId, savedListingId: Number(remote.listingId),
+            fingerprint, savedFingerprint: remote.fingerprint, status, file,
           });
-          setPublishStatus("Processing video…");
-          await completeSparkUpload(session.complete_url, controller.signal);
-          await waitForExchangeSparkMediaReady(draft.spark_id, controller.signal, () => {});
+          if (action === "create-upload" || action === "resume-upload") {
+            const asset = status?.media_assets[0];
+            if (asset?.status === "failed") {
+              setPublishStatus("Retrying video processing…");
+              await completeSparkUpload(`/api/media-assets/${asset.media_asset_id}/complete`, controller.signal);
+            } else {
+              const session = asset
+                ? resumeSparkUploadSession(asset.media_asset_id, file)
+                : await createSparkUploadSession({ contextId: remote.id, file, signal: controller.signal });
+              setPublishStatus("Uploading video…");
+              await putRawSparkFile(session.upload, file, controller.signal, (loaded, total) => {
+                setPublishProgress(total > 0 ? Math.round(loaded / total * 100) : 0);
+              });
+              setPublishStatus("Processing video…");
+              await completeSparkUpload(session.complete_url, controller.signal);
+            }
+          }
+          if (status && status.caption !== caption.trim()) await updateExchangeSparkDraftCaption(remote.id, caption.trim(), controller.signal);
+          if (action !== "publish-again" && action !== "publish") {
+            setPublishStatus("Processing video…");
+            await waitForExchangeSparkMediaReady(remote.id, controller.signal, () => {});
+          }
           setPublishStatus("Publishing Spark…");
-          await publishExchangeSparkDraft(draft.spark_id, caption.trim(), controller.signal);
+          await publishExchangeSparkDraft(remote.id, caption.trim(), controller.signal);
           trackCommunityContent("community_spark_created", hubId === null ? {} : { hub_id: hubId });
+          draftGenerationRef.current++;
+          await draftQueueRef.current.catch(() => {});
+          await discardStudioDraft(userId, hubId);
+          exchangeDraftRef.current = null;
           resetComposer();
           setComposerOpen(false);
           navigate("/community?section=exchange");
@@ -419,19 +655,9 @@ export function CommunityStoryRail({
           publishControllerRef.current = null;
         }
       }
-      const validationErrors = await validateStoryFiles(publishFiles);
-      if (validationErrors.length) throw new Error(validationErrors[0]);
-      const metadata = await Promise.all(publishFiles.map((file) => readStoryMediaMetadata(file)));
-      const media = await Promise.all(publishFiles.map(async (file, index) => ({
-        data_url: await readFileAsDataUrl(file),
-        media_type: file.type.startsWith("video/") ? "video" as const : "photo" as const,
-        mime_type: file.type,
-        duration_ms: metadata[index].durationSeconds ? Math.round(metadata[index].durationSeconds * 1000) : null,
-        width: metadata[index].width ?? null,
-        height: metadata[index].height ?? null,
-      })));
+      await validateStudioFiles(publishFiles);
       const elements: Array<Record<string, unknown>> = [];
-      if (!media.length) elements.push({ type: "background", payload: { color: textBackground }, position_x: 50, position_y: 50, z_index: 0 });
+      if (!publishFiles.length) elements.push({ type: "background", payload: { color: textBackground }, position_x: 50, position_y: 50, z_index: 0 });
       const draftElements = editorElements.slice();
       if (caption.trim() && !draftElements.some((element) => element.id === "caption")) {
         draftElements.push({
@@ -446,24 +672,49 @@ export function CommunityStoryRail({
         });
       }
       elements.push(...draftElements.map(({ id: _id, ...element }) => element));
-      if (tool === "effects" || effect !== "none") elements.push({ type: "effect", payload: { effect }, position_x: 50, position_y: 50 });
-      const response = await fetch("/api/community/stories", {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caption: caption.trim(),
-          hub_id: hubId,
-          audience,
-          media,
-          elements,
-          ...(media.some((item) => item.media_type === "video") && exchangeListingId
-            ? { exchange_listing_id: Number(exchangeListingId) }
-            : {}),
-        }),
+      // Preview-only effects and trim are not included in the published manifest.
+      publishAttemptRef.current = attemptSignature;
+      await publishStudioMoment({
+        userId, hubId, audience, files: publishFiles, caption, elements: elements as Array<{ type: string; payload: Record<string, unknown> }>, effect,
+        clientPublishId: attemptId,
+        signal: controller.signal,
+        uploadedIds: selectedIndexes.map((index) => uploadedIdsRef.current[index]),
+        onAssetUploaded: (index, id) => {
+          const next = [...uploadedIdsRef.current];
+          next[selectedIndexes[index]] = id;
+          uploadedIdsRef.current = next;
+          setUploadedIds(next);
+        },
+        beforePublish: async (orderedAssetIds) => {
+          if (signatureRef.current !== attemptSignature || clientPublishIdRef.current !== attemptId || activeScopeRef.current !== scopeKey) {
+            throw new Error("The Spark changed during upload. Review your edits and publish again; nothing was posted.");
+          }
+          if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+          draftWriteVersionRef.current++;
+          publishAssetIdsRef.current = [...orderedAssetIds];
+          const frozen: StudioDraft = { ...attemptSnapshot, clientPublishId: attemptId, attemptedSignature: attemptSignature,
+            uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0), publishAssetIds: [...orderedAssetIds] };
+          draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(async () => {
+            const durable = await persistStudioPublishAttempt(frozen, selectedIndexes, orderedAssetIds);
+            if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, durable);
+          });
+          try {
+            await draftQueueRef.current;
+          } catch (reason) {
+            setDraftError(reason instanceof Error ? reason.message : "Could not save the publish identity. Nothing was posted.");
+            throw reason;
+          }
+          if (signatureRef.current !== attemptSignature || clientPublishIdRef.current !== attemptId || activeScopeRef.current !== scopeKey) {
+            throw new Error("The Spark changed during publication preparation. Nothing was posted.");
+          }
+        },
+        onStatus: (status, percent) => { setPublishStatus(status); setPublishProgress(percent); },
       });
-      const data = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(data.error || "Could not publish your Spark.");
       trackCommunityContent("community_spark_created", hubId === null ? {} : { hub_id: hubId });
+      draftGenerationRef.current++;
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      await draftQueueRef.current.catch(() => {});
+      await discardStudioDraft(userId, hubId);
       resetComposer();
       setComposerOpen(false);
       const refresh = await fetch(`/api/community/stories${hubId ? `?hubId=${hubId}` : ""}`, { headers: authHeaders() });
@@ -476,6 +727,7 @@ export function CommunityStoryRail({
         ? "Upload cancelled. Your Spark was not published."
         : reason instanceof Error ? reason.message : "Could not publish your Spark.");
     } finally {
+      publishControllerRef.current = null;
       setPublishing(false);
       setPublishStatus("");
       setPublishProgress(0);
@@ -483,12 +735,13 @@ export function CommunityStoryRail({
   };
 
   const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { files: selected, errors } = normalizeStoryFiles(
-      [...files, ...Array.from(event.target.files ?? [])],
-      { allowExchangeVideo: true },
-    );
+    const { files: selected, errors } = chooseStudioFiles([...files, ...Array.from(event.target.files ?? [])]);
     if (errors.length) setError(errors[0]);
     if (selected.length) {
+      uploadedIdsRef.current = [];
+      publishAssetIdsRef.current = [];
+      setUploadedIds([]);
+      setTrimPreview({});
       setFiles(selected);
       setGallerySelection(selected.map((_, index) => index));
       setPreviewFileIndex(Math.max(0, selected.length - 1));
@@ -497,6 +750,38 @@ export function CommunityStoryRail({
       if (!errors.length) setError(null);
     }
     event.target.value = "";
+  };
+
+  const discardDraft = async () => {
+    if (!userId || !window.confirm(exchangeDraftRef.current
+      ? "Discard this Spark? If its Exchange video is still a draft, it will also be removed from the server. A Spark already published cannot be undone here."
+      : "Discard this Spark and its saved media? This cannot be undone.")) return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    try {
+      await draftQueueRef.current.catch(() => {});
+      const remote = exchangeDraftRef.current;
+      if (remote) {
+        const controller = new AbortController();
+        try {
+          const status = await getExchangeSparkDraftStatus(remote.id, controller.signal);
+          if (String(status.listing_id) !== remote.listingId) throw new Error("The server draft does not match the saved listing.");
+          await discardExchangeSparkDraft(remote.id, controller.signal);
+        } catch (reason) {
+          // 404 means the draft is no longer active (possibly already
+          // published). Never DELETE by id in that case: DELETE also removes
+          // published Sparks.
+          if (!(reason instanceof ExchangeSparkUploadError && reason.status === 404)) throw reason;
+        }
+      }
+      draftGenerationRef.current++;
+      await discardStudioDraft(userId, hubId);
+      resetComposer();
+      setDraftSaved(false);
+      setDraftError("");
+      setError(null);
+    } catch (reason: unknown) {
+      setDraftError(reason instanceof Error ? reason.message : "Could not discard the saved draft.");
+    }
   };
 
   const openStory = useCallback((index: number) => {
@@ -676,11 +961,13 @@ export function CommunityStoryRail({
         />
       </section>
 
-      {composerOpen && (
+      {composerOpen && (!draftReady || activeScopeRef.current !== scopeKey) && <div className="nia-story-composer-overlay" role="status" aria-live="polite"><div className="nia-story-composer-shell p-8 text-center text-white">Recovering your saved Spark…</div></div>}
+      {composerOpen && draftReady && activeScopeRef.current === scopeKey && (
         <div className="nia-story-composer-overlay">
           <input ref={cameraInput} type="file" accept="image/*,video/*" capture="environment" className="sr-only" onChange={onFileChange} aria-label="Capture Spark media" />
           <input ref={galleryInput} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={onFileChange} aria-label="Choose Spark media" />
           <div className="nia-story-composer-shell">
+            {studioStep === "source" && exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-slate-900 px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
             <StoryComposerChrome
               step={studioStep}
               onStep={(next) => { setStudioStep(next); setTool(null); }}
@@ -693,7 +980,10 @@ export function CommunityStoryRail({
                 >
                   <div className="relative flex h-full w-full items-center justify-center overflow-hidden" style={!selectedFileUrl ? { background: textBackground } : undefined}>
                     {selectedFileUrl ? (
-                      selectedPreviewFile?.type.startsWith("video/") ? <video src={selectedFileUrl} controls playsInline className="h-full w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Spark preview" className="h-full w-full object-contain" style={{ filter }} />
+                      selectedPreviewFile?.type.startsWith("video/") ? <video ref={previewVideo} key={selectedFileUrl} src={selectedFileUrl} controls playsInline className="h-full w-full object-contain" style={{ filter }} onLoadedMetadata={(event) => { setVideoDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0); event.currentTarget.currentTime = trimPreview[previewFileIndex]?.start ?? 0; }} onPlay={(event) => { if (event.currentTarget.currentTime < (trimPreview[previewFileIndex]?.start ?? 0)) event.currentTarget.currentTime = trimPreview[previewFileIndex].start; }} onTimeUpdate={(event) => {
+                        const bounds = trimPreview[previewFileIndex];
+                        if (bounds && event.currentTarget.currentTime >= bounds.end) { event.currentTarget.pause(); event.currentTarget.currentTime = bounds.start; }
+                      }} /> : <img src={selectedFileUrl} alt="Spark preview" className="h-full w-full object-contain" style={{ filter }} />
                     ) : (
                       <div className="nia-story-text-preview"><span>Niakofa / Spark</span>{!caption && <p>Your words belong here.</p>}<small>{caption ? "Drag the text to place it" : "Write a few words below to begin"}</small></div>
                     )}
@@ -703,7 +993,7 @@ export function CommunityStoryRail({
               tools={toolButtons}
               activeTool={tool}
               onTool={(nextTool) => setTool(tool === nextTool ? null : nextTool)}
-              onClose={() => { publishControllerRef.current?.abort(); resetComposer(); setError(null); setComposerOpen(false); }}
+              onClose={closeComposer}
               onSettings={() => { setStudioStep("destination"); window.setTimeout(() => document.getElementById("story-audience")?.focus(), 0); }}
               onGallery={() => setGalleryOpen(true)}
               onCamera={() => cameraInput.current?.click()}
@@ -712,6 +1002,11 @@ export function CommunityStoryRail({
               galleryCount={files.length}
             >
               <div className="nia-story-composer__form">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-white/75" aria-live="polite">
+                  <span>{draftReady ? draftError ? "Local save unavailable" : draftSaved ? "Draft saved on this device" : "Saving draft…" : "Recovering your draft…"}</span>
+                  {(files.length > 0 || caption.trim() || exchangeDraftRef.current) && <button type="button" className="rounded-lg border border-white/30 px-3 py-2 font-semibold" onClick={() => void discardDraft()} disabled={publishing} data-testid="button-discard-studio-draft">Discard draft</button>}
+                </div>
+                {draftError && <p role="alert" className="mb-2 rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-xs text-amber-100">{draftError} Keep this tab open or try editing again to save.</p>}
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
                 {publishing && publishStatus && <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs"><p>{publishStatus}{publishProgress ? ` ${publishProgress}%` : ""}</p>{publishProgress > 0 && <progress aria-label="Spark upload progress" value={publishProgress} max={100} className="mt-2 w-full" />}<button type="button" className="mt-2 min-h-10 rounded-lg border border-white/20 px-3 font-bold" onClick={() => publishControllerRef.current?.abort()}>Cancel upload</button></div>}
                 {studioStep === "destination" ? <>
@@ -719,23 +1014,30 @@ export function CommunityStoryRail({
                   <div className="nia-story-destination-card">
                     <Users size={22} />
                     <div><label htmlFor="story-audience">Your audience</label><p>{audience === "hub" ? "Only members of this Hub" : "Your approved community"}</p></div>
-                    <select id="story-audience" value={audience} onChange={(event) => setAudience(event.target.value as "community" | "hub")} disabled={!hubId} aria-label="Spark audience"><option value="community">Community</option>{hubId && <option value="hub">This Hub</option>}</select>
+                    <select id="story-audience" value={audience} onChange={(event) => { setAudience(event.target.value as "community" | "hub"); uploadedIdsRef.current = []; publishAssetIdsRef.current = []; setUploadedIds([]); }} disabled={!hubId || publishing} aria-label="Spark audience"><option value="community">Community</option>{hubId && <option value="hub">This Hub</option>}</select>
                   </div>
                   {selectedVideo && <div className="nia-story-destination-card nia-story-destination-card--listing">
                     <div className="nia-story-destination-card__full"><label htmlFor="spark-exchange-listing">Connect an Exchange listing <span>(optional)</span></label><p>Only an active listing you own can be linked. The server checks eligibility.</p>
                       {exchangeListingsError && <p role="alert">{exchangeListingsError} <button type="button" onClick={() => { setExchangeListingsLoading(true); setExchangeListingsError(""); getExchangeListings({ mine: true, limit: 50 }).then((result) => setOwnedExchangeListings((result.listings ?? []).filter((listing) => listing.status === "active"))).catch((reason: unknown) => setExchangeListingsError(reason instanceof Error ? reason.message : "Could not load listings.")).finally(() => setExchangeListingsLoading(false)); }}>Retry</button></p>}
-                      <select id="spark-exchange-listing" value={exchangeListingId} onChange={(event) => { setExchangeListingId(event.target.value); if (event.target.value) setAudience("community"); }} disabled={exchangeListingsLoading || !ownedExchangeListings.length} data-testid="select-spark-exchange-listing"><option value="">{exchangeListingsLoading ? "Loading listings…" : ownedExchangeListings.length ? "No listing connected" : "No active listings available"}</option>{ownedExchangeListings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title} · {listing.neighborhood}</option>)}</select>
+                      <select id="spark-exchange-listing" value={exchangeListingId} onChange={(event) => { setExchangeListingId(event.target.value); if (event.target.value && audience !== "community") { setAudience("community"); uploadedIdsRef.current = []; publishAssetIdsRef.current = []; setUploadedIds([]); } }} disabled={publishing || exchangeListingsLoading || (!ownedExchangeListings.length && !exchangeDraftRef.current)} data-testid="select-spark-exchange-listing"><option value="">{exchangeListingsLoading ? "Loading listings…" : ownedExchangeListings.length ? "No listing connected" : "No active listings available"}</option>{exchangeDraftRef.current && !ownedExchangeListings.some((listing) => String(listing.id) === exchangeDraftRef.current?.listingId) && <option value={exchangeDraftRef.current.listingId}>Saved listing (no longer active)</option>}{ownedExchangeListings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title} · {listing.neighborhood}</option>)}</select>
                     </div>
                   </div>}
                   <p className="nia-story-destination-note">{exchangeListingId
                     ? "A linked video appears in Exchange Sparks while its listing remains active. It does not appear in 24-hour Moments. Only the original video and caption are published; editing overlays are not available here."
-                    : "Your Spark appears in Moments for 24 hours, then expires."}</p>
+                    : `Confirm: ${audience === "hub" ? "this Hub's members" : "your approved community"} can see this Spark for 24 hours. ${selectedFiles.length ? `${selectedFiles.length} media item${selectedFiles.length === 1 ? "" : "s"} in your chosen order.` : "Text-only Spark."}`}</p>
                 </> : <>
                 {files.length > 0 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="Spark media sequence">
                   {files.map((file, index) => <button key={`${file.name}-${index}`} type="button" onClick={() => setPreviewFileIndex(index)} className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 ${previewFileIndex === index ? "border-primary" : "border-white/20"}`} aria-label={`Preview Spark item ${index + 1}`}>
                     {previewUrls[index] ? (file.type.startsWith("video/") ? <video src={previewUrls[index]} muted playsInline className="h-full w-full object-cover" /> : <img src={previewUrls[index]} alt="" className="h-full w-full object-cover" />) : <span className="grid h-full place-items-center text-xs">{index + 1}</span>}
                     <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[9px] text-white">{index + 1}</span>
                   </button>)}
+                </div>}
+                {selectedPreviewFile?.type.startsWith("video/") && videoDuration > 0 && <div className="mb-3 rounded-xl border border-white/20 bg-white/5 p-3 text-xs text-white/80">
+                  <p className="mb-2 font-bold">Playback range preview · original video is published in full</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label>Start {Math.round(trimPreview[previewFileIndex]?.start ?? 0)}s<input type="range" min={0} max={Math.max(0, Math.floor(videoDuration) - 1)} value={trimPreview[previewFileIndex]?.start ?? 0} onChange={(event) => { const start = Number(event.target.value); setTrimPreview((current) => ({ ...current, [previewFileIndex]: { start, end: Math.max(start + 1, current[previewFileIndex]?.end ?? videoDuration) } })); if (previewVideo.current) previewVideo.current.currentTime = start; }} className="w-full" data-testid="input-spark-preview-start" /></label>
+                    <label>End {Math.round(trimPreview[previewFileIndex]?.end ?? videoDuration)}s<input type="range" min={1} max={Math.ceil(videoDuration)} value={trimPreview[previewFileIndex]?.end ?? videoDuration} onChange={(event) => setTrimPreview((current) => ({ ...current, [previewFileIndex]: { start: Math.min(current[previewFileIndex]?.start ?? 0, Number(event.target.value) - 1), end: Number(event.target.value) } }))} className="w-full" data-testid="input-spark-preview-end" /></label>
+                  </div>
                 </div>}
                 {tool === "music" && <div className="nia-story-audio-note"><Volume2 size={19} /><div><strong>Original audio only</strong><p>Your video keeps the sound it was recorded with. Music tracks are not available yet.</p></div></div>}
                 {tool === "stickers" && <div className="flex gap-2 overflow-x-auto pb-1">{["💙", "🙏", "🤝", "🌍", "🙌", "✨", "📍"].map((item) => <button key={item} type="button" onClick={() => { setSticker(item); upsertEditorElement({ id: "sticker", type: "sticker", payload: { sticker: item }, position_x: 50, position_y: 50, scale: 1, rotation: 0, z_index: 15 }); }} className={`h-11 w-11 shrink-0 rounded-xl border text-xl ${sticker === item ? "border-primary bg-primary/10" : "border-white/20"}`} aria-label={`Add ${item} sticker`}>{item}</button>)}</div>}
@@ -744,7 +1046,7 @@ export function CommunityStoryRail({
                 {tool === "text" && <div className="grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-white/65">Color<input type="color" value={textColor} onChange={(event) => { const value = event.target.value; setTextColor(value); updateEditorElement("caption", { payload: { color: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-white/10" /></label><label className="text-[10px] font-bold text-white/65">Size<select value={textSize} onChange={(event) => { const value = event.target.value; setTextSize(value); updateEditorElement("caption", { payload: { font_size: Number(value) } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-white/65">Align<select value={textAlign} onChange={(event) => { const value = event.target.value as "left" | "center" | "right"; setTextAlign(value); updateEditorElement("caption", { payload: { align: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-white/65">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
                 <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={2} className="mt-3 w-full resize-none rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white outline-none focus:border-primary" placeholder="Add text to your Spark…" />
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="text-[10px] leading-relaxed text-white/55">Photos and short videos only. Your original video audio is preserved; effects change the preview, not the uploaded file.</p>
+                  <p className="text-[10px] leading-relaxed text-white/55">Original audio is preserved. Trim and effects are preview-only; the original media is uploaded. Text and stickers are saved as Story overlays.</p>
                   {files.length > 0 && <button type="button" onClick={() => { setFiles([]); setGallerySelection([]); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
                 </div>
                 </>}
@@ -807,7 +1109,7 @@ export function CommunityStoryRail({
           </StoryViewerChrome>
         </div>
       )}
-      {galleryOpen && composerOpen && (
+      {galleryOpen && composerOpen && draftReady && activeScopeRef.current === scopeKey && (
         <div className="nia-story-gallery-overlay">
           <StoryGalleryChrome
             thumbnails={galleryThumbnails}

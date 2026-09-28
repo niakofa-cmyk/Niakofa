@@ -42,6 +42,7 @@ function unavailableMessage(code: string | undefined, message: string): string {
 
 export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (status: "published" | "pending") => void }) {
   const [open, setOpen] = useState(false);
+  const [draftEntryVisible, setDraftEntryVisible] = useState(false);
   const [listings, setListings] = useState<ExchangeListing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
   const [listingsError, setListingsError] = useState("");
@@ -64,6 +65,32 @@ export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (
   const metadataControllerRef = useRef<AbortController | null>(null);
   const requestControllerRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let savedDraftId: number | null = null;
+    try {
+      savedDraftId = loadExchangeSparkDraftId();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Saved Spark draft reference could not be read.");
+      setDraftEntryVisible(true);
+    }
+    void listExchangeSparkDrafts(controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          if (!Array.isArray(result.drafts)) throw new Error("The server returned an invalid saved-drafts response.");
+          setDraftEntryVisible(result.drafts.length > 0 || savedDraftId !== null);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (controller.signal.aborted) return;
+        // Keep recovery reachable if the server cannot confirm whether an
+        // in-progress draft exists. Opening the fallback reports the cause.
+        setDraftEntryVisible(true);
+        setError(reason instanceof Error ? reason.message : "Saved Spark drafts could not be checked.");
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -330,6 +357,7 @@ export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (
         setStatusText(`${result.status === "pending" ? "Spark submitted for review." : "Your Exchange Spark is live."} The device could not clear its saved draft reference; it may reappear after reload.`);
       }
       resetForm();
+      setDraftEntryVisible(false);
     } catch (reason) {
       if (controller.signal.aborted) return;
       const failure = reason instanceof ExchangeSparkUploadError
@@ -380,16 +408,18 @@ export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (
     }
   };
 
+  if (!draftEntryVisible) return null;
+
   return (
     <section className="overflow-hidden rounded-2xl border border-primary/25 bg-card" aria-label="Create an Exchange Spark">
       <div className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div>
-          <p className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-primary"><Video className="h-4 w-4" aria-hidden="true" /> Share an Exchange video</p>
-          <p className="mt-1 text-sm text-muted-foreground">Attach a short MP4 or WebM video to an active post you own.</p>
+          <p className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-primary"><Video className="h-4 w-4" aria-hidden="true" /> Legacy Exchange video draft</p>
+          <p className="mt-1 text-sm text-muted-foreground">Resume a saved video upload from the legacy composer. For new Sparks, use the unified Studio above.</p>
         </div>
         <button type="button" onClick={() => setOpen((value) => !value)} disabled={busy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-sm font-black text-primary-foreground disabled:opacity-60" aria-expanded={open}>
           {open ? <X className="h-4 w-4" aria-hidden="true" /> : <Video className="h-4 w-4" aria-hidden="true" />}
-          {open ? "Close creator" : "Create video Spark"}
+          {open ? "Close recovery" : "Resume saved video draft"}
         </button>
       </div>
       {open && (

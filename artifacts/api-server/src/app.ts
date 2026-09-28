@@ -12,7 +12,7 @@ import { parseAuth, requireApproved, requireAuth } from "./middlewares/auth";
 import { requestTimeout } from "./middlewares/timeout";
 import helmet from "helmet";
 import { getNiaServiceUrl } from "./lib/nia-client";
-import { MAX_MEDIA_BYTES } from "./lib/media-validation";
+import { mediaUploadParser } from "./lib/media-upload-parser";
 
 const app: Express = express();
 
@@ -184,10 +184,17 @@ app.use(
   "/api/media-assets/:id/upload",
   requireAuth,
   requireApproved,
-  express.raw({
-    type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"],
-    limit: `${MAX_MEDIA_BYTES}b`,
-  }),
+  mediaUploadParser,
+  (err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    const parserError = err as { type?: string; status?: number };
+    if (parserError?.type === "entity.too.large" || parserError?.status === 413) {
+      return res.status(413).json({
+        error: "Media upload exceeds the 64 MiB limit.",
+        error_code: "MEDIA_SIZE_INVALID",
+      });
+    }
+    return next(err);
+  },
 );
 
 // DNA exports are parsed in memory by the authenticated route. The raw bytes

@@ -207,9 +207,6 @@ router.get(
   requireApproved,
   generalApiLimiter,
   async (req, res) => {
-    const code = featureUnavailableCode();
-    if (code) return featureUnavailableResponse(res, code);
-
     const sparkId = positiveId(req.params.sparkId);
     if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
     const userId = req.authenticatedUserId!;
@@ -274,7 +271,6 @@ router.post(
   generalApiLimiter,
   async (req, res) => {
     const code = featureUnavailableCode();
-    if (code) return featureUnavailableResponse(res, code);
 
     const sparkId = positiveId(req.params.sparkId);
     if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
@@ -298,15 +294,15 @@ router.post(
         id: exchangeListingsTable.id,
         seller_id: exchangeListingsTable.seller_id,
         community_id: usersTable.community_id,
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status,
+        seller_approval_status: usersTable.approval_status,
+        seller_is_suspended: usersTable.is_suspended,
       }).from(exchangeListingsTable)
         .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
         .where(and(
           eq(exchangeListingsTable.id, sparkReference.listing_id),
           eq(exchangeListingsTable.seller_id, userId),
-          eq(exchangeListingsTable.status, "active"),
-          eq(exchangeListingsTable.moderation_status, "approved"),
-          eq(usersTable.approval_status, "approved"),
-          eq(usersTable.is_suspended, false),
         ))
         .limit(1)
         .for("update");
@@ -329,8 +325,39 @@ router.post(
         .limit(1)
         .for("update");
       if (!spark || spark.status === "deletion_pending") return { kind: "not-found" as const };
+      if (spark.status === "published" || spark.status === "pending") {
+        const [asset] = await tx.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable)
+          .where(and(
+            eq(mediaAssetsTable.context_kind, "exchange_spark"),
+            eq(mediaAssetsTable.context_id, sparkId),
+            eq(mediaAssetsTable.owner_user_id, userId),
+          ))
+          .limit(1);
+        return {
+          kind: "published" as const,
+          status: spark.status,
+          mediaAssetId: asset?.id ?? null,
+        };
+      }
+      if (spark.status !== "draft") {
+        return {
+          kind: "conflict" as const,
+          error: spark.status === "rejected"
+            ? "This Spark was rejected and cannot be published again."
+            : "Spark draft cannot be published in its current state.",
+        };
+      }
       if (spark.status === "draft" && spark.draft_expires_at <= new Date()) {
         return { kind: "conflict" as const, error: "Spark draft has expired." };
+      }
+
+      if (code) return { kind: "unavailable" as const, code };
+      if (!listing
+        || listing.status !== "active"
+        || listing.moderation_status !== "approved"
+        || listing.seller_approval_status !== "approved"
+        || listing.seller_is_suspended) {
+        return { kind: "conflict" as const, error: "The linked Exchange listing is no longer eligible." };
       }
 
       const assets = await tx.select().from(mediaAssetsTable)
@@ -345,13 +372,6 @@ router.post(
       }
       const caption = cleanCaption(parsed.data.caption ?? spark.caption) || null;
       const moderation = moderatePostText(caption ?? "");
-
-      if (spark.status !== "draft") {
-        if (spark.status === "published" || spark.status === "pending") {
-          return { kind: "published" as const, status: spark.status, mediaAssetId: asset.id };
-        }
-        return { kind: "conflict" as const, error: "Spark draft cannot be published in its current state." };
-      }
 
       await tx.update(exchangeSparksTable).set({
         caption,
@@ -368,6 +388,7 @@ router.post(
 
     if (result.kind === "not-found") return res.status(404).json({ error: "Spark draft not found." });
     if (result.kind === "conflict") return res.status(409).json({ error: result.error });
+    if (result.kind === "unavailable") return featureUnavailableResponse(res, result.code);
     return res.status(201).json({
       spark_id: sparkId,
       status: result.status,

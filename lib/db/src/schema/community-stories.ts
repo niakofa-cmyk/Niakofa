@@ -3,6 +3,7 @@ import {
   serial,
   integer,
   text,
+  varchar,
   boolean,
   timestamp,
   jsonb,
@@ -10,6 +11,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
 import { diasporaHubsTable } from "./diaspora-hubs";
@@ -26,6 +28,8 @@ export const communityStoriesTable = pgTable("community_stories", {
   hub_id: integer("hub_id").references(() => diasporaHubsTable.id, { onDelete: "set null" }),
   community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
   exchange_listing_id: integer("exchange_listing_id").references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
+  client_publish_id: varchar("client_publish_id", { length: 36 }),
+  publish_payload_hash: varchar("publish_payload_hash", { length: 64 }),
   caption: text("caption"),
   audience: text("audience").notNull().default("community"),
   status: text("status").notNull().default("published"),
@@ -39,6 +43,9 @@ export const communityStoriesTable = pgTable("community_stories", {
   index("community_stories_status_expires_idx").on(table.status, table.expires_at),
   index("community_stories_community_expires_idx").on(table.community_id, table.expires_at),
   index("community_stories_exchange_listing_idx").on(table.exchange_listing_id, table.created_at),
+  uniqueIndex("community_stories_author_client_publish_uidx")
+    .on(table.author_user_id, table.client_publish_id)
+    .where(sql`${table.client_publish_id} IS NOT NULL`),
 ]);
 
 export const communityStoryMediaTable = pgTable("community_story_media", {

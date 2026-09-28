@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-const getToolPaths = () => ({
+export const getMediaToolPaths = () => ({
   ffmpeg: process.env["FFMPEG_PATH"]?.trim() || "ffmpeg",
   ffprobe: process.env["FFPROBE_PATH"]?.trim() || "ffprobe",
 });
@@ -31,7 +31,7 @@ async function verifyExecutable(name: "ffmpeg" | "ffprobe", executable: string):
  * cannot activate against a broken production image.
  */
 export async function verifyMediaToolchain(): Promise<void> {
-  const { ffmpeg, ffprobe } = getToolPaths();
+  const { ffmpeg, ffprobe } = getMediaToolPaths();
   await verifyExecutable("ffmpeg", ffmpeg);
   await verifyExecutable("ffprobe", ffprobe);
 

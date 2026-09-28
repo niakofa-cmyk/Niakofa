@@ -41,6 +41,8 @@ const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const STORY_ORPHAN_MEDIA_RETENTION_MS = 24 * 60 * 60 * 1000;
+const MEDIA_UPLOAD_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
+const MEDIA_CLEANUP_BATCH_SIZE = 100;
 const ACCOUNT_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 // Run hourly so a user's local weekly delivery window is not missed by a
 // six-hour UTC cadence. The archival query remains idempotent and indexed.
@@ -593,30 +595,104 @@ async function processCommunityStoryCleanup(): Promise<void> {
   const ids = [...new Set(expired.map((row) => row.id))];
   const deletedIds: number[] = [];
   let cleanupFailed = false;
-  const tombstones = await db.select({
-    id: mediaAssetsTable.id,
-    original_key: mediaAssetsTable.original_key,
-    thumbnail_key: mediaAssetsTable.thumbnail_key,
-    variant_key: mediaAssetsTable.variant_key,
-  }).from(mediaAssetsTable).where(and(
-    eq(mediaAssetsTable.status, "deleted"),
-    sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`,
-  ));
-  for (const asset of tombstones) {
-    try {
-      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key]
-        .filter((key): key is string => Boolean(key)))];
-      for (const key of keys) await deleteAssetStrict(key);
-      await db.update(mediaAssetsTable)
-        .set({
-          metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
-          updated_at: new Date(),
-        })
-        .where(and(eq(mediaAssetsTable.id, asset.id), eq(mediaAssetsTable.status, "deleted")));
-    } catch (err) {
-      cleanupFailed = true;
-      logger.error({ err, mediaAssetId: asset.id }, "media cleanup: deleted object cleanup will retry");
+
+  // Expire upload sessions that were initialized but never completed. Locking
+  // each row serializes expiry with the same-origin PUT: an upload already in
+  // flight finishes before its object is tombstoned and cleaned, while a later
+  // PUT observes the non-pending status and cannot recreate the object.
+  const staleUploadCutoff = new Date(Date.now() - MEDIA_UPLOAD_SESSION_RETENTION_MS);
+  const staleUploads = await db.transaction(async (tx) => {
+    const due = await tx.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.status, "pending"),
+      lte(mediaAssetsTable.updated_at, staleUploadCutoff),
+    ))
+      .orderBy(mediaAssetsTable.updated_at, mediaAssetsTable.id)
+      .limit(MEDIA_CLEANUP_BATCH_SIZE)
+      .for("update", { skipLocked: true });
+    const expiredUploads = [];
+    for (const asset of due) {
+      const [tombstone] = await tx.update(mediaAssetsTable).set({
+        status: "deleted",
+        metadata: sql`jsonb_set(jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true), '{stale_upload_cleanup_pending}', 'true'::jsonb, true)`,
+        updated_at: new Date(),
+      }).where(and(
+        eq(mediaAssetsTable.id, asset.id),
+        eq(mediaAssetsTable.status, "pending"),
+      )).returning({ id: mediaAssetsTable.id });
+      if (tombstone) expiredUploads.push(asset);
     }
+    return expiredUploads;
+  });
+  if (staleUploads.length > 0) {
+    logger.info({ count: staleUploads.length }, "media cleanup: stale pending upload sessions expired");
+  }
+
+  const tombstoneCleanup = await db.transaction(async (tx) => {
+    const tombstones = await tx.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+      metadata: mediaAssetsTable.metadata,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.status, "deleted"),
+      sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`,
+    ))
+      // Oldest retry timestamp first guarantees assets that have never been
+      // reached move ahead of repeatedly failing early rows. Locks make the
+      // bounded batch a claim across concurrent API scheduler instances.
+      .orderBy(mediaAssetsTable.updated_at, mediaAssetsTable.id)
+      .limit(MEDIA_CLEANUP_BATCH_SIZE)
+      .for("update", { skipLocked: true });
+    const failedAssetIds: number[] = [];
+    for (const asset of tombstones) {
+      try {
+        const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key]
+          .filter((key): key is string => Boolean(key)))];
+        for (const key of keys) await deleteAssetStrict(key);
+        if (asset.metadata?.["account_cleanup_pending"] === true
+          || asset.metadata?.["stale_upload_cleanup_pending"] === true) {
+          // Account erasure and expired upload sessions remove their database
+          // key ledger only after every strict object deletion succeeds.
+          await tx.delete(mediaAssetsTable).where(and(
+            eq(mediaAssetsTable.id, asset.id),
+            eq(mediaAssetsTable.status, "deleted"),
+          ));
+        } else {
+          await tx.update(mediaAssetsTable)
+            .set({
+              metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+              updated_at: new Date(),
+            })
+            .where(and(eq(mediaAssetsTable.id, asset.id), eq(mediaAssetsTable.status, "deleted")));
+        }
+      } catch (err) {
+        failedAssetIds.push(asset.id);
+        // Bump the retry timestamp while the row is still claimed. Ordering on
+        // updated_at puts this failure behind unattempted tombstones next run.
+        await tx.update(mediaAssetsTable)
+          .set({ updated_at: new Date() })
+          .where(and(
+            eq(mediaAssetsTable.id, asset.id),
+            eq(mediaAssetsTable.status, "deleted"),
+            sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`,
+          ));
+        logger.error({ err, mediaAssetId: asset.id }, "media cleanup: deleted object cleanup will retry");
+      }
+    }
+    return { count: tombstones.length, failedAssetIds };
+  });
+  if (tombstoneCleanup.failedAssetIds.length > 0) cleanupFailed = true;
+  if (tombstoneCleanup.count > 0) {
+    logger.info({
+      processed: tombstoneCleanup.count,
+      failed: tombstoneCleanup.failedAssetIds.length,
+    }, "media cleanup: durable tombstones processed");
   }
   for (const id of ids) {
     await db.update(communityStoriesTable)
@@ -807,6 +883,15 @@ export async function processScheduledAccountPurges(now = new Date()): Promise<n
     .where(and(
       eq(usersTable.deletion_status, "pending_purge"),
       lte(usersTable.deletion_scheduled_at, now),
+      sql`NOT EXISTS (
+        SELECT 1
+        FROM media_assets
+        WHERE media_assets.owner_user_id = ${usersTable.id}
+          AND (
+            media_assets.metadata->>'storage_cleanup_pending' = 'true'
+            OR media_assets.metadata->>'account_cleanup_pending' = 'true'
+          )
+      )`,
     ))
     .returning({ id: usersTable.id });
 

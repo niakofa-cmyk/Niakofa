@@ -95,4 +95,33 @@ describe("direct-binary Exchange Spark draft contract", () => {
     expect(mediaRoute).not.toMatch(/getAssetUploadUrl|expires_in_seconds: 900/);
     expect(storage).not.toMatch(/export async function getAssetUploadUrl/);
   });
+
+  it("keeps pre-flag-change drafts readable while gating only a new publish attempt", async () => {
+    const route = await fs.readFile(routePath, "utf8");
+    const statusRoute = route.slice(
+      route.indexOf('"/community/exchange/sparks/drafts/:sparkId"'),
+      route.indexOf('"/community/exchange/sparks/drafts/:sparkId/publish"'),
+    );
+    const publishRoute = route.slice(route.indexOf('"/community/exchange/sparks/drafts/:sparkId/publish"'));
+
+    expect(statusRoute).toMatch(/eq\(exchangeSparksTable\.status, "draft"\)/);
+    expect(statusRoute).toMatch(/draft_expires_at/);
+    expect(statusRoute).not.toMatch(/featureUnavailableCode\(\)/);
+    expect(publishRoute).toMatch(/const code = featureUnavailableCode\(\)/);
+    expect(publishRoute).toMatch(/if \(code\) return \{ kind: "unavailable" as const, code \}/);
+  });
+
+  it("makes repeat publishes state-idempotent and refuses rejected, expired, or deleted drafts", async () => {
+    const route = await fs.readFile(routePath, "utf8");
+    const publishRoute = route.slice(route.indexOf('"/community/exchange/sparks/drafts/:sparkId/publish"'));
+    const publishedStatusOffset = publishRoute.indexOf('spark.status === "published" || spark.status === "pending"');
+    const assetValidationOffset = publishRoute.indexOf("singlePublishableExchangeSparkAsset(assets, userId, sparkId)");
+
+    expect(publishedStatusOffset).toBeGreaterThanOrEqual(0);
+    expect(assetValidationOffset).toBeGreaterThan(publishedStatusOffset);
+    expect(publishRoute).toMatch(/mediaAssetId: asset\?\.id \?\? null/);
+    expect(publishRoute).toMatch(/spark\.status === "deletion_pending"/);
+    expect(publishRoute).toMatch(/spark\.status === "rejected"[\s\S]*cannot be published again/);
+    expect(publishRoute).toMatch(/spark\.draft_expires_at <= new Date\(\)/);
+  });
 });

@@ -41,6 +41,15 @@ for review in that conversation. Temporary browser states and traces were
 removed. This pass does not certify physical devices, independently identify
 the stored bucket objects, or inspect the worker's temporary-file namespace.
 
+**Local implementation, not production acceptance:** The subsequent unified
+Sparks Studio changes replace new Community/Hub inline Base64 uploads with
+bounded, authenticated binary uploads while retaining legacy Story reads and
+older client compatibility. They also add retryable cleanup for abandoned
+uploads and account-owned media. These source changes have not been published
+or exercised against the deployed revision. The earlier production pass above
+remains evidence only for the commit it names; it does not certify the new
+Studio, cleanup, or draft-to-publish behavior.
+
 ## Gate 1 — Application and storage configuration
 
 - [x] CI, typecheck, and tests are green on the intended commit
@@ -156,6 +165,29 @@ path using disposable media and verify the object is gone; retain any
 evidence the owner requests until the session is declared complete.
 Desktop Playwright or mobile viewport emulation cannot certify real iOS or
 Android camera, gallery, playback, or accessibility behavior.
+
+## Gate 5 — Unified Sparks Studio release
+
+- [ ] Deploy and confirm the exact served commit contains the bounded same-origin upload parser and Studio changes
+- [ ] With approved disposable accounts, publish a Community and a Hub Moment through Studio; verify media, overlays, privacy, 24-hour expiry, and draft recovery after reload or interruption
+- [ ] Confirm a listing-owned Exchange draft can resume across a rollout/flag change, publish once after a lost response, and enter/leave the authorized moderation queue
+- [ ] Confirm paused, removed, and rejected listings lose discovery and playback access without deleting unrelated legacy Stories
+- [ ] Run the separately gated `pnpm test:community-exchange-sparks-production` only with an approved disposable listing and exact served commit; reconcile every created draft/asset afterward
+- [ ] Inspect the actual worker runtime for FFmpeg/FFprobe and verify its thumbnail/variant keys are in the intended private bucket
+- [ ] Confirm account/listing deletion and failed processing leave no inaccessible-but-retained objects, stalled cleanup markers, or worker temporary files
+- [ ] Complete physical iOS and Android capture, interruption/retry, private playback, and accessibility checks
+
+The Exchange runner cannot prove bucket placement, account erasure, or native
+device behavior. It requires an approved disposable listing, two validated
+disposable account states, the exact served commit, a unique
+`SPARK_SMOKE_RUN_ID`, and a private `SPARK_SMOKE_RECOVERY_DIR` outside the
+checkout. Keep that recovery directory across interrupted runs. The runner
+retains unresolved IDs and fails closed until an operator independently
+reconciles database rows and storage objects; an empty feed or accepted
+deletion request is not proof of physical removal. Do not interpret a passing
+API/browser run as completion of the independent operational gates. Do not
+toggle the already-live media flag or alter production storage settings
+without an owner-approved rollout plan.
 
 ## Security rule
 

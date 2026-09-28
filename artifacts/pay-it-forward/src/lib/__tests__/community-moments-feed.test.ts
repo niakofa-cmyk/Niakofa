@@ -9,9 +9,14 @@ const appRoot = path.resolve(__dirname, "../..");
 const apiRoot = path.resolve(appRoot, "../../api-server/src/routes");
 const momentsMigration = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsMigration.ts"), "utf8");
 const moments = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsExperience.tsx"), "utf8");
+const studio = fs.readFileSync(path.join(appRoot, "components/community/CommunityStoryRail.tsx"), "utf8");
+const studioPublish = fs.readFileSync(path.join(appRoot, "components/community/story-studio-publish.ts"), "utf8");
 const uploader = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsUploader.tsx"), "utf8");
 const momentsView = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsView.tsx"), "utf8");
 const exchange = fs.readFileSync(path.join(appRoot, "components/community/CommunityExchangeSparks.tsx"), "utf8");
+const communityPage = fs.readFileSync(path.join(appRoot, "pages/community.tsx"), "utf8");
+const exchangeView = fs.readFileSync(path.join(appRoot, "components/community/CommunityExchangeView.tsx"), "utf8");
+const exchangeComposer = fs.readFileSync(path.join(appRoot, "components/community/CommunityExchangeSparkComposer.tsx"), "utf8");
 const storiesRoute = fs.readFileSync(path.join(apiRoot, "community-stories.ts"), "utf8");
 const mediaRoute = fs.readFileSync(path.join(apiRoot, "media-assets-v21.ts"), "utf8");
 
@@ -44,14 +49,40 @@ describe("authorized Community Moments browsing feed", () => {
   });
 
   test("active media is authorized and only fetched for the current Spark", () => {
-    assert.match(moments, /if \(!activeMedia\)/);
+    assert.match(moments, /if \(!activeMedia \|\| !playbackAllowed\)/);
     assert.match(moments, /playback-grant/);
     assert.match(moments, /method: "POST"/);
     assert.match(moments, /credentials: "same-origin"/);
     assert.match(moments, /reference\.origin !== window\.location\.origin/);
     assert.match(moments, /playback\.origin !== window\.location\.origin/);
     assert.match(moments, /URL\.revokeObjectURL/);
-    assert.match(moments, /muted playsInline controls/);
+    assert.match(moments, /muted=\{videoMuted\} playsInline controls/);
+    assert.match(moments, /Turn Spark sound on/);
+  });
+
+  test("Moments uses persisted composition elements and renders text-only Story backgrounds", () => {
+    assert.match(moments, /composition_manifest\?:/);
+    assert.match(moments, /composition_manifest\?\.elements/);
+    assert.match(moments, /activeSpark\?\.elements/);
+    assert.match(moments, /<StoryElementLayer elements=\{visualElements\} \/>/);
+    assert.match(moments, /backgroundColor \? \{ backgroundColor \}/);
+    assert.match(moments, /StoryElementLayer, storyEffectFilter/);
+  });
+
+  test("text-only Moments show the standalone caption only without a persisted caption overlay", () => {
+    assert.match(moments, /function hasCaptionOverlay\(spark: MomentSpark\)/);
+    assert.match(moments, /spark\.caption && !hasCaptionOverlay\(spark\)/);
+    assert.match(moments, /spark\.caption && media &&/);
+  });
+
+  test("Moments cancels active playback grants and pauses media when hidden or offscreen", () => {
+    assert.match(moments, /playbackAllowed = feedInViewport && documentVisible/);
+    assert.match(moments, /document\.addEventListener\("visibilitychange"/);
+    assert.match(moments, /new IntersectionObserver\(\(\[entry\]\)/);
+    assert.match(moments, /if \(!activeMedia \|\| !playbackAllowed\)/);
+    assert.match(moments, /controller\.abort\(\)/);
+    assert.match(moments, /video\.pause\(\)/);
+    assert.match(moments, /moreControllerRef\.current\?\.abort\(\)/);
   });
 
   test("every attachment on a multi-media Moment can be browsed", () => {
@@ -69,14 +100,28 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(exchange, /button-previous-exchange-spark/);
   });
 
-  test("exported Moments uploader waits for processing and posts asset ids to the Stories API", () => {
+  test("Exchange creation defaults to the unified Studio and keeps legacy draft recovery available", () => {
+    assert.match(exchange, /href="\/community\/moments\?composer=1"/);
+    assert.match(exchange, /Create in Studio/);
+    assert.match(communityPage, /composerValues\.length === 1 && composerValues\[0\] === "1"/);
+    assert.match(communityPage, /openComposerSignal=\{openMomentsComposerSignal\}/);
+    assert.match(momentsView, /openComposerSignal=\{openComposerSignal\}/);
+    assert.match(moments, /openComposerSignal=\{openComposerSignal\}/);
+    assert.match(exchangeComposer, /listExchangeSparkDrafts\(controller\.signal\)/);
+    assert.match(exchangeComposer, /if \(!draftEntryVisible\) return null/);
+    assert.match(exchangeComposer, /Resume saved video draft/);
+    assert.match(exchangeView, /Post to Exchange/);
+  });
+
+  test("Studio publishes processed staged assets while preserving the legacy uploader export", () => {
     assert.match(momentsMigration, /export \{ CommunityMomentsUploader \}/);
-    assert.match(moments, /CommunityMomentsUploader/);
-    assert.match(moments, /onComplete=\{publishMoment\}/);
-    assert.match(moments, /moment-media-status/);
-    assert.match(moments, /asset\.status === "ready"/);
-    assert.match(moments, /media_asset_ids: mediaAssetIds/);
-    assert.match(moments, /contextKind=\{hubId === null \? "community_moment" : "hub_moment"\}/);
+    assert.match(moments, /<CommunityStoryRail/);
+    assert.doesNotMatch(moments, /<CommunityMomentsUploader/);
+    assert.match(studio, /publishStudioMoment\(/);
+    assert.match(studioPublish, /moment-media-status/);
+    assert.match(studioPublish, /asset\.status === "ready"/);
+    assert.match(studioPublish, /media_asset_ids: ids/);
+    assert.match(studioPublish, /"hub_moment" : "community_moment"/);
     assert.match(uploader, /onComplete\(\{ caption: caption\.trim\(\), mediaAssetIds \}\)/);
     assert.match(mediaRoute, /if \(contextKind === "community_moment" \|\| contextKind === "hub_moment"\) return false/);
   });

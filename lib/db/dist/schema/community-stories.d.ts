@@ -92,6 +92,44 @@ export declare const communityStoriesTable: import("drizzle-orm/pg-core").PgTabl
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        client_publish_id: import("drizzle-orm/pg-core").PgColumn<{
+            name: "client_publish_id";
+            tableName: "community_stories";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 36;
+        }>;
+        publish_payload_hash: import("drizzle-orm/pg-core").PgColumn<{
+            name: "publish_payload_hash";
+            tableName: "community_stories";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 64;
+        }>;
         caption: import("drizzle-orm/pg-core").PgColumn<{
             name: "caption";
             tableName: "community_stories";

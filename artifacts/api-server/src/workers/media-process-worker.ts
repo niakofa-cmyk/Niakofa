@@ -18,9 +18,11 @@ import { logger } from "../lib/logger";
 import { assertSupportedMediaJob, mediaJobsForType } from "../lib/media-platform";
 import { trackWorker } from "../lib/worker-lifecycle";
 import { randomUUID } from "node:crypto";
+import { getMediaToolPaths } from "../lib/mediaCapabilities";
 
 const execFileAsync = promisify(execFile);
 type MediaJobData = { mediaAssetId: number; jobType: MediaJobType };
+const mediaToolPaths = getMediaToolPaths();
 
 async function storeGeneratedAsset(
   mediaAssetId: number,
@@ -53,7 +55,7 @@ async function storeGeneratedAsset(
 }
 
 async function runFfmpeg(args: string[]): Promise<void> {
-  await execFileAsync(process.env["FFMPEG_PATH"] ?? "ffmpeg", args, {
+  await execFileAsync(mediaToolPaths.ffmpeg, args, {
     timeout: 120_000,
     maxBuffer: 2 * 1024 * 1024,
   });
@@ -202,7 +204,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         const volume = Math.min(Math.max(Number(music.volume ?? 1), 0), 2);
         let hasOriginalAudio = false;
         try {
-          const probe = await execFileAsync(process.env["FFPROBE_PATH"] ?? "ffprobe", [
+          const probe = await execFileAsync(mediaToolPaths.ffprobe, [
             "-v", "error", "-select_streams", "a:0",
             "-show_entries", "stream=index", "-of", "csv=p=0", input,
           ], { timeout: 10_000 });

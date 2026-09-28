@@ -40,6 +40,21 @@ describe("held Exchange Spark moderation contract", () => {
     expect(migration).toMatch(/CREATE TABLE IF NOT EXISTS exchange_spark_moderation_history/);
   });
 
+  it("releases an approved hold, keeps rejected Sparks out of the queue, and rejects duplicate resolutions", async () => {
+    const route = await fs.readFile(routePath, "utf8");
+    const resolution = route.slice(route.indexOf('"/admin/exchange/sparks/:id/resolve"'));
+    const decisionUpdateOffset = resolution.indexOf("tx.update(exchangeSparksTable)");
+    const historyInsertOffset = resolution.indexOf("tx.insert(exchangeSparkModerationHistoryTable)");
+
+    expect(route).toMatch(/const nextStatus = decision === "approve" \? "published" : "rejected"/);
+    expect(route).toMatch(/if \(spark\.status !== "pending"\) return \{ kind: "already-resolved" as const \}/);
+    expect(route).toMatch(/This Spark is no longer awaiting moderation/);
+    expect(resolution).toMatch(/moderation_reason: decision === "reject" \? reason : null/);
+    expect(decisionUpdateOffset).toBeGreaterThanOrEqual(0);
+    expect(historyInsertOffset).toBeGreaterThan(decisionUpdateOffset);
+    expect(route).toMatch(/\.where\(eq\(exchangeSparksTable\.status, "pending"\)\)/);
+  });
+
   it("offers actionable admin decisions and refreshes the held queue after resolution", async () => {
     const adminUi = await fs.readFile(adminUiPath, "utf8");
     expect(adminUi).toMatch(/\/api\/admin\/exchange\/sparks\/held/);

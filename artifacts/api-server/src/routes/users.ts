@@ -1113,16 +1113,6 @@ async function anonymizeAccount(userId: number): Promise<AccountDeletionResult> 
 
   const now = new Date();
   const deletionScheduledAt = new Date(now.getTime() + ACCOUNT_RETENTION_MS);
-  const ownedMedia = await db
-    .select({
-      original_key: mediaAssetsTable.original_key,
-      thumbnail_key: mediaAssetsTable.thumbnail_key,
-      variant_key: mediaAssetsTable.variant_key,
-    })
-    .from(mediaAssetsTable)
-    .where(eq(mediaAssetsTable.owner_user_id, userId))
-    .limit(1000);
-
   let updated = false;
   let effectiveScheduledAt = deletionScheduledAt;
 
@@ -1130,16 +1120,18 @@ async function anonymizeAccount(userId: number): Promise<AccountDeletionResult> 
   // moves an active account into pending_purge and starts storage cleanup.
   await db.transaction(async (tx) => {
     await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
-    // Keep Exchange media tombstones until strict storage deletion succeeds.
-    // Removing the rows now would lose the only retryable object-key ledger.
+    // Keep the owning Sparks and all MediaAsset rows until strict object
+    // deletion succeeds. The hourly media cleanup worker retries tombstones;
+    // deleting rows here would lose the only durable object-key ledger.
     await tx.update(exchangeSparksTable).set({
       status: "deletion_pending",
       updated_at: now,
     }).where(eq(exchangeSparksTable.author_user_id, userId));
-    await tx.delete(mediaAssetsTable).where(and(
-      eq(mediaAssetsTable.owner_user_id, userId),
-      sql`${mediaAssetsTable.context_kind} <> 'exchange_spark'`,
-    ));
+    await tx.update(mediaAssetsTable).set({
+      status: "deleted",
+      metadata: sql`jsonb_set(jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true), '{account_cleanup_pending}', 'true'::jsonb, true)`,
+      updated_at: now,
+    }).where(eq(mediaAssetsTable.owner_user_id, userId));
     // Nia memory and conversation text are personal data, not community or
     // financial history. Erase both in the same privacy transition.
     await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));
@@ -1214,19 +1206,6 @@ async function anonymizeAccount(userId: number): Promise<AccountDeletionResult> 
     if (!existing) throw deletionError("USER_NOT_FOUND", "User not found");
     effectiveScheduledAt = existing.deletion_scheduled_at ?? deletionScheduledAt;
   });
-
-  if (updated) {
-    // Storage providers are outside the database transaction. Database rows
-    // are already hidden; storage failures must not undo the privacy change.
-    const { deleteAsset } = await import("../lib/storage.js");
-    await Promise.allSettled(
-      ownedMedia.flatMap((asset) =>
-        [asset.original_key, asset.thumbnail_key, asset.variant_key]
-          .filter((key): key is string => Boolean(key))
-          .map((key) => deleteAsset(key)),
-      ),
-    );
-  }
 
   return { deletionScheduledAt: effectiveScheduledAt, alreadyPending: !updated };
 }

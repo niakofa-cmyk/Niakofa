@@ -1,4 +1,5 @@
 import { authHeaders } from "@/lib/auth";
+import { ensureSameOriginMediaPath, uploadBinaryMedia } from "./media-upload-client";
 import {
   EXCHANGE_SPARK_MAX_BYTES,
   EXCHANGE_SPARK_MAX_DURATION_SECONDS,
@@ -127,14 +128,6 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   return payload as T;
 }
 
-function ensureSameOriginPath(path: string): string {
-  const url = new URL(path, window.location.origin);
-  if (url.origin !== window.location.origin || url.username || url.password || url.hash) {
-    throw new ExchangeSparkUploadError("The media service returned an unsafe Niakofa endpoint.");
-  }
-  return `${url.pathname}${url.search}`;
-}
-
 export function createExchangeSparkDraft(listingId: number, caption: string, signal: AbortSignal) {
   return apiRequest<SparkDraftResponse>(`/api/community/exchange/listings/${listingId}/sparks/drafts`, {
     method: "POST",
@@ -185,71 +178,27 @@ export function putRawSparkFile(
   signal: AbortSignal,
   onProgress: (loaded: number, total: number) => void,
 ): Promise<void> {
-  if (upload.method !== "PUT") {
-    return Promise.reject(new ExchangeSparkUploadError("The media service did not provide a PUT upload."));
-  }
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException("Upload cancelled.", "AbortError"));
-      return;
-    }
-    let url: URL;
-    try {
-      url = new URL(upload.url, window.location.origin);
-      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
-        throw new Error("Invalid upload URL.");
-      }
-    } catch {
-      reject(new ExchangeSparkUploadError("The media service returned an invalid upload URL."));
-      return;
-    }
-
-    const xhr = new XMLHttpRequest();
-    xhr.timeout = 180_000;
-    let settled = false;
-    const cleanup = () => {
-      signal.removeEventListener("abort", abort);
-      xhr.upload.onprogress = null;
-      xhr.onload = null;
-      xhr.onerror = null;
-      xhr.ontimeout = null;
-      xhr.onabort = null;
-    };
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      callback();
-    };
-    const abort = () => xhr.abort();
-    xhr.open("PUT", url.href);
-    const requestHeaders = { ...upload.headers };
-    if (url.origin === window.location.origin) {
-      for (const [name, value] of Object.entries(authHeaders())) {
-        if (!Object.keys(requestHeaders).some((existing) => existing.toLowerCase() === name.toLowerCase())) {
-          requestHeaders[name] = value;
-        }
-      }
-    }
-    Object.entries(requestHeaders).forEach(([name, value]) => xhr.setRequestHeader(name, value));
-    xhr.upload.onprogress = (event) => onProgress(event.loaded, event.lengthComputable ? event.total : file.size);
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) finish(resolve);
-      else finish(() => reject(new ExchangeSparkUploadError(
-        "The video bytes could not be uploaded. Check your connection and retry.",
-        { status: xhr.status },
-      )));
-    };
-    xhr.onerror = () => finish(() => reject(new ExchangeSparkUploadError("The storage upload failed. Check your connection and retry.")));
-    xhr.ontimeout = () => finish(() => reject(new ExchangeSparkUploadError("The storage upload timed out. You can retry.")));
-    xhr.onabort = () => finish(() => reject(new DOMException("Upload cancelled.", "AbortError")));
-    signal.addEventListener("abort", abort, { once: true });
-    xhr.send(file);
+  return uploadBinaryMedia({
+    upload,
+    file,
+    signal,
+    onProgress,
+    errors: {
+      method: "The media service did not provide a PUT upload.",
+      invalidUrl: "The media service returned an invalid upload URL.",
+      failed: "The video bytes could not be uploaded. Check your connection and retry.",
+      network: "The storage upload failed. Check your connection and retry.",
+      timeout: "The storage upload timed out. You can retry.",
+    },
+    makeError: (message, status) => new ExchangeSparkUploadError(message, { status }),
   });
 }
 
 export function completeSparkUpload(completeUrl: string, signal: AbortSignal) {
-  return apiRequest<{ media_asset_id: number; status: string }>(ensureSameOriginPath(completeUrl), {
+  return apiRequest<{ media_asset_id: number; status: string }>(ensureSameOriginMediaPath(
+    completeUrl,
+    (message) => new ExchangeSparkUploadError(message),
+  ), {
     method: "POST",
     body: JSON.stringify({}),
     signal,

@@ -21,7 +21,7 @@ import { deleteAsset, deleteAssetStrict, putAsset, streamAssetRange, streamAsset
 import { hasExpectedSignature, inspectMedia } from "../lib/media-validation";
 import { broadcast } from "../lib/ws-hub";
 import { createMessageNotification } from "../lib/message-notifications";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isMediaPlatformV21Enabled } from "../lib/media-platform";
 import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
@@ -59,6 +59,7 @@ const storyElementSchema = z.object({
 });
 
 const createStorySchema = z.object({
+  client_publish_id: z.string().uuid().optional(),
   caption: z.string().trim().max(1000).optional().default(""),
   hub_id: z.number().int().positive().nullable().optional(),
   exchange_listing_id: z.number().int().positive().optional(),
@@ -94,6 +95,33 @@ const createStorySchema = z.object({
     effects: z.array(z.enum(["grayscale", "sepia", "blur"])).max(6).optional(),
   }).optional(),
 });
+
+export function communityStoryPublishPayloadHash(payload: {
+  caption: string | null;
+  audience: string;
+  hubId: number | null;
+  exchangeListingId: number | null;
+  communityId: number | null;
+  replyEnabled: boolean;
+  elements: z.infer<typeof storyElementSchema>[];
+  compositionManifest: StoryCompositionManifest;
+  mediaAssetIds: number[];
+}): string {
+  const canonicalPayload = JSON.stringify({
+    caption: payload.caption,
+    audience: payload.audience,
+    hub_id: payload.hubId,
+    exchange_listing_id: payload.exchangeListingId,
+    community_id: payload.communityId,
+    reply_enabled: payload.replyEnabled,
+    elements: payload.elements,
+    composition_manifest: payload.compositionManifest,
+    media_asset_ids: payload.mediaAssetIds,
+  }, (_key, value: unknown) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)))
+    : value);
+  return createHash("sha256").update(canonicalPayload).digest("hex");
+}
 
 function positiveId(value: unknown): number | null {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -516,8 +544,47 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   const hubId = parsed.data.hub_id ?? null;
   const exchangeListingId = parsed.data.exchange_listing_id ?? null;
   const mediaAssetIds = parsed.data.media_asset_ids ?? [];
+  const [viewer] = await db.select({ community_id: usersTable.community_id })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const caption = cleanText(parsed.data.caption, 1000) || null;
+  const compositionManifest = normalizeCompositionManifest(parsed.data.composition_manifest, parsed.data.elements);
+  const publishPayloadHash = parsed.data.client_publish_id
+    ? communityStoryPublishPayloadHash({
+      caption,
+      audience: parsed.data.audience,
+      hubId,
+      exchangeListingId,
+      communityId: viewer?.community_id ?? null,
+      replyEnabled: parsed.data.reply_enabled,
+      elements: parsed.data.elements,
+      compositionManifest,
+      mediaAssetIds,
+    })
+    : null;
+  if (parsed.data.client_publish_id) {
+    const [existing] = await db.select({
+      id: communityStoriesTable.id,
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at,
+      publish_payload_hash: communityStoriesTable.publish_payload_hash,
+    }).from(communityStoriesTable).where(and(
+      eq(communityStoriesTable.author_user_id, userId),
+      eq(communityStoriesTable.client_publish_id, parsed.data.client_publish_id),
+    )).limit(1);
+    if (existing) {
+      if (parsed.data.media.length || existing.publish_payload_hash !== publishPayloadHash) {
+        return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
+      }
+      return res.status(200).json({
+        story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() },
+      });
+    }
+  }
   if (mediaAssetIds.length && parsed.data.media.length) {
     return res.status(400).json({ error: "Use either uploaded media assets or inline Story media, not both." });
+  }
+  if (parsed.data.client_publish_id && parsed.data.media.length) {
+    return res.status(400).json({ error: "client_publish_id is not supported with inline Base64 Story media." });
   }
   if (new Set(mediaAssetIds).size !== mediaAssetIds.length) {
     return res.status(400).json({ error: "Moment media asset ids must be unique." });
@@ -539,6 +606,9 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id))
       .where(inArray(communityStoryMediaTable.media_asset_id, mediaAssetIds));
     if (attachedAssets.length) {
+      if (parsed.data.client_publish_id) {
+        return res.status(409).json({ error: "One or more uploaded assets have already been attached to a Moment." });
+      }
       const first = attachedAssets[0];
       const isSameCompletedCreate = attachedAssets.length === mediaAssetIds.length
         && attachedAssets.every((asset) => asset.story_id === first?.story_id
@@ -628,11 +698,8 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       return res.status(400).json({ error: "Uploaded media type does not match its file format." });
     }
   }
-  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  const caption = cleanText(parsed.data.caption, 1000) || null;
   const moderation = moderatePostText(caption ?? "");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const compositionManifest = normalizeCompositionManifest(parsed.data.composition_manifest, parsed.data.elements);
   const storedKeys: string[] = [];
   if (isMediaPlatformV21Enabled() && !mediaProcessingQueue) {
     return res.status(503).json({
@@ -706,6 +773,8 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         hub_id: hubId,
         community_id: viewer?.community_id ?? null,
         exchange_listing_id: exchangeListingId,
+        client_publish_id: parsed.data.client_publish_id ?? null,
+        publish_payload_hash: publishPayloadHash,
         caption,
         audience: parsed.data.audience,
         status: moderation.status === "approved" ? "published" : "pending",
@@ -791,7 +860,28 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       }
       return { kind: "created" as const, story, mediaAssetJobs };
     });
-    if (result.kind === "media_not_found") return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
+    if (result.kind === "media_not_found") {
+      if (parsed.data.client_publish_id) {
+        const [existing] = await db.select({
+          id: communityStoriesTable.id,
+          status: communityStoriesTable.status,
+          expires_at: communityStoriesTable.expires_at,
+          publish_payload_hash: communityStoriesTable.publish_payload_hash,
+        }).from(communityStoriesTable).where(and(
+          eq(communityStoriesTable.author_user_id, userId),
+          eq(communityStoriesTable.client_publish_id, parsed.data.client_publish_id),
+        )).limit(1);
+        if (existing) {
+          if (existing.publish_payload_hash !== publishPayloadHash) {
+            return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
+          }
+          return res.status(200).json({
+            story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() },
+          });
+        }
+      }
+      return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
+    }
     if (result.kind === "media_failed") return res.status(409).json({ error: "One or more uploaded assets failed processing.", error_code: "MOMENT_MEDIA_FAILED" });
     if (result.kind === "media_too_long") return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
     if (result.kind === "media_not_ready") return res.status(409).json({ error: "Moment media is still processing. Retry after every file is ready.", error_code: "MOMENT_MEDIA_NOT_READY" });
@@ -824,6 +914,26 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     return res.status(201).json({ story: { id: result.story.id, status: result.story.status, expires_at: result.story.expires_at.toISOString() } });
   } catch (error) {
     await Promise.all(storedKeys.map((key) => deleteAsset(key)));
+    const databaseError = error as { code?: unknown };
+    if (parsed.data.client_publish_id && databaseError.code === "23505") {
+      const [existing] = await db.select({
+        id: communityStoriesTable.id,
+        status: communityStoriesTable.status,
+        expires_at: communityStoriesTable.expires_at,
+        publish_payload_hash: communityStoriesTable.publish_payload_hash,
+      }).from(communityStoriesTable).where(and(
+        eq(communityStoriesTable.author_user_id, userId),
+        eq(communityStoriesTable.client_publish_id, parsed.data.client_publish_id),
+      )).limit(1);
+      if (existing) {
+        if (existing.publish_payload_hash !== publishPayloadHash) {
+          return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
+        }
+        return res.status(200).json({
+          story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() },
+        });
+      }
+    }
     throw error;
   }
 });

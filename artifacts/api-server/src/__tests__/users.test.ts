@@ -321,7 +321,8 @@ describe("DELETE /api/users/me", () => {
     });
     expect(res.body.deletion_scheduled_at).toEqual(expect.any(String));
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-    expect(mockDb.delete).toHaveBeenCalledTimes(6);
+    expect(mockDb.delete).toHaveBeenCalledTimes(5);
+    expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({ status: "deleted" }));
   });
 });
 
@@ -338,6 +339,7 @@ describe("DELETE /api/users/:id", () => {
     expect(res.status).toBe(202);
     expect(res.body.status).toBe("pending_purge");
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-    expect(mockDb.delete).toHaveBeenCalledTimes(6);
+    expect(mockDb.delete).toHaveBeenCalledTimes(5);
+    expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({ status: "deleted" }));
   });
 });

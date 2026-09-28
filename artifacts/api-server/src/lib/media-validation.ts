@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { getMediaToolPaths } from "./mediaCapabilities";
 
 export const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
 
@@ -46,7 +47,7 @@ function imageDimensions(buffer: Buffer, mimeType: string): { width: number; hei
 
 function probeMedia(buffer: Buffer): Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null> {
   return new Promise((resolve) => {
-    const child = spawn(process.env["FFPROBE_PATH"] || "ffprobe", [
+    const child = spawn(getMediaToolPaths().ffprobe, [
       "-v", "error", "-i", "pipe:0",
       "-show_entries", "stream=codec_type,width,height,duration:format=duration", "-of", "json",
     ]);
