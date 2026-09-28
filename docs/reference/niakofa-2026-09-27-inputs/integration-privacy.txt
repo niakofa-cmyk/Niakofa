@@ -1,0 +1,653 @@
+Niakofa: integration testing, privacy verification, and the uploaded implementation
+
+Yes, we can use your uploaded text as a source specification—but it should not be copied directly into Niakofa or deployed to Railway as-is. It contains useful testing ideas and a major proposed change to the Community Exchange's funding model. Those need to be treated as two separate workstreams.
+
+Your core mission remains a community network built around solidarity, practical help, and local connection. Integration tests and privacy verification should protect that mission: make sure requests, identities, location data, messages, and any future compensation records behave correctly across the actual app and API—not just look correct in the UI.
+
+1. What I verified in GitHub and Railway
+
+GitHub — Niakofa
+
+main at b99f41ca08dbaf2cfdbc7576b201dc75f4a38f99
+
+Found
+
+Railway — production
+
+Project precious-abundance; latest app deployment reported SUCCESS on September 27, 2026.
+
+Reported up
+
+Railway also reports PostGIS, Postgres, and Redis services. This is infrastructure status—not proof that the proposed tests have run against production or that the database contains the new county-funding schema.
+
+The current repository is not a standalone Supabase/Expo app. It has a TypeScript/Express API, Drizzle database schema, a React/Vite client, and Playwright-based acceptance testing. The Exchange already has a production-readiness contract test and a two-party request-arrival E2E harness.
+
+Relevant existing code:
+
+Exchange API 
+
+Exchange readiness contract tests 
+
+Request-arrival E2E test 
+
+Client package test configuration 
+
+That means the uploaded text can inform Niakofa's test strategy, but the implementation should use the existing stack and its real auth, database, API, and storage boundaries.
+
+2. Which parts of your uploaded text can be used?
+
+Uploaded component
+
+	
+
+Decision
+
+	
+
+How it should be adapted
+
+
+
+
+Push-token cleanup integration test
+
+	
+
+Use the test objective
+
+	
+
+Test Niakofa's actual push-token storage and cleanup API/job, with isolated test users and database fixtures. Do not assume a Supabase Edge Function exists.
+
+
+
+
+Network degradation simulator
+
+	
+
+Use the test scenarios
+
+	
+
+Simulate latency, timeouts, offline mode, retries, and recovery using the existing web/client networking and persistence stack. Do not inject React Native NetInfo or MMKV without an actual native app integration.
+
+
+
+
+County Pool subsidy ledger
+
+	
+
+Treat as a proposed product/financial architecture
+
+	
+
+Requires schema discovery, authorization, ledger accounting, county funding agreements, reconciliation, and fraud controls before implementation.
+
+
+
+
+Dual-party completion handshake
+
+	
+
+Reuse as a design requirement
+
+	
+
+Extend and test the existing Exchange pickup/handoff lifecycle rather than creating a parallel claims lifecycle.
+
+
+
+
+43% proportional funding
+
+	
+
+Do not deploy as written
+
+	
+
+A pool's balance-to-target ratio is not, by itself, a verified or legally approved payout formula. The proposed trigger also lacks essential concurrency and accounting protections.
+
+The source itself describes these features and SQL as proposed components, not as evidence of an existing production implementation. 
+Pasted markdown.md
+
+Why the supplied SQL is not safe to run on Railway
+
+The county-funding proposal has several important correctness and security gaps:
+
+Two concurrent claims can read the same balance and both calculate payouts before either deduction is committed.
+
+The trigger does not lock and reserve funds atomically or prevent the pool balance from becoming negative.
+
+A repeated update or retry needs an idempotent settlement mechanism to prevent duplicate payments.
+
+approved_payout is not the same as a completed, reconciled payment. The design needs distinct authorization, reservation, settlement, failure, reversal, and audit states.
+
+SECURITY DEFINER needs a hardened search_path and strict privilege boundaries.
+
+The example references county_community_pools, county_identifier, and other schema objects that have not been established as the current production schema by this inspection.
+
+The supplied Deno test uses a fixed UUID and a fallback service key, and its cleanup is not protected by finally. It could leave test data behind or accidentally target a non-test database.
+
+Bottom line: Use the document as a requirements and scenario source. Do not run its SQL against production or add its sample keys, direct Supabase calls, or assumed tables to the current app.
+
+3. Improved integration-test code for Niakofa
+
+I would add a dedicated integration suite that exercises the real Express API and a disposable test database. It should test persisted outcomes, not merely inspect source-code patterns.
+
+A. Exchange integration: authorization, privacy, and lifecycle
+
+Create artifacts/api-server/src/routes/__tests__/community-exchange.integration.test.ts using the repository's existing test runner, database test setup, and auth helpers.
+
+The following is the core test contract to implement against the actual test fixtures. It deliberately avoids assuming undocumented factory names or database columns.
+
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
+
+// Bind these to Niakofa's existing test database and auth helpers.
+// Do not use production credentials or production user accounts.
+import {
+  createIsolatedExchangeFixture,
+  deleteIsolatedExchangeFixture,
+  apiRequestAs,
+} from "../../test-utils/exchange-fixtures";
+
+describe("Exchange integration: privacy and lifecycle", () => {
+  let fixture: Awaited<
+    ReturnType<typeof createIsolatedExchangeFixture>
+  >;
+
+  beforeAll(async () => {
+    fixture = await createIsolatedExchangeFixture({
+      participants: 3,
+      disposable: true,
+    });
+  });
+
+  afterAll(async () => {
+    if (fixture) {
+      await deleteIsolatedExchangeFixture(fixture);
+    }
+  });
+
+  it("rejects unauthenticated listing creation", async () => {
+    const response = await apiRequestAs(null, {
+      method: "POST",
+      path: "/api/community-exchange/listings",
+      body: fixture.validListing,
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("does not allow one participant to read another's private data", async () => {
+    const response = await apiRequestAs(fixture.unrelatedUser, {
+      method: "GET",
+      path: fixture.privatePickupResourcePath,
+    });
+
+    expect([403, 404]).toContain(response.status);
+
+    // Also verify at the database/API serialization boundary that
+    // private messages, precise pickup coordinates, and contact details
+    // were not included in the response.
+    expect(JSON.stringify(response.body)).not.toContain(
+      fixture.privatePickupAddress,
+    );
+  });
+
+  it("requires the correct participants for pickup confirmation", async () => {
+    const unauthorized = await apiRequestAs(fixture.unrelatedUser, {
+      method: "POST",
+      path: fixture.confirmationPath,
+      body: fixture.confirmationPayload,
+    });
+
+    expect([403, 404]).toContain(unauthorized.status);
+
+    const firstParty = await apiRequestAs(fixture.requester, {
+      method: "POST",
+      path: fixture.confirmationPath,
+      body: fixture.requesterConfirmation,
+    });
+
+    expect(firstParty.status).toBe(200);
+
+    // One party's confirmation must not imply both parties completed.
+    expect(firstParty.body).toMatchObject({
+      awaiting_other_confirmation: true,
+    });
+
+    const persisted = await fixture.readPickupFromDatabase();
+
+    expect(persisted.requesterConfirmedAt).not.toBeNull();
+    expect(persisted.helperConfirmedAt).toBeNull();
+  });
+
+  it("makes repeated completion requests idempotent", async () => {
+    await fixture.confirmAsRequester();
+    await fixture.confirmAsHelper();
+
+    const before = await fixture.readCompletionAndAuditState();
+
+    // Retry the same request as a client might after a timeout.
+    await fixture.confirmAsHelper();
+
+    const after = await fixture.readCompletionAndAuditState();
+
+    expect(after.completionCount).toBe(before.completionCount);
+    expect(after.settlementCount).toBe(before.settlementCount);
+  });
+});
+
+Important integration requirement: the fixture helpers above are interfaces to implement using the repository's existing DB and auth test infrastructure; they are not existing verified imports. The final test must compile against the actual API response types and database schema before being added to CI.
+
+The test suite should additionally cover:
+
+Listing ownership: a user cannot edit, renew, archive, or delete another user's listing.
+
+Pickup coordination: unrelated users cannot accept, cancel, or confirm another user's pickup.
+
+Reporting and moderation: threshold-triggered holds persist and cannot be bypassed by a client.
+
+Notifications: failed push delivery does not undo a valid Exchange transaction or leak private pickup data.
+
+Database isolation: all fixtures are unique, all test rows are cleaned up in finally, and no test can connect to a production database.
+
+B. Push-token cleanup integration
+
+Adapt the uploaded token-sweep test to the actual push implementation and database schema.
+
+The test should establish a disposable user with two registered device tokens, invoke the actual cleanup path, and query the database after the operation.
+
+
+describe("Push-token cleanup integration", () => {
+  it("removes only the invalidated device token", async () => {
+    const fixture = await createDisposablePushTokenFixture();
+
+    try {
+      const { user, expiredToken, activeToken } = fixture;
+
+      // Invoke the real authenticated logout/token invalidation flow.
+      const response = await apiRequestAs(user, {
+        method: "POST",
+        path: fixture.cleanupPath,
+        body: fixture.cleanupPayload,
+      });
+
+      expect(response.status).toBe(200);
+
+      const tokens = await fixture.readTokensFromDatabase();
+
+      expect(tokens).not.toContainEqual(
+        expect.objectContaining({
+          token: expiredToken,
+        }),
+      );
+
+      expect(tokens).toContainEqual(
+        expect.objectContaining({
+          token: activeToken,
+        }),
+      );
+
+      // The operation must not delete the user's profile.
+      expect(await fixture.profileStillExists()).toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+This is an integration-test template, not a claim that the cleanup endpoint or fixture names have been confirmed. First identify the real token invalidation path, token columns, and auth middleware in the current API. If invalidation is handled by a background job, test the job's actual processing function and its database effects rather than adding a fake endpoint.
+
+The test should also cover duplicate cleanup requests, missing tokens, a token belonging to a different user, and database failures. An invalidation request for one device must not remove another device's active token or disable the entire account.
+
+4. End-to-end privacy verification
+
+The existing Playwright setup and guarded two-role acceptance harness are the right foundation. Add a separate privacy-focused suite that exercises two real disposable accounts in isolated browser contexts and verifies both the UI and server responses.
+
+Suggested file:
+
+e2e/exchange-privacy-live.spec.ts
+
+
+import { expect, test } from "@playwright/test";
+
+const enabled =
+  process.env.ALLOW_MUTATING_E2E === "1" &&
+  process.env.CONFIRM_DISPOSABLE_ACCOUNT === "1" &&
+  process.env.ALLOW_EXCHANGE_PRIVACY_E2E === "1";
+
+test.describe("Exchange privacy boundaries", () => {
+  test.skip(
+    !enabled,
+    "Requires explicitly enabled disposable-account E2E environment.",
+  );
+
+  test("unrelated users cannot see private pickup details", async ({
+    browser,
+    request,
+  }) => {
+    // These helpers must reuse Niakofa's existing authenticated
+    // storage-state loader and disposable test-account setup.
+    const fixture = await createExchangePrivacyFixture({
+      browser,
+      request,
+      disposableAccountsOnly: true,
+    });
+
+    try {
+      const { requester, helper, unrelated, pickup } = fixture;
+
+      // Both legitimate participants can access their coordination.
+      expect(
+        (await requester.getPickup(pickup.id)).status(),
+      ).toBe(200);
+
+      expect(
+        (await helper.getPickup(pickup.id)).status(),
+      ).toBe(200);
+
+      // A third user cannot access the same private resource.
+      const unauthorized = await unrelated.getPickup(pickup.id);
+
+      expect([403, 404]).toContain(unauthorized.status());
+
+      const body = await unauthorized.text();
+
+      expect(body).not.toContain(pickup.exactAddress);
+      expect(body).not.toContain(pickup.privateMessage);
+
+      // The unrelated user's actual browser must not render
+      // the private address or coordination message either.
+      await fixture.unrelatedPage.goto(
+        `/community/exchange/${pickup.listingId}`,
+      );
+
+      await expect(
+        fixture.unrelatedPage.getByText(pickup.exactAddress),
+      ).toHaveCount(0);
+
+      await expect(
+        fixture.unrelatedPage.getByText(pickup.privateMessage),
+      ).toHaveCount(0);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+The fixture API in this example must be implemented with the same account and cleanup infrastructure used by Niakofa's current E2E suite. The exact Exchange route and pickup resource endpoint must be taken from the current server routes, not guessed from the UI.
+
+Privacy acceptance matrix
+
+These are the end-to-end checks I would require before calling Exchange privacy verified.
+
+P0
+
+Cross-account access
+
+Requester, helper, unrelated account, blocked account, and unauthenticated session. Verify every private API resource, not just hidden UI elements.
+
+P0
+
+Precise location leakage
+
+Verify that public listings, map payloads, logs, notifications, and analytics do not expose exact pickup coordinates or addresses before the authorized coordination stage.
+
+P0
+
+Location consent and revocation
+
+Deny GPS, revoke permission, switch to a manually entered area, and clear location data. Confirm that location-dependent functionality fails safely without silently exposing the last precise position.
+
+P1
+
+Account deletion and retention
+
+Delete a disposable account and verify auth revocation, profile removal or anonymization, private media access, token invalidation, and retained transaction/audit records against the actual retention policy.
+
+P1
+
+Privacy under concurrency
+
+Run simultaneous requests and confirmations. Check for cross-user state changes, duplicate completion, race conditions, and information exposed through error messages or retries.
+
+Privacy must be enforced in the API and database access paths. A frontend that hides an address, disables a button, or removes a map marker does not establish a privacy boundary.
+
+For location specifically, Niakofa should preserve the distinction between GPS accuracy, the user's selected privacy radius, and a generalized neighborhood location. Those are separate pieces of data and should not be treated as interchangeable.
+
+5. Network degradation and offline recovery
+
+The uploaded simulator is useful in concept, but its MMKV implementation assumes a React Native client. The current Niakofa client is React/Vite, so the test should exercise the actual API client, browser persistence, and retry/sync behavior.
+
+I recommend a dependency-injected network simulator used only in tests.
+
+Create a test utility along these lines:
+
+
+export type NetworkProfile =
+  | "normal"
+  | "slow"
+  | "offline"
+  | "fail_once";
+
+export function createNetworkSimulator() {
+  let profile: NetworkProfile = "normal";
+  let failedOnce = false;
+
+  return {
+    setProfile(next: NetworkProfile) {
+      profile = next;
+      failedOnce = false;
+    },
+
+    async run<T>(task: () => Promise<T>): Promise<T> {
+      if (profile === "offline") {
+        throw new Error("SIMULATED_OFFLINE");
+      }
+
+      if (profile === "fail_once" && !failedOnce) {
+        failedOnce = true;
+        throw new Error("SIMULATED_TRANSIENT_FAILURE");
+      }
+
+      if (profile === "slow") {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 4500),
+        );
+      }
+
+      return task();
+    },
+  };
+}
+
+The simulator should wrap the existing network transport at its dependency boundary in tests. It should not replace production networking, bypass authentication, or become an enabled production feature.
+
+The integration test should use the real persistence implementation with the simulator injected into the network layer.
+
+
+describe("Offline persistence and recovery", () => {
+  it("preserves a pending update across a network outage", async () => {
+    const fixture = await createOfflineSyncFixture();
+
+    try {
+      fixture.network.setProfile("offline");
+
+      await fixture.settings.save({
+        notification_preferences: {
+          notif_exchange_offers: false,
+        },
+      });
+
+      // Local state should be immediately readable.
+      expect(
+        await fixture.settings.readLocal(),
+      ).toMatchObject({
+        notification_preferences: {
+          notif_exchange_offers: false,
+        },
+      });
+
+      expect(
+        await fixture.settings.hasPendingSync(),
+      ).toBe(true);
+
+      fixture.network.setProfile("normal");
+
+      await fixture.settings.syncPendingChanges();
+
+      expect(
+        await fixture.settings.hasPendingSync(),
+      ).toBe(false);
+
+      expect(
+        await fixture.settings.readFromServer(),
+      ).toMatchObject({
+        notification_preferences: {
+          notif_exchange_offers: false,
+        },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+Again, createOfflineSyncFixture is a required test fixture to wire to Niakofa's real persistence and settings services; it is not an existing verified repository export.
+
+Recovery cases that must pass
+
+Scenario
+
+	
+
+Expected result
+
+
+
+
+Offline when saving a setting
+
+	
+
+UI remains responsive; change is queued durably.
+
+
+
+
+App/browser reload before reconnection
+
+	
+
+Pending change survives reload if the existing persistence contract promises durability.
+
+
+
+
+Network comes back
+
+	
+
+Pending changes sync without duplicating server-side effects.
+
+
+
+
+Two updates to the same setting
+
+	
+
+Conflict resolution follows a documented last-write/version policy.
+
+
+
+
+User signs out with pending changes
+
+	
+
+One user's queued private data is never uploaded under another user's session.
+
+
+
+
+Server rejects a stale or unauthorized update
+
+	
+
+Local state is reconciled safely; the client does not mark a rejected update as synced.
+
+For production confidence, use deterministic simulated network faults in CI and a separate staging-only test for real throttling. Do not run destructive or mutating tests against the live production database.
+
+6. County Community Pool: the next architecture decision
+
+The county-subsidized model is a significant change to Exchange, not just a new posting option.
+
+The proposed model in your text is:
+
+Neighbors receive goods and services at $0 out of pocket.
+
+Eligible providers can request reimbursement from a local community funding pool.
+
+Both parties confirm completion.
+
+The payout is adjusted based on the pool's available funding percentage.
+
+That can be developed as a separate, carefully controlled feature, but the current source does not establish that Niakofa has a funded county pool, an approved reimbursement agreement, or a settlement provider configured for this model.
+
+Before coding it, I would require the following design:
+
+County and funding authority: define who owns the pool, who can fund it, which jurisdiction applies, and who is authorized to approve or reverse payments.
+
+Ledger and reservation model: maintain an immutable ledger with atomic balance reservations, unique claim identifiers, idempotency keys, and explicit settlement/reversal entries.
+
+Completion and dispute state machine: dual sign-off should establish evidence of completion, not independently execute an irreversible payment. Include dispute, fraud review, appeal, cancellation, and timeout paths.
+
+Funding transparency: show the provider the requested amount, estimated amount, applicable funding rule, and final approved amount before they accept the reimbursement terms.
+
+Independent accounting tests: test concurrent claims, insufficient funds, pool exhaustion, repeated callbacks, partial funding, refunds, and reconciliation against a test ledger.
+
+The 43% example is especially important. If a pool has a $43,000 balance and a $100,000 target, the proposal would calculate 43% of a provider's requested compensation. But that ratio does not prove that the pool's funds are legally available for that claim, that the county has authorized that payment, or that all claims should receive the same fraction.
+
+I would make the funding formula a versioned, approved policy—not a hard-coded database trigger.
+
+7. GitHub and Railway integration plan
+
+Here is the implementation sequence I recommend for the actual Niakofa repository:
+
+P0
+
+Phase 1 — Integration test foundation
+
+Add disposable DB fixtures, real API/auth tests, Exchange lifecycle and cross-account authorization coverage, and reliable cleanup. Ensure production databases cannot be selected by test configuration.
+
+P0
+
+Phase 2 — End-to-end privacy
+
+Extend the existing Playwright harness with separate requester, helper, and unrelated-user sessions. Verify location, pickup, messages, media, notifications, account deletion, and authorization at the API boundary.
+
+P1
+
+Phase 3 — Offline and fault testing
+
+Add deterministic network failure injection, durable local persistence tests, recovery tests, and duplicate-operation protection.
+
+P1
+
+Phase 4 — County funding sandbox
+
+Only after the accounting model and authorization requirements are established, add isolated migrations, ledger integration tests, concurrency tests, and a sandbox settlement adapter.
+
+The CI workflow should run typechecking, linting, existing tests, new API integration tests, Exchange contract tests, and privacy E2E tests against a disposable environment. Live acceptance tests should remain opt-in and require explicit disposable-account safeguards, as the existing request-arrival harness already does.
+
+Railway should host the application and an isolated staging/test environment, with test-only credentials and a disposable database. Production secrets and production ledger data should never be used by the test suite.
+
+Current status: I verified the GitHub source, existing test structure, and Railway production deployment status. I have not committed the proposed test files, run them against the Railway database, created a branch or PR, or deployed any changes. The code above is an implementation blueprint that must be wired to the repository's real fixtures and API contracts before it can be reported as passing.
+
+My recommendation is to prioritize the integration and privacy verification work first. It directly protects Niakofa's existing community mission and gives the team evidence that the Exchange is safe and reliable before introducing the additional financial and operational risk of county-funded payouts.

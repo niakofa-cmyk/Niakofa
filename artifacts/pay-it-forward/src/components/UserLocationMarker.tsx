@@ -9,6 +9,8 @@ import { resolveLocationMarkerStyle } from "@/lib/location-marker";
 export interface UserLocationMarkerProps extends SpiritCompanionProps {
   /** Saved preference. Unknown or missing values intentionally resolve to puck. */
   markerStyle?: unknown;
+  /** Opt in to a directional puck cone, used by active navigation only. */
+  showHeading?: boolean;
   species?: SpiritAnimalId;
   locationState?: LocationMarkerState;
   latitude?: number | null;
@@ -24,6 +26,7 @@ export interface UserLocationMarkerProps extends SpiritCompanionProps {
  */
 export function UserLocationMarker({
   markerStyle,
+  showHeading = false,
   species,
   batterySaver,
   size = 34,
@@ -43,6 +46,7 @@ export function UserLocationMarker({
       <LocationPuck
         heading={spiritProps.heading}
         mapBearing={spiritProps.mapBearing ?? 0}
+        showHeading={showHeading}
         size={size}
         locationState={locationState}
         latitude={latitude}
@@ -57,6 +61,7 @@ export function UserLocationMarker({
         <LocationPuck
           heading={spiritProps.heading}
           mapBearing={spiritProps.mapBearing ?? 0}
+          showHeading={showHeading}
           size={size}
           locationState={locationState}
           latitude={latitude}

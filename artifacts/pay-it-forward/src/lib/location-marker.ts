@@ -5,6 +5,14 @@ export type LocationMarkerStyle = typeof LOCATION_MARKER_STYLES[number];
 export type LocationSource = "gps" | "ip" | "approximate" | "privacy";
 export type LocationSignal = "live" | "approximate" | "stale" | "privacy";
 
+/** Heading data alone does not opt a puck into directional rendering. */
+export function shouldShowLocationHeadingCone(
+  showHeading: boolean,
+  heading: number | null | undefined,
+): boolean {
+  return showHeading && typeof heading === "number" && Number.isFinite(heading);
+}
+
 export interface LocationMarkerInput {
   source?: LocationSource;
   accuracy?: number | null;

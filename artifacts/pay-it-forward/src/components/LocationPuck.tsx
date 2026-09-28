@@ -1,11 +1,18 @@
-import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
-import { getAccuracyRingDiameterPx, type LocationMarkerState } from "@/lib/location-marker";
+import React from "react";
+import { useIsAnimationSuppressed } from "../hooks/useAnimationPreference.ts";
+import {
+  getAccuracyRingDiameterPx,
+  shouldShowLocationHeadingCone,
+  type LocationMarkerState,
+} from "../lib/location-marker.ts";
 
 interface LocationPuckProps {
   /** World-frame heading in degrees (0 = true north), or null if unknown. */
   heading: number | null;
   /** Current map camera bearing in degrees — 0 in north-up mode, live in heading-up mode. */
   mapBearing: number;
+  /** Opt in to a directional cone; omitted for ordinary map location markers. */
+  showHeading?: boolean;
   size?: number;
   /** GPS/fallback state used to distinguish live, stale, and approximate fixes. */
   locationState?: LocationMarkerState;
@@ -17,10 +24,9 @@ interface LocationPuckProps {
 /**
  * LocationPuck
  *
- * The "blue dot" every serious nav app has — but with a directional cone
- * instead of a plain circle. Every real turn-by-turn product (Google Maps,
- * Waze, Apple Maps) rotates a cone/arrow to show which way you're actually
- * facing, independent of which way the camera is currently pointed.
+ * The ordinary map marker is a circular blue puck. Active navigation may
+ * opt in to a directional cone that shows travel direction independently
+ * of the current camera bearing.
  *
  * The cone's screen-space rotation is (heading - mapBearing), NOT just
  * `heading`, because:
@@ -30,19 +36,19 @@ interface LocationPuckProps {
  *     cone should stay pointing straight "up" on screen (heading - bearing
  *     ≈ 0 once the camera catches up) — exactly like Google Maps' arrow.
  *
- * When heading is unavailable (no compass/GPS course yet), we fall back to
- * a plain pulsing dot with no cone — matches the old behavior rather than
- * showing a meaningless/stale direction.
+ * Outside navigation, or when heading is unavailable, render the circular
+ * puck without a meaningless/stale directional indicator.
  */
 export function LocationPuck({
   heading,
   mapBearing,
+  showHeading = false,
   size = 34,
   locationState,
   latitude,
   mapZoom,
 }: LocationPuckProps) {
-  const hasHeading = typeof heading === "number" && !Number.isNaN(heading);
+  const hasHeading = shouldShowLocationHeadingCone(showHeading, heading);
   const suppressed = useIsAnimationSuppressed();
   const signal = locationState?.signal ?? "live";
   const accuracyMeters = locationState?.accuracyMeters ?? null;

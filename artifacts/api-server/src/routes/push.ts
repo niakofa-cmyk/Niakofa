@@ -37,38 +37,34 @@ router.post("/push/subscribe", requireAuth, requireOwnership("userId"), async (r
   const { userId, subscription } = req.body as { userId: number; subscription: webpush.PushSubscription };
   if (!userId || !subscription?.endpoint) return res.status(400).json({ error: "userId and subscription required" });
 
-  const existing = await db
-    .select({ id: pushSubscriptionsTable.id })
-    .from(pushSubscriptionsTable)
-    .where(eq(pushSubscriptionsTable.endpoint, subscription.endpoint))
-    .limit(1);
-
-  if (existing.length > 0) {
-    await db
-      .update(pushSubscriptionsTable)
-      .set({ user_id: userId, subscription: subscription as unknown as Record<string, unknown>, updated_at: new Date() })
-      .where(eq(pushSubscriptionsTable.endpoint, subscription.endpoint));
-  } else {
-    await db.insert(pushSubscriptionsTable).values({
+  await db
+    .insert(pushSubscriptionsTable)
+    .values({
       user_id: userId,
       endpoint: subscription.endpoint,
       subscription: subscription as unknown as Record<string, unknown>,
+    })
+    .onConflictDoUpdate({
+      target: pushSubscriptionsTable.endpoint,
+      set: {
+        user_id: userId,
+        subscription: subscription as unknown as Record<string, unknown>,
+        updated_at: new Date(),
+      },
     });
-  }
 
   return res.json({ ok: true });
 });
 
 router.post("/push/unsubscribe", requireAuth, requireOwnership("userId"), async (req, res) => {
-  const { userId, endpoint } = req.body as { userId: number; endpoint: string };
+  const { userId, endpoint } = req.body as { userId: number; endpoint?: string };
   if (!userId) return res.status(400).json({ error: "userId required" });
-  if (endpoint) {
-    await db
-      .delete(pushSubscriptionsTable)
-      .where(and(eq(pushSubscriptionsTable.user_id, userId), eq(pushSubscriptionsTable.endpoint, endpoint)));
-  } else {
-    await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
+  if (typeof endpoint !== "string" || endpoint.length === 0) {
+    return res.status(400).json({ error: "endpoint required" });
   }
+  await db
+    .delete(pushSubscriptionsTable)
+    .where(and(eq(pushSubscriptionsTable.user_id, userId), eq(pushSubscriptionsTable.endpoint, endpoint)));
   return res.json({ ok: true });
 });
 
@@ -133,7 +129,11 @@ async function getSubsForUser(userId: number): Promise<webpush.PushSubscription[
  * Deliver to a set of push subscriptions.
  * Returns the count of successful deliveries.
  */
-export async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayload): Promise<number> {
+export async function deliverToSubs(
+  subs: webpush.PushSubscription[],
+  payload: PushPayload,
+  ownerUserId: number,
+): Promise<number> {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE || subs.length === 0) return 0;
   const data = JSON.stringify(payload);
   const opts = pushOptions(payload.urgency);
@@ -142,14 +142,17 @@ export async function deliverToSubs(subs: webpush.PushSubscription[], payload: P
     subs.map(sub =>
       webpush.sendNotification(sub, data, opts)
         .then(() => { delivered++; })
-        .catch(err => {
+        .catch(async err => {
           // 404/410 both mean the endpoint is no longer usable. Treat the
           // subscription as invalid and remove it so future sends do not
           // repeatedly retry a dead browser registration.
           const statusCode = (err as { statusCode?: number }).statusCode;
           if (statusCode === 404 || statusCode === 410) {
-            db.delete(pushSubscriptionsTable)
-              .where(eq(pushSubscriptionsTable.endpoint, sub.endpoint))
+            await db.delete(pushSubscriptionsTable)
+              .where(and(
+                eq(pushSubscriptionsTable.user_id, ownerUserId),
+                eq(pushSubscriptionsTable.endpoint, sub.endpoint),
+              ))
               .catch(() => {
                 // Non-fatal: subscription cleanup failure doesn't affect delivery count
               });
@@ -299,7 +302,7 @@ export async function sendPushToUser(
     };
   }
 
-  const delivered = await deliverToSubs(subs, payload);
+  const delivered = await deliverToSubs(subs, payload, userId);
 
   if (delivered === 0 && options?.fallbackEmail) {
     logger.info({ userId }, "push: no delivery — falling back to email");
@@ -439,7 +442,7 @@ export async function sendPushToNearbyHelpers(
         return; // helper opted out of this notification type
       }
       const subs = await getSubsForUser(h.id);
-      const delivered = await deliverToSubs(subs, payload);
+      const delivered = await deliverToSubs(subs, payload, h.id);
       if (delivered === 0 && isEmergency && h.email) {
         await sendAlertEmail({
           to: h.email,
@@ -459,10 +462,20 @@ export async function sendPushToAllHelpers(payload: PushPayload): Promise<void> 
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
 
   const rows = await db
-    .select({ subscription: pushSubscriptionsTable.subscription })
+    .select({
+      user_id: pushSubscriptionsTable.user_id,
+      subscription: pushSubscriptionsTable.subscription,
+    })
     .from(pushSubscriptionsTable);
-  const subs = rows.map(r => r.subscription as unknown as webpush.PushSubscription);
-  await deliverToSubs(subs, payload);
+  const subscriptionsByUser = new Map<number, webpush.PushSubscription[]>();
+  for (const row of rows) {
+    const subscriptions = subscriptionsByUser.get(row.user_id) ?? [];
+    subscriptions.push(row.subscription as unknown as webpush.PushSubscription);
+    subscriptionsByUser.set(row.user_id, subscriptions);
+  }
+  await Promise.allSettled(
+    [...subscriptionsByUser].map(([userId, subs]) => deliverToSubs(subs, payload, userId)),
+  );
 }
 
 export default router;

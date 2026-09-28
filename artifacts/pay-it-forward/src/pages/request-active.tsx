@@ -892,6 +892,7 @@ export default function ActiveRequestScreen() {
             <LocationPuck
               heading={heldHeading}
               mapBearing={0}
+              showHeading
               size={56}
               locationState={locationMarkerState}
               latitude={myLocation.lat}
@@ -900,6 +901,7 @@ export default function ActiveRequestScreen() {
           }>
             <UserLocationMarker
               markerStyle={userSettings?.location_marker_style}
+              showHeading
               species={userSettings?.spirit_animal}
               locationState={locationMarkerState}
               latitude={myLocation.lat}
@@ -944,6 +946,7 @@ export default function ActiveRequestScreen() {
             <LocationPuck
               heading={heldHeading}
               mapBearing={mode === "heading-up" ? (fusedHeading ?? 0) : 0}
+              showHeading
               size={40}
               locationState={locationMarkerState}
               latitude={(tweenedPosition ?? myLocation).lat}
@@ -952,6 +955,7 @@ export default function ActiveRequestScreen() {
           }>
             <UserLocationMarker
               markerStyle={userSettings?.location_marker_style}
+              showHeading
               species={userSettings?.spirit_animal}
               locationState={locationMarkerState}
               latitude={(tweenedPosition ?? myLocation).lat}

@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 /**
- * Disposable-table spatial integration contract. Uses the migration-backed CI
- * Postgres service, creates only TEMP fixtures, and never touches app rows.
+ * Migration-backed CI integration entrypoint. The spatial check uses only TEMP
+ * fixtures; after it closes its connection, run the local-only Exchange
+ * lifecycle and push API fixtures through the same existing CI entrypoint.
+ * Both child scripts refuse non-local databases and clean up their own rows.
  */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 const { Pool } = pg;
@@ -79,4 +83,18 @@ try {
 } finally {
   client.release();
   await pool.end();
+}
+
+for (const [label, file] of [
+  ["Exchange API lifecycle", "./exchange-lifecycle.integration.test.mjs"],
+  ["Push subscription API", "./push-subscription.integration.test.mjs"],
+]) {
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL(file, import.meta.url))], {
+    env: process.env,
+    stdio: "inherit",
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`${label} integration failed (exit ${result.status ?? result.signal})`);
+  }
 }

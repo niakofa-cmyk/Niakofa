@@ -1,0 +1,188 @@
+1. The blue location marker: should Niakofa bring it back?
+
+Yes — I recommend restoring the original blue circular location marker as Niakofa's default map-location indicator, while keeping the directional arrow for actual navigation.
+
+For Niakofa, this is a meaningful distinction because the app serves two related but different purposes:
+
+Community and Exchange: Help people identify their current location, explore nearby neighbors, and discover local goods, services, and requests.
+
+Navigation mode: Help a user travel to a destination, follow a route, and understand which direction they are moving.
+
+A blue dot or circular marker communicates “you are here.” A directional arrow communicates heading or movement. They shouldn't be interchangeable across the whole app.
+
+2. What the current GitHub code actually does
+
+I checked the current main branch of Niakofa 
+, including the location-marker component and the map/navigation integration.
+
+The important finding: the existing code already contains a blue circular location puck, but it adds a directional cone whenever heading data is available. So this can be implemented as a targeted UI change rather than rebuilding Niakofa's location or routing systems.
+
+Current implementation and recommended behavior
+
+Area
+
+	
+
+Current behavior
+
+	
+
+Recommended behavior
+
+
+
+
+Community map
+
+	
+
+Blue puck can display a heading cone
+
+	
+
+Plain blue circle by default
+
+
+
+
+Niakofa Exchange
+
+	
+
+Should emphasize the user's location, not their travel direction
+
+	
+
+Plain blue circle
+
+
+
+
+Active help navigation
+
+	
+
+Heading and companion marker are integrated
+
+	
+
+Keep directional indicator available in navigation
+
+
+
+
+GPS unavailable or stale
+
+	
+
+Marker state and accuracy indicators are supported
+
+	
+
+Preserve these safeguards
+
+The relevant files are:
+
+LocationPuck.tsx 
+— renders the blue puck, accuracy rings, and heading cone.
+
+UserLocationMarker.tsx 
+— chooses between the standard puck and the spirit-animal companion.
+
+map.tsx 
+— passes heading and map-bearing data into the marker.
+
+request-active.tsx 
+— integrates the marker into active navigation.
+
+The current design also has a useful fallback: if the spirit-animal marker fails, the map can still render the standard location puck. That should remain intact.
+
+3. How I would implement the blue-circle restoration
+
+I recommend a small, backward-compatible change with an explicit distinction between location and navigation.
+
+Step 1 — Add a heading-visibility option to LocationPuck
+
+In LocationPuck.tsx, introduce a prop such as showHeading, defaulting to false.
+
+Conceptually:
+
+interface LocationPuckProps {
+  heading: number | null;
+  mapBearing: number;
+  showHeading?: boolean;
+  // Keep existing props
+}
+
+Then change the directional cone condition from:
+
+{hasHeading ? (
+  // Render directional cone
+) : null}
+
+to:
+
+{showHeading && hasHeading ? (
+  // Render directional cone
+) : null}
+
+The blue center dot, accuracy ring, GPS signal state, and existing accessibility labels should remain unchanged.
+
+This is the key change: heading data can continue updating in the background without forcing the visual marker to become an arrow.
+
+Step 2 — Make the default marker the original blue circle
+
+In UserLocationMarker.tsx, pass showHeading={false} to LocationPuck for the default puck and its error fallback.
+
+That means the user's marker stays circular regardless of whether a compass heading is available.
+
+Keep the existing resolveLocationMarkerStyle behavior and spirit-animal preference. The restoration should not remove the Sankofa Bird or other supported companion options.
+
+Step 3 — Keep directional guidance in navigation
+
+In request-active.tsx, explicitly enable the heading indicator for the navigation marker if the user is actively navigating.
+
+For example:
+
+<LocationPuck
+  heading={heldHeading}
+  mapBearing={mode === "heading-up" ? (fusedHeading ?? 0) : 0}
+  showHeading={true}
+  size={40}
+  locationState={locationMarkerState}
+/>
+
+The equivalent option should be passed through the navigation-specific UserLocationMarker path as well, so the normal marker and its error fallback behave consistently.
+
+For the main community map, leave the option disabled.
+
+Important: Do not remove useFusedHeading, useHeadingWithHold, or useMapOrientation. Those systems handle orientation and camera behavior, which are separate from how the location marker is drawn.
+
+4. Tests and release requirements
+
+Before merging, I would require these regression checks:
+
+Location marker acceptance checklist
+Community map shows the original blue circular marker when heading is available.
+The marker remains circular when the user rotates their phone or changes direction.
+Active navigation can still display a directional cone when enabled.
+GPS accuracy, stale-location, privacy-approximation, and fallback behavior remain intact.
+Spirit-animal markers and user preferences remain functional.
+Typecheck, ESLint, frontend tests, backend tests, and App/AI Boundary Check pass.
+5. Other recommendations from the updated repo
+
+The latest GitHub history also shows continued Exchange work, including spatial validation, listing privacy, pickup recovery, dispute review, and release lint checks. Those changes should be reviewed independently from this visual marker change.
+
+My recommendations are:
+
+Keep the blue dot as the standard location identity throughout Community and Exchange.
+
+Keep route instructions, turn arrows, and heading indicators specific to active navigation.
+
+Add a component-level regression test so a future heading or spirit-animal enhancement cannot silently change the default marker again.
+
+Keep the marker's displayed precision consistent with the actual GPS or privacy-protected location data.
+
+Bottom line: Restore the blue circle as the default, preserve the directional arrow as an optional navigation feature, and implement it behind a simple display prop. That gives Niakofa the familiar location-marker experience without sacrificing its existing navigation capabilities.
+
+I have reviewed the current GitHub implementation and identified the change points, but I have not modified the repository or run CI for this proposed marker change.

@@ -8,8 +8,7 @@ const steps = [
 ];
 
 if (process.env.DATABASE_URL) {
-  steps.push(["Exchange spatial integration", ["node", "scripts/exchange-spatial.integration.test.mjs"]]);
-  steps.push(["Exchange handoff lifecycle integration", ["node", "scripts/exchange-lifecycle.integration.test.mjs"]]);
+  steps.push(["Exchange spatial, lifecycle, and push integration", ["node", "scripts/exchange-spatial.integration.test.mjs"]]);
 } else {
   console.error("Exchange release gate requires DATABASE_URL for migration-backed spatial and handoff integration; refusing to certify without it.");
   process.exit(1);
