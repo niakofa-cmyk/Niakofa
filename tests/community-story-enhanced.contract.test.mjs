@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const rail = fs.readFileSync("artifacts/pay-it-forward/src/components/community/CommunityStoryRail.tsx", "utf8");
+const overlays = fs.readFileSync("artifacts/pay-it-forward/src/components/community/CommunityStoryRailOverlays.tsx", "utf8");
 const shell = fs.readFileSync("artifacts/pay-it-forward/src/components/community/CommunityStoriesExperience.tsx", "utf8");
 const communityPage = fs.readFileSync("artifacts/pay-it-forward/src/pages/community.tsx", "utf8");
 const interactionClient = fs.readFileSync("artifacts/pay-it-forward/src/lib/community-story-client.ts", "utf8");
@@ -11,11 +12,11 @@ const messages = fs.readFileSync("artifacts/api-server/src/routes/direct-message
 const scheduler = fs.readFileSync("artifacts/api-server/src/lib/scheduler.ts", "utf8");
 const openapi = fs.readFileSync("lib/api-spec/openapi.yaml", "utf8");
 
-assert.match(rail, /StoryMediaPlayer/);
-assert.match(rail, /StoryShareSheet/);
+assert.match(overlays, /StoryMediaPlayer/);
+assert.match(overlays, /StoryShareSheet/);
 assert.match(rail, /\/api\/community\/stories/);
 assert.match(shell, /export function CommunityStoriesExperience/);
-assert.match(communityPage, /CommunityStoriesView/);
+assert.match(communityPage, /CommunityMomentsView/);
 assert.doesNotMatch(communityPage, /<CommunityStoryRail/);
 assert.match(rail, /sendStoryContextMessage/);
 assert.match(rail, /storyId: selectedStory\.id/);

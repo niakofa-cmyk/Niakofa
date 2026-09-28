@@ -13,8 +13,6 @@ import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
-import { StoryMediaPlayer } from "./StoryMediaPlayer";
-import { StoryShareSheet } from "./StoryShareSheet";
 import { useObjectUrls } from "./StoryComposerMedia";
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, newStudioPublishId, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
@@ -46,43 +44,19 @@ import {
 } from "@/lib/community-story-client";
 import {
   StoryComposerChrome,
-  StoryGalleryChrome,
-  StoryViewerChrome,
   StoryVisualRail,
   type StoryVisualAuthor,
   type StoryVisualTool,
 } from "./CommunityStoryVisual";
+import {
+  CommunityStoryGalleryOverlay,
+  CommunityStoryShareOverlay,
+  CommunityStoryViewerOverlay,
+} from "./CommunityStoryRailOverlays";
+import type { CommunityStory, Effect, StoryAuthor, StoryFrame, StoryMedia } from "./story-rail-types";
+import { TEXT_STORY_BACKGROUNDS } from "./story-rail-types";
 
-type StoryMedia = {
-  id: number;
-  media_type: "photo" | "video" | "audio";
-  mime_type: string;
-  duration_ms: number | null;
-  media_url: string;
-  width?: number | null;
-  height?: number | null;
-};
-
-type CommunityStory = {
-  id: number;
-  author_user_id: number;
-  hub_id: number | null;
-  community_id: number | null;
-  caption: string | null;
-  audience: string;
-  reply_enabled: boolean;
-  created_at: string | null;
-  expires_at: string | null;
-  author: { id: number; name: string; avatar_url: string | null };
-  media: StoryMedia[];
-  elements: Array<{ id: number; type: string; payload: Record<string, unknown>; position_x?: number; position_y?: number; scale?: number; rotation?: number; z_index?: number }>;
-};
-
-type StoryFrame = { story: CommunityStory; media: StoryMedia | null };
-type StoryAuthor = { author_user_id: number; author: CommunityStory["author"]; frames: StoryFrame[] };
 type Tool = "music" | "stickers" | "text" | "effects" | "mention";
-type Effect = "none" | "warmth" | "contrast" | "grayscale" | "vignette";
-const TEXT_STORY_BACKGROUNDS = ["#172554", "#0f766e", "#7c2d12", "#701a75", "#111827"] as const;
 
 function groupStories(stories: CommunityStory[]): StoryAuthor[] {
   const byAuthor = new Map<number, StoryAuthor>();
@@ -1057,73 +1031,55 @@ export function CommunityStoryRail({
       )}
 
       {selectedStory && selectedAuthor && (
-        <div className="nia-story-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${selectedAuthor.author.name}'s Spark`}>
-          <StoryViewerChrome
-            author={{
-              id: selectedAuthor.author_user_id,
-              name: selectedAuthor.author.name,
-              avatarUrl: selectedAuthor.author.avatar_url,
-              contextLabel: selectedStory.hub_id ? "Hub Spark" : "Community",
-            }}
-            progress={storyProgress}
-            onPrevious={() => advanceFrame(-1)}
-            onNext={() => advanceFrame(1)}
-            onClose={closeViewer}
-            onMore={() => setShareStoryId(selectedStory.id)}
-            onReact={() => void toggleReaction()}
-            onSwipe={(direction) => {
-              if (direction === "close") {
-                closeViewer();
-                return;
-              }
-              moveToAuthor(direction === "next" ? 1 : -1);
-            }}
-            onHoldChange={setStoryPaused}
-            onReply={(body) => {
-              if (!selectedStory.reply_enabled) return;
-              void sendStoryContextMessage({
-                recipientId: selectedStory.author_user_id,
-                storyId: selectedStory.id,
-                body,
-              })
-                .then(() => navigate(`/messages?mode=direct&recipientId=${selectedStory.author_user_id}&storyId=${selectedStory.id}`))
-                .catch((reason: unknown) => {
-                  setError(reason instanceof Error ? reason.message : "Could not send your Spark reply.");
-                });
-            }}
-            onShare={() => setShareStoryId(selectedStory.id)}
-            replyPlaceholder={selectedStory.reply_enabled ? "Reply to this Spark…" : "Replies are off"}
-            replyDisabled={!selectedStory.reply_enabled}
-          >
-            <div className="nia-story-viewer__player-shell">
-              <StoryMediaPlayer
-                media={selectedPlayerMedia}
-                elements={selectedStory.elements}
-                fallbackText={selectedMedia ? "Loading Spark media…" : selectedStory.caption || "Community Spark"}
-                onComplete={completeSelectedFrame}
-                onProgress={setStoryProgress}
-                paused={storyPaused}
-              />
-              {selectedStory.caption && <p className="nia-story-viewer__caption">{selectedStory.caption}</p>}
-            </div>
-          </StoryViewerChrome>
-        </div>
+        <CommunityStoryViewerOverlay
+          author={selectedAuthor}
+          story={selectedStory}
+          media={selectedMedia}
+          playerMedia={selectedPlayerMedia}
+          progress={storyProgress}
+          paused={storyPaused}
+          onProgress={setStoryProgress}
+          onPrevious={() => advanceFrame(-1)}
+          onNext={completeSelectedFrame}
+          onClose={closeViewer}
+          onMore={() => setShareStoryId(selectedStory.id)}
+          onReact={() => void toggleReaction()}
+          onSwipe={(direction) => {
+            if (direction === "close") {
+              closeViewer();
+              return;
+            }
+            moveToAuthor(direction === "next" ? 1 : -1);
+          }}
+          onHoldChange={setStoryPaused}
+          onReply={(body) => {
+            if (!selectedStory.reply_enabled) return;
+            void sendStoryContextMessage({
+              recipientId: selectedStory.author_user_id,
+              storyId: selectedStory.id,
+              body,
+            })
+              .then(() => navigate(`/messages?mode=direct&recipientId=${selectedStory.author_user_id}&storyId=${selectedStory.id}`))
+              .catch((reason: unknown) => {
+                setError(reason instanceof Error ? reason.message : "Could not send your Spark reply.");
+              });
+          }}
+          onShare={() => setShareStoryId(selectedStory.id)}
+        />
       )}
       {galleryOpen && composerOpen && draftReady && activeScopeRef.current === scopeKey && (
-        <div className="nia-story-gallery-overlay">
-          <StoryGalleryChrome
-            thumbnails={galleryThumbnails}
-            selected={gallerySelection}
-            onSelect={(id) => toggleGallerySelection(Number(id))}
-            onMultiple={() => setGallerySelection(files.map((_, index) => index))}
-            onClose={() => setGalleryOpen(false)}
-            onCamera={() => cameraInput.current?.click()}
-            onChooseFiles={() => galleryInput.current?.click()}
-            onDone={() => setGalleryOpen(false)}
-          />
-        </div>
+        <CommunityStoryGalleryOverlay
+          thumbnails={galleryThumbnails}
+          selected={gallerySelection}
+          onSelect={(id) => toggleGallerySelection(Number(id))}
+          onMultiple={() => setGallerySelection(files.map((_, index) => index))}
+          onClose={() => setGalleryOpen(false)}
+          onCamera={() => cameraInput.current?.click()}
+          onChooseFiles={() => galleryInput.current?.click()}
+          onDone={() => setGalleryOpen(false)}
+        />
       )}
-      {shareStoryId !== null && <StoryShareSheet storyId={shareStoryId} onClose={() => setShareStoryId(null)} />}
+      {shareStoryId !== null && <CommunityStoryShareOverlay storyId={shareStoryId} onClose={() => setShareStoryId(null)} />}
     </>
   );
 }
