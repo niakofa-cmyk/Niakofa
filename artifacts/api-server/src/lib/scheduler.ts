@@ -43,6 +43,7 @@ const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const STORY_ORPHAN_MEDIA_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MEDIA_UPLOAD_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MEDIA_CLEANUP_BATCH_SIZE = 100;
+const SPARK_CLEANUP_CLAIM_MS = 10 * 60 * 1000;
 const ACCOUNT_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 // Run hourly so a user's local weekly delivery window is not missed by a
 // six-hour UTC cadence. The archival query remains idempotent and indexed.
@@ -771,6 +772,16 @@ async function processCommunityStoryCleanup(): Promise<void> {
       logger.error({ err, mediaAssetId: asset.id }, "community-story cleanup: orphan media cleanup will retry");
     }
   }
+  // Recover a Spark claimed by a scheduler instance that exited mid-cleanup.
+  // The claim state prevents duplicate storage deletion while still making a
+  // process crash retryable.
+  await db.update(exchangeSparksTable).set({
+    status: "deletion_pending",
+    updated_at: new Date(),
+  }).where(and(
+    eq(exchangeSparksTable.status, "deleting"),
+    lte(exchangeSparksTable.updated_at, new Date(Date.now() - SPARK_CLEANUP_CLAIM_MS)),
+  ));
   await db.update(exchangeSparksTable).set({
     status: "deletion_pending",
     updated_at: new Date(),
@@ -778,10 +789,23 @@ async function processCommunityStoryCleanup(): Promise<void> {
     eq(exchangeSparksTable.status, "draft"),
     lte(exchangeSparksTable.draft_expires_at, new Date()),
   ));
-  const deletingSparks = await db.select({
-    id: exchangeSparksTable.id,
-  }).from(exchangeSparksTable)
-    .where(eq(exchangeSparksTable.status, "deletion_pending"));
+  const deletingSparks = await db.transaction(async (tx) => {
+    const due = await tx.select({
+      id: exchangeSparksTable.id,
+    }).from(exchangeSparksTable)
+      .where(eq(exchangeSparksTable.status, "deletion_pending"))
+      .limit(MEDIA_CLEANUP_BATCH_SIZE)
+      .for("update", { skipLocked: true });
+    if (!due.length) return due;
+    await tx.update(exchangeSparksTable).set({
+      status: "deleting",
+      updated_at: new Date(),
+    }).where(and(
+      inArray(exchangeSparksTable.id, due.map((spark) => spark.id)),
+      eq(exchangeSparksTable.status, "deletion_pending"),
+    ));
+    return due;
+  });
   for (const spark of deletingSparks) {
     const assets = await db.select({
       id: mediaAssetsTable.id,
@@ -810,6 +834,13 @@ async function processCommunityStoryCleanup(): Promise<void> {
         .limit(1);
       if (processingJob) {
         cleanupFailed = true;
+        await db.update(exchangeSparksTable).set({
+          status: "deletion_pending",
+          updated_at: new Date(),
+        }).where(and(
+          eq(exchangeSparksTable.id, spark.id),
+          eq(exchangeSparksTable.status, "deleting"),
+        ));
         continue;
       }
       await db.update(mediaAssetsTable).set({
@@ -828,6 +859,13 @@ async function processCommunityStoryCleanup(): Promise<void> {
       await db.delete(exchangeSparksTable).where(eq(exchangeSparksTable.id, spark.id));
     } catch (err) {
       cleanupFailed = true;
+      await db.update(exchangeSparksTable).set({
+        status: "deletion_pending",
+        updated_at: new Date(),
+      }).where(and(
+        eq(exchangeSparksTable.id, spark.id),
+        eq(exchangeSparksTable.status, "deleting"),
+      ));
       logger.error({ err, sparkId: spark.id }, "Exchange Spark cleanup: storage/database cleanup will retry");
     }
   }

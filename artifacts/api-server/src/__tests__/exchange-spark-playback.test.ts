@@ -13,7 +13,7 @@ describe("secure Exchange Spark playback grants", () => {
       const grant = issueExchangeSparkPlaybackGrant(51, 9, 4, secret, true);
       const header = grant.cookie.split(";")[0];
       expect(grant.expiresAt).toBe(1_800_000_120_000);
-      expect(grant.cookie).toContain("Path=/api/media-assets/51/play; HttpOnly; SameSite=Strict; Max-Age=120; Secure");
+      expect(grant.cookie).toContain("Path=/api/media-assets/51; HttpOnly; SameSite=Strict; Max-Age=120; Secure");
       expect(grant.cookie).not.toMatch(/;\s*Domain=/i);
       expect(verifyExchangeSparkPlaybackGrant(header, 51, secret)).toMatchObject({
         assetId: 51, userId: 9, tokenVersion: 4,

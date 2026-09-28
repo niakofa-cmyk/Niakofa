@@ -205,8 +205,22 @@ export async function viewerCanReadStory(userId: number, story: {
   audience: string;
   exchange_listing_id?: number | null;
 }): Promise<boolean> {
-  const [viewer] = await db.select({ community_id: usersTable.community_id })
+  const [viewer] = await db.select({
+    community_id: usersTable.community_id,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score,
+  })
     .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [author] = await db.select({
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+  }).from(usersTable).where(eq(usersTable.id, story.author_user_id)).limit(1);
+  if (!viewer || viewer.approval_status !== "approved" || viewer.is_suspended
+    || viewer.trust_score !== null && viewer.trust_score <= -1
+    || !author || author.approval_status !== "approved" || author.is_suspended) {
+    return false;
+  }
   if (story.exchange_listing_id != null) {
     const [listing] = await db.select({
       seller_id: exchangeListingsTable.seller_id,
@@ -981,12 +995,28 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
     }
     return res.status(404).json({ error: "Story thumbnail not found." });
   }
-  if (row.media_type === "video") return streamAssetRange(
-    row.variant_key ?? row.storage_key,
-    req,
-    res,
-    storyVideoStreamContentType(row.variant_key, row.mime_type),
-  );
+  if (row.media_type === "video") {
+    const claims = verifyStoryPlaybackGrant(
+      readStoryPlaybackCookie(req.headers.cookie),
+      mediaId,
+      process.env["SESSION_SECRET"],
+    );
+    const [viewer] = await db.select({
+      token_version: usersTable.token_version,
+      trust_score: usersTable.trust_score,
+    }).from(usersTable).where(eq(usersTable.id, req.authenticatedUserId!)).limit(1);
+    if (!claims || claims.userId !== req.authenticatedUserId
+      || !viewer || claims.tokenVersion !== viewer.token_version
+      || viewer.trust_score !== null && viewer.trust_score <= -1) {
+      return res.status(404).json({ error: "Story video not found." });
+    }
+    return streamAssetRange(
+      row.variant_key ?? row.storage_key,
+      req,
+      res,
+      storyVideoStreamContentType(row.variant_key, row.mime_type),
+    );
+  }
   return streamAssetSameOrigin(row.variant_key ?? row.storage_key, res);
 });
 

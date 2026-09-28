@@ -428,7 +428,25 @@ export function CommunityStoryRail({
   const loadMediaUrl = useCallback(async (media: StoryMedia) => {
     if (mediaObjectUrlsRef.current[media.id]) return;
     try {
-      const response = await fetch(media.media_url, { headers: authHeaders() });
+      let mediaUrl = media.media_url;
+      if (media.media_type === "video") {
+        const grantUrl = new URL(media.media_url, window.location.origin);
+        if (grantUrl.origin !== window.location.origin || grantUrl.search || grantUrl.hash
+          || !/^\/api\/community\/stories\/media\/\d+\/?$/.test(grantUrl.pathname)) {
+          return;
+        }
+        const grantResponse = await fetch(`${grantUrl.pathname.replace(/\/$/, "")}/playback-grant`, {
+          method: "POST",
+          headers: authHeaders(),
+          credentials: "same-origin",
+        });
+        const grant = await grantResponse.json().catch(() => ({})) as { playback_url?: string };
+        if (!grantResponse.ok || typeof grant.playback_url !== "string") return;
+        const playbackUrl = new URL(grant.playback_url, window.location.origin);
+        if (playbackUrl.origin !== window.location.origin || playbackUrl.search || playbackUrl.hash) return;
+        mediaUrl = grant.playback_url;
+      }
+      const response = await fetch(mediaUrl, { headers: authHeaders(), credentials: "same-origin" });
       if (!response.ok) return;
       const url = URL.createObjectURL(await response.blob());
       mediaObjectUrlsRef.current[media.id] = url;

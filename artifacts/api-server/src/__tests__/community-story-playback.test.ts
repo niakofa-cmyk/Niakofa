@@ -40,7 +40,7 @@ describe("secure Story video playback grants", () => {
   it("builds host-only, path-scoped HttpOnly cookies with Secure only on HTTPS", () => {
     const grant = issueStoryPlaybackGrant({ mediaId: 51, userId: 9, tokenVersion: 4 }, secret, now);
     const secureCookie = buildStoryPlaybackSetCookie(grant.value, 51, true);
-    expect(secureCookie).toContain("Path=/api/community/stories/media/51/play");
+    expect(secureCookie).toContain("Path=/api/community/stories/media/51");
     expect(secureCookie).toContain("HttpOnly");
     expect(secureCookie).toContain("SameSite=Strict");
     expect(secureCookie).toContain("Max-Age=120");

@@ -26,7 +26,10 @@ export function issueExchangeSparkPlaybackGrant(
   }
   const claims = { assetId, userId, tokenVersion, expiresAt: Date.now() + TTL_SECONDS * 1000 };
   const value = `v1.${assetId}.${userId}.${tokenVersion}.${claims.expiresAt}.${signature(claims, secret)}`;
-  const cookie = `${COOKIE}=${value}; Path=/api/media-assets/${assetId}/play; HttpOnly; SameSite=Strict; Max-Age=${TTL_SECONDS}${secure ? "; Secure" : ""}`;
+  // Scope the grant to this asset's authenticated media routes. This protects
+  // both the explicit /play endpoint and legacy direct media URLs that older
+  // clients still request after obtaining a grant.
+  const cookie = `${COOKIE}=${value}; Path=/api/media-assets/${assetId}; HttpOnly; SameSite=Strict; Max-Age=${TTL_SECONDS}${secure ? "; Secure" : ""}`;
   return { cookie, expiresAt: claims.expiresAt };
 }
 

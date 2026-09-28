@@ -11,7 +11,9 @@ import { usersTable } from "./users";
  */
 export const exchangeSparksTable = pgTable("exchange_sparks", {
   id: serial("id").primaryKey(),
-  listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "cascade" }),
+  // A hard listing delete must be blocked until Spark media cleanup has
+  // completed; withdrawal/archival remains the supported product lifecycle.
+  listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
   author_user_id: integer("author_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
   caption: text("caption"),

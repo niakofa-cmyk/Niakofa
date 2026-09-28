@@ -83,7 +83,9 @@ export function buildStoryPlaybackSetCookie(value: string, mediaId: number, secu
     throw new Error("Invalid Story playback cookie.");
   }
   const secureAttribute = secure ? "; Secure" : "";
-  return `${STORY_PLAYBACK_COOKIE_NAME}=${value}; Path=/api/community/stories/media/${mediaId}/play; HttpOnly; SameSite=Strict; Max-Age=${STORY_PLAYBACK_TTL_SECONDS}${secureAttribute}`;
+  // Scope the grant to this media resource so the legacy direct URL can be
+  // protected without exposing a broader session cookie.
+  return `${STORY_PLAYBACK_COOKIE_NAME}=${value}; Path=/api/community/stories/media/${mediaId}; HttpOnly; SameSite=Strict; Max-Age=${STORY_PLAYBACK_TTL_SECONDS}${secureAttribute}`;
 }
 
 /**

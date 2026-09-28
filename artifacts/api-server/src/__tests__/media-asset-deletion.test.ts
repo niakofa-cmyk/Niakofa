@@ -37,6 +37,9 @@ describe("V21 media asset deletion safety", () => {
     const playback = route.slice(route.indexOf('router.get("/media-assets/:id/play"'));
     expect(playback).toMatch(/verifyExchangeSparkPlaybackGrant/);
     expect(playback).toMatch(/if \(!assetId \|\| !claims\) return res\.status\(404\)/);
+    const direct = route.slice(route.indexOf("async function streamMediaAsset"));
+    expect(direct).toMatch(/asset\.context_kind === "exchange_spark" && asset\.media_type === "video"/);
+    expect(direct).toMatch(/verifyExchangeSparkPlaybackGrant/);
   });
 
   it("hides the asset before strict, retryable object cleanup", async () => {

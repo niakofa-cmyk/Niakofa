@@ -344,6 +344,32 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
   let asset: { id: number } | undefined;
   if (input.contextKind === "exchange_spark" && input.mediaType === "video") {
     const result = await db.transaction(async (tx) => {
+      const [sparkReference] = await tx.select({
+        listing_id: exchangeSparksTable.listing_id,
+      }).from(exchangeSparksTable)
+        .where(eq(exchangeSparksTable.id, input.contextId))
+        .limit(1);
+      if (!sparkReference) return { kind: "not-found" as const };
+
+      // Publish locks the linked listing before the Spark. Keep the same
+      // order here so an upload initialization cannot deadlock publication.
+      const [listing] = await tx.select({
+        seller_id: exchangeListingsTable.seller_id,
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status,
+        seller_approval_status: usersTable.approval_status,
+        seller_is_suspended: usersTable.is_suspended,
+      }).from(exchangeListingsTable)
+        .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
+        .where(eq(exchangeListingsTable.id, sparkReference.listing_id))
+        .limit(1)
+        .for("update");
+      if (!listing || listing.seller_id !== req.authenticatedUserId
+        || listing.status !== "active"
+        || listing.moderation_status !== "approved"
+        || listing.seller_approval_status !== "approved"
+        || listing.seller_is_suspended) return { kind: "not-found" as const };
+
       const [spark] = await tx.select({
         author_user_id: exchangeSparksTable.author_user_id,
         listing_id: exchangeSparksTable.listing_id,
@@ -357,22 +383,6 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
         || spark.draft_expires_at <= new Date()) {
         return { kind: "not-found" as const };
       }
-      const [listing] = await tx.select({
-        seller_id: exchangeListingsTable.seller_id,
-        status: exchangeListingsTable.status,
-        moderation_status: exchangeListingsTable.moderation_status,
-        seller_approval_status: usersTable.approval_status,
-        seller_is_suspended: usersTable.is_suspended,
-      }).from(exchangeListingsTable)
-        .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
-        .where(eq(exchangeListingsTable.id, spark.listing_id))
-        .limit(1)
-        .for("update");
-      if (!listing || listing.seller_id !== req.authenticatedUserId
-        || listing.status !== "active"
-        || listing.moderation_status !== "approved"
-        || listing.seller_approval_status !== "approved"
-        || listing.seller_is_suspended) return { kind: "not-found" as const };
 
       const [existingVideo] = await tx.select({ id: mediaAssetsTable.id })
         .from(mediaAssetsTable)
@@ -804,6 +814,25 @@ async function streamMediaAsset(req: Request, res: Response, thumbnail: boolean)
   }
   const key = thumbnail ? asset.thumbnail_key : (asset.variant_key ?? asset.original_key);
   if (!key) return res.status(409).json({ error: "Media variant is still processing." });
+  if (!thumbnail && asset.context_kind === "exchange_spark" && asset.media_type === "video") {
+    const claims = verifyExchangeSparkPlaybackGrant(
+      req.headers.cookie,
+      asset.id,
+      process.env["SESSION_SECRET"],
+    );
+    const [viewer] = await db.select({
+      id: usersTable.id,
+      token_version: usersTable.token_version,
+      trust_score: usersTable.trust_score,
+    }).from(usersTable).where(eq(usersTable.id, req.authenticatedUserId!)).limit(1);
+    if (!claims || claims.userId !== req.authenticatedUserId
+      || !viewer || claims.tokenVersion !== viewer.token_version
+      || viewer.trust_score !== null && viewer.trust_score <= -1) {
+      return res.status(404).json({ error: "Media asset not found." });
+    }
+  }
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
   return streamAssetRange(key, req, res, thumbnail ? "image/jpeg" : asset.variant_key ? "video/mp4" : asset.mime_type);
 }
 
