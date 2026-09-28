@@ -326,7 +326,7 @@ export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (
       onPublished(result.status);
       try {
         clearExchangeSparkDraftId();
-      } catch (clearFailure) {
+      } catch {
         setStatusText(`${result.status === "pending" ? "Spark submitted for review." : "Your Exchange Spark is live."} The device could not clear its saved draft reference; it may reappear after reload.`);
       }
       resetForm();

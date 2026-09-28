@@ -78,7 +78,7 @@ if (process.env.ALLOW_MEDIA_CERT_STATE_CREATION !== "1") {
       });
       if (check.status !== 0) throw new Error(`account ${label} state failed the storage-state validator.`);
     }
-    console.log("PASS: two distinct, approved storage states were created and validated in the private output directory.");
+    process.stdout.write("PASS: two distinct, approved storage states were created and validated in the private output directory.\n");
   } catch (error) {
     for (const filename of written) fs.rmSync(filename, { force: true });
     refuse(error instanceof Error ? error.message : "state creation failed.");
