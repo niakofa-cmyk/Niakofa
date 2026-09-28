@@ -999,7 +999,7 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
     const claims = verifyStoryPlaybackGrant(
       readStoryPlaybackCookie(req.headers.cookie),
       mediaId,
-      process.env["SESSION_SECRET"],
+      process.env["SESSION_SECRET"] ?? "",
     );
     const [viewer] = await db.select({
       token_version: usersTable.token_version,
