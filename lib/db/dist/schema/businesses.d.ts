@@ -357,8 +357,8 @@ export declare const insertBusinessMemberSchema: z.ZodObject<{
     status: z.ZodOptional<z.ZodString>;
     business_id: z.ZodInt;
     role: z.ZodOptional<z.ZodString>;
-    spending_cap_cents: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
     accepted_at: z.ZodOptional<z.ZodNullable<z.ZodDate>>;
+    spending_cap_cents: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
 }, {
     out: {};
     in: {};

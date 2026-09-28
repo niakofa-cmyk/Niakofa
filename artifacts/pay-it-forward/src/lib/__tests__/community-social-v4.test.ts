@@ -22,6 +22,7 @@ const storyVisual = fs.readFileSync(path.join(__dirname, "../../components/commu
 const storyRail = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityStoryRail.tsx"), "utf8");
 const storyStyles = fs.readFileSync(path.join(__dirname, "../../components/community/community-story-visual.css"), "utf8");
 const profile = fs.readFileSync(path.join(__dirname, "../../pages/profile.tsx"), "utf8");
+const people = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityPeopleView.tsx"), "utf8");
 const localeUtils = fs.readFileSync(path.join(__dirname, "../locale-utils.ts"), "utf8");
 
 describe("Community Social V4 view boundaries", () => {
@@ -157,6 +158,13 @@ describe("Community Social V4 view boundaries", () => {
       profile,
       /fetch\(`\$\{base\}\/api\/requests\?requester_id=\$\{userId\}&status=completed&limit=6`,\s*\{\s*headers: authHeaders\(\),\s*\}\)/,
     );
+  });
+
+  test("People searches approved users and enters the existing direct-message flow", () => {
+    assert.match(people, /\/api\/messages\/direct\/users\?q=/);
+    assert.match(people, /headers: authHeaders\(\)/);
+    assert.match(people, /\/messages\?mode=direct&recipientId=/);
+    assert.match(people, /Email addresses stay private/);
   });
 
   test("IP locale fallback uses a CORS-capable provider and accepts zero coordinates", () => {
