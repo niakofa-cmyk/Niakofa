@@ -53,7 +53,7 @@ import {
   CommunityStoryShareOverlay,
   CommunityStoryViewerOverlay,
 } from "./CommunityStoryRailOverlays";
-import type { CommunityStory, Effect, StoryAuthor, StoryFrame, StoryMedia } from "./story-rail-types";
+import type { CommunityStory, Effect, StoryAuthor, StoryMedia } from "./story-rail-types";
 import { TEXT_STORY_BACKGROUNDS } from "./story-rail-types";
 
 type Tool = "music" | "stickers" | "text" | "effects" | "mention";
