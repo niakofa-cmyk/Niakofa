@@ -7,6 +7,14 @@ older `niakofa-media` bucket until a retention decision is explicit. Do not
 paste or commit credentials, and do not set `MEDIA_PLATFORM_V21=1` during
 storage or toolchain certification.
 
+Railway's display name is **not** the S3 API bucket name: the real `BUCKET`
+value includes a unique suffix. On the API service, reference the production
+bucket's `BUCKET`, `REGION`, `ENDPOINT`, `ACCESS_KEY_ID`, and
+`SECRET_ACCESS_KEY` variables from the *same* Railway bucket resource.
+Never hardcode the display name as `STORAGE_BUCKET`. If the flag is already on
+before these checks, treat it as an uncertified operational state, not as a
+passed gate; decide separately whether pausing media is safe.
+
 ## Gate A — real storage I/O
 
 Preferred: open a one-off shell for the production API service in Railway. The
@@ -56,6 +64,7 @@ Only after Gates A and B pass:
 | Symptom | Action |
 | --- | --- |
 | `STORAGE_NOT_CONFIGURED` | Fix Railway variable references; do not invent values |
+| `NoSuchBucket` | Check whether `STORAGE_BUCKET` references the production bucket's unique `BUCKET` variable; its display name is not the S3 name |
 | `AccessDenied` or I/O failure | Check bucket policy, credentials, endpoint, and region |
 | `cleanup failed` | Stop activation, inspect the bucket probe namespace, and rerun only after cleanup is confirmed |
 | `/api/healthz` reports local disk | Redeploy after variables are attached and verify the served commit |

@@ -4,37 +4,46 @@ This is the release gate for the universal media foundation. A healthy
 deployment or a configured bucket is not enough to enable `MEDIA_PLATFORM_V21`.
 Record evidence for every checked row from the production runtime.
 
-**Observed 2026-09-28 (not a passed gate):** Production `/api/healthz`
-reported `media_platform_flag=true`, a configured S3-compatible
-`niakofa-production-media` bucket, and credential presence both before and
-after the Sparks deployment. `/api/readiness` reported healthy on the deployed
-commit. The flag was already on; this review did not activate it. There is no
-recorded production PUT/HEAD/DELETE probe, worker FFmpeg/FFprobe execution,
-approved-account media round trip, cleanup verification, or real-device
-evidence. Leave the unchecked gates unchecked. Turning an already-live flag
-off requires an operational decision because it may interrupt existing media
-use; do not interpret its current value as approval to expand the rollout.
+**Observed 2026-09-28:** The owner ran the probes from a one-off shell in the
+production API image on the served revision. The first storage probe failed
+with `NoSuchBucket` and three unsuccessful cleanup attempts: the service used
+the bucket's display name, not its unique S3 API name. After switching
+`STORAGE_BUCKET` and `STORAGE_REGION` to references to the same production
+bucket as the endpoint and credentials, the second probe reported
+`ok=true`, `probe=put-head-delete`, `deleted=true`, and one cleanup attempt.
+The corrected script requires an explicit provider not-found response after
+deletion. The toolchain probe reported `ok=true`, a generated MP4 read by
+FFprobe, and 16×16 dimensions. These are owner-supplied shell results, not a
+completed approved-account or device acceptance pass. The initial failed
+probe could not confirm cleanup in the nonexistent bucket; inspect the probe
+namespace if provider-side ambiguity remains.
+
+Production `/api/healthz` reported `media_platform_flag=true` before these
+tests, and `/api/readiness` was healthy. This work did not activate the flag.
+Turning an already-live flag off requires an operational decision because it
+may interrupt existing media use. Do not treat its value or these two probes
+as approval of the full rollout.
 
 ## Gate 1 — Application and storage configuration
 
 - [ ] CI, typecheck, and tests are green on the intended commit
-- [ ] Deploy verification is green
-- [ ] `/api/healthz` reports the intended S3-compatible backend
-- [ ] `cloud_configured=true`, `credentials_present=true`, and `missing=[]`
-- [ ] `/api/readiness` is healthy, including Redis/BullMQ
+- [x] Deploy verification is green (owner-reported check for the probe revision)
+- [x] `/api/healthz` reports the intended S3-compatible backend
+- [x] `cloud_configured=true`, `credentials_present=true`, and `missing=[]`
+- [x] `/api/readiness` is healthy, including Redis/BullMQ
 - [ ] `MEDIA_PLATFORM_V21` remains unset or false until Gates 2 and 3 pass
 - [ ] `STORAGE_CDN_URL` remains unset for the private bucket/presigned model
 
 ## Gate 2 — Real production object-storage I/O
 
-- [ ] PUT succeeds from the production API runtime/environment
-- [ ] HEAD succeeds for the generated probe key
-- [ ] HEAD `Content-Length` matches the uploaded byte count
-- [ ] DELETE succeeds
-- [ ] A post-delete HEAD returns a provider-specific not-found result; transient or ambiguous errors fail the probe
-- [ ] A failed PUT or HEAD still triggers bounded cleanup attempts
-- [ ] The probe reports cleanup success and leaves no probe object behind
-- [ ] No permanent public/admin storage-probe route was added
+- [x] PUT succeeds from the production API runtime/environment
+- [x] HEAD succeeds for the generated probe key
+- [x] HEAD `Content-Length` matches the uploaded byte count
+- [x] DELETE succeeds
+- [x] A post-delete HEAD returns a provider-specific not-found result; transient or ambiguous errors fail the probe
+- [x] A failed PUT or HEAD still triggers bounded cleanup attempts (first probe: three attempts, no success)
+- [x] The successful probe reports cleanup success and confirms its own object is gone
+- [x] No permanent public/admin storage-probe route was added
 
 Run the probe with:
 
@@ -44,10 +53,10 @@ node artifacts/api-server/scripts/verify-object-storage.mjs
 
 ## Gate 3 — Production media toolchain
 
-- [ ] FFmpeg creates a synthetic media fixture in the production runtime
-- [ ] FFprobe reads the fixture’s video metadata
+- [x] FFmpeg creates a synthetic media fixture in the production runtime
+- [x] FFprobe reads the fixture’s video metadata
 - [ ] Both binaries are available to the actual media worker process
-- [ ] The temporary fixture is removed after success or failure
+- [x] The temporary fixture is removed after success or failure (script `finally` path)
 
 Run the probe with:
 

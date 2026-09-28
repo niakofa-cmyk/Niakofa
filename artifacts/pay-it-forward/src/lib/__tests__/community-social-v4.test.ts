@@ -115,7 +115,7 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(contract, /durableNarrative: "Stories"/);
     assert.match(feed, /Create a Spark/);
     assert.match(storyVisual, /Create a Spark/);
-    assert.match(storyVisual, /Post Spark/);
+    assert.match(storyVisual, /Publish Spark/);
     assert.match(storyVisual, /aria-label="Community Moments"/);
   });
 
