@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import type { enqueueMediaAssetProcessing as EnqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue.js";
 
 const state = { assetStatus: "pending" };
 const order: string[] = [];
@@ -39,14 +40,14 @@ const mockDb = {
       })),
     })),
   })),
-  transaction: jest.fn(async (callback: (transaction: any) => Promise<unknown>) => callback(mockDb)),
+  transaction: jest.fn(async (callback: (transaction: unknown) => Promise<unknown>) => callback(mockDb)),
 };
 
 jest.unstable_mockModule("../lib/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-let enqueueMediaAssetProcessing: typeof import("../lib/mediaProcessingQueue.js")["enqueueMediaAssetProcessing"];
+let enqueueMediaAssetProcessing: typeof EnqueueMediaAssetProcessing;
 
 beforeAll(async () => {
   ({ enqueueMediaAssetProcessing } = await import("../lib/mediaProcessingQueue.js"));

@@ -27,6 +27,8 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
   const moreControllerRef = useRef<AbortController | null>(null);
   const grantAttemptsRef = useRef(0);
   const activeSpark = sparks[activeIndex] ?? null;
+  const activeSparkId = activeSpark?.id;
+  const activeSparkMediaUrl = activeSpark?.media_url;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -109,7 +111,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
   }, [activeSpark?.id]);
 
   useEffect(() => {
-    if (!activeSpark) {
+    if (!activeSparkId || !activeSparkMediaUrl) {
       setPlaybackUrl(null);
       setPlaybackError("");
       return;
@@ -119,7 +121,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
     setPlaybackError("");
     let mediaId: number;
     try {
-      const mediaUrl = new URL(activeSpark.media_url, window.location.origin);
+      const mediaUrl = new URL(activeSparkMediaUrl, window.location.origin);
       const match = mediaUrl.pathname.match(/^\/api\/community\/stories\/media\/(\d+)\/?$/);
       mediaId = Number(match?.[1]);
       if (mediaUrl.origin !== window.location.origin || !Number.isSafeInteger(mediaId) || mediaId < 1) {
@@ -156,7 +158,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
         }
       });
     return () => controller.abort();
-  }, [activeSpark?.id, activeSpark?.media_url, grantRetry]);
+  }, [activeSparkId, activeSparkMediaUrl, grantRetry]);
 
   useEffect(() => {
     if (!activeSpark?.thumbnail_url) {

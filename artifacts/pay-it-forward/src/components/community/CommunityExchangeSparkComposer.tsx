@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
-import { Camera, ImagePlus, Loader2, RefreshCw, Video, X } from "lucide-react";
+import { Camera, ImagePlus, Loader2, Video, X } from "lucide-react";
 import { getExchangeListings } from "@/lib/community-exchange-client";
 import type { ExchangeListing } from "@/lib/community-exchange-types";
 import {

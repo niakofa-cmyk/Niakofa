@@ -258,7 +258,11 @@ export function readExchangeSparkVideoDuration(
     const objectUrl = URL.createObjectURL(file);
     const video = document.createElement("video");
     let settled = false;
-    let metadataTimer: ReturnType<typeof setTimeout> | undefined;
+    const metadataTimer = setTimeout(() => {
+      finish(() => reject(new ExchangeSparkUploadError(
+        "Video details could not be loaded within 10 seconds. Choose another MP4 or WebM video.",
+      )));
+    }, timeoutMs);
     const cleanup = () => {
       if (metadataTimer !== undefined) clearTimeout(metadataTimer);
       signal.removeEventListener("abort", abort);
@@ -298,11 +302,6 @@ export function readExchangeSparkVideoDuration(
     video.addEventListener("loadedmetadata", loaded, { once: true });
     video.addEventListener("error", failed, { once: true });
     signal.addEventListener("abort", abort, { once: true });
-    metadataTimer = setTimeout(() => {
-      finish(() => reject(new ExchangeSparkUploadError(
-        "Video details could not be loaded within 10 seconds. Choose another MP4 or WebM video.",
-      )));
-    }, timeoutMs);
     video.src = objectUrl;
     if (signal.aborted) abort();
   });

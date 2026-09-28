@@ -53,6 +53,7 @@ jest.unstable_mockModule("@workspace/db", () => {
 
   return {
     db: mockDb,
+    communityStoriesTable: { id: "id", status: "status" },
     // NOTE: this list must mirror EVERY table symbol requests.ts (and
     // anything it transitively imports, e.g. lib/community-pool.ts) pulls
     // from "@workspace/db" — under native ESM, a missing key here throws
