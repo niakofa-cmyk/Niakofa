@@ -16,9 +16,9 @@
  * WHAT'S NEW IN THIS VERSION
  * ──────────────────────────────────────────────────────────────────────────
  * 1. Passwords are read from environment variables (SEED_ADMIN_PASSWORD,
- *    SEED_HELPER_PASSWORD, SEED_USER_PASSWORD). Local/dev databases may use
- *    the historical test defaults, but non-local databases fail closed unless
- *    all three passwords are explicitly supplied.
+ *    SEED_HELPER_PASSWORD, SEED_USER_PASSWORD). Every database target must
+ *    receive explicitly supplied values; this script never contains a
+ *    built-in password fallback.
  * 2. A production guard: if DATABASE_URL doesn't look like a local/dev
  *    database, the script refuses to run unless you pass
  *    `--i-know-this-is-production` on the command line. This is the one
@@ -29,10 +29,13 @@
  *
  * USAGE
  * ──────────────────────────────────────────────────────────────────────────
- *   # Local Replit / dev DB (defaults apply, no flag needed):
+ *   # Local Replit / dev DB:
+ *   SEED_ADMIN_PASSWORD="<your own strong password>" \
+ *   SEED_HELPER_PASSWORD="<your own strong password>" \
+ *   SEED_USER_PASSWORD="<your own strong password>" \
  *   pnpm --filter @workspace/scripts run seed-test-accounts
  *
- *   # Railway / any production DB — override passwords AND pass the flag:
+ *   # Railway / any production DB — supply passwords AND pass the flag:
  *   DATABASE_URL="postgres://..." \
  *   SEED_ADMIN_PASSWORD="<your own strong password>" \
  *   SEED_HELPER_PASSWORD="<your own strong password>" \
@@ -75,9 +78,8 @@ if (!looksLocal && !hasProdFlag) {
     "If this really is your production database and you mean to seed or\n" +
     "repair these accounts on it, re-run with:\n\n" +
     "    ... pnpm --filter @workspace/scripts run seed-test-accounts -- --i-know-this-is-production\n\n" +
-    "Before doing that: make sure SEED_ADMIN_PASSWORD (and ideally the\n" +
-    "helper/user passwords too) are set to something you chose yourself,\n" +
-    "not the shared defaults below — those are meant for local testing only.\n"
+    "Before doing that: make sure all three SEED_*_PASSWORD values are set\n" +
+     "to unique passwords you chose yourself.\n"
   );
   process.exit(1);
 }
@@ -86,35 +88,32 @@ const pool = new pg.Pool({ connectionString: DATABASE_URL });
 const db = drizzle(pool);
 
 // ── Passwords ────────────────────────────────────────────────────────────────
-// Local/dev databases may use the historical test defaults. A non-local
-// database must never receive a known fallback password, even when the
-// operator remembered to pass the explicit production confirmation flag.
+// Never provide a fallback here. This script is intentionally manual, and a
+// missing environment value must fail before any database connection or write.
 const adminPasswordInput = process.env.SEED_ADMIN_PASSWORD?.trim();
 const helperPasswordInput = process.env.SEED_HELPER_PASSWORD?.trim();
 const userPasswordInput = process.env.SEED_USER_PASSWORD?.trim();
 
-if (!looksLocal) {
-  const missingPasswords = [
-    ["SEED_ADMIN_PASSWORD", adminPasswordInput],
-    ["SEED_HELPER_PASSWORD", helperPasswordInput],
-    ["SEED_USER_PASSWORD", userPasswordInput],
-  ]
-    .filter(([, value]) => !value)
-    .map(([key]) => key);
+const missingPasswords = [
+  ["SEED_ADMIN_PASSWORD", adminPasswordInput],
+  ["SEED_HELPER_PASSWORD", helperPasswordInput],
+  ["SEED_USER_PASSWORD", userPasswordInput],
+]
+  .filter(([, value]) => !value)
+  .map(([key]) => key);
 
-  if (missingPasswords.length > 0) {
-    console.error(
-      "\nERROR: non-local account seeding requires explicit passwords for every test account.\n" +
-        `Missing: ${missingPasswords.join(", ")}\n` +
-        "Set unique values in the environment and rerun with --i-know-this-is-production.\n",
-    );
-    process.exit(1);
-  }
+if (missingPasswords.length > 0) {
+  console.error(
+    "\nERROR: account seeding requires explicit passwords for every test account.\n" +
+      `Missing: ${missingPasswords.join(", ")}\n` +
+      "Set unique values in the environment and rerun.\n",
+  );
+  process.exit(1);
 }
 
-const ADMIN_PASSWORD = adminPasswordInput || "NiakofaAdmin2026!";
-const HELPER_PASSWORD = helperPasswordInput || "NiakofaHelper2026!";
-const USER_PASSWORD = userPasswordInput || "NiakofaUser2026!";
+const ADMIN_PASSWORD = adminPasswordInput!;
+const HELPER_PASSWORD = helperPasswordInput!;
+const USER_PASSWORD = userPasswordInput!;
 
 // ── Account definitions ───────────────────────────────────────────────────────
 // Each account has separate `insertFields` (first-time creation) and
@@ -313,9 +312,9 @@ async function main() {
   console.log("\n✅ All three test accounts are ready.\n");
   console.log("  Role    Email                    Password source");
   console.log("  ──────  ───────────────────────  ─────────────────────────────");
-  console.log(`  Admin   admin@niakofa.app         ${process.env.SEED_ADMIN_PASSWORD ? "SEED_ADMIN_PASSWORD (env)" : "default (dev only)"}`);
-  console.log(`  Helper  helper@niakofa.app        ${process.env.SEED_HELPER_PASSWORD ? "SEED_HELPER_PASSWORD (env)" : "default (dev only)"}`);
-  console.log(`  User    user@niakofa.app          ${process.env.SEED_USER_PASSWORD ? "SEED_USER_PASSWORD (env)" : "default (dev only)"}\n`);
+  console.log("  Admin   admin@niakofa.app         SEED_ADMIN_PASSWORD (env)");
+  console.log("  Helper  helper@niakofa.app        SEED_HELPER_PASSWORD (env)");
+  console.log("  User    user@niakofa.app          SEED_USER_PASSWORD (env)\n");
   console.log("  ℹ  Admin account:  /admin panel, Nia kill-switch, all management tabs.");
   console.log("  ℹ  Helper account: helper mode, dispatch, navigation, rating flows.");
   console.log("  ℹ  User account:   standard requester flow end-to-end.");

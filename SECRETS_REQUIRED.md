@@ -118,10 +118,11 @@ an in-process scheduler. Development preview may use the explicit fallback.
 Once running, use an explicitly seeded admin account and go to:
 **Admin panel → System tab → Global Ops section → Feature Verification**
 
-The manual test-account seeder requires `SEED_ADMIN_PASSWORD`,
-`SEED_HELPER_PASSWORD`, and `SEED_USER_PASSWORD` for any non-local database.
-It refuses to use the repository's local-only defaults against a public or
-non-local target.
+The manual test-account seeder always requires explicitly supplied
+`SEED_ADMIN_PASSWORD`, `SEED_HELPER_PASSWORD`, and `SEED_USER_PASSWORD`
+values. It has no built-in password fallback, including for local databases.
+Production still requires the explicit confirmation flag and unique operator-
+chosen values before this manual seeder can run.
 
 The Feature Verification grid shows which secrets are configured (✅ green) vs.
 missing (❌ red). The banner above the grid tells you exactly which critical

@@ -85,6 +85,15 @@ async function markReadyIfComplete(mediaAssetId: number, mediaType: string, comp
   }
 }
 
+async function cancelClaimedJob(jobId: number): Promise<void> {
+  await db.update(mediaProcessingJobsTable).set({
+    status: "cancelled",
+    error: "MEDIA_ASSET_DELETED",
+    completed_at: new Date(),
+    updated_at: new Date(),
+  }).where(eq(mediaProcessingJobsTable.id, jobId));
+}
+
 async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
   const { mediaAssetId, jobType } = job.data;
   assertSupportedMediaJob(jobType);
@@ -105,7 +114,10 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
   if (!claimed) return;
 
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
-  if (!asset || asset.status === "deleted") return;
+  if (!asset || asset.status === "deleted") {
+    await cancelClaimedJob(claimed.id);
+    return;
+  }
   let tempDir: string | undefined;
   const generatedKeys: string[] = [];
   try {
@@ -231,6 +243,15 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           throw new Error("MEDIA_ASSET_DELETED");
         }
       }
+    }
+
+    const [currentAsset] = await db.select({ status: mediaAssetsTable.status })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1);
+    if (!currentAsset || currentAsset.status === "deleted") {
+      await cancelClaimedJob(claimed.id);
+      return;
     }
 
     await db.update(mediaProcessingJobsTable).set({

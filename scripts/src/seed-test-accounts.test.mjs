@@ -26,10 +26,35 @@ test("non-local seeding refuses missing explicit passwords", () => {
   assert.equal(result.status, 1);
   assert.match(
     result.stderr,
-    /non-local account seeding requires explicit passwords/,
+    /account seeding requires explicit passwords for every test account/,
   );
   assert.match(
     result.stderr,
     /SEED_ADMIN_PASSWORD, SEED_HELPER_PASSWORD, SEED_USER_PASSWORD/,
+  );
+});
+
+test("local seeding also refuses missing explicit passwords", () => {
+  const env = { ...process.env };
+  delete env.SEED_ADMIN_PASSWORD;
+  delete env.SEED_HELPER_PASSWORD;
+  delete env.SEED_USER_PASSWORD;
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx/esm", script],
+    {
+      encoding: "utf8",
+      env: {
+        ...env,
+        DATABASE_URL: "postgres://localhost:5432/niakofa",
+      },
+    },
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stderr,
+    /account seeding requires explicit passwords for every test account/,
   );
 });

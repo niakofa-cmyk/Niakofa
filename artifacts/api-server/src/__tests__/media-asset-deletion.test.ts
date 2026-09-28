@@ -144,4 +144,12 @@ describe("V21 media asset deletion safety", () => {
     expect(worker).toMatch(/ne\(mediaAssetsTable\.status, "deleted"\)/);
     expect(worker).toMatch(/generatedCleanupSucceeded/);
   });
+
+  it("cancels a claimed job when its asset is tombstoned", async () => {
+    const worker = await fs.readFile(workerPath, "utf8");
+    expect(worker).toMatch(/async function cancelClaimedJob\(jobId: number\)/);
+    expect(worker).toMatch(/status: "cancelled"[\s\S]*error: "MEDIA_ASSET_DELETED"[\s\S]*completed_at: new Date\(\)/);
+    expect(worker).toMatch(/if \(!asset \|\| asset\.status === "deleted"\) \{\s*await cancelClaimedJob\(claimed\.id\)/);
+    expect(worker).toMatch(/if \(!currentAsset \|\| currentAsset\.status === "deleted"\) \{\s*await cancelClaimedJob\(claimed\.id\)/);
+  });
 });
