@@ -68,3 +68,4 @@
 - [TypeScript incremental CI state](typescript-incremental-ci-state.md) — never track tsbuildinfo without its emitted declarations; clean CI can skip required builds and fail with TS6305.
 - [Nia optional-feature gating](nia-context-killswitch.md) — wait for the shared Nia kill-switch before issuing optional context probes.
 - [Community Media fixture reference](niakofa-community-media-fixture.md) — the generated Hub 1 fixture and its privacy-acceptance evidence are documented under docs/reference/.
+- [Production state secret validation](production-state-secret-validation.md) — a secure-form confirmation proves presence, not usable browser state; validate before any production mutation.
