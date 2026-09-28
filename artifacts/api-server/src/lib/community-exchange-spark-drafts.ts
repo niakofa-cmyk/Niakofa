@@ -28,7 +28,7 @@ export function isPublishableExchangeSparkAsset(
   sparkId: number,
 ): boolean {
   return asset.owner_user_id === ownerUserId
-    && asset.context_kind === "story"
+    && asset.context_kind === "exchange_spark"
     && asset.context_id === sparkId
     && asset.media_type === "video"
     && asset.mime_type.startsWith("video/")

@@ -1,9 +1,8 @@
 import { Router, type Response } from "express";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
-  communityStoriesTable,
-  communityStoryMediaTable,
   db,
+  exchangeSparksTable,
   exchangeListingsTable,
   mediaAssetsTable,
   usersTable,
@@ -97,21 +96,19 @@ router.post(
     const userId = req.authenticatedUserId!;
     const listing = await eligibleListing(listingId, userId);
     if (!listing) return res.status(404).json({ error: "An active, approved Exchange listing you own is required." });
-    const [story] = await db.insert(communityStoriesTable).values({
+    const [spark] = await db.insert(exchangeSparksTable).values({
+      listing_id: listing.id,
       author_user_id: userId,
       community_id: listing.community_id,
-      exchange_listing_id: listing.id,
       caption: cleanCaption(parsed.data.caption) || null,
-      audience: "community",
       status: "draft",
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    }).returning({ id: communityStoriesTable.id });
-    if (!story) return res.status(500).json({ error: "Spark draft could not be created." });
+    }).returning({ id: exchangeSparksTable.id });
+    if (!spark) return res.status(500).json({ error: "Spark draft could not be created." });
 
     return res.status(201).json({
-      spark_id: story.id,
+      spark_id: spark.id,
       status: "draft",
-      upload_context: { contextKind: "story", contextId: story.id },
+      upload_context: { contextKind: "exchange_spark", contextId: spark.id },
     });
   },
 );
@@ -128,19 +125,19 @@ router.get(
     const sparkId = positiveId(req.params.sparkId);
     if (!sparkId) return res.status(404).json({ error: "Spark draft not found." });
     const userId = req.authenticatedUserId!;
-    const [story] = await db.select({
-      id: communityStoriesTable.id,
-      status: communityStoriesTable.status,
-      caption: communityStoriesTable.caption,
-      expires_at: communityStoriesTable.expires_at,
-    }).from(communityStoriesTable)
+    const [spark] = await db.select({
+      id: exchangeSparksTable.id,
+      status: exchangeSparksTable.status,
+      caption: exchangeSparksTable.caption,
+      draft_expires_at: exchangeSparksTable.draft_expires_at,
+      created_at: exchangeSparksTable.created_at,
+    }).from(exchangeSparksTable)
       .where(and(
-        eq(communityStoriesTable.id, sparkId),
-        eq(communityStoriesTable.author_user_id, userId),
-        isNotNull(communityStoriesTable.exchange_listing_id),
+        eq(exchangeSparksTable.id, sparkId),
+        eq(exchangeSparksTable.author_user_id, userId),
       ))
       .limit(1);
-    if (!story || story.status !== "draft" || story.expires_at <= new Date()) {
+    if (!spark || spark.status !== "draft" || spark.draft_expires_at <= new Date()) {
       return res.status(404).json({ error: "Spark draft not found." });
     }
 
@@ -154,15 +151,17 @@ router.get(
       failure_reason: mediaAssetsTable.failure_reason,
     }).from(mediaAssetsTable)
       .where(and(
-        eq(mediaAssetsTable.context_kind, "story"),
+        eq(mediaAssetsTable.context_kind, "exchange_spark"),
         eq(mediaAssetsTable.context_id, sparkId),
         eq(mediaAssetsTable.owner_user_id, userId),
       ));
     return res.json({
       spark_id: sparkId,
-      status: story.status,
-      caption: story.caption,
-      expires_at: story.expires_at.toISOString(),
+      status: spark.status,
+      caption: spark.caption,
+      created_at: spark.created_at.toISOString(),
+      expires_at: spark.draft_expires_at.toISOString(),
+      durable: true,
       media_assets: assets.map((asset) => ({
         media_asset_id: asset.id,
         media_type: asset.media_type,
@@ -192,16 +191,16 @@ router.post(
     const userId = req.authenticatedUserId!;
 
     const result = await db.transaction(async (tx) => {
-      const [storyReference] = await tx.select({
-        id: communityStoriesTable.id,
-        exchange_listing_id: communityStoriesTable.exchange_listing_id,
-      }).from(communityStoriesTable)
+      const [sparkReference] = await tx.select({
+        id: exchangeSparksTable.id,
+        listing_id: exchangeSparksTable.listing_id,
+      }).from(exchangeSparksTable)
         .where(and(
-          eq(communityStoriesTable.id, sparkId),
-          eq(communityStoriesTable.author_user_id, userId),
+          eq(exchangeSparksTable.id, sparkId),
+          eq(exchangeSparksTable.author_user_id, userId),
         ))
         .limit(1);
-      if (!storyReference || storyReference.exchange_listing_id === null) return { kind: "not-found" as const };
+      if (!sparkReference) return { kind: "not-found" as const };
 
       const [listing] = await tx.select({
         id: exchangeListingsTable.id,
@@ -210,7 +209,7 @@ router.post(
       }).from(exchangeListingsTable)
         .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
         .where(and(
-          eq(exchangeListingsTable.id, storyReference.exchange_listing_id),
+          eq(exchangeListingsTable.id, sparkReference.listing_id),
           eq(exchangeListingsTable.seller_id, userId),
           eq(exchangeListingsTable.status, "active"),
           eq(exchangeListingsTable.moderation_status, "approved"),
@@ -221,28 +220,30 @@ router.post(
         .for("update");
       if (!listing) return { kind: "conflict" as const, error: "The linked Exchange listing is no longer eligible." };
 
-      const [story] = await tx.select({
-        id: communityStoriesTable.id,
-        author_user_id: communityStoriesTable.author_user_id,
-        community_id: communityStoriesTable.community_id,
-        exchange_listing_id: communityStoriesTable.exchange_listing_id,
-        status: communityStoriesTable.status,
-        caption: communityStoriesTable.caption,
-        expires_at: communityStoriesTable.expires_at,
-      }).from(communityStoriesTable)
+      const [spark] = await tx.select({
+        id: exchangeSparksTable.id,
+        author_user_id: exchangeSparksTable.author_user_id,
+        community_id: exchangeSparksTable.community_id,
+        listing_id: exchangeSparksTable.listing_id,
+        status: exchangeSparksTable.status,
+        caption: exchangeSparksTable.caption,
+        draft_expires_at: exchangeSparksTable.draft_expires_at,
+      }).from(exchangeSparksTable)
         .where(and(
-          eq(communityStoriesTable.id, sparkId),
-          eq(communityStoriesTable.author_user_id, userId),
-          eq(communityStoriesTable.exchange_listing_id, storyReference.exchange_listing_id),
+          eq(exchangeSparksTable.id, sparkId),
+          eq(exchangeSparksTable.author_user_id, userId),
+          eq(exchangeSparksTable.listing_id, sparkReference.listing_id),
         ))
         .limit(1)
         .for("update");
-      if (!story || story.status === "deletion_pending") return { kind: "not-found" as const };
-      if (story.expires_at <= new Date()) return { kind: "conflict" as const, error: "Spark draft has expired." };
+      if (!spark || spark.status === "deletion_pending") return { kind: "not-found" as const };
+      if (spark.status === "draft" && spark.draft_expires_at <= new Date()) {
+        return { kind: "conflict" as const, error: "Spark draft has expired." };
+      }
 
       const assets = await tx.select().from(mediaAssetsTable)
         .where(and(
-          eq(mediaAssetsTable.context_kind, "story"),
+          eq(mediaAssetsTable.context_kind, "exchange_spark"),
           eq(mediaAssetsTable.context_id, sparkId),
         ))
         .for("update");
@@ -250,43 +251,22 @@ router.post(
       if (!asset) {
         return { kind: "conflict" as const, error: "Exactly one ready, validated video asset under 60 seconds is required." };
       }
-      const caption = cleanCaption(parsed.data.caption ?? story.caption) || null;
+      const caption = cleanCaption(parsed.data.caption ?? spark.caption) || null;
       const moderation = moderatePostText(caption ?? "");
 
-      const existingMedia = await tx.select({
-        id: communityStoryMediaTable.id,
-        media_asset_id: communityStoryMediaTable.media_asset_id,
-      }).from(communityStoryMediaTable)
-        .where(eq(communityStoryMediaTable.story_id, sparkId))
-        .for("update");
-
-      if (story.status !== "draft") {
-        if ((story.status === "published" || story.status === "pending")
-          && existingMedia.length === 1
-          && existingMedia[0]?.media_asset_id === asset.id) {
-          return { kind: "published" as const, status: story.status, mediaAssetId: asset.id };
+      if (spark.status !== "draft") {
+        if (spark.status === "published" || spark.status === "pending") {
+          return { kind: "published" as const, status: spark.status, mediaAssetId: asset.id };
         }
         return { kind: "conflict" as const, error: "Spark draft cannot be published in its current state." };
       }
-      if (existingMedia.length) return { kind: "conflict" as const, error: "Spark draft already has attached media." };
 
-      await tx.insert(communityStoryMediaTable).values({
-        story_id: sparkId,
-        media_asset_id: asset.id,
-        storage_key: asset.original_key,
-        media_type: "video",
-        mime_type: asset.mime_type,
-        byte_size: asset.byte_size,
-        duration_ms: asset.duration_ms,
-        width: asset.width,
-        height: asset.height,
-      });
-      await tx.update(communityStoriesTable).set({
+      await tx.update(exchangeSparksTable).set({
         caption,
         community_id: listing.community_id,
-        audience: "community",
         status: moderation.status === "approved" ? "published" : "pending",
-      }).where(eq(communityStoriesTable.id, sparkId));
+        updated_at: new Date(),
+      }).where(eq(exchangeSparksTable.id, sparkId));
       return {
         kind: "published" as const,
         status: moderation.status === "approved" ? "published" : "pending",
@@ -301,6 +281,26 @@ router.post(
       status: result.status,
       media_asset_id: result.mediaAssetId,
     });
+  },
+);
+
+router.delete(
+  "/community/exchange/sparks/:sparkId",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  async (req, res) => {
+    const sparkId = positiveId(req.params.sparkId);
+    if (!sparkId) return res.status(404).json({ error: "Spark not found." });
+    const [spark] = await db.update(exchangeSparksTable)
+      .set({ status: "deletion_pending", updated_at: new Date() })
+      .where(and(
+        eq(exchangeSparksTable.id, sparkId),
+        eq(exchangeSparksTable.author_user_id, req.authenticatedUserId!),
+      ))
+      .returning({ id: exchangeSparksTable.id });
+    if (!spark) return res.status(404).json({ error: "Spark not found." });
+    return res.status(202).json({ spark_id: sparkId, status: "deletion_pending" });
   },
 );
 

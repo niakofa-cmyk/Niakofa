@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { STORY_MEDIA_LIMITS, validateStoryMedia } from "@/lib/storyMediaPipeline";
+import { EXCHANGE_SPARK_MAX_BYTES } from "@/lib/exchange-spark-upload-rules";
 
 export function validateStoryFile(file: File): string | null {
   const result = validateStoryMedia(file);
@@ -12,14 +13,21 @@ export function validateStoryFileCount(files: File[]): string | null {
     : null;
 }
 
-export function normalizeStoryFiles(files: File[]) {
+export function normalizeStoryFiles(files: File[], options: { allowExchangeVideo?: boolean } = {}) {
   const errors: string[] = [];
   const accepted: File[] = [];
   const countError = validateStoryFileCount(files);
   if (countError) errors.push(countError);
   for (const file of files) {
     const error = validateStoryFile(file);
-    if (error) errors.push(`${file.name}: ${error}`);
+    const exchangeVideo = options.allowExchangeVideo
+      && (file.type === "video/mp4" || file.type === "video/webm")
+      && file.size > 0 && file.size <= EXCHANGE_SPARK_MAX_BYTES;
+    if (error && !exchangeVideo) {
+      errors.push(`${file.name}: ${options.allowExchangeVideo && file.type.startsWith("video/")
+        ? "Choose an MP4 or WebM video no larger than 64 MiB for Exchange, or a smaller clip for Moments."
+        : error}`);
+    }
     else accepted.push(file);
   }
   return { files: accepted.slice(0, STORY_MEDIA_LIMITS.maxFiles), errors };

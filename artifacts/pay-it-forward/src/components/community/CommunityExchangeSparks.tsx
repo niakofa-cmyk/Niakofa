@@ -28,6 +28,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
   const grantAttemptsRef = useRef(0);
   const activeSpark = sparks[activeIndex] ?? null;
   const activeSparkId = activeSpark?.id;
+  const activeSparkKey = activeSpark ? `${activeSpark.durable ? "durable" : "legacy"}:${activeSpark.id}` : null;
   const activeSparkMediaUrl = activeSpark?.media_url;
 
   useEffect(() => {
@@ -108,7 +109,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
   useEffect(() => {
     grantAttemptsRef.current = 0;
     setPlaybackError("");
-  }, [activeSpark?.id]);
+  }, [activeSparkKey]);
 
   useEffect(() => {
     if (!activeSparkId || !activeSparkMediaUrl) {
@@ -120,18 +121,21 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
     setPlaybackUrl(null);
     setPlaybackError("");
     let mediaId: number;
+    let grantPath: string;
     try {
       const mediaUrl = new URL(activeSparkMediaUrl, window.location.origin);
-      const match = mediaUrl.pathname.match(/^\/api\/community\/stories\/media\/(\d+)\/?$/);
+      const match = mediaUrl.pathname.match(/^\/api\/(?:community\/stories\/media|media-assets)\/(\d+)\/?$/);
       mediaId = Number(match?.[1]);
-      if (mediaUrl.origin !== window.location.origin || !Number.isSafeInteger(mediaId) || mediaId < 1) {
+      if (mediaUrl.origin !== window.location.origin || mediaUrl.search || mediaUrl.hash
+        || mediaUrl.username || mediaUrl.password || !Number.isSafeInteger(mediaId) || mediaId < 1) {
         throw new Error("This Spark does not have a valid authenticated media reference.");
       }
+      grantPath = `${mediaUrl.pathname.replace(/\/$/, "")}/playback-grant`;
     } catch (reason) {
       setPlaybackError(reason instanceof Error ? reason.message : "This Spark does not have a valid media reference.");
       return () => controller.abort();
     }
-    void fetch(`/api/community/stories/media/${mediaId}/playback-grant`, {
+    void fetch(grantPath, {
       method: "POST",
       headers: authHeaders(),
       credentials: "same-origin",
@@ -158,7 +162,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
         }
       });
     return () => controller.abort();
-  }, [activeSparkId, activeSparkMediaUrl, grantRetry]);
+  }, [activeSparkKey, activeSparkId, activeSparkMediaUrl, grantRetry]);
 
   useEffect(() => {
     if (!activeSpark?.thumbnail_url) {
@@ -171,11 +175,15 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
     let thumbnailUrl: URL;
     try {
       thumbnailUrl = new URL(activeSpark.thumbnail_url, window.location.origin);
+      const oldStoryThumbnail = /^\/api\/community\/stories\/media\/\d+\/?$/.test(thumbnailUrl.pathname)
+        && Array.from(thumbnailUrl.searchParams.keys()).every((key) => key === "thumbnail")
+        && thumbnailUrl.searchParams.get("thumbnail") === "true";
+      const durableThumbnail = /^\/api\/media-assets\/\d+\/thumbnail\/?$/.test(thumbnailUrl.pathname)
+        && !thumbnailUrl.search;
       if (
         thumbnailUrl.origin !== window.location.origin
-        || !/^\/api\/community\/stories\/media\/\d+\/?$/.test(thumbnailUrl.pathname)
-        || Array.from(thumbnailUrl.searchParams.keys()).some((key) => key !== "thumbnail")
-        || (thumbnailUrl.searchParams.has("thumbnail") && thumbnailUrl.searchParams.get("thumbnail") !== "true")
+        || thumbnailUrl.hash || thumbnailUrl.username || thumbnailUrl.password
+        || !(oldStoryThumbnail || durableThumbnail)
       ) {
         throw new Error("This Spark preview is not a same-origin media URL.");
       }
@@ -200,7 +208,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [activeSpark?.id, activeSpark?.thumbnail_url]);
+  }, [activeSparkKey, activeSpark?.thumbnail_url]);
 
   const retryFeed = () => setFeedRetry((value) => value + 1);
   const handlePlaybackError = () => {
@@ -272,7 +280,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
           <div ref={cardListRef} className="mx-auto flex h-[min(72dvh,680px)] max-h-[680px] max-w-md snap-y snap-mandatory flex-col overflow-y-auto bg-black sm:my-5 sm:rounded-2xl" aria-label="Swipe or scroll through Exchange videos">
             {sparks.map((spark, index) => (
               <article
-                key={spark.id}
+                 key={`${spark.durable ? "durable" : "legacy"}:${spark.id}`}
                 ref={(element) => {
                   if (element) cardRefs.current.set(index, element);
                   else cardRefs.current.delete(index);
@@ -283,7 +291,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
               >
                 {index === activeIndex && activeThumbnailUrl && <img src={activeThumbnailUrl} alt="" className={`absolute inset-0 h-full w-full object-cover transition-opacity ${playbackUrl ? "opacity-0" : "opacity-100"}`} />}
                 {index === activeIndex && playbackUrl ? (
-                  <video key={spark.id} src={playbackUrl} autoPlay muted playsInline controls preload="metadata" onError={handlePlaybackError} className="relative z-10 h-full w-full object-contain" aria-label={spark.caption || "Exchange Spark video"} />
+                   <video key={`${spark.durable ? "durable" : "legacy"}:${spark.id}`} src={playbackUrl} autoPlay muted playsInline controls preload="metadata" onError={handlePlaybackError} className="relative z-10 h-full w-full object-contain" aria-label={spark.caption || "Exchange Spark video"} />
                 ) : (
                   <div className="relative z-10 flex h-full w-full items-center justify-center bg-gradient-to-b from-black/10 via-transparent to-black/65">
                     {!activeThumbnailUrl && <span className="rounded-full bg-black/45 p-4 text-white"><Play className="h-8 w-8" aria-hidden="true" /></span>}
@@ -291,6 +299,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
                 )}
                 {index === activeIndex && playbackError && <div className="absolute left-4 right-4 top-4 z-30 rounded-xl border border-white/20 bg-black/80 p-3 text-sm text-white" role="status"><p>{playbackError}</p>{playbackError !== "Refreshing secure playback…" && <button type="button" onClick={retryPlayback} className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 font-bold text-primary-foreground focus:outline-none focus:ring-2 focus:ring-white"><RefreshCw className="h-4 w-4" aria-hidden="true" /> Retry video</button>}</div>}
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-5 pt-24 text-white">
+                   <p className="mb-1 text-xs font-black">{spark.author_name || "A neighbor"}</p>
                   <p className="flex items-center gap-1.5 text-xs font-bold text-white/80"><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{spark.neighborhood}</p>
                   {spark.caption && <p className="mt-2 text-sm font-semibold leading-relaxed">{spark.caption}</p>}
                 </div>

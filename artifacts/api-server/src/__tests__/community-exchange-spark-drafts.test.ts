@@ -11,7 +11,7 @@ const indexPath = new URL("../routes/index.ts", import.meta.url);
 
 const readyAsset = {
   owner_user_id: 7,
-  context_kind: "story",
+  context_kind: "exchange_spark",
   context_id: 51,
   media_type: "video",
   mime_type: "video/mp4",
@@ -69,9 +69,11 @@ describe("direct-binary Exchange Spark draft contract", () => {
   });
 
   it("registers owner draft, status, and transactional idempotent publish endpoints", async () => {
-    const [route, index] = await Promise.all([
+    const [route, index, mediaRoute, storage] = await Promise.all([
       fs.readFile(routePath, "utf8"),
       fs.readFile(indexPath, "utf8"),
+      fs.readFile(new URL("../routes/media-assets-v21.ts", import.meta.url), "utf8"),
+      fs.readFile(new URL("../lib/storage.ts", import.meta.url), "utf8"),
     ]);
 
     expect(index).toMatch(/communityExchangeSparkDraftsRouter/);
@@ -82,9 +84,15 @@ describe("direct-binary Exchange Spark draft contract", () => {
     expect(route).toMatch(/getStorageReadiness\(\)/);
     expect(route).toMatch(/storage\.cloud_configured && storage\.credentials_present/);
     expect(route).toMatch(/mediaProcessingQueue/);
-    expect(route).toMatch(/tx\.insert\(communityStoryMediaTable\)/);
+    expect(route).toMatch(/tx\.update\(exchangeSparksTable\)\.set/);
     expect(route).toMatch(/singlePublishableExchangeSparkAsset\(assets, userId, sparkId\)/);
-    expect(route).toMatch(/story\.status === "published" \|\| story\.status === "pending"/);
+    expect(route).toMatch(/spark\.status === "published" \|\| spark\.status === "pending"/);
     expect(route).toMatch(/status: "draft"/);
+    expect(route).toMatch(/contextKind: "exchange_spark"/);
+    expect(mediaRoute).toMatch(/url: `\/api\/media-assets\/\$\{asset\.id\}\/upload`/);
+    expect(mediaRoute).toMatch(/req\.body\.length !== asset\.byte_size/);
+    expect(mediaRoute).toMatch(/req\.body\.length > MAX_MEDIA_BYTES/);
+    expect(mediaRoute).not.toMatch(/getAssetUploadUrl|expires_in_seconds: 900/);
+    expect(storage).not.toMatch(/export async function getAssetUploadUrl/);
   });
 });

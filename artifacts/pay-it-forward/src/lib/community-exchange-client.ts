@@ -59,10 +59,13 @@ export interface ExchangeSpark {
   listing_id: number;
   caption: string | null;
   created_at: string;
-  expires_at: string;
+  expires_at: string | null;
   media_url: string;
   thumbnail_url: string | null;
   neighborhood: string;
+  durable?: boolean;
+  author_name?: string;
+  author_avatar_url?: string | null;
 }
 
 export interface ExchangeSparksResponse {

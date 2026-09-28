@@ -50,6 +50,7 @@ jest.unstable_mockModule("@workspace/db", () => {
 
   return {
     db: mockDb,
+    exchangeSparksTable: { id: "id", author_user_id: "author_user_id", status: "status", draft_expires_at: "draft_expires_at" },
     communityStoriesTable: { id: "id", status: "status" },
     requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id", lat: "lat", lng: "lng", urgency: "urgency", category: "category", title: "title" },
     reportsTable: { id: "id", type: "type", reported_request_id: "reported_request_id", reporter_id: "reporter_id", status: "status", created_at: "created_at" },

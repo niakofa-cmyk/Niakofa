@@ -48,6 +48,7 @@ const mockDb: Record<string, jest.Mock> = {
 // ── Module mocks (must be registered BEFORE any dynamic import) ───────────────
 jest.unstable_mockModule("@workspace/db", () => ({
   db: mockDb,
+  exchangeSparksTable: { id: "id", author_user_id: "author_user_id", status: "status", draft_expires_at: "draft_expires_at" },
   requestsTable:           { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id" },
   usersTable:              { id: "id", name: "name", email: "email", is_admin: "is_admin", benevolence_wallet: "benevolence_wallet", active: "active" },
   transactionsTable:       { id: "id", user_id: "user_id", amount: "amount", type: "type", description: "description", created_at: "created_at" },

@@ -140,7 +140,7 @@ export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (
     try {
       setStatusText("Creating your Exchange Spark draft…");
       const draft = await createExchangeSparkDraft(Number(listingId), caption.trim(), controller.signal);
-      if (draft.upload_context.contextKind !== "story" || draft.upload_context.contextId !== draft.spark_id) {
+      if (draft.upload_context.contextKind !== "exchange_spark" || draft.upload_context.contextId !== draft.spark_id) {
         throw new Error("The server returned an invalid Spark upload context.");
       }
       setStatusText("Preparing secure video upload…");
@@ -206,6 +206,15 @@ export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (
     }
   };
 
+  const cancelUpload = () => {
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    busyRef.current = false;
+    setBusy(false);
+    setProgress(0);
+    setStatusText("Upload cancelled. You can try again with the same video.");
+  };
+
   return (
     <section className="overflow-hidden rounded-2xl border border-primary/25 bg-card" aria-label="Create an Exchange Spark">
       <div className="flex flex-wrap items-center justify-between gap-3 p-4">
@@ -249,6 +258,7 @@ export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (
             <div className="space-y-2" role="status" aria-live="polite">
               <div className="flex items-center justify-between gap-3 text-xs"><span className="inline-flex items-center gap-2 font-bold"><Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />{statusText}</span>{progress > 0 && <span>{progress}% · try {uploadAttempt}/{EXCHANGE_SPARK_UPLOAD_ATTEMPTS}</span>}</div>
               {progress > 0 && <progress className="h-2 w-full accent-primary" value={progress} max={100} aria-label="Video upload progress" />}
+              <button type="button" onClick={cancelUpload} className="min-h-10 rounded-lg border border-border px-3 text-xs font-bold">Cancel upload</button>
             </div>
           )}
           {statusText && !busy && <p role="status" className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">{statusText}</p>}

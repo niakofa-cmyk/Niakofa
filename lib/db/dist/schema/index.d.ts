@@ -71,4 +71,5 @@ export * from "./circle-recordings";
 export * from "./media-assets";
 export * from "./community-media-saves";
 export * from "./exchange";
+export * from "./exchange-sparks";
 //# sourceMappingURL=index.d.ts.map

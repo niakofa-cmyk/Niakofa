@@ -1,6 +1,7 @@
 import {
   communityStoriesTable,
   db,
+  exchangeSparksTable,
   mediaAssetsTable,
   mediaProcessingJobsTable,
   type MediaJobType,
@@ -72,6 +73,17 @@ export async function enqueueMediaAssetProcessing(
         .limit(1)
         .for("share");
       if (!story || story.status === "deletion_pending") return false;
+      return transitionAsset(tx);
+    });
+    if (!canTransition) return false;
+  } else if (assetContext.context_kind === "exchange_spark") {
+    const canTransition = await database.transaction(async (tx) => {
+      const [spark] = await tx.select({ status: exchangeSparksTable.status })
+        .from(exchangeSparksTable)
+        .where(eq(exchangeSparksTable.id, assetContext.context_id))
+        .limit(1)
+        .for("share");
+      if (!spark || spark.status === "deletion_pending") return false;
       return transitionAsset(tx);
     });
     if (!canTransition) return false;

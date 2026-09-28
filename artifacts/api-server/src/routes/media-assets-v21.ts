@@ -8,6 +8,7 @@ import {
   directConversationsTable,
   diasporaHubsTable,
   exchangeListingsTable,
+  exchangeSparksTable,
   hubMembershipsTable,
   mediaAssetsTable,
   requestsTable,
@@ -15,7 +16,7 @@ import {
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { getAssetBuffer, getAssetInfo, getAssetUploadUrl, putAsset, streamAssetRange } from "../lib/storage";
+import { getAssetBuffer, getAssetInfo, putAsset, streamAssetRange } from "../lib/storage";
 import { isMediaPlatformV21Enabled } from "../lib/media-platform";
 import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
 import { mediaProcessingQueue } from "../lib/queue";
@@ -23,6 +24,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
 import { logger } from "../lib/logger";
+import { issueExchangeSparkPlaybackGrant, verifyExchangeSparkPlaybackGrant } from "../lib/exchange-spark-playback";
 import {
   canReadCommunityStoryAudience,
   canReadExchangeLinkedStory,
@@ -31,7 +33,7 @@ import {
 } from "../lib/community-story-policy";
 
 const router = Router();
-const CONTEXT_KINDS = new Set(["story", "direct", "request", "hub"]);
+const CONTEXT_KINDS = new Set(["story", "exchange_spark", "direct", "request", "hub"]);
 
 function positiveId(value: unknown): number | null {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -140,6 +142,41 @@ async function canReadContext(userId: number, contextKind: string, contextId: nu
     );
   }
 
+  if (contextKind === "exchange_spark") {
+    const [spark] = await db.select({
+      author_user_id: exchangeSparksTable.author_user_id,
+      community_id: exchangeSparksTable.community_id,
+      status: exchangeSparksTable.status,
+      listing_seller_id: exchangeListingsTable.seller_id,
+      listing_status: exchangeListingsTable.status,
+      listing_moderation_status: exchangeListingsTable.moderation_status,
+      seller_approval_status: usersTable.approval_status,
+      seller_is_suspended: usersTable.is_suspended,
+    }).from(exchangeSparksTable)
+      .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangeSparksTable.listing_id))
+      .innerJoin(usersTable, eq(usersTable.id, exchangeSparksTable.author_user_id))
+      .where(eq(exchangeSparksTable.id, contextId))
+      .limit(1);
+    if (!spark || spark.status !== "published"
+      || spark.listing_status !== "active"
+      || spark.listing_moderation_status !== "approved"
+      || spark.listing_seller_id !== spark.author_user_id
+      || spark.seller_approval_status !== "approved"
+      || spark.seller_is_suspended) return false;
+    if (spark.author_user_id === userId) return true;
+    const [viewer] = await db.select({ community_id: usersTable.community_id })
+      .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (viewer?.community_id !== spark.community_id) return false;
+    const blocks = await db.select({ blocker_id: directMessageBlocksTable.blocker_id })
+      .from(directMessageBlocksTable)
+      .where(or(
+        and(eq(directMessageBlocksTable.blocker_id, userId), eq(directMessageBlocksTable.blocked_id, spark.author_user_id)),
+        and(eq(directMessageBlocksTable.blocker_id, spark.author_user_id), eq(directMessageBlocksTable.blocked_id, userId)),
+      ))
+      .limit(1);
+    return blocks.length === 0;
+  }
+
   if (contextKind === "hub") {
     const [membership] = await db.select({ id: hubMembershipsTable.id })
       .from(hubMembershipsTable)
@@ -213,6 +250,32 @@ async function canWriteContext(userId: number, contextKind: string, contextId: n
       sellerIsSuspended: listing?.seller_is_suspended ?? null,
     });
   }
+  if (contextKind === "exchange_spark") {
+    const [spark] = await db.select({
+      author_user_id: exchangeSparksTable.author_user_id,
+      status: exchangeSparksTable.status,
+      draft_expires_at: exchangeSparksTable.draft_expires_at,
+      listing_id: exchangeSparksTable.listing_id,
+      listing_seller_id: exchangeListingsTable.seller_id,
+      listing_status: exchangeListingsTable.status,
+      listing_moderation_status: exchangeListingsTable.moderation_status,
+      seller_approval_status: usersTable.approval_status,
+      seller_is_suspended: usersTable.is_suspended,
+    }).from(exchangeSparksTable)
+      .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangeSparksTable.listing_id))
+      .innerJoin(usersTable, eq(usersTable.id, exchangeSparksTable.author_user_id))
+      .where(eq(exchangeSparksTable.id, contextId))
+      .limit(1);
+    return Boolean(spark
+      && spark.author_user_id === userId
+      && spark.status === "draft"
+      && spark.draft_expires_at > new Date()
+      && spark.listing_seller_id === userId
+      && spark.listing_status === "active"
+      && spark.listing_moderation_status === "approved"
+      && spark.seller_approval_status === "approved"
+      && !spark.seller_is_suspended);
+  }
   return canReadContext(userId, contextKind, contextId);
 }
 
@@ -224,7 +287,7 @@ function disabled(res: Response) {
 }
 
 const uploadRequestSchema = z.object({
-  contextKind: z.enum(["story", "direct", "request", "hub"]),
+  contextKind: z.enum(["story", "exchange_spark", "direct", "request", "hub"]),
   contextId: z.number().int().positive(),
   mediaType: z.enum(["photo", "video", "audio", "document"]),
   mimeType: z.string().trim().min(3).max(120),
@@ -264,7 +327,63 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
     byte_size: input.byteSize,
   };
   let asset: { id: number } | undefined;
-  if (input.contextKind === "story" && input.mediaType === "video") {
+  if (input.contextKind === "exchange_spark" && input.mediaType === "video") {
+    const result = await db.transaction(async (tx) => {
+      const [spark] = await tx.select({
+        author_user_id: exchangeSparksTable.author_user_id,
+        listing_id: exchangeSparksTable.listing_id,
+        status: exchangeSparksTable.status,
+        draft_expires_at: exchangeSparksTable.draft_expires_at,
+      }).from(exchangeSparksTable)
+        .where(eq(exchangeSparksTable.id, input.contextId))
+        .limit(1)
+        .for("update");
+      if (!spark || spark.author_user_id !== req.authenticatedUserId || spark.status !== "draft"
+        || spark.draft_expires_at <= new Date()) {
+        return { kind: "not-found" as const };
+      }
+      const [listing] = await tx.select({
+        seller_id: exchangeListingsTable.seller_id,
+        status: exchangeListingsTable.status,
+        moderation_status: exchangeListingsTable.moderation_status,
+        seller_approval_status: usersTable.approval_status,
+        seller_is_suspended: usersTable.is_suspended,
+      }).from(exchangeListingsTable)
+        .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
+        .where(eq(exchangeListingsTable.id, spark.listing_id))
+        .limit(1)
+        .for("update");
+      if (!listing || listing.seller_id !== req.authenticatedUserId
+        || listing.status !== "active"
+        || listing.moderation_status !== "approved"
+        || listing.seller_approval_status !== "approved"
+        || listing.seller_is_suspended) return { kind: "not-found" as const };
+
+      const [existingVideo] = await tx.select({ id: mediaAssetsTable.id })
+        .from(mediaAssetsTable)
+        .where(and(
+          eq(mediaAssetsTable.context_kind, "exchange_spark"),
+          eq(mediaAssetsTable.context_id, input.contextId),
+          eq(mediaAssetsTable.media_type, "video"),
+          ne(mediaAssetsTable.status, "deleted"),
+        ))
+        .limit(1)
+        .for("update");
+      if (existingVideo) return { kind: "duplicate" as const };
+      const [created] = await tx.insert(mediaAssetsTable).values(values)
+        .returning({ id: mediaAssetsTable.id });
+      return created ? { kind: "created" as const, asset: created } : { kind: "failed" as const };
+    });
+    if (result.kind === "not-found") return res.status(404).json({ error: "Media context not found." });
+    if (result.kind === "duplicate") {
+      return res.status(409).json({
+        error: "This Exchange Spark draft already has a video upload session.",
+        error_code: "SPARK_VIDEO_SESSION_EXISTS",
+      });
+    }
+    if (result.kind === "failed") return res.status(500).json({ error: "Media upload could not be initialized." });
+    asset = result.asset;
+  } else if (input.contextKind === "story" && input.mediaType === "video") {
     const result = await db.transaction(async (tx) => {
       const [story] = await tx.select({
         author_user_id: communityStoriesTable.author_user_id,
@@ -343,22 +462,16 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
   }
   if (!asset) return res.status(500).json({ error: "Media upload could not be initialized." });
 
-  try {
-    const signedUrl = await getAssetUploadUrl(key, input.mimeType);
-    return res.status(201).json({
-      media_asset_id: asset.id,
-      upload: {
-        method: "PUT",
-        url: signedUrl ?? `/api/media-assets/${asset.id}/upload`,
-        headers: { "Content-Type": input.mimeType },
-        expires_in_seconds: signedUrl ? 900 : null,
-      },
-      complete_url: `/api/media-assets/${asset.id}/complete`,
-    });
-  } catch {
-    await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
-    return res.status(503).json({ error: "Object storage is not ready.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
-  }
+  return res.status(201).json({
+    media_asset_id: asset.id,
+    upload: {
+      method: "PUT",
+      url: `/api/media-assets/${asset.id}/upload`,
+      headers: { "Content-Type": input.mimeType },
+      expires_in_seconds: null,
+    },
+    complete_url: `/api/media-assets/${asset.id}/complete`,
+  });
 });
 
 router.put("/media-assets/:id/upload", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
@@ -375,8 +488,15 @@ router.put("/media-assets/:id/upload", requireAuth, requireApproved, generalApiL
   if (!isAllowedMediaSize(asset.byte_size) || req.body.length > MAX_MEDIA_BYTES) {
     return res.status(413).json({ error: "Media upload exceeds the 64 MiB limit.", error_code: "MEDIA_SIZE_INVALID" });
   }
+  if (req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !== asset.mime_type.toLowerCase()) {
+    return res.status(415).json({ error: "Upload content type does not match the declared media type.", error_code: "MEDIA_TYPE_INVALID" });
+  }
   if (req.body.length !== asset.byte_size) return res.status(409).json({ error: "Uploaded byte size does not match the declared size." });
-  await putAsset(asset.original_key, req.body, asset.mime_type);
+  try {
+    await putAsset(asset.original_key, req.body, asset.mime_type);
+  } catch {
+    return res.status(503).json({ error: "Media storage is unavailable. Retry the upload.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
+  }
   return res.status(204).send();
 });
 
@@ -461,6 +581,71 @@ router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalA
       request_id: requestId,
     });
   }
+});
+
+router.post("/media-assets/:id/playback-grant", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId(req.params.id);
+  if (!assetId) return res.status(404).json({ error: "Spark video not found." });
+  const [asset] = await db.select().from(mediaAssetsTable)
+    .where(eq(mediaAssetsTable.id, assetId)).limit(1);
+  if (!asset || asset.context_kind !== "exchange_spark" || asset.media_type !== "video"
+    || asset.status !== "ready" || !asset.variant_key
+    || !(await canReadContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
+    return res.status(404).json({ error: "Spark video not found." });
+  }
+  const [viewer] = await db.select({
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score,
+  }).from(usersTable).where(eq(usersTable.id, req.authenticatedUserId!)).limit(1);
+  if (!viewer || viewer.approval_status !== "approved" || viewer.is_suspended
+    || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Spark video not found." });
+  }
+  if (req.authenticatedTokenVersion !== viewer.token_version) {
+    return res.status(401).json({ error: "Session expired — please log in again.", error_code: "TOKEN_REVOKED" });
+  }
+  const secret = process.env["SESSION_SECRET"];
+  if (!secret || secret.length < 32) {
+    return res.status(503).json({ error: "Secure Spark playback is temporarily unavailable." });
+  }
+  const grant = issueExchangeSparkPlaybackGrant(assetId, req.authenticatedUserId!, viewer.token_version, secret, req.secure || req.protocol === "https");
+  res.setHeader("Set-Cookie", grant.cookie);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
+  return res.json({ playback_url: `/api/media-assets/${assetId}/play`, expires_at: new Date(grant.expiresAt).toISOString() });
+});
+
+router.get("/media-assets/:id/play", async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId(req.params.id);
+  const claims = assetId
+    ? verifyExchangeSparkPlaybackGrant(req.headers.cookie, assetId, process.env["SESSION_SECRET"])
+    : null;
+  if (!assetId || !claims) return res.status(404).json({ error: "Spark video not found." });
+  const [viewer] = await db.select({
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score,
+  }).from(usersTable).where(eq(usersTable.id, claims.userId)).limit(1);
+  if (!viewer || viewer.token_version !== claims.tokenVersion
+    || viewer.approval_status !== "approved" || viewer.is_suspended
+    || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Spark video not found." });
+  }
+  const [asset] = await db.select().from(mediaAssetsTable)
+    .where(eq(mediaAssetsTable.id, assetId)).limit(1);
+  if (!asset || asset.context_kind !== "exchange_spark" || asset.media_type !== "video"
+    || asset.status !== "ready" || !asset.variant_key
+    || !(await canReadContext(claims.userId, asset.context_kind, asset.context_id))) {
+    return res.status(404).json({ error: "Spark video not found." });
+  }
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
+  return streamAssetRange(asset.variant_key, req, res, "video/mp4");
 });
 
 router.get("/media-assets/shared", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {

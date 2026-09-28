@@ -47,3 +47,4 @@ export {
   exchangePickupRequestsTable,
   exchangeDigestDeliveriesTable,
 } from "./schema/exchange";
+export { exchangeSparksTable } from "./schema/exchange-sparks";

@@ -1,6 +1,6 @@
 import {
   AtSign,
-  Music2,
+  Volume2,
   Sparkles,
   Sticker,
   Trash2,
@@ -21,6 +21,16 @@ import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { getExchangeListings } from "@/lib/community-exchange-client";
 import type { ExchangeListing } from "@/lib/community-exchange-types";
 import {
+  completeSparkUpload,
+  createExchangeSparkDraft,
+  createSparkUploadSession,
+  publishExchangeSparkDraft,
+  putRawSparkFile,
+  readExchangeSparkVideoDuration,
+  waitForExchangeSparkMediaReady,
+} from "@/lib/exchange-spark-upload-client";
+import { validateExchangeSparkVideo } from "@/lib/exchange-spark-upload-rules";
+import {
   getStoryMetrics,
   reactToStory,
   recordStoryView,
@@ -30,7 +40,6 @@ import {
 import {
   StoryComposerChrome,
   StoryGalleryChrome,
-  StoryMusicChrome,
   StoryViewerChrome,
   StoryVisualRail,
   type StoryVisualAuthor,
@@ -103,6 +112,7 @@ export function CommunityStoryRail({
   const [stories, setStories] = useState<CommunityStory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
   useEffect(() => {
     // The page-level signal starts at 0, so a positive value is always an
@@ -115,8 +125,7 @@ export function CommunityStoryRail({
   const [previewFileIndex, setPreviewFileIndex] = useState(0);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [gallerySelection, setGallerySelection] = useState<number[]>([]);
-  const [musicQuery, setMusicQuery] = useState("");
-  const [musicTab, setMusicTab] = useState<"for-you" | "trending">("for-you");
+  const [studioStep, setStudioStep] = useState<"source" | "edit" | "destination">("source");
   const [seenAuthorIds, setSeenAuthorIds] = useState<Set<number>>(() => new Set());
   const [mediaUrls, setMediaUrls] = useState<Record<number, string>>({});
   const mediaObjectUrlsRef = useRef<Record<number, string>>({});
@@ -139,6 +148,9 @@ export function CommunityStoryRail({
   const [textBackground, setTextBackground] = useState<string>(TEXT_STORY_BACKGROUNDS[0]);
   const [editorElements, setEditorElements] = useState<EditableStoryElement[]>([]);
   const [publishing, setPublishing] = useState(false);
+  const [publishStatus, setPublishStatus] = useState("");
+  const [publishProgress, setPublishProgress] = useState(0);
+  const publishControllerRef = useRef<AbortController | null>(null);
   const [ownedExchangeListings, setOwnedExchangeListings] = useState<ExchangeListing[]>([]);
   const [exchangeListingsLoading, setExchangeListingsLoading] = useState(false);
   const [exchangeListingsError, setExchangeListingsError] = useState("");
@@ -180,15 +192,6 @@ export function CommunityStoryRail({
     })).filter((item) => item.src),
     [files, previewUrls],
   );
-  const musicTracks = useMemo(() => [
-    { id: "original", title: "Original audio", artist: "Your Spark" },
-    { id: "sunrise", title: "Sunrise", artist: "Niakofa curated" },
-    { id: "neighborhood-pulse", title: "Neighborhood pulse", artist: "Niakofa curated" },
-    { id: "quiet-strength", title: "Quiet strength", artist: "Niakofa curated" },
-  ].filter((track) => {
-    const matchesQuery = `${track.title} ${track.artist}`.toLowerCase().includes(musicQuery.toLowerCase());
-    return matchesQuery && (musicTab === "for-you" || track.id !== "original");
-  }), [musicQuery, musicTab]);
   const filter = effect === "warmth"
     ? "sepia(.25) saturate(1.25)"
     : effect === "contrast"
@@ -256,7 +259,7 @@ export function CommunityStoryRail({
     };
     void load();
     return () => { cancelled = true; };
-  }, [hubId]);
+  }, [hubId, refreshNonce]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -296,12 +299,14 @@ export function CommunityStoryRail({
   useEffect(() => {
     const visible = stories.slice(0, 24).flatMap((story) => story.media);
     void Promise.all(visible.map((media) => loadMediaUrl(media)));
+  }, [loadMediaUrl, stories]);
+
+  useEffect(() => {
     return () => {
       Object.values(mediaObjectUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
       mediaObjectUrlsRef.current = {};
-      setMediaUrls({});
     };
-  }, [loadMediaUrl, stories]);
+  }, []);
 
   useEffect(() => {
     if (selectedMedia) void loadMediaUrl(selectedMedia);
@@ -328,24 +333,94 @@ export function CommunityStoryRail({
     setTextAlign("center");
     setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
     setEditorElements([]);
-    setMusicQuery("");
-    setMusicTab("for-you");
+    setStudioStep("source");
     setAudience(hubId ? "hub" : "community");
     setExchangeListingId("");
     setExchangeListingsError("");
   };
 
+  useEffect(() => {
+    if (!composerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const dialog = document.querySelector<HTMLElement>(galleryOpen ? ".nia-story-gallery" : ".nia-story-composer");
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (galleryOpen) { setGalleryOpen(false); return; }
+        if (studioStep !== "source") { setStudioStep(studioStep === "destination" ? "edit" : "source"); return; }
+        publishControllerRef.current?.abort();
+        resetComposer();
+        setComposerOpen(false);
+      }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])') ?? []).filter((element) => element.getClientRects().length > 0);
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    dialog?.querySelector<HTMLElement>("button")?.focus();
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); };
+  // Reset is intentionally scoped to explicit close actions, not effect cleanup.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerOpen, galleryOpen, studioStep]);
+
   const publish = async () => {
-    if (publishing || (!caption.trim() && files.length === 0 && !tool)) return;
+    if (publishing || (!caption.trim() && gallerySelection.length === 0)) {
+      setError("Add a photo, video, or a few words before publishing.");
+      return;
+    }
     setPublishing(true);
     setError(null);
     try {
-      const validationErrors = await validateStoryFiles(files);
-      if (validationErrors.length) throw new Error(validationErrors[0]);
       const selectedIndexes = gallerySelection
         .filter((index) => Number.isInteger(index) && index >= 0 && index < files.length)
         .sort((a, b) => a - b);
       const publishFiles = selectedIndexes.map((index) => files[index]).filter((file): file is File => Boolean(file));
+      if (exchangeListingId) {
+        if (audience !== "community" || publishFiles.length !== 1 || !publishFiles[0].type.startsWith("video/")) {
+          throw new Error("An Exchange Spark needs one video shared with your Community. Remove other selected items or change the audience.");
+        }
+        if (editorElements.some((element) => element.id !== "caption") || effect !== "none") {
+          throw new Error("Exchange video stickers, mentions, and effects are not rendered yet. Remove them or publish this as a 24-hour Moment.");
+        }
+        const file = publishFiles[0];
+        const controller = new AbortController();
+        publishControllerRef.current = controller;
+        try {
+          setPublishStatus("Checking your video…");
+          const durationSeconds = await readExchangeSparkVideoDuration(file, controller.signal);
+          const fileError = validateExchangeSparkVideo({ mimeType: file.type, byteSize: file.size, durationSeconds });
+          if (fileError) throw new Error(fileError);
+          setPublishStatus("Creating your Exchange Spark…");
+          const draft = await createExchangeSparkDraft(Number(exchangeListingId), caption.trim(), controller.signal);
+          if (draft.upload_context.contextKind !== "exchange_spark" || draft.upload_context.contextId !== draft.spark_id) {
+            throw new Error("The server returned an invalid Spark upload context.");
+          }
+          const session = await createSparkUploadSession({ contextId: draft.spark_id, file, signal: controller.signal });
+          setPublishStatus("Uploading video…");
+          await putRawSparkFile(session.upload, file, controller.signal, (loaded, total) => {
+            setPublishProgress(total > 0 ? Math.round(loaded / total * 100) : 0);
+          });
+          setPublishStatus("Processing video…");
+          await completeSparkUpload(session.complete_url, controller.signal);
+          await waitForExchangeSparkMediaReady(draft.spark_id, controller.signal, () => {});
+          setPublishStatus("Publishing Spark…");
+          await publishExchangeSparkDraft(draft.spark_id, caption.trim(), controller.signal);
+          trackCommunityContent("community_spark_created", hubId === null ? {} : { hub_id: hubId });
+          resetComposer();
+          setComposerOpen(false);
+          navigate("/community?section=exchange");
+          return;
+        } finally {
+          publishControllerRef.current = null;
+        }
+      }
+      const validationErrors = await validateStoryFiles(publishFiles);
+      if (validationErrors.length) throw new Error(validationErrors[0]);
       const metadata = await Promise.all(publishFiles.map((file) => readStoryMediaMetadata(file)));
       const media = await Promise.all(publishFiles.map(async (file, index) => ({
         data_url: await readFileAsDataUrl(file),
@@ -397,19 +472,30 @@ export function CommunityStoryRail({
         setStories(Array.isArray(next.stories) ? next.stories : []);
       }
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Could not publish your Spark.");
+      setError(reason instanceof Error && reason.name === "AbortError"
+        ? "Upload cancelled. Your Spark was not published."
+        : reason instanceof Error ? reason.message : "Could not publish your Spark.");
     } finally {
       setPublishing(false);
+      setPublishStatus("");
+      setPublishProgress(0);
     }
   };
 
   const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { files: selected, errors } = normalizeStoryFiles(Array.from(event.target.files ?? []));
+    const { files: selected, errors } = normalizeStoryFiles(
+      [...files, ...Array.from(event.target.files ?? [])],
+      { allowExchangeVideo: true },
+    );
     if (errors.length) setError(errors[0]);
-    setFiles(selected);
-    setGallerySelection(selected.map((_, index) => index));
-    setPreviewFileIndex(0);
-    if (event.target === galleryInput.current) setGalleryOpen(true);
+    if (selected.length) {
+      setFiles(selected);
+      setGallerySelection(selected.map((_, index) => index));
+      setPreviewFileIndex(Math.max(0, selected.length - 1));
+      setStudioStep("edit");
+      setGalleryOpen(false);
+      if (!errors.length) setError(null);
+    }
     event.target.value = "";
   };
 
@@ -441,14 +527,18 @@ export function CommunityStoryRail({
 
   useEffect(() => {
     if (tool !== "mention") return;
+    let active = true;
     const timer = window.setTimeout(async () => {
-      const response = await fetch(`/api/community/stories/mention-candidates?q=${encodeURIComponent(mention)}`, { headers: authHeaders() });
-      if (response.ok) {
+      try {
+        const response = await fetch(`/api/community/stories/mention-candidates?q=${encodeURIComponent(mention)}`, { headers: authHeaders() });
+        if (!response.ok) throw new Error("Could not find members. Try again.");
         const data = await response.json() as { users?: Array<{ id: number; name: string; avatar_url: string | null }> };
-        setMentionCandidates(Array.isArray(data.users) ? data.users : []);
+        if (active) setMentionCandidates(Array.isArray(data.users) ? data.users : []);
+      } catch (reason) {
+        if (active) setError(reason instanceof Error ? reason.message : "Could not find members.");
       }
     }, 180);
-    return () => window.clearTimeout(timer);
+    return () => { active = false; window.clearTimeout(timer); };
   }, [mention, tool]);
 
   useEffect(() => {
@@ -551,7 +641,7 @@ export function CommunityStoryRail({
   }
 
   const toolButtons: Array<{ key: StoryVisualTool; label: string; icon: ReactNode }> = [
-    { key: "music", label: "Music", icon: <Music2 size={22} /> },
+    { key: "music", label: "Audio", icon: <Volume2 size={22} /> },
     { key: "stickers", label: "Stickers", icon: <Sticker size={22} /> },
     { key: "text", label: "Text", icon: <Type size={22} /> },
     { key: "effects", label: "Effects", icon: <Sparkles size={22} /> },
@@ -560,7 +650,7 @@ export function CommunityStoryRail({
 
   return (
     <>
-      {error && <p role="alert" className="mb-3 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
+      {error && !composerOpen && <div role="alert" className="nia-story-error">{error} <button type="button" onClick={() => { setError(null); setRefreshNonce((value) => value + 1); }}>Retry</button></div>}
       <section className="nia-community-stories-shell" aria-label="Niakofa Community Moments">
         {!compact && <header className="nia-community-stories-hero">
           <div className="nia-community-stories-brand">
@@ -588,19 +678,24 @@ export function CommunityStoryRail({
 
       {composerOpen && (
         <div className="nia-story-composer-overlay">
+          <input ref={cameraInput} type="file" accept="image/*,video/*" capture="environment" className="sr-only" onChange={onFileChange} aria-label="Capture Spark media" />
+          <input ref={galleryInput} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={onFileChange} aria-label="Choose Spark media" />
           <div className="nia-story-composer-shell">
             <StoryComposerChrome
+              step={studioStep}
+              onStep={(next) => { setStudioStep(next); setTool(null); }}
+              canContinue={Boolean(caption.trim() || gallerySelection.length)}
               preview={(
                 <StoryEditorCanvas
                   elements={editorElements}
                   onChange={setEditorElements}
-                  className={`relative flex h-full min-h-80 w-full items-center justify-center overflow-hidden bg-black ${!selectedFileUrl ? "border border-dashed border-primary/30" : ""}`}
+                  className="nia-story-editor-surface"
                 >
                   <div className="relative flex h-full w-full items-center justify-center overflow-hidden" style={!selectedFileUrl ? { background: textBackground } : undefined}>
                     {selectedFileUrl ? (
-                      selectedPreviewFile?.type.startsWith("video/") ? <video src={selectedFileUrl} muted playsInline className="max-h-[52dvh] max-w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Spark preview" className="max-h-[52dvh] max-w-full object-contain" style={{ filter }} />
+                      selectedPreviewFile?.type.startsWith("video/") ? <video src={selectedFileUrl} controls playsInline className="h-full w-full object-contain" style={{ filter }} /> : <img src={selectedFileUrl} alt="Spark preview" className="h-full w-full object-contain" style={{ filter }} />
                     ) : (
-                      <div className="px-8 text-center text-white"><Type className="mx-auto h-10 w-10 text-white/70" /><p className="mt-3 font-black">{caption ? "Text Spark preview" : "Add a photo or video"}</p><p className="mt-1 text-xs text-white/65">Use your camera, choose recent items, or create a text-only Spark.</p></div>
+                      <div className="nia-story-text-preview"><span>Niakofa / Spark</span>{!caption && <p>Your words belong here.</p>}<small>{caption ? "Drag the text to place it" : "Write a few words below to begin"}</small></div>
                     )}
                   </div>
                 </StoryEditorCanvas>
@@ -608,9 +703,9 @@ export function CommunityStoryRail({
               tools={toolButtons}
               activeTool={tool}
               onTool={(nextTool) => setTool(tool === nextTool ? null : nextTool)}
-              onClose={() => { resetComposer(); setComposerOpen(false); }}
-              onSettings={() => document.getElementById("story-audience")?.focus()}
-              onGallery={() => { setGallerySelection(files.map((_, index) => index)); setGalleryOpen(true); }}
+              onClose={() => { publishControllerRef.current?.abort(); resetComposer(); setError(null); setComposerOpen(false); }}
+              onSettings={() => { setStudioStep("destination"); window.setTimeout(() => document.getElementById("story-audience")?.focus(), 0); }}
+              onGallery={() => setGalleryOpen(true)}
               onCamera={() => cameraInput.current?.click()}
               onPublish={() => void publish()}
               publishing={publishing}
@@ -618,59 +713,41 @@ export function CommunityStoryRail({
             >
               <div className="nia-story-composer__form">
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
-                <input ref={cameraInput} type="file" accept="image/*,video/*" capture="environment" className="sr-only" onChange={onFileChange} />
-                <input ref={galleryInput} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={onFileChange} />
+                {publishing && publishStatus && <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs"><p>{publishStatus}{publishProgress ? ` ${publishProgress}%` : ""}</p>{publishProgress > 0 && <progress aria-label="Spark upload progress" value={publishProgress} max={100} className="mt-2 w-full" />}<button type="button" className="mt-2 min-h-10 rounded-lg border border-white/20 px-3 font-bold" onClick={() => publishControllerRef.current?.abort()}>Cancel upload</button></div>}
+                {studioStep === "destination" ? <>
+                  <div className="nia-story-destination-intro"><p className="nia-story-kicker">The final step</p><h2>Where should<br /><em>this Spark land?</em></h2><p>Choose who gets to see your moment before it goes live.</p></div>
+                  <div className="nia-story-destination-card">
+                    <Users size={22} />
+                    <div><label htmlFor="story-audience">Your audience</label><p>{audience === "hub" ? "Only members of this Hub" : "Your approved community"}</p></div>
+                    <select id="story-audience" value={audience} onChange={(event) => setAudience(event.target.value as "community" | "hub")} disabled={!hubId} aria-label="Spark audience"><option value="community">Community</option>{hubId && <option value="hub">This Hub</option>}</select>
+                  </div>
+                  {selectedVideo && <div className="nia-story-destination-card nia-story-destination-card--listing">
+                    <div className="nia-story-destination-card__full"><label htmlFor="spark-exchange-listing">Connect an Exchange listing <span>(optional)</span></label><p>Only an active listing you own can be linked. The server checks eligibility.</p>
+                      {exchangeListingsError && <p role="alert">{exchangeListingsError} <button type="button" onClick={() => { setExchangeListingsLoading(true); setExchangeListingsError(""); getExchangeListings({ mine: true, limit: 50 }).then((result) => setOwnedExchangeListings((result.listings ?? []).filter((listing) => listing.status === "active"))).catch((reason: unknown) => setExchangeListingsError(reason instanceof Error ? reason.message : "Could not load listings.")).finally(() => setExchangeListingsLoading(false)); }}>Retry</button></p>}
+                      <select id="spark-exchange-listing" value={exchangeListingId} onChange={(event) => { setExchangeListingId(event.target.value); if (event.target.value) setAudience("community"); }} disabled={exchangeListingsLoading || !ownedExchangeListings.length} data-testid="select-spark-exchange-listing"><option value="">{exchangeListingsLoading ? "Loading listings…" : ownedExchangeListings.length ? "No listing connected" : "No active listings available"}</option>{ownedExchangeListings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title} · {listing.neighborhood}</option>)}</select>
+                    </div>
+                  </div>}
+                  <p className="nia-story-destination-note">{exchangeListingId
+                    ? "A linked video appears in Exchange Sparks while its listing remains active. It does not appear in 24-hour Moments. Only the original video and caption are published; editing overlays are not available here."
+                    : "Your Spark appears in Moments for 24 hours, then expires."}</p>
+                </> : <>
                 {files.length > 0 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="Spark media sequence">
                   {files.map((file, index) => <button key={`${file.name}-${index}`} type="button" onClick={() => setPreviewFileIndex(index)} className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 ${previewFileIndex === index ? "border-primary" : "border-white/20"}`} aria-label={`Preview Spark item ${index + 1}`}>
                     {previewUrls[index] ? (file.type.startsWith("video/") ? <video src={previewUrls[index]} muted playsInline className="h-full w-full object-cover" /> : <img src={previewUrls[index]} alt="" className="h-full w-full object-cover" />) : <span className="grid h-full place-items-center text-xs">{index + 1}</span>}
                     <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[9px] text-white">{index + 1}</span>
                   </button>)}
                 </div>}
-                {tool === "music" && (
-                  <StoryMusicChrome
-                    query={musicQuery}
-                    onQuery={setMusicQuery}
-                    tab={musicTab}
-                    onTab={setMusicTab}
-                    tracks={musicTracks}
-                    onPlay={(id) => {
-                      const track = musicTracks.find((item) => item.id === id);
-                      if (!track) return;
-                      upsertEditorElement({ id: "music", type: "music", payload: { track: track.title }, position_x: 50, position_y: 12, scale: 1, rotation: 0, z_index: 20 });
-                    }}
-                  />
-                )}
+                {tool === "music" && <div className="nia-story-audio-note"><Volume2 size={19} /><div><strong>Original audio only</strong><p>Your video keeps the sound it was recorded with. Music tracks are not available yet.</p></div></div>}
                 {tool === "stickers" && <div className="flex gap-2 overflow-x-auto pb-1">{["💙", "🙏", "🤝", "🌍", "🙌", "✨", "📍"].map((item) => <button key={item} type="button" onClick={() => { setSticker(item); upsertEditorElement({ id: "sticker", type: "sticker", payload: { sticker: item }, position_x: 50, position_y: 50, scale: 1, rotation: 0, z_index: 15 }); }} className={`h-11 w-11 shrink-0 rounded-xl border text-xl ${sticker === item ? "border-primary bg-primary/10" : "border-white/20"}`} aria-label={`Add ${item} sticker`}>{item}</button>)}</div>}
                 {tool === "effects" && <div className="flex gap-2 overflow-x-auto pb-1">{(["none", "warmth", "contrast", "grayscale", "vignette"] as Effect[]).map((item) => <button key={item} type="button" onClick={() => setEffect(item)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold capitalize ${effect === item ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}>{item}</button>)}</div>}
                 {tool === "mention" && <div className="space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); setEditorElements((current) => current.filter((element) => element.id !== "mention")); }} className="min-h-11 w-full rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); upsertEditorElement({ id: "mention", type: "mention", payload: { display_name: candidate.name, mention_user_id: candidate.id }, position_x: 50, position_y: 65, scale: 1, rotation: 0, z_index: 18 }); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
                 {tool === "text" && <div className="grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-white/65">Color<input type="color" value={textColor} onChange={(event) => { const value = event.target.value; setTextColor(value); updateEditorElement("caption", { payload: { color: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-white/10" /></label><label className="text-[10px] font-bold text-white/65">Size<select value={textSize} onChange={(event) => { const value = event.target.value; setTextSize(value); updateEditorElement("caption", { payload: { font_size: Number(value) } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-white/65">Align<select value={textAlign} onChange={(event) => { const value = event.target.value as "left" | "center" | "right"; setTextAlign(value); updateEditorElement("caption", { payload: { align: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-white/65">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
                 <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={2} className="mt-3 w-full resize-none rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white outline-none focus:border-primary" placeholder="Add text to your Spark…" />
-                {selectedVideo && (
-                  <div className="mt-3 rounded-2xl border border-primary/30 bg-primary/10 p-3">
-                    <label htmlFor="spark-exchange-listing" className="block text-xs font-black">Connect an Exchange post <span className="font-normal text-white/60">(optional)</span></label>
-                    <p className="mt-1 text-[10px] leading-relaxed text-white/60">Attach an active post you own to make this video discoverable in Exchange Sparks. The server confirms eligibility.</p>
-                    {exchangeListingsError && <p className="mt-2 text-xs text-rose-200" role="alert">{exchangeListingsError}</p>}
-                    <select
-                      id="spark-exchange-listing"
-                      value={exchangeListingId}
-                      onChange={(event) => setExchangeListingId(event.target.value)}
-                      disabled={exchangeListingsLoading || !ownedExchangeListings.length}
-                      className="mt-2 min-h-10 w-full rounded-xl border border-white/20 bg-black px-3 text-xs text-white disabled:opacity-60"
-                      data-testid="select-spark-exchange-listing"
-                    >
-                      <option value="">{exchangeListingsLoading ? "Loading your active posts…" : ownedExchangeListings.length ? "No Exchange post" : "No active posts to connect"}</option>
-                      {ownedExchangeListings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title} · {listing.neighborhood}</option>)}
-                    </select>
-                  </div>
-                )}
-                <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-white/15 bg-white/5 px-3 py-2">
-                  <div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><div><p className="text-xs font-black">Share with</p><p className="text-[10px] text-white/60">{audience === "hub" ? "Selected Hub members" : "Your approved community"}</p></div></div>
-                  <select id="story-audience" value={audience} onChange={(event) => setAudience(event.target.value as "community" | "hub")} disabled={!hubId} className="rounded-lg border border-white/20 bg-black px-2 py-2 text-xs font-bold"><option value="community">Community</option><option value="hub">This Hub</option></select>
-                </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="text-[10px] leading-relaxed text-white/55">Spark videos are short recorded or camera-roll clips. Music remains curated metadata until a licensed audio pipeline is approved.</p>
+                  <p className="text-[10px] leading-relaxed text-white/55">Photos and short videos only. Your original video audio is preserved; effects change the preview, not the uploaded file.</p>
                   {files.length > 0 && <button type="button" onClick={() => { setFiles([]); setGallerySelection([]); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
                 </div>
+                </>}
               </div>
             </StoryComposerChrome>
           </div>

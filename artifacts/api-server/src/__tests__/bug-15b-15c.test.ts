@@ -49,6 +49,7 @@ jest.unstable_mockModule("@workspace/db", () => {
 
   return {
     db: mockDb,
+    exchangeSparksTable: { id: "id", author_user_id: "author_user_id", status: "status", draft_expires_at: "draft_expires_at" },
     communityStoriesTable: { id: "id", status: "status" },
     // NOTE: this list must mirror EVERY table symbol requests.ts (and
     // anything it transitively imports, e.g. lib/community-pool.ts) pulls

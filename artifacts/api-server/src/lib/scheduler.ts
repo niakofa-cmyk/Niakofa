@@ -18,6 +18,7 @@ import {
   communityStoriesTable,
   communityStoryMediaTable,
   exchangeListingsTable,
+  exchangeSparksTable,
   exchangePickupRequestsTable,
   exchangeDigestDeliveriesTable,
   mediaAssetsTable,
@@ -667,6 +668,87 @@ async function processCommunityStoryCleanup(): Promise<void> {
     } catch (err) {
       cleanupFailed = true;
       logger.error({ err, mediaAssetId: asset.id }, "community-story cleanup: orphan media cleanup will retry");
+    }
+  }
+  await db.update(exchangeSparksTable).set({
+    status: "deletion_pending",
+    updated_at: new Date(),
+  }).where(and(
+    eq(exchangeSparksTable.status, "draft"),
+    lte(exchangeSparksTable.draft_expires_at, new Date()),
+  ));
+  const deletingSparks = await db.select({
+    id: exchangeSparksTable.id,
+  }).from(exchangeSparksTable)
+    .where(eq(exchangeSparksTable.status, "deletion_pending"));
+  for (const spark of deletingSparks) {
+    const assets = await db.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.context_kind, "exchange_spark"),
+      eq(mediaAssetsTable.context_id, spark.id),
+    ));
+    const assetIds = assets.map((asset) => asset.id);
+    if (assetIds.length) {
+      await db.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        updated_at: new Date(),
+      }).where(and(
+        inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+        inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
+      ));
+      const [processingJob] = await db.select({ id: mediaProcessingJobsTable.id })
+        .from(mediaProcessingJobsTable)
+        .where(and(
+          inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+          eq(mediaProcessingJobsTable.status, "processing"),
+        ))
+        .limit(1);
+      if (processingJob) {
+        cleanupFailed = true;
+        continue;
+      }
+      await db.update(mediaAssetsTable).set({
+        status: "deletion_pending",
+        updated_at: new Date(),
+      }).where(inArray(mediaAssetsTable.id, assetIds));
+    }
+    const keys = [...new Set(
+      assets.flatMap((asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key])
+        .filter((key): key is string => Boolean(key)),
+    )];
+    try {
+      for (const key of keys) await deleteAssetStrict(key);
+      // Keep media rows as tombstones. The orphan pass repeats deletion after
+      // the upload-session retention window to catch late in-flight PUTs.
+      await db.delete(exchangeSparksTable).where(eq(exchangeSparksTable.id, spark.id));
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, sparkId: spark.id }, "Exchange Spark cleanup: storage/database cleanup will retry");
+    }
+  }
+  const orphanedSparkAssets = await db.select({
+    id: mediaAssetsTable.id,
+    original_key: mediaAssetsTable.original_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key,
+  }).from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.context_kind, "exchange_spark"),
+    sql`NOT EXISTS (SELECT 1 FROM exchange_sparks WHERE exchange_sparks.id = ${mediaAssetsTable.context_id})`,
+    lte(mediaAssetsTable.updated_at, new Date(Date.now() - STORY_ORPHAN_MEDIA_RETENTION_MS)),
+  ));
+  for (const asset of orphanedSparkAssets) {
+    try {
+      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key]
+        .filter((key): key is string => Boolean(key)))];
+      for (const key of keys) await deleteAssetStrict(key);
+      await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, mediaAssetId: asset.id }, "Exchange Spark cleanup: orphan media cleanup will retry");
     }
   }
   if (deletedIds.length) {

@@ -23,7 +23,7 @@ export class ExchangeSparkUploadError extends Error {
 
 export interface SparkDraftResponse {
   spark_id: number;
-  upload_context: { contextKind: "story"; contextId: number };
+  upload_context: { contextKind: "exchange_spark"; contextId: number };
 }
 
 export interface UploadSessionResponse {
@@ -98,7 +98,7 @@ export function createSparkUploadSession(input: {
   return apiRequest<UploadSessionResponse>("/api/media-assets/uploads", {
     method: "POST",
     body: JSON.stringify({
-      contextKind: "story",
+      contextKind: "exchange_spark",
       contextId,
       mediaType: "video",
       mimeType: file.type,

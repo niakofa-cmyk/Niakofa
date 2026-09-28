@@ -188,7 +188,7 @@ export function StoryEditorCanvas({
         className="relative h-full w-full touch-none select-none overflow-hidden"
         onPointerDown={() => setSelectedId(null)}
       >
-        {children && <div className="pointer-events-none absolute inset-0 z-0">{children}</div>}
+        {children && <div className="absolute inset-0 z-0">{children}</div>}
         {elements
           .filter((element) => EDITABLE_TYPES.has(element.type))
           .slice()
@@ -202,6 +202,20 @@ export function StoryEditorCanvas({
                 role="button"
                 tabIndex={0}
                 aria-label={`Edit ${element.type}`}
+                 aria-description="Drag to position. Use arrow keys for precise placement, then use the controls below to resize or rotate."
+                 onKeyDown={(event) => {
+                   const offsets: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+                   const offset = offsets[event.key];
+                   if (!offset) return;
+                   event.preventDefault();
+                   event.stopPropagation();
+                   setSelectedId(element.id);
+                   commit(elements.map((item) => item.id === element.id ? {
+                     ...item,
+                     position_x: clamp(item.position_x + offset[0] * (event.shiftKey ? 5 : 1), 2, 98),
+                     position_y: clamp(item.position_y + offset[1] * (event.shiftKey ? 5 : 1), 2, 98),
+                   } : item));
+                 }}
                 onPointerDown={(event) => beginDrag(event, element)}
                 onPointerMove={moveDrag}
                 onPointerUp={endDrag}

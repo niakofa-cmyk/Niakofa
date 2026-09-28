@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable, niaConversationsTable, niaMemoriesTable } from "@workspace/db";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable, exchangeSparksTable, niaConversationsTable, niaMemoriesTable } from "@workspace/db";
 import { eq, and, or, sql, inArray } from "drizzle-orm";
 import {
   GetUserParams,
@@ -1130,7 +1130,16 @@ async function anonymizeAccount(userId: number): Promise<AccountDeletionResult> 
   // moves an active account into pending_purge and starts storage cleanup.
   await db.transaction(async (tx) => {
     await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
-    await tx.delete(mediaAssetsTable).where(eq(mediaAssetsTable.owner_user_id, userId));
+    // Keep Exchange media tombstones until strict storage deletion succeeds.
+    // Removing the rows now would lose the only retryable object-key ledger.
+    await tx.update(exchangeSparksTable).set({
+      status: "deletion_pending",
+      updated_at: now,
+    }).where(eq(exchangeSparksTable.author_user_id, userId));
+    await tx.delete(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.owner_user_id, userId),
+      sql`${mediaAssetsTable.context_kind} <> 'exchange_spark'`,
+    ));
     // Nia memory and conversation text are personal data, not community or
     // financial history. Erase both in the same privacy transition.
     await tx.delete(niaConversationsTable).where(eq(niaConversationsTable.user_id, userId));

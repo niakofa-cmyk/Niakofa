@@ -112,27 +112,6 @@ export async function putAsset(key: string, buffer: Buffer, mimeType: string): P
   }
 }
 
-export async function getAssetUploadUrl(key: string, mimeType: string, expiresInSeconds = 900): Promise<string | null> {
-  if (!isCloudStorageConfigured()) return null;
-  // Rollout gate: a presigned PutObject URL alone cannot enforce a storage-side
-  // maximum Content-Length. API HEAD checks and bounded reads protect processing
-  // memory, but oversized PUTs can still consume bucket capacity. Production
-  // enablement requires a policy-based upload (for example POST with a
-  // content-length-range condition) or an equivalent provider-enforced policy.
-  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-  const client = await getS3Client();
-  return getSignedUrl(
-    client,
-    new PutObjectCommand({
-      Bucket: process.env["STORAGE_BUCKET"]!,
-      Key: key,
-      ContentType: mimeType,
-    }),
-    { expiresIn: expiresInSeconds },
-  );
-}
-
 export async function getAssetInfo(key: string): Promise<{ contentLength: number; contentType: string | null } | null> {
   if (isCloudStorageConfigured()) {
     try {

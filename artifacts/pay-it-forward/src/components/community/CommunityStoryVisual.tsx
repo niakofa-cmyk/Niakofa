@@ -1,7 +1,10 @@
 import {
   AtSign,
+  ArrowLeft,
+  ArrowRight,
   Camera,
   ChevronLeft,
+  Heart,
   ImagePlus,
   MoreHorizontal,
   Music2,
@@ -55,7 +58,7 @@ export function StoryVisualRail({
         </div>
         <button className="nia-story-pill" type="button" onClick={onCreate}>
           <Camera size={16} />
-          Create
+          Create Spark
         </button>
       </div>
 
@@ -69,7 +72,7 @@ export function StoryVisualRail({
           <span className="nia-story-avatar nia-story-avatar--create">
             <Camera size={22} />
           </span>
-          <span>Your Sparks</span>
+          <span>Create Spark</span>
         </button>
 
         {authors.map((author, index) => (
@@ -99,7 +102,7 @@ export function StoryVisualRail({
           </button>
         ))}
         {loading ? (
-          <p className="nia-story-rail__empty" role="status" aria-live="polite">Loading Moments…</p>
+          <div className="nia-story-rail__skeleton" role="status" aria-label="Loading Moments"><span /><span /><span /><span /></div>
         ) : !authors.length ? (
           <p className="nia-story-rail__empty">{emptyLabel}</p>
         ) : null}
@@ -220,7 +223,7 @@ export function StoryViewerChrome({
 
       <footer className="nia-story-viewer__bottom">
         <div className="nia-story-viewer__reactions">
-          <button type="button" className="nia-story-round" onClick={onReact} aria-label="React to Spark">💙</button>
+          <button type="button" className="nia-story-round" onClick={onReact} aria-label="React to Spark"><Heart size={20} /></button>
           <button type="button" className="nia-story-round" onClick={onShare} aria-label="Share Spark"><Share2 size={18} /></button>
         </div>
         <form
@@ -255,6 +258,9 @@ export function StoryComposerChrome({
   onPublish,
   publishing,
   galleryCount,
+  step,
+  onStep,
+  canContinue,
   children,
 }: {
   preview: ReactNode;
@@ -268,61 +274,54 @@ export function StoryComposerChrome({
   onPublish: () => void;
   publishing?: boolean;
   galleryCount?: number;
+  step: "source" | "edit" | "destination";
+  onStep: (step: "source" | "edit" | "destination") => void;
+  canContinue: boolean;
   children?: ReactNode;
 }) {
   return (
-    <div className="nia-story-composer">
+    <div className={`nia-story-composer nia-story-composer--${step}`} role="dialog" aria-modal="true" aria-label="Create Spark studio">
       <header className="nia-story-composer__header">
-        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onClose} aria-label="Close Spark creator">
-          <X size={23} />
+        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={step === "source" ? onClose : () => onStep(step === "destination" ? "edit" : "source")} aria-label={step === "source" ? "Close Spark creator" : "Go back"}>
+          {step === "source" ? <X size={22} /> : <ArrowLeft size={21} />}
         </button>
         <div className="nia-story-composer__title">
-          <strong>Create a Spark</strong>
-          <span>Share a Spark with your community</span>
+          <strong>Create Spark</strong>
+          <span>{step === "source" ? "01 / CHOOSE" : step === "edit" ? "02 / MAKE IT YOURS" : "03 / SHARE"}</span>
         </div>
-        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onSettings} aria-label="Spark settings">
-          <Settings2 size={21} />
-        </button>
+        {step !== "source" ? <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onSettings} aria-label="Spark settings"><Settings2 size={20} /></button> : <span className="nia-story-header-end" aria-hidden="true" />}
       </header>
 
-      <main className="nia-story-composer__canvas">{preview}</main>
-      {children && <section className="nia-story-composer__details">{children}</section>}
-
-      <div className="nia-story-composer__gallery-actions">
-        <button type="button" className="nia-story-gallery-button" onClick={onGallery}>
-          <ImagePlus size={18} />
-          Gallery
-          {galleryCount ? <b>{galleryCount}</b> : null}
-        </button>
-        <button type="button" className="nia-story-gallery-button" onClick={onCamera}>
-          <Camera size={18} />
-          Camera
-        </button>
-      </div>
-
-      <nav className="nia-story-tool-dock" aria-label="Spark editing tools">
-        {tools.map((tool) => (
-          <button
-            key={tool.key}
-            type="button"
-            className={activeTool === tool.key ? "nia-story-tool nia-story-tool--active" : "nia-story-tool"}
-            onClick={() => onTool(tool.key)}
-          >
-            <span>{tool.icon}</span>
-            <small>{tool.label}</small>
-          </button>
-        ))}
-      </nav>
-
-      <button
-        type="button"
-        className="nia-story-publish"
-        onClick={onPublish}
-        disabled={publishing}
-        aria-live="polite"
-      >
-        {publishing ? "Publishing…" : "Post Spark"}
-      </button>
+      {step === "source" ? (
+        <main className="nia-story-source">
+          <div className="nia-story-source__intro"><p className="nia-story-kicker">A moment worth sharing</p><h2>What’s happening<br /><em>around you?</em></h2><p>Small moments can move a whole neighborhood.</p></div>
+          <div className="nia-story-source__choices">
+            <button type="button" onClick={onCamera} className="nia-story-source__choice" data-testid="button-spark-camera"><span><Camera size={26} /></span><strong>Open camera</strong><small>Capture a moment now</small><ArrowRight size={20} /></button>
+            <button type="button" onClick={onGallery} className="nia-story-source__choice" data-testid="button-spark-gallery"><span><ImagePlus size={26} /></span><strong>Choose from gallery</strong><small>Photos or short videos</small><ArrowRight size={20} /></button>
+            <button type="button" onClick={() => onStep("edit")} className="nia-story-source__choice" data-testid="button-spark-text"><span><Type size={26} /></span><strong>Start with words</strong><small>A note for your neighbors</small><ArrowRight size={20} /></button>
+          </div>
+          {galleryCount ? <button type="button" className="nia-story-source__resume" onClick={() => onStep("edit")}>Continue with {galleryCount} selected item{galleryCount === 1 ? "" : "s"} <ArrowRight size={17} /></button> : null}
+          <p className="nia-story-source__foot">Your Spark is shared only with the audience you choose.</p>
+        </main>
+      ) : (
+        <>
+          {step === "edit" && <main className="nia-story-composer__canvas">{preview}</main>}
+          {children && <section className="nia-story-composer__details">{children}</section>}
+          {step === "edit" && <div className="nia-story-composer__gallery-actions">
+            <button type="button" className="nia-story-gallery-button" onClick={onGallery}><ImagePlus size={17} /> Media {galleryCount ? `(${galleryCount})` : ""}</button>
+            <button type="button" className="nia-story-gallery-button" onClick={onCamera}><Camera size={17} /> Camera</button>
+          </div>}
+          {step === "edit" && <nav className="nia-story-tool-dock" aria-label="Spark editing tools">{tools.map((tool) => (
+            <button key={tool.key} type="button" className={activeTool === tool.key ? "nia-story-tool nia-story-tool--active" : "nia-story-tool"} onClick={() => onTool(tool.key)} aria-pressed={activeTool === tool.key}><span>{tool.icon}</span><small>{tool.label}</small></button>
+          ))}</nav>}
+          <footer className="nia-story-composer__footer">
+            <span>{step === "edit" ? "Make it yours" : "Ready for your neighbors?"}</span>
+            <button type="button" className="nia-story-publish" onClick={step === "edit" ? () => onStep("destination") : onPublish} disabled={publishing || (step === "edit" && !canContinue)} aria-live="polite" data-testid="button-spark-continue">
+              {publishing ? "Publishing…" : step === "edit" ? "Next" : "Publish Spark"} {!publishing && <ArrowRight size={18} />}
+            </button>
+          </footer>
+        </>
+      )}
     </div>
   );
 }
@@ -353,8 +352,8 @@ export function StoryGalleryChrome({
           <X size={23} />
         </button>
         <div>
-          <strong>Gallery</strong>
-          <span>{selected.length ? `${selected.length} selected` : "Choose Spark media"}</span>
+          <strong>Your media</strong>
+          <span>{selected.length ? `${selected.length} selected for your Spark` : "Choose Spark media"}</span>
         </div>
         <div className="nia-story-gallery__header-actions">
           <button type="button" className="nia-story-multiple" onClick={onMultiple}>
@@ -364,7 +363,8 @@ export function StoryGalleryChrome({
         </div>
       </header>
 
-      <div className="nia-story-gallery__grid">
+       {!thumbnails.length && <div className="nia-story-gallery__empty"><ImagePlus size={32} /><strong>No media selected yet</strong><p>Choose photos or videos from your device. Niakofa cannot browse your camera roll until you pick them.</p><button type="button" onClick={onChooseFiles}>Choose from device</button></div>}
+       <div className="nia-story-gallery__grid">
         {thumbnails.map((item) => {
           const index = selected.indexOf(item.id);
           const isSelected = index >= 0;
@@ -374,7 +374,7 @@ export function StoryGalleryChrome({
               type="button"
               className="nia-story-gallery__item"
               onClick={() => onSelect(item.id)}
-              aria-label={`${isSelected ? "Remove" : "Select"} media`}
+               aria-label={`${isSelected ? "Remove" : "Select"} media ${Number(item.id) + 1}`}
             >
               {item.type === "video" ? (
                 <video src={item.src} muted playsInline preload="metadata" aria-hidden="true" />
@@ -390,7 +390,7 @@ export function StoryGalleryChrome({
       {(onCamera || onDone) && (
         <footer className="nia-story-gallery__footer">
           {onCamera && <button type="button" className="nia-story-gallery__footer-button" onClick={onCamera}><Camera size={18} /> Camera</button>}
-          {onDone && <button type="button" className="nia-story-gallery__footer-button nia-story-gallery__footer-button--primary" onClick={onDone}>Done{selected.length ? ` (${selected.length})` : ""}</button>}
+           {onDone && <button type="button" className="nia-story-gallery__footer-button nia-story-gallery__footer-button--primary" onClick={onDone}>Continue{selected.length ? ` (${selected.length})` : ""}</button>}
         </footer>
       )}
     </div>

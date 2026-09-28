@@ -5,6 +5,7 @@ import {
   directMessageBlocksTable,
   exchangeListingsTable,
   exchangePickupRequestsTable,
+  exchangeSparksTable,
   communityStoriesTable,
   communityStoryMediaTable,
   mediaAssetsTable,
@@ -174,11 +175,40 @@ function decodeListingCursor(value: unknown): ListingCursor | null {
   }
 }
 
+type SparkCursor = ListingCursor & { source: "durable" | "legacy" };
+
+function decodeSparkCursor(value: unknown): SparkCursor | null {
+  const base = decodeListingCursor(value);
+  if (!base) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(value as string, "base64url").toString("utf8")) as { source?: unknown };
+    if (payload.source !== undefined && payload.source !== "durable" && payload.source !== "legacy") return null;
+    // Cursors issued before the durable feed existed only address legacy Stories.
+    return { ...base, source: payload.source === "durable" ? "durable" : "legacy" };
+  } catch {
+    return null;
+  }
+}
+
+function encodeSparkCursor(cursor: { created_at: Date; id: number; source: SparkCursor["source"] }): string {
+  return Buffer.from(JSON.stringify({
+    created_at: cursor.created_at.toISOString(),
+    id: cursor.id,
+    source: cursor.source,
+  })).toString("base64url");
+}
+
 router.get("/community/exchange/sparks", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const [viewer] = await db.select({ community_id: usersTable.community_id })
     .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   const communityVisibility = or(
+    eq(exchangeSparksTable.author_user_id, userId),
+    viewer?.community_id == null
+      ? isNull(exchangeSparksTable.community_id)
+      : eq(exchangeSparksTable.community_id, viewer.community_id),
+  );
+  const legacyCommunityVisibility = or(
     eq(communityStoriesTable.author_user_id, userId),
     viewer?.community_id == null
       ? isNull(communityStoriesTable.community_id)
@@ -193,7 +223,7 @@ router.get("/community/exchange/sparks", requireAuth, requireApproved, generalAp
     ? Math.min(EXCHANGE_SPARK_MAX_PAGE_SIZE, Math.max(1, requestedLimit))
     : 24;
   const cursorValue = req.query.cursor;
-  const cursor = cursorValue == null ? null : decodeListingCursor(cursorValue);
+  const cursor = cursorValue == null ? null : decodeSparkCursor(cursorValue);
   if (cursorValue != null && !cursor) return res.status(400).json({ error: "Invalid Spark cursor" });
 
   let locationCondition: ReturnType<typeof and> | ReturnType<typeof sql> | undefined;
@@ -220,12 +250,66 @@ router.get("/community/exchange/sparks", requireAuth, requireApproved, generalAp
     }
   }
 
-  const rows = await db.select({
+  const durableRows = await db.select({
+    spark_id: exchangeSparksTable.id,
+    created_at: exchangeSparksTable.created_at,
+    listing_id: exchangeListingsTable.id,
+    author_user_id: exchangeSparksTable.author_user_id,
+    author_name: usersTable.name,
+    author_avatar_url: usersTable.avatar_url,
+    caption: exchangeSparksTable.caption,
+    neighborhood: exchangeListingsTable.neighborhood,
+    media_asset_id: mediaAssetsTable.id,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+  }).from(exchangeSparksTable)
+    .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangeSparksTable.listing_id))
+    .innerJoin(usersTable, eq(usersTable.id, exchangeSparksTable.author_user_id))
+    .innerJoin(mediaAssetsTable, and(
+      eq(mediaAssetsTable.context_kind, "exchange_spark"),
+      eq(mediaAssetsTable.context_id, exchangeSparksTable.id),
+    ))
+    .where(and(
+      eq(exchangeSparksTable.status, "published"),
+      communityVisibility,
+      eq(mediaAssetsTable.status, "ready"),
+      sql`${mediaAssetsTable.variant_key} IS NOT NULL`,
+      eq(mediaAssetsTable.media_type, "video"),
+      sql`${mediaAssetsTable.mime_type} LIKE 'video/%'`,
+      eq(exchangeListingsTable.status, "active"),
+      eq(exchangeListingsTable.moderation_status, "approved"),
+      eq(exchangeListingsTable.seller_id, exchangeSparksTable.author_user_id),
+      eq(usersTable.approval_status, "approved"),
+      eq(usersTable.is_suspended, false),
+      locationCondition,
+      sql`NOT EXISTS (
+        SELECT 1 FROM direct_message_blocks spark_block
+        WHERE (spark_block.blocker_id = ${userId} AND spark_block.blocked_id = ${exchangeSparksTable.author_user_id})
+           OR (spark_block.blocker_id = ${exchangeSparksTable.author_user_id} AND spark_block.blocked_id = ${userId})
+      )`,
+      cursor
+        ? or(
+          lt(exchangeSparksTable.created_at, new Date(cursor.created_at)),
+          and(
+            eq(exchangeSparksTable.created_at, new Date(cursor.created_at)),
+            cursor.source === "durable" ? lt(exchangeSparksTable.id, cursor.id) : sql`FALSE`,
+          ),
+        )
+        : undefined,
+    ))
+    .orderBy(desc(exchangeSparksTable.created_at), desc(exchangeSparksTable.id))
+    .limit(pageSize + 1);
+
+  // Old listing-linked Stories are still 24-hour Moments. Keep them visible
+  // until their original expiry, without silently turning them into durable
+  // listing media or changing legacy Story interaction permissions.
+  const legacyRows = await db.select({
     story_id: communityStoriesTable.id,
     created_at: communityStoriesTable.created_at,
     expires_at: communityStoriesTable.expires_at,
     listing_id: exchangeListingsTable.id,
     caption: communityStoriesTable.caption,
+    author_name: usersTable.name,
+    author_avatar_url: usersTable.avatar_url,
     neighborhood: exchangeListingsTable.neighborhood,
     media_id: communityStoryMediaTable.id,
     thumbnail_storage_key: communityStoryMediaTable.thumbnail_storage_key,
@@ -238,7 +322,7 @@ router.get("/community/exchange/sparks", requireAuth, requireApproved, generalAp
     .where(and(
       eq(communityStoriesTable.status, "published"),
       eq(communityStoriesTable.audience, "community"),
-      communityVisibility,
+      legacyCommunityVisibility,
       sql`${communityStoriesTable.expires_at} > NOW()`,
       eq(communityStoryMediaTable.media_type, "video"),
       sql`${communityStoryMediaTable.mime_type} LIKE 'video/%'`,
@@ -262,35 +346,63 @@ router.get("/community/exchange/sparks", requireAuth, requireApproved, generalAp
           lt(communityStoriesTable.created_at, new Date(cursor.created_at)),
           and(
             eq(communityStoriesTable.created_at, new Date(cursor.created_at)),
-            lt(communityStoriesTable.id, cursor.id),
+            cursor.source === "legacy" ? lt(communityStoriesTable.id, cursor.id) : sql`TRUE`,
           ),
         )
         : undefined,
     ))
     .orderBy(desc(communityStoriesTable.created_at), desc(communityStoriesTable.id))
     .limit(pageSize + 1);
-  const hasMore = rows.length > pageSize;
-  const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
-  return res.json({
-    sparks: pageRows.map((row) => ({
-      listingId: row.listing_id,
-      storyId: row.story_id,
-      // Retain the Exchange client’s established snake-case identifiers while
-      // exposing the canonical linked Story/listing keys for newer clients.
-      id: row.story_id,
-      listing_id: row.listing_id,
-      caption: row.caption,
-      created_at: row.created_at.toISOString(),
-      expires_at: row.expires_at.toISOString(),
-      neighborhood: row.neighborhood,
+
+  const items = [
+    ...durableRows.map((row) => ({
+      id: row.spark_id, source: "durable" as const, created_at: row.created_at,
+      listing_id: row.listing_id, caption: row.caption,
+      author_name: row.author_name, author_avatar_url: row.author_avatar_url,
+      neighborhood: row.neighborhood, expires_at: null as string | null,
+      media_asset_id: row.media_asset_id,
+      media_url: `/api/media-assets/${row.media_asset_id}`,
+      thumbnail_url: row.thumbnail_key ? `/api/media-assets/${row.media_asset_id}/thumbnail` : null,
+    })),
+    ...legacyRows.map((row) => ({
+      id: row.story_id, source: "legacy" as const, created_at: row.created_at,
+      listing_id: row.listing_id, caption: row.caption,
+      author_name: row.author_name, author_avatar_url: row.author_avatar_url,
+      neighborhood: row.neighborhood, expires_at: row.expires_at.toISOString(),
+      media_asset_id: null,
       media_url: `/api/community/stories/media/${row.media_id}`,
       thumbnail_url: row.thumbnail_storage_key || row.thumbnail_key
         ? `/api/community/stories/media/${row.media_id}?thumbnail=true`
         : null,
     })),
-    next_cursor: hasMore ? encodeListingCursor({
+  ].sort((a, b) => b.created_at.getTime() - a.created_at.getTime()
+    || (a.source === b.source ? 0 : a.source === "durable" ? -1 : 1)
+    || b.id - a.id);
+  const hasMore = items.length > pageSize;
+  const pageRows = items.slice(0, pageSize);
+  return res.json({
+    sparks: pageRows.map((row) => ({
+      listingId: row.listing_id,
+      sparkId: row.source === "durable" ? row.id : null,
+      storyId: row.source === "legacy" ? row.id : null,
+      id: row.id,
+      listing_id: row.listing_id,
+      spark_id: row.source === "durable" ? row.id : null,
+      caption: row.caption,
+      created_at: row.created_at.toISOString(),
+      expires_at: row.expires_at,
+      durable: row.source === "durable",
+      neighborhood: row.neighborhood,
+      author_name: row.author_name,
+      author_avatar_url: row.author_avatar_url,
+      media_asset_id: row.media_asset_id,
+      media_url: row.media_url,
+      thumbnail_url: row.thumbnail_url,
+    })),
+    next_cursor: hasMore ? encodeSparkCursor({
       created_at: pageRows[pageRows.length - 1].created_at,
-      id: pageRows[pageRows.length - 1].story_id,
+      id: pageRows[pageRows.length - 1].id,
+      source: pageRows[pageRows.length - 1].source,
     }) : null,
   });
 });

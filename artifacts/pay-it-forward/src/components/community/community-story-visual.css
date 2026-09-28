@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap');
+
 :root {
   --nia-story-viewer: #050505;
   --nia-story-glass: rgba(0,0,0,.58);
@@ -183,4 +185,99 @@
   .nia-community-stories-brand h1 { font-size:28px; }
   .nia-community-stories-mark { width:42px; height:42px; border-radius:14px; font-size:19px; }
   .nia-community-stories-hero .nia-story-pill { padding:0 12px; }
+}
+
+/* Spark studio: an editorial, indigo-ink workspace with a warm paper entrance. */
+.nia-story-composer-overlay { z-index:100; background:rgba(8,14,29,.9); }
+.nia-story-gallery-overlay { z-index:110; background:rgba(8,14,29,.92); }
+.nia-story-composer-shell { background:#101b2c; }
+.nia-story-composer { min-height:0; height:100%; background:#101b2c; color:#f4f4ed; font-family:'DM Sans',var(--app-font-sans),sans-serif; }
+.nia-story-composer__header { flex:0 0 auto; min-height:68px; padding: max(14px,env(safe-area-inset-top)) 18px 12px; border-bottom:1px solid rgba(255,255,255,.09); background:#101b2c; }
+.nia-story-composer__title strong { font-size:17px; font-weight:800; letter-spacing:-.025em; }
+.nia-story-composer__title span { margin-top:3px; font-size:9px; font-weight:800; letter-spacing:.18em; color:#a4c7cb; }
+.nia-story-header-end { width:40px; }
+.nia-story-icon--light { background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.12); }
+.nia-story-source { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; padding:38px 22px max(26px,env(safe-area-inset-bottom)); background:radial-gradient(circle at 85% 0%,rgba(91,152,155,.2),transparent 42%),#16263b; }
+.nia-story-source__intro { margin-bottom:32px; }
+.nia-story-source__intro h2,.nia-story-destination-intro h2 { margin:13px 0 12px; font-size:clamp(38px,9vw,54px); line-height:1.02; letter-spacing:-.055em; font-weight:750; }
+.nia-story-source__intro h2 em,.nia-story-destination-intro h2 em { font-family:'Instrument Serif',Georgia,serif; color:#a6d9d3; font-weight:400; }
+.nia-story-source__intro > p:last-child,.nia-story-destination-intro > p:last-child { margin:0; color:#b4c6ca; font-size:14px; line-height:1.5; }
+.nia-story-source__choices { display:grid; gap:10px; }
+.nia-story-source__choice { display:grid; grid-template-columns:56px 1fr 22px; grid-template-rows:1fr 1fr; align-items:center; column-gap:14px; min-height:88px; padding:14px; border:1px solid rgba(196,227,224,.16); border-radius:18px; background:rgba(241,247,241,.06); color:#f4f4ed; text-align:left; cursor:pointer; transition:transform .18s ease,background .18s ease; }
+.nia-story-source__choice:hover { background:rgba(241,247,241,.11); transform:translateY(-2px); }
+.nia-story-source__choice > span { grid-row:1/3; display:grid; place-items:center; width:56px; height:56px; border-radius:14px; background:#a8d6d0; color:#163a42; }
+.nia-story-source__choice:nth-child(2) > span { background:#e4c4ac; color:#53392f; }
+.nia-story-source__choice:nth-child(3) > span { background:#d1c6dc; color:#473954; }
+.nia-story-source__choice strong { align-self:end; font-size:15px; }
+.nia-story-source__choice small { grid-column:2; align-self:start; margin-top:3px; color:#b0c4c8; font-size:11px; }
+.nia-story-source__choice > svg { grid-column:3; grid-row:1/3; color:#abc7c9; }
+.nia-story-source__resume { display:flex; align-items:center; justify-content:center; gap:8px; min-height:46px; margin-top:18px; border-radius:12px; background:#a8d6d0; color:#152b35; font-weight:800; }
+.nia-story-source__foot { margin:auto 0 0; padding-top:26px; color:#9db6bb; text-align:center; font-size:11px; }
+.nia-story-composer__canvas { flex:1 1 0; min-height:170px; background:#091422; padding:12px 16px 0; }
+.nia-story-editor-surface { position:relative; width:100%; height:100%; max-width:450px; overflow:hidden; border-radius:18px 18px 0 0; background:#233849; box-shadow:0 0 0 1px rgba(255,255,255,.13); }
+.nia-story-text-preview { padding:28px; width:100%; text-align:center; color:#f5f3ea; }
+.nia-story-text-preview span { font-size:10px; text-transform:uppercase; letter-spacing:.2em; color:#afdfdb; }
+.nia-story-text-preview p { font-family:'Instrument Serif',Georgia,serif; font-size:clamp(27px,7vw,44px); line-height:1.12; overflow-wrap:anywhere; }
+.nia-story-text-preview small { font-size:11px; color:#c7d3d5; }
+.nia-story-composer__details { flex:0 1 auto; max-height:29dvh; min-height:74px; padding:14px 18px 10px; border-top:1px solid rgba(255,255,255,.13); background:#18283a; overflow:auto; }
+.nia-story-composer--destination .nia-story-composer__details { flex:1; max-height:none; padding:30px 20px; background:radial-gradient(circle at 95% 2%,rgba(93,155,155,.16),transparent 45%),#16263b; }
+.nia-story-composer__form textarea { margin-top:12px; border-radius:12px; background:rgba(255,255,255,.07); font-size:14px; }
+.nia-story-composer__form textarea::placeholder { color:#bac6cf; }
+.nia-story-audio-note { display:flex; align-items:flex-start; gap:12px; padding:13px; border-radius:12px; background:rgba(169,216,207,.1); color:#d2e7e3; }
+.nia-story-audio-note strong { font-size:13px; }
+.nia-story-audio-note p { margin:3px 0 0; font-size:11px; line-height:1.45; }
+.nia-story-composer__gallery-actions { position:relative; z-index:3; bottom:auto; left:auto; right:auto; flex:0 0 auto; justify-content:flex-start; gap:8px; padding:8px 18px; background:#18283a; }
+.nia-story-gallery-button { min-height:36px; background:rgba(255,255,255,.07); font-size:11px; }
+.nia-story-tool-dock { position:relative; z-index:3; bottom:auto; left:auto; right:auto; flex:0 0 auto; gap:0; justify-content:space-around; border:0; border-top:1px solid rgba(255,255,255,.09); border-radius:0; background:#18283a; padding:7px 8px; }
+.nia-story-tool { display:grid; place-items:center; min-width:0; width:20%; min-height:56px; border-radius:12px; }
+.nia-story-tool span { margin:0 0 3px; }
+.nia-story-tool small { font-size:10px; font-weight:650; }
+.nia-story-tool--active { background:rgba(168,214,208,.18); color:#b9ebe3; }
+.nia-story-composer__footer { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 18px max(13px,env(safe-area-inset-bottom)); background:#101b2c; border-top:1px solid rgba(255,255,255,.09); }
+.nia-story-composer__footer > span { color:#a8bdc3; font-size:11px; font-weight:650; }
+.nia-story-publish { position:static; display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:45px; border-radius:12px; background:#a8d6d0; color:#142d35; padding:0 19px; font-size:13px; box-shadow:none; }
+.nia-story-publish:disabled { opacity:.5; cursor:not-allowed; }
+.nia-story-destination-intro { margin-bottom:31px; }
+.nia-story-destination-card { display:flex; align-items:center; gap:13px; padding:17px; margin:12px 0; border:1px solid rgba(188,222,220,.22); border-radius:16px; background:rgba(255,255,255,.055); }
+.nia-story-destination-card > svg { color:#a8d6d0; flex:none; }
+.nia-story-destination-card > div:not(.nia-story-destination-card__full) { flex:1; min-width:0; }
+.nia-story-destination-card label { display:block; color:#f7f6ef; font-size:13px; font-weight:800; }
+.nia-story-destination-card label span { color:#b3c8c8; font-weight:400; }
+.nia-story-destination-card p { margin:4px 0 0; color:#afc3c8; font-size:11px; line-height:1.45; }
+.nia-story-destination-card select { min-height:40px; max-width:145px; padding:0 8px; border:1px solid rgba(255,255,255,.2); border-radius:10px; background:#213b4b; color:#f5f4ee; font-size:12px; }
+.nia-story-destination-card__full { width:100%; }
+.nia-story-destination-card__full select { display:block; max-width:none; width:100%; margin-top:14px; }
+.nia-story-destination-card button { color:#a8d6d0; text-decoration:underline; }
+.nia-story-destination-note { color:#aabfc3; font-size:11px; line-height:1.6; padding:12px 4px; }
+.nia-story-gallery { background:#eff1eb; color:#172d39; }
+.nia-story-gallery-overlay > .nia-story-gallery { background:#eff1eb; }
+.nia-story-gallery__header,.nia-story-gallery__footer { background:#eff1eb; border-color:#d8dedb; }
+.nia-story-gallery__header strong { font-size:17px; }
+.nia-story-gallery__item { background:#d6ddd9; }
+.nia-story-gallery__selected { background:#183f49; }
+.nia-story-gallery__empty { display:flex; min-height:42dvh; align-items:center; justify-content:center; flex-direction:column; gap:9px; padding:30px; text-align:center; }
+.nia-story-gallery__empty svg { color:#49767b; }
+.nia-story-gallery__empty p { max-width:270px; margin:0; color:#597077; font-size:13px; line-height:1.5; }
+.nia-story-gallery__empty button { min-height:42px; margin-top:10px; border-radius:10px; background:#163e48; color:#f5f6ed; padding:0 17px; font-weight:700; }
+.nia-story-rail__skeleton { display:flex; gap:12px; align-items:center; }
+.nia-story-rail__skeleton span { width:65px; height:65px; flex:none; border-radius:50%; background:hsl(var(--muted)); animation:nia-story-pulse 1.5s ease-in-out infinite alternate; }
+.nia-story-rail__skeleton span:nth-child(2) { animation-delay:.15s; }.nia-story-rail__skeleton span:nth-child(3) { animation-delay:.3s; }
+.nia-story-error { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; margin-bottom:12px; border:1px solid #bf7777; border-radius:12px; color:#f6d7d0; background:#512c36; font-size:12px; }
+.nia-story-error button { text-decoration:underline; font-weight:800; }
+.nia-story-composer button:focus-visible,.nia-story-composer select:focus-visible,.nia-story-composer textarea:focus-visible,.nia-story-gallery button:focus-visible { outline:2px solid #a8d6d0; outline-offset:2px; }
+@keyframes nia-story-pulse { to { opacity:.35; } }
+@media (min-width:640px) {
+  .nia-story-composer-shell { height:min(900px,calc(100dvh - 32px)); width:min(520px,100vw); box-shadow:0 25px 90px rgba(0,0,0,.38); }
+  .nia-story-composer { width:100%; }
+  .nia-story-composer__canvas { min-height:220px; }
+}
+@media (max-height:720px) {
+  .nia-story-source { padding-top:18px; }
+  .nia-story-source__intro { margin-bottom:16px; }
+  .nia-story-source__choice { min-height:70px; padding:9px 12px; }
+  .nia-story-composer__details { max-height:25dvh; }
+  .nia-story-tool { min-height:49px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .nia-story-source__choice,.nia-story-rail__skeleton span { animation:none; transition:none; }
 }

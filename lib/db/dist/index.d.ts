@@ -8,4 +8,5 @@ export { communityStoriesTable, communityStoryMediaTable, communityStoryElements
 export { mediaAssetsTable, mediaProcessingJobsTable, } from "./schema/media-assets";
 export { requestMessageAttachmentsTable } from "./schema/request-message-attachments";
 export { exchangeListingsTable, exchangePickupRequestsTable, exchangeDigestDeliveriesTable, } from "./schema/exchange";
+export { exchangeSparksTable } from "./schema/exchange-sparks";
 //# sourceMappingURL=index.d.ts.map

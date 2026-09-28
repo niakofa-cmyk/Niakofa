@@ -28,6 +28,11 @@ const mediaUploadGuardMigrationPath = new URL(
 );
 const storiesSchemaPath = new URL("../../../../lib/db/src/schema/community-stories.ts", import.meta.url);
 const schedulerPath = new URL("../lib/scheduler.ts", import.meta.url);
+const durableSparksMigrationPath = new URL(
+  "../../../../lib/db/migrations/0176_durable_exchange_sparks.sql",
+  import.meta.url,
+);
+const durableSparksSchemaPath = new URL("../../../../lib/db/src/schema/exchange-sparks.ts", import.meta.url);
 
 describe("Exchange Sparks authorization and discovery contract", () => {
   const visibleStory = {
@@ -169,7 +174,7 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(scheduler).toMatch(/mediaProcessingJobsTable\.status, \["queued", "failed"\]/);
   });
 
-  it("locks the linked listing before locking a Spark Story for publication", async () => {
+  it("locks the linked listing before locking the durable Spark for publication", async () => {
     const route = await fs.readFile(
       new URL("../routes/community-exchange-spark-drafts.ts", import.meta.url),
       "utf8",
@@ -181,7 +186,7 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(publishOffset).toBeGreaterThanOrEqual(0);
     expect(listingLockOffset).toBeGreaterThan(publishOffset);
     expect(storyLockOffset).toBeGreaterThan(listingLockOffset);
-    expect(route.slice(publishOffset, storyLockOffset)).toMatch(/storyReference\.exchange_listing_id/);
+    expect(route.slice(publishOffset, storyLockOffset)).toMatch(/sparkReference\.listing_id/);
   });
 
   it("provides bounded cursor discovery with coarse server-side nearby matching and same-origin media URLs", async () => {
@@ -191,9 +196,31 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(route).toMatch(/router\.get\("\/community\/exchange\/sparks"/);
     expect(route).toMatch(/3958\.8 \* 2 \* ASIN\(SQRT/);
     expect(route).toMatch(/locationCondition = sql`FALSE`/);
-    expect(route).toMatch(/media_url: `\/api\/community\/stories\/media\/\$\{row\.media_id\}`/);
-    expect(route).toMatch(/thumbnail_url: row\.thumbnail_storage_key \|\| row\.thumbnail_key[\s\S]*\?thumbnail=true/);
-    expect(route).toMatch(/listingId: row\.listing_id,[\s\S]*storyId: row\.story_id,[\s\S]*caption: row\.caption,[\s\S]*neighborhood: row\.neighborhood/);
+    expect(route).toMatch(/media_url: `\/api\/media-assets\/\$\{row\.media_asset_id\}`/);
+    expect(route).toMatch(/thumbnail_url: row\.thumbnail_key[\s\S]*\/api\/media-assets\/\$\{row\.media_asset_id\}\/thumbnail/);
+    expect(route).toMatch(/listingId: row\.listing_id,[\s\S]*sparkId: row\.source === "durable" \? row\.id : null/);
+    expect(route).toMatch(/durable: row\.source === "durable"/);
+    expect(route).toMatch(/legacyRows = await db\.select/);
+    expect(route).toMatch(/communityStoriesTable\.expires_at} > NOW\(\)/);
+    expect(route).toMatch(/encodeSparkCursor/);
     expect(route).toMatch(/next_cursor: hasMore/);
+  });
+
+  it("keeps durable Sparks separate from expiring Stories and retries media deletion", async () => {
+    const [migration, schema, scheduler, usersRoute, mediaRoute] = await Promise.all([
+      fs.readFile(durableSparksMigrationPath, "utf8"),
+      fs.readFile(durableSparksSchemaPath, "utf8"),
+      fs.readFile(schedulerPath, "utf8"),
+      fs.readFile(new URL("../routes/users.ts", import.meta.url), "utf8"),
+      fs.readFile(new URL("../routes/media-assets-v21.ts", import.meta.url), "utf8"),
+    ]);
+    expect(migration).toMatch(/CREATE TABLE IF NOT EXISTS exchange_sparks/);
+    expect(migration).toMatch(/listing_id integer NOT NULL REFERENCES exchange_listings\(id\) ON DELETE CASCADE/);
+    expect(schema).toMatch(/exchangeSparksTable = pgTable\("exchange_sparks"/);
+    expect(schema).not.toMatch(/^\s*expires_at:/m);
+    expect(mediaRoute).toMatch(/contextKind === "exchange_spark"/);
+    expect(scheduler).toMatch(/exchange_sparks WHERE exchange_sparks\.id/);
+    expect(scheduler).toMatch(/Exchange Spark cleanup: storage\/database cleanup will retry/);
+    expect(usersRoute).toMatch(/update\(exchangeSparksTable\)\.set\(\{[\s\S]*status: "deletion_pending"/);
   });
 });
