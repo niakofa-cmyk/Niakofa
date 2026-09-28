@@ -162,9 +162,9 @@ var require_ms = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/common.js
+// ../../node_modules/.pnpm/debug@4.4.3_supports-color@8.1.1/node_modules/debug/src/common.js
 var require_common = __commonJS({
-  "../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/common.js"(exports, module) {
+  "../../node_modules/.pnpm/debug@4.4.3_supports-color@8.1.1/node_modules/debug/src/common.js"(exports, module) {
     function setup(env) {
       createDebug.debug = createDebug;
       createDebug.default = createDebug;
@@ -339,9 +339,9 @@ var require_common = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/browser.js
+// ../../node_modules/.pnpm/debug@4.4.3_supports-color@8.1.1/node_modules/debug/src/browser.js
 var require_browser = __commonJS({
-  "../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/browser.js"(exports, module) {
+  "../../node_modules/.pnpm/debug@4.4.3_supports-color@8.1.1/node_modules/debug/src/browser.js"(exports, module) {
     exports.formatArgs = formatArgs;
     exports.save = save;
     exports.load = load;
@@ -522,27 +522,29 @@ var require_has_flag = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/supports-color@7.2.0/node_modules/supports-color/index.js
+// ../../node_modules/.pnpm/supports-color@8.1.1/node_modules/supports-color/index.js
 var require_supports_color = __commonJS({
-  "../../node_modules/.pnpm/supports-color@7.2.0/node_modules/supports-color/index.js"(exports, module) {
+  "../../node_modules/.pnpm/supports-color@8.1.1/node_modules/supports-color/index.js"(exports, module) {
     "use strict";
     var os3 = __require("os");
     var tty = __require("tty");
     var hasFlag = require_has_flag();
     var { env } = process;
-    var forceColor;
+    var flagForceColor;
     if (hasFlag("no-color") || hasFlag("no-colors") || hasFlag("color=false") || hasFlag("color=never")) {
-      forceColor = 0;
+      flagForceColor = 0;
     } else if (hasFlag("color") || hasFlag("colors") || hasFlag("color=true") || hasFlag("color=always")) {
-      forceColor = 1;
+      flagForceColor = 1;
     }
-    if ("FORCE_COLOR" in env) {
-      if (env.FORCE_COLOR === "true") {
-        forceColor = 1;
-      } else if (env.FORCE_COLOR === "false") {
-        forceColor = 0;
-      } else {
-        forceColor = env.FORCE_COLOR.length === 0 ? 1 : Math.min(parseInt(env.FORCE_COLOR, 10), 3);
+    function envForceColor() {
+      if ("FORCE_COLOR" in env) {
+        if (env.FORCE_COLOR === "true") {
+          return 1;
+        }
+        if (env.FORCE_COLOR === "false") {
+          return 0;
+        }
+        return env.FORCE_COLOR.length === 0 ? 1 : Math.min(Number.parseInt(env.FORCE_COLOR, 10), 3);
       }
     }
     function translateLevel(level) {
@@ -556,15 +558,22 @@ var require_supports_color = __commonJS({
         has16m: level >= 3
       };
     }
-    function supportsColor(haveStream, streamIsTTY) {
+    function supportsColor(haveStream, { streamIsTTY, sniffFlags = true } = {}) {
+      const noFlagForceColor = envForceColor();
+      if (noFlagForceColor !== void 0) {
+        flagForceColor = noFlagForceColor;
+      }
+      const forceColor = sniffFlags ? flagForceColor : noFlagForceColor;
       if (forceColor === 0) {
         return 0;
       }
-      if (hasFlag("color=16m") || hasFlag("color=full") || hasFlag("color=truecolor")) {
-        return 3;
-      }
-      if (hasFlag("color=256")) {
-        return 2;
+      if (sniffFlags) {
+        if (hasFlag("color=16m") || hasFlag("color=full") || hasFlag("color=truecolor")) {
+          return 3;
+        }
+        if (hasFlag("color=256")) {
+          return 2;
+        }
       }
       if (haveStream && !streamIsTTY && forceColor === void 0) {
         return 0;
@@ -581,7 +590,7 @@ var require_supports_color = __commonJS({
         return 1;
       }
       if ("CI" in env) {
-        if (["TRAVIS", "CIRCLECI", "APPVEYOR", "GITLAB_CI", "GITHUB_ACTIONS", "BUILDKITE"].some((sign3) => sign3 in env) || env.CI_NAME === "codeship") {
+        if (["TRAVIS", "CIRCLECI", "APPVEYOR", "GITLAB_CI", "GITHUB_ACTIONS", "BUILDKITE", "DRONE"].some((sign3) => sign3 in env) || env.CI_NAME === "codeship") {
           return 1;
         }
         return min2;
@@ -593,7 +602,7 @@ var require_supports_color = __commonJS({
         return 3;
       }
       if ("TERM_PROGRAM" in env) {
-        const version3 = parseInt((env.TERM_PROGRAM_VERSION || "").split(".")[0], 10);
+        const version3 = Number.parseInt((env.TERM_PROGRAM_VERSION || "").split(".")[0], 10);
         switch (env.TERM_PROGRAM) {
           case "iTerm.app":
             return version3 >= 3 ? 3 : 2;
@@ -612,21 +621,24 @@ var require_supports_color = __commonJS({
       }
       return min2;
     }
-    function getSupportLevel(stream) {
-      const level = supportsColor(stream, stream && stream.isTTY);
+    function getSupportLevel(stream, options = {}) {
+      const level = supportsColor(stream, {
+        streamIsTTY: stream && stream.isTTY,
+        ...options
+      });
       return translateLevel(level);
     }
     module.exports = {
       supportsColor: getSupportLevel,
-      stdout: translateLevel(supportsColor(true, tty.isatty(1))),
-      stderr: translateLevel(supportsColor(true, tty.isatty(2)))
+      stdout: getSupportLevel({ isTTY: tty.isatty(1) }),
+      stderr: getSupportLevel({ isTTY: tty.isatty(2) })
     };
   }
 });
 
-// ../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/node.js
+// ../../node_modules/.pnpm/debug@4.4.3_supports-color@8.1.1/node_modules/debug/src/node.js
 var require_node = __commonJS({
-  "../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/node.js"(exports, module) {
+  "../../node_modules/.pnpm/debug@4.4.3_supports-color@8.1.1/node_modules/debug/src/node.js"(exports, module) {
     var tty = __require("tty");
     var util4 = __require("util");
     exports.init = init;
@@ -798,9 +810,9 @@ var require_node = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/index.js
+// ../../node_modules/.pnpm/debug@4.4.3_supports-color@8.1.1/node_modules/debug/src/index.js
 var require_src = __commonJS({
-  "../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/index.js"(exports, module) {
+  "../../node_modules/.pnpm/debug@4.4.3_supports-color@8.1.1/node_modules/debug/src/index.js"(exports, module) {
     if (typeof process === "undefined" || process.type === "renderer" || process.browser === true || process.__nwjs) {
       module.exports = require_browser();
     } else {
@@ -1657,9 +1669,9 @@ var require_safer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/lib/bom-handling.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/lib/bom-handling.js
 var require_bom_handling = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/lib/bom-handling.js"(exports) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/lib/bom-handling.js"(exports) {
     "use strict";
     var BOMChar = "\uFEFF";
     exports.PrependBOM = PrependBOMWrapper;
@@ -1703,9 +1715,9 @@ var require_bom_handling = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/lib/helpers/merge-exports.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/lib/helpers/merge-exports.js
 var require_merge_exports = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/lib/helpers/merge-exports.js"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/lib/helpers/merge-exports.js"(exports, module) {
     "use strict";
     var hasOwn = typeof Object.hasOwn === "undefined" ? Function.call.bind(Object.prototype.hasOwnProperty) : Object.hasOwn;
     function mergeModules(target, module2) {
@@ -1719,9 +1731,9 @@ var require_merge_exports = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/internal.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/internal.js
 var require_internal = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/internal.js"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/internal.js"(exports, module) {
     "use strict";
     var Buffer6 = require_safer().Buffer;
     module.exports = {
@@ -1900,9 +1912,9 @@ var require_internal = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/utf32.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/utf32.js
 var require_utf32 = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/utf32.js"(exports) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/utf32.js"(exports) {
     "use strict";
     var Buffer6 = require_safer().Buffer;
     exports._utf32 = Utf32Codec;
@@ -1923,7 +1935,7 @@ var require_utf32 = __commonJS({
     }
     Utf32Encoder.prototype.write = function(str) {
       var src = Buffer6.from(str, "ucs2");
-      var dst = Buffer6.alloc(src.length * 2);
+      var dst = Buffer6.alloc(src.length * 2 + 4);
       var write32 = this.isLE ? dst.writeUInt32LE : dst.writeUInt32BE;
       var offset = 0;
       for (var i2 = 0; i2 < src.length; i2 += 2) {
@@ -1990,9 +2002,9 @@ var require_utf32 = __commonJS({
         }
         if (overflow.length === 4) {
           if (isLE) {
-            codepoint = overflow[i2] | overflow[i2 + 1] << 8 | overflow[i2 + 2] << 16 | overflow[i2 + 3] << 24;
+            codepoint = overflow[0] | overflow[1] << 8 | overflow[2] << 16 | overflow[3] << 24;
           } else {
-            codepoint = overflow[i2 + 3] | overflow[i2 + 2] << 8 | overflow[i2 + 1] << 16 | overflow[i2] << 24;
+            codepoint = overflow[3] | overflow[2] << 8 | overflow[1] << 16 | overflow[0] << 24;
           }
           overflow.length = 0;
           offset = _writeCodepoint(dst, offset, codepoint, badChar);
@@ -2027,7 +2039,11 @@ var require_utf32 = __commonJS({
       return offset;
     }
     Utf32Decoder.prototype.end = function() {
+      if (this.overflow.length === 0) {
+        return;
+      }
       this.overflow.length = 0;
+      return String.fromCharCode(this.badChar);
     };
     exports.utf32 = Utf32AutoCodec;
     exports.ucs4 = "utf32";
@@ -2131,9 +2147,9 @@ var require_utf32 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/utf16.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/utf16.js
 var require_utf16 = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/utf16.js"(exports) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/utf16.js"(exports) {
     "use strict";
     var Buffer6 = require_safer().Buffer;
     exports.utf16be = Utf16BECodec;
@@ -2274,9 +2290,9 @@ var require_utf16 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/utf7.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/utf7.js
 var require_utf7 = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/utf7.js"(exports) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/utf7.js"(exports) {
     "use strict";
     var Buffer6 = require_safer().Buffer;
     exports.utf7 = Utf7Codec;
@@ -2492,9 +2508,9 @@ var require_utf7 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/sbcs-codec.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/sbcs-codec.js
 var require_sbcs_codec = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/sbcs-codec.js"(exports) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/sbcs-codec.js"(exports) {
     "use strict";
     var Buffer6 = require_safer().Buffer;
     exports._sbcs = SBCSCodec;
@@ -2554,9 +2570,9 @@ var require_sbcs_codec = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/sbcs-data.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/sbcs-data.js
 var require_sbcs_data = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/sbcs-data.js"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/sbcs-data.js"(exports, module) {
     "use strict";
     module.exports = {
       // Not supported by iconv, not sure why.
@@ -2652,6 +2668,8 @@ var require_sbcs_data = __commonJS({
       elot928: "iso88597",
       hebrew: "iso88598",
       hebrew8: "iso88598",
+      iso88598i: "iso88598",
+      iso88598e: "iso88598",
       turkish: "iso88599",
       turkish8: "iso88599",
       thai: "iso885911",
@@ -2707,9 +2725,9 @@ var require_sbcs_data = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/sbcs-data-generated.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/sbcs-data-generated.js
 var require_sbcs_data_generated = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/sbcs-data-generated.js"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/sbcs-data-generated.js"(exports, module) {
     "use strict";
     module.exports = {
       "437": "cp437",
@@ -3162,9 +3180,9 @@ var require_sbcs_data_generated = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/dbcs-codec.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/dbcs-codec.js
 var require_dbcs_codec = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/dbcs-codec.js"(exports) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/dbcs-codec.js"(exports) {
     "use strict";
     var Buffer6 = require_safer().Buffer;
     exports._dbcs = DBCSCodec;
@@ -3622,9 +3640,9 @@ var require_dbcs_codec = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/shiftjis.json
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/shiftjis.json
 var require_shiftjis = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/shiftjis.json"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/shiftjis.json"(exports, module) {
     module.exports = [
       ["0", "\0", 128],
       ["a1", "\uFF61", 62],
@@ -3753,9 +3771,9 @@ var require_shiftjis = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/eucjp.json
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/eucjp.json
 var require_eucjp = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/eucjp.json"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/eucjp.json"(exports, module) {
     module.exports = [
       ["0", "\0", 127],
       ["8ea1", "\uFF61", 62],
@@ -3941,9 +3959,9 @@ var require_eucjp = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/cp936.json
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/cp936.json
 var require_cp936 = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/cp936.json"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/cp936.json"(exports, module) {
     module.exports = [
       ["0", "\0", 127, "\u20AC"],
       ["8140", "\u4E02\u4E04\u4E05\u4E06\u4E0F\u4E12\u4E17\u4E1F\u4E20\u4E21\u4E23\u4E26\u4E29\u4E2E\u4E2F\u4E31\u4E33\u4E35\u4E37\u4E3C\u4E40\u4E41\u4E42\u4E44\u4E46\u4E4A\u4E51\u4E55\u4E57\u4E5A\u4E5B\u4E62\u4E63\u4E64\u4E65\u4E67\u4E68\u4E6A", 5, "\u4E72\u4E74", 9, "\u4E7F", 6, "\u4E87\u4E8A"],
@@ -4211,9 +4229,9 @@ var require_cp936 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/gbk-added.json
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/gbk-added.json
 var require_gbk_added = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/gbk-added.json"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/gbk-added.json"(exports, module) {
     module.exports = [
       ["a140", "\uE4C6", 62],
       ["a180", "\uE505", 32],
@@ -4273,16 +4291,16 @@ var require_gbk_added = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/gb18030-ranges.json
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/gb18030-ranges.json
 var require_gb18030_ranges = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/gb18030-ranges.json"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/gb18030-ranges.json"(exports, module) {
     module.exports = { uChars: [128, 165, 169, 178, 184, 216, 226, 235, 238, 244, 248, 251, 253, 258, 276, 284, 300, 325, 329, 334, 364, 463, 465, 467, 469, 471, 473, 475, 477, 506, 594, 610, 712, 716, 730, 930, 938, 962, 970, 1026, 1104, 1106, 8209, 8215, 8218, 8222, 8231, 8241, 8244, 8246, 8252, 8365, 8452, 8454, 8458, 8471, 8482, 8556, 8570, 8596, 8602, 8713, 8720, 8722, 8726, 8731, 8737, 8740, 8742, 8748, 8751, 8760, 8766, 8777, 8781, 8787, 8802, 8808, 8816, 8854, 8858, 8870, 8896, 8979, 9322, 9372, 9548, 9588, 9616, 9622, 9634, 9652, 9662, 9672, 9676, 9680, 9702, 9735, 9738, 9793, 9795, 11906, 11909, 11913, 11917, 11928, 11944, 11947, 11951, 11956, 11960, 11964, 11979, 12284, 12292, 12312, 12319, 12330, 12351, 12436, 12447, 12535, 12543, 12586, 12842, 12850, 12964, 13200, 13215, 13218, 13253, 13263, 13267, 13270, 13384, 13428, 13727, 13839, 13851, 14617, 14703, 14801, 14816, 14964, 15183, 15471, 15585, 16471, 16736, 17208, 17325, 17330, 17374, 17623, 17997, 18018, 18212, 18218, 18301, 18318, 18760, 18811, 18814, 18820, 18823, 18844, 18848, 18872, 19576, 19620, 19738, 19887, 40870, 59244, 59336, 59367, 59413, 59417, 59423, 59431, 59437, 59443, 59452, 59460, 59478, 59493, 63789, 63866, 63894, 63976, 63986, 64016, 64018, 64021, 64025, 64034, 64037, 64042, 65074, 65093, 65107, 65112, 65127, 65132, 65375, 65510, 65536], gbChars: [0, 36, 38, 45, 50, 81, 89, 95, 96, 100, 103, 104, 105, 109, 126, 133, 148, 172, 175, 179, 208, 306, 307, 308, 309, 310, 311, 312, 313, 341, 428, 443, 544, 545, 558, 741, 742, 749, 750, 805, 819, 820, 7922, 7924, 7925, 7927, 7934, 7943, 7944, 7945, 7950, 8062, 8148, 8149, 8152, 8164, 8174, 8236, 8240, 8262, 8264, 8374, 8380, 8381, 8384, 8388, 8390, 8392, 8393, 8394, 8396, 8401, 8406, 8416, 8419, 8424, 8437, 8439, 8445, 8482, 8485, 8496, 8521, 8603, 8936, 8946, 9046, 9050, 9063, 9066, 9076, 9092, 9100, 9108, 9111, 9113, 9131, 9162, 9164, 9218, 9219, 11329, 11331, 11334, 11336, 11346, 11361, 11363, 11366, 11370, 11372, 11375, 11389, 11682, 11686, 11687, 11692, 11694, 11714, 11716, 11723, 11725, 11730, 11736, 11982, 11989, 12102, 12336, 12348, 12350, 12384, 12393, 12395, 12397, 12510, 12553, 12851, 12962, 12973, 13738, 13823, 13919, 13933, 14080, 14298, 14585, 14698, 15583, 15847, 16318, 16434, 16438, 16481, 16729, 17102, 17122, 17315, 17320, 17402, 17418, 17859, 17909, 17911, 17915, 17916, 17936, 17939, 17961, 18664, 18703, 18814, 18962, 19043, 33469, 33470, 33471, 33484, 33485, 33490, 33497, 33501, 33505, 33513, 33520, 33536, 33550, 37845, 37921, 37948, 38029, 38038, 38064, 38065, 38066, 38069, 38075, 38076, 38078, 39108, 39109, 39113, 39114, 39115, 39116, 39265, 39394, 189e3] };
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/cp949.json
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/cp949.json
 var require_cp949 = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/cp949.json"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/cp949.json"(exports, module) {
     module.exports = [
       ["0", "\0", 127],
       ["8141", "\uAC02\uAC03\uAC05\uAC06\uAC0B", 4, "\uAC18\uAC1E\uAC1F\uAC21\uAC22\uAC23\uAC25", 6, "\uAC2E\uAC32\uAC33\uAC34"],
@@ -4559,9 +4577,9 @@ var require_cp949 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/cp950.json
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/cp950.json
 var require_cp950 = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/cp950.json"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/cp950.json"(exports, module) {
     module.exports = [
       ["0", "\0", 127],
       ["a140", "\u3000\uFF0C\u3001\u3002\uFF0E\u2027\uFF1B\uFF1A\uFF1F\uFF01\uFE30\u2026\u2025\uFE50\uFE51\uFE52\xB7\uFE54\uFE55\uFE56\uFE57\uFF5C\u2013\uFE31\u2014\uFE33\u2574\uFE34\uFE4F\uFF08\uFF09\uFE35\uFE36\uFF5B\uFF5D\uFE37\uFE38\u3014\u3015\uFE39\uFE3A\u3010\u3011\uFE3B\uFE3C\u300A\u300B\uFE3D\uFE3E\u3008\u3009\uFE3F\uFE40\u300C\u300D\uFE41\uFE42\u300E\u300F\uFE43\uFE44\uFE59\uFE5A"],
@@ -4742,9 +4760,9 @@ var require_cp950 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/big5-added.json
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/big5-added.json
 var require_big5_added = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/tables/big5-added.json"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/tables/big5-added.json"(exports, module) {
     module.exports = [
       ["8740", "\u43F0\u4C32\u4603\u45A6\u4578\u{27267}\u4D77\u45B3\u{27CB1}\u4CE2\u{27CC5}\u3B95\u4736\u4744\u4C47\u4C40\u{242BF}\u{23617}\u{27352}\u{26E8B}\u{270D2}\u4C57\u{2A351}\u474F\u45DA\u4C85\u{27C6C}\u4D07\u4AA4\u46A1\u{26B23}\u7225\u{25A54}\u{21A63}\u{23E06}\u{23F61}\u664D\u56FB"],
       ["8767", "\u7D95\u591D\u{28BB9}\u3DF4\u9734\u{27BEF}\u5BDB\u{21D5E}\u5AA4\u3625\u{29EB0}\u5AD1\u5BB7\u5CFC\u676E\u8593\u{29945}\u7461\u749D\u3875\u{21D53}\u{2369E}\u{26021}\u3EEC"],
@@ -4870,9 +4888,9 @@ var require_big5_added = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/dbcs-data.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/dbcs-data.js
 var require_dbcs_data = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/dbcs-data.js"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/dbcs-data.js"(exports, module) {
     "use strict";
     module.exports = {
       // == Japanese/ShiftJIS ====================================================
@@ -5117,9 +5135,9 @@ var require_dbcs_data = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/index.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/index.js
 var require_encodings = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/encodings/index.js"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/encodings/index.js"(exports, module) {
     "use strict";
     var mergeModules = require_merge_exports();
     var modules = [
@@ -5142,9 +5160,9 @@ var require_encodings = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/lib/streams.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/lib/streams.js
 var require_streams = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/lib/streams.js"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/lib/streams.js"(exports, module) {
     "use strict";
     var Buffer6 = require_safer().Buffer;
     module.exports = function(streamModule) {
@@ -5239,9 +5257,9 @@ var require_streams = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/lib/index.js
+// ../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/lib/index.js
 var require_lib = __commonJS({
-  "../../node_modules/.pnpm/iconv-lite@0.7.2/node_modules/iconv-lite/lib/index.js"(exports, module) {
+  "../../node_modules/.pnpm/iconv-lite@0.7.3/node_modules/iconv-lite/lib/index.js"(exports, module) {
     "use strict";
     var Buffer6 = require_safer().Buffer;
     var bomHandling = require_bom_handling();
@@ -5758,9 +5776,9 @@ var require_on_finished = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/content-type@2.0.0/node_modules/content-type/dist/index.js
+// ../../node_modules/.pnpm/content-type@2.1.0/node_modules/content-type/dist/index.js
 var require_dist = __commonJS({
-  "../../node_modules/.pnpm/content-type@2.0.0/node_modules/content-type/dist/index.js"(exports) {
+  "../../node_modules/.pnpm/content-type@2.1.0/node_modules/content-type/dist/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.format = format;
@@ -5792,14 +5810,17 @@ var require_dist = __commonJS({
       return result;
     }
     function parse3(header, options) {
+      const stopChar = options?.comma === true ? COMMA : 65536;
       const len = header.length;
-      let index2 = skipOWS(header, 0, len);
+      let index2 = skipOWS(header, options?.start ?? 0, len);
       const valueStart = index2;
-      index2 = skipValue(header, index2, len);
+      index2 = skipValue(header, index2, len, stopChar);
       const valueEnd = trailingOWS(header, valueStart, index2);
       const type = header.slice(valueStart, valueEnd).toLowerCase();
-      const parameters = options?.parameters === false ? new NullObject() : parseParameters(header, index2, len);
-      return { type, parameters };
+      if (options?.parameters === false) {
+        return { type, index: index2, parameters: new NullObject() };
+      }
+      return parseParameters(header, type, index2, len, stopChar);
     }
     var SP = 32;
     var HTAB = 9;
@@ -5807,13 +5828,18 @@ var require_dist = __commonJS({
     var EQ = 61;
     var DQUOTE = 34;
     var BSLASH = 92;
-    function parseParameters(header, index2, len) {
+    var COMMA = 44;
+    function parseParameters(header, type, index2, len, stopChar) {
       const parameters = new NullObject();
       parameter: while (index2 < len) {
+        if (header.charCodeAt(index2) === stopChar)
+          break;
         index2 = skipOWS(header, index2 + 1, len);
         const keyStart = index2;
         while (index2 < len) {
           const code = header.charCodeAt(index2);
+          if (code === stopChar)
+            break parameter;
           if (code === SEMI)
             continue parameter;
           if (code === EQ) {
@@ -5826,7 +5852,7 @@ var require_dist = __commonJS({
               while (index2 < len) {
                 const code2 = header.charCodeAt(index2++);
                 if (code2 === DQUOTE) {
-                  index2 = skipValue(header, index2, len);
+                  index2 = skipValue(header, index2, len, stopChar);
                   if (parameters[key] === void 0)
                     parameters[key] = value;
                   break;
@@ -5840,7 +5866,7 @@ var require_dist = __commonJS({
               continue parameter;
             }
             const valueStart = index2;
-            index2 = skipValue(header, index2, len);
+            index2 = skipValue(header, index2, len, stopChar);
             if (parameters[key] === void 0) {
               const valueEnd = trailingOWS(header, valueStart, index2);
               parameters[key] = header.slice(valueStart, valueEnd);
@@ -5850,12 +5876,12 @@ var require_dist = __commonJS({
           index2++;
         }
       }
-      return parameters;
+      return { type, index: index2, parameters };
     }
-    function skipValue(str, index2, len) {
+    function skipValue(str, index2, len, stopChar) {
       while (index2 < len) {
-        const char2 = str.charCodeAt(index2);
-        if (char2 === SEMI)
+        const code = str.charCodeAt(index2);
+        if (code === SEMI || code === stopChar)
           break;
         index2++;
       }
@@ -15394,9 +15420,9 @@ var require_mime_types = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/media-typer@1.1.0/node_modules/media-typer/index.js
+// ../../node_modules/.pnpm/media-typer@1.1.1/node_modules/media-typer/index.js
 var require_media_typer = __commonJS({
-  "../../node_modules/.pnpm/media-typer@1.1.0/node_modules/media-typer/index.js"(exports) {
+  "../../node_modules/.pnpm/media-typer@1.1.1/node_modules/media-typer/index.js"(exports) {
     "use strict";
     var SUBTYPE_NAME_REGEXP = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.-]{0,126}$/;
     var TYPE_NAME_REGEXP = /^[A-Za-z0-9][A-Za-z0-9!#$&^_-]{0,126}$/;
@@ -15427,18 +15453,12 @@ var require_media_typer = __commonJS({
       return string4;
     }
     function test(string4) {
-      if (!string4) {
-        throw new TypeError("argument string is required");
-      }
       if (typeof string4 !== "string") {
         throw new TypeError("argument string is required to be a string");
       }
       return TYPE_REGEXP.test(string4.toLowerCase());
     }
     function parse3(string4) {
-      if (!string4) {
-        throw new TypeError("argument string is required");
-      }
       if (typeof string4 !== "string") {
         throw new TypeError("argument string is required to be a string");
       }
@@ -15555,9 +15575,9 @@ var require_type_is = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/utils.js
+// ../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/utils.js
 var require_utils = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/utils.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/utils.js"(exports, module) {
     "use strict";
     var bytes = require_bytes();
     var contentType = require_dist();
@@ -15607,9 +15627,9 @@ var require_utils = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/read.js
+// ../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/read.js
 var require_read = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/read.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/read.js"(exports, module) {
     "use strict";
     var createError = require_http_errors();
     var getBody = require_raw_body();
@@ -15765,9 +15785,9 @@ var require_read = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/json.js
+// ../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/types/json.js
 var require_json = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/json.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/types/json.js"(exports, module) {
     "use strict";
     var debug = require_src()("body-parser:json");
     var read = require_read();
@@ -15864,9 +15884,9 @@ var require_json = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/raw.js
+// ../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/types/raw.js
 var require_raw = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/raw.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/types/raw.js"(exports, module) {
     "use strict";
     var debug = require_src()("body-parser:raw");
     var read = require_read();
@@ -15886,9 +15906,9 @@ var require_raw = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/text.js
+// ../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/types/text.js
 var require_text = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/text.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/types/text.js"(exports, module) {
     "use strict";
     var debug = require_src()("body-parser:text");
     var read = require_read();
@@ -16141,7 +16161,7 @@ var require_object_inspect = __commonJS({
       if (isBoolean(obj)) {
         return markBoxed(booleanValueOf.call(obj));
       }
-      if (isString(obj)) {
+      if (isString2(obj)) {
         return markBoxed(inspect(String(obj)));
       }
       if (typeof window !== "undefined" && obj === window) {
@@ -16190,7 +16210,7 @@ var require_object_inspect = __commonJS({
     function isError(obj) {
       return toStr(obj) === "[object Error]" && canTrustToString(obj);
     }
-    function isString(obj) {
+    function isString2(obj) {
       return toStr(obj) === "[object String]" && canTrustToString(obj);
     }
     function isNumber(obj) {
@@ -17529,9 +17549,9 @@ var require_side_channel = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/formats.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/formats.js
 var require_formats = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/formats.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/formats.js"(exports, module) {
     "use strict";
     var replace = String.prototype.replace;
     var percentTwenties = /%20/g;
@@ -17555,12 +17575,13 @@ var require_formats = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/utils.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/utils.js
 var require_utils2 = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/utils.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/utils.js"(exports, module) {
     "use strict";
     var formats = require_formats();
     var getSideChannel = require_side_channel();
+    var defineProperty = require_es_define_property();
     var has = Object.prototype.hasOwnProperty;
     var isArray = Array.isArray;
     var overflowChannel = getSideChannel();
@@ -17608,6 +17629,18 @@ var require_utils2 = __commonJS({
       }
       return obj;
     };
+    var setProperty = function setProperty2(obj, key, value) {
+      if (key === "__proto__" && defineProperty) {
+        defineProperty(obj, key, {
+          configurable: true,
+          enumerable: true,
+          value,
+          writable: true
+        });
+      } else {
+        obj[key] = value;
+      }
+    };
     var merge2 = function merge3(target, source, options) {
       if (!source) {
         return target;
@@ -17615,7 +17648,10 @@ var require_utils2 = __commonJS({
       if (typeof source !== "object" && typeof source !== "function") {
         if (isArray(target)) {
           var nextIndex = target.length;
-          if (options && typeof options.arrayLimit === "number" && nextIndex > options.arrayLimit) {
+          if (options && typeof options.arrayLimit === "number" && nextIndex >= options.arrayLimit) {
+            if (options.throwOnLimitExceeded) {
+              throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+            }
             return markOverflow(arrayToObject(target.concat(source), options), nextIndex);
           }
           target[nextIndex] = source;
@@ -17646,6 +17682,9 @@ var require_utils2 = __commonJS({
         }
         var combined = [target].concat(source);
         if (options && typeof options.arrayLimit === "number" && combined.length > options.arrayLimit) {
+          if (options.throwOnLimitExceeded) {
+            throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+          }
           return markOverflow(arrayToObject(combined, options), combined.length - 1);
         }
         return combined;
@@ -17667,14 +17706,20 @@ var require_utils2 = __commonJS({
             target[i2] = item;
           }
         });
+        if (options && typeof options.arrayLimit === "number" && target.length > options.arrayLimit) {
+          if (options.throwOnLimitExceeded) {
+            throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+          }
+          return markOverflow(arrayToObject(target, options), target.length - 1);
+        }
         return target;
       }
       return Object.keys(source).reduce(function(acc, key) {
         var value = source[key];
         if (has.call(acc, key)) {
-          acc[key] = merge3(acc[key], value, options);
+          setProperty(acc, key, merge3(acc[key], value, options));
         } else {
-          acc[key] = value;
+          setProperty(acc, key, value);
         }
         if (isOverflow(source) && !isOverflow(acc)) {
           markOverflow(acc, getMaxIndex(source));
@@ -17690,7 +17735,7 @@ var require_utils2 = __commonJS({
     };
     var assign = function assignSingleSource(target, source) {
       return Object.keys(source).reduce(function(acc, key) {
-        acc[key] = source[key];
+        setProperty(acc, key, source[key]);
         return acc;
       }, target);
     };
@@ -17724,6 +17769,13 @@ var require_utils2 = __commonJS({
       var out = "";
       for (var j = 0; j < string4.length; j += limit) {
         var segment = string4.length >= limit ? string4.slice(j, j + limit) : string4;
+        if (j + limit < string4.length) {
+          var last = segment.charCodeAt(segment.length - 1);
+          if (last >= 55296 && last <= 56319) {
+            segment = segment.slice(0, -1);
+            j -= 1;
+          }
+        }
         var arr = [];
         for (var i2 = 0; i2 < segment.length; ++i2) {
           var c = segment.charCodeAt(i2);
@@ -17753,7 +17805,7 @@ var require_utils2 = __commonJS({
     };
     var compact = function compact2(value) {
       var queue = [{ obj: { o: value }, prop: "o" }];
-      var refs = [];
+      var refs = getSideChannel();
       for (var i2 = 0; i2 < queue.length; ++i2) {
         var item = queue[i2];
         var obj = item.obj[item.prop];
@@ -17761,9 +17813,9 @@ var require_utils2 = __commonJS({
         for (var j = 0; j < keys.length; ++j) {
           var key = keys[j];
           var val = obj[key];
-          if (typeof val === "object" && val !== null && refs.indexOf(val) === -1) {
+          if (typeof val === "object" && val !== null && !refs.has(val)) {
             queue[queue.length] = { obj, prop: key };
-            refs[refs.length] = val;
+            refs.set(val, true);
           }
         }
       }
@@ -17777,17 +17829,27 @@ var require_utils2 = __commonJS({
       if (!obj || typeof obj !== "object") {
         return false;
       }
-      return !!(obj.constructor && obj.constructor.isBuffer && obj.constructor.isBuffer(obj));
+      return !!(obj.constructor && typeof obj.constructor.isBuffer === "function" && obj.constructor.isBuffer(obj));
     };
-    var combine = function combine2(a, b, arrayLimit, plainObjects) {
+    var combine = function combine2(a, b, arrayLimit, plainObjects, throwOnLimitExceeded) {
       if (isOverflow(a)) {
-        var newIndex = getMaxIndex(a) + 1;
-        a[newIndex] = b;
+        if (throwOnLimitExceeded) {
+          throw new RangeError("Array limit exceeded. Only " + arrayLimit + " element" + (arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+        }
+        var bValues = isArray(b) ? b : [b];
+        var newIndex = getMaxIndex(a);
+        for (var i2 = 0; i2 < bValues.length; ++i2) {
+          newIndex += 1;
+          a[newIndex] = bValues[i2];
+        }
         setMaxIndex(a, newIndex);
         return a;
       }
       var result = [].concat(a, b);
       if (result.length > arrayLimit) {
+        if (throwOnLimitExceeded) {
+          throw new RangeError("Array limit exceeded. Only " + arrayLimit + " element" + (arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+        }
         return markOverflow(arrayToObject(result, { plainObjects }), result.length - 1);
       }
       return result;
@@ -17819,9 +17881,9 @@ var require_utils2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/stringify.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/stringify.js
 var require_stringify = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/stringify.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/stringify.js"(exports, module) {
     "use strict";
     var getSideChannel = require_side_channel();
     var utils = require_utils2();
@@ -17855,6 +17917,7 @@ var require_stringify = __commonJS({
       charsetSentinel: false,
       commaRoundTrip: false,
       delimiter: "&",
+      depth: Infinity,
       encode: true,
       encodeDotInKeys: false,
       encoder: utils.encode,
@@ -17874,8 +17937,11 @@ var require_stringify = __commonJS({
       return typeof v === "string" || typeof v === "number" || typeof v === "boolean" || typeof v === "symbol" || typeof v === "bigint";
     };
     var sentinel = {};
-    var stringify2 = function stringify3(object2, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder2, filter, sort, allowDots, serializeDate4, format, formatter, encodeValuesOnly, charset, sideChannel) {
+    var stringify2 = function stringify3(object2, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder2, filter, sort, allowDots, serializeDate4, format, formatter, encodeValuesOnly, charset, sideChannel, depth, currentDepth) {
       var obj = object2;
+      if (currentDepth > depth) {
+        throw new RangeError("Input depth exceeded depth option of " + depth);
+      }
       var tmpSc = sideChannel;
       var step = 0;
       var findFlag = false;
@@ -17893,9 +17959,8 @@ var require_stringify = __commonJS({
           step = 0;
         }
       }
-      if (typeof filter === "function") {
-        obj = filter(prefix, obj);
-      } else if (obj instanceof Date) {
+      obj = typeof filter === "function" ? filter(prefix, obj) : obj;
+      if (obj instanceof Date) {
         obj = serializeDate4(obj);
       } else if (generateArrayPrefix === "comma" && isArray(obj)) {
         obj = utils.maybeMap(obj, function(value2) {
@@ -17938,7 +18003,7 @@ var require_stringify = __commonJS({
       }
       var encodedPrefix = encodeDotInKeys ? String(prefix).replace(/\./g, "%2E") : String(prefix);
       var adjustedPrefix = commaRoundTrip && isArray(obj) && obj.length === 1 ? encodedPrefix + "[]" : encodedPrefix;
-      if (allowEmptyArrays && isArray(obj) && obj.length === 0) {
+      if (allowEmptyArrays && isArray(obj) && obj.length === 0 && Object.keys(obj).length === 0) {
         return adjustedPrefix + "[]";
       }
       for (var j = 0; j < objKeys.length; ++j) {
@@ -17970,7 +18035,9 @@ var require_stringify = __commonJS({
           formatter,
           encodeValuesOnly,
           charset,
-          valueSideChannel
+          valueSideChannel,
+          depth,
+          currentDepth + 1
         ));
       }
       return values;
@@ -18025,6 +18092,7 @@ var require_stringify = __commonJS({
         charsetSentinel: typeof opts.charsetSentinel === "boolean" ? opts.charsetSentinel : defaults2.charsetSentinel,
         commaRoundTrip: !!opts.commaRoundTrip,
         delimiter: typeof opts.delimiter === "undefined" ? defaults2.delimiter : opts.delimiter,
+        depth: typeof opts.depth === "number" ? opts.depth : defaults2.depth,
         encode: typeof opts.encode === "boolean" ? opts.encode : defaults2.encode,
         encodeDotInKeys: typeof opts.encodeDotInKeys === "boolean" ? opts.encodeDotInKeys : defaults2.encodeDotInKeys,
         encoder: typeof opts.encoder === "function" ? opts.encoder : defaults2.encoder,
@@ -18072,9 +18140,10 @@ var require_stringify = __commonJS({
         if (options.skipNulls && value === null) {
           continue;
         }
+        var encodedKey = options.encodeDotInKeys ? String(key).replace(/\./g, "%2E") : String(key);
         pushToArray(keys, stringify2(
           value,
-          key,
+          encodedKey,
           generateArrayPrefix,
           commaRoundTrip,
           options.allowEmptyArrays,
@@ -18090,7 +18159,9 @@ var require_stringify = __commonJS({
           options.formatter,
           options.encodeValuesOnly,
           options.charset,
-          sideChannel
+          sideChannel,
+          options.depth,
+          0
         ));
       }
       var joined = keys.join(options.delimiter);
@@ -18107,9 +18178,9 @@ var require_stringify = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/parse.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/parse.js
 var require_parse = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/parse.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/parse.js"(exports, module) {
     "use strict";
     var utils = require_utils2();
     var has = Object.prototype.hasOwnProperty;
@@ -18145,6 +18216,17 @@ var require_parse = __commonJS({
     };
     var parseArrayValue = function(val, options, currentArrayLength) {
       if (val && typeof val === "string" && options.comma && val.indexOf(",") > -1) {
+        if (options.throwOnLimitExceeded) {
+          var commaCount = 0;
+          var commaIndex = val.indexOf(",");
+          while (commaIndex > -1) {
+            commaCount += 1;
+            if (commaCount >= options.arrayLimit) {
+              throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+            }
+            commaIndex = val.indexOf(",", commaIndex + 1);
+          }
+        }
         return val.split(",");
       }
       if (options.throwOnLimitExceeded && currentArrayLength >= options.arrayLimit) {
@@ -18216,10 +18298,7 @@ var require_parse = __commonJS({
           val = isArray(val) ? [val] : val;
         }
         if (options.comma && isArray(val) && val.length > options.arrayLimit) {
-          if (options.throwOnLimitExceeded) {
-            throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
-          }
-          val = utils.combine([], val, options.arrayLimit, options.plainObjects);
+          val = utils.combine([], val, options.arrayLimit, options.plainObjects, options.throwOnLimitExceeded);
         }
         if (key !== null) {
           var existing = has.call(obj, key);
@@ -18228,7 +18307,8 @@ var require_parse = __commonJS({
               obj[key],
               val,
               options.arrayLimit,
-              options.plainObjects
+              options.plainObjects,
+              options.throwOnLimitExceeded
             );
           } else if (!existing || options.duplicates === "last") {
             obj[key] = val;
@@ -18255,7 +18335,8 @@ var require_parse = __commonJS({
               [],
               leaf,
               options.arrayLimit,
-              options.plainObjects
+              options.plainObjects,
+              options.throwOnLimitExceeded
             );
           }
         } else {
@@ -18425,9 +18506,9 @@ var require_parse = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/index.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/index.js
 var require_lib2 = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/index.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/index.js"(exports, module) {
     "use strict";
     var stringify2 = require_stringify();
     var parse3 = require_parse();
@@ -18440,9 +18521,9 @@ var require_lib2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/urlencoded.js
+// ../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/types/urlencoded.js
 var require_urlencoded = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/urlencoded.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/lib/types/urlencoded.js"(exports, module) {
     "use strict";
     var createError = require_http_errors();
     var debug = require_src()("body-parser:urlencoded");
@@ -18526,9 +18607,9 @@ var require_urlencoded = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/index.js
+// ../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/index.js
 var require_body_parser = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/index.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0_supports-color@8.1.1/node_modules/body-parser/index.js"(exports, module) {
     "use strict";
     exports = module.exports = bodyParser;
     exports.json = require_json();
@@ -18710,9 +18791,9 @@ var require_parseurl = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/finalhandler@2.1.1/node_modules/finalhandler/index.js
+// ../../node_modules/.pnpm/finalhandler@2.1.1_supports-color@8.1.1/node_modules/finalhandler/index.js
 var require_finalhandler = __commonJS({
-  "../../node_modules/.pnpm/finalhandler@2.1.1/node_modules/finalhandler/index.js"(exports, module) {
+  "../../node_modules/.pnpm/finalhandler@2.1.1_supports-color@8.1.1/node_modules/finalhandler/index.js"(exports, module) {
     "use strict";
     var debug = require_src()("finalhandler");
     var encodeUrl = require_encodeurl();
@@ -18837,9 +18918,9 @@ var require_finalhandler = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/view.js
+// ../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/view.js
 var require_view = __commonJS({
-  "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/view.js"(exports, module) {
+  "../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/view.js"(exports, module) {
     "use strict";
     var debug = require_src()("express:view");
     var path5 = __require("node:path");
@@ -19746,9 +19827,9 @@ var require_ipaddr = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/proxy-addr@2.0.7/node_modules/proxy-addr/index.js
+// ../../node_modules/.pnpm/proxy-addr@2.0.8/node_modules/proxy-addr/index.js
 var require_proxy_addr = __commonJS({
-  "../../node_modules/.pnpm/proxy-addr@2.0.7/node_modules/proxy-addr/index.js"(exports, module) {
+  "../../node_modules/.pnpm/proxy-addr@2.0.8/node_modules/proxy-addr/index.js"(exports, module) {
     "use strict";
     module.exports = proxyaddr;
     module.exports.all = alladdrs;
@@ -19860,6 +19941,9 @@ var require_proxy_addr = __commonJS({
       return function trust(addr) {
         if (!isip(addr)) return false;
         var ip = parseip(addr);
+        if (ip.kind() === "ipv6" && ip.isIPv4MappedAddress()) {
+          ip = ip.toIPv4Address();
+        }
         var ipconv;
         var kind = ip.kind();
         for (var i2 = 0; i2 < subnets.length; i2++) {
@@ -19872,10 +19956,15 @@ var require_proxy_addr = __commonJS({
             if (subnetkind === "ipv4" && !ip.isIPv4MappedAddress()) {
               continue;
             }
+            if (subnetkind !== "ipv4" && !(subnetrange >= 96 && subnetip.isIPv4MappedAddress())) {
+              continue;
+            }
             if (!ipconv) {
               ipconv = subnetkind === "ipv4" ? ip.toIPv4Address() : ip.toIPv4MappedAddress();
             }
             trusted = ipconv;
+          } else if (kind === "ipv6" && subnetip.isIPv4MappedAddress()) {
+            continue;
           }
           if (trusted.match(subnetip, subnetrange)) {
             return true;
@@ -19892,12 +19981,20 @@ var require_proxy_addr = __commonJS({
       return function trust(addr) {
         if (!isip(addr)) return false;
         var ip = parseip(addr);
+        if (ip.kind() === "ipv6" && ip.isIPv4MappedAddress()) {
+          ip = ip.toIPv4Address();
+        }
         var kind = ip.kind();
         if (kind !== subnetkind) {
           if (subnetisipv4 && !ip.isIPv4MappedAddress()) {
             return false;
           }
+          if (!subnetisipv4 && !(subnetrange >= 96 && subnetip.isIPv4MappedAddress())) {
+            return false;
+          }
           ip = subnetisipv4 ? ip.toIPv4Address() : ip.toIPv4MappedAddress();
+        } else if (kind === "ipv6" && subnetip.isIPv4MappedAddress()) {
+          return false;
         }
         return ip.match(subnetip, subnetrange);
       };
@@ -19905,9 +20002,9 @@ var require_proxy_addr = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/utils.js
+// ../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/utils.js
 var require_utils3 = __commonJS({
-  "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/utils.js"(exports) {
+  "../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/utils.js"(exports) {
     "use strict";
     var { METHODS } = __require("node:http");
     var contentType = require_content_type();
@@ -20486,9 +20583,9 @@ var require_dist2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js
+// ../../node_modules/.pnpm/router@2.2.0_supports-color@8.1.1/node_modules/router/lib/layer.js
 var require_layer = __commonJS({
-  "../../node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js"(exports, module) {
+  "../../node_modules/.pnpm/router@2.2.0_supports-color@8.1.1/node_modules/router/lib/layer.js"(exports, module) {
     "use strict";
     var isPromise = require_is_promise();
     var pathRegexp = require_dist2();
@@ -20636,9 +20733,9 @@ var require_layer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/router@2.2.0/node_modules/router/lib/route.js
+// ../../node_modules/.pnpm/router@2.2.0_supports-color@8.1.1/node_modules/router/lib/route.js
 var require_route = __commonJS({
-  "../../node_modules/.pnpm/router@2.2.0/node_modules/router/lib/route.js"(exports, module) {
+  "../../node_modules/.pnpm/router@2.2.0_supports-color@8.1.1/node_modules/router/lib/route.js"(exports, module) {
     "use strict";
     var debug = require_src()("router:route");
     var Layer = require_layer();
@@ -20756,9 +20853,9 @@ var require_route = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/router@2.2.0/node_modules/router/index.js
+// ../../node_modules/.pnpm/router@2.2.0_supports-color@8.1.1/node_modules/router/index.js
 var require_router = __commonJS({
-  "../../node_modules/.pnpm/router@2.2.0/node_modules/router/index.js"(exports, module) {
+  "../../node_modules/.pnpm/router@2.2.0_supports-color@8.1.1/node_modules/router/index.js"(exports, module) {
     "use strict";
     var isPromise = require_is_promise();
     var Layer = require_layer();
@@ -21154,9 +21251,9 @@ var require_router = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/application.js
+// ../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/application.js
 var require_application = __commonJS({
-  "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/application.js"(exports, module) {
+  "../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/application.js"(exports, module) {
     "use strict";
     var finalhandler = require_finalhandler();
     var debug = require_src()("express:application");
@@ -21415,42 +21512,55 @@ var require_application = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/lib/charset.js
-var require_charset = __commonJS({
-  "../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/lib/charset.js"(exports, module) {
+// ../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/accept.js
+var require_accept = __commonJS({
+  "../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/accept.js"(exports, module) {
     "use strict";
+    var contentType = require_dist();
+    module.exports = parseAccept;
+    function parseAccept(header) {
+      var values = [];
+      var index2 = 0;
+      while (index2 < header.length) {
+        var start = skipOptionalWhitespace(header, index2);
+        var parsed = contentType.parse(header, { comma: true, start });
+        parsed.type = header.slice(start, start + parsed.type.length);
+        values.push(parsed);
+        index2 = parsed.index + 1;
+      }
+      return values;
+    }
+    function skipOptionalWhitespace(header, index2) {
+      var cursor = index2;
+      while (header.charCodeAt(cursor) === 32 || header.charCodeAt(cursor) === 9) {
+        cursor++;
+      }
+      return cursor;
+    }
+  }
+});
+
+// ../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/charset.js
+var require_charset = __commonJS({
+  "../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/charset.js"(exports, module) {
+    "use strict";
+    var parseAccept = require_accept();
     module.exports = preferredCharsets;
     module.exports.preferredCharsets = preferredCharsets;
-    var simpleCharsetRegExp = /^\s*([^\s;]+)\s*(?:;(.*))?$/;
     function parseAcceptCharset(accept) {
-      var accepts = accept.split(",");
+      var accepts = parseAccept(accept);
       for (var i2 = 0, j = 0; i2 < accepts.length; i2++) {
-        var charset = parseCharset(accepts[i2].trim(), i2);
-        if (charset) {
-          accepts[j++] = charset;
-        }
+        var charset = formatCharset(accepts[i2], i2);
+        if (charset) accepts[j++] = charset;
       }
       accepts.length = j;
       return accepts;
     }
-    function parseCharset(str, i2) {
-      var match = simpleCharsetRegExp.exec(str);
-      if (!match) return null;
-      var charset = match[1];
-      var q = 1;
-      if (match[2]) {
-        var params = match[2].split(";");
-        for (var j = 0; j < params.length; j++) {
-          var p = params[j].trim().split("=");
-          if (p[0] === "q") {
-            q = parseFloat(p[1]);
-            break;
-          }
-        }
-      }
+    function formatCharset(parsed, i2) {
+      if (!parsed.type) return null;
       return {
-        charset,
-        q,
+        charset: parsed.type,
+        q: parsed.parameters.q ? parseFloat(parsed.parameters.q) : 1,
         i: i2
       };
     }
@@ -21502,19 +21612,19 @@ var require_charset = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/lib/encoding.js
+// ../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/encoding.js
 var require_encoding = __commonJS({
-  "../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/lib/encoding.js"(exports, module) {
+  "../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/encoding.js"(exports, module) {
     "use strict";
+    var parseAccept = require_accept();
     module.exports = preferredEncodings;
     module.exports.preferredEncodings = preferredEncodings;
-    var simpleEncodingRegExp = /^\s*([^\s;]+)\s*(?:;(.*))?$/;
     function parseAcceptEncoding(accept) {
-      var accepts = accept.split(",");
+      var accepts = parseAccept(accept);
       var hasIdentity = false;
       var minQuality = 1;
       for (var i2 = 0, j = 0; i2 < accepts.length; i2++) {
-        var encoding = parseEncoding(accepts[i2].trim(), i2);
+        var encoding = formatEncoding(accepts[i2], i2);
         if (encoding) {
           accepts[j++] = encoding;
           hasIdentity = hasIdentity || specify("identity", encoding);
@@ -21531,24 +21641,11 @@ var require_encoding = __commonJS({
       accepts.length = j;
       return accepts;
     }
-    function parseEncoding(str, i2) {
-      var match = simpleEncodingRegExp.exec(str);
-      if (!match) return null;
-      var encoding = match[1];
-      var q = 1;
-      if (match[2]) {
-        var params = match[2].split(";");
-        for (var j = 0; j < params.length; j++) {
-          var p = params[j].trim().split("=");
-          if (p[0] === "q") {
-            q = parseFloat(p[1]);
-            break;
-          }
-        }
-      }
+    function formatEncoding(parsed, i2) {
+      if (!parsed.type) return null;
       return {
-        encoding,
-        q,
+        encoding: parsed.type,
+        q: parsed.parameters.q ? parseFloat(parsed.parameters.q) : 1,
         i: i2
       };
     }
@@ -21615,45 +21712,34 @@ var require_encoding = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/lib/language.js
+// ../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/language.js
 var require_language = __commonJS({
-  "../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/lib/language.js"(exports, module) {
+  "../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/language.js"(exports, module) {
     "use strict";
+    var contentType = require_dist();
+    var parseAccept = require_accept();
     module.exports = preferredLanguages;
     module.exports.preferredLanguages = preferredLanguages;
-    var simpleLanguageRegExp = /^\s*([^\s\-;]+)(?:-([^\s;]+))?\s*(?:;(.*))?$/;
     function parseAcceptLanguage(accept) {
-      var accepts = accept.split(",");
+      var accepts = parseAccept(accept);
       for (var i2 = 0, j = 0; i2 < accepts.length; i2++) {
-        var language = parseLanguage(accepts[i2].trim(), i2);
-        if (language) {
-          accepts[j++] = language;
-        }
+        var language = formatLanguage(accepts[i2], i2);
+        if (language) accepts[j++] = language;
       }
       accepts.length = j;
       return accepts;
     }
-    function parseLanguage(str, i2) {
-      var match = simpleLanguageRegExp.exec(str);
-      if (!match) return null;
-      var prefix = match[1];
-      var suffix = match[2];
-      var full = prefix;
-      if (suffix) full += "-" + suffix;
-      var q = 1;
-      if (match[3]) {
-        var params = match[3].split(";");
-        for (var j = 0; j < params.length; j++) {
-          var p = params[j].split("=");
-          if (p[0] === "q") q = parseFloat(p[1]);
-        }
-      }
+    function formatLanguage(parsed, i2) {
+      if (!parsed.type) return null;
+      var hyphen = parsed.type.indexOf("-");
+      var prefix = hyphen === -1 ? parsed.type : parsed.type.slice(0, hyphen);
+      var suffix = hyphen === -1 ? void 0 : parsed.type.slice(hyphen + 1);
       return {
         prefix,
         suffix,
-        q,
+        q: parsed.parameters.q ? parseFloat(parsed.parameters.q) : 1,
         i: i2,
-        full
+        full: parsed.type
       };
     }
     function getLanguagePriority(language, accepted, index2) {
@@ -21667,7 +21753,7 @@ var require_language = __commonJS({
       return priority;
     }
     function specify(language, spec, index2) {
-      var p = parseLanguage(language);
+      var p = formatLanguage(contentType.parse(language), 0);
       if (!p) return null;
       var s2 = 0;
       if (spec.full.toLowerCase() === p.full.toLowerCase()) {
@@ -21710,49 +21796,32 @@ var require_language = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/lib/mediaType.js
+// ../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/mediaType.js
 var require_mediaType = __commonJS({
-  "../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/lib/mediaType.js"(exports, module) {
+  "../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/lib/mediaType.js"(exports, module) {
     "use strict";
+    var contentType = require_dist();
+    var parseAcceptHeader = require_accept();
     module.exports = preferredMediaTypes;
     module.exports.preferredMediaTypes = preferredMediaTypes;
-    var simpleMediaTypeRegExp = /^\s*([^\s\/;]+)\/([^;\s]+)\s*(?:;(.*))?$/;
     function parseAccept(accept) {
-      var accepts = splitMediaTypes(accept);
+      var accepts = parseAcceptHeader(accept);
       for (var i2 = 0, j = 0; i2 < accepts.length; i2++) {
-        var mediaType = parseMediaType(accepts[i2].trim(), i2);
-        if (mediaType) {
-          accepts[j++] = mediaType;
-        }
+        var mediaType = formatMediaType(accepts[i2], i2);
+        if (mediaType) accepts[j++] = mediaType;
       }
       accepts.length = j;
       return accepts;
     }
-    function parseMediaType(str, i2) {
-      var match = simpleMediaTypeRegExp.exec(str);
-      if (!match) return null;
-      var params = /* @__PURE__ */ Object.create(null);
-      var q = 1;
-      var subtype = match[2];
-      var type = match[1];
-      if (match[3]) {
-        var kvps = splitParameters(match[3]).map(splitKeyValuePair);
-        for (var j = 0; j < kvps.length; j++) {
-          var pair = kvps[j];
-          var key = pair[0].toLowerCase();
-          var val = pair[1];
-          var value = val && val[0] === '"' && val[val.length - 1] === '"' ? val.slice(1, -1) : val;
-          if (key === "q") {
-            q = parseFloat(value);
-            break;
-          }
-          params[key] = value;
-        }
-      }
+    function formatMediaType(parsed, i2) {
+      var slash = parsed.type.indexOf("/");
+      if (slash === -1) return null;
+      var q = parsed.parameters.q ? parseFloat(parsed.parameters.q) : 1;
+      delete parsed.parameters.q;
       return {
-        type,
-        subtype,
-        params,
+        type: parsed.type.slice(0, slash),
+        subtype: parsed.type.slice(slash + 1),
+        params: parsed.parameters,
         q,
         i: i2
       };
@@ -21768,7 +21837,7 @@ var require_mediaType = __commonJS({
       return priority;
     }
     function specify(type, spec, index2) {
-      var p = parseMediaType(type);
+      var p = formatMediaType(contentType.parse(type), 0);
       var s2 = 0;
       if (!p) {
         return null;
@@ -21821,60 +21890,12 @@ var require_mediaType = __commonJS({
     function isQuality(spec) {
       return spec.q > 0;
     }
-    function quoteCount(string4) {
-      var count2 = 0;
-      var index2 = 0;
-      while ((index2 = string4.indexOf('"', index2)) !== -1) {
-        count2++;
-        index2++;
-      }
-      return count2;
-    }
-    function splitKeyValuePair(str) {
-      var index2 = str.indexOf("=");
-      var key;
-      var val;
-      if (index2 === -1) {
-        key = str;
-      } else {
-        key = str.slice(0, index2);
-        val = str.slice(index2 + 1);
-      }
-      return [key, val];
-    }
-    function splitMediaTypes(accept) {
-      var accepts = accept.split(",");
-      for (var i2 = 1, j = 0; i2 < accepts.length; i2++) {
-        if (quoteCount(accepts[j]) % 2 == 0) {
-          accepts[++j] = accepts[i2];
-        } else {
-          accepts[j] += "," + accepts[i2];
-        }
-      }
-      accepts.length = j + 1;
-      return accepts;
-    }
-    function splitParameters(str) {
-      var parameters = str.split(";");
-      for (var i2 = 1, j = 0; i2 < parameters.length; i2++) {
-        if (quoteCount(parameters[j]) % 2 == 0) {
-          parameters[++j] = parameters[i2];
-        } else {
-          parameters[j] += ";" + parameters[i2];
-        }
-      }
-      parameters.length = j + 1;
-      for (var i2 = 0; i2 < parameters.length; i2++) {
-        parameters[i2] = parameters[i2].trim();
-      }
-      return parameters;
-    }
   }
 });
 
-// ../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/index.js
+// ../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/index.js
 var require_negotiator = __commonJS({
-  "../../node_modules/.pnpm/negotiator@1.0.0/node_modules/negotiator/index.js"(exports, module) {
+  "../../node_modules/.pnpm/negotiator@1.1.0/node_modules/negotiator/index.js"(exports, module) {
     "use strict";
     var preferredCharsets = require_charset();
     var preferredEncodings = require_encoding();
@@ -22081,9 +22102,9 @@ var require_fresh = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/range-parser@1.2.1/node_modules/range-parser/index.js
+// ../../node_modules/.pnpm/range-parser@1.3.0/node_modules/range-parser/index.js
 var require_range_parser = __commonJS({
-  "../../node_modules/.pnpm/range-parser@1.2.1/node_modules/range-parser/index.js"(exports, module) {
+  "../../node_modules/.pnpm/range-parser@1.3.0/node_modules/range-parser/index.js"(exports, module) {
     "use strict";
     module.exports = rangeParser;
     function rangeParser(size, str, options) {
@@ -22098,19 +22119,27 @@ var require_range_parser = __commonJS({
       var ranges = [];
       ranges.type = str.slice(0, index2);
       for (var i2 = 0; i2 < arr.length; i2++) {
-        var range = arr[i2].split("-");
-        var start = parseInt(range[0], 10);
-        var end = parseInt(range[1], 10);
-        if (isNaN(start)) {
+        var indexOf = arr[i2].indexOf("-");
+        if (indexOf === -1) {
+          return -2;
+        }
+        var startStr = arr[i2].slice(0, indexOf).trim();
+        var endStr = arr[i2].slice(indexOf + 1).trim();
+        var start = parsePos(startStr);
+        var end = parsePos(endStr);
+        if (startStr.length === 0) {
           start = size - end;
           end = size - 1;
-        } else if (isNaN(end)) {
+        } else if (endStr.length === 0) {
           end = size - 1;
         }
         if (end > size - 1) {
           end = size - 1;
         }
-        if (isNaN(start) || isNaN(end) || start > end || start < 0) {
+        if (isNaN(start) || isNaN(end)) {
+          return -2;
+        }
+        if (start > end || start < 0) {
           continue;
         }
         ranges.push({
@@ -22122,6 +22151,10 @@ var require_range_parser = __commonJS({
         return -1;
       }
       return options && options.combine ? combineRanges(ranges) : ranges;
+    }
+    function parsePos(str) {
+      if (/^\d+$/.test(str)) return Number(str);
+      return NaN;
     }
     function combineRanges(ranges) {
       var ordered = ranges.map(mapWithIndex).sort(sortByRangeStart);
@@ -22162,9 +22195,9 @@ var require_range_parser = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/request.js
+// ../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/request.js
 var require_request = __commonJS({
-  "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/request.js"(exports, module) {
+  "../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/request.js"(exports, module) {
     "use strict";
     var accepts = require_accepts();
     var isIP3 = __require("node:net").isIP;
@@ -22703,9 +22736,9 @@ var require_cookie = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/send@1.2.1/node_modules/send/index.js
+// ../../node_modules/.pnpm/send@1.2.1_supports-color@8.1.1/node_modules/send/index.js
 var require_send = __commonJS({
-  "../../node_modules/.pnpm/send@1.2.1/node_modules/send/index.js"(exports, module) {
+  "../../node_modules/.pnpm/send@1.2.1_supports-color@8.1.1/node_modules/send/index.js"(exports, module) {
     "use strict";
     var createError = require_http_errors();
     var debug = require_src()("send");
@@ -23259,9 +23292,9 @@ var require_vary = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/response.js
+// ../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/response.js
 var require_response = __commonJS({
-  "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/response.js"(exports, module) {
+  "../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/response.js"(exports, module) {
     "use strict";
     var contentDisposition = require_content_disposition();
     var createError = require_http_errors();
@@ -23729,9 +23762,9 @@ var require_response = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/serve-static@2.2.1/node_modules/serve-static/index.js
+// ../../node_modules/.pnpm/serve-static@2.2.1_supports-color@8.1.1/node_modules/serve-static/index.js
 var require_serve_static = __commonJS({
-  "../../node_modules/.pnpm/serve-static@2.2.1/node_modules/serve-static/index.js"(exports, module) {
+  "../../node_modules/.pnpm/serve-static@2.2.1_supports-color@8.1.1/node_modules/serve-static/index.js"(exports, module) {
     "use strict";
     var encodeUrl = require_encodeurl();
     var escapeHtml2 = require_escape_html();
@@ -23833,9 +23866,9 @@ var require_serve_static = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/express.js
+// ../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/express.js
 var require_express = __commonJS({
-  "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/express.js"(exports, module) {
+  "../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/lib/express.js"(exports, module) {
     "use strict";
     var bodyParser = require_body_parser();
     var EventEmitter2 = __require("node:events").EventEmitter;
@@ -23873,9 +23906,9 @@ var require_express = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/express@5.2.1/node_modules/express/index.js
+// ../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/index.js
 var require_express2 = __commonJS({
-  "../../node_modules/.pnpm/express@5.2.1/node_modules/express/index.js"(exports, module) {
+  "../../node_modules/.pnpm/express@5.2.1_supports-color@8.1.1/node_modules/express/index.js"(exports, module) {
     "use strict";
     module.exports = require_express();
   }
@@ -23964,7 +23997,7 @@ var require_lib3 = __commonJS({
         preflightContinue: false,
         optionsSuccessStatus: 204
       };
-      function isString(s2) {
+      function isString2(s2) {
         return typeof s2 === "string" || s2 instanceof String;
       }
       function isOriginAllowed(origin, allowedOrigin) {
@@ -23975,7 +24008,7 @@ var require_lib3 = __commonJS({
             }
           }
           return false;
-        } else if (isString(allowedOrigin)) {
+        } else if (isString2(allowedOrigin)) {
           return origin === allowedOrigin;
         } else if (allowedOrigin instanceof RegExp) {
           return allowedOrigin.test(origin);
@@ -23990,7 +24023,7 @@ var require_lib3 = __commonJS({
             key: "Access-Control-Allow-Origin",
             value: "*"
           }]);
-        } else if (isString(options.origin)) {
+        } else if (isString2(options.origin)) {
           headers.push([{
             key: "Access-Control-Allow-Origin",
             value: options.origin
@@ -29417,9 +29450,9 @@ var require_ms2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/debug@2.6.9/node_modules/debug/src/debug.js
+// ../../node_modules/.pnpm/debug@2.6.9_supports-color@8.1.1/node_modules/debug/src/debug.js
 var require_debug = __commonJS({
-  "../../node_modules/.pnpm/debug@2.6.9/node_modules/debug/src/debug.js"(exports, module) {
+  "../../node_modules/.pnpm/debug@2.6.9_supports-color@8.1.1/node_modules/debug/src/debug.js"(exports, module) {
     exports = module.exports = createDebug.debug = createDebug["default"] = createDebug;
     exports.coerce = coerce2;
     exports.disable = disable;
@@ -29522,9 +29555,9 @@ var require_debug = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/debug@2.6.9/node_modules/debug/src/browser.js
+// ../../node_modules/.pnpm/debug@2.6.9_supports-color@8.1.1/node_modules/debug/src/browser.js
 var require_browser2 = __commonJS({
-  "../../node_modules/.pnpm/debug@2.6.9/node_modules/debug/src/browser.js"(exports, module) {
+  "../../node_modules/.pnpm/debug@2.6.9_supports-color@8.1.1/node_modules/debug/src/browser.js"(exports, module) {
     exports = module.exports = require_debug();
     exports.log = log;
     exports.formatArgs = formatArgs;
@@ -29608,9 +29641,9 @@ var require_browser2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/debug@2.6.9/node_modules/debug/src/node.js
+// ../../node_modules/.pnpm/debug@2.6.9_supports-color@8.1.1/node_modules/debug/src/node.js
 var require_node2 = __commonJS({
-  "../../node_modules/.pnpm/debug@2.6.9/node_modules/debug/src/node.js"(exports, module) {
+  "../../node_modules/.pnpm/debug@2.6.9_supports-color@8.1.1/node_modules/debug/src/node.js"(exports, module) {
     var tty = __require("tty");
     var util4 = __require("util");
     exports = module.exports = require_debug();
@@ -29728,13 +29761,100 @@ var require_node2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/debug@2.6.9/node_modules/debug/src/index.js
+// ../../node_modules/.pnpm/debug@2.6.9_supports-color@8.1.1/node_modules/debug/src/index.js
 var require_src2 = __commonJS({
-  "../../node_modules/.pnpm/debug@2.6.9/node_modules/debug/src/index.js"(exports, module) {
+  "../../node_modules/.pnpm/debug@2.6.9_supports-color@8.1.1/node_modules/debug/src/index.js"(exports, module) {
     if (typeof process !== "undefined" && process.type === "renderer") {
       module.exports = require_browser2();
     } else {
       module.exports = require_node2();
+    }
+  }
+});
+
+// ../../node_modules/.pnpm/destroy@1.2.0/node_modules/destroy/index.js
+var require_destroy = __commonJS({
+  "../../node_modules/.pnpm/destroy@1.2.0/node_modules/destroy/index.js"(exports, module) {
+    "use strict";
+    var EventEmitter2 = __require("events").EventEmitter;
+    var ReadStream = __require("fs").ReadStream;
+    var Stream3 = __require("stream");
+    var Zlib = __require("zlib");
+    module.exports = destroy;
+    function destroy(stream, suppress) {
+      if (isFsReadStream(stream)) {
+        destroyReadStream(stream);
+      } else if (isZlibStream(stream)) {
+        destroyZlibStream(stream);
+      } else if (hasDestroy(stream)) {
+        stream.destroy();
+      }
+      if (isEventEmitter(stream) && suppress) {
+        stream.removeAllListeners("error");
+        stream.addListener("error", noop2);
+      }
+      return stream;
+    }
+    function destroyReadStream(stream) {
+      stream.destroy();
+      if (typeof stream.close === "function") {
+        stream.on("open", onOpenClose);
+      }
+    }
+    function closeZlibStream(stream) {
+      if (stream._hadError === true) {
+        var prop = stream._binding === null ? "_binding" : "_handle";
+        stream[prop] = {
+          close: function() {
+            this[prop] = null;
+          }
+        };
+      }
+      stream.close();
+    }
+    function destroyZlibStream(stream) {
+      if (typeof stream.destroy === "function") {
+        if (stream._binding) {
+          stream.destroy();
+          if (stream._processing) {
+            stream._needDrain = true;
+            stream.once("drain", onDrainClearBinding);
+          } else {
+            stream._binding.clear();
+          }
+        } else if (stream._destroy && stream._destroy !== Stream3.Transform.prototype._destroy) {
+          stream.destroy();
+        } else if (stream._destroy && typeof stream.close === "function") {
+          stream.destroyed = true;
+          stream.close();
+        } else {
+          stream.destroy();
+        }
+      } else if (typeof stream.close === "function") {
+        closeZlibStream(stream);
+      }
+    }
+    function hasDestroy(stream) {
+      return stream instanceof Stream3 && typeof stream.destroy === "function";
+    }
+    function isEventEmitter(val) {
+      return val instanceof EventEmitter2;
+    }
+    function isFsReadStream(stream) {
+      return stream instanceof ReadStream;
+    }
+    function isZlibStream(stream) {
+      return stream instanceof Zlib.Gzip || stream instanceof Zlib.Gunzip || stream instanceof Zlib.Deflate || stream instanceof Zlib.DeflateRaw || stream instanceof Zlib.Inflate || stream instanceof Zlib.InflateRaw || stream instanceof Zlib.Unzip;
+    }
+    function noop2() {
+    }
+    function onDrainClearBinding() {
+      this._binding.clear();
+    }
+    function onOpenClose() {
+      if (typeof this.fd === "number") {
+        this.close();
+      }
     }
   }
 });
@@ -29837,22 +29957,23 @@ var require_on_headers = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/compression@1.8.1/node_modules/compression/index.js
+// ../../node_modules/.pnpm/compression@1.8.2_supports-color@8.1.1/node_modules/compression/index.js
 var require_compression = __commonJS({
-  "../../node_modules/.pnpm/compression@1.8.1/node_modules/compression/index.js"(exports, module) {
+  "../../node_modules/.pnpm/compression@1.8.2_supports-color@8.1.1/node_modules/compression/index.js"(exports, module) {
     "use strict";
     var Negotiator = require_negotiator2();
     var Buffer6 = require_safe_buffer().Buffer;
     var bytes = require_bytes();
     var compressible = require_compressible();
     var debug = require_src2()("compression");
+    var destroy = require_destroy();
     var onHeaders = require_on_headers();
     var vary = require_vary();
     var zlib2 = __require("zlib");
     module.exports = compression2;
     module.exports.filter = shouldCompress;
     var hasBrotliSupport = "createBrotliCompress" in zlib2;
-    var cacheControlNoTransformRegExp = /(?:^|,)\s*?no-transform\s*?(?:,|$)/;
+    var cacheControlNoTransformRegExp = /(?:^|,)\s*?no-transform\s*?(?:,|$)/i;
     var SUPPORTED_ENCODING = hasBrotliSupport ? ["br", "gzip", "deflate", "identity"] : ["gzip", "deflate", "identity"];
     var PREFERRED_ENCODING = hasBrotliSupport ? ["br", "gzip"] : ["gzip"];
     var encodingSupported = ["gzip", "deflate", "identity", "br"];
@@ -29876,6 +29997,7 @@ var require_compression = __commonJS({
         var length;
         var listeners = [];
         var stream;
+        var closed = false;
         var _end = res.end;
         var _on = res.on;
         var _write = res.write;
@@ -29924,6 +30046,10 @@ var require_compression = __commonJS({
           addListeners(res, _on, listeners);
           listeners = null;
         }
+        _on.call(res, "close", function onResponseClose() {
+          closed = true;
+          destroy(stream);
+        });
         onHeaders(res, function onResponseHeaders() {
           if (!filter(req, res)) {
             nocompress("filtered");
@@ -29958,6 +30084,11 @@ var require_compression = __commonJS({
           }
           debug("%s compression", method);
           stream = method === "gzip" ? zlib2.createGzip(opts) : method === "br" ? zlib2.createBrotliCompress(optsBrotli) : zlib2.createDeflate(opts);
+          if (closed) {
+            destroy(stream);
+            stream = null;
+            return;
+          }
           addListeners(stream, stream.on, listeners);
           res.setHeader("Content-Encoding", method);
           res.removeHeader("Content-Length");
@@ -30940,9 +31071,9 @@ var require_pg_types = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/defaults.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/defaults.js
 var require_defaults = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/defaults.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/defaults.js"(exports, module) {
     "use strict";
     var user;
     try {
@@ -30978,6 +31109,8 @@ var require_defaults = __commonJS({
       idleTimeoutMillis: 3e4,
       client_encoding: "",
       ssl: false,
+      // SSL negotiation style: 'postgres' (traditional SSLRequest) or 'direct'
+      sslnegotiation: void 0,
       application_name: void 0,
       fallback_application_name: void 0,
       options: void 0,
@@ -31007,9 +31140,9 @@ var require_defaults = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/utils.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/utils.js
 var require_utils4 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/utils.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/utils.js"(exports, module) {
     "use strict";
     var defaults2 = require_defaults();
     var { isDate } = __require("util/types");
@@ -31155,9 +31288,9 @@ var require_utils4 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/utils.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/crypto/utils.js
 var require_utils5 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/utils.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/crypto/utils.js"(exports, module) {
     var nodeCrypto2 = __require("crypto");
     module.exports = {
       postgresMd5PasswordHash,
@@ -31206,9 +31339,9 @@ var require_utils5 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/cert-signatures.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/crypto/cert-signatures.js
 var require_cert_signatures = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/cert-signatures.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/crypto/cert-signatures.js"(exports, module) {
     function x509Error(msg, cert) {
       return new Error("SASL channel binding: " + msg + " when parsing public certificate " + cert.toString("base64"));
     }
@@ -31319,9 +31452,9 @@ var require_cert_signatures = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/sasl.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/crypto/sasl.js
 var require_sasl = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/sasl.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
     var crypto7 = require_utils5();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
@@ -31504,9 +31637,9 @@ var require_sasl = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/type-overrides.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/type-overrides.js
 var require_type_overrides = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/type-overrides.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/type-overrides.js"(exports, module) {
     "use strict";
     var types8 = require_pg_types();
     function TypeOverrides2(userTypes) {
@@ -31539,9 +31672,9 @@ var require_type_overrides = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-connection-string@2.13.0/node_modules/pg-connection-string/index.js
+// ../../node_modules/.pnpm/pg-connection-string@2.14.0/node_modules/pg-connection-string/index.js
 var require_pg_connection_string = __commonJS({
-  "../../node_modules/.pnpm/pg-connection-string@2.13.0/node_modules/pg-connection-string/index.js"(exports, module) {
+  "../../node_modules/.pnpm/pg-connection-string@2.14.0/node_modules/pg-connection-string/index.js"(exports, module) {
     "use strict";
     function parse3(str, options = {}) {
       if (str.charAt(0) === "/") {
@@ -31595,6 +31728,9 @@ var require_pg_connection_string = __commonJS({
       }
       if (config2.sslcert || config2.sslkey || config2.sslrootcert || config2.sslmode) {
         config2.ssl = {};
+      }
+      if (config2.sslnegotiation === "direct" && config2.ssl === void 0) {
+        config2.ssl = true;
       }
       const fs3 = config2.sslcert || config2.sslkey || config2.sslrootcert ? __require("fs") : null;
       if (config2.sslcert) {
@@ -31724,9 +31860,9 @@ See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode de
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection-parameters.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/connection-parameters.js
 var require_connection_parameters = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection-parameters.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/connection-parameters.js"(exports, module) {
     "use strict";
     var dns2 = __require("dns");
     var defaults2 = require_defaults();
@@ -31801,6 +31937,15 @@ var require_connection_parameters = __commonJS({
             enumerable: false
           });
         }
+        this.sslnegotiation = val("sslnegotiation", config2, "PGSSLNEGOTIATION");
+        if (this.sslnegotiation !== void 0 && this.sslnegotiation !== "postgres" && this.sslnegotiation !== "direct") {
+          throw new Error(
+            `Invalid sslnegotiation value: "${this.sslnegotiation}". Valid values are "postgres" and "direct".`
+          );
+        }
+        if (this.sslnegotiation === "direct" && !this.ssl) {
+          throw new Error("sslnegotiation=direct requires SSL to be enabled");
+        }
         this.client_encoding = val("client_encoding", config2);
         this.replication = val("replication", config2);
         this.isDomainSocket = !(this.host || "").indexOf("/");
@@ -31839,6 +31984,7 @@ var require_connection_parameters = __commonJS({
         add(params, ssl, "sslkey");
         add(params, ssl, "sslcert");
         add(params, ssl, "sslrootcert");
+        add(params, this, "sslnegotiation");
         if (this.database) {
           params.push("dbname=" + quoteParamValue(this.database));
         }
@@ -31865,9 +32011,9 @@ var require_connection_parameters = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/result.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/result.js
 var require_result = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/result.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/result.js"(exports, module) {
     "use strict";
     var types8 = require_pg_types();
     var matchRegexp = /^([A-Za-z]+)(?: (\d+))?(?: (\d+))?/;
@@ -31956,9 +32102,9 @@ var require_result = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/query.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/query.js
 var require_query = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/query.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/query.js"(exports, module) {
     "use strict";
     var { EventEmitter: EventEmitter2 } = __require("events");
     var Result2 = require_result();
@@ -32080,7 +32226,7 @@ var require_query = __commonJS({
         if (typeof this.text !== "string" && typeof this.name !== "string") {
           return new Error("A query must have either text or a name. Supplying neither is unsupported.");
         }
-        const previous = connection.parsedStatements[this.name];
+        const previous = connection.parsedStatements[this.name] || connection.submittedNamedStatements[this.name];
         if (this.text && previous && this.text !== previous) {
           return new Error(`Prepared statements must be unique - '${this.name}' was used for a different statement`);
         }
@@ -32100,7 +32246,7 @@ var require_query = __commonJS({
         return null;
       }
       hasBeenParsed(connection) {
-        return this.name && connection.parsedStatements[this.name];
+        return this.name && (connection.parsedStatements[this.name] || connection.submittedNamedStatements[this.name]);
       }
       handlePortalSuspended(connection) {
         this._getRows(connection, this.rows);
@@ -32124,6 +32270,9 @@ var require_query = __commonJS({
             name: this.name,
             types: this.types
           });
+          if (this.name) {
+            connection.submittedNamedStatements[this.name] = this.text;
+          }
         }
         try {
           connection.bind({
@@ -32134,6 +32283,8 @@ var require_query = __commonJS({
             valueMapper: utils.prepareValue
           });
         } catch (err) {
+          connection.close({ type: "S", name: this.name });
+          connection.sync();
           this.handleError(err, connection);
           return;
         }
@@ -32153,9 +32304,9 @@ var require_query = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/messages.js
+// ../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/messages.js
 var require_messages = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/messages.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NoticeMessage = exports.DataRowMessage = exports.CommandCompleteMessage = exports.ReadyForQueryMessage = exports.NotificationResponseMessage = exports.BackendKeyDataMessage = exports.AuthenticationMD5Password = exports.ParameterStatusMessage = exports.ParameterDescriptionMessage = exports.RowDescriptionMessage = exports.Field = exports.CopyResponse = exports.CopyDataMessage = exports.DatabaseError = exports.copyDone = exports.emptyQuery = exports.replicationStart = exports.portalSuspended = exports.noData = exports.closeComplete = exports.bindComplete = exports.parseComplete = void 0;
@@ -32318,9 +32469,9 @@ var require_messages = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/buffer-writer.js
+// ../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/buffer-writer.js
 var require_buffer_writer = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/buffer-writer.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/buffer-writer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Writer = void 0;
@@ -32373,6 +32524,25 @@ var require_buffer_writer = __commonJS({
         this.offset += len;
         return this;
       }
+      // Write an Int32 byte-length prefix immediately followed by the string's UTF-8
+      // bytes. Postgres' Bind wire format prefixes every parameter with its length,
+      // and doing it in one method computes Buffer.byteLength ONCE — the previous
+      // `addInt32(Buffer.byteLength(s)).addString(s)` pairing scanned the string
+      // three times (byteLength for the prefix, byteLength again inside addString,
+      // then the encode), which is costly for large text parameters.
+      addInt32PrefixedString(string4) {
+        const len = Buffer.byteLength(string4);
+        this.ensure(4 + len);
+        const buffer = this.buffer;
+        let offset = this.offset;
+        buffer[offset++] = len >>> 24 & 255;
+        buffer[offset++] = len >>> 16 & 255;
+        buffer[offset++] = len >>> 8 & 255;
+        buffer[offset++] = len >>> 0 & 255;
+        buffer.write(string4, offset, "utf-8");
+        this.offset = offset + len;
+        return this;
+      }
       add(otherBuffer) {
         this.ensure(otherBuffer.length);
         otherBuffer.copy(this.buffer, this.offset);
@@ -32394,14 +32564,18 @@ var require_buffer_writer = __commonJS({
         this.buffer = Buffer.allocUnsafe(this.size);
         return result;
       }
+      clear() {
+        this.offset = 5;
+        this.headerPosition = 0;
+      }
     };
     exports.Writer = Writer;
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/serializer.js
+// ../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/serializer.js
 var require_serializer = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/serializer.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/serializer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.serialize = void 0;
@@ -32430,7 +32604,7 @@ var require_serializer = __commonJS({
       );
     };
     var sendSASLInitialResponseMessage = function(mechanism, initialResponse) {
-      writer.addCString(mechanism).addInt32(Buffer.byteLength(initialResponse)).addString(initialResponse);
+      writer.addCString(mechanism).addInt32PrefixedString(initialResponse);
       return writer.flush(
         112
         /* code.startup */
@@ -32489,8 +32663,7 @@ var require_serializer = __commonJS({
             0
             /* ParamType.STRING */
           );
-          paramWriter.addInt32(Buffer.byteLength(mappedVal));
-          paramWriter.addString(mappedVal);
+          paramWriter.addInt32PrefixedString(mappedVal);
         }
       }
     };
@@ -32502,7 +32675,13 @@ var require_serializer = __commonJS({
       const len = values.length;
       writer.addCString(portal).addCString(statement);
       writer.addInt16(len);
-      writeValues(values, config2.valueMapper);
+      try {
+        writeValues(values, config2.valueMapper);
+      } catch (err) {
+        writer.clear();
+        paramWriter.clear();
+        throw err;
+      }
       writer.addInt16(len);
       writer.add(paramWriter.flush());
       writer.addInt16(1);
@@ -32616,9 +32795,9 @@ var require_serializer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/buffer-reader.js
+// ../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/buffer-reader.js
 var require_buffer_reader = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/buffer-reader.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/buffer-reader.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BufferReader = void 0;
@@ -32660,7 +32839,7 @@ var require_buffer_reader = __commonJS({
       cstring() {
         const start = this.offset;
         let end = start;
-        while (this.buffer[end++] !== 0) {
+        while (this.buffer[end++]) {
         }
         this.offset = end;
         return this.buffer.toString(this.encoding, start, end - 1);
@@ -32675,9 +32854,9 @@ var require_buffer_reader = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/parser.js
+// ../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/parser.js
 var require_parser = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/parser.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/parser.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Parser = void 0;
@@ -32882,7 +33061,7 @@ var require_parser = __commonJS({
       const parameterCount = reader.int16();
       const message2 = new messages_1.ParameterDescriptionMessage(LATEINIT_LENGTH, parameterCount);
       for (let i2 = 0; i2 < parameterCount; i2++) {
-        message2.dataTypeIDs[i2] = reader.int32();
+        message2.dataTypeIDs[i2] = reader.uint32();
       }
       return message2;
     };
@@ -32982,12 +33161,13 @@ var require_parser = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/index.js
+// ../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/index.js
 var require_dist3 = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/index.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.16.0/node_modules/pg-protocol/dist/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.DatabaseError = exports.serialize = exports.parse = void 0;
+    exports.DatabaseError = exports.serialize = void 0;
+    exports.parse = parse3;
     var messages_1 = require_messages();
     Object.defineProperty(exports, "DatabaseError", { enumerable: true, get: function() {
       return messages_1.DatabaseError;
@@ -33002,7 +33182,6 @@ var require_dist3 = __commonJS({
       stream.on("data", (buffer) => parser.parse(buffer, callback));
       return new Promise((resolve) => stream.on("end", () => resolve()));
     }
-    exports.parse = parse3;
   }
 });
 
@@ -33015,9 +33194,9 @@ var require_empty = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/stream.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/stream.js
 var require_stream = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/stream.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/stream.js"(exports, module) {
     var { getStream, getSecureStream } = getStreamFuncs();
     module.exports = {
       /**
@@ -33081,13 +33260,14 @@ var require_stream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/connection.js
 var require_connection = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/connection.js"(exports, module) {
     "use strict";
     var EventEmitter2 = __require("events").EventEmitter;
     var { parse: parse3, serialize: serialize2 } = require_dist3();
-    var { getStream, getSecureStream } = require_stream();
+    var stream = require_stream();
+    var { getStream } = stream;
     var flushBuffer = serialize2.flush();
     var syncBuffer = serialize2.sync();
     var endBuffer = serialize2.end();
@@ -33102,7 +33282,9 @@ var require_connection = __commonJS({
         this._keepAlive = config2.keepAlive;
         this._keepAliveInitialDelayMillis = config2.keepAliveInitialDelayMillis;
         this.parsedStatements = {};
+        this.submittedNamedStatements = {};
         this.ssl = config2.ssl || false;
+        this.sslNegotiation = config2.sslNegotiation || "postgres";
         this._ending = false;
         this._emitMessage = false;
         const self2 = this;
@@ -33136,6 +33318,11 @@ var require_connection = __commonJS({
         if (!this.ssl) {
           return this.attachListeners(this.stream);
         }
+        if (this.sslNegotiation === "direct") {
+          return this.stream.once("connect", function() {
+            self2.upgradeToSSL(host, reportStreamError);
+          });
+        }
         this.stream.once("data", function(buffer) {
           const responseCode = buffer.toString("utf8");
           switch (responseCode) {
@@ -33148,31 +33335,38 @@ var require_connection = __commonJS({
               self2.stream.end();
               return self2.emit("error", new Error("There was an error establishing an SSL connection"));
           }
-          const options = {
-            socket: self2.stream
-          };
-          if (self2.ssl !== true) {
-            Object.assign(options, self2.ssl);
-            if ("key" in self2.ssl) {
-              options.key = self2.ssl.key;
-            }
-          }
-          const net2 = __require("net");
-          if (net2.isIP && net2.isIP(host) === 0) {
-            options.servername = host;
-          }
-          try {
-            self2.stream = getSecureStream(options);
-          } catch (err) {
-            return self2.emit("error", err);
-          }
-          self2.attachListeners(self2.stream);
-          self2.stream.on("error", reportStreamError);
-          self2.emit("sslconnect");
+          self2.upgradeToSSL(host, reportStreamError);
         });
       }
-      attachListeners(stream) {
-        parse3(stream, (msg) => {
+      upgradeToSSL(host, reportStreamError) {
+        const self2 = this;
+        const options = {
+          socket: self2.stream
+        };
+        if (self2.ssl !== true) {
+          Object.assign(options, self2.ssl);
+          if ("key" in self2.ssl) {
+            options.key = self2.ssl.key;
+          }
+        }
+        if (self2.sslNegotiation === "direct") {
+          options.ALPNProtocols = ["postgresql"];
+        }
+        const net2 = __require("net");
+        if (net2.isIP && net2.isIP(host) === 0) {
+          options.servername = host;
+        }
+        try {
+          self2.stream = stream.getSecureStream(options);
+        } catch (err) {
+          return self2.emit("error", err);
+        }
+        self2.attachListeners(self2.stream);
+        self2.stream.on("error", reportStreamError);
+        self2.emit("sslconnect");
+      }
+      attachListeners(stream2) {
+        parse3(stream2, (msg) => {
           const eventName = msg.name === "error" ? "errorMessage" : msg.name;
           if (this._emitMessage) {
             this.emit("message", msg);
@@ -33557,9 +33751,9 @@ var require_lib4 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/client.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/client.js
 var require_client = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/client.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/client.js"(exports, module) {
     var EventEmitter2 = __require("events").EventEmitter;
     var utils = require_utils4();
     var nodeUtils = __require("util");
@@ -33639,15 +33833,19 @@ var require_client = __commonJS({
         this.connection = c.connection || new Connection2({
           stream: c.stream,
           ssl: this.connectionParameters.ssl,
+          sslNegotiation: this.connectionParameters.sslnegotiation,
           keepAlive: c.keepAlive || false,
           keepAliveInitialDelayMillis: c.keepAliveInitialDelayMillis || 0,
           encoding: this.connectionParameters.client_encoding || "utf8"
         });
         this._queryQueue = [];
+        this._sentQueryQueue = [];
+        this.pipeline = Boolean(c.pipeline);
         this.binary = c.binary || defaults2.binary;
         this.processID = null;
         this.secretKey = null;
         this.ssl = this.connectionParameters.ssl || false;
+        this.sslNegotiation = this.connectionParameters.sslnegotiation || "postgres";
         if (this.ssl && this.ssl.key) {
           Object.defineProperty(this.ssl, "key", {
             enumerable: false
@@ -33677,6 +33875,8 @@ var require_client = __commonJS({
           enqueueError(activeQuery);
           this._activeQuery = null;
         }
+        this._sentQueryQueue.forEach(enqueueError);
+        this._sentQueryQueue.length = 0;
         this._queryQueue.forEach(enqueueError);
         this._queryQueue.length = 0;
       }
@@ -33708,7 +33908,9 @@ var require_client = __commonJS({
         }
         con.on("connect", function() {
           if (self2.ssl) {
-            con.requestSsl();
+            if (self2.sslNegotiation !== "direct") {
+              con.requestSsl();
+            }
           } else {
             con.startup(self2.getStartupConf());
           }
@@ -33917,6 +34119,9 @@ var require_client = __commonJS({
           return;
         }
         this._activeQuery = null;
+        if (activeQuery.name) {
+          delete this.connection.submittedNamedStatements[activeQuery.name];
+        }
         activeQuery.handleError(msg, this.connection);
       }
       _handleRowDescription(msg) {
@@ -33973,6 +34178,7 @@ var require_client = __commonJS({
         }
         if (activeQuery.name) {
           this.connection.parsedStatements[activeQuery.name] = activeQuery.text;
+          delete this.connection.submittedNamedStatements[activeQuery.name];
         }
       }
       _handleCopyInResponse(msg) {
@@ -34039,6 +34245,9 @@ var require_client = __commonJS({
           });
         } else if (client._queryQueue.indexOf(query) !== -1) {
           client._queryQueue.splice(client._queryQueue.indexOf(query), 1);
+        } else if (client._sentQueryQueue.indexOf(query) !== -1) {
+          query.callback = () => {
+          };
         }
       }
       setTypeParser(oid, format, parseFn) {
@@ -34057,6 +34266,10 @@ var require_client = __commonJS({
         return utils.escapeLiteral(str);
       }
       _pulseQueryQueue() {
+        if (this.pipeline) {
+          this._pulsePipelinedQueryQueue();
+          return;
+        }
         if (this.readyForQuery === true) {
           this._activeQuery = this._queryQueue.shift();
           const activeQuery = this._getActiveQuery();
@@ -34075,6 +34288,30 @@ var require_client = __commonJS({
             this._activeQuery = null;
             this.emit("drain");
           }
+        }
+      }
+      _pulsePipelinedQueryQueue() {
+        if (!this._connected || !this._queryable) {
+          return;
+        }
+        while (this._queryQueue.length > 0) {
+          const query = this._queryQueue.shift();
+          this.hasExecuted = true;
+          const queryError = query.submit(this.connection);
+          if (queryError) {
+            process.nextTick(() => {
+              query.handleError(queryError, this.connection);
+            });
+            continue;
+          }
+          this._sentQueryQueue.push(query);
+        }
+        if (this.readyForQuery && !this._activeQuery && this._sentQueryQueue.length > 0) {
+          this._activeQuery = this._sentQueryQueue.shift();
+          this.readyForQuery = false;
+        }
+        if (!this._activeQuery && this._sentQueryQueue.length === 0 && this._queryQueue.length === 0 && this.hasExecuted) {
+          this.emit("drain");
         }
       }
       query(config2, values, callback) {
@@ -34120,6 +34357,9 @@ var require_client = __commonJS({
             const index2 = this._queryQueue.indexOf(query);
             if (index2 > -1) {
               this._queryQueue.splice(index2, 1);
+            } else if (this.pipeline) {
+              this.connection.stream.destroy();
+              return;
             }
             this._pulseQueryQueue();
           }, readTimeout);
@@ -34146,7 +34386,7 @@ var require_client = __commonJS({
           });
           return result;
         }
-        if (this._queryQueue.length > 0) {
+        if (this._queryQueue.length > 0 && !this.pipeline) {
           queryQueueLengthDeprecationNotice();
         }
         this._queryQueue.push(query);
@@ -34172,7 +34412,11 @@ var require_client = __commonJS({
             return this._Promise.resolve();
           }
         }
-        if (this._getActiveQuery() || !this._queryable) {
+        if (!this._queryable) {
+          this.connection.stream.destroy();
+        } else if (this.pipeline && (this._getActiveQuery() || this._sentQueryQueue.length > 0 || this._queryQueue.length > 0)) {
+          this.once("drain", () => this.connection.end());
+        } else if (this._getActiveQuery()) {
           this.connection.stream.destroy();
         } else {
           this.connection.end();
@@ -34195,9 +34439,9 @@ var require_client = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.21.0/node_modules/pg-pool/index.js
+// ../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.23.0/node_modules/pg-pool/index.js
 var require_pg_pool = __commonJS({
-  "../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.21.0/node_modules/pg-pool/index.js"(exports, module) {
+  "../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.23.0/node_modules/pg-pool/index.js"(exports, module) {
     "use strict";
     var EventEmitter2 = __require("events").EventEmitter;
     var NOOP = function() {
@@ -34621,9 +34865,9 @@ var require_pg_pool = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/query.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/native/query.js
 var require_query2 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/query.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/native/query.js"(exports, module) {
     "use strict";
     var EventEmitter2 = __require("events").EventEmitter;
     var util4 = __require("util");
@@ -34662,7 +34906,7 @@ var require_query2 = __commonJS({
       sourceFunction: "routine"
     };
     NativeQuery.prototype.handleError = function(err) {
-      const fields = this.native.pq.resultErrorFields();
+      const fields = this.native && this.native.pq.resultErrorFields();
       if (fields) {
         for (const key in fields) {
           const normalizedFieldName = errorFieldMap[key] || key;
@@ -34762,9 +35006,9 @@ var require_query2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/client.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/native/client.js
 var require_client2 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/client.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/native/client.js"(exports, module) {
     var nodeUtils = __require("util");
     var Native;
     try {
@@ -34795,6 +35039,8 @@ var require_client2 = __commonJS({
       this._connecting = false;
       this._connected = false;
       this._queryable = true;
+      this.pipeline = Boolean(config2.pipeline);
+      this._pipelineInFlight = false;
       const cp = this.connectionParameters = new ConnectionParameters(config2);
       if (config2.nativeConnectionString) cp.nativeConnectionString = config2.nativeConnectionString;
       this.user = cp.user;
@@ -34938,7 +35184,7 @@ var require_client2 = __commonJS({
         });
         return result;
       }
-      if (this._queryQueue.length > 0) {
+      if (this._queryQueue.length > 0 && !this.pipeline) {
         queryQueueLengthDeprecationNotice();
       }
       this._queryQueue.push(query);
@@ -34960,14 +35206,21 @@ var require_client2 = __commonJS({
           cb = (err) => err ? reject(err) : resolve();
         });
       }
-      this.native.end(function() {
-        self2._connected = false;
-        self2._errorAllQueries(new Error("Connection terminated"));
-        process.nextTick(() => {
-          self2.emit("end");
-          if (cb) cb();
+      const doEnd = function() {
+        self2.native.end(function() {
+          self2._connected = false;
+          self2._errorAllQueries(new Error("Connection terminated"));
+          process.nextTick(() => {
+            self2.emit("end");
+            if (cb) cb();
+          });
         });
-      });
+      };
+      if (this.pipeline && (this._pipelineInFlight || this._queryQueue.length > 0)) {
+        this.once("drain", doEnd);
+      } else {
+        doEnd();
+      }
       return result;
     };
     Client2.prototype._hasActiveQuery = function() {
@@ -34976,6 +35229,9 @@ var require_client2 = __commonJS({
     Client2.prototype._pulseQueryQueue = function(initialConnection) {
       if (!this._connected) {
         return;
+      }
+      if (this.pipeline && !initialConnection) {
+        return this._pulsePipelinedQueryQueue();
       }
       if (this._hasActiveQuery()) {
         return;
@@ -34992,6 +35248,69 @@ var require_client2 = __commonJS({
       const self2 = this;
       query.once("_done", function() {
         self2._pulseQueryQueue();
+      });
+    };
+    Client2.prototype._pulsePipelinedQueryQueue = function() {
+      if (!this._connected || this._pipelineInFlight) {
+        return;
+      }
+      if (this._queryQueue.length === 0) {
+        if (this.hasExecuted) {
+          this.emit("drain");
+        }
+        return;
+      }
+      this._pipelineInFlight = true;
+      const self2 = this;
+      const queries = [];
+      const nativeQueries = [];
+      const utils = require_utils4();
+      while (this._queryQueue.length > 0) {
+        const query = this._queryQueue.shift();
+        this.hasExecuted = true;
+        nativeQueries.push(query);
+        const values = query.values ? query.values.map(utils.prepareValue) : null;
+        const pipelineEntry = { text: query.text, name: query.name };
+        if (values) {
+          pipelineEntry.values = values;
+        }
+        if (query.name && this.namedQueries[query.name]) {
+          pipelineEntry._alreadyPrepared = true;
+        }
+        queries.push(pipelineEntry);
+      }
+      this.native.pipeline(queries, function(err, results) {
+        self2._pipelineInFlight = false;
+        if (err) {
+          for (let i2 = 0; i2 < nativeQueries.length; i2++) {
+            const q = nativeQueries[i2];
+            q.native = self2.native;
+            q.handleError(err);
+          }
+          self2._pulsePipelinedQueryQueue();
+          return;
+        }
+        for (let i2 = 0; i2 < nativeQueries.length; i2++) {
+          const q = nativeQueries[i2];
+          const r2 = results[i2];
+          q.native = self2.native;
+          if (r2.err) {
+            q.handleError(r2.err);
+          } else {
+            if (q.name) {
+              self2.namedQueries[q.name] = q.text;
+            }
+            q.state = "end";
+            q.emit("end", r2.result);
+            if (q.callback) {
+              q.callback(null, r2.result);
+            }
+          }
+          setImmediate(function() {
+            q.emit("_done");
+          });
+        }
+        self2._pulsePipelinedQueryQueue();
       });
     };
     Client2.prototype.cancel = function(query) {
@@ -35021,17 +35340,17 @@ var require_client2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/index.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/native/index.js
 var require_native = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/index.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/native/index.js"(exports, module) {
     "use strict";
     module.exports = require_client2();
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/index.js
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/index.js
 var require_lib5 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/index.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/index.js"(exports, module) {
     "use strict";
     var Client2 = require_client();
     var defaults2 = require_defaults();
@@ -35095,10 +35414,10 @@ var require_lib5 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/esm/index.mjs
+// ../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/esm/index.mjs
 var import_lib, Client, Pool, Connection, types, Query, DatabaseError, escapeIdentifier, escapeLiteral, Result, TypeOverrides, defaults, esm_default;
 var init_esm = __esm({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/esm/index.mjs"() {
+  "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/esm/index.mjs"() {
     import_lib = __toESM(require_lib5(), 1);
     Client = import_lib.default.Client;
     Pool = import_lib.default.Pool;
@@ -35115,7 +35434,7 @@ var init_esm = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/entity.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/entity.js
 function is(value, type) {
   if (!value || typeof value !== "object") {
     return false;
@@ -35141,16 +35460,16 @@ function is(value, type) {
 }
 var entityKind, hasOwnEntityKind;
 var init_entity = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/entity.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/entity.js"() {
     entityKind = /* @__PURE__ */ Symbol.for("drizzle:entityKind");
     hasOwnEntityKind = /* @__PURE__ */ Symbol.for("drizzle:hasOwnEntityKind");
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/logger.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/logger.js
 var ConsoleLogWriter, DefaultLogger, NoopLogger;
 var init_logger = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/logger.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/logger.js"() {
     init_entity();
     ConsoleLogWriter = class {
       static [entityKind] = "ConsoleLogWriter";
@@ -35184,10 +35503,10 @@ var init_logger = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/query-promise.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/query-promise.js
 var QueryPromise;
 var init_query_promise = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/query-promise.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/query-promise.js"() {
     init_entity();
     QueryPromise = class {
       static [entityKind] = "QueryPromise";
@@ -35214,10 +35533,10 @@ var init_query_promise = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/column.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/column.js
 var Column;
 var init_column = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/column.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/column.js"() {
     init_entity();
     Column = class {
       constructor(table, config2) {
@@ -35271,10 +35590,10 @@ var init_column = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/column-builder.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/column-builder.js
 var ColumnBuilder;
 var init_column_builder = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/column-builder.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/column-builder.js"() {
     init_entity();
     ColumnBuilder = class {
       static [entityKind] = "ColumnBuilder";
@@ -35380,15 +35699,15 @@ var init_column_builder = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/table.utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/table.utils.js
 var TableName;
 var init_table_utils = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/table.utils.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/table.utils.js"() {
     TableName = /* @__PURE__ */ Symbol.for("drizzle:Name");
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/foreign-keys.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/foreign-keys.js
 function foreignKey(config2) {
   function mappedConfig() {
     const { name: name2, columns, foreignColumns } = config2;
@@ -35402,7 +35721,7 @@ function foreignKey(config2) {
 }
 var ForeignKeyBuilder, ForeignKey;
 var init_foreign_keys = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/foreign-keys.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/foreign-keys.js"() {
     init_entity();
     init_table_utils();
     ForeignKeyBuilder = class {
@@ -35463,16 +35782,16 @@ var init_foreign_keys = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/tracing-utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/tracing-utils.js
 function iife(fn, ...args) {
   return fn(...args);
 }
 var init_tracing_utils = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/tracing-utils.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/tracing-utils.js"() {
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/unique-constraint.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/unique-constraint.js
 function unique(name2) {
   return new UniqueOnConstraintBuilder(name2);
 }
@@ -35481,7 +35800,7 @@ function uniqueKeyName(table, columns) {
 }
 var UniqueConstraintBuilder, UniqueOnConstraintBuilder, UniqueConstraint;
 var init_unique_constraint = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/unique-constraint.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/unique-constraint.js"() {
     init_entity();
     init_table_utils();
     UniqueConstraintBuilder = class {
@@ -35532,7 +35851,7 @@ var init_unique_constraint = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/utils/array.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/utils/array.js
 function parsePgArrayValue(arrayString, startFrom, inQuotes) {
   for (let i2 = startFrom; i2 < arrayString.length; i2++) {
     const char2 = arrayString[i2];
@@ -35608,14 +35927,14 @@ function makePgArray(array2) {
   }).join(",")}}`;
 }
 var init_array = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/utils/array.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/utils/array.js"() {
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/common.js
 var PgColumnBuilder, PgColumn, ExtraConfigColumn, IndexedColumn, PgArrayBuilder, PgArray;
 var init_common = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/common.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/common.js"() {
     init_column_builder();
     init_column();
     init_entity();
@@ -35808,7 +36127,7 @@ var init_common = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/enum.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/enum.js
 function isPgEnum(obj) {
   return !!obj && typeof obj === "function" && isPgEnumSym in obj && obj[isPgEnumSym] === true;
 }
@@ -35841,7 +36160,7 @@ function pgEnumObjectWithSchema(enumName, values, schema) {
 }
 var PgEnumObjectColumnBuilder, PgEnumObjectColumn, isPgEnumSym, PgEnumColumnBuilder, PgEnumColumn;
 var init_enum = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/enum.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/enum.js"() {
     init_entity();
     init_common();
     PgEnumObjectColumnBuilder = class extends PgColumnBuilder {
@@ -35900,10 +36219,10 @@ var init_enum = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/subquery.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/subquery.js
 var Subquery, WithSubquery;
 var init_subquery = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/subquery.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/subquery.js"() {
     init_entity();
     Subquery = class {
       static [entityKind] = "Subquery";
@@ -35927,18 +36246,18 @@ var init_subquery = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/version.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/version.js
 var version;
 var init_version = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/version.js"() {
-    version = "0.45.2";
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/version.js"() {
+    version = "0.45.3";
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/tracing.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/tracing.js
 var otel, rawTracer, tracer;
 var init_tracing = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/tracing.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/tracing.js"() {
     init_tracing_utils();
     init_version();
     tracer = {
@@ -35975,15 +36294,15 @@ var init_tracing = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/view-common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/view-common.js
 var ViewBaseConfig;
 var init_view_common = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/view-common.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/view-common.js"() {
     ViewBaseConfig = /* @__PURE__ */ Symbol.for("drizzle:ViewBaseConfig");
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/table.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/table.js
 function isTable(table) {
   return typeof table === "object" && table !== null && IsDrizzleTable in table;
 }
@@ -35995,7 +36314,7 @@ function getTableUniqueName(table) {
 }
 var Schema, Columns, ExtraConfigColumns, OriginalName, BaseName, IsAlias, ExtraConfigBuilder, IsDrizzleTable, Table;
 var init_table = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/table.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/table.js"() {
     init_entity();
     init_table_utils();
     Schema = /* @__PURE__ */ Symbol.for("drizzle:Schema");
@@ -36055,7 +36374,7 @@ var init_table = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/sql.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/sql.js
 function isSQLWrapper(value) {
   return value !== null && value !== void 0 && typeof value.getSQL === "function";
 }
@@ -36120,7 +36439,7 @@ function getViewName(view) {
 }
 var FakePrimitiveParam, StringChunk, SQL, Name, noopDecoder, noopEncoder, noopMapper, Param, Placeholder, IsDrizzleView, View;
 var init_sql = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/sql.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/sql.js"() {
     init_entity();
     init_enum();
     init_subquery();
@@ -36476,7 +36795,7 @@ var init_sql = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/alias.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/alias.js
 function aliasedTable(table, tableAlias) {
   return new Proxy(table, new TableAliasProxyHandler(tableAlias, false));
 }
@@ -36508,7 +36827,7 @@ function mapColumnsInSQLToAlias(query, alias2) {
 }
 var ColumnAliasProxyHandler, TableAliasProxyHandler, RelationTableAliasProxyHandler;
 var init_alias = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/alias.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/alias.js"() {
     init_column();
     init_entity();
     init_sql();
@@ -36585,10 +36904,10 @@ var init_alias = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/selection-proxy.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/selection-proxy.js
 var SelectionProxyHandler;
 var init_selection_proxy = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/selection-proxy.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/selection-proxy.js"() {
     init_alias();
     init_column();
     init_entity();
@@ -36664,7 +36983,7 @@ var init_selection_proxy = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/utils.js
 function mapResultRow(columns, row, joinsNotNullableMap) {
   const nullifyMap = {};
   const result = columns.reduce(
@@ -36818,7 +37137,7 @@ function isConfig(data) {
 }
 var textDecoder;
 var init_utils = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/utils.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/utils.js"() {
     init_column();
     init_entity();
     init_sql();
@@ -36829,10 +37148,10 @@ var init_utils = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/int.common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/int.common.js
 var PgIntColumnBaseBuilder;
 var init_int_common = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/int.common.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/int.common.js"() {
     init_entity();
     init_common();
     PgIntColumnBaseBuilder = class extends PgColumnBuilder {
@@ -36875,7 +37194,7 @@ var init_int_common = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/bigint.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/bigint.js
 function bigint(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (config2.mode === "number") {
@@ -36885,7 +37204,7 @@ function bigint(a, b) {
 }
 var PgBigInt53Builder, PgBigInt53, PgBigInt64Builder, PgBigInt64;
 var init_bigint = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/bigint.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/bigint.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -36938,7 +37257,7 @@ var init_bigint = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/bigserial.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/bigserial.js
 function bigserial(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (config2.mode === "number") {
@@ -36948,7 +37267,7 @@ function bigserial(a, b) {
 }
 var PgBigSerial53Builder, PgBigSerial53, PgBigSerial64Builder, PgBigSerial64;
 var init_bigserial = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/bigserial.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/bigserial.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37006,13 +37325,13 @@ var init_bigserial = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/boolean.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/boolean.js
 function boolean(name2) {
   return new PgBooleanBuilder(name2 ?? "");
 }
 var PgBooleanBuilder, PgBoolean;
 var init_boolean = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/boolean.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/boolean.js"() {
     init_entity();
     init_common();
     PgBooleanBuilder = class extends PgColumnBuilder {
@@ -37034,14 +37353,14 @@ var init_boolean = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/char.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/char.js
 function char(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgCharBuilder(name2, config2);
 }
 var PgCharBuilder, PgChar;
 var init_char = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/char.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/char.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37071,13 +37390,13 @@ var init_char = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/cidr.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/cidr.js
 function cidr(name2) {
   return new PgCidrBuilder(name2 ?? "");
 }
 var PgCidrBuilder, PgCidr;
 var init_cidr = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/cidr.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/cidr.js"() {
     init_entity();
     init_common();
     PgCidrBuilder = class extends PgColumnBuilder {
@@ -37099,7 +37418,7 @@ var init_cidr = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/custom.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/custom.js
 function customType(customTypeParams) {
   return (a, b) => {
     const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
@@ -37108,7 +37427,7 @@ function customType(customTypeParams) {
 }
 var PgCustomColumnBuilder, PgCustomColumn;
 var init_custom = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/custom.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/custom.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37151,10 +37470,10 @@ var init_custom = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/date.common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/date.common.js
 var PgDateColumnBaseBuilder;
 var init_date_common = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/date.common.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/date.common.js"() {
     init_entity();
     init_sql();
     init_common();
@@ -37167,7 +37486,7 @@ var init_date_common = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/date.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/date.js
 function date(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (config2?.mode === "date") {
@@ -37177,7 +37496,7 @@ function date(a, b) {
 }
 var PgDateBuilder, PgDate, PgDateStringBuilder, PgDateString;
 var init_date = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/date.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/date.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37231,13 +37550,13 @@ var init_date = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/double-precision.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/double-precision.js
 function doublePrecision(name2) {
   return new PgDoublePrecisionBuilder(name2 ?? "");
 }
 var PgDoublePrecisionBuilder, PgDoublePrecision;
 var init_double_precision = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/double-precision.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/double-precision.js"() {
     init_entity();
     init_common();
     PgDoublePrecisionBuilder = class extends PgColumnBuilder {
@@ -37268,13 +37587,13 @@ var init_double_precision = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/inet.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/inet.js
 function inet(name2) {
   return new PgInetBuilder(name2 ?? "");
 }
 var PgInetBuilder, PgInet;
 var init_inet = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/inet.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/inet.js"() {
     init_entity();
     init_common();
     PgInetBuilder = class extends PgColumnBuilder {
@@ -37296,13 +37615,13 @@ var init_inet = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/integer.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/integer.js
 function integer(name2) {
   return new PgIntegerBuilder(name2 ?? "");
 }
 var PgIntegerBuilder, PgInteger;
 var init_integer = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/integer.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/integer.js"() {
     init_entity();
     init_common();
     init_int_common();
@@ -37331,14 +37650,14 @@ var init_integer = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/interval.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/interval.js
 function interval(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgIntervalBuilder(name2, config2);
 }
 var PgIntervalBuilder, PgInterval;
 var init_interval = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/interval.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/interval.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37366,13 +37685,13 @@ var init_interval = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/json.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/json.js
 function json(name2) {
   return new PgJsonBuilder(name2 ?? "");
 }
 var PgJsonBuilder, PgJson;
 var init_json = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/json.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/json.js"() {
     init_entity();
     init_common();
     PgJsonBuilder = class extends PgColumnBuilder {
@@ -37410,13 +37729,13 @@ var init_json = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/jsonb.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/jsonb.js
 function jsonb(name2) {
   return new PgJsonbBuilder(name2 ?? "");
 }
 var PgJsonbBuilder, PgJsonb;
 var init_jsonb = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/jsonb.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/jsonb.js"() {
     init_entity();
     init_common();
     PgJsonbBuilder = class extends PgColumnBuilder {
@@ -37454,7 +37773,7 @@ var init_jsonb = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/line.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/line.js
 function line(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (!config2?.mode || config2.mode === "tuple") {
@@ -37464,7 +37783,7 @@ function line(a, b) {
 }
 var PgLineBuilder, PgLineTuple, PgLineABCBuilder, PgLineABC;
 var init_line = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/line.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/line.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37523,13 +37842,13 @@ var init_line = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/macaddr.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/macaddr.js
 function macaddr(name2) {
   return new PgMacaddrBuilder(name2 ?? "");
 }
 var PgMacaddrBuilder, PgMacaddr;
 var init_macaddr = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/macaddr.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/macaddr.js"() {
     init_entity();
     init_common();
     PgMacaddrBuilder = class extends PgColumnBuilder {
@@ -37551,13 +37870,13 @@ var init_macaddr = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/macaddr8.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/macaddr8.js
 function macaddr8(name2) {
   return new PgMacaddr8Builder(name2 ?? "");
 }
 var PgMacaddr8Builder, PgMacaddr8;
 var init_macaddr8 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/macaddr8.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/macaddr8.js"() {
     init_entity();
     init_common();
     PgMacaddr8Builder = class extends PgColumnBuilder {
@@ -37579,7 +37898,7 @@ var init_macaddr8 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/numeric.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/numeric.js
 function numeric(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   const mode = config2?.mode;
@@ -37587,7 +37906,7 @@ function numeric(a, b) {
 }
 var PgNumericBuilder, PgNumeric, PgNumericNumberBuilder, PgNumericNumber, PgNumericBigIntBuilder, PgNumericBigInt;
 var init_numeric = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/numeric.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/numeric.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37704,7 +38023,7 @@ var init_numeric = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/point.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/point.js
 function point(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (!config2?.mode || config2.mode === "tuple") {
@@ -37714,7 +38033,7 @@ function point(a, b) {
 }
 var PgPointTupleBuilder, PgPointTuple, PgPointObjectBuilder, PgPointObject;
 var init_point = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/point.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/point.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37779,7 +38098,7 @@ var init_point = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/postgis_extension/utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/postgis_extension/utils.js
 function hexToBytes(hex) {
   const bytes = [];
   for (let c = 0; c < hex.length; c += 2) {
@@ -37818,11 +38137,11 @@ function parseEWKB(hex) {
   throw new Error("Unsupported geometry type");
 }
 var init_utils2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/postgis_extension/utils.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/postgis_extension/utils.js"() {
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/postgis_extension/geometry.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/postgis_extension/geometry.js
 function geometry(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (!config2?.mode || config2.mode === "tuple") {
@@ -37832,7 +38151,7 @@ function geometry(a, b) {
 }
 var PgGeometryBuilder, PgGeometry, PgGeometryObjectBuilder, PgGeometryObject;
 var init_geometry = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/postgis_extension/geometry.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/postgis_extension/geometry.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -37891,13 +38210,13 @@ var init_geometry = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/real.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/real.js
 function real(name2) {
   return new PgRealBuilder(name2 ?? "");
 }
 var PgRealBuilder, PgReal;
 var init_real = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/real.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/real.js"() {
     init_entity();
     init_common();
     PgRealBuilder = class extends PgColumnBuilder {
@@ -37929,13 +38248,13 @@ var init_real = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/serial.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/serial.js
 function serial(name2) {
   return new PgSerialBuilder(name2 ?? "");
 }
 var PgSerialBuilder, PgSerial;
 var init_serial = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/serial.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/serial.js"() {
     init_entity();
     init_common();
     PgSerialBuilder = class extends PgColumnBuilder {
@@ -37959,13 +38278,13 @@ var init_serial = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/smallint.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/smallint.js
 function smallint(name2) {
   return new PgSmallIntBuilder(name2 ?? "");
 }
 var PgSmallIntBuilder, PgSmallInt;
 var init_smallint = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/smallint.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/smallint.js"() {
     init_entity();
     init_common();
     init_int_common();
@@ -37994,13 +38313,13 @@ var init_smallint = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/smallserial.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/smallserial.js
 function smallserial(name2) {
   return new PgSmallSerialBuilder(name2 ?? "");
 }
 var PgSmallSerialBuilder, PgSmallSerial;
 var init_smallserial = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/smallserial.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/smallserial.js"() {
     init_entity();
     init_common();
     PgSmallSerialBuilder = class extends PgColumnBuilder {
@@ -38027,14 +38346,14 @@ var init_smallserial = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/text.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/text.js
 function text(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgTextBuilder(name2, config2);
 }
 var PgTextBuilder, PgText;
 var init_text = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/text.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/text.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -38059,14 +38378,14 @@ var init_text = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/time.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/time.js
 function time(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgTimeBuilder(name2, config2.withTimezone ?? false, config2.precision);
 }
 var PgTimeBuilder, PgTime;
 var init_time = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/time.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/time.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -38102,7 +38421,7 @@ var init_time = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/timestamp.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/timestamp.js
 function timestamp(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (config2?.mode === "string") {
@@ -38112,7 +38431,7 @@ function timestamp(a, b = {}) {
 }
 var PgTimestampBuilder, PgTimestamp, PgTimestampStringBuilder, PgTimestampString;
 var init_timestamp = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/timestamp.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/timestamp.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -38192,13 +38511,13 @@ var init_timestamp = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/uuid.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/uuid.js
 function uuid(name2) {
   return new PgUUIDBuilder(name2 ?? "");
 }
 var PgUUIDBuilder, PgUUID;
 var init_uuid = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/uuid.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/uuid.js"() {
     init_entity();
     init_sql();
     init_common();
@@ -38227,14 +38546,14 @@ var init_uuid = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/varchar.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/varchar.js
 function varchar(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgVarcharBuilder(name2, config2);
 }
 var PgVarcharBuilder, PgVarchar;
 var init_varchar = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/varchar.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/varchar.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -38264,14 +38583,14 @@ var init_varchar = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js
 function bit(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgBinaryVectorBuilder(name2, config2);
 }
 var PgBinaryVectorBuilder, PgBinaryVector;
 var init_bit = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -38299,14 +38618,14 @@ var init_bit = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js
 function halfvec(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgHalfVectorBuilder(name2, config2);
 }
 var PgHalfVectorBuilder, PgHalfVector;
 var init_halfvec = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -38340,14 +38659,14 @@ var init_halfvec = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js
 function sparsevec(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgSparseVectorBuilder(name2, config2);
 }
 var PgSparseVectorBuilder, PgSparseVector;
 var init_sparsevec = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -38375,14 +38694,14 @@ var init_sparsevec = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js
 function vector(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new PgVectorBuilder(name2, config2);
 }
 var PgVectorBuilder, PgVector;
 var init_vector = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js"() {
     init_entity();
     init_utils();
     init_common();
@@ -38416,7 +38735,7 @@ var init_vector = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/all.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/all.js
 function getPgColumnBuilders() {
   return {
     bigint,
@@ -38454,7 +38773,7 @@ function getPgColumnBuilders() {
   };
 }
 var init_all = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/all.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/all.js"() {
     init_bigint();
     init_bigserial();
     init_boolean();
@@ -38490,7 +38809,7 @@ var init_all = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/table.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/table.js
 function pgTableWithSchema(name2, columns, extraConfig, schema, baseName = name2) {
   const rawTable = new PgTable(name2, schema, baseName);
   const parsedColumns = typeof columns === "function" ? columns(getPgColumnBuilders()) : columns;
@@ -38526,7 +38845,7 @@ function pgTableWithSchema(name2, columns, extraConfig, schema, baseName = name2
 }
 var InlineForeignKeys, EnableRLS, PgTable, pgTable;
 var init_table2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/table.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/table.js"() {
     init_entity();
     init_table();
     init_all();
@@ -38554,13 +38873,13 @@ var init_table2 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/checks.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/checks.js
 function check(name2, value) {
   return new CheckBuilder(name2, value);
 }
 var CheckBuilder, Check;
 var init_checks = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/checks.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/checks.js"() {
     init_entity();
     CheckBuilder = class {
       constructor(name2, value) {
@@ -38587,9 +38906,9 @@ var init_checks = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/index.js
 var init_columns = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/columns/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/columns/index.js"() {
     init_bigint();
     init_bigserial();
     init_boolean();
@@ -38628,7 +38947,7 @@ var init_columns = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/indexes.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/indexes.js
 function index(name2) {
   return new IndexBuilderOn(false, name2);
 }
@@ -38637,7 +38956,7 @@ function uniqueIndex(name2) {
 }
 var IndexBuilderOn, IndexBuilder, Index;
 var init_indexes = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/indexes.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/indexes.js"() {
     init_sql();
     init_entity();
     init_columns();
@@ -38748,10 +39067,10 @@ var init_indexes = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/policies.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/policies.js
 var PgPolicy;
 var init_policies = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/policies.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/policies.js"() {
     init_entity();
     PgPolicy = class {
       constructor(name2, config2) {
@@ -38780,7 +39099,7 @@ var init_policies = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/primary-keys.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/primary-keys.js
 function primaryKey(...config2) {
   if (config2[0].columns) {
     return new PrimaryKeyBuilder(config2[0].columns, config2[0].name);
@@ -38789,7 +39108,7 @@ function primaryKey(...config2) {
 }
 var PrimaryKeyBuilder, PrimaryKey;
 var init_primary_keys = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/primary-keys.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/primary-keys.js"() {
     init_entity();
     init_table2();
     PrimaryKeyBuilder = class {
@@ -38823,15 +39142,15 @@ var init_primary_keys = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/view-common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/view-common.js
 var PgViewConfig;
 var init_view_common2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/view-common.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/view-common.js"() {
     PgViewConfig = /* @__PURE__ */ Symbol.for("drizzle:PgViewConfig");
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/casing.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/casing.js
 function toSnakeCase(input) {
   const words = input.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? [];
   return words.map((word) => word.toLowerCase()).join("_");
@@ -38848,7 +39167,7 @@ function noopCase(input) {
 }
 var CasingCache;
 var init_casing = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/casing.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/casing.js"() {
     init_entity();
     init_table();
     CasingCache = class {
@@ -38890,10 +39209,10 @@ var init_casing = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/errors.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/errors.js
 var DrizzleError, DrizzleQueryError, TransactionRollbackError;
 var init_errors = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/errors.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/errors.js"() {
     init_entity();
     DrizzleError = class extends Error {
       static [entityKind] = "DrizzleError";
@@ -38923,7 +39242,7 @@ params: ${params}`);
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/expressions/conditions.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/expressions/conditions.js
 function bindIfParam(value, column) {
   if (isDriverValueEncoder(column) && !isSQLWrapper(value) && !is(value, Param) && !is(value, Placeholder) && !is(value, Column) && !is(value, Table) && !is(value, View)) {
     return new Param(value, column);
@@ -39051,7 +39370,7 @@ function arrayOverlaps(column, values) {
 }
 var eq, ne, gt, gte, lt, lte;
 var init_conditions = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/expressions/conditions.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/expressions/conditions.js"() {
     init_column();
     init_entity();
     init_table();
@@ -39077,7 +39396,7 @@ var init_conditions = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/expressions/select.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/expressions/select.js
 function asc(column) {
   return sql`${column} asc`;
 }
@@ -39085,20 +39404,20 @@ function desc(column) {
   return sql`${column} desc`;
 }
 var init_select = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/expressions/select.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/expressions/select.js"() {
     init_sql();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/expressions/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/expressions/index.js
 var init_expressions = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/expressions/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/expressions/index.js"() {
     init_conditions();
     init_select();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/relations.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/relations.js
 function getOperators() {
   return {
     and,
@@ -39319,7 +39638,7 @@ function mapRelationalRow(tablesConfig, tableConfig, row, buildQueryResultSelect
 }
 var Relation, Relations, One, Many;
 var init_relations = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/relations.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/relations.js"() {
     init_table();
     init_column();
     init_entity();
@@ -39381,7 +39700,7 @@ var init_relations = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/functions/aggregate.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/functions/aggregate.js
 function count(expression) {
   return sql`count(${expression || sql.raw("*")})`.mapWith(Number);
 }
@@ -39407,14 +39726,14 @@ function min(expression) {
   return sql`min(${expression})`.mapWith(is(expression, Column) ? expression : String);
 }
 var init_aggregate = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/functions/aggregate.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/functions/aggregate.js"() {
     init_column();
     init_entity();
     init_sql();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/functions/vector.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/functions/vector.js
 function toSql(value) {
   return JSON.stringify(value);
 }
@@ -39455,32 +39774,32 @@ function jaccardDistance(column, value) {
   return sql`${column} <%> ${value}`;
 }
 var init_vector2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/functions/vector.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/functions/vector.js"() {
     init_sql();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/functions/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/functions/index.js
 var init_functions = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/functions/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/functions/index.js"() {
     init_aggregate();
     init_vector2();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/index.js
 var init_sql2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/sql/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/sql/index.js"() {
     init_expressions();
     init_functions();
     init_sql();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/view-base.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/view-base.js
 var PgViewBase;
 var init_view_base = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/view-base.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/view-base.js"() {
     init_entity();
     init_sql();
     PgViewBase = class extends View {
@@ -39489,10 +39808,10 @@ var init_view_base = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/dialect.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/dialect.js
 var PgDialect;
 var init_dialect = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/dialect.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/dialect.js"() {
     init_alias();
     init_casing();
     init_column();
@@ -40614,10 +40933,10 @@ var init_dialect = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/query-builders/query-builder.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/query-builders/query-builder.js
 var TypedQueryBuilder;
 var init_query_builder = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/query-builders/query-builder.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/query-builders/query-builder.js"() {
     init_entity();
     TypedQueryBuilder = class {
       static [entityKind] = "TypedQueryBuilder";
@@ -40629,7 +40948,7 @@ var init_query_builder = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/select.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/select.js
 function createSetOperator(type, isAll) {
   return (leftSelect, rightSelect, ...restSelects) => {
     const setOperators = [rightSelect, ...restSelects].map((select) => ({
@@ -40649,7 +40968,7 @@ function createSetOperator(type, isAll) {
 }
 var PgSelectBuilder, PgSelectQueryBuilderBase, PgSelectBase, getPgSetOperators, union, unionAll, intersect, intersectAll, except, exceptAll;
 var init_select2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/select.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/select.js"() {
     init_entity();
     init_view_base();
     init_query_builder();
@@ -41463,10 +41782,10 @@ var init_select2 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/query-builder.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/query-builder.js
 var QueryBuilder;
 var init_query_builder2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/query-builder.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/query-builder.js"() {
     init_entity();
     init_dialect();
     init_selection_proxy();
@@ -41560,7 +41879,7 @@ var init_query_builder2 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/view.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/view.js
 function pgViewWithSchema(name2, selection, schema) {
   if (selection) {
     return new ManualViewBuilder(name2, selection, schema);
@@ -41575,7 +41894,7 @@ function pgMaterializedViewWithSchema(name2, selection, schema) {
 }
 var DefaultViewBuilderCore, ViewBuilder, ManualViewBuilder, MaterializedViewBuilderCore, MaterializedViewBuilder, ManualMaterializedViewBuilder, PgView, PgMaterializedViewConfig, PgMaterializedView;
 var init_view = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/view.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/view.js"() {
     init_entity();
     init_selection_proxy();
     init_utils();
@@ -41809,7 +42128,7 @@ var init_view = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/utils.js
 function extractUsedTable(table) {
   if (is(table, PgTable)) {
     return [table[Schema] ? `${table[Schema]}.${table[Table.Symbol.BaseName]}` : table[Table.Symbol.BaseName]];
@@ -41823,7 +42142,7 @@ function extractUsedTable(table) {
   return [];
 }
 var init_utils3 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/utils.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/utils.js"() {
     init_entity();
     init_table2();
     init_sql();
@@ -41832,10 +42151,10 @@ var init_utils3 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/delete.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/delete.js
 var PgDeleteBase;
 var init_delete = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/delete.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/delete.js"() {
     init_entity();
     init_query_promise();
     init_selection_proxy();
@@ -41940,10 +42259,10 @@ var init_delete = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/insert.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/insert.js
 var PgInsertBuilder, PgInsertBase;
 var init_insert = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/insert.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/insert.js"() {
     init_entity();
     init_query_promise();
     init_selection_proxy();
@@ -42147,10 +42466,10 @@ var init_insert = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/refresh-materialized-view.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/refresh-materialized-view.js
 var PgRefreshMaterializedView;
 var init_refresh_materialized_view = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/refresh-materialized-view.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/refresh-materialized-view.js"() {
     init_entity();
     init_query_promise();
     init_tracing();
@@ -42209,16 +42528,16 @@ var init_refresh_materialized_view = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/select.types.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/select.types.js
 var init_select_types = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/select.types.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/select.types.js"() {
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/update.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/update.js
 var PgUpdateBuilder, PgUpdateBase;
 var init_update = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/update.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/update.js"() {
     init_entity();
     init_table2();
     init_query_promise();
@@ -42442,9 +42761,9 @@ var init_update = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/index.js
 var init_query_builders = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/index.js"() {
     init_delete();
     init_insert();
     init_query_builder2();
@@ -42455,10 +42774,10 @@ var init_query_builders = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/count.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/count.js
 var PgCountBuilder;
 var init_count = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/count.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/count.js"() {
     init_entity();
     init_sql();
     PgCountBuilder = class _PgCountBuilder extends SQL {
@@ -42513,10 +42832,10 @@ var init_count = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/query.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/query.js
 var RelationalQueryBuilder, PgRelationalQuery;
 var init_query = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/query.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/query.js"() {
     init_entity();
     init_query_promise();
     init_relations();
@@ -42635,10 +42954,10 @@ var init_query = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/raw.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/raw.js
 var PgRaw;
 var init_raw = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/query-builders/raw.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/query-builders/raw.js"() {
     init_entity();
     init_query_promise();
     PgRaw = class extends QueryPromise {
@@ -42671,10 +42990,10 @@ var init_raw = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/db.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/db.js
 var PgDatabase;
 var init_db = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/db.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/db.js"() {
     init_entity();
     init_query_builders();
     init_selection_proxy();
@@ -42964,7 +43283,7 @@ var init_db = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/cache/core/cache.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/cache/core/cache.js
 async function hashQuery(sql2, params) {
   const dataToHash = `${sql2}-${JSON.stringify(params)}`;
   const encoder2 = new TextEncoder();
@@ -42976,7 +43295,7 @@ async function hashQuery(sql2, params) {
 }
 var Cache, NoopCache;
 var init_cache = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/cache/core/cache.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/cache/core/cache.js"() {
     init_entity();
     Cache = class {
       static [entityKind] = "Cache";
@@ -42997,27 +43316,27 @@ var init_cache = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/cache/core/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/cache/core/index.js
 var init_core = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/cache/core/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/cache/core/index.js"() {
     init_cache();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/alias.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/alias.js
 function alias(table, alias2) {
   return new Proxy(table, new TableAliasProxyHandler(alias2, false));
 }
 var init_alias2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/alias.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/alias.js"() {
     init_alias();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/roles.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/roles.js
 var PgRole;
 var init_roles = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/roles.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/roles.js"() {
     init_entity();
     PgRole = class {
       constructor(name2, config2) {
@@ -43045,13 +43364,13 @@ var init_roles = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/sequence.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/sequence.js
 function pgSequenceWithSchema(name2, options, schema) {
   return new PgSequence(name2, options, schema);
 }
 var PgSequence;
 var init_sequence = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/sequence.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/sequence.js"() {
     init_entity();
     PgSequence = class {
       constructor(seqName, seqOptions, schema) {
@@ -43064,10 +43383,10 @@ var init_sequence = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/schema.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/schema.js
 var PgSchema;
 var init_schema = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/schema.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/schema.js"() {
     init_entity();
     init_sql();
     init_enum();
@@ -43108,10 +43427,10 @@ var init_schema = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/session.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/session.js
 var PgPreparedQuery, PgSession, PgTransaction;
 var init_session = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/session.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/session.js"() {
     init_cache();
     init_entity();
     init_errors();
@@ -43279,22 +43598,22 @@ var init_session = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/subquery.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/subquery.js
 var init_subquery2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/subquery.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/subquery.js"() {
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/utils/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/utils/index.js
 var init_utils4 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/utils/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/utils/index.js"() {
     init_array();
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/index.js
 var init_pg_core = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/pg-core/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/index.js"() {
     init_alias2();
     init_checks();
     init_columns();
@@ -43319,10 +43638,10 @@ var init_pg_core = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/node-postgres/session.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/node-postgres/session.js
 var Pool2, types2, NodePgPreparedQuery, NodePgSession, NodePgTransaction;
 var init_session2 = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/node-postgres/session.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/node-postgres/session.js"() {
     init_esm();
     init_core();
     init_entity();
@@ -43549,7 +43868,7 @@ var init_session2 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/node-postgres/driver.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/node-postgres/driver.js
 function construct(client, config2 = {}) {
   const dialect = new PgDialect({ casing: config2.casing });
   let logger2;
@@ -43599,7 +43918,7 @@ function drizzle(...params) {
 }
 var NodePgDriver, NodePgDatabase;
 var init_driver = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/node-postgres/driver.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/node-postgres/driver.js"() {
     init_esm();
     init_entity();
     init_logger();
@@ -43634,9 +43953,9 @@ var init_driver = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/node-postgres/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/node-postgres/index.js
 var init_node_postgres = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/node-postgres/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/node-postgres/index.js"() {
     init_driver();
     init_session2();
   }
@@ -55251,13 +55570,13 @@ var init_v4 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/operations.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/operations.js
 var init_operations = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/operations.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/operations.js"() {
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/index.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/index.js
 var drizzle_orm_exports = {};
 __export(drizzle_orm_exports, {
   BaseName: () => BaseName,
@@ -55380,7 +55699,7 @@ __export(drizzle_orm_exports, {
   textDecoder: () => textDecoder
 });
 var init_drizzle_orm = __esm({
-  "../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0/node_modules/drizzle-orm/index.js"() {
+  "../../node_modules/.pnpm/drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/index.js"() {
     init_alias();
     init_column_builder();
     init_column();
@@ -55398,7 +55717,7 @@ var init_drizzle_orm = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/drizzle-zod@0.8.3_drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0__zod@3.25.76/node_modules/drizzle-zod/index.mjs
+// ../../node_modules/.pnpm/drizzle-zod@0.8.3_drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0__zod@3.25.76/node_modules/drizzle-zod/index.mjs
 function isColumnType(column, columnTypes) {
   return columnTypes.includes(column.columnType);
 }
@@ -55610,7 +55929,7 @@ function handleColumns(columns, refinements, conditions, factory) {
 }
 var CONSTANTS, literalSchema, jsonSchema, bufferSchema, insertConditions, createInsertSchema;
 var init_drizzle_zod = __esm({
-  "../../node_modules/.pnpm/drizzle-zod@0.8.3_drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0__zod@3.25.76/node_modules/drizzle-zod/index.mjs"() {
+  "../../node_modules/.pnpm/drizzle-zod@0.8.3_drizzle-orm@0.45.3_@types+pg@8.23.1_pg@8.23.0__zod@3.25.76/node_modules/drizzle-zod/index.mjs"() {
     init_v4();
     init_drizzle_orm();
     CONSTANTS = {
@@ -63078,9 +63397,9 @@ var require_lib6 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/defaults.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/defaults.js
 var require_defaults2 = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/defaults.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/defaults.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.defaults = void 0;
@@ -63145,9 +63464,9 @@ var require_defaults2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/isArguments.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/isArguments.js
 var require_isArguments = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/isArguments.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/isArguments.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isArguments = void 0;
@@ -63164,9 +63483,9 @@ var require_isArguments = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/lodash.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/lodash.js
 var require_lodash = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/lodash.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/lodash.js"(exports) {
     "use strict";
     var __createBinding2 = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -63190,9 +63509,9 @@ var require_lodash = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/debug.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/debug.js
 var require_debug2 = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/debug.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/debug.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.genRedactedString = exports.getStringValue = exports.MAX_ARGUMENT_LENGTH = void 0;
@@ -63276,9 +63595,9 @@ var require_debug2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/constants/TLSProfiles.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/constants/TLSProfiles.js
 var require_TLSProfiles = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/constants/TLSProfiles.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/constants/TLSProfiles.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var RedisCloudCA = `-----BEGIN CERTIFICATE-----
@@ -63428,9 +63747,9 @@ WD9f
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/index.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/index.js
 var require_utils7 = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.noop = exports.isArguments = exports.defaults = exports.Debug = exports.getPackageMeta = exports.zipMap = exports.CONNECTION_CLOSED_ERROR_MSG = exports.shuffle = exports.sample = exports.resolveTLSProfile = exports.parseURL = exports.optimizeErrorStack = exports.toArg = exports.convertMapToArray = exports.convertObjectToArray = exports.timeout = exports.packObject = exports.isInt = exports.wrapMultiResult = exports.convertBufferToString = void 0;
@@ -63685,9 +64004,9 @@ var require_utils7 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/argumentParsers.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/argumentParsers.js
 var require_argumentParsers = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/argumentParsers.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/argumentParsers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.parseBlockOption = exports.parseSecondsArgument = void 0;
@@ -63744,9 +64063,9 @@ var require_argumentParsers = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Command.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/Command.js
 var require_Command = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Command.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/Command.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var commands_1 = require_built();
@@ -64140,9 +64459,9 @@ var require_Command = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/ClusterAllFailedError.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/errors/ClusterAllFailedError.js
 var require_ClusterAllFailedError = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/ClusterAllFailedError.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/errors/ClusterAllFailedError.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var redis_errors_1 = require_redis_errors();
@@ -64161,9 +64480,9 @@ var require_ClusterAllFailedError = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/ScanStream.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/ScanStream.js
 var require_ScanStream = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/ScanStream.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/ScanStream.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var stream_1 = __require("stream");
@@ -64215,9 +64534,9 @@ var require_ScanStream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/autoPipelining.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/autoPipelining.js
 var require_autoPipelining = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/autoPipelining.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/autoPipelining.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.executeWithAutoPipelining = exports.getFirstValueInFlattenedArray = exports.shouldUseAutoPipelining = exports.notAllowedAutoPipelineCommands = exports.kCallbacks = exports.kExec = void 0;
@@ -64355,9 +64674,9 @@ var require_autoPipelining = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Script.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/Script.js
 var require_Script = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Script.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/Script.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var crypto_1 = __require("crypto");
@@ -64420,9 +64739,9 @@ var require_Script = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/Commander.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/Commander.js
 var require_Commander = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/Commander.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/Commander.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var commands_1 = require_built();
@@ -64536,9 +64855,9 @@ var require_Commander = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Pipeline.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/Pipeline.js
 var require_Pipeline = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Pipeline.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/Pipeline.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var calculateSlot = require_lib6();
@@ -64856,9 +65175,9 @@ var require_Pipeline = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/tracing.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/tracing.js
 var require_tracing = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/tracing.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/tracing.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.traceConnect = exports.traceBatch = exports.traceCommand = exports.sanitizeArgs = void 0;
@@ -64937,9 +65256,9 @@ var require_tracing = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/transaction.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/transaction.js
 var require_transaction = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/transaction.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/transaction.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addTransactionSupport = void 0;
@@ -65033,9 +65352,9 @@ var require_transaction = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/applyMixin.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/applyMixin.js
 var require_applyMixin = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/applyMixin.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/utils/applyMixin.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     function applyMixin(derivedConstructor, mixinConstructor) {
@@ -65047,9 +65366,9 @@ var require_applyMixin = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterOptions.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ClusterOptions.js
 var require_ClusterOptions = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterOptions.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ClusterOptions.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DEFAULT_CLUSTER_OPTIONS = void 0;
@@ -65076,9 +65395,9 @@ var require_ClusterOptions = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/util.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/util.js
 var require_util = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/util.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/util.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getConnectionName = exports.weightSrvRecords = exports.groupSrvRecords = exports.getUniqueHostnamesFromOptions = exports.normalizeNodeOptions = exports.nodeKeyToRedisOptions = exports.getNodeKey = void 0;
@@ -65176,9 +65495,9 @@ var require_util = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterSubscriber.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ClusterSubscriber.js
 var require_ClusterSubscriber = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterSubscriber.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ClusterSubscriber.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util();
@@ -65362,9 +65681,9 @@ var require_ClusterSubscriber = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ConnectionPool.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ConnectionPool.js
 var require_ConnectionPool = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ConnectionPool.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ConnectionPool.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var events_1 = __require("events");
@@ -65833,9 +66152,9 @@ var require_denque = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/DelayQueue.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/DelayQueue.js
 var require_DelayQueue = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/DelayQueue.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/DelayQueue.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var utils_1 = require_utils7();
@@ -65889,9 +66208,9 @@ var require_DelayQueue = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ShardedSubscriber.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ShardedSubscriber.js
 var require_ShardedSubscriber = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ShardedSubscriber.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ShardedSubscriber.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util();
@@ -66034,9 +66353,9 @@ var require_ShardedSubscriber = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterSubscriberGroup.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ClusterSubscriberGroup.js
 var require_ClusterSubscriberGroup = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterSubscriberGroup.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/ClusterSubscriberGroup.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var utils_1 = require_utils7();
@@ -66350,9 +66669,9 @@ var require_ClusterSubscriberGroup = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/index.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/index.js
 var require_cluster = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/cluster/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var commands_1 = require_built();
@@ -67204,9 +67523,9 @@ var require_cluster = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/AbstractConnector.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/AbstractConnector.js
 var require_AbstractConnector = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/AbstractConnector.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/AbstractConnector.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var utils_1 = require_utils7();
@@ -67236,9 +67555,9 @@ var require_AbstractConnector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/StandaloneConnector.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/StandaloneConnector.js
 var require_StandaloneConnector = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/StandaloneConnector.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/StandaloneConnector.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var net_1 = __require("net");
@@ -67301,9 +67620,9 @@ var require_StandaloneConnector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/SentinelIterator.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/SentinelConnector/SentinelIterator.js
 var require_SentinelIterator = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/SentinelIterator.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/SentinelConnector/SentinelIterator.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     function isSentinelEql(a, b) {
@@ -67341,9 +67660,9 @@ var require_SentinelIterator = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/FailoverDetector.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/SentinelConnector/FailoverDetector.js
 var require_FailoverDetector = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/FailoverDetector.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/SentinelConnector/FailoverDetector.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FailoverDetector = void 0;
@@ -67389,9 +67708,9 @@ var require_FailoverDetector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/index.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/SentinelConnector/index.js
 var require_SentinelConnector = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/SentinelConnector/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SentinelIterator = void 0;
@@ -67655,9 +67974,9 @@ var require_SentinelConnector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/index.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/index.js
 var require_connectors = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/connectors/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SentinelConnector = exports.StandaloneConnector = void 0;
@@ -67668,9 +67987,9 @@ var require_connectors = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/MaxRetriesPerRequestError.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/errors/MaxRetriesPerRequestError.js
 var require_MaxRetriesPerRequestError = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/MaxRetriesPerRequestError.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/errors/MaxRetriesPerRequestError.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var redis_errors_1 = require_redis_errors();
@@ -67688,9 +68007,9 @@ var require_MaxRetriesPerRequestError = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/index.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/errors/index.js
 var require_errors = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/errors/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MaxRetriesPerRequestError = void 0;
@@ -68108,9 +68427,9 @@ var require_redis_parser = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/SubscriptionSet.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/SubscriptionSet.js
 var require_SubscriptionSet = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/SubscriptionSet.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/SubscriptionSet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var SubscriptionSet = class {
@@ -68150,9 +68469,9 @@ var require_SubscriptionSet = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/DataHandler.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/DataHandler.js
 var require_DataHandler = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/DataHandler.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/DataHandler.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var Command_1 = require_Command();
@@ -68358,9 +68677,9 @@ var require_DataHandler = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/redis/event_handler.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/redis/event_handler.js
 var require_event_handler = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/redis/event_handler.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/redis/event_handler.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.readyHandler = exports.errorHandler = exports.closeHandler = exports.connectHandler = void 0;
@@ -68638,9 +68957,9 @@ var require_event_handler = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/redis/RedisOptions.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/redis/RedisOptions.js
 var require_RedisOptions = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/redis/RedisOptions.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/redis/RedisOptions.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DEFAULT_REDIS_OPTIONS = void 0;
@@ -68697,9 +69016,9 @@ var require_RedisOptions = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Redis.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/Redis.js
 var require_Redis = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Redis.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/Redis.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var commands_1 = require_built();
@@ -69394,9 +69713,9 @@ var require_Redis = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/index.js
+// ../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/index.js
 var require_built3 = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/index.js"(exports, module) {
+  "../../node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/index.js"(exports, module) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.print = exports.ReplyError = exports.SentinelIterator = exports.SentinelConnector = exports.AbstractConnector = exports.Pipeline = exports.ScanStream = exports.Command = exports.Cluster = exports.Redis = exports.default = void 0;
@@ -69982,9 +70301,9 @@ var init_tslib_es6 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/async-fifo-queue.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/async-fifo-queue.js
 var require_async_fifo_queue = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/async-fifo-queue.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/async-fifo-queue.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AsyncFifoQueue = void 0;
@@ -70134,9 +70453,9 @@ var require_async_fifo_queue = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/backoffs.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/backoffs.js
 var require_backoffs = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/backoffs.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/backoffs.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Backoffs = void 0;
@@ -70195,9 +70514,9 @@ var require_backoffs = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/child-command.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/child-command.js
 var require_child_command = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/child-command.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/child-command.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ChildCommand = void 0;
@@ -70216,9 +70535,9 @@ var require_child_command = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/error-code.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/error-code.js
 var require_error_code = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/error-code.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/error-code.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ErrorCode = void 0;
@@ -70239,9 +70558,9 @@ var require_error_code = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/parent-command.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/parent-command.js
 var require_parent_command = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/parent-command.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/parent-command.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ParentCommand = void 0;
@@ -70266,9 +70585,9 @@ var require_parent_command = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/metrics-time.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/metrics-time.js
 var require_metrics_time = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/metrics-time.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/metrics-time.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MetricsTime = void 0;
@@ -70286,9 +70605,9 @@ var require_metrics_time = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/telemetry-attributes.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/telemetry-attributes.js
 var require_telemetry_attributes = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/telemetry-attributes.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/telemetry-attributes.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SpanKind = exports.MetricNames = exports.TelemetryAttributes = void 0;
@@ -70331,6 +70650,7 @@ var require_telemetry_attributes = __commonJS({
       TelemetryAttributes2["FlowName"] = "bullmq.flow.name";
       TelemetryAttributes2["JobSchedulerId"] = "bullmq.job.scheduler.id";
       TelemetryAttributes2["JobStatus"] = "bullmq.job.status";
+      TelemetryAttributes2["JobState"] = "bullmq.job.state";
     })(TelemetryAttributes || (exports.TelemetryAttributes = TelemetryAttributes = {}));
     var MetricNames;
     (function(MetricNames2) {
@@ -70354,9 +70674,9 @@ var require_telemetry_attributes = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/index.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/index.js
 var require_enums = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/enums/index.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/enums/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -70368,9 +70688,9 @@ var require_enums = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/child.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/child.js
 var require_child = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/child.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/child.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Child = void 0;
@@ -70427,6 +70747,7 @@ var require_child = __commonJS({
         return this._killed;
       }
       async init() {
+        var _a, _b;
         const execArgv = await convertExecArgv(process.execArgv);
         let parent;
         if (this.opts.useWorkerThreads) {
@@ -70446,8 +70767,8 @@ var require_child = __commonJS({
         parent.on("error", (...args) => this.emit("error", ...args));
         parent.on("message", (...args) => this.emit("message", ...args));
         parent.on("close", (...args) => this.emit("close", ...args));
-        parent.stdout.pipe(process.stdout);
-        parent.stderr.pipe(process.stderr);
+        (_a = parent.stdout) === null || _a === void 0 ? void 0 : _a.pipe(process.stdout);
+        (_b = parent.stderr) === null || _b === void 0 ? void 0 : _b.pipe(process.stderr);
         await this.initChild();
       }
       async send(msg) {
@@ -70563,9 +70884,9 @@ var require_child = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/child-pool.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/child-pool.js
 var require_child_pool = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/child-pool.js"(exports, module) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/child-pool.js"(exports, module) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ChildPool = void 0;
@@ -70607,7 +70928,15 @@ var require_child_pool = __commonJS({
           return child;
         } catch (err) {
           console.error(err);
-          this.release(child);
+          if (child.childProcess || child.worker) {
+            try {
+              this.kill(child, "SIGKILL").catch((killErr) => {
+                console.error("Failed to kill child after init error:", killErr);
+              });
+            } catch (killErr) {
+              console.error("Failed to kill child after init error:", killErr);
+            }
+          }
           throw err;
         }
       }
@@ -70711,9 +71040,9 @@ var require_node_abort_controller = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/abort-controller.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/abort-controller.js
 var require_abort_controller = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/abort-controller.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/abort-controller.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AbortController = void 0;
@@ -70730,9 +71059,9 @@ var require_abort_controller = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/connection-closed-error.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/connection-closed-error.js
 var require_connection_closed_error = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/connection-closed-error.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/connection-closed-error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectionClosedError = void 0;
@@ -70748,9 +71077,9 @@ var require_connection_closed_error = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/constants.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/constants.js
 var require_constants2 = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/constants.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/constants.js"(exports, module) {
     "use strict";
     var SEMVER_SPEC_VERSION = "2.0.0";
     var MAX_LENGTH = 256;
@@ -70780,9 +71109,9 @@ var require_constants2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/debug.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/debug.js
 var require_debug3 = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/debug.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/debug.js"(exports, module) {
     "use strict";
     var debug = typeof process === "object" && process.env && process.env.NODE_DEBUG && /\bsemver\b/i.test(process.env.NODE_DEBUG) ? (...args) => console.error("SEMVER", ...args) : () => {
     };
@@ -70790,9 +71119,9 @@ var require_debug3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/re.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/re.js
 var require_re = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/re.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/re.js"(exports, module) {
     "use strict";
     var {
       MAX_SAFE_COMPONENT_LENGTH,
@@ -70878,9 +71207,9 @@ var require_re = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/parse-options.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/parse-options.js
 var require_parse_options = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/parse-options.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/parse-options.js"(exports, module) {
     "use strict";
     var looseOption = Object.freeze({ loose: true });
     var emptyOpts = Object.freeze({});
@@ -70897,9 +71226,9 @@ var require_parse_options = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/identifiers.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/identifiers.js
 var require_identifiers = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/identifiers.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/identifiers.js"(exports, module) {
     "use strict";
     var numeric2 = /^[0-9]+$/;
     var compareIdentifiers = (a, b) => {
@@ -70922,15 +71251,27 @@ var require_identifiers = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/classes/semver.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/classes/semver.js
 var require_semver = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/classes/semver.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/classes/semver.js"(exports, module) {
     "use strict";
     var debug = require_debug3();
     var { MAX_LENGTH, MAX_SAFE_INTEGER } = require_constants2();
     var { safeRe: re, t: t2 } = require_re();
     var parseOptions2 = require_parse_options();
     var { compareIdentifiers } = require_identifiers();
+    var isPrereleaseIdentifier = (prerelease, identifier) => {
+      const identifiers = identifier.split(".");
+      if (identifiers.length > prerelease.length) {
+        return false;
+      }
+      for (let i2 = 0; i2 < identifiers.length; i2++) {
+        if (compareIdentifiers(prerelease[i2], identifiers[i2]) !== 0) {
+          return false;
+        }
+      }
+      return true;
+    };
     var SemVer = class _SemVer {
       constructor(version3, options) {
         options = parseOptions2(options);
@@ -71177,8 +71518,9 @@ var require_semver = __commonJS({
               if (identifierBase === false) {
                 prerelease = [identifier];
               }
-              if (compareIdentifiers(this.prerelease[0], identifier) === 0) {
-                if (isNaN(this.prerelease[1])) {
+              if (isPrereleaseIdentifier(this.prerelease, identifier)) {
+                const prereleaseBase = this.prerelease[identifier.split(".").length];
+                if (isNaN(prereleaseBase)) {
                   this.prerelease = prerelease;
                 }
               } else {
@@ -71201,9 +71543,9 @@ var require_semver = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/parse.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/parse.js
 var require_parse2 = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/parse.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/parse.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var parse3 = (version3, options, throwErrors = false) => {
@@ -71223,9 +71565,9 @@ var require_parse2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/valid.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/valid.js
 var require_valid = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/valid.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/valid.js"(exports, module) {
     "use strict";
     var parse3 = require_parse2();
     var valid = (version3, options) => {
@@ -71236,9 +71578,9 @@ var require_valid = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/clean.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/clean.js
 var require_clean = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/clean.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/clean.js"(exports, module) {
     "use strict";
     var parse3 = require_parse2();
     var clean = (version3, options) => {
@@ -71249,9 +71591,9 @@ var require_clean = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/inc.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/inc.js
 var require_inc = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/inc.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/inc.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var inc = (version3, release, options, identifier, identifierBase) => {
@@ -71273,9 +71615,9 @@ var require_inc = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/diff.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/diff.js
 var require_diff = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/diff.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/diff.js"(exports, module) {
     "use strict";
     var parse3 = require_parse2();
     var diff = (version1, version22) => {
@@ -71317,9 +71659,9 @@ var require_diff = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/major.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/major.js
 var require_major = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/major.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/major.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var major = (a, loose) => new SemVer(a, loose).major;
@@ -71327,9 +71669,9 @@ var require_major = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/minor.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/minor.js
 var require_minor = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/minor.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/minor.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var minor = (a, loose) => new SemVer(a, loose).minor;
@@ -71337,9 +71679,9 @@ var require_minor = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/patch.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/patch.js
 var require_patch = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/patch.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/patch.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var patch = (a, loose) => new SemVer(a, loose).patch;
@@ -71347,9 +71689,9 @@ var require_patch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/prerelease.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/prerelease.js
 var require_prerelease = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/prerelease.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/prerelease.js"(exports, module) {
     "use strict";
     var parse3 = require_parse2();
     var prerelease = (version3, options) => {
@@ -71360,9 +71702,9 @@ var require_prerelease = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/compare.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/compare.js
 var require_compare = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/compare.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/compare.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var compare2 = (a, b, loose) => new SemVer(a, loose).compare(new SemVer(b, loose));
@@ -71370,9 +71712,9 @@ var require_compare = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/rcompare.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/rcompare.js
 var require_rcompare = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/rcompare.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/rcompare.js"(exports, module) {
     "use strict";
     var compare2 = require_compare();
     var rcompare = (a, b, loose) => compare2(b, a, loose);
@@ -71380,9 +71722,9 @@ var require_rcompare = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/compare-loose.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/compare-loose.js
 var require_compare_loose = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/compare-loose.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/compare-loose.js"(exports, module) {
     "use strict";
     var compare2 = require_compare();
     var compareLoose = (a, b) => compare2(a, b, true);
@@ -71390,9 +71732,9 @@ var require_compare_loose = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/compare-build.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/compare-build.js
 var require_compare_build = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/compare-build.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/compare-build.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var compareBuild = (a, b, loose) => {
@@ -71404,9 +71746,9 @@ var require_compare_build = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/sort.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/sort.js
 var require_sort = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/sort.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/sort.js"(exports, module) {
     "use strict";
     var compareBuild = require_compare_build();
     var sort = (list, loose) => list.sort((a, b) => compareBuild(a, b, loose));
@@ -71414,9 +71756,9 @@ var require_sort = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/rsort.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/rsort.js
 var require_rsort = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/rsort.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/rsort.js"(exports, module) {
     "use strict";
     var compareBuild = require_compare_build();
     var rsort = (list, loose) => list.sort((a, b) => compareBuild(b, a, loose));
@@ -71424,9 +71766,9 @@ var require_rsort = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/gt.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/gt.js
 var require_gt = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/gt.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/gt.js"(exports, module) {
     "use strict";
     var compare2 = require_compare();
     var gt2 = (a, b, loose) => compare2(a, b, loose) > 0;
@@ -71434,9 +71776,9 @@ var require_gt = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/lt.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/lt.js
 var require_lt = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/lt.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/lt.js"(exports, module) {
     "use strict";
     var compare2 = require_compare();
     var lt2 = (a, b, loose) => compare2(a, b, loose) < 0;
@@ -71444,9 +71786,9 @@ var require_lt = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/eq.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/eq.js
 var require_eq = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/eq.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/eq.js"(exports, module) {
     "use strict";
     var compare2 = require_compare();
     var eq2 = (a, b, loose) => compare2(a, b, loose) === 0;
@@ -71454,9 +71796,9 @@ var require_eq = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/neq.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/neq.js
 var require_neq = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/neq.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/neq.js"(exports, module) {
     "use strict";
     var compare2 = require_compare();
     var neq = (a, b, loose) => compare2(a, b, loose) !== 0;
@@ -71464,9 +71806,9 @@ var require_neq = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/gte.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/gte.js
 var require_gte = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/gte.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/gte.js"(exports, module) {
     "use strict";
     var compare2 = require_compare();
     var gte2 = (a, b, loose) => compare2(a, b, loose) >= 0;
@@ -71474,9 +71816,9 @@ var require_gte = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/lte.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/lte.js
 var require_lte = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/lte.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/lte.js"(exports, module) {
     "use strict";
     var compare2 = require_compare();
     var lte2 = (a, b, loose) => compare2(a, b, loose) <= 0;
@@ -71484,9 +71826,9 @@ var require_lte = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/cmp.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/cmp.js
 var require_cmp = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/cmp.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/cmp.js"(exports, module) {
     "use strict";
     var eq2 = require_eq();
     var neq = require_neq();
@@ -71534,9 +71876,9 @@ var require_cmp = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/coerce.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/coerce.js
 var require_coerce = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/coerce.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/coerce.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var parse3 = require_parse2();
@@ -71580,9 +71922,9 @@ var require_coerce = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/truncate.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/truncate.js
 var require_truncate = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/truncate.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/truncate.js"(exports, module) {
     "use strict";
     var parse3 = require_parse2();
     var constants2 = require_constants2();
@@ -71621,9 +71963,9 @@ var require_truncate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/lrucache.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/lrucache.js
 var require_lrucache = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/internal/lrucache.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/internal/lrucache.js"(exports, module) {
     "use strict";
     var LRUCache = class {
       constructor() {
@@ -71659,9 +72001,9 @@ var require_lrucache = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/classes/range.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/classes/range.js
 var require_range2 = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/classes/range.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/classes/range.js"(exports, module) {
     "use strict";
     var SPACE_CHARACTERS = /\s+/g;
     var Range = class _Range {
@@ -71848,20 +72190,22 @@ var require_range2 = __commonJS({
       return comp;
     };
     var isX = (id3) => !id3 || id3.toLowerCase() === "x" || id3 === "*";
+    var invalidXRangeOrder = (M, m2, p) => isX(M) && !isX(m2) || isX(m2) && p && !isX(p);
     var replaceTildes = (comp, options) => {
       return comp.trim().split(/\s+/).map((c) => replaceTilde(c, options)).join(" ");
     };
     var replaceTilde = (comp, options) => {
       const r2 = options.loose ? re[t2.TILDELOOSE] : re[t2.TILDE];
+      const z = options.includePrerelease ? "-0" : "";
       return comp.replace(r2, (_, M, m2, p, pr) => {
         debug("tilde", comp, _, M, m2, p, pr);
         let ret;
         if (isX(M)) {
           ret = "";
         } else if (isX(m2)) {
-          ret = `>=${M}.0.0 <${+M + 1}.0.0-0`;
+          ret = `>=${M}.0.0${z} <${+M + 1}.0.0-0`;
         } else if (isX(p)) {
-          ret = `>=${M}.${m2}.0 <${M}.${+m2 + 1}.0-0`;
+          ret = `>=${M}.${m2}.0${z} <${M}.${+m2 + 1}.0-0`;
         } else if (pr) {
           debug("replaceTilde pr", pr);
           ret = `>=${M}.${m2}.${p}-${pr} <${M}.${+m2 + 1}.0-0`;
@@ -71907,9 +72251,9 @@ var require_range2 = __commonJS({
           debug("no pr");
           if (M === "0") {
             if (m2 === "0") {
-              ret = `>=${M}.${m2}.${p}${z} <${M}.${m2}.${+p + 1}-0`;
+              ret = `>=${M}.${m2}.${p} <${M}.${m2}.${+p + 1}-0`;
             } else {
-              ret = `>=${M}.${m2}.${p}${z} <${M}.${+m2 + 1}.0-0`;
+              ret = `>=${M}.${m2}.${p} <${M}.${+m2 + 1}.0-0`;
             }
           } else {
             ret = `>=${M}.${m2}.${p} <${+M + 1}.0.0-0`;
@@ -71928,6 +72272,9 @@ var require_range2 = __commonJS({
       const r2 = options.loose ? re[t2.XRANGELOOSE] : re[t2.XRANGE];
       return comp.replace(r2, (ret, gtlt, M, m2, p, pr) => {
         debug("xRange", comp, ret, gtlt, M, m2, p, pr);
+        if (invalidXRangeOrder(M, m2, p)) {
+          return comp;
+        }
         const xM = isX(M);
         const xm = xM || isX(m2);
         const xp = xm || isX(p);
@@ -72039,9 +72386,9 @@ var require_range2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/classes/comparator.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/classes/comparator.js
 var require_comparator = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/classes/comparator.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/classes/comparator.js"(exports, module) {
     "use strict";
     var ANY = /* @__PURE__ */ Symbol("SemVer ANY");
     var Comparator = class _Comparator {
@@ -72152,9 +72499,9 @@ var require_comparator = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/satisfies.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/satisfies.js
 var require_satisfies = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/functions/satisfies.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/functions/satisfies.js"(exports, module) {
     "use strict";
     var Range = require_range2();
     var satisfies = (version3, range, options) => {
@@ -72169,9 +72516,9 @@ var require_satisfies = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/to-comparators.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/to-comparators.js
 var require_to_comparators = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/to-comparators.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/to-comparators.js"(exports, module) {
     "use strict";
     var Range = require_range2();
     var toComparators = (range, options) => new Range(range, options).set.map((comp) => comp.map((c) => c.value).join(" ").trim().split(" "));
@@ -72179,9 +72526,9 @@ var require_to_comparators = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/max-satisfying.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/max-satisfying.js
 var require_max_satisfying = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/max-satisfying.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/max-satisfying.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var Range = require_range2();
@@ -72208,9 +72555,9 @@ var require_max_satisfying = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/min-satisfying.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/min-satisfying.js
 var require_min_satisfying = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/min-satisfying.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/min-satisfying.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var Range = require_range2();
@@ -72237,9 +72584,9 @@ var require_min_satisfying = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/min-version.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/min-version.js
 var require_min_version = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/min-version.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/min-version.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var Range = require_range2();
@@ -72296,9 +72643,9 @@ var require_min_version = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/valid.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/valid.js
 var require_valid2 = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/valid.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/valid.js"(exports, module) {
     "use strict";
     var Range = require_range2();
     var validRange = (range, options) => {
@@ -72312,9 +72659,9 @@ var require_valid2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/outside.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/outside.js
 var require_outside = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/outside.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/outside.js"(exports, module) {
     "use strict";
     var SemVer = require_semver();
     var Comparator = require_comparator();
@@ -72381,9 +72728,9 @@ var require_outside = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/gtr.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/gtr.js
 var require_gtr = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/gtr.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/gtr.js"(exports, module) {
     "use strict";
     var outside = require_outside();
     var gtr = (version3, range, options) => outside(version3, range, ">", options);
@@ -72391,9 +72738,9 @@ var require_gtr = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/ltr.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/ltr.js
 var require_ltr = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/ltr.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/ltr.js"(exports, module) {
     "use strict";
     var outside = require_outside();
     var ltr = (version3, range, options) => outside(version3, range, "<", options);
@@ -72401,9 +72748,9 @@ var require_ltr = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/intersects.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/intersects.js
 var require_intersects = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/intersects.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/intersects.js"(exports, module) {
     "use strict";
     var Range = require_range2();
     var intersects = (r1, r2, options) => {
@@ -72415,9 +72762,9 @@ var require_intersects = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/simplify.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/simplify.js
 var require_simplify = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/simplify.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/simplify.js"(exports, module) {
     "use strict";
     var satisfies = require_satisfies();
     var compare2 = require_compare();
@@ -72465,9 +72812,9 @@ var require_simplify = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/subset.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/subset.js
 var require_subset = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/ranges/subset.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/ranges/subset.js"(exports, module) {
     "use strict";
     var Range = require_range2();
     var Comparator = require_comparator();
@@ -72627,9 +72974,9 @@ var require_subset = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/index.js
+// ../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/index.js
 var require_semver2 = __commonJS({
-  "../../node_modules/.pnpm/semver@7.8.1/node_modules/semver/index.js"(exports, module) {
+  "../../node_modules/.pnpm/semver@7.8.5/node_modules/semver/index.js"(exports, module) {
     "use strict";
     var internalRe = require_re();
     var constants2 = require_constants2();
@@ -72724,9 +73071,9 @@ var require_semver2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/utils/index.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/utils/index.js
 var require_utils8 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/utils/index.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/utils/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QUEUE_EVENT_SUFFIX = exports.toString = exports.errorToJSON = exports.parseObjectValues = exports.isRedisVersionLowerThan = exports.childSend = exports.asyncSend = exports.DELAY_TIME_1 = exports.DELAY_TIME_5 = exports.clientCommandMessageReg = exports.optsEncodeMap = exports.optsDecodeMap = exports.errorObject = void 0;
@@ -72736,6 +73083,7 @@ var require_utils8 = __commonJS({
     exports.array2obj = array2obj;
     exports.objectToFlatArray = objectToFlatArray;
     exports.delay = delay;
+    exports.forwardConnectionError = forwardConnectionError;
     exports.increaseMaxListeners = increaseMaxListeners;
     exports.invertObject = invertObject;
     exports.isRedisInstance = isRedisInstance;
@@ -72746,7 +73094,7 @@ var require_utils8 = __commonJS({
     exports.isNotConnectionError = isNotConnectionError;
     exports.removeUndefinedFields = removeUndefinedFields;
     exports.trace = trace;
-    exports.randomUUID = randomUUID13;
+    exports.randomUUID = randomUUID14;
     var crypto_1 = __require("crypto");
     var utils_1 = require_utils7();
     var connection_closed_error_1 = require_connection_closed_error();
@@ -72799,6 +73147,13 @@ var require_utils8 = __commonJS({
         };
         timeout = setTimeout(callback, ms);
         abortController === null || abortController === void 0 ? void 0 : abortController.signal.addEventListener("abort", callback);
+      });
+    }
+    function forwardConnectionError(emitter, connection) {
+      connection.on("error", (error40) => {
+        if (emitter.listenerCount("error") > 0) {
+          emitter.emit("error", error40);
+        }
       });
     }
     function increaseMaxListeners(emitter, count2) {
@@ -73009,7 +73364,7 @@ var require_utils8 = __commonJS({
         }
       }
     }
-    function randomUUID13() {
+    function randomUUID14() {
       if (typeof crypto_1.randomUUID === "function") {
         return (0, crypto_1.randomUUID)();
       }
@@ -73027,9 +73382,9 @@ var require_utils8 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/child-processor.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/child-processor.js
 var require_child_processor = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/child-processor.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/child-processor.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ChildProcessor = void 0;
@@ -73050,6 +73405,7 @@ var require_child_processor = __commonJS({
         this.receiver = receiver;
       }
       async init(processorFile) {
+        var _a;
         let processor;
         try {
           const { default: processorFn } = await import(processorFile);
@@ -73062,10 +73418,14 @@ var require_child_processor = __commonJS({
           }
         } catch (err) {
           this.status = ChildStatus.Errored;
-          return this.send({
-            cmd: enums_1.ParentCommand.InitFailed,
-            err: (0, utils_1.errorToJSON)(err)
-          });
+          try {
+            await this.send({
+              cmd: enums_1.ParentCommand.InitFailed,
+              err: (0, utils_1.errorToJSON)(err)
+            });
+          } finally {
+            process.exit((_a = process.exitCode) !== null && _a !== void 0 ? _a : 1);
+          }
         }
         const origProcessor = processor;
         processor = function(job, token, signal) {
@@ -73278,9 +73638,9 @@ var require_child_processor = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/delayed-error.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/delayed-error.js
 var require_delayed_error = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/delayed-error.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/delayed-error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DelayedError = exports.DELAYED_ERROR = void 0;
@@ -73296,9 +73656,9 @@ var require_delayed_error = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/rate-limit-error.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/rate-limit-error.js
 var require_rate_limit_error = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/rate-limit-error.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/rate-limit-error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RateLimitError = exports.RATE_LIMIT_ERROR = void 0;
@@ -73314,9 +73674,9 @@ var require_rate_limit_error = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/unrecoverable-error.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/unrecoverable-error.js
 var require_unrecoverable_error = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/unrecoverable-error.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/unrecoverable-error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.UnrecoverableError = exports.UNRECOVERABLE_ERROR = void 0;
@@ -73332,9 +73692,9 @@ var require_unrecoverable_error = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/waiting-children-error.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/waiting-children-error.js
 var require_waiting_children_error = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/waiting-children-error.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/waiting-children-error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WaitingChildrenError = exports.WAITING_CHILDREN_ERROR = void 0;
@@ -73350,9 +73710,9 @@ var require_waiting_children_error = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/waiting-error.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/waiting-error.js
 var require_waiting_error = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/waiting-error.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/waiting-error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WaitingError = exports.WAITING_ERROR = void 0;
@@ -73368,9 +73728,9 @@ var require_waiting_error = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/index.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/index.js
 var require_errors2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/errors/index.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/errors/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -73953,12 +74313,13 @@ var require_msgpackr_extract = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/msgpackr@2.0.2/node_modules/msgpackr/dist/node.cjs
+// ../../node_modules/.pnpm/msgpackr@2.0.5/node_modules/msgpackr/dist/node.cjs
 var require_node3 = __commonJS({
-  "../../node_modules/.pnpm/msgpackr@2.0.2/node_modules/msgpackr/dist/node.cjs"(exports) {
+  "../../node_modules/.pnpm/msgpackr@2.0.5/node_modules/msgpackr/dist/node.cjs"(exports) {
     "use strict";
     var stream = __require("stream");
     var module$1 = __require("module");
+    var _documentCurrentScript = typeof document !== "undefined" ? document.currentScript : null;
     var decoder2;
     try {
       decoder2 = new TextDecoder();
@@ -74427,6 +74788,7 @@ var require_node3 = __commonJS({
             inlineObjectReadThreshold = Infinity;
             return readObject();
           }
+          structure.read0 = optimizedReadObject;
           if (structure.highByte === 0)
             structure.read = createSecondByteReader(firstId, structure.read);
           return optimizedReadObject();
@@ -74443,6 +74805,7 @@ var require_node3 = __commonJS({
         return object2;
       }
       readObject.count = 0;
+      structure.read0 = readObject;
       if (structure.highByte === 0) {
         return createSecondByteReader(firstId, readObject);
       }
@@ -74530,36 +74893,45 @@ var require_node3 = __commonJS({
         if ((byte1 & 128) === 0) {
           units.push(byte1);
         } else if ((byte1 & 224) === 192) {
-          const byte2 = src[position$1++] & 63;
-          const codePoint = (byte1 & 31) << 6 | byte2;
-          if (codePoint < 128) {
+          if (byte1 < 194 || position$1 >= end || (src[position$1] & 192) !== 128) {
             units.push(65533);
           } else {
-            units.push(codePoint);
+            const byte2 = src[position$1++] & 63;
+            units.push((byte1 & 31) << 6 | byte2);
           }
         } else if ((byte1 & 240) === 224) {
-          const byte2 = src[position$1++] & 63;
-          const byte3 = src[position$1++] & 63;
-          const codePoint = (byte1 & 31) << 12 | byte2 << 6 | byte3;
-          if (codePoint < 2048 || codePoint >= 55296 && codePoint <= 57343) {
+          const byte2 = position$1 < end ? src[position$1] : 0;
+          if (position$1 >= end || (byte2 & 192) !== 128 || byte1 === 224 && byte2 < 160 || byte1 === 237 && byte2 >= 160) {
             units.push(65533);
           } else {
-            units.push(codePoint);
+            position$1++;
+            if (position$1 >= end || (src[position$1] & 192) !== 128) {
+              units.push(65533);
+            } else {
+              const byte3 = src[position$1++] & 63;
+              units.push((byte1 & 31) << 12 | (byte2 & 63) << 6 | byte3);
+            }
           }
         } else if ((byte1 & 248) === 240) {
-          const byte2 = src[position$1++] & 63;
-          const byte3 = src[position$1++] & 63;
-          const byte4 = src[position$1++] & 63;
-          let unit = (byte1 & 7) << 18 | byte2 << 12 | byte3 << 6 | byte4;
-          if (unit < 65536 || unit > 1114111) {
+          const byte2 = position$1 < end ? src[position$1] : 0;
+          if (byte1 > 244 || position$1 >= end || (byte2 & 192) !== 128 || byte1 === 240 && byte2 < 144 || byte1 === 244 && byte2 >= 144) {
             units.push(65533);
-          } else if (unit > 65535) {
-            unit -= 65536;
-            units.push(unit >>> 10 & 1023 | 55296);
-            unit = 56320 | unit & 1023;
-            units.push(unit);
           } else {
-            units.push(unit);
+            position$1++;
+            if (position$1 >= end || (src[position$1] & 192) !== 128) {
+              units.push(65533);
+            } else {
+              const byte3 = src[position$1++] & 63;
+              if (position$1 >= end || (src[position$1] & 192) !== 128) {
+                units.push(65533);
+              } else {
+                const byte4 = src[position$1++] & 63;
+                let unit = (byte1 & 7) << 18 | (byte2 & 63) << 12 | byte3 << 6 | byte4;
+                unit -= 65536;
+                units.push(unit >>> 10 & 1023 | 55296);
+                units.push(56320 | unit & 1023);
+              }
+            }
           }
         } else {
           units.push(65533);
@@ -74882,7 +75254,7 @@ var require_node3 = __commonJS({
       }
       currentStructures[id3] = structure;
       structure.read = createStructureReader(structure, firstByte);
-      return structure.read();
+      return (structure.read0 || structure.read)();
     };
     currentExtensions[0] = () => {
     };
@@ -75269,6 +75641,7 @@ var require_node3 = __commonJS({
                 let newSharedData = (packr._prepareStructures || prepareStructures)(structures, packr);
                 if (!encodingError) {
                   if (packr.saveStructures(newSharedData, newSharedData.isCompatible) === false) {
+                    structures.uninitialized = true;
                     return packr.pack(value, encodeOptions);
                   }
                   packr.lastNamedStructuresLength = sharedLength;
@@ -76283,7 +76656,7 @@ var require_node3 = __commonJS({
         if (typeof __require == "function")
           extractor = require_msgpackr_extract();
         else
-          extractor = module$1.createRequire(typeof document === "undefined" ? new (__require("url")).URL("file:" + __filename).href : document.currentScript && document.currentScript.src || new URL("node.cjs", document.baseURI).href)("msgpackr-extract");
+          extractor = module$1.createRequire(typeof document === "undefined" ? __require("url").pathToFileURL(__filename).href : _documentCurrentScript && _documentCurrentScript.tagName.toUpperCase() === "SCRIPT" && _documentCurrentScript.src || new URL("node.cjs", document.baseURI).href)("msgpackr-extract");
         if (extractor)
           setExtractor(extractor.extractStrings);
       } catch (error40) {
@@ -76321,19 +76694,19 @@ var require_node3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/version.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/version.js
 var require_version = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/version.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/version.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.version = void 0;
-    exports.version = "5.78.1";
+    exports.version = "5.81.5";
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/scripts.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/scripts.js
 var require_scripts = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/scripts.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/scripts.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Scripts = void 0;
@@ -76348,6 +76721,7 @@ var require_scripts = __commonJS({
     var utils_1 = require_utils8();
     var version_1 = require_version();
     var errors_1 = require_errors2();
+    var GET_JOBS_MAX_BACKFILL_ITERATIONS = 5;
     var Scripts = class {
       constructor(queue) {
         this.queue = queue;
@@ -76928,6 +77302,32 @@ var require_scripts = __commonJS({
         const client = await this.queue.client;
         const args = this.getRangesArgs(types8, start, end, asc2);
         return await this.execCommand(client, "getRanges", args);
+      }
+      getJobsArgs(types8, start, end, asc2) {
+        const queueKeys = this.queue.keys;
+        const transformedTypes = [
+          ...new Set(types8.map((type) => type === "waiting" ? "wait" : type))
+        ];
+        const keys = [queueKeys[""]];
+        const args = [
+          start,
+          end,
+          asc2 ? "1" : "0",
+          GET_JOBS_MAX_BACKFILL_ITERATIONS,
+          ...transformedTypes
+        ];
+        return keys.concat(args);
+      }
+      /**
+       * Fetches job ids and their job hashes for the provided states in a single
+       * script, skipping ids whose job hash is missing (for example the deprecated
+       * wait list marker or jobs removed after their id was read). Each returned
+       * entry is a `[jobId, jobHashFields]` tuple grouped per requested type.
+       */
+      async getJobs(types8, start = 0, end = -1, asc2 = false) {
+        const client = await this.queue.client;
+        const args = this.getJobsArgs(types8, start, end, asc2);
+        return await this.execCommand(client, "getJobs", args);
       }
       getCountsArgs(types8) {
         const queueKeys = this.queue.keys;
@@ -77604,9 +78004,9 @@ var require_scripts = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/utils/create-scripts.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/utils/create-scripts.js
 var require_create_scripts = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/utils/create-scripts.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/utils/create-scripts.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.createScripts = void 0;
@@ -77628,9 +78028,9 @@ var require_create_scripts = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/job.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/job.js
 var require_job = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/job.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/job.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Job = exports.PRIORITY_LIMIT = void 0;
@@ -77642,7 +78042,7 @@ var require_job = __commonJS({
     var unrecoverable_error_1 = require_unrecoverable_error();
     var enums_1 = require_enums();
     var logger2 = (0, util_1.debuglog)("bull");
-    exports.PRIORITY_LIMIT = 2 ** 21;
+    exports.PRIORITY_LIMIT = 2 ** 21 - 1;
     var Job2 = class _Job {
       constructor(queue, name2, data, opts = {}, id3) {
         this.queue = queue;
@@ -77694,7 +78094,11 @@ var require_job = __commonJS({
        *
        * @param queue - the queue where to add the job.
        * @param name - the name of the job.
-       * @param data - the payload of the job.
+       * @param data - the payload of the job. It will be serialized with
+       * `JSON.stringify` before being stored in Redis, so it must be
+       * JSON-serializable. Class instances are flattened to plain objects and
+       * lose their prototype methods on the worker side; see the
+       * {@link Job} class for details.
        * @param opts - the options bag for this job.
        * @returns The created Job instance
        */
@@ -77798,7 +78202,8 @@ var require_job = __commonJS({
         return job;
       }
       createScripts() {
-        this.scripts = (0, create_scripts_1.createScripts)(this.queue);
+        var _a;
+        this.scripts = (_a = this.queue.scripts) !== null && _a !== void 0 ? _a : (0, create_scripts_1.createScripts)(this.queue);
       }
       static optsFromJSON(rawOpts, optsDecode = utils_1.optsDecodeMap) {
         const opts = JSON.parse(rawOpts || "{}");
@@ -77845,7 +78250,8 @@ var require_job = __commonJS({
        * @returns The total number of log entries for this job so far.
        */
       static addJobLog(queue, jobId, logRow, keepLogs) {
-        const scripts = queue.scripts;
+        var _a;
+        const scripts = (_a = queue.scripts) !== null && _a !== void 0 ? _a : (0, create_scripts_1.createScripts)(queue);
         return scripts.addLog(jobId, logRow, keepLogs);
       }
       toJSON() {
@@ -78120,9 +78526,9 @@ var require_job = __commonJS({
       /**
        * Records job metrics if a meter is configured in telemetry options.
        *
-       * @param status - The job status
+       * @param state - The job state
        */
-      recordJobMetrics(status) {
+      recordJobMetrics(state) {
         var _a, _b;
         const meter = (_b = (_a = this.queue.opts) === null || _a === void 0 ? void 0 : _a.telemetry) === null || _b === void 0 ? void 0 : _b.meter;
         if (!meter) {
@@ -78131,7 +78537,8 @@ var require_job = __commonJS({
         const attributes = {
           [enums_1.TelemetryAttributes.QueueName]: this.queue.name,
           [enums_1.TelemetryAttributes.JobName]: this.name,
-          [enums_1.TelemetryAttributes.JobStatus]: status
+          [enums_1.TelemetryAttributes.JobStatus]: state,
+          [enums_1.TelemetryAttributes.JobState]: state
         };
         const statusToCounterName = {
           completed: enums_1.MetricNames.JobsCompleted,
@@ -78141,9 +78548,9 @@ var require_job = __commonJS({
           waiting: enums_1.MetricNames.JobsWaiting,
           "waiting-children": enums_1.MetricNames.JobsWaitingChildren
         };
-        const counterName = statusToCounterName[status];
+        const counterName = statusToCounterName[state];
         const counter = meter.createCounter(counterName, {
-          description: `Number of jobs ${status}`,
+          description: `Number of jobs ${state}`,
           unit: "1"
         });
         counter.add(1, attributes);
@@ -78651,9 +79058,9 @@ var require_job = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-keys.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-keys.js
 var require_queue_keys = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-keys.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-keys.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueueKeys = void 0;
@@ -78702,9 +79109,9 @@ var require_queue_keys = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addDelayedJob-6.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addDelayedJob-6.js
 var require_addDelayedJob_6 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addDelayedJob-6.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addDelayedJob-6.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addDelayedJob = void 0;
@@ -79253,7 +79660,7 @@ local opts = cmsgpack.unpack(ARGV[3])
 local parentDependenciesKey = args[6]
 local timestamp = args[4]
 if args[2] == "" then
-    jobId = jobCounter
+    jobId = jobCounter .. "" -- convert to string
     jobIdKey = args[1] .. jobId
 else
     jobId = args[2]
@@ -79277,7 +79684,7 @@ addDelayedJob(jobId, delayedKey, eventsKey, timestamp, maxEvents, KEYS[1], delay
 if parentDependenciesKey ~= nil then
     rcall("SADD", parentDependenciesKey, jobIdKey)
 end
-return jobId .. "" -- convert to string
+return jobId
 `;
     exports.addDelayedJob = {
       name: "addDelayedJob",
@@ -79287,9 +79694,9 @@ return jobId .. "" -- convert to string
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addJobScheduler-11.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addJobScheduler-11.js
 var require_addJobScheduler_11 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addJobScheduler-11.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addJobScheduler-11.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addJobScheduler = void 0;
@@ -79727,6 +80134,7 @@ local function storeJobScheduler(schedulerId, schedulerKey, repeatKey, nextMilli
   rcall("HMSET", schedulerKey, "name", opts['name'], unpack(optionalValues))
 end
 local function getJobSchedulerEveryNextMillis(prevMillis, every, now, offset, startDate)
+    offset = tonumber(offset)
     local nextMillis
     if not prevMillis then
         if startDate then
@@ -79734,25 +80142,32 @@ local function getJobSchedulerEveryNextMillis(prevMillis, every, now, offset, st
             nextMillis = tonumber(startDate)
             nextMillis = nextMillis > now and nextMillis or now
         else
-            nextMillis = now
-            -- For the first iteration with no startDate and an explicit
-            -- offset, align nextMillis to the next offset slot strictly
-            -- after now. Without this the user-supplied offset is
-            -- recorded but ignored, and the first job fires at now
-            -- instead of the next aligned timestamp (issue #3705).
             if offset and offset > 0 then
-                local aligned = math.floor(nextMillis / every) * every + offset
-                if aligned <= nextMillis then
-                    aligned = aligned + every
+                -- Align to the next slot that respects the offset
+                nextMillis = math.floor(now / every) * every + offset
+                if nextMillis <= now then
+                    nextMillis = nextMillis + every
                 end
-                nextMillis = aligned
+            else
+                nextMillis = now
             end
         end
     else
         nextMillis = prevMillis + every
         -- check if we may have missed some iterations
         if nextMillis < now then
-            nextMillis = math.floor(now / every) * every + every + (offset or 0)
+            -- Use the same offset-aware alignment as the initial branch
+            -- above so a non-zero offset is preserved across catch-ups
+            -- instead of being flattened to (slot + every). When the
+            -- aligned slot is itself still in the past, advance by one
+            -- full interval; otherwise the aligned slot is the next
+            -- iteration.
+            local aligned = math.floor(now / every) * every + (offset or 0)
+            if aligned <= now then
+                nextMillis = aligned + every
+            else
+                nextMillis = aligned
+            end
         end
     end
     if not offset or offset == 0 then
@@ -79837,22 +80252,30 @@ end
 -- Check for job ID collision with existing jobs (in any state)
 local jobId = "repeat:" .. jobSchedulerId .. ":" .. nextMillis
 local jobKey = prefixKey .. jobId
--- If there's already a job with this ID, in a state 
--- that is not updatable (active, completed, failed) we must 
+-- If there's already a job with this ID, in a state
+-- that is not updatable (active, completed, failed) we must
 -- handle the collision
 local hasCollision = false
 if rcall("EXISTS", jobKey) == 1 then
     if every then
-        -- For 'every' case: try next time slot to avoid collision
-        local nextSlotMillis = nextMillis + every
-        local nextSlotJobId = "repeat:" .. jobSchedulerId .. ":" .. nextSlotMillis
-        local nextSlotJobKey = prefixKey .. nextSlotJobId
-        if rcall("EXISTS", nextSlotJobKey) == 0 then
-            -- Next slot is free, use it
-            nextMillis = nextSlotMillis
-            jobId = nextSlotJobId
-        else
-            -- Next slot also has a job, return error code
+        -- For 'every' case: walk forward through subsequent slots
+        -- until we find a free one. Stale completed/failed jobs from
+        -- a previous scheduler under the same id can occupy several
+        -- consecutive slots (issue #3063), so a single retry is not
+        -- enough. The scan is bounded so we don't spin if the
+        -- scheduler is genuinely contested.
+        local maxSlotScans = 32
+        local slotsScanned = 0
+        local jobExists
+        repeat
+            nextMillis = nextMillis + every
+            jobId = "repeat:" .. jobSchedulerId .. ":" .. nextMillis
+            jobKey = prefixKey .. jobId
+            slotsScanned = slotsScanned + 1
+            jobExists = rcall("EXISTS", jobKey)
+        until jobExists == 0 or slotsScanned >= maxSlotScans
+        if jobExists == 1 then
+            -- Every scanned slot still has a job, return error code
             return -11 -- SchedulerJobSlotsBusy
         end
     else
@@ -79888,9 +80311,9 @@ return {jobId .. "", delay}
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addLog-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addLog-2.js
 var require_addLog_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addLog-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addLog-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addLog = void 0;
@@ -79926,9 +80349,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addParentJob-6.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addParentJob-6.js
 var require_addParentJob_6 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addParentJob-6.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addParentJob-6.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addParentJob = void 0;
@@ -80367,7 +80790,7 @@ local maxEvents = getOrSetMaxEvents(metaKey)
 local parentDependenciesKey = args[6]
 local timestamp = args[4]
 if args[2] == "" then
-    jobId = jobCounter
+    jobId = jobCounter .. "" -- convert to string
     jobIdKey = args[1] .. jobId
 else
     jobId = args[2]
@@ -80398,7 +80821,7 @@ rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event",
 if parentDependenciesKey ~= nil then
     rcall("SADD", parentDependenciesKey, jobIdKey)
 end
-return jobId .. "" -- convert to string
+return jobId
 `;
     exports.addParentJob = {
       name: "addParentJob",
@@ -80408,9 +80831,9 @@ return jobId .. "" -- convert to string
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addPrioritizedJob-9.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addPrioritizedJob-9.js
 var require_addPrioritizedJob_9 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addPrioritizedJob-9.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addPrioritizedJob-9.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addPrioritizedJob = void 0;
@@ -80922,7 +81345,7 @@ local maxEvents = getOrSetMaxEvents(metaKey)
 local parentDependenciesKey = args[6]
 local timestamp = args[4]
 if args[2] == "" then
-    jobId = jobCounter
+    jobId = jobCounter .. "" -- convert to string
     jobIdKey = args[1] .. jobId
 else
     jobId = args[2]
@@ -80953,7 +81376,7 @@ rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "waiting",
 if parentDependenciesKey ~= nil then
     rcall("SADD", parentDependenciesKey, jobIdKey)
 end
-return jobId .. "" -- convert to string
+return jobId
 `;
     exports.addPrioritizedJob = {
       name: "addPrioritizedJob",
@@ -80963,9 +81386,9 @@ return jobId .. "" -- convert to string
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addRepeatableJob-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addRepeatableJob-2.js
 var require_addRepeatableJob_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addRepeatableJob-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addRepeatableJob-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addRepeatableJob = void 0;
@@ -81206,9 +81629,9 @@ return storeRepeatableJob(repeatKey, customKey, nextMillis, ARGV[2])
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addStandardJob-9.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addStandardJob-9.js
 var require_addStandardJob_9 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/addStandardJob-9.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/addStandardJob-9.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addStandardJob = void 0;
@@ -81724,7 +82147,7 @@ local maxEvents = getOrSetMaxEvents(metaKey)
 local parentDependenciesKey = args[6]
 local timestamp = args[4]
 if args[2] == "" then
-    jobId = jobCounter
+    jobId = jobCounter .. "" -- convert to string
     jobIdKey = args[1] .. jobId
 else
     jobId = args[2]
@@ -81755,7 +82178,7 @@ rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "waiting",
 if parentDependenciesKey ~= nil then
     rcall("SADD", parentDependenciesKey, jobIdKey)
 end
-return jobId .. "" -- convert to string
+return jobId
 `;
     exports.addStandardJob = {
       name: "addStandardJob",
@@ -81765,9 +82188,9 @@ return jobId .. "" -- convert to string
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/changeDelay-4.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/changeDelay-4.js
 var require_changeDelay_4 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/changeDelay-4.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/changeDelay-4.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.changeDelay = void 0;
@@ -81877,9 +82300,9 @@ end`;
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/changePriority-7.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/changePriority-7.js
 var require_changePriority_7 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/changePriority-7.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/changePriority-7.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.changePriority = void 0;
@@ -82010,9 +82433,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/cleanJobsInSet-3.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/cleanJobsInSet-3.js
 var require_cleanJobsInSet_3 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/cleanJobsInSet-3.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/cleanJobsInSet-3.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.cleanJobsInSet = void 0;
@@ -82384,9 +82807,9 @@ return result[1]
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/drain-5.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/drain-5.js
 var require_drain_5 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/drain-5.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/drain-5.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.drain = void 0;
@@ -82664,9 +83087,9 @@ removeZSetJobs(KEYS[4], true, queueBaseKey, 0, scheduledJobs) -- prioritized
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/extendLock-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/extendLock-2.js
 var require_extendLock_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/extendLock-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/extendLock-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.extendLock = void 0;
@@ -82699,9 +83122,9 @@ return 0
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/extendLocks-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/extendLocks-1.js
 var require_extendLocks_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/extendLocks-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/extendLocks-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.extendLocks = void 0;
@@ -82754,9 +83177,9 @@ return failedJobs
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getCounts-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getCounts-1.js
 var require_getCounts_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getCounts-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getCounts-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getCounts = void 0;
@@ -82801,9 +83224,9 @@ return results
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getCountsPerPriority-4.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getCountsPerPriority-4.js
 var require_getCountsPerPriority_4 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getCountsPerPriority-4.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getCountsPerPriority-4.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getCountsPerPriority = void 0;
@@ -82852,9 +83275,9 @@ return results
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getDependencyCounts-4.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getDependencyCounts-4.js
 var require_getDependencyCounts_4 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getDependencyCounts-4.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getDependencyCounts-4.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getDependencyCounts = void 0;
@@ -82894,9 +83317,9 @@ return results
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getJobScheduler-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getJobScheduler-1.js
 var require_getJobScheduler_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getJobScheduler-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getJobScheduler-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getJobScheduler = void 0;
@@ -82922,9 +83345,157 @@ return {nil, nil}
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getMetrics-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getJobs-1.js
+var require_getJobs_1 = __commonJS({
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getJobs-1.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.getJobs = void 0;
+    var content = `--[[
+  Get jobs (id + data) for the provided states.
+  Job ids and their hashes are read in the same script so that ids whose hash
+  disappears after the id is read (but before the job is loaded) do not appear
+  in the result set. Ids without a job hash (for example the deprecated wait
+  list marker entry stored in the list) are skipped. For bounded ranges the
+  script iterates forward using the range offset as a cursor to backfill
+  skipped ids, preserving the requested page size when possible.
+    Input:
+      KEYS[1]    'prefix'
+      ARGV[1]    start
+      ARGV[2]    end
+      ARGV[3]    asc ('1' | '0')
+      ARGV[4]    max iterations (backfill bound)
+      ARGV[5...] types
+    Output:
+      results grouped per requested type; each entry is a
+      {jobId, {field, value, ...}} tuple
+]]
+local rcall = redis.call
+local prefix = KEYS[1]
+local rangeStart = tonumber(ARGV[1])
+local rangeEnd = tonumber(ARGV[2])
+local asc = ARGV[3] == "1"
+local max_iterations = tonumber(ARGV[4])
+local results = {}
+local function isListType(stateType)
+  return stateType == "wait" or stateType == "paused" or stateType == "active"
+end
+-- Fetch a slice of ids for the given state respecting the requested order.
+local function fetchIds(stateKey, stateType, sliceStart, sliceEnd, listLength)
+  if isListType(stateType) then
+    if asc then
+      local modifiedRangeStart
+      local modifiedRangeEnd
+      if sliceStart == -1 then
+        modifiedRangeStart = 0
+      else
+        modifiedRangeStart = -(sliceStart + 1)
+      end
+      if sliceEnd == -1 then
+        modifiedRangeEnd = 0
+      else
+        modifiedRangeEnd = -(sliceEnd + 1)
+      end
+      -- Ascending list slices use negative indexes. When the whole window is
+      -- beyond the list length Redis clamps both indexes to 0 and LRANGE would
+      -- return the head element, so guard against out-of-range slices with LLEN.
+      if listLength ~= nil and sliceStart >= 0 and sliceEnd >= 0 and sliceStart >= listLength then
+        return {}
+      end
+      local ids = rcall("LRANGE", stateKey, modifiedRangeEnd, modifiedRangeStart)
+      local reversed = {}
+      for i = #ids, 1, -1 do
+        reversed[#reversed + 1] = ids[i]
+      end
+      return reversed
+    else
+      return rcall("LRANGE", stateKey, sliceStart, sliceEnd)
+    end
+  else
+    if asc then
+      return rcall("ZRANGE", stateKey, sliceStart, sliceEnd)
+    else
+      return rcall("ZREVRANGE", stateKey, sliceStart, sliceEnd)
+    end
+  end
+end
+-- Fetch the job hash for an id and append it when present.
+local function appendJob(entries, jobId)
+  local jobData = rcall("HGETALL", prefix .. jobId)
+  if #jobData > 0 then
+    entries[#entries + 1] = {jobId, jobData}
+  end
+end
+local function cleanupDeprecatedMarker(stateKey, stateType)
+  if stateType == "wait" or stateType == "paused" then
+    local marker = rcall("LINDEX", stateKey, -1)
+    if marker and string.sub(marker, 1, 2) == "0:" then
+      local count = rcall("LLEN", stateKey)
+      if count > 1 then
+        rcall("RPOP", stateKey)
+        return count - 1
+      end
+      return 0
+    end
+  end
+end
+local function collectJobs(stateKey, stateType)
+  local entries = {}
+  local listLength
+  local cleanedListLength = cleanupDeprecatedMarker(stateKey, stateType)
+  if asc and isListType(stateType) and rangeStart >= 0 and rangeEnd >= 0 then
+    if cleanedListLength ~= nil then
+      listLength = cleanedListLength
+    else
+      listLength = rcall("LLEN", stateKey)
+    end
+  end
+  -- Unbounded or negative ranges: fetch the exact window and skip missing ids.
+  if rangeStart < 0 or rangeEnd < 0 then
+    local ids = fetchIds(stateKey, stateType, rangeStart, rangeEnd, listLength)
+    for i = 1, #ids do
+      appendJob(entries, ids[i])
+    end
+    return entries
+  end
+  -- Bounded range: iterate forward to backfill skipped ids.
+  local needed = rangeEnd - rangeStart + 1
+  local cursor = rangeStart
+  local iterations = 0
+  while #entries < needed and iterations < max_iterations do
+    local ids = fetchIds(stateKey, stateType, cursor, cursor + needed - 1, listLength)
+    if #ids == 0 then
+      break
+    end
+    for i = 1, #ids do
+      if #entries >= needed then
+        break
+      end
+      appendJob(entries, ids[i])
+    end
+    cursor = cursor + #ids
+    iterations = iterations + 1
+  end
+  return entries
+end
+for i = 5, #ARGV do
+  local stateType = ARGV[i]
+  local stateKey = prefix .. stateType
+  results[#results + 1] = collectJobs(stateKey, stateType)
+end
+return results
+`;
+    exports.getJobs = {
+      name: "getJobs",
+      content,
+      keys: 1
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getMetrics-2.js
 var require_getMetrics_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getMetrics-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getMetrics-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getMetrics = void 0;
@@ -82952,9 +83523,9 @@ return {metrics, data, numPoints}
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getRanges-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getRanges-1.js
 var require_getRanges_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getRanges-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getRanges-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getRanges = void 0;
@@ -83030,9 +83601,9 @@ return results
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getRateLimitTtl-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getRateLimitTtl-2.js
 var require_getRateLimitTtl_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getRateLimitTtl-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getRateLimitTtl-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getRateLimitTtl = void 0;
@@ -83079,9 +83650,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getState-8.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getState-8.js
 var require_getState_8 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getState-8.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getState-8.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getState = void 0;
@@ -83157,9 +83728,9 @@ return "unknown"
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getStateV2-8.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getStateV2-8.js
 var require_getStateV2_8 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/getStateV2-8.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/getStateV2-8.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getStateV2 = void 0;
@@ -83219,9 +83790,9 @@ return "unknown"
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/isFinished-3.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/isFinished-3.js
 var require_isFinished_3 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/isFinished-3.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/isFinished-3.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isFinished = void 0;
@@ -83273,9 +83844,9 @@ return 0
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/isJobInList-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/isJobInList-1.js
 var require_isJobInList_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/isJobInList-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/isJobInList-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isJobInList = void 0;
@@ -83310,9 +83881,9 @@ return checkItemInList(items, ARGV[1])
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/isMaxed-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/isMaxed-2.js
 var require_isMaxed_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/isMaxed-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/isMaxed-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isMaxed = void 0;
@@ -83349,9 +83920,9 @@ return isQueueMaxed(KEYS[1], KEYS[2])
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveJobFromActiveToWait-9.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveJobFromActiveToWait-9.js
 var require_moveJobFromActiveToWait_9 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveJobFromActiveToWait-9.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveJobFromActiveToWait-9.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.moveJobFromActiveToWait = void 0;
@@ -83488,9 +84059,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveJobsToWait-8.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveJobsToWait-8.js
 var require_moveJobsToWait_8 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveJobsToWait-8.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveJobsToWait-8.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.moveJobsToWait = void 0;
@@ -83611,9 +84182,9 @@ return 0
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveStalledJobsToWait-9.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveStalledJobsToWait-9.js
 var require_moveStalledJobsToWait_9 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveStalledJobsToWait-9.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveStalledJobsToWait-9.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.moveStalledJobsToWait = void 0;
@@ -83810,9 +84381,9 @@ return stalled
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveToActive-11.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveToActive-11.js
 var require_moveToActive_11 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveToActive-11.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveToActive-11.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.moveToActive = void 0;
@@ -84059,9 +84630,9 @@ return {0, 0, 0, 0}
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveToDelayed-12.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveToDelayed-12.js
 var require_moveToDelayed_12 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveToDelayed-12.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveToDelayed-12.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.moveToDelayed = void 0;
@@ -84463,9 +85034,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveToFinished-14.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveToFinished-14.js
 var require_moveToFinished_14 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveToFinished-14.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveToFinished-14.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.moveToFinished = void 0;
@@ -85513,9 +86084,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveToWaitingChildren-7.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveToWaitingChildren-7.js
 var require_moveToWaitingChildren_7 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/moveToWaitingChildren-7.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/moveToWaitingChildren-7.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.moveToWaitingChildren = void 0;
@@ -85625,9 +86196,9 @@ return -1
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/obliterate-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/obliterate-2.js
 var require_obliterate_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/obliterate-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/obliterate-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.obliterate = void 0;
@@ -85974,9 +86545,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/paginate-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/paginate-1.js
 var require_paginate_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/paginate-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/paginate-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.paginate = void 0;
@@ -86089,9 +86660,9 @@ return {cursor, offset, items, numItems, jobs}
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/pause-7.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/pause-7.js
 var require_pause_7 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/pause-7.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/pause-7.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.pause = void 0;
@@ -86161,9 +86732,9 @@ rcall("XADD", KEYS[5], "*", "event", ARGV[1]);
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/promote-9.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/promote-9.js
 var require_promote_9 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/promote-9.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/promote-9.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.promote = void 0;
@@ -86276,9 +86847,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/releaseLock-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/releaseLock-1.js
 var require_releaseLock_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/releaseLock-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/releaseLock-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.releaseLock = void 0;
@@ -86306,9 +86877,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeChildDependency-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeChildDependency-1.js
 var require_removeChildDependency_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeChildDependency-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeChildDependency-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.removeChildDependency = void 0;
@@ -86476,9 +87047,9 @@ end`;
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeDeduplicationKey-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeDeduplicationKey-1.js
 var require_removeDeduplicationKey_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeDeduplicationKey-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeDeduplicationKey-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.removeDeduplicationKey = void 0;
@@ -86508,9 +87079,9 @@ return 0
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeJob-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeJob-2.js
 var require_removeJob_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeJob-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeJob-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.removeJob = void 0;
@@ -86865,9 +87436,9 @@ return 0
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeJobScheduler-3.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeJobScheduler-3.js
 var require_removeJobScheduler_3 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeJobScheduler-3.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeJobScheduler-3.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.removeJobScheduler = void 0;
@@ -86919,9 +87490,9 @@ return 1
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeOrphanedJobs-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeOrphanedJobs-1.js
 var require_removeOrphanedJobs_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeOrphanedJobs-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeOrphanedJobs-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.removeOrphanedJobs = void 0;
@@ -87001,9 +87572,9 @@ return removedCount
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeRepeatable-3.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeRepeatable-3.js
 var require_removeRepeatable_3 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeRepeatable-3.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeRepeatable-3.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.removeRepeatable = void 0;
@@ -87069,9 +87640,9 @@ return 1
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeUnprocessedChildren-2.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeUnprocessedChildren-2.js
 var require_removeUnprocessedChildren_2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/removeUnprocessedChildren-2.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/removeUnprocessedChildren-2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.removeUnprocessedChildren = void 0;
@@ -87416,9 +87987,9 @@ removeJobChildren(prefix, jobKey, options)
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/reprocessJob-8.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/reprocessJob-8.js
 var require_reprocessJob_8 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/reprocessJob-8.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/reprocessJob-8.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.reprocessJob = void 0;
@@ -87511,7 +88082,7 @@ if rcall("EXISTS", jobKey) == 1 then
     if parentKey and rcall("EXISTS", parentKey) == 1 then
       if ARGV[4] == "failed" then
         if rcall("ZREM", parentKey .. ":unsuccessful", jobKey) == 1 or
-          rcall("ZREM", parentKey .. ":failed", jobKey) == 1 then
+          rcall("HDEL", parentKey .. ":failed", jobKey) == 1 then
           rcall("SADD", parentKey .. ":dependencies", jobKey)
         end
       else
@@ -87540,9 +88111,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/retryJob-11.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/retryJob-11.js
 var require_retryJob_11 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/retryJob-11.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/retryJob-11.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.retryJob = void 0;
@@ -87759,9 +88330,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/saveStacktrace-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/saveStacktrace-1.js
 var require_saveStacktrace_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/saveStacktrace-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/saveStacktrace-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.saveStacktrace = void 0;
@@ -87791,9 +88362,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/updateData-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/updateData-1.js
 var require_updateData_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/updateData-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/updateData-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.updateData = void 0;
@@ -87822,9 +88393,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/updateJobScheduler-12.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/updateJobScheduler-12.js
 var require_updateJobScheduler_12 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/updateJobScheduler-12.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/updateJobScheduler-12.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.updateJobScheduler = void 0;
@@ -88068,6 +88639,7 @@ local function getOrSetMaxEvents(metaKey)
   return maxEvents
 end
 local function getJobSchedulerEveryNextMillis(prevMillis, every, now, offset, startDate)
+    offset = tonumber(offset)
     local nextMillis
     if not prevMillis then
         if startDate then
@@ -88075,25 +88647,32 @@ local function getJobSchedulerEveryNextMillis(prevMillis, every, now, offset, st
             nextMillis = tonumber(startDate)
             nextMillis = nextMillis > now and nextMillis or now
         else
-            nextMillis = now
-            -- For the first iteration with no startDate and an explicit
-            -- offset, align nextMillis to the next offset slot strictly
-            -- after now. Without this the user-supplied offset is
-            -- recorded but ignored, and the first job fires at now
-            -- instead of the next aligned timestamp (issue #3705).
             if offset and offset > 0 then
-                local aligned = math.floor(nextMillis / every) * every + offset
-                if aligned <= nextMillis then
-                    aligned = aligned + every
+                -- Align to the next slot that respects the offset
+                nextMillis = math.floor(now / every) * every + offset
+                if nextMillis <= now then
+                    nextMillis = nextMillis + every
                 end
-                nextMillis = aligned
+            else
+                nextMillis = now
             end
         end
     else
         nextMillis = prevMillis + every
         -- check if we may have missed some iterations
         if nextMillis < now then
-            nextMillis = math.floor(now / every) * every + every + (offset or 0)
+            -- Use the same offset-aware alignment as the initial branch
+            -- above so a non-zero offset is preserved across catch-ups
+            -- instead of being flattened to (slot + every). When the
+            -- aligned slot is itself still in the past, advance by one
+            -- full interval; otherwise the aligned slot is the next
+            -- iteration.
+            local aligned = math.floor(now / every) * every + (offset or 0)
+            if aligned <= now then
+                nextMillis = aligned + every
+            else
+                nextMillis = aligned
+            end
         end
     end
     if not offset or offset == 0 then
@@ -88171,9 +88750,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/updateProgress-3.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/updateProgress-3.js
 var require_updateProgress_3 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/updateProgress-3.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/updateProgress-3.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.updateProgress = void 0;
@@ -88222,9 +88801,9 @@ end
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/updateRepeatableJobMillis-1.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/updateRepeatableJobMillis-1.js
 var require_updateRepeatableJobMillis_1 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/updateRepeatableJobMillis-1.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/updateRepeatableJobMillis-1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.updateRepeatableJobMillis = void 0;
@@ -88260,9 +88839,9 @@ return ''
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/index.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/index.js
 var require_scripts2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/scripts/index.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/scripts/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -88283,6 +88862,7 @@ var require_scripts2 = __commonJS({
     tslib_1.__exportStar(require_getCountsPerPriority_4(), exports);
     tslib_1.__exportStar(require_getDependencyCounts_4(), exports);
     tslib_1.__exportStar(require_getJobScheduler_1(), exports);
+    tslib_1.__exportStar(require_getJobs_1(), exports);
     tslib_1.__exportStar(require_getMetrics_2(), exports);
     tslib_1.__exportStar(require_getRanges_1(), exports);
     tslib_1.__exportStar(require_getRateLimitTtl_2(), exports);
@@ -88320,9 +88900,9 @@ var require_scripts2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/ioredis-client.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/ioredis-client.js
 var require_ioredis_client = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/ioredis-client.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/ioredis-client.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.createIORedisClient = createIORedisClient;
@@ -88560,9 +89140,9 @@ var require_ioredis_client = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/redis-connection.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/redis-connection.js
 var require_redis_connection = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/redis-connection.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/redis-connection.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RedisConnection = void 0;
@@ -88909,7 +89489,24 @@ var require_redis_connection = __commonJS({
       }
       async reconnect() {
         const client = await this.client;
-        return client.connect();
+        for (; ; ) {
+          if (this.closing) {
+            throw new connection_closed_error_1.ConnectionClosedError(utils_1.CONNECTION_CLOSED_ERROR_MSG);
+          }
+          if (client.status === "ready" || client.status === "connect" && (0, utils_2.isRedisCluster)(client)) {
+            return;
+          }
+          if (client.status === "wait" || client.status === "end") {
+            return client.connect();
+          }
+          try {
+            await _RedisConnection.waitUntilReady(client);
+          } catch (error40) {
+            if (!["end", "connecting", "connect", "reconnecting"].includes(client.status)) {
+              throw error40;
+            }
+          }
+        }
       }
       async close(force = false) {
         var _a;
@@ -89014,14 +89611,15 @@ var require_redis_connection = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/flow-producer.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/flow-producer.js
 var require_flow_producer = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/flow-producer.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/flow-producer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FlowProducer = void 0;
     var events_1 = __require("events");
     var utils_1 = require_utils8();
+    var create_scripts_1 = require_create_scripts();
     var job_1 = require_job();
     var queue_keys_1 = require_queue_keys();
     var redis_connection_1 = require_redis_connection();
@@ -89030,6 +89628,7 @@ var require_flow_producer = __commonJS({
       constructor(opts = { connection: {} }, Connection2 = redis_connection_1.RedisConnection) {
         super();
         this.opts = opts;
+        this.queues = /* @__PURE__ */ new Map();
         this.opts = Object.assign({ prefix: "bull" }, opts);
         this.connection = new Connection2(opts.connection, {
           shared: (0, utils_1.isRedisInstance)(opts.connection),
@@ -89037,8 +89636,9 @@ var require_flow_producer = __commonJS({
           skipVersionCheck: opts.skipVersionCheck,
           skipWaitingForReady: opts.skipWaitingForReady
         });
-        this.connection.on("error", (error40) => this.emit("error", error40));
+        (0, utils_1.forwardConnectionError)(this, this.connection);
         this.connection.on("close", () => {
+          this.queues.clear();
           if (!this.closing) {
             this.emit("ioredis:close");
           }
@@ -89047,6 +89647,10 @@ var require_flow_producer = __commonJS({
         if (opts === null || opts === void 0 ? void 0 : opts.telemetry) {
           this.telemetry = opts.telemetry;
         }
+      }
+      createScripts(queue) {
+        var _a;
+        return (_a = queue.scripts) !== null && _a !== void 0 ? _a : (0, create_scripts_1.createScripts)(queue);
       }
       emit(event, ...args) {
         return super.emit(event, ...args);
@@ -89123,6 +89727,8 @@ var require_flow_producer = __commonJS({
             }
             if (typeof jobId === "string") {
               jobsTree.job.id = jobId;
+            } else if (typeof jobId === "number") {
+              jobsTree.job.id = jobId.toString();
             }
           }
           return jobsTree;
@@ -89153,9 +89759,8 @@ var require_flow_producer = __commonJS({
        * Whenever the children of a given parent are completed, the parent
        * will be processed, being able to access the children's result data.
        *
-       * All Jobs can be in different queues, either children or parents,
-       * however this call would be atomic, either it fails and no jobs will
-       * be added to the queues, or it succeeds and all jobs will be added.
+       * All Jobs can be in different queues, either children or parents.
+       * If a flow fails to be added, other flows in the batch may still be added.
        *
        * @param flows - an array of objects with a tree-like structure where children jobs
        * will be processed before their parents.
@@ -89167,6 +89772,7 @@ var require_flow_producer = __commonJS({
         const client = await this.connection.client;
         const multi = client.multi();
         return (0, utils_1.trace)(this.telemetry, enums_1.SpanKind.PRODUCER, "", "addBulkFlows", "", async (span) => {
+          var _a, _b;
           span === null || span === void 0 ? void 0 : span.setAttributes({
             [enums_1.TelemetryAttributes.BulkCount]: flows.length,
             [enums_1.TelemetryAttributes.BulkNames]: flows.map((flow) => flow.name).join(",")
@@ -89179,8 +89785,16 @@ var require_flow_producer = __commonJS({
               continue;
             }
             const [err, jobId] = result;
-            if (!err && typeof jobId === "string") {
+            if (err) {
+              throw err;
+            }
+            if (typeof jobId === "number" && jobId < 0) {
+              throw this.toFlowError(jobId, (0, utils_1.getParentKey)((_b = (_a = flows[index2]) === null || _a === void 0 ? void 0 : _a.opts) === null || _b === void 0 ? void 0 : _b.parent));
+            }
+            if (typeof jobId === "string") {
               jobsTrees[index2].job.id = jobId;
+            } else if (typeof jobId === "number") {
+              jobsTrees[index2].job.id = jobId.toString();
             }
           }
           return jobsTrees;
@@ -89337,23 +89951,38 @@ var require_flow_producer = __commonJS({
        * @returns A queue-like object with the client, keys, and options needed to create jobs.
        */
       queueFromNode(node, queueKeys, prefix) {
-        return {
+        const cacheKey = `${prefix}:${node.queueName}`;
+        const cached2 = this.queues.get(cacheKey);
+        if (cached2) {
+          return cached2;
+        }
+        const flowProducer = this;
+        const queue = {
           client: this.connection.client,
           name: node.queueName,
           keys: queueKeys.getKeys(node.queueName),
           toKey: (type) => queueKeys.toKey(node.queueName, type),
           opts: { prefix, connection: {} },
           qualifiedName: queueKeys.getQueueQualifiedName(node.queueName),
-          closing: this.closing,
+          get closing() {
+            return flowProducer.closing;
+          },
           waitUntilReady: async () => this.connection.client,
           removeListener: this.removeListener.bind(this),
           emit: this.emit.bind(this),
           on: this.on.bind(this),
-          redisVersion: this.connection.redisVersion,
-          databaseType: this.connection.databaseType,
+          get redisVersion() {
+            return flowProducer.connection.redisVersion;
+          },
+          get databaseType() {
+            return flowProducer.connection.databaseType;
+          },
           trace: async () => {
           }
         };
+        queue.scripts = this.createScripts(queue);
+        this.queues.set(cacheKey, queue);
+        return queue;
       }
       /**
        * Translates numeric addJob Lua error codes returned by root flow exec.
@@ -89382,6 +90011,7 @@ var require_flow_producer = __commonJS({
        */
       async close() {
         if (!this.closing) {
+          this.queues.clear();
           this.closing = this.connection.close();
         }
         await this.closing;
@@ -89398,9 +90028,9 @@ var require_flow_producer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/node-redis-client.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/node-redis-client.js
 var require_node_redis_client = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/node-redis-client.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/node-redis-client.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.createNodeRedisClient = createNodeRedisClient;
@@ -90094,9 +90724,9 @@ var require_node_redis_client = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/bun-redis-client.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/bun-redis-client.js
 var require_bun_redis_client = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/bun-redis-client.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/bun-redis-client.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.createBunRedisClient = createBunRedisClient;
@@ -90240,7 +90870,13 @@ var require_bun_redis_client = __commonJS({
       // Connection lifecycle
       // ---------------------------------------------------------------
       async connect() {
-        if (this.raw.connected) {
+        const replaceRaw = this.hasConnected && (this.closed || !this.raw.connected);
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.reconnecting = false;
+        if (this.raw.connected && !replaceRaw) {
           this.hasConnected = true;
           this.closed = false;
           this.closing = false;
@@ -90251,7 +90887,7 @@ var require_bun_redis_client = __commonJS({
           this.closed = false;
           this.closing = false;
           this.statusOverride = void 0;
-          if (this.hasConnected && !this.raw.connected) {
+          if (replaceRaw) {
             const BunRedisClient = this.raw.constructor;
             this.raw = new BunRedisClient(this.raw.url);
             this._setupCallbacks();
@@ -90431,7 +91067,10 @@ var require_bun_redis_client = __commonJS({
         }
         return this.raw.send(command, args).catch((err) => {
           if (isBunConnectionClosedError(err)) {
-            return Promise.reject(new connection_closed_error_1.ConnectionClosedError(this.closing || this.closed ? "Connection is closed" : err.message, err));
+            if (this.closing || this.closed) {
+              return null;
+            }
+            return Promise.reject(new connection_closed_error_1.ConnectionClosedError(err.message, err));
           }
           throw err;
         });
@@ -90967,6 +91606,927 @@ var require_bun_redis_client = __commonJS({
           }
           throw err;
         }
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/valkey-glide-client.js
+var require_valkey_glide_client = __commonJS({
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/valkey-glide-client.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.createValkeyGlideClient = createValkeyGlideClient;
+    var crypto_1 = __require("crypto");
+    var events_1 = __require("events");
+    var stream_1 = __require("stream");
+    var connection_closed_error_1 = require_connection_closed_error();
+    var GLIDE_STRING_DECODER = 1;
+    function createCompatibilityBatch() {
+      return {
+        commands: [],
+        customCommand(args) {
+          this.commands.push(args);
+        }
+      };
+    }
+    function createGlideBatch(isAtomic) {
+      try {
+        const { Batch } = __require("@valkey/valkey-glide");
+        return typeof Batch === "function" ? new Batch(isAtomic) : null;
+      } catch (_a) {
+        return null;
+      }
+    }
+    function isBuffer(value) {
+      return Buffer.isBuffer(value);
+    }
+    function toGlideArg(value) {
+      if (isBuffer(value)) {
+        return value;
+      }
+      if (value === void 0 || value === null) {
+        return "";
+      }
+      return String(value);
+    }
+    function toStringValue(value) {
+      if (isBuffer(value)) {
+        return value.toString();
+      }
+      return String(value);
+    }
+    function isKeyValueArray(value) {
+      return Array.isArray(value) && value.every((item) => item && typeof item === "object" && "key" in item && "value" in item);
+    }
+    function normalizeScriptArgs(args) {
+      return args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+    }
+    function normalizeHashReply(reply) {
+      if (!reply) {
+        return {};
+      }
+      if (isKeyValueArray(reply)) {
+        return reply.reduce((acc, item) => {
+          acc[toStringValue(item.key)] = toStringValue(item.value);
+          return acc;
+        }, {});
+      }
+      if (reply instanceof Map) {
+        const out = {};
+        for (const [key, value] of reply.entries()) {
+          out[toStringValue(key)] = toStringValue(value);
+        }
+        return out;
+      }
+      if (Array.isArray(reply)) {
+        const out = {};
+        for (let i2 = 0; i2 < reply.length; i2 += 2) {
+          out[toStringValue(reply[i2])] = toStringValue(reply[i2 + 1]);
+        }
+        return out;
+      }
+      if (typeof reply === "object") {
+        const out = {};
+        for (const [key, value] of Object.entries(reply)) {
+          out[key] = toStringValue(value);
+        }
+        return out;
+      }
+      return {};
+    }
+    function flattenFieldPairs(fields) {
+      if (!fields) {
+        return [];
+      }
+      if (Array.isArray(fields)) {
+        if (isKeyValueArray(fields)) {
+          return fields.flatMap((pair) => [
+            toStringValue(pair.key),
+            toStringValue(pair.value)
+          ]);
+        }
+        if (fields.every((item) => Array.isArray(item) && item.length === 2)) {
+          return fields.flatMap((pair) => {
+            const [field, value] = pair;
+            return [toStringValue(field), toStringValue(value)];
+          });
+        }
+        return fields.map((item) => toStringValue(item));
+      }
+      if (typeof fields === "object") {
+        return Object.entries(fields).flatMap(([field, value]) => [field, toStringValue(value)]);
+      }
+      return [];
+    }
+    function normalizeXReadReply(reply) {
+      if (!reply) {
+        return null;
+      }
+      if (Array.isArray(reply) && reply.every((stream) => Array.isArray(stream) && stream.length === 2 && typeof stream[0] !== "undefined" && Array.isArray(stream[1]))) {
+        return reply;
+      }
+      if (!isKeyValueArray(reply)) {
+        return reply;
+      }
+      return reply.map((streamEntry) => {
+        const streamName = toStringValue(streamEntry.key);
+        const messages = isKeyValueArray(streamEntry.value) ? streamEntry.value.map((message2) => [
+          toStringValue(message2.key),
+          flattenFieldPairs(message2.value)
+        ]) : [];
+        return [streamName, messages];
+      });
+    }
+    function normalizeScanReply(reply) {
+      if (Array.isArray(reply) && reply.length >= 2) {
+        const [cursor, keys] = reply;
+        const normalizedKeys = Array.isArray(keys) ? keys.map((key) => toStringValue(key)) : [];
+        return [toStringValue(cursor), normalizedKeys];
+      }
+      if (reply && typeof reply === "object") {
+        const result = reply;
+        if (result.cursor !== void 0 && Array.isArray(result.keys)) {
+          return [
+            toStringValue(result.cursor),
+            result.keys.map((key) => toStringValue(key))
+          ];
+        }
+      }
+      return ["0", []];
+    }
+    function normalizeXRangeReply(reply) {
+      if (!reply) {
+        return [];
+      }
+      if (Array.isArray(reply) && reply.every((entry) => Array.isArray(entry) && entry.length === 2 && typeof entry[0] !== "undefined" && Array.isArray(entry[1]))) {
+        return reply.map(([id3, fields]) => [
+          toStringValue(id3),
+          fields.map((field) => toStringValue(field))
+        ]);
+      }
+      if (!isKeyValueArray(reply)) {
+        return [];
+      }
+      return reply.map((entry) => [
+        toStringValue(entry.key),
+        flattenFieldPairs(entry.value)
+      ]);
+    }
+    function normalizeSortedSetReply(reply, withScores = false) {
+      if (!Array.isArray(reply)) {
+        return [];
+      }
+      if (!withScores) {
+        return reply.map((item) => toStringValue(item));
+      }
+      if (isKeyValueArray(reply)) {
+        return reply.flatMap((entry) => [
+          toStringValue(entry.key),
+          toStringValue(entry.value)
+        ]);
+      }
+      if (reply.every((item) => Array.isArray(item) && item.length >= 2 && item[0] !== void 0)) {
+        return reply.flatMap((item) => [
+          toStringValue(item[0]),
+          toStringValue(item[1])
+        ]);
+      }
+      return reply.map((item) => toStringValue(item));
+    }
+    function isBlockingCommand(args) {
+      const [command, ...rest] = args;
+      const name2 = toStringValue(command).toUpperCase();
+      if (name2 === "BZPOPMIN") {
+        return true;
+      }
+      if (name2 !== "XREAD") {
+        return false;
+      }
+      for (let i2 = 0; i2 < rest.length; i2 += 2) {
+        if (toStringValue(rest[i2]).toUpperCase() === "BLOCK") {
+          return true;
+        }
+      }
+      return false;
+    }
+    function createValkeyGlideClient(client) {
+      return new ValkeyGlideAdapter(client);
+    }
+    var ValkeyGlideAdapter = class _ValkeyGlideAdapter extends events_1.EventEmitter {
+      constructor(rawOrPromise, connectionName) {
+        super();
+        this.connectionName = connectionName;
+        this.scripts = /* @__PURE__ */ new Map();
+        this.scriptsBySha = /* @__PURE__ */ new Map();
+        this.scriptLoadPromises = /* @__PURE__ */ new Map();
+        this.readyEmitted = false;
+        this.closed = false;
+        this.operationChain = Promise.resolve();
+        this.activeBlockingCommands = 0;
+        if (rawOrPromise instanceof Promise) {
+          this.rawPromise = rawOrPromise;
+          void this.connect().catch((error40) => this.emit("error", error40));
+        } else {
+          this.raw = rawOrPromise;
+        }
+      }
+      get status() {
+        if (this.statusOverride) {
+          return this.statusOverride;
+        }
+        if (this.closed) {
+          return "end";
+        }
+        if (this.readyEmitted) {
+          return "ready";
+        }
+        return "wait";
+      }
+      set status(value) {
+        if (value === "end") {
+          this.disconnect();
+        }
+        this.statusOverride = value;
+      }
+      get isCluster() {
+        var _a, _b, _c;
+        const name2 = (_c = (_b = (_a = this.raw) === null || _a === void 0 ? void 0 : _a.constructor) === null || _b === void 0 ? void 0 : _b.name) !== null && _c !== void 0 ? _c : "";
+        return name2.includes("Cluster");
+      }
+      get options() {
+        var _a, _b, _c, _d;
+        return (_d = (_b = (_a = this.raw) === null || _a === void 0 ? void 0 : _a.config) !== null && _b !== void 0 ? _b : (_c = this.raw) === null || _c === void 0 ? void 0 : _c.options) !== null && _d !== void 0 ? _d : {};
+      }
+      set options(_value) {
+      }
+      ensureOpen() {
+        if (this.closed) {
+          throw new connection_closed_error_1.ConnectionClosedError();
+        }
+      }
+      normalizeError(error40) {
+        if (error40 instanceof connection_closed_error_1.ConnectionClosedError || error40 instanceof Error && error40.name === "ClosingError") {
+          throw new connection_closed_error_1.ConnectionClosedError(error40.message, error40);
+        }
+        throw error40;
+      }
+      async ensureRaw() {
+        if (this.raw) {
+          return this.raw;
+        }
+        if (!this.rawPromise) {
+          throw new Error("BullMQ: Valkey Glide client not initialized - missing raw client and client promise. Please report this as a bug.");
+        }
+        this.raw = await this.rawPromise;
+        return this.raw;
+      }
+      async runSerialized(fn) {
+        this.ensureOpen();
+        const previous = this.operationChain;
+        let release;
+        this.operationChain = new Promise((resolve) => {
+          release = resolve;
+        });
+        await previous;
+        this.ensureOpen();
+        try {
+          const raw = await this.ensureRaw();
+          this.ensureOpen();
+          return await fn(raw);
+        } catch (error40) {
+          this.normalizeError(error40);
+        } finally {
+          release();
+        }
+      }
+      async runRawCommand(args, options) {
+        const blockingCommand = isBlockingCommand(args);
+        return this.runSerialized(async (raw) => {
+          if (blockingCommand) {
+            this.activeBlockingCommands++;
+          }
+          try {
+            return await raw.customCommand(args, options);
+          } finally {
+            if (blockingCommand) {
+              this.activeBlockingCommands--;
+            }
+          }
+        });
+      }
+      ensureScriptLoaded(script) {
+        let pendingLoad = this.scriptLoadPromises.get(script.sha);
+        if (!pendingLoad) {
+          pendingLoad = this.runRawCommand(["SCRIPT", "LOAD", script.lua]).then(() => {
+          }).catch(() => {
+          });
+          this.scriptLoadPromises.set(script.sha, pendingLoad);
+        }
+        return pendingLoad;
+      }
+      async applyConnectionNameIfNeeded() {
+        if (!this.connectionName) {
+          return;
+        }
+        await this.runRawCommand(["CLIENT", "SETNAME", this.connectionName], {
+          decoder: GLIDE_STRING_DECODER
+        });
+      }
+      async clearConnectionNameIfNeeded(raw) {
+        if (!this.connectionName) {
+          return;
+        }
+        try {
+          await raw.customCommand(["CLIENT", "SETNAME", ""], {
+            decoder: GLIDE_STRING_DECODER
+          });
+        } catch (_a) {
+        }
+      }
+      async recreateRaw() {
+        var _a, _b;
+        const raw = await this.ensureRaw();
+        const clientConstructor = raw.constructor;
+        const createClient = (_a = clientConstructor === null || clientConstructor === void 0 ? void 0 : clientConstructor.createClient) === null || _a === void 0 ? void 0 : _a.bind(clientConstructor);
+        const config2 = (_b = raw.config) !== null && _b !== void 0 ? _b : raw.options;
+        if (!createClient || !config2) {
+          throw new Error("BullMQ: Cannot recreate Valkey Glide client: missing createClient() method or config object. Ensure the client was created via GlideClient.createClient() or GlideClusterClient.createClient().");
+        }
+        this.raw = await createClient(config2);
+        this.scriptLoadPromises.clear();
+      }
+      async connect() {
+        if (this.connecting) {
+          return this.connecting;
+        }
+        this.connecting = (async () => {
+          if (this.closed && this.raw) {
+            await this.recreateRaw();
+          }
+          this.closed = false;
+          this.statusOverride = void 0;
+          await this.ensureRaw();
+          try {
+            await this.applyConnectionNameIfNeeded();
+          } catch (error40) {
+            if (this.closed && error40 instanceof connection_closed_error_1.ConnectionClosedError) {
+              return;
+            }
+            throw error40;
+          }
+          if (this.closed) {
+            return;
+          }
+          this.readyEmitted = true;
+          this.emit("ready");
+        })().finally(() => {
+          this.connecting = void 0;
+        });
+        return this.connecting;
+      }
+      closeRaw() {
+        if (!this.closingPromise) {
+          const closeRaw = () => {
+            if (!this.raw) {
+              return;
+            }
+            try {
+              this.raw.close();
+            } catch (_a) {
+            }
+          };
+          this.closingPromise = (this.activeBlockingCommands > 0 ? Promise.resolve().then(closeRaw) : this.operationChain.catch(() => {
+          }).then(async () => {
+            if (!this.closed) {
+              return;
+            }
+            if (this.raw) {
+              await this.clearConnectionNameIfNeeded(this.raw);
+            }
+            closeRaw();
+          })).finally(() => {
+            this.closingPromise = void 0;
+          });
+        }
+        return this.closingPromise;
+      }
+      disconnect(reconnect = false) {
+        if (this.closed && !reconnect) {
+          return;
+        }
+        this.closed = true;
+        this.readyEmitted = false;
+        this.statusOverride = reconnect ? void 0 : "end";
+        this.emit("close");
+        if (reconnect) {
+          void this.closeRaw().then(() => {
+            this.emit("reconnecting");
+            return this.connect();
+          }).catch((error40) => this.emit("error", error40));
+          return;
+        }
+        void this.closeRaw();
+        this.emit("end");
+      }
+      async quit() {
+        if (this.closed) {
+          setImmediate(() => {
+            this.emit("end");
+            this.emit("close");
+          });
+          return "OK";
+        }
+        this.closed = true;
+        this.readyEmitted = false;
+        this.statusOverride = "end";
+        void this.closeRaw();
+        setImmediate(() => {
+          this.emit("end");
+          this.emit("close");
+        });
+        return "OK";
+      }
+      duplicate(...args) {
+        var _a;
+        const options = (_a = args[0]) !== null && _a !== void 0 ? _a : {};
+        const duplicated = (async () => {
+          var _a2, _b;
+          const raw = await this.ensureRaw();
+          const clientConstructor = raw.constructor;
+          const createClient = (_a2 = clientConstructor === null || clientConstructor === void 0 ? void 0 : clientConstructor.createClient) === null || _a2 === void 0 ? void 0 : _a2.bind(clientConstructor);
+          const config2 = (_b = raw.config) !== null && _b !== void 0 ? _b : raw.options;
+          if (!createClient || !config2) {
+            throw new Error("BullMQ: Cannot duplicate Valkey Glide client: missing createClient() or config. Ensure the client was created via GlideClient.createClient()/GlideClusterClient.createClient().");
+          }
+          return createClient(config2);
+        })();
+        return new _ValkeyGlideAdapter(duplicated, options.connectionName);
+      }
+      defineCommand(name2, definition) {
+        const sha = (0, crypto_1.createHash)("sha1").update(definition.lua).digest("hex");
+        const script = {
+          sha,
+          lua: definition.lua,
+          numberOfKeys: definition.numberOfKeys
+        };
+        this.scripts.set(name2, script);
+        this.scriptsBySha.set(sha, script);
+        this[name2] = (...args) => this.runCommand(name2, args);
+        void this.ensureScriptLoaded(script);
+      }
+      async runCommand(name2, args) {
+        const script = this.scripts.get(name2);
+        if (!script) {
+          throw new Error(`BullMQ: command "${name2}" is not defined. Use defineCommand() before runCommand().`);
+        }
+        const normalizedArgs = normalizeScriptArgs(args);
+        const keys = normalizedArgs.slice(0, script.numberOfKeys).map(toGlideArg);
+        const argv = normalizedArgs.slice(script.numberOfKeys).map(toGlideArg);
+        const evalShaArgs = [
+          "EVALSHA",
+          script.sha,
+          String(script.numberOfKeys),
+          ...keys,
+          ...argv
+        ];
+        try {
+          return await this.runRawCommand(evalShaArgs);
+        } catch (err) {
+          if (typeof (err === null || err === void 0 ? void 0 : err.message) === "string" && err.message.toLowerCase().includes("noscript")) {
+            return this.runRawCommand([
+              "EVAL",
+              script.lua,
+              String(script.numberOfKeys),
+              ...keys,
+              ...argv
+            ]);
+          }
+          throw err;
+        }
+      }
+      multi() {
+        return new ValkeyGlideTransaction(this, this.scripts);
+      }
+      pipeline() {
+        return this.multi();
+      }
+      async hgetall(key) {
+        return normalizeHashReply(await this.runRawCommand(["HGETALL", key]));
+      }
+      async hget(key, field) {
+        const value = await this.runRawCommand(["HGET", key, field]);
+        return value == null ? null : toStringValue(value);
+      }
+      async hmget(key, ...fields) {
+        const value = await this.runRawCommand(["HMGET", key, ...fields]);
+        return Array.isArray(value) ? value.map((item) => item == null ? null : toStringValue(item)) : [];
+      }
+      async hset(key, data) {
+        const args = ["HSET", key];
+        for (const [field, value] of Object.entries(data)) {
+          args.push(field, toGlideArg(value));
+        }
+        return Number(await this.runRawCommand(args));
+      }
+      async hdel(key, ...fields) {
+        return Number(await this.runRawCommand(["HDEL", key, ...fields]));
+      }
+      async hexists(key, field) {
+        const result = await this.runRawCommand(["HEXISTS", key, field]);
+        if (typeof result === "boolean") {
+          return result ? 1 : 0;
+        }
+        return Number(result);
+      }
+      async get(key) {
+        const value = await this.runRawCommand(["GET", key]);
+        return value == null ? null : toStringValue(value);
+      }
+      async set(key, value, options) {
+        const args = ["SET", key, toGlideArg(value)];
+        if ((options === null || options === void 0 ? void 0 : options.PX) != null) {
+          args.push("PX", String(options.PX));
+        } else if ((options === null || options === void 0 ? void 0 : options.EX) != null) {
+          args.push("EX", String(options.EX));
+        }
+        const result = await this.runRawCommand(args);
+        return result == null ? null : toStringValue(result);
+      }
+      async del(...keys) {
+        if (keys.length === 0) {
+          return 0;
+        }
+        return Number(await this.runRawCommand(["DEL", ...keys]));
+      }
+      async zrange(key, start, end, options) {
+        const args = ["ZRANGE", key, String(start), String(end)];
+        if (options === null || options === void 0 ? void 0 : options.WITHSCORES) {
+          args.push("WITHSCORES");
+        }
+        const result = await this.runRawCommand(args);
+        return normalizeSortedSetReply(result, options === null || options === void 0 ? void 0 : options.WITHSCORES);
+      }
+      async zrevrange(key, start, end, options) {
+        const args = ["ZREVRANGE", key, String(start), String(end)];
+        if (options === null || options === void 0 ? void 0 : options.WITHSCORES) {
+          args.push("WITHSCORES");
+        }
+        const result = await this.runRawCommand(args);
+        return normalizeSortedSetReply(result, options === null || options === void 0 ? void 0 : options.WITHSCORES);
+      }
+      async zcard(key) {
+        return Number(await this.runRawCommand(["ZCARD", key]));
+      }
+      async zscore(key, member) {
+        const result = await this.runRawCommand(["ZSCORE", key, member]);
+        return result == null ? null : toStringValue(result);
+      }
+      async lrange(key, start, end) {
+        const result = await this.runRawCommand([
+          "LRANGE",
+          key,
+          String(start),
+          String(end)
+        ]);
+        return Array.isArray(result) ? result.map(toStringValue) : [];
+      }
+      async llen(key) {
+        return Number(await this.runRawCommand(["LLEN", key]));
+      }
+      async ltrim(key, start, end) {
+        const result = await this.runRawCommand([
+          "LTRIM",
+          key,
+          String(start),
+          String(end)
+        ]);
+        return result == null ? "OK" : toStringValue(result);
+      }
+      async lpos(key, value) {
+        const result = await this.runRawCommand(["LPOS", key, value]);
+        return result == null ? null : Number(result);
+      }
+      async smembers(key) {
+        const result = await this.runRawCommand(["SMEMBERS", key]);
+        return Array.isArray(result) ? result.map(toStringValue) : [];
+      }
+      async xadd(key, id3, fields, options) {
+        const args = ["XADD", key];
+        if ((options === null || options === void 0 ? void 0 : options.MAXLEN) != null) {
+          args.push("MAXLEN");
+          if (options.approximate !== false) {
+            args.push("~");
+          }
+          args.push(String(options.MAXLEN));
+        }
+        args.push(id3);
+        for (const [field, value] of Object.entries(fields)) {
+          args.push(field, toGlideArg(value));
+        }
+        return toStringValue(await this.runRawCommand(args));
+      }
+      async xread(streams, options) {
+        const args = ["XREAD"];
+        if ((options === null || options === void 0 ? void 0 : options.BLOCK) != null) {
+          args.push("BLOCK", String(options.BLOCK));
+        }
+        if ((options === null || options === void 0 ? void 0 : options.COUNT) != null) {
+          args.push("COUNT", String(options.COUNT));
+        }
+        args.push("STREAMS");
+        for (const stream of streams) {
+          args.push(stream.key);
+        }
+        for (const stream of streams) {
+          args.push(stream.id);
+        }
+        return normalizeXReadReply(await this.runRawCommand(args));
+      }
+      async xtrim(key, strategy, threshold, options) {
+        const args = ["XTRIM", key, strategy];
+        if ((options === null || options === void 0 ? void 0 : options.approximate) !== false) {
+          args.push("~");
+        }
+        args.push(String(threshold));
+        return Number(await this.runRawCommand(args));
+      }
+      async bzpopmin(key, timeout) {
+        const result = await this.runRawCommand(["BZPOPMIN", key, String(timeout)]);
+        if (!result) {
+          return null;
+        }
+        if (Array.isArray(result) && result.length >= 3) {
+          return [
+            toStringValue(result[0]),
+            toStringValue(result[1]),
+            toStringValue(result[2])
+          ];
+        }
+        return null;
+      }
+      async info() {
+        return toStringValue(await this.runRawCommand(["INFO"]));
+      }
+      async clientSetName(name2) {
+        return this.runRawCommand(["CLIENT", "SETNAME", name2], {
+          decoder: GLIDE_STRING_DECODER
+        });
+      }
+      async clientList() {
+        return toStringValue(await this.runRawCommand(["CLIENT", "LIST"], {
+          decoder: GLIDE_STRING_DECODER
+        }));
+      }
+      async scan(cursor, options) {
+        const args = ["SCAN", String(cursor)];
+        if (options === null || options === void 0 ? void 0 : options.MATCH) {
+          args.push("MATCH", options.MATCH);
+        }
+        if ((options === null || options === void 0 ? void 0 : options.COUNT) != null) {
+          args.push("COUNT", String(options.COUNT));
+        }
+        return normalizeScanReply(await this.runRawCommand(args));
+      }
+      scanStream(options) {
+        let cursor = "0";
+        let running = false;
+        const stream = new stream_1.Readable({
+          objectMode: true,
+          read: () => {
+            if (running) {
+              return;
+            }
+            running = true;
+            (async () => {
+              do {
+                const [nextCursor, keys] = await this.scan(cursor, {
+                  MATCH: options.match,
+                  COUNT: options.count
+                });
+                cursor = nextCursor;
+                if (keys.length > 0 && !stream.push(keys)) {
+                  return;
+                }
+              } while (cursor !== "0");
+              stream.push(null);
+            })().catch((err) => stream.destroy(err)).finally(() => {
+              running = false;
+            });
+          }
+        });
+        return stream;
+      }
+      async keys(pattern) {
+        const result = await this.runRawCommand(["KEYS", pattern]);
+        return Array.isArray(result) ? result.map(toStringValue) : [];
+      }
+      async exists(...keys) {
+        if (keys.length === 0) {
+          return 0;
+        }
+        const result = await this.runRawCommand(["EXISTS", ...keys]);
+        if (typeof result === "boolean") {
+          return result ? 1 : 0;
+        }
+        return Number(result);
+      }
+      async zadd(key, ...args) {
+        const commandArgs = ["ZADD", key];
+        for (let i2 = 0; i2 < args.length; i2 += 2) {
+          commandArgs.push(toGlideArg(args[i2]), toGlideArg(args[i2 + 1]));
+        }
+        return Number(await this.runRawCommand(commandArgs));
+      }
+      async zrem(key, ...members) {
+        return Number(await this.runRawCommand(["ZREM", key, ...members]));
+      }
+      async xlen(key) {
+        return Number(await this.runRawCommand(["XLEN", key]));
+      }
+      async xrevrange(key, end, start, ...rest) {
+        const args = ["XREVRANGE", key, end, start];
+        if (rest[0] === "COUNT") {
+          args.push("COUNT", toGlideArg(rest[1]));
+        }
+        return normalizeXRangeReply(await this.runRawCommand(args));
+      }
+      async sadd(key, ...members) {
+        return Number(await this.runRawCommand([
+          "SADD",
+          key,
+          ...members.map((member) => toGlideArg(member))
+        ]));
+      }
+      async scard(key) {
+        return Number(await this.runRawCommand(["SCARD", key]));
+      }
+      async lpush(key, ...values) {
+        return Number(await this.runRawCommand(["LPUSH", key, ...values]));
+      }
+      async rpop(key) {
+        const result = await this.runRawCommand(["RPOP", key]);
+        return result == null ? null : toStringValue(result);
+      }
+      async incr(key) {
+        return Number(await this.runRawCommand(["INCR", key]));
+      }
+      async incrby(key, increment) {
+        return Number(await this.runRawCommand(["INCRBY", key, String(increment)]));
+      }
+      async flushall() {
+        const result = await this.runRawCommand(["FLUSHALL"]);
+        return result == null ? "OK" : toStringValue(result);
+      }
+      async execQueuedCommands(commands) {
+        const requiredScripts = commands.map((command) => String(command.args[0]).toUpperCase() === "EVALSHA" ? this.scriptsBySha.get(toStringValue(command.args[1])) : void 0).filter((script) => Boolean(script));
+        if (requiredScripts.length > 0) {
+          await Promise.all(requiredScripts.map((script) => this.ensureScriptLoaded(script)));
+        }
+        return this.runSerialized(async (raw) => {
+          if (typeof raw.exec === "function") {
+            const nativeBatch = createGlideBatch(true);
+            const batch = nativeBatch !== null && nativeBatch !== void 0 ? nativeBatch : createCompatibilityBatch();
+            if (batch) {
+              for (const command of commands) {
+                batch.customCommand(command.args);
+              }
+              let execResult;
+              try {
+                execResult = await raw.exec(batch, false);
+              } catch (err) {
+                if (nativeBatch) {
+                  throw err;
+                }
+                execResult = null;
+              }
+              if (!execResult) {
+                if (nativeBatch) {
+                  return null;
+                }
+              } else {
+                return execResult.map((value, index2) => {
+                  var _a;
+                  if (value instanceof Error) {
+                    return [value, null];
+                  }
+                  const transform2 = (_a = commands[index2]) === null || _a === void 0 ? void 0 : _a.transform;
+                  return [null, transform2 ? transform2(value) : value];
+                });
+              }
+            }
+          }
+          await raw.customCommand(["MULTI"]);
+          try {
+            for (const command of commands) {
+              await raw.customCommand(command.args, {
+                decoder: GLIDE_STRING_DECODER
+              });
+            }
+            const execResult = await raw.customCommand(["EXEC"]);
+            if (!execResult) {
+              return null;
+            }
+            const results = Array.isArray(execResult) ? execResult : [execResult];
+            return results.map((value, index2) => {
+              var _a;
+              if (value instanceof Error) {
+                return [value, null];
+              }
+              const transform2 = (_a = commands[index2]) === null || _a === void 0 ? void 0 : _a.transform;
+              return [null, transform2 ? transform2(value) : value];
+            });
+          } catch (err) {
+            try {
+              await raw.customCommand(["DISCARD"]);
+            } catch (_a) {
+            }
+            throw err;
+          }
+        });
+      }
+    };
+    var ValkeyGlideTransaction = class {
+      constructor(adapter, scripts) {
+        this.adapter = adapter;
+        this.scripts = scripts;
+        this.commands = [];
+      }
+      queueCommand(args, transform2) {
+        this.commands.push({ args, transform: transform2 });
+        return this;
+      }
+      hgetall(key) {
+        return this.queueCommand(["HGETALL", key], normalizeHashReply);
+      }
+      hset(key, data) {
+        const args = ["HSET", key];
+        for (const [field, value] of Object.entries(data)) {
+          args.push(field, toGlideArg(value));
+        }
+        return this.queueCommand(args);
+      }
+      hscan(key, cursor, options) {
+        const args = ["HSCAN", key, String(cursor)];
+        if ((options === null || options === void 0 ? void 0 : options.COUNT) != null) {
+          args.push("COUNT", String(options.COUNT));
+        }
+        return this.queueCommand(args, (value) => {
+          if (Array.isArray(value) && value.length >= 2) {
+            return [toStringValue(value[0]), flattenFieldPairs(value[1])];
+          }
+          return ["0", []];
+        });
+      }
+      smembers(key) {
+        return this.queueCommand(["SMEMBERS", key], (value) => Array.isArray(value) ? value.map((item) => toStringValue(item)) : []);
+      }
+      sscan(key, cursor, options) {
+        const args = ["SSCAN", key, String(cursor)];
+        if ((options === null || options === void 0 ? void 0 : options.COUNT) != null) {
+          args.push("COUNT", String(options.COUNT));
+        }
+        return this.queueCommand(args, (value) => {
+          if (Array.isArray(value) && value.length >= 2) {
+            const members = Array.isArray(value[1]) ? value[1].map((item) => toStringValue(item)) : [];
+            return [toStringValue(value[0]), members];
+          }
+          return ["0", []];
+        });
+      }
+      zrange(key, start, end) {
+        return this.queueCommand(["ZRANGE", key, String(start), String(end)]);
+      }
+      lrange(key, start, end) {
+        return this.queueCommand(["LRANGE", key, String(start), String(end)]);
+      }
+      llen(key) {
+        return this.queueCommand(["LLEN", key]);
+      }
+      del(...keys) {
+        if (keys.length > 0) {
+          this.queueCommand(["DEL", ...keys]);
+        }
+        return this;
+      }
+      runCommand(name2, args) {
+        const script = this.scripts.get(name2);
+        if (!script) {
+          throw new Error(`BullMQ: command "${name2}" is not defined. Use defineCommand() before adding it to transactions.`);
+        }
+        const normalizedArgs = normalizeScriptArgs(args);
+        const keys = normalizedArgs.slice(0, script.numberOfKeys).map(toGlideArg);
+        const argv = normalizedArgs.slice(script.numberOfKeys).map(toGlideArg);
+        return this.queueCommand([
+          "EVALSHA",
+          script.sha,
+          String(script.numberOfKeys),
+          ...keys,
+          ...argv
+        ]);
+      }
+      exec() {
+        return this.adapter.execQueuedCommands(this.commands);
       }
     };
   }
@@ -92127,7 +93687,7 @@ var require_luxon = __commonJS({
         return defaultZone2;
       } else if (input instanceof Zone) {
         return input;
-      } else if (isString(input)) {
+      } else if (isString2(input)) {
         const lowered = input.toLowerCase();
         if (lowered === "default") return defaultZone2;
         else if (lowered === "local" || lowered === "system") return SystemZone.instance;
@@ -92575,7 +94135,7 @@ var require_luxon = __commonJS({
     function isInteger(o) {
       return typeof o === "number" && o % 1 === 0;
     }
-    function isString(o) {
+    function isString2(o) {
       return typeof o === "string";
     }
     function isDate(o) {
@@ -98748,9 +100308,9 @@ var require_parser3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-base.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-base.js
 var require_queue_base = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-base.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-base.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueueBase = void 0;
@@ -98788,7 +100348,7 @@ var require_queue_base = __commonJS({
           skipVersionCheck: opts.skipVersionCheck,
           skipWaitingForReady: opts.skipWaitingForReady
         });
-        this.connection.on("error", (error40) => this.emit("error", error40));
+        (0, utils_1.forwardConnectionError)(this, this.connection);
         this.connection.on("close", () => {
           if (!this.closing) {
             this.emit("ioredis:close");
@@ -98906,9 +100466,9 @@ var require_queue_base = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/job-scheduler.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/job-scheduler.js
 var require_job_scheduler = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/job-scheduler.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/job-scheduler.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.defaultRepeatStrategy = exports.JobScheduler = void 0;
@@ -99158,9 +100718,9 @@ var require_job_scheduler = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/lock-manager.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/lock-manager.js
 var require_lock_manager = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/lock-manager.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/lock-manager.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.LockManager = void 0;
@@ -99320,9 +100880,9 @@ var require_lock_manager = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-events.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-events.js
 var require_queue_events = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-events.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-events.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueueEvents = void 0;
@@ -99406,6 +100966,9 @@ var require_queue_events = __commonJS({
                 case "completed":
                   args.returnvalue = JSON.parse(args.returnvalue);
                   break;
+                case "delayed":
+                  args.delay = Number(args.delay);
+                  break;
               }
               const { event } = args, restArgs = tslib_1.__rest(args, ["event"]);
               if (event === "drained") {
@@ -99444,9 +101007,9 @@ var require_queue_events = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-events-producer.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-events-producer.js
 var require_queue_events_producer = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-events-producer.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-events-producer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueueEventsProducer = void 0;
@@ -99488,9 +101051,9 @@ var require_queue_events_producer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-getters.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-getters.js
 var require_queue_getters = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue-getters.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue-getters.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueueGetters = void 0;
@@ -99867,8 +101430,13 @@ var require_queue_getters = __commonJS({
        */
       async getJobs(types8, start = 0, end = -1, asc2 = false) {
         const currentTypes = this.sanitizeJobTypes(types8);
-        const jobIds = await this.getRanges(currentTypes, start, end, asc2);
-        return Promise.all(jobIds.map((jobId) => this.Job.fromId(this, jobId)));
+        const jobDataByType = await this.scripts.getJobs(currentTypes, start, end, asc2);
+        return jobDataByType.reduce((jobs, jobData) => {
+          for (const [jobId, jobHashFields] of jobData || []) {
+            jobs.push(this.Job.fromJSON(this, (0, utils_1.array2obj)(jobHashFields), jobId));
+          }
+          return jobs;
+        }, []);
       }
       /**
        * Returns the logs for a given Job.
@@ -100042,9 +101610,9 @@ var require_queue_getters = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/repeat.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/repeat.js
 var require_repeat = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/repeat.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/repeat.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getNextMillis = exports.Repeat = void 0;
@@ -100232,9 +101800,9 @@ var require_repeat = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue.js
 var require_queue = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/queue.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/queue.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Queue = void 0;
@@ -100352,7 +101920,14 @@ var require_queue = __commonJS({
        * Adds a new job to the queue.
        *
        * @param name - Name of the job to be added to the queue.
-       * @param data - Arbitrary data to append to the job.
+       * @param data - Arbitrary data to append to the job. The value is
+       * serialized with `JSON.stringify` before being stored in Redis, so it
+       * must be JSON-serializable. The `DataType` type parameter describes the
+       * shape of this payload, not a runtime class: passing a class instance
+       * will store its enumerable own properties, but its prototype methods
+       * and getters/setters will not be available when a worker reads
+       * `job.data` back. Prefer plain objects, or implement `toJSON()` on
+       * the class to control how it is serialized.
        * @param opts - Job options that affects how the job is going to be processed.
        */
       async add(name2, data, opts) {
@@ -100406,7 +101981,9 @@ var require_queue = __commonJS({
        * one job at a time in a sequence.
        *
        * @param jobs - The array of jobs to add to the queue. Each job is defined by 3
-       * properties, 'name', 'data' and 'opts'. They follow the same signature as 'Queue.add'.
+       * properties, 'name', 'data' and 'opts'. They follow the same signature as 'Queue.add',
+       * including the JSON-serialization caveat for `data` (class instances lose their
+       * prototype methods on the worker side).
        */
       async addBulk(jobs) {
         return this.trace(enums_1.SpanKind.PRODUCER, "addBulk", this.name, async (span, srcPropagationMetadata) => {
@@ -100941,9 +102518,9 @@ var require_queue = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/sandbox.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/sandbox.js
 var require_sandbox = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/sandbox.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/sandbox.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var enums_1 = require_enums();
@@ -100963,7 +102540,7 @@ var require_sandbox = __commonJS({
                 child = await childPool.retain(processFile);
                 child.on("exit", exitHandler);
                 msgHandler = async (msg) => {
-                  var _a, _b, _c, _d, _e;
+                  var _a, _b, _c, _d, _e, _f;
                   try {
                     switch (msg.cmd) {
                       case enums_1.ParentCommand.Completed:
@@ -100972,7 +102549,7 @@ var require_sandbox = __commonJS({
                       case enums_1.ParentCommand.Failed:
                       case enums_1.ParentCommand.Error: {
                         const err = new Error();
-                        Object.assign(err, msg.value);
+                        Object.assign(err, (_a = msg.value) !== null && _a !== void 0 ? _a : msg.err);
                         reject(err);
                         break;
                       }
@@ -100983,14 +102560,14 @@ var require_sandbox = __commonJS({
                         await job.log(msg.value);
                         break;
                       case enums_1.ParentCommand.MoveToDelayed:
-                        await job.moveToDelayed((_a = msg.value) === null || _a === void 0 ? void 0 : _a.timestamp, (_b = msg.value) === null || _b === void 0 ? void 0 : _b.token);
+                        await job.moveToDelayed((_b = msg.value) === null || _b === void 0 ? void 0 : _b.timestamp, (_c = msg.value) === null || _c === void 0 ? void 0 : _c.token);
                         break;
                       case enums_1.ParentCommand.MoveToWait:
-                        await job.moveToWait((_c = msg.value) === null || _c === void 0 ? void 0 : _c.token);
+                        await job.moveToWait((_d = msg.value) === null || _d === void 0 ? void 0 : _d.token);
                         break;
                       case enums_1.ParentCommand.MoveToWaitingChildren:
                         {
-                          const value = await job.moveToWaitingChildren((_d = msg.value) === null || _d === void 0 ? void 0 : _d.token, (_e = msg.value) === null || _e === void 0 ? void 0 : _e.opts);
+                          const value = await job.moveToWaitingChildren((_e = msg.value) === null || _e === void 0 ? void 0 : _e.token, (_f = msg.value) === null || _f === void 0 ? void 0 : _f.opts);
                           child.send({
                             requestId: msg.requestId,
                             cmd: enums_1.ChildCommand.MoveToWaitingChildrenResponse,
@@ -101094,9 +102671,9 @@ var require_sandbox = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/worker.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/worker.js
 var require_worker = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/worker.js"(exports, module) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/worker.js"(exports, module) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Worker = void 0;
@@ -101117,6 +102694,9 @@ var require_worker = __commonJS({
     var job_scheduler_1 = require_job_scheduler();
     var lock_manager_1 = require_lock_manager();
     var maximumBlockTimeout = 10;
+    function isClientLive(client) {
+      return client.status === "ready" || client.status === "connect" && (0, utils_1.isRedisCluster)(client);
+    }
     var Worker7 = class extends queue_base_1.QueueBase {
       static RateLimitError() {
         return new errors_1.RateLimitError();
@@ -101198,7 +102778,7 @@ var require_worker = __commonJS({
           blocking: true,
           skipVersionCheck: opts.skipVersionCheck
         });
-        this.blockingConnection.on("error", (error40) => this.emit("error", error40));
+        (0, utils_1.forwardConnectionError)(this, this.blockingConnection);
         this.blockingConnection.on("ready", () => setTimeout(() => this.emit("ready"), 0));
       }
       /**
@@ -101390,6 +102970,18 @@ var require_worker = __commonJS({
        * @returns a Job or undefined if no job was available in the queue.
        */
       async getNextJob(token, { block = true } = {}) {
+        let nextJob = await this.getTracedNextJob(token, { block });
+        while (nextJob) {
+          const unrecoverableErrorMessage = this.getUnrecoverableErrorMessage(nextJob);
+          if (!unrecoverableErrorMessage) {
+            break;
+          }
+          await this.handleFailed(new errors_1.UnrecoverableError(unrecoverableErrorMessage), nextJob, token, () => false);
+          nextJob = await this.getTracedNextJob(token, { block });
+        }
+        return nextJob;
+      }
+      async getTracedNextJob(token, { block = true } = {}) {
         var _a, _b;
         const nextJob = await this._getNextJob(await this.client, await this.blockingConnection.client, token, { block });
         return this.trace(enums_1.SpanKind.INTERNAL, "getNextJob", this.name, async (span) => {
@@ -101425,9 +103017,6 @@ var require_worker = __commonJS({
           if (!this.isRateLimited()) {
             job = await this.moveToActive(client, token, this.opts.name);
           }
-        }
-        if (job) {
-          this.emit("active", job, "waiting");
         }
         return job;
       }
@@ -101473,11 +103062,29 @@ var require_worker = __commonJS({
             let blockTimeout = this.getBlockTimeout(blockUntil);
             if (blockTimeout > 0) {
               blockTimeout = this.blockingConnection.capabilities.canDoubleTimeout ? blockTimeout : Math.ceil(blockTimeout);
-              timeout = setTimeout(async () => {
-                bclient.disconnect(!this.closing);
-              }, blockTimeout * 1e3 + 1e3);
+              let timedOut = false;
+              const watchdog = new Promise((resolve) => {
+                timeout = setTimeout(() => {
+                  timedOut = true;
+                  resolve(null);
+                }, blockTimeout * 1e3 + 1e3);
+              });
               this.updateDelays();
-              const result = await bclient.bzpopmin(this.keys.marker, blockTimeout);
+              const result = await Promise.race([
+                bclient.bzpopmin(this.keys.marker, blockTimeout),
+                watchdog
+              ]);
+              if (timedOut && !this.closing) {
+                if (!isClientLive(bclient)) {
+                  await this.blockingConnection.reconnect();
+                }
+                if (isClientLive(bclient) && !this.closing) {
+                  await this.blockingConnection.disconnect(true);
+                  if (!this.closing) {
+                    await this.blockingConnection.reconnect();
+                  }
+                }
+              }
               if (result) {
                 const [, member, score] = result;
                 if (member) {
@@ -101494,6 +103101,15 @@ var require_worker = __commonJS({
         } catch (error40) {
           if ((0, utils_1.isNotConnectionError)(error40)) {
             this.emit("error", error40);
+          }
+          if (!this.closing && bclient.status === "end") {
+            try {
+              await bclient.connect();
+            } catch (reconnectError) {
+              if (bclient.status === "end" && (0, utils_1.isNotConnectionError)(reconnectError)) {
+                this.emit("error", reconnectError);
+              }
+            }
           }
           if (!this.closing) {
             await this.delay();
@@ -101581,6 +103197,7 @@ var require_worker = __commonJS({
             this.emit("error", schedulingError);
             return void 0;
           }
+          this.emit("active", job, "waiting");
           return job;
         }
       }
@@ -101909,9 +103526,9 @@ var require_worker = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/index.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/index.js
 var require_classes = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/classes/index.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/classes/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -101925,6 +103542,7 @@ var require_classes = __commonJS({
     tslib_1.__exportStar(require_ioredis_client(), exports);
     tslib_1.__exportStar(require_node_redis_client(), exports);
     tslib_1.__exportStar(require_bun_redis_client(), exports);
+    tslib_1.__exportStar(require_valkey_glide_client(), exports);
     tslib_1.__exportStar(require_job(), exports);
     tslib_1.__exportStar(require_job_scheduler(), exports);
     tslib_1.__exportStar(require_lock_manager(), exports);
@@ -101942,153 +103560,153 @@ var require_classes = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/advanced-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/advanced-options.js
 var require_advanced_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/advanced-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/advanced-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/backoff-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/backoff-options.js
 var require_backoff_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/backoff-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/backoff-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/base-job-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/base-job-options.js
 var require_base_job_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/base-job-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/base-job-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/child-message.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/child-message.js
 var require_child_message = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/child-message.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/child-message.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/connection.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/connection.js
 var require_connection2 = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/connection.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/connection.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/flow-job.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/flow-job.js
 var require_flow_job = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/flow-job.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/flow-job.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/ioredis-events.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/ioredis-events.js
 var require_ioredis_events = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/ioredis-events.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/ioredis-events.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/job-json.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/job-json.js
 var require_job_json = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/job-json.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/job-json.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/job-scheduler-json.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/job-scheduler-json.js
 var require_job_scheduler_json = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/job-scheduler-json.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/job-scheduler-json.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/lock-manager-worker-context.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/lock-manager-worker-context.js
 var require_lock_manager_worker_context = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/lock-manager-worker-context.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/lock-manager-worker-context.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/metrics-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/metrics-options.js
 var require_metrics_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/metrics-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/metrics-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/metrics.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/metrics.js
 var require_metrics = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/metrics.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/metrics.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/minimal-job.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/minimal-job.js
 var require_minimal_job = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/minimal-job.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/minimal-job.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/minimal-queue.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/minimal-queue.js
 var require_minimal_queue = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/minimal-queue.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/minimal-queue.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/parent-message.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/parent-message.js
 var require_parent_message = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/parent-message.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/parent-message.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/parent.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/parent.js
 var require_parent = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/parent.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/parent.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/parent-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/parent-options.js
 var require_parent_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/parent-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/parent-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/queue-meta.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/queue-meta.js
 var require_queue_meta = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/queue-meta.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/queue-meta.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/queue-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/queue-options.js
 var require_queue_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/queue-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/queue-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ClientType = void 0;
@@ -102100,129 +103718,129 @@ var require_queue_options = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/rate-limiter-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/rate-limiter-options.js
 var require_rate_limiter_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/rate-limiter-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/rate-limiter-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/redis-client.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/redis-client.js
 var require_redis_client = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/redis-client.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/redis-client.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/redis-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/redis-options.js
 var require_redis_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/redis-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/redis-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/redis-streams.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/redis-streams.js
 var require_redis_streams = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/redis-streams.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/redis-streams.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/repeatable-job.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/repeatable-job.js
 var require_repeatable_job = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/repeatable-job.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/repeatable-job.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/repeatable-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/repeatable-options.js
 var require_repeatable_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/repeatable-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/repeatable-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/repeat-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/repeat-options.js
 var require_repeat_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/repeat-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/repeat-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/retry-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/retry-options.js
 var require_retry_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/retry-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/retry-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/script-queue-context.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/script-queue-context.js
 var require_script_queue_context = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/script-queue-context.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/script-queue-context.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-job-processor.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-job-processor.js
 var require_sandboxed_job_processor = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-job-processor.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-job-processor.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-job.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-job.js
 var require_sandboxed_job = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-job.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-job.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-options.js
 var require_sandboxed_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/sandboxed-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/worker-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/worker-options.js
 var require_worker_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/worker-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/worker-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/telemetry.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/telemetry.js
 var require_telemetry = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/telemetry.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/telemetry.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/receiver.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/receiver.js
 var require_receiver = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/receiver.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/receiver.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/index.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/index.js
 var require_interfaces = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/interfaces/index.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/interfaces/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -102263,97 +103881,97 @@ var require_interfaces = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/backoff-strategy.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/backoff-strategy.js
 var require_backoff_strategy = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/backoff-strategy.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/backoff-strategy.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/database-type.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/database-type.js
 var require_database_type = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/database-type.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/database-type.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/deduplication-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/deduplication-options.js
 var require_deduplication_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/deduplication-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/deduplication-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/finished-status.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/finished-status.js
 var require_finished_status = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/finished-status.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/finished-status.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-json-sandbox.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-json-sandbox.js
 var require_job_json_sandbox = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-json-sandbox.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-json-sandbox.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-options.js
 var require_job_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-scheduler-template-options.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-scheduler-template-options.js
 var require_job_scheduler_template_options = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-scheduler-template-options.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-scheduler-template-options.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-type.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-type.js
 var require_job_type = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-type.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-type.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-progress.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-progress.js
 var require_job_progress = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/job-progress.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/job-progress.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/repeat-strategy.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/repeat-strategy.js
 var require_repeat_strategy = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/repeat-strategy.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/repeat-strategy.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/keep-jobs.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/keep-jobs.js
 var require_keep_jobs = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/keep-jobs.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/keep-jobs.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/index.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/index.js
 var require_types = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/index.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -102371,17 +103989,17 @@ var require_types = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/processor.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/processor.js
 var require_processor = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/types/processor.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/types/processor.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
   }
 });
 
-// ../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/index.js
+// ../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/index.js
 var require_cjs = __commonJS({
-  "../../node_modules/.pnpm/bullmq@5.78.1/node_modules/bullmq/dist/cjs/index.js"(exports) {
+  "../../node_modules/.pnpm/bullmq@5.81.5_supports-color@8.1.1/node_modules/bullmq/dist/cjs/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -102808,13 +104426,13 @@ var init_authz = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/express-rate-limit@7.5.1_express@5.2.1/node_modules/express-rate-limit/dist/index.mjs
+// ../../node_modules/.pnpm/express-rate-limit@7.5.1_express@5.2.1_supports-color@8.1.1_/node_modules/express-rate-limit/dist/index.mjs
 import { Buffer as Buffer2 } from "node:buffer";
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 var SUPPORTED_DRAFT_VERSIONS, getResetSeconds, getPartitionKey, setLegacyHeaders, setDraft6Headers, setDraft7Headers, setDraft8Headers, setRetryAfterHeader, ValidationError, ChangeWarning, usedStores, singleCountKeys, validations, getValidations, MemoryStore, isLegacyStore, promisifyStore, getOptionsFromConfig, omitUndefinedOptions, parseOptions, handleAsyncErrors, rateLimit, lib_default;
 var init_dist = __esm({
-  "../../node_modules/.pnpm/express-rate-limit@7.5.1_express@5.2.1/node_modules/express-rate-limit/dist/index.mjs"() {
+  "../../node_modules/.pnpm/express-rate-limit@7.5.1_express@5.2.1_supports-color@8.1.1_/node_modules/express-rate-limit/dist/index.mjs"() {
     SUPPORTED_DRAFT_VERSIONS = [
       "draft-6",
       "draft-7",
@@ -103852,9 +105470,9 @@ var init_rate_limit = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/constants.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js
 var require_constants3 = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/constants.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js"(exports, module) {
     "use strict";
     var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
     var hasBlob = typeof Blob !== "undefined";
@@ -103875,9 +105493,9 @@ var require_constants3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/buffer-util.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/buffer-util.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js"(exports, module) {
     "use strict";
     var { EMPTY_BUFFER } = require_constants3();
     var FastBuffer = Buffer[Symbol.species];
@@ -103950,9 +105568,9 @@ var require_buffer_util = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/limiter.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js
 var require_limiter = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/limiter.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
     var kDone = /* @__PURE__ */ Symbol("kDone");
     var kRun = /* @__PURE__ */ Symbol("kRun");
@@ -104000,9 +105618,9 @@ var require_limiter = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/permessage-deflate.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
     "use strict";
     var zlib2 = __require("zlib");
     var bufferUtil = require_buffer_util();
@@ -104129,7 +105747,7 @@ var require_permessage_deflate = __commonJS({
       acceptAsServer(offers) {
         const opts = this._options;
         const accepted = offers.find((params) => {
-          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && !params.client_max_window_bits) {
+          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && (typeof params.client_max_window_bits === "number" ? opts.clientMaxWindowBits > params.client_max_window_bits : !params.client_max_window_bits)) {
             return false;
           }
           return true;
@@ -104383,9 +106001,9 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/validation.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/validation.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js"(exports, module) {
     "use strict";
     var { isUtf8 } = __require("buffer");
     var { hasBlob } = require_constants3();
@@ -104584,9 +106202,9 @@ var require_validation = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/receiver.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js
 var require_receiver2 = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/receiver.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -104649,6 +106267,7 @@ var require_receiver2 = __commonJS({
         this._opcode = 0;
         this._totalPayloadLength = 0;
         this._messageLength = 0;
+        this._numFragments = 0;
         this._fragments = [];
         this._errored = false;
         this._loop = false;
@@ -104999,23 +106618,23 @@ var require_receiver2 = __commonJS({
           this.controlMessage(data, cb);
           return;
         }
+        if (this._maxFragments > 0 && ++this._numFragments > this._maxFragments) {
+          const error40 = this.createError(
+            RangeError,
+            "Too many message fragments",
+            false,
+            1008,
+            "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+          );
+          cb(error40);
+          return;
+        }
         if (this._compressed) {
           this._state = INFLATING;
           this.decompress(data, cb);
           return;
         }
         if (data.length) {
-          if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
-            const error40 = this.createError(
-              RangeError,
-              "Too many message fragments",
-              false,
-              1008,
-              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
-            );
-            cb(error40);
-            return;
-          }
           this._messageLength = this._totalPayloadLength;
           this._fragments.push(data);
         }
@@ -105045,17 +106664,6 @@ var require_receiver2 = __commonJS({
               cb(error40);
               return;
             }
-            if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
-              const error40 = this.createError(
-                RangeError,
-                "Too many message fragments",
-                false,
-                1008,
-                "WS_ERR_TOO_MANY_BUFFERED_PARTS"
-              );
-              cb(error40);
-              return;
-            }
             this._fragments.push(buf);
           }
           this.dataMessage(cb);
@@ -105078,6 +106686,7 @@ var require_receiver2 = __commonJS({
         this._totalPayloadLength = 0;
         this._messageLength = 0;
         this._fragmented = 0;
+        this._numFragments = 0;
         this._fragments = [];
         if (this._opcode === 2) {
           let data;
@@ -105216,9 +106825,9 @@ var require_receiver2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/sender.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js
 var require_sender = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/sender.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js"(exports, module) {
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
@@ -105709,9 +107318,9 @@ var require_sender = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/event-target.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js
 var require_event_target = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/event-target.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants3();
     var kCode = /* @__PURE__ */ Symbol("kCode");
@@ -105938,9 +107547,9 @@ var require_event_target = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/extension.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js
 var require_extension = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/extension.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function push(dest, name2, elem) {
@@ -106091,9 +107700,9 @@ var require_extension = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js
 var require_websocket = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js"(exports, module) {
     "use strict";
     var EventEmitter2 = __require("events");
     var https3 = __require("https");
@@ -106156,11 +107765,23 @@ var require_websocket = __commonJS({
           this._isServer = false;
           this._redirects = 0;
           if (protocols === void 0) {
-            protocols = [];
+            if (!options || options.protocols === void 0) {
+              protocols = [];
+            } else if (Array.isArray(options.protocols)) {
+              protocols = options.protocols;
+            } else {
+              protocols = [options.protocols];
+            }
           } else if (!Array.isArray(protocols)) {
             if (typeof protocols === "object" && protocols !== null) {
               options = protocols;
-              protocols = [];
+              if (options.protocols === void 0) {
+                protocols = [];
+              } else if (Array.isArray(options.protocols)) {
+                protocols = options.protocols;
+              } else {
+                protocols = [options.protocols];
+              }
             } else {
               protocols = [protocols];
             }
@@ -106357,7 +107978,6 @@ var require_websocket = __commonJS({
           }
           return;
         }
-        this._readyState = _WebSocket.CLOSING;
         this._sender.close(code, data, !this._isServer, (err) => {
           if (err) return;
           this._closeFrameSent = true;
@@ -106365,6 +107985,7 @@ var require_websocket = __commonJS({
             this._socket.end();
           }
         });
+        this._readyState = _WebSocket.CLOSING;
         setCloseTimer(this);
       }
       /**
@@ -106578,8 +108199,8 @@ var require_websocket = __commonJS({
         autoPong: true,
         closeTimeout: CLOSE_TIMEOUT,
         protocolVersion: protocolVersions[1],
-        maxBufferedChunks: 1024 * 1024,
-        maxFragments: 128 * 1024,
+        maxBufferedChunks: 256 * 1024,
+        maxFragments: 16 * 1024,
         maxPayload: 100 * 1024 * 1024,
         skipUTF8Validation: false,
         perMessageDeflate: true,
@@ -106589,6 +108210,7 @@ var require_websocket = __commonJS({
         socketPath: void 0,
         hostname: void 0,
         protocol: void 0,
+        protocols: void 0,
         timeout: void 0,
         method: "GET",
         host: void 0,
@@ -106987,9 +108609,9 @@ var require_websocket = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/stream.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js
 var require_stream2 = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/stream.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js"(exports, module) {
     "use strict";
     var WebSocket2 = require_websocket();
     var { Duplex } = __require("stream");
@@ -107085,9 +108707,9 @@ var require_stream2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/subprotocol.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js
 var require_subprotocol = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/subprotocol.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function parse3(header) {
@@ -107130,9 +108752,9 @@ var require_subprotocol = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket-server.js
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket-server.js"(exports, module) {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js"(exports, module) {
     "use strict";
     var EventEmitter2 = __require("events");
     var http5 = __require("http");
@@ -107166,9 +108788,9 @@ var require_websocket_server = __commonJS({
        *     called
        * @param {Function} [options.handleProtocols] A hook to handle protocols
        * @param {String} [options.host] The hostname where to bind the server
-       * @param {Number} [options.maxBufferedChunks=1048576] The maximum number of
+       * @param {Number} [options.maxBufferedChunks=262144] The maximum number of
        *     buffered data chunks
-       * @param {Number} [options.maxFragments=131072] The maximum number of message
+       * @param {Number} [options.maxFragments=16384] The maximum number of message
        *     fragments
        * @param {Number} [options.maxPayload=104857600] The maximum allowed message
        *     size
@@ -107191,8 +108813,8 @@ var require_websocket_server = __commonJS({
         options = {
           allowSynchronousEvents: true,
           autoPong: true,
-          maxBufferedChunks: 1024 * 1024,
-          maxFragments: 128 * 1024,
+          maxBufferedChunks: 256 * 1024,
+          maxFragments: 16 * 1024,
           maxPayload: 100 * 1024 * 1024,
           skipUTF8Validation: false,
           perMessageDeflate: false,
@@ -107531,10 +109153,10 @@ var require_websocket_server = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs
+// ../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs
 var import_stream, import_extension, import_permessage_deflate, import_receiver, import_sender, import_subprotocol, import_websocket, import_websocket_server;
 var init_wrapper = __esm({
-  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs"() {
+  "../../node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs"() {
     import_stream = __toESM(require_stream2(), 1);
     import_extension = __toESM(require_extension(), 1);
     import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
@@ -122004,12 +123626,12 @@ function createStripe(platformFunctions, requestSender = defaultRequestSenderFac
       if (!config2) {
         return {};
       }
-      const isString = typeof config2 === "string";
+      const isString2 = typeof config2 === "string";
       const isObject4 = config2 === Object(config2) && !Array.isArray(config2);
-      if (!isObject4 && !isString) {
+      if (!isObject4 && !isString2) {
         throw new Error("Config must either be an object or a string");
       }
-      if (isString) {
+      if (isString2) {
         return {
           apiVersion: config2
         };
@@ -122213,9 +123835,9 @@ var init_cache2 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/bn.js@4.12.3/node_modules/bn.js/lib/bn.js
+// ../../node_modules/.pnpm/bn.js@4.12.5/node_modules/bn.js/lib/bn.js
 var require_bn = __commonJS({
-  "../../node_modules/.pnpm/bn.js@4.12.3/node_modules/bn.js/lib/bn.js"(exports, module) {
+  "../../node_modules/.pnpm/bn.js@4.12.5/node_modules/bn.js/lib/bn.js"(exports, module) {
     (function(module2, exports2) {
       "use strict";
       function assert3(val, msg) {
@@ -122924,6 +124546,10 @@ var require_bn = __commonJS({
         }
         if (bitsLeft > 0) {
           this.words[i2] = ~this.words[i2] & 67108863 >> 26 - bitsLeft;
+          i2++;
+        }
+        for (; i2 < this.length; i2++) {
+          this.words[i2] = 0;
         }
         return this.strip();
       };
@@ -123863,7 +125489,10 @@ var require_bn = __commonJS({
           this.words[i2] = carry;
           this.length++;
         }
-        this.length = num === 0 ? 1 : this.length;
+        if (num === 0) {
+          this.length = 1;
+          this._normSign();
+        }
         return this;
       };
       BN.prototype.muln = function muln(num) {
@@ -124256,12 +125885,14 @@ var require_bn = __commonJS({
       BN.prototype.divRound = function divRound(num) {
         var dm = this.divmod(num);
         if (dm.mod.isZero()) return dm.div;
-        var mod = dm.div.negative !== 0 ? dm.mod.isub(num) : dm.mod;
-        var half = num.ushrn(1);
-        var r2 = num.andln(1);
+        var mod = dm.mod.abs();
+        var half = num.abs().iushrn(1);
+        var r2 = num.words[0] & 1;
         var cmp = mod.cmp(half);
         if (cmp < 0 || r2 === 1 && cmp === 0) return dm.div;
-        return dm.div.negative !== 0 ? dm.div.isubn(1) : dm.div.iaddn(1);
+        var up = new BN(1);
+        up.negative = this.negative ^ num.negative;
+        return dm.div.iadd(up);
       };
       BN.prototype.modn = function modn(num) {
         assert3(num <= 67108863);
@@ -127242,9 +128873,9 @@ var require_jws = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-constants.js
+// ../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/web-push-constants.js
 var require_web_push_constants = __commonJS({
-  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-constants.js"(exports, module) {
+  "../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/web-push-constants.js"(exports, module) {
     "use strict";
     var WebPushConstants = {};
     WebPushConstants.supportedContentEncodings = {
@@ -127261,9 +128892,9 @@ var require_web_push_constants = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/urlsafe-base64-helper.js
+// ../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/urlsafe-base64-helper.js
 var require_urlsafe_base64_helper = __commonJS({
-  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/urlsafe-base64-helper.js"(exports, module) {
+  "../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/urlsafe-base64-helper.js"(exports, module) {
     "use strict";
     function validate(base643) {
       return /^[A-Za-z0-9\-_]+$/.test(base643);
@@ -127274,9 +128905,9 @@ var require_urlsafe_base64_helper = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/vapid-helper.js
+// ../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/vapid-helper.js
 var require_vapid_helper = __commonJS({
-  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/vapid-helper.js"(exports, module) {
+  "../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/vapid-helper.js"(exports, module) {
     "use strict";
     var crypto7 = __require("crypto");
     var asn1 = require_asn1();
@@ -127902,9 +129533,9 @@ var require_ece = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/encryption-helper.js
+// ../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/encryption-helper.js
 var require_encryption_helper = __commonJS({
-  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/encryption-helper.js"(exports, module) {
+  "../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/encryption-helper.js"(exports, module) {
     "use strict";
     var crypto7 = __require("crypto");
     var ece = require_ece();
@@ -127955,9 +129586,9 @@ var require_encryption_helper = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-error.js
+// ../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/web-push-error.js
 var require_web_push_error = __commonJS({
-  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-error.js"(exports, module) {
+  "../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/web-push-error.js"(exports, module) {
     "use strict";
     function WebPushError(message2, statusCode, headers, body, endpoint) {
       Error.captureStackTrace(this, this.constructor);
@@ -128199,9 +129830,9 @@ var require_dist4 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/https-proxy-agent@7.0.6/node_modules/https-proxy-agent/dist/parse-proxy-response.js
+// ../../node_modules/.pnpm/https-proxy-agent@7.0.6_supports-color@8.1.1/node_modules/https-proxy-agent/dist/parse-proxy-response.js
 var require_parse_proxy_response = __commonJS({
-  "../../node_modules/.pnpm/https-proxy-agent@7.0.6/node_modules/https-proxy-agent/dist/parse-proxy-response.js"(exports) {
+  "../../node_modules/.pnpm/https-proxy-agent@7.0.6_supports-color@8.1.1/node_modules/https-proxy-agent/dist/parse-proxy-response.js"(exports) {
     "use strict";
     var __importDefault2 = exports && exports.__importDefault || function(mod) {
       return mod && mod.__esModule ? mod : { "default": mod };
@@ -128295,9 +129926,9 @@ var require_parse_proxy_response = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/https-proxy-agent@7.0.6/node_modules/https-proxy-agent/dist/index.js
+// ../../node_modules/.pnpm/https-proxy-agent@7.0.6_supports-color@8.1.1/node_modules/https-proxy-agent/dist/index.js
 var require_dist5 = __commonJS({
-  "../../node_modules/.pnpm/https-proxy-agent@7.0.6/node_modules/https-proxy-agent/dist/index.js"(exports) {
+  "../../node_modules/.pnpm/https-proxy-agent@7.0.6_supports-color@8.1.1/node_modules/https-proxy-agent/dist/index.js"(exports) {
     "use strict";
     var __createBinding2 = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -128445,9 +130076,9 @@ var require_dist5 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-lib.js
+// ../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/web-push-lib.js
 var require_web_push_lib = __commonJS({
-  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-lib.js"(exports, module) {
+  "../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/web-push-lib.js"(exports, module) {
     "use strict";
     var url2 = __require("url");
     var https3 = __require("https");
@@ -128732,9 +130363,9 @@ var require_web_push_lib = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/index.js
+// ../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/index.js
 var require_src3 = __commonJS({
-  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/index.js"(exports, module) {
+  "../../node_modules/.pnpm/web-push@3.6.7_supports-color@8.1.1/node_modules/web-push/src/index.js"(exports, module) {
     "use strict";
     var vapidHelper = require_vapid_helper();
     var encryptionHelper = require_encryption_helper();
@@ -130625,12 +132256,12 @@ var require_extend = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/package.json
+// ../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/package.json
 var require_package2 = __commonJS({
-  "../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/package.json"(exports, module) {
+  "../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/package.json"(exports, module) {
     module.exports = {
       name: "gaxios",
-      version: "7.1.5",
+      version: "7.3.1",
       description: "A simple common HTTP client specifically for Google APIs and services.",
       main: "build/cjs/src/index.js",
       types: "build/cjs/src/index.d.ts",
@@ -130668,8 +132299,8 @@ var require_package2 = __commonJS({
       },
       repository: {
         type: "git",
-        directory: "packages/gaxios",
-        url: "https://github.com/googleapis/google-cloud-node-core.git"
+        directory: "core/packages/gaxios",
+        url: "https://github.com/googleapis/google-cloud-node.git"
       },
       keywords: [
         "google"
@@ -130708,7 +132339,7 @@ var require_package2 = __commonJS({
         "karma-mocha": "^2.0.0",
         "karma-remap-coverage": "^0.1.5",
         "karma-sourcemap-loader": "^0.4.0",
-        "karma-webpack": "^5.0.1",
+        "karma-webpack": "^5.0.0",
         mocha: "^11.1.0",
         multiparty: "^4.2.1",
         mv: "^2.1.1",
@@ -130719,7 +132350,7 @@ var require_package2 = __commonJS({
         puppeteer: "^24.0.0",
         sinon: "21.0.3",
         "stream-browserify": "^3.0.0",
-        tmp: "0.2.6",
+        tmp: "0.2.7",
         "ts-loader": "^9.5.2",
         typescript: "5.8.3",
         "undici-types": "^7.24.1",
@@ -130731,23 +132362,23 @@ var require_package2 = __commonJS({
         "https-proxy-agent": "^7.0.1",
         "node-fetch": "^3.3.2"
       },
-      homepage: "https://github.com/googleapis/google-cloud-node-core/tree/main/packages/gaxios"
+      homepage: "https://github.com/googleapis/google-cloud-node/tree/main/core/packages/gaxios"
     };
   }
 });
 
-// ../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/util.cjs
+// ../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/util.cjs
 var require_util2 = __commonJS({
-  "../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/util.cjs"(exports, module) {
+  "../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/util.cjs"(exports, module) {
     "use strict";
     var pkg = require_package2();
     module.exports = { pkg };
   }
 });
 
-// ../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/common.js
+// ../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/common.js
 var require_common2 = __commonJS({
-  "../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/common.js"(exports) {
+  "../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/common.js"(exports) {
     "use strict";
     var __importDefault2 = exports && exports.__importDefault || function(mod) {
       return mod && mod.__esModule ? mod : { "default": mod };
@@ -130987,9 +132618,9 @@ var require_common2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/retry.js
+// ../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/retry.js
 var require_retry = __commonJS({
-  "../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/retry.js"(exports) {
+  "../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/retry.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getRetryConfig = getRetryConfig;
@@ -131092,9 +132723,9 @@ var require_retry = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/interceptor.js
+// ../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/interceptor.js
 var require_interceptor = __commonJS({
-  "../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/interceptor.js"(exports) {
+  "../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/interceptor.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GaxiosInterceptorManager = void 0;
@@ -137591,9 +139222,9 @@ var init_src3 = __esm({
   }
 });
 
-// ../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/gaxios.js
+// ../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/gaxios.js
 var require_gaxios = __commonJS({
-  "../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/gaxios.js"(exports) {
+  "../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/gaxios.js"(exports) {
     "use strict";
     var __importDefault2 = exports && exports.__importDefault || function(mod) {
       return mod && mod.__esModule ? mod : { "default": mod };
@@ -137607,7 +139238,7 @@ var require_gaxios = __commonJS({
     var retry_js_1 = require_retry();
     var stream_1 = __require("stream");
     var interceptor_js_1 = require_interceptor();
-    var randomUUID13 = async () => globalThis.crypto?.randomUUID() || (await import("crypto")).randomUUID();
+    var randomUUID14 = async () => globalThis.crypto?.randomUUID() || (await import("crypto")).randomUUID();
     var HTTP_STATUS_NO_CONTENT = 204;
     var Gaxios = class {
       agentCache = /* @__PURE__ */ new Map();
@@ -137717,7 +139348,7 @@ var require_gaxios = __commonJS({
               for await (const chunk of translatedResponse.data) {
                 response.push(chunk);
               }
-              translatedResponse.data = response.toString();
+              translatedResponse.data = Buffer.concat(response.map((c) => typeof c === "string" ? Buffer.from(c) : c)).toString("utf8");
             }
             const errorInfo = common_js_1.GaxiosError.extractAPIErrorFromResponse(translatedResponse, `Request failed with status code ${translatedResponse.status}`);
             throw new common_js_1.GaxiosError(errorInfo?.message, opts, translatedResponse, errorInfo);
@@ -137880,7 +139511,7 @@ var require_gaxios = __commonJS({
          */
         ["Blob", "File", "FormData"].includes(opts.data?.constructor?.name || "");
         if (opts.multipart?.length) {
-          const boundary = await randomUUID13();
+          const boundary = await randomUUID14();
           preparedHeaders.set("content-type", `multipart/related; boundary=${boundary}`);
           opts.body = stream_1.Readable.from(this.getMultipartRequest(opts.multipart, boundary));
         } else if (shouldDirectlyPassData) {
@@ -138065,9 +139696,9 @@ Content-Type: ${partContentType}\r
   }
 });
 
-// ../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/index.js
+// ../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/index.js
 var require_src4 = __commonJS({
-  "../../node_modules/.pnpm/gaxios@7.1.5/node_modules/gaxios/build/cjs/src/index.js"(exports) {
+  "../../node_modules/.pnpm/gaxios@7.3.1_supports-color@8.1.1/node_modules/gaxios/build/cjs/src/index.js"(exports) {
     "use strict";
     var __createBinding2 = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -139864,9 +141495,9 @@ var require_json_bigint = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/gcp-metadata@8.1.2/node_modules/gcp-metadata/build/src/gcp-residency.js
+// ../../node_modules/.pnpm/gcp-metadata@8.1.2_supports-color@8.1.1/node_modules/gcp-metadata/build/src/gcp-residency.js
 var require_gcp_residency = __commonJS({
-  "../../node_modules/.pnpm/gcp-metadata@8.1.2/node_modules/gcp-metadata/build/src/gcp-residency.js"(exports) {
+  "../../node_modules/.pnpm/gcp-metadata@8.1.2_supports-color@8.1.1/node_modules/gcp-metadata/build/src/gcp-residency.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GCE_LINUX_BIOS_PATHS = void 0;
@@ -140294,9 +141925,9 @@ var require_src5 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/gcp-metadata@8.1.2/node_modules/gcp-metadata/build/src/index.js
+// ../../node_modules/.pnpm/gcp-metadata@8.1.2_supports-color@8.1.1/node_modules/gcp-metadata/build/src/index.js
 var require_src6 = __commonJS({
-  "../../node_modules/.pnpm/gcp-metadata@8.1.2/node_modules/gcp-metadata/build/src/index.js"(exports) {
+  "../../node_modules/.pnpm/gcp-metadata@8.1.2_supports-color@8.1.1/node_modules/gcp-metadata/build/src/index.js"(exports) {
     "use strict";
     var __createBinding2 = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -140651,9 +142282,9 @@ var require_base64_js = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/crypto/shared.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/crypto/shared.js
 var require_shared = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/crypto/shared.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/crypto/shared.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.fromArrayBufferToHex = fromArrayBufferToHex;
@@ -140666,9 +142297,9 @@ var require_shared = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/crypto/browser/crypto.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/crypto/browser/crypto.js
 var require_crypto = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/crypto/browser/crypto.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/crypto/browser/crypto.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BrowserCrypto = void 0;
@@ -140762,9 +142393,9 @@ var require_crypto = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/crypto/node/crypto.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/crypto/node/crypto.js
 var require_crypto2 = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/crypto/node/crypto.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/crypto/node/crypto.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NodeCrypto = void 0;
@@ -140831,9 +142462,9 @@ var require_crypto2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/crypto/crypto.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/crypto/crypto.js
 var require_crypto3 = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/crypto/crypto.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/crypto/crypto.js"(exports) {
     "use strict";
     var __createBinding2 = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -140869,9 +142500,9 @@ var require_crypto3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/util.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/util.js
 var require_util3 = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/util.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/util.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.LRUCache = void 0;
@@ -140984,12 +142615,12 @@ var require_util3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/package.json
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/package.json
 var require_package3 = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/package.json"(exports, module) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/package.json"(exports, module) {
     module.exports = {
       name: "google-auth-library",
-      version: "10.9.0",
+      version: "10.9.1",
       author: "Google Inc.",
       description: "Google APIs Authentication Client Library for Node.js",
       engines: {
@@ -141080,9 +142711,9 @@ var require_package3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/shared.cjs
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/shared.cjs
 var require_shared2 = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/shared.cjs"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/shared.cjs"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.USER_AGENT = exports.PRODUCT_NAME = exports.pkg = void 0;
@@ -141095,9 +142726,9 @@ var require_shared2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/authclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/authclient.js
 var require_authclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/authclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/authclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AuthClient = exports.DEFAULT_EAGER_REFRESH_THRESHOLD_MILLIS = exports.DEFAULT_UNIVERSE = void 0;
@@ -141330,9 +142961,9 @@ var require_authclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/loginticket.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/loginticket.js
 var require_loginticket = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/loginticket.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/loginticket.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.LoginTicket = void 0;
@@ -141382,9 +143013,9 @@ var require_loginticket = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/oauth2client.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/oauth2client.js
 var require_oauth2client = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/oauth2client.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/oauth2client.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OAuth2Client = exports.ClientAuthentication = exports.CertificateFormat = exports.CodeChallengeMethod = void 0;
@@ -142063,9 +143694,9 @@ var require_oauth2client = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/computeclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/computeclient.js
 var require_computeclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/computeclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/computeclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Compute = void 0;
@@ -142155,9 +143786,9 @@ var require_computeclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/idtokenclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/idtokenclient.js
 var require_idtokenclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/idtokenclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/idtokenclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IdTokenClient = void 0;
@@ -142201,9 +143832,9 @@ var require_idtokenclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/envDetect.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/envDetect.js
 var require_envDetect = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/envDetect.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/envDetect.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GCPEnv = void 0;
@@ -142278,9 +143909,9 @@ var require_envDetect = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/jwsSign.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/jwsSign.js
 var require_jwsSign = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/jwsSign.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/jwsSign.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.buildPayloadForJwsSign = buildPayloadForJwsSign;
@@ -142312,9 +143943,9 @@ var require_jwsSign = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/getToken.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/getToken.js
 var require_getToken = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/getToken.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/getToken.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getToken = getToken;
@@ -142356,9 +143987,9 @@ var require_getToken = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/errorWithCode.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/errorWithCode.js
 var require_errorWithCode = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/errorWithCode.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/errorWithCode.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ErrorWithCode = void 0;
@@ -142373,9 +144004,9 @@ var require_errorWithCode = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/getCredentials.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/getCredentials.js
 var require_getCredentials = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/getCredentials.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/getCredentials.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getCredentials = getCredentials;
@@ -142474,9 +144105,9 @@ var require_getCredentials = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/tokenHandler.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/tokenHandler.js
 var require_tokenHandler = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/tokenHandler.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/tokenHandler.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TokenHandler = void 0;
@@ -142565,9 +144196,9 @@ var require_tokenHandler = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/revokeToken.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/revokeToken.js
 var require_revokeToken = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/revokeToken.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/revokeToken.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.revokeToken = revokeToken;
@@ -142583,9 +144214,9 @@ var require_revokeToken = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/googleToken.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/googleToken.js
 var require_googleToken = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/gtoken/googleToken.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/gtoken/googleToken.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleToken = void 0;
@@ -142689,9 +144320,9 @@ var require_googleToken = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/jwtaccess.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/jwtaccess.js
 var require_jwtaccess = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/jwtaccess.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/jwtaccess.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.JWTAccess = void 0;
@@ -142859,9 +144490,9 @@ var require_jwtaccess = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/jwtclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/jwtclient.js
 var require_jwtclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/jwtclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/jwtclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.JWT = void 0;
@@ -143131,9 +144762,9 @@ var require_jwtclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/refreshclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/refreshclient.js
 var require_refreshclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/refreshclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/refreshclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.UserRefreshClient = exports.USER_REFRESH_ACCOUNT_TYPE = void 0;
@@ -143259,9 +144890,9 @@ var require_refreshclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/impersonated.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/impersonated.js
 var require_impersonated = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/impersonated.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/impersonated.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Impersonated = exports.IMPERSONATED_ACCOUNT_TYPE = void 0;
@@ -143438,9 +145069,9 @@ var require_impersonated = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/oauth2common.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/oauth2common.js
 var require_oauth2common = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/oauth2common.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/oauth2common.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OAuthClientAuthHandler = void 0;
@@ -143586,9 +145217,9 @@ var require_oauth2common = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/stscredentials.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/stscredentials.js
 var require_stscredentials = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/stscredentials.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/stscredentials.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StsCredentials = void 0;
@@ -143674,9 +145305,9 @@ var require_stscredentials = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/baseexternalclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/baseexternalclient.js
 var require_baseexternalclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/baseexternalclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/baseexternalclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BaseExternalAccountClient = exports.CLOUD_RESOURCE_MANAGER = exports.EXTERNAL_ACCOUNT_TYPE = exports.EXPIRATION_TIME_OFFSET = void 0;
@@ -144053,9 +145684,9 @@ var require_baseexternalclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/filesubjecttokensupplier.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/filesubjecttokensupplier.js
 var require_filesubjecttokensupplier = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/filesubjecttokensupplier.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/filesubjecttokensupplier.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FileSubjectTokenSupplier = void 0;
@@ -144118,9 +145749,9 @@ var require_filesubjecttokensupplier = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/urlsubjecttokensupplier.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/urlsubjecttokensupplier.js
 var require_urlsubjecttokensupplier = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/urlsubjecttokensupplier.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/urlsubjecttokensupplier.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.UrlSubjectTokenSupplier = void 0;
@@ -144176,9 +145807,9 @@ var require_urlsubjecttokensupplier = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/certificatesubjecttokensupplier.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/certificatesubjecttokensupplier.js
 var require_certificatesubjecttokensupplier = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/certificatesubjecttokensupplier.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/certificatesubjecttokensupplier.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CertificateSubjectTokenSupplier = exports.InvalidConfigurationError = exports.CertificateSourceUnavailableError = exports.CERTIFICATE_CONFIGURATION_ENV_VARIABLE = void 0;
@@ -144360,9 +145991,9 @@ var require_certificatesubjecttokensupplier = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/identitypoolclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/identitypoolclient.js
 var require_identitypoolclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/identitypoolclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/identitypoolclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IdentityPoolClient = void 0;
@@ -144472,9 +146103,9 @@ var require_identitypoolclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/awsrequestsigner.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/awsrequestsigner.js
 var require_awsrequestsigner = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/awsrequestsigner.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/awsrequestsigner.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AwsRequestSigner = void 0;
@@ -144622,9 +146253,9 @@ ${credentialScope}
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/defaultawssecuritycredentialssupplier.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/defaultawssecuritycredentialssupplier.js
 var require_defaultawssecuritycredentialssupplier = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/defaultawssecuritycredentialssupplier.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/defaultawssecuritycredentialssupplier.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DefaultAwsSecurityCredentialsSupplier = void 0;
@@ -144777,9 +146408,9 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/awsclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/awsclient.js
 var require_awsclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/awsclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/awsclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AwsClient = void 0;
@@ -144891,9 +146522,9 @@ var require_awsclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/executable-response.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/executable-response.js
 var require_executable_response = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/executable-response.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/executable-response.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.InvalidSubjectTokenError = exports.InvalidMessageFieldError = exports.InvalidCodeFieldError = exports.InvalidTokenTypeFieldError = exports.InvalidExpirationTimeFieldError = exports.InvalidSuccessFieldError = exports.InvalidVersionFieldError = exports.ExecutableResponseError = exports.ExecutableResponse = void 0;
@@ -145022,9 +146653,9 @@ var require_executable_response = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/pluggable-auth-handler.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/pluggable-auth-handler.js
 var require_pluggable_auth_handler = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/pluggable-auth-handler.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/pluggable-auth-handler.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PluggableAuthHandler = exports.ExecutableError = void 0;
@@ -145163,9 +146794,9 @@ var require_pluggable_auth_handler = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/pluggable-auth-client.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/pluggable-auth-client.js
 var require_pluggable_auth_client = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/pluggable-auth-client.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/pluggable-auth-client.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PluggableAuthClient = exports.ExecutableError = void 0;
@@ -145290,9 +146921,9 @@ var require_pluggable_auth_client = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/externalclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/externalclient.js
 var require_externalclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/externalclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/externalclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ExternalAccountClient = void 0;
@@ -145339,9 +146970,9 @@ var require_externalclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/externalAccountAuthorizedUserClient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/externalAccountAuthorizedUserClient.js
 var require_externalAccountAuthorizedUserClient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/externalAccountAuthorizedUserClient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/externalAccountAuthorizedUserClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ExternalAccountAuthorizedUserClient = exports.EXTERNAL_ACCOUNT_AUTHORIZED_USER_TYPE = void 0;
@@ -145526,9 +147157,9 @@ var require_externalAccountAuthorizedUserClient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/gdchclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/gdchclient.js
 var require_gdchclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/gdchclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/gdchclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GdchClient = exports.GDCH_SERVICE_ACCOUNT_TYPE = void 0;
@@ -145809,9 +147440,9 @@ var require_gdchclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/googleauth.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/googleauth.js
 var require_googleauth = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/googleauth.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/googleauth.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleAuth = exports.GoogleAuthExceptionMessages = void 0;
@@ -146087,7 +147718,7 @@ var require_googleauth = __commonJS({
           return null;
         }
         try {
-          return this._getApplicationCredentialsFromFilePath(credentialsPath, options);
+          return await this._getApplicationCredentialsFromFilePath(credentialsPath, options);
         } catch (e2) {
           if (e2 instanceof Error) {
             e2.message = `Unable to read the credential file specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable: ${e2.message}`;
@@ -146101,22 +147732,24 @@ var require_googleauth = __commonJS({
        * @api private
        */
       async _tryGetApplicationCredentialsFromWellKnownFile(options) {
-        let location = null;
-        if (this._isWindows()) {
-          location = process.env["APPDATA"];
-        } else {
-          const home = process.env["HOME"];
-          if (home) {
-            location = path5.join(home, ".config");
+        let configDir = process.env["CLOUDSDK_CONFIG"];
+        if (!configDir) {
+          if (this._isWindows()) {
+            if (process.env["APPDATA"]) {
+              configDir = path5.join(process.env["APPDATA"], "gcloud");
+            }
+          } else {
+            const home = process.env["HOME"];
+            if (home) {
+              configDir = path5.join(home, ".config", "gcloud");
+            }
           }
         }
-        if (location) {
-          location = path5.join(location, "gcloud", "application_default_credentials.json");
-          if (!fs3.existsSync(location)) {
-            location = null;
-          }
+        if (!configDir) {
+          return null;
         }
-        if (!location) {
+        const location = path5.join(configDir, "application_default_credentials.json");
+        if (!fs3.existsSync(location)) {
           return null;
         }
         const client = await this._getApplicationCredentialsFromFilePath(location, options);
@@ -146615,9 +148248,9 @@ var require_googleauth = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/iam.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/iam.js
 var require_iam = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/iam.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/iam.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IAMAuth = void 0;
@@ -146651,9 +148284,9 @@ var require_iam = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/downscopedclient.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/downscopedclient.js
 var require_downscopedclient = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/downscopedclient.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/downscopedclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DownscopedClient = exports.EXPIRATION_TIME_OFFSET = exports.MAX_ACCESS_BOUNDARY_RULES_COUNT = void 0;
@@ -146836,9 +148469,9 @@ var require_downscopedclient = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/passthrough.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/passthrough.js
 var require_passthrough = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/auth/passthrough.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/auth/passthrough.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PassThroughClient = void 0;
@@ -146881,9 +148514,9 @@ var require_passthrough = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/index.js
+// ../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/index.js
 var require_src7 = __commonJS({
-  "../../node_modules/.pnpm/google-auth-library@10.9.0/node_modules/google-auth-library/build/src/index.js"(exports) {
+  "../../node_modules/.pnpm/google-auth-library@10.9.1_supports-color@8.1.1/node_modules/google-auth-library/build/src/index.js"(exports) {
     "use strict";
     var __createBinding2 = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -147944,7 +149577,7 @@ function bucketRegion(lat, lng) {
   return "Other";
 }
 var PROCESS_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
-var GIT_COMMIT = "be205e2a0353a6231d6f41d3c9a73aefae19ba0b";
+var GIT_COMMIT = "034282857085b70900991b21a5442e03f34d0e8e";
 var NIA_HEALTH_TIMEOUT_MS = 2e3;
 var router2 = (0, import_express3.Router)();
 function getLiveKitReadiness() {
@@ -169548,7 +171181,7 @@ Duration.fields = proto3.util.newFieldList(() => [
   }
 ]);
 
-// ../../node_modules/.pnpm/@livekit+protocol@1.48.0/node_modules/@livekit/protocol/dist/index.mjs
+// ../../node_modules/.pnpm/@livekit+protocol@1.51.0/node_modules/@livekit/protocol/dist/index.mjs
 var AudioCodec = /* @__PURE__ */ proto3.makeEnum(
   "livekit.AudioCodec",
   [
@@ -169993,7 +171626,8 @@ var ParticipantInfo_KindDetail = /* @__PURE__ */ proto3.makeEnum(
     { no: 1, name: "FORWARDED" },
     { no: 2, name: "CONNECTOR_WHATSAPP" },
     { no: 3, name: "CONNECTOR_TWILIO" },
-    { no: 4, name: "BRIDGE_RTSP" }
+    { no: 4, name: "BRIDGE_RTSP" },
+    { no: 5, name: "SIMULATION" }
   ]
 );
 var Encryption_Type = /* @__PURE__ */ proto3.makeEnum(
@@ -170161,7 +171795,62 @@ var DataTrackInfo = /* @__PURE__ */ proto3.makeMessageType(
       T: 9
       /* ScalarType.STRING */
     },
-    { no: 4, name: "encryption", kind: "enum", T: proto3.getEnumType(Encryption_Type) }
+    { no: 4, name: "encryption", kind: "enum", T: proto3.getEnumType(Encryption_Type) },
+    { no: 5, name: "frame_encoding", kind: "message", T: DataTrackFrameEncoding, opt: true },
+    { no: 6, name: "schema", kind: "message", T: DataTrackSchemaId, opt: true }
+  ]
+);
+var DataTrackFrameEncoding = /* @__PURE__ */ proto3.makeMessageType(
+  "livekit.DataTrackFrameEncoding",
+  () => [
+    { no: 1, name: "well_known", kind: "enum", T: proto3.getEnumType(DataTrackFrameEncoding_WellKnownFrameEncoding), oneof: "value" },
+    { no: 2, name: "custom", kind: "scalar", T: 9, oneof: "value" }
+  ]
+);
+var DataTrackFrameEncoding_WellKnownFrameEncoding = /* @__PURE__ */ proto3.makeEnum(
+  "livekit.DataTrackFrameEncoding.WellKnownFrameEncoding",
+  [
+    { no: 0, name: "WELL_KNOWN_FRAME_ENCODING_UNSPECIFIED", localName: "UNSPECIFIED" },
+    { no: 1, name: "WELL_KNOWN_FRAME_ENCODING_ROS1", localName: "ROS1" },
+    { no: 2, name: "WELL_KNOWN_FRAME_ENCODING_CDR", localName: "CDR" },
+    { no: 3, name: "WELL_KNOWN_FRAME_ENCODING_PROTOBUF", localName: "PROTOBUF" },
+    { no: 4, name: "WELL_KNOWN_FRAME_ENCODING_FLATBUFFER", localName: "FLATBUFFER" },
+    { no: 5, name: "WELL_KNOWN_FRAME_ENCODING_CBOR", localName: "CBOR" },
+    { no: 6, name: "WELL_KNOWN_FRAME_ENCODING_MSGPACK", localName: "MSGPACK" },
+    { no: 7, name: "WELL_KNOWN_FRAME_ENCODING_JSON", localName: "JSON" }
+  ]
+);
+var DataTrackSchemaEncoding = /* @__PURE__ */ proto3.makeMessageType(
+  "livekit.DataTrackSchemaEncoding",
+  () => [
+    { no: 1, name: "well_known", kind: "enum", T: proto3.getEnumType(DataTrackSchemaEncoding_WellKnownSchemaEncoding), oneof: "value" },
+    { no: 2, name: "custom", kind: "scalar", T: 9, oneof: "value" }
+  ]
+);
+var DataTrackSchemaEncoding_WellKnownSchemaEncoding = /* @__PURE__ */ proto3.makeEnum(
+  "livekit.DataTrackSchemaEncoding.WellKnownSchemaEncoding",
+  [
+    { no: 0, name: "WELL_KNOWN_SCHEMA_ENCODING_UNSPECIFIED", localName: "UNSPECIFIED" },
+    { no: 1, name: "WELL_KNOWN_SCHEMA_ENCODING_PROTOBUF", localName: "PROTOBUF" },
+    { no: 2, name: "WELL_KNOWN_SCHEMA_ENCODING_FLATBUFFER", localName: "FLATBUFFER" },
+    { no: 3, name: "WELL_KNOWN_SCHEMA_ENCODING_ROS1_MSG", localName: "ROS1_MSG" },
+    { no: 4, name: "WELL_KNOWN_SCHEMA_ENCODING_ROS2_MSG", localName: "ROS2_MSG" },
+    { no: 5, name: "WELL_KNOWN_SCHEMA_ENCODING_ROS2_IDL", localName: "ROS2_IDL" },
+    { no: 6, name: "WELL_KNOWN_SCHEMA_ENCODING_OMG_IDL", localName: "OMG_IDL" },
+    { no: 7, name: "WELL_KNOWN_SCHEMA_ENCODING_JSON_SCHEMA", localName: "JSON_SCHEMA" }
+  ]
+);
+var DataTrackSchemaId = /* @__PURE__ */ proto3.makeMessageType(
+  "livekit.DataTrackSchemaId",
+  () => [
+    {
+      no: 1,
+      name: "name",
+      kind: "scalar",
+      T: 9
+      /* ScalarType.STRING */
+    },
+    { no: 2, name: "encoding", kind: "message", T: DataTrackSchemaEncoding }
   ]
 );
 var VideoLayer = /* @__PURE__ */ proto3.makeMessageType(
@@ -170379,7 +172068,14 @@ var Job = /* @__PURE__ */ proto3.makeMessageType(
       kind: "scalar",
       T: 9
       /* ScalarType.STRING */
-    } }
+    } },
+    {
+      no: 13,
+      name: "enable_redaction",
+      kind: "scalar",
+      T: 8
+      /* ScalarType.BOOL */
+    }
   ]
 );
 var JobState = /* @__PURE__ */ proto3.makeMessageType(
@@ -170644,7 +172340,8 @@ var EncodingOptionsPreset = /* @__PURE__ */ proto3.makeEnum(
     { no: 4, name: "PORTRAIT_H264_720P_30" },
     { no: 5, name: "PORTRAIT_H264_720P_60" },
     { no: 6, name: "PORTRAIT_H264_1080P_30" },
-    { no: 7, name: "PORTRAIT_H264_1080P_60" }
+    { no: 7, name: "PORTRAIT_H264_1080P_60" },
+    { no: 8, name: "PASSTHROUGH" }
   ]
 );
 var EncodedFileType = /* @__PURE__ */ proto3.makeEnum(
@@ -173670,6 +175367,13 @@ var CreateSIPParticipantRequest = /* @__PURE__ */ proto3.makeMessageType(
       /* ScalarType.STRING */
     },
     {
+      no: 27,
+      name: "to_user_override",
+      kind: "scalar",
+      T: 9
+      /* ScalarType.STRING */
+    },
+    {
       no: 15,
       name: "sip_number",
       kind: "scalar",
@@ -174157,7 +175861,14 @@ var ConnectWhatsAppCallRequest = /* @__PURE__ */ proto3.makeMessageType(
       T: 9
       /* ScalarType.STRING */
     },
-    { no: 2, name: "sdp", kind: "message", T: SessionDescription }
+    { no: 2, name: "sdp", kind: "message", T: SessionDescription },
+    {
+      no: 3,
+      name: "wait_until_answered",
+      kind: "scalar",
+      T: 8
+      /* ScalarType.BOOL */
+    }
   ]
 );
 var ConnectWhatsAppCallResponse = /* @__PURE__ */ proto3.makeMessageType(
@@ -175112,7 +176823,7 @@ var SignJWT = class extends ProduceJWT {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/grants.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/grants.js
 function trackSourceToString(source) {
   switch (source) {
     case TrackSource.CAMERA:
@@ -175136,7 +176847,7 @@ function claimsToJwtPayload(grant) {
   return claim;
 }
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/AccessToken.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/AccessToken.js
 var defaultTTL = `6h`;
 var AccessToken = class {
   /**
@@ -175265,7 +176976,7 @@ var AccessToken = class {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/ServiceBase.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/ServiceBase.js
 var ServiceBase = class {
   constructor(apiKeyOrOptions, secret, ttl) {
     const options = typeof apiKeyOrOptions === "object" ? apiKeyOrOptions : { apiKey: apiKeyOrOptions, secret, ttl };
@@ -175291,7 +177002,33 @@ var ServiceBase = class {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/failover.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/crypto/uuid.js
+async function getRandomBytes(size = 16) {
+  var _a;
+  if (!((_a = globalThis.crypto) == null ? void 0 : _a.getRandomValues)) {
+    throw new Error("Web Crypto API is required (globalThis.crypto.getRandomValues)");
+  }
+  return crypto.getRandomValues(new Uint8Array(size));
+}
+async function randomUUID7() {
+  var _a;
+  if (typeof ((_a = globalThis.crypto) == null ? void 0 : _a.randomUUID) === "function") {
+    return crypto.randomUUID();
+  }
+  const bytes = await getRandomBytes(16);
+  bytes[6] = bytes[6] & 15 | 64;
+  bytes[8] = bytes[8] & 63 | 128;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20)
+  ].join("-");
+}
+
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/failover.js
 var FAILOVER_MAX_ATTEMPTS = 3;
 var FAILOVER_BACKOFF_BASE_MS = 200;
 var MIN_FAILOVER_TIMEOUT_SECONDS = 5;
@@ -175388,11 +177125,12 @@ function parseMaxAge(cacheControl) {
   return 0;
 }
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/version.js
-var SDK_VERSION = "2.18.0";
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/version.js
+var SDK_VERSION = "2.19.1";
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/TwirpRPC.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/TwirpRPC.js
 var USER_AGENT = `livekit-server-sdk-node/${SDK_VERSION}`;
+var REQUEST_ID_HEADER = "X-Livekit-Request-Id";
 var defaultPrefix = "/twirp";
 var defaultTimeoutSeconds = 10;
 var livekitPackage = "livekit";
@@ -175474,6 +177212,7 @@ var TwirpRpc = class {
       "User-Agent": USER_AGENT,
       ...headers
     };
+    requestHeaders[REQUEST_ID_HEADER] = await randomUUID7();
     const origin = new URL(this.host);
     const maxAttempts = failoverAttempts(
       this.failover,
@@ -175551,7 +177290,7 @@ async function toTwirpError(response) {
   return new TwirpError(response.statusText, errorMessage, response.status, errorCode, metadata);
 }
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/AgentDispatchClient.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/AgentDispatchClient.js
 var svc = "AgentDispatchService";
 var AgentDispatchClient = class extends ServiceBase {
   /**
@@ -175651,7 +177390,7 @@ var AgentDispatchClient = class extends ServiceBase {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/dialTimeout.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/dialTimeout.js
 var DEFAULT_RINGING_TIMEOUT_SECONDS = 30;
 var RINGING_TIMEOUT_MARGIN_SECONDS = 2;
 function dialRequestTimeout(timeout, ringingTimeout) {
@@ -175660,7 +177399,7 @@ function dialRequestTimeout(timeout, ringingTimeout) {
   return Math.max(timeout ?? floor, floor);
 }
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/ConnectorClient.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/ConnectorClient.js
 var svc2 = "Connector";
 var ConnectorClient = class extends ServiceBase {
   /**
@@ -175823,7 +177562,7 @@ var ConnectorClient = class extends ServiceBase {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/EgressClient.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/EgressClient.js
 var svc3 = "Egress";
 var EgressClient = class extends ServiceBase {
   /**
@@ -176198,7 +177937,7 @@ var EgressClient = class extends ServiceBase {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/IngressClient.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/IngressClient.js
 var svc4 = "Ingress";
 var IngressClient = class extends ServiceBase {
   /**
@@ -176229,6 +177968,7 @@ var IngressClient = class extends ServiceBase {
     }
     const roomName2 = opts.roomName;
     const enableTranscoding = opts.enableTranscoding;
+    const enabled = opts.enabled;
     const audio = opts.audio;
     const video = opts.video;
     const participantMetadata = opts.participantMetadata;
@@ -176253,6 +177993,7 @@ var IngressClient = class extends ServiceBase {
       bypassTranscoding,
       enableTranscoding,
       url: url2,
+      enabled,
       audio,
       video
     }).toJson();
@@ -176274,7 +178015,7 @@ var IngressClient = class extends ServiceBase {
     const participantName = opts.participantName || "";
     const participantIdentity = opts.participantIdentity || "";
     const { participantMetadata } = opts;
-    const { audio, video, bypassTranscoding, enableTranscoding } = opts;
+    const { audio, video, bypassTranscoding, enableTranscoding, enabled } = opts;
     const req = new UpdateIngressRequest({
       ingressId,
       name: name2,
@@ -176284,6 +178025,7 @@ var IngressClient = class extends ServiceBase {
       participantMetadata,
       bypassTranscoding,
       enableTranscoding,
+      enabled,
       audio,
       video
     }).toJson();
@@ -176327,17 +178069,7 @@ var IngressClient = class extends ServiceBase {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/crypto/uuid.js
-async function getRandomBytes(size = 16) {
-  if (globalThis.crypto) {
-    return crypto.getRandomValues(new Uint8Array(size));
-  } else {
-    const nodeCrypto2 = await import("node:crypto");
-    return nodeCrypto2.getRandomValues(new Uint8Array(size));
-  }
-}
-
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/RoomServiceClient.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/RoomServiceClient.js
 var svc5 = "RoomService";
 var RoomServiceClient = class extends ServiceBase {
   /**
@@ -176584,7 +178316,7 @@ var RoomServiceClient = class extends ServiceBase {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/SipClient.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/SipClient.js
 function asSipCallError(e2) {
   if (e2 instanceof ServerError && e2.metadata && "sip_status_code" in e2.metadata) {
     return SipCallError.fromServerError(e2);
@@ -177113,7 +178845,7 @@ var SipClient = class extends ServiceBase {
   }
 };
 
-// ../../node_modules/.pnpm/livekit-server-sdk@2.18.0/node_modules/livekit-server-sdk/dist/LiveKitAPI.js
+// ../../node_modules/.pnpm/livekit-server-sdk@2.19.1/node_modules/livekit-server-sdk/dist/LiveKitAPI.js
 var LiveKitAPI = class {
   /**
    * @param options - server host, credentials, and client options; each value
@@ -177404,7 +179136,7 @@ var circle_livekit_health_default = router43;
 var import_express46 = __toESM(require_express2(), 1);
 init_auth();
 init_rate_limit();
-import { createHmac as createHmac4, randomUUID as randomUUID7 } from "crypto";
+import { createHmac as createHmac4, randomUUID as randomUUID8 } from "crypto";
 var router44 = (0, import_express46.Router)();
 var STUN_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -177413,7 +179145,7 @@ var STUN_SERVERS = [
 var TURN_CREDENTIAL_TTL_SECONDS = 60 * 60;
 function mintTurnCredential(secret, userId) {
   const expiresAt = Math.floor(Date.now() / 1e3) + TURN_CREDENTIAL_TTL_SECONDS;
-  const username = `${expiresAt}:u${userId}-${randomUUID7().slice(0, 8)}`;
+  const username = `${expiresAt}:u${userId}-${randomUUID8().slice(0, 8)}`;
   const credential = createHmac4("sha1", secret).update(username).digest("base64");
   return { username, credential };
 }
@@ -180532,7 +182264,7 @@ init_drizzle_orm();
 init_src();
 init_auth();
 init_rate_limit();
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 init_ws_hub();
 init_src();
 init_queue();
@@ -180956,7 +182688,7 @@ router55.post("/messages/direct", requireAuth, requireApproved, generalApiLimite
         const persisted = [];
         for (const attachment of parsedAttachments.attachments) {
           const extension2 = DIRECT_ATTACHMENT_EXTENSIONS[attachment.mimeType] ?? "bin";
-          const storageKey = `direct-messages/${conversationId}/${randomUUID8()}.${extension2}`;
+          const storageKey = `direct-messages/${conversationId}/${randomUUID9()}.${extension2}`;
           await putAsset(storageKey, attachment.buffer, attachment.mimeType);
           storedKeys.push(storageKey);
           let mediaAssetId = null;
@@ -181019,7 +182751,7 @@ router55.post("/messages/direct", requireAuth, requireApproved, generalApiLimite
               throw new Error("That Story is no longer available for replies.");
             }
           }
-          const storageKey = `direct-contexts/${conversationId}/${randomUUID8()}`;
+          const storageKey = `direct-contexts/${conversationId}/${randomUUID9()}`;
           const [row] = await tx.insert(directMessageAttachmentsTable).values({
             message_id: messageId,
             attachment_type: context.type,
@@ -181488,7 +183220,7 @@ init_auth();
 init_rate_limit();
 init_ws_hub();
 init_zod();
-import { createHash as createHash6, randomUUID as randomUUID9 } from "node:crypto";
+import { createHash as createHash6, randomUUID as randomUUID10 } from "node:crypto";
 init_queue();
 init_logger2();
 
@@ -182190,7 +183922,7 @@ router59.post("/community/stories", requireAuth, requireApproved, communityPostL
       for (const item of decodedMedia) {
         const decoded = item.decoded;
         const extension2 = decoded.mimeType.split("/")[1].replace("jpeg", "jpg");
-        const storageKey = `community-stories/${story.id}/${randomUUID9()}.${extension2}`;
+        const storageKey = `community-stories/${story.id}/${randomUUID10()}.${extension2}`;
         await putAsset(storageKey, decoded.buffer, decoded.mimeType);
         storedKeys.push(storageKey);
         let mediaAssetId = null;
@@ -182819,7 +184551,7 @@ init_auth();
 init_rate_limit();
 init_queue();
 init_zod();
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 init_logger2();
 
 // src/lib/exchange-spark-playback.ts
@@ -183079,7 +184811,7 @@ router64.post("/media-assets/uploads", requireAuth, requireApproved, generalApiL
       error_code: "MEDIA_PROCESSING_UNAVAILABLE"
     });
   }
-  const key = `media-assets/incoming/${req.authenticatedUserId}/${randomUUID10()}.${extensionForMime(input.mimeType)}`;
+  const key = `media-assets/incoming/${req.authenticatedUserId}/${randomUUID11()}.${extensionForMime(input.mimeType)}`;
   const values = {
     owner_user_id: req.authenticatedUserId,
     context_kind: input.contextKind,
@@ -183257,7 +184989,7 @@ router64.post("/media-assets/:id/complete", requireAuth, requireApproved, genera
   if (info.contentLength !== asset.byte_size) {
     return res.status(409).json({ error: "Uploaded object size does not match the declared size." });
   }
-  const requestId = randomUUID10();
+  const requestId = randomUUID11();
   try {
     const bytes = await getAssetBuffer(asset.original_key, MAX_MEDIA_BYTES);
     if (bytes.length !== asset.byte_size) {
@@ -183499,10 +185231,12 @@ async function getExchangeMatchingLocation(userId) {
 var NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\b(?:text|call|email|venmo|cash\s*app|zelle|whatsapp|telegram)\b)/i;
 var EXACT_STREET_ADDRESS = /\b\d{1,6}[A-Za-z]?\s+(?:(?:[A-Za-z][\w.'-]*|\d+(?:st|nd|rd|th)?)\s+){0,5}(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|boulevard|blvd|way|court|ct|parkway|pkwy|highway|hwy|terrace|ter|place|pl|circle|cir|trail|trl|route|rt)\b/i;
 var PRIVATE_RESIDENCE = /\b(?:my|your|their|our)\s+(?:house|home|apartment|residence|place)\b|\b(?:apartment|apt|unit|suite|ste|front|back)\s*(?:#?\s*[a-z0-9-]+)?\b|\b(?:front|back)\s+(?:door|porch|yard)\b|\bdriveway\b/i;
+var DECIMAL_COORDINATE_PAIR = /\b[+-]?\d{1,3}\.\d+\s*(?:[,/;]|\s+)\s*[+-]?\d{1,3}\.\d+\b/;
+var HEMISPHERE_COORDINATE_PAIR = /\b(?:\d{1,3}(?:\.\d+)?\s*°?\s*[NS]\s*(?:[,/;]|\s+)\s*\d{1,3}(?:\.\d+)?\s*°?\s*[EW]|\d{1,3}(?:\.\d+)?\s*°?\s*[EW]\s*(?:[,/;]|\s+)\s*\d{1,3}(?:\.\d+)?\s*°?\s*[NS])\b/i;
 function sanitizePublicPickupArea(value) {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (!normalized) return true;
-  return !NO_PRIVATE_CONTACT.test(normalized) && !EXACT_STREET_ADDRESS.test(normalized) && !PRIVATE_RESIDENCE.test(normalized);
+  return !NO_PRIVATE_CONTACT.test(normalized) && !EXACT_STREET_ADDRESS.test(normalized) && !PRIVATE_RESIDENCE.test(normalized) && !DECIMAL_COORDINATE_PAIR.test(normalized) && !HEMISPHERE_COORDINATE_PAIR.test(normalized);
 }
 
 // src/routes/community-exchange.ts
@@ -185417,7 +187151,13 @@ function requestTimeout(ms) {
   };
 }
 
-// ../../node_modules/.pnpm/helmet@8.2.0/node_modules/helmet/index.mjs
+// ../../node_modules/.pnpm/helmet@8.3.0/node_modules/helmet/index.mjs
+var dashify = (str) => str.replace(/[A-Z]/g, (capitalLetter) => "-" + capitalLetter.toLowerCase());
+var errify = (err) => err instanceof Error ? err : new Error(String(err));
+var isString = (value) => typeof value === "string";
+var throwErrorIfExists = (err) => {
+  if (err) throw err;
+};
 var dangerouslyDisableDefaultSrc = /* @__PURE__ */ Symbol("dangerouslyDisableDefaultSrc");
 var SHOULD_BE_QUOTED = /* @__PURE__ */ new Set(["none", "self", "strict-dynamic", "report-sample", "inline-speculation-rules", "unsafe-inline", "unsafe-eval", "unsafe-hashes", "wasm-unsafe-eval"]);
 var getDefaultDirectives = () => ({
@@ -185433,31 +187173,32 @@ var getDefaultDirectives = () => ({
   "style-src": ["'self'", "https:", "'unsafe-inline'"],
   "upgrade-insecure-requests": []
 });
-var dashify = (str) => str.replace(/[A-Z]/g, (capitalLetter) => "-" + capitalLetter.toLowerCase());
-var assertDirectiveValueIsValid = (directiveName, directiveValue) => {
-  if (/;|,/.test(directiveValue)) {
-    throw new Error(`Content-Security-Policy received an invalid directive value for ${JSON.stringify(directiveName)}`);
+var parseDirectiveName = (rawDirectiveName) => {
+  if (rawDirectiveName.length === 0 || !/^[a-z](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(rawDirectiveName)) {
+    throw new Error(`Content-Security-Policy received an invalid directive name ${JSON.stringify(rawDirectiveName)}`);
   }
+  return dashify(rawDirectiveName);
 };
-var assertDirectiveValueEntryIsValid = (directiveName, directiveValueEntry) => {
-  if (SHOULD_BE_QUOTED.has(directiveValueEntry) || directiveValueEntry.startsWith("nonce-") || directiveValueEntry.startsWith("sha256-") || directiveValueEntry.startsWith("sha384-") || directiveValueEntry.startsWith("sha512-")) {
-    throw new Error(`Content-Security-Policy received an invalid directive value for ${JSON.stringify(directiveName)}. ${JSON.stringify(directiveValueEntry)} should be quoted`);
+var getDirectiveValueValidationError = (directiveName, directiveValue) => /;|,/.test(directiveValue) ? new Error(`Content-Security-Policy received an invalid directive value for ${JSON.stringify(directiveName)}`) : null;
+var getDirectiveValueEntryValidationError = (directiveName, directiveValueEntry) => SHOULD_BE_QUOTED.has(directiveValueEntry) || directiveValueEntry.startsWith("nonce-") || directiveValueEntry.startsWith("sha256-") || directiveValueEntry.startsWith("sha384-") || directiveValueEntry.startsWith("sha512-") ? new Error(`Content-Security-Policy received an invalid directive value for ${JSON.stringify(directiveName)}. ${JSON.stringify(directiveValueEntry)} should be quoted`) : null;
+var stringifyDirectiveValue = (directiveValue) => {
+  if (Array.isArray(directiveValue)) {
+    return directiveValue.every(isString) ? directiveValue.join(" ") : null;
   }
+  if (directiveValue instanceof Set) {
+    return stringifyDirectiveValue(Array.from(directiveValue));
+  }
+  return null;
 };
-function normalizeDirectives(options) {
-  const defaultDirectives = getDefaultDirectives();
-  const { useDefaults = true, directives: rawDirectives = defaultDirectives } = options;
-  const result = /* @__PURE__ */ new Map();
+var parseDirectives = ({ useDefaults = true, directives: rawDirectives = {} }) => {
+  const result = new Map(useDefaults ? Object.entries(getDefaultDirectives()) : []);
+  let hasDisabledDefaultSrc = false;
   const directiveNamesSeen = /* @__PURE__ */ new Set();
-  const directivesExplicitlyDisabled = /* @__PURE__ */ new Set();
   for (const rawDirectiveName in rawDirectives) {
     if (!Object.hasOwn(rawDirectives, rawDirectiveName)) {
       continue;
     }
-    if (rawDirectiveName.length === 0 || /[^a-zA-Z0-9-]/.test(rawDirectiveName)) {
-      throw new Error(`Content-Security-Policy received an invalid directive name ${JSON.stringify(rawDirectiveName)}`);
-    }
-    const directiveName = dashify(rawDirectiveName);
+    const directiveName = parseDirectiveName(rawDirectiveName);
     if (directiveNamesSeen.has(directiveName)) {
       throw new Error(`Content-Security-Policy received a duplicate directive ${JSON.stringify(directiveName)}`);
     }
@@ -185468,59 +187209,71 @@ function normalizeDirectives(options) {
       if (directiveName === "default-src") {
         throw new Error("Content-Security-Policy needs a default-src but it was set to `null`. If you really want to disable it, set it to `contentSecurityPolicy.dangerouslyDisableDefaultSrc`.");
       }
-      directivesExplicitlyDisabled.add(directiveName);
+      result.delete(directiveName);
       continue;
     } else if (typeof rawDirectiveValue === "string") {
       directiveValue = [rawDirectiveValue];
-    } else if (!rawDirectiveValue) {
-      throw new Error(`Content-Security-Policy received an invalid directive value for ${JSON.stringify(directiveName)}`);
     } else if (rawDirectiveValue === dangerouslyDisableDefaultSrc) {
       if (directiveName === "default-src") {
-        directivesExplicitlyDisabled.add("default-src");
+        hasDisabledDefaultSrc = true;
+        result.delete(directiveName);
         continue;
       } else {
         throw new Error(`Content-Security-Policy: tried to disable ${JSON.stringify(directiveName)} as if it were default-src; simply omit the key`);
       }
-    } else {
+    } else if (rawDirectiveValue) {
       directiveValue = rawDirectiveValue;
+    } else {
+      throw new Error(`Content-Security-Policy received an invalid directive value for ${JSON.stringify(directiveName)}`);
     }
     for (const element of directiveValue) {
       if (typeof element !== "string") continue;
-      assertDirectiveValueIsValid(directiveName, element);
-      assertDirectiveValueEntryIsValid(directiveName, element);
+      throwErrorIfExists(getDirectiveValueValidationError(directiveName, element) ?? getDirectiveValueEntryValidationError(directiveName, element));
     }
     result.set(directiveName, directiveValue);
-  }
-  if (useDefaults) {
-    Object.entries(defaultDirectives).forEach(([defaultDirectiveName, defaultDirectiveValue]) => {
-      if (!result.has(defaultDirectiveName) && !directivesExplicitlyDisabled.has(defaultDirectiveName)) {
-        result.set(defaultDirectiveName, defaultDirectiveValue);
-      }
-    });
   }
   if (!result.size) {
     throw new Error("Content-Security-Policy has no directives. Either set some or disable the header");
   }
-  if (!result.has("default-src") && !directivesExplicitlyDisabled.has("default-src")) {
+  if (!result.has("default-src") && !hasDisabledDefaultSrc) {
     throw new Error("Content-Security-Policy needs a default-src but none was provided. If you really want to disable it, set it to `contentSecurityPolicy.dangerouslyDisableDefaultSrc`.");
   }
-  return result;
-}
+  let stringResult = "";
+  let shouldUseStringResult = true;
+  for (const [directiveName, directiveValue] of result) {
+    const directiveValueString = stringifyDirectiveValue(directiveValue);
+    if (directiveValueString === null) {
+      shouldUseStringResult = false;
+      break;
+    } else {
+      if (stringResult) stringResult += ";";
+      stringResult += directiveValueString ? `${directiveName} ${directiveValueString}` : directiveName;
+    }
+  }
+  return shouldUseStringResult ? stringResult : result;
+};
 function getHeaderValue(req, res, normalizedDirectives) {
   const result = [];
   for (const [directiveName, rawDirectiveValue] of normalizedDirectives) {
     let directiveValue = "";
     for (const element of rawDirectiveValue) {
       if (typeof element === "function") {
-        const newElement = element(req, res);
-        assertDirectiveValueEntryIsValid(directiveName, newElement);
+        let newElement;
+        try {
+          newElement = element(req, res);
+        } catch (err2) {
+          return errify(err2);
+        }
+        const err = getDirectiveValueEntryValidationError(directiveName, newElement);
+        if (err) return err;
         directiveValue += " " + newElement;
       } else {
         directiveValue += " " + element;
       }
     }
     if (directiveValue) {
-      assertDirectiveValueIsValid(directiveName, directiveValue);
+      const err = getDirectiveValueValidationError(directiveName, directiveValue);
+      if (err) return err;
       result.push(`${directiveName}${directiveValue}`);
     } else {
       result.push(directiveName);
@@ -185530,9 +187283,15 @@ function getHeaderValue(req, res, normalizedDirectives) {
 }
 var contentSecurityPolicy = function contentSecurityPolicy2(options = {}) {
   const headerName = options.reportOnly ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy";
-  const normalizedDirectives = normalizeDirectives(options);
+  const parsedDirectives = parseDirectives(options);
+  if (typeof parsedDirectives === "string") {
+    return function contentSecurityPolicyMiddleware(_req, res, next) {
+      res.setHeader(headerName, parsedDirectives);
+      next();
+    };
+  }
   return function contentSecurityPolicyMiddleware(req, res, next) {
-    const result = getHeaderValue(req, res, normalizedDirectives);
+    const result = getHeaderValue(req, res, parsedDirectives);
     if (result instanceof Error) {
       next(result);
     } else {
@@ -186210,7 +187969,7 @@ init_push();
 init_logger2();
 init_stripe_config();
 init_stripe_errors();
-import { randomUUID as randomUUID11 } from "node:crypto";
+import { randomUUID as randomUUID12 } from "node:crypto";
 init_worker_registry();
 init_ws_hub();
 var SIX_HOURS_MS = 6 * 60 * 60 * 1e3;
@@ -186487,7 +188246,7 @@ async function processExchangeDigest(now = /* @__PURE__ */ new Date()) {
       urgentAid: recipient.urgentAid ?? true
     });
     if (listings.length === 0) continue;
-    const claimToken = randomUUID11();
+    const claimToken = randomUUID12();
     const claimExpiresAt = new Date(now.getTime() + EXCHANGE_DIGEST_CLAIM_MS);
     let deliveryId;
     if (existingDelivery) {
@@ -188839,7 +190598,7 @@ import os2 from "node:os";
 import path4 from "node:path";
 import { promisify as promisify4 } from "node:util";
 init_logger2();
-import { randomUUID as randomUUID12 } from "node:crypto";
+import { randomUUID as randomUUID13 } from "node:crypto";
 var execFileAsync2 = promisify4(execFile2);
 var mediaToolPaths = getMediaToolPaths();
 async function storeGeneratedAsset(mediaAssetId, field, key, bytes, mimeType) {
@@ -189078,7 +190837,7 @@ async function processMediaJob(job) {
     await markReadyIfComplete(mediaAssetId, asset.media_type, asset.composition_manifest);
     logger.info({ mediaAssetId, jobType }, "media-processing: job completed");
   } catch (error40) {
-    const requestId = randomUUID12();
+    const requestId = randomUUID13();
     const message2 = error40 instanceof Error && error40.message === "STORAGE_OBJECT_TOO_LARGE" ? "MEDIA_SIZE_INVALID" : error40 instanceof Error && /^MEDIA_[A-Z_]+$/.test(error40.message) ? error40.message : "MEDIA_PROCESSING_FAILED";
     let generatedCleanupSucceeded = true;
     for (const key of generatedKeys) {
@@ -189628,6 +191387,13 @@ router/index.js:
    * MIT Licensed
    *)
 
+negotiator/lib/accept.js:
+  (*!
+   * negotiator
+   * Copyright(c) 2026 Blake Embrey
+   * MIT Licensed
+   *)
+
 negotiator/index.js:
 negotiator/index.js:
   (*!
@@ -189717,6 +191483,14 @@ compressible/index.js:
    * Copyright(c) 2013 Jonathan Ong
    * Copyright(c) 2014 Jeremiah Senkpiel
    * Copyright(c) 2015 Douglas Christopher Wilson
+   * MIT Licensed
+   *)
+
+destroy/index.js:
+  (*!
+   * destroy
+   * Copyright(c) 2014 Jonathan Ong
+   * Copyright(c) 2015-2022 Douglas Christopher Wilson
    * MIT Licensed
    *)
 

@@ -3,6 +3,11 @@ const NO_PRIVATE_CONTACT = /(?:https?:\/\/|www\.|@|(?:\+?[\d][\d\s().-]{6,}\d)|\
 // numbers as well as words (e.g. "12B Main Street", "123 5th Avenue").
 const EXACT_STREET_ADDRESS = /\b\d{1,6}[A-Za-z]?\s+(?:(?:[A-Za-z][\w.'-]*|\d+(?:st|nd|rd|th)?)\s+){0,5}(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|boulevard|blvd|way|court|ct|parkway|pkwy|highway|hwy|terrace|ter|place|pl|circle|cir|trail|trl|route|rt)\b/i;
 const PRIVATE_RESIDENCE = /\b(?:my|your|their|our)\s+(?:house|home|apartment|residence|place)\b|\b(?:apartment|apt|unit|suite|ste|front|back)\s*(?:#?\s*[a-z0-9-]+)?\b|\b(?:front|back)\s+(?:door|porch|yard)\b|\bdriveway\b/i;
+// Reject common GPS representations as well as addresses. Exchange keeps
+// only privacy-rounded coordinates for matching; exact coordinates do not
+// belong in any user-visible title, note, or pickup window.
+const DECIMAL_COORDINATE_PAIR = /\b[+-]?\d{1,3}\.\d+\s*(?:[,/;]|\s+)\s*[+-]?\d{1,3}\.\d+\b/;
+const HEMISPHERE_COORDINATE_PAIR = /\b(?:\d{1,3}(?:\.\d+)?\s*°?\s*[NS]\s*(?:[,/;]|\s+)\s*\d{1,3}(?:\.\d+)?\s*°?\s*[EW]|\d{1,3}(?:\.\d+)?\s*°?\s*[EW]\s*(?:[,/;]|\s+)\s*\d{1,3}(?:\.\d+)?\s*°?\s*[NS])\b/i;
 
 /**
  * All displayed Exchange text must avoid contact details and precise private
@@ -13,5 +18,7 @@ export function sanitizePublicPickupArea(value: string): boolean {
   if (!normalized) return true;
   return !NO_PRIVATE_CONTACT.test(normalized)
     && !EXACT_STREET_ADDRESS.test(normalized)
-    && !PRIVATE_RESIDENCE.test(normalized);
+    && !PRIVATE_RESIDENCE.test(normalized)
+    && !DECIMAL_COORDINATE_PAIR.test(normalized)
+    && !HEMISPHERE_COORDINATE_PAIR.test(normalized);
 }
