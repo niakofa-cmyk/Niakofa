@@ -24,9 +24,11 @@
  *   streamOrRedirectAsset(key, res) → Promise<void>  (stream from S3 or sendFile locally)
  */
 
-import { existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
+import { createReadStream, existsSync, mkdirSync, writeFileSync, promises as fs } from "fs";
 import path from "path";
-import type { Response } from "express";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { Request, Response } from "express";
 import { logger } from "./logger";
 
 // ─── Local-disk constants ─────────────────────────────────────────────────────
@@ -112,6 +114,11 @@ export async function putAsset(key: string, buffer: Buffer, mimeType: string): P
 
 export async function getAssetUploadUrl(key: string, mimeType: string, expiresInSeconds = 900): Promise<string | null> {
   if (!isCloudStorageConfigured()) return null;
+  // Rollout gate: a presigned PutObject URL alone cannot enforce a storage-side
+  // maximum Content-Length. API HEAD checks and bounded reads protect processing
+  // memory, but oversized PUTs can still consume bucket capacity. Production
+  // enablement requires a policy-based upload (for example POST with a
+  // content-length-range condition) or an equivalent provider-enforced policy.
   const { PutObjectCommand } = await import("@aws-sdk/client-s3");
   const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
   const client = await getS3Client();
@@ -225,9 +232,35 @@ export async function assetExists(key: string): Promise<boolean> {
   return existsSync(path.resolve(UPLOADS_BASE, key));
 }
 
+export async function collectAssetBuffer(
+  source: AsyncIterable<Uint8Array>,
+  maxBytes?: number,
+  cancel?: () => void,
+): Promise<Buffer> {
+  if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+    throw new Error("STORAGE_INVALID_MAX_BYTES");
+  }
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  for await (const chunk of source) {
+    totalBytes += chunk.byteLength;
+    if (maxBytes !== undefined && totalBytes > maxBytes) {
+      cancel?.();
+      throw new Error("STORAGE_OBJECT_TOO_LARGE");
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, totalBytes);
+}
+
 /** Read an asset for trusted server-side processing. Callers must already
- * have authorization for the database row that owns the key. */
-export async function getAssetBuffer(key: string): Promise<Buffer> {
+ * have authorization for the database row that owns the key. When maxBytes is
+ * supplied, byte accumulation is stopped and the source is closed immediately
+ * as soon as the limit is exceeded (independent of any earlier HEAD request). */
+export async function getAssetBuffer(key: string, maxBytes?: number): Promise<Buffer> {
+  if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+    throw new Error("STORAGE_INVALID_MAX_BYTES");
+  }
   if (isCloudStorageConfigured()) {
     const { GetObjectCommand } = await import("@aws-sdk/client-s3");
     const client = await getS3Client();
@@ -235,14 +268,16 @@ export async function getAssetBuffer(key: string): Promise<Buffer> {
       Bucket: process.env["STORAGE_BUCKET"]!,
       Key: key,
     }));
-    if (!result.Body) throw new Error(`Storage object is empty: ${key}`);
-    const chunks: Buffer[] = [];
-    for await (const chunk of result.Body as AsyncIterable<Uint8Array>) {
-      chunks.push(Buffer.from(chunk));
+    if (!result.Body) throw new Error("STORAGE_OBJECT_EMPTY");
+    const body = result.Body as AsyncIterable<Uint8Array> & { destroy?: () => void };
+    if (maxBytes !== undefined && result.ContentLength != null && result.ContentLength > maxBytes) {
+      body.destroy?.();
+      throw new Error("STORAGE_OBJECT_TOO_LARGE");
     }
-    return Buffer.concat(chunks);
+    return collectAssetBuffer(body, maxBytes, () => body.destroy?.());
   }
-  return fs.readFile(path.resolve(UPLOADS_BASE, key));
+  const stream = createReadStream(path.resolve(UPLOADS_BASE, key));
+  return collectAssetBuffer(stream, maxBytes, () => stream.destroy());
 }
 
 // ─── streamOrRedirectAsset ────────────────────────────────────────────────────
@@ -274,6 +309,137 @@ export async function streamOrRedirectAsset(key: string, res: Response): Promise
     return;
   }
   res.sendFile(abs);
+}
+
+/**
+ * Stream private media from the API origin with single-range support. This
+ * deliberately does not create or return a storage/CDN URL.
+ */
+export async function streamAssetRange(key: string, req: Request, res: Response, contentType?: string): Promise<void> {
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  if (contentType) res.setHeader("Content-Type", contentType);
+
+  const abs = path.resolve(UPLOADS_BASE, key);
+  if (!abs.startsWith(UPLOADS_BASE + path.sep)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  let size: number;
+  let localFile = false;
+  if (isCloudStorageConfigured()) {
+    const info = await getAssetInfo(key);
+    if (!info) {
+      res.status(404).json({ error: "Asset not found" });
+      return;
+    }
+    size = info.contentLength;
+    if (!contentType && info.contentType) res.setHeader("Content-Type", info.contentType);
+  } else {
+    try {
+      size = (await fs.stat(abs)).size;
+      localFile = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      throw error;
+    }
+  }
+
+  let start = 0;
+  let end = size - 1;
+  const range = req.headers.range;
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!match || (!match[1] && !match[2]) || size === 0) {
+      res.setHeader("Content-Range", `bytes */${size}`);
+      res.status(416).end();
+      return;
+    }
+    if (!match[1]) {
+      const suffixLength = Number(match[2]);
+      if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+        res.setHeader("Content-Range", `bytes */${size}`);
+        res.status(416).end();
+        return;
+      }
+      start = Math.max(size - suffixLength, 0);
+    } else {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : size - 1;
+    }
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= size) {
+      res.setHeader("Content-Range", `bytes */${size}`);
+      res.status(416).end();
+      return;
+    }
+    end = Math.min(end, size - 1);
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+  }
+  res.setHeader("Content-Length", String(end - start + 1));
+
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+  if (size === 0) {
+    res.end();
+    return;
+  }
+
+  if (localFile) {
+    try {
+      await pipeline(createReadStream(abs, { start, end }), res);
+    } catch (error) {
+      if (req.aborted || res.destroyed) return;
+      logger.warn({ errorType: error instanceof Error ? error.name : "unknown" }, "storage: local media stream failed");
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    }
+    return;
+  }
+
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getS3Client();
+  const abortController = new AbortController();
+  const abortForDisconnect = () => abortController.abort();
+  const abortForResponseClose = () => {
+    if (!res.writableEnded) abortController.abort();
+  };
+  req.once("aborted", abortForDisconnect);
+  res.once("close", abortForResponseClose);
+  try {
+    const result = await client.send(new GetObjectCommand({
+      Bucket: process.env["STORAGE_BUCKET"]!,
+      Key: key,
+      Range: range ? `bytes=${start}-${end}` : undefined,
+    }), { abortSignal: abortController.signal });
+    if (result.ContentType && !contentType) res.setHeader("Content-Type", result.ContentType);
+    if (!result.Body) {
+      res.removeHeader("Content-Length");
+      res.status(404).end();
+      return;
+    }
+    await pipeline(Readable.from(result.Body as AsyncIterable<Uint8Array>), res, {
+      signal: abortController.signal,
+    });
+  } catch (error) {
+    if (abortController.signal.aborted || req.aborted) return;
+    logger.warn({ errorType: error instanceof Error ? error.name : "unknown" }, "storage: cloud media stream failed");
+    if (res.headersSent || res.destroyed) {
+      if (!res.destroyed) res.destroy();
+      return;
+    }
+    throw error;
+  } finally {
+    req.off("aborted", abortForDisconnect);
+    res.off("close", abortForResponseClose);
+  }
 }
 
 /**

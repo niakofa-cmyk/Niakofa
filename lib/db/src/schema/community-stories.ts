@@ -14,6 +14,7 @@ import { usersTable } from "./users";
 import { communitiesTable } from "./communities";
 import { diasporaHubsTable } from "./diaspora-hubs";
 import { mediaAssetsTable, type StoryCompositionManifest } from "./media-assets";
+import { exchangeListingsTable } from "./exchange";
 
 /**
  * Ephemeral social Stories/Moments belong to Community, not Messages.
@@ -24,6 +25,7 @@ export const communityStoriesTable = pgTable("community_stories", {
   author_user_id: integer("author_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   hub_id: integer("hub_id").references(() => diasporaHubsTable.id, { onDelete: "set null" }),
   community_id: integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
+  exchange_listing_id: integer("exchange_listing_id").references(() => exchangeListingsTable.id, { onDelete: "restrict" }),
   caption: text("caption"),
   audience: text("audience").notNull().default("community"),
   status: text("status").notNull().default("published"),
@@ -36,6 +38,7 @@ export const communityStoriesTable = pgTable("community_stories", {
   index("community_stories_hub_expires_idx").on(table.hub_id, table.expires_at),
   index("community_stories_status_expires_idx").on(table.status, table.expires_at),
   index("community_stories_community_expires_idx").on(table.community_id, table.expires_at),
+  index("community_stories_exchange_listing_idx").on(table.exchange_listing_id, table.created_at),
 ]);
 
 export const communityStoryMediaTable = pgTable("community_story_media", {

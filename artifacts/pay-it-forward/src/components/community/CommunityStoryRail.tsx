@@ -18,6 +18,8 @@ import { normalizeStoryFiles, useObjectUrls, validateStoryFiles } from "./StoryC
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
 import { readStoryMediaMetadata } from "@/lib/storyMediaPipeline";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
+import { getExchangeListings } from "@/lib/community-exchange-client";
+import type { ExchangeListing } from "@/lib/community-exchange-types";
 import {
   getStoryMetrics,
   reactToStory,
@@ -137,6 +139,10 @@ export function CommunityStoryRail({
   const [textBackground, setTextBackground] = useState<string>(TEXT_STORY_BACKGROUNDS[0]);
   const [editorElements, setEditorElements] = useState<EditableStoryElement[]>([]);
   const [publishing, setPublishing] = useState(false);
+  const [ownedExchangeListings, setOwnedExchangeListings] = useState<ExchangeListing[]>([]);
+  const [exchangeListingsLoading, setExchangeListingsLoading] = useState(false);
+  const [exchangeListingsError, setExchangeListingsError] = useState("");
+  const [exchangeListingId, setExchangeListingId] = useState("");
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const autoOpenedRef = useRef(false);
@@ -151,6 +157,11 @@ export function CommunityStoryRail({
   const previewUrls = useObjectUrls(files);
   const selectedPreviewFile = files[previewFileIndex] ?? files[0] ?? null;
   const selectedFileUrl = previewUrls[previewFileIndex] ?? previewUrls[0] ?? null;
+  const selectedFiles = gallerySelection
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < files.length)
+    .map((index) => files[index])
+    .filter((file): file is File => Boolean(file));
+  const selectedVideo = selectedFiles.some((file) => file.type.startsWith("video/"));
   const visualAuthors = useMemo<StoryVisualAuthor[]>(
     () => authors.map((author) => ({
       id: author.author_user_id,
@@ -247,6 +258,28 @@ export function CommunityStoryRail({
     return () => { cancelled = true; };
   }, [hubId]);
 
+  useEffect(() => {
+    if (!composerOpen) return;
+    let cancelled = false;
+    setExchangeListingsLoading(true);
+    setExchangeListingsError("");
+    getExchangeListings({ mine: true, limit: 50 })
+      .then((result) => {
+        if (!cancelled) {
+          const eligible = (result.listings ?? []).filter((listing) => listing.status === "active");
+          setOwnedExchangeListings(eligible);
+          setExchangeListingId((current) => eligible.some((listing) => String(listing.id) === current) ? current : "");
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setExchangeListingsError(reason instanceof Error ? reason.message : "Your Exchange listings could not be loaded.");
+      })
+      .finally(() => {
+        if (!cancelled) setExchangeListingsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [composerOpen]);
+
   const loadMediaUrl = useCallback(async (media: StoryMedia) => {
     if (mediaObjectUrlsRef.current[media.id]) return;
     try {
@@ -298,6 +331,8 @@ export function CommunityStoryRail({
     setMusicQuery("");
     setMusicTab("for-you");
     setAudience(hubId ? "hub" : "community");
+    setExchangeListingId("");
+    setExchangeListingsError("");
   };
 
   const publish = async () => {
@@ -310,9 +345,9 @@ export function CommunityStoryRail({
       const selectedIndexes = gallerySelection
         .filter((index) => Number.isInteger(index) && index >= 0 && index < files.length)
         .sort((a, b) => a - b);
-      const selectedFiles = selectedIndexes.map((index) => files[index]).filter((file): file is File => Boolean(file));
-      const metadata = await Promise.all(selectedFiles.map((file) => readStoryMediaMetadata(file)));
-      const media = await Promise.all(selectedFiles.map(async (file, index) => ({
+      const publishFiles = selectedIndexes.map((index) => files[index]).filter((file): file is File => Boolean(file));
+      const metadata = await Promise.all(publishFiles.map((file) => readStoryMediaMetadata(file)));
+      const media = await Promise.all(publishFiles.map(async (file, index) => ({
         data_url: await readFileAsDataUrl(file),
         media_type: file.type.startsWith("video/") ? "video" as const : "photo" as const,
         mime_type: file.type,
@@ -340,7 +375,16 @@ export function CommunityStoryRail({
       const response = await fetch("/api/community/stories", {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ caption: caption.trim(), hub_id: hubId, audience, media, elements }),
+        body: JSON.stringify({
+          caption: caption.trim(),
+          hub_id: hubId,
+          audience,
+          media,
+          elements,
+          ...(media.some((item) => item.media_type === "video") && exchangeListingId
+            ? { exchange_listing_id: Number(exchangeListingId) }
+            : {}),
+        }),
       });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Could not publish your Spark.");
@@ -601,6 +645,24 @@ export function CommunityStoryRail({
                 {tool === "mention" && <div className="space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); setEditorElements((current) => current.filter((element) => element.id !== "mention")); }} className="min-h-11 w-full rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); upsertEditorElement({ id: "mention", type: "mention", payload: { display_name: candidate.name, mention_user_id: candidate.id }, position_x: 50, position_y: 65, scale: 1, rotation: 0, z_index: 18 }); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
                 {tool === "text" && <div className="grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-white/65">Color<input type="color" value={textColor} onChange={(event) => { const value = event.target.value; setTextColor(value); updateEditorElement("caption", { payload: { color: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-white/10" /></label><label className="text-[10px] font-bold text-white/65">Size<select value={textSize} onChange={(event) => { const value = event.target.value; setTextSize(value); updateEditorElement("caption", { payload: { font_size: Number(value) } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-white/65">Align<select value={textAlign} onChange={(event) => { const value = event.target.value as "left" | "center" | "right"; setTextAlign(value); updateEditorElement("caption", { payload: { align: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-white/65">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
                 <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={2} className="mt-3 w-full resize-none rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white outline-none focus:border-primary" placeholder="Add text to your Spark…" />
+                {selectedVideo && (
+                  <div className="mt-3 rounded-2xl border border-primary/30 bg-primary/10 p-3">
+                    <label htmlFor="spark-exchange-listing" className="block text-xs font-black">Connect an Exchange post <span className="font-normal text-white/60">(optional)</span></label>
+                    <p className="mt-1 text-[10px] leading-relaxed text-white/60">Attach an active post you own to make this video discoverable in Exchange Sparks. The server confirms eligibility.</p>
+                    {exchangeListingsError && <p className="mt-2 text-xs text-rose-200" role="alert">{exchangeListingsError}</p>}
+                    <select
+                      id="spark-exchange-listing"
+                      value={exchangeListingId}
+                      onChange={(event) => setExchangeListingId(event.target.value)}
+                      disabled={exchangeListingsLoading || !ownedExchangeListings.length}
+                      className="mt-2 min-h-10 w-full rounded-xl border border-white/20 bg-black px-3 text-xs text-white disabled:opacity-60"
+                      data-testid="select-spark-exchange-listing"
+                    >
+                      <option value="">{exchangeListingsLoading ? "Loading your active posts…" : ownedExchangeListings.length ? "No Exchange post" : "No active posts to connect"}</option>
+                      {ownedExchangeListings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title} · {listing.neighborhood}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-white/15 bg-white/5 px-3 py-2">
                   <div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><div><p className="text-xs font-black">Share with</p><p className="text-[10px] text-white/60">{audience === "hub" ? "Selected Hub members" : "Your approved community"}</p></div></div>
                   <select id="story-audience" value={audience} onChange={(event) => setAudience(event.target.value as "community" | "hub")} disabled={!hubId} className="rounded-lg border border-white/20 bg-black px-2 py-2 text-xs font-bold"><option value="community">Community</option><option value="hub">This Hub</option></select>

@@ -1,5 +1,11 @@
 import { spawn } from "node:child_process";
 
+export const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
+
+export function isAllowedMediaSize(size: number): boolean {
+  return Number.isSafeInteger(size) && size > 0 && size <= MAX_MEDIA_BYTES;
+}
+
 export function hasExpectedSignature(buffer: Buffer, mimeType: string): boolean {
   if (mimeType === "image/jpeg") return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
   if (mimeType === "image/png") return buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
@@ -38,33 +44,51 @@ function imageDimensions(buffer: Buffer, mimeType: string): { width: number; hei
   return null;
 }
 
-function probeVideo(buffer: Buffer): Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null> {
+function probeMedia(buffer: Buffer): Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null> {
   return new Promise((resolve) => {
     const child = spawn(process.env["FFPROBE_PATH"] || "ffprobe", [
-      "-v", "error", "-i", "pipe:0", "-select_streams", "v:0",
-      "-show_entries", "stream=width,height,duration", "-of", "json",
+      "-v", "error", "-i", "pipe:0",
+      "-show_entries", "stream=codec_type,width,height,duration:format=duration", "-of", "json",
     ]);
     const chunks: Buffer[] = [];
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    child.on("error", () => resolve(null));
+    let outputBytes = 0;
+    let hasStderr = false;
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 15_000);
+    child.stdout.on("data", (chunk: Buffer) => {
+      outputBytes += chunk.length;
+      if (outputBytes > 64 * 1024) child.kill("SIGKILL");
+      else chunks.push(chunk);
+    });
+    child.stderr.on("data", () => { hasStderr = true; });
+    child.on("error", () => {
+      clearTimeout(timeout);
+      resolve(null);
+    });
     child.on("close", (code) => {
-      if (code !== 0 || stderr || !chunks.length) return resolve(null);
+      clearTimeout(timeout);
+      if (code !== 0 || hasStderr || !chunks.length) return resolve(null);
       try {
-        const parsed = JSON.parse(Buffer.concat(chunks).toString()) as { streams?: Array<{ width?: number; height?: number; duration?: string }> };
-        const stream = parsed.streams?.find((item) => (
+        const parsed = JSON.parse(Buffer.concat(chunks).toString()) as {
+          streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string }>;
+          format?: { duration?: string };
+        };
+        const video = parsed.streams?.find((item) => item.codec_type === "video" && (
           Number.isFinite(item.width) &&
           Number.isFinite(item.height) &&
           Number(item.width) > 0 &&
           Number(item.height) > 0
         ));
+        const stream = video ?? parsed.streams?.find((item) => item.codec_type === "audio");
         if (!stream) return resolve(null);
-        const duration = stream.duration ? Math.round(Number(stream.duration) * 1000) : null;
+        const streamSeconds = Number(stream.duration);
+        const seconds = Number.isFinite(streamSeconds) && streamSeconds > 0
+          ? streamSeconds
+          : Number(parsed.format?.duration);
+        const duration = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1000) : null;
         resolve({
-          width: Number.isFinite(stream.width) ? Number(stream.width) : null,
-          height: Number.isFinite(stream.height) ? Number(stream.height) : null,
-          duration_ms: duration && duration > 0 ? duration : null,
+          width: video ? Number(video.width) : null,
+          height: video ? Number(video.height) : null,
+          duration_ms: duration,
         });
       } catch { resolve(null); }
     });
@@ -77,6 +101,35 @@ export async function inspectMedia(buffer: Buffer, mimeType: string): Promise<{ 
     const dimensions = imageDimensions(buffer, mimeType);
     return dimensions ? { ...dimensions, duration_ms: null } : null;
   }
-  if (mimeType.startsWith("video/")) return probeVideo(buffer);
-  return { width: null, height: null, duration_ms: null };
+  if (mimeType.startsWith("video/") || mimeType.startsWith("audio/")) return probeMedia(buffer);
+  if (mimeType === "application/pdf" && hasExpectedSignature(buffer, mimeType)) {
+    return { width: null, height: null, duration_ms: null };
+  }
+  return null;
+}
+
+export async function validateMediaBuffer(
+  buffer: Buffer,
+  mediaType: string,
+  mimeType: string,
+): Promise<{ width: number | null; height: number | null; duration_ms: number | null }> {
+  const supported: Record<string, string[]> = {
+    photo: ["image/jpeg", "image/png", "image/gif", "image/webp"],
+    video: ["video/mp4", "video/webm"],
+    audio: ["audio/ogg", "audio/wav", "audio/mpeg"],
+    document: ["application/pdf"],
+  };
+  if (!supported[mediaType]?.includes(mimeType)) throw new Error("MEDIA_TYPE_NOT_SUPPORTED");
+  if (!hasExpectedSignature(buffer, mimeType)) throw new Error("MEDIA_SIGNATURE_INVALID");
+  const metadata = await inspectMedia(buffer, mimeType);
+  if (!metadata) throw new Error("MEDIA_METADATA_INVALID");
+  if (mediaType === "photo" || mediaType === "video") {
+    if (!metadata.width || !metadata.height || metadata.width > 16_384 || metadata.height > 16_384) {
+      throw new Error("MEDIA_DIMENSIONS_INVALID");
+    }
+  }
+  if ((mediaType === "video" || mediaType === "audio") && (!metadata.duration_ms || metadata.duration_ms <= 0)) {
+    throw new Error("MEDIA_DURATION_INVALID");
+  }
+  return metadata;
 }

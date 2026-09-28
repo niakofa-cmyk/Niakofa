@@ -75,6 +75,23 @@ export declare const communityStoriesTable: import("drizzle-orm/pg-core").PgTabl
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        exchange_listing_id: import("drizzle-orm/pg-core").PgColumn<{
+            name: "exchange_listing_id";
+            tableName: "community_stories";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         caption: import("drizzle-orm/pg-core").PgColumn<{
             name: "caption";
             tableName: "community_stories";

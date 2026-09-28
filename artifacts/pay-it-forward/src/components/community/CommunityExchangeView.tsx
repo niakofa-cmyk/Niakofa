@@ -46,6 +46,7 @@ import type {
 } from "@/lib/community-exchange-types";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
+import { CommunityExchangeSparks } from "./CommunityExchangeSparks";
 
 type FeedFilter = "all" | "goods" | "services" | "needs" | "mine";
 type LocalLocation = {
@@ -650,6 +651,8 @@ export function CommunityExchangeView() {
           <button type="button" onClick={() => setNotice("")} className="rounded p-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary" aria-label="Dismiss notice" data-testid="button-dismiss-notice"><X className="h-4 w-4" /></button>
         </div>
       )}
+
+      <CommunityExchangeSparks onOpenListing={setSelectedId} />
 
       <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
         <div>

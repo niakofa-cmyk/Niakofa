@@ -1,4 +1,11 @@
-import { db, mediaAssetsTable, mediaProcessingJobsTable, type MediaJobType, type StoryCompositionManifest } from "@workspace/db";
+import {
+  communityStoriesTable,
+  db,
+  mediaAssetsTable,
+  mediaProcessingJobsTable,
+  type MediaJobType,
+  type StoryCompositionManifest,
+} from "@workspace/db";
 import { and, eq, inArray, lt } from "drizzle-orm";
 import { mediaProcessingQueue } from "./queue";
 import { logger } from "./logger";
@@ -18,22 +25,69 @@ export async function enqueueMediaAssetProcessing(
   mediaAssetId: number,
   mediaType: string,
   compositionManifest?: StoryCompositionManifest | null,
+  publisher: Pick<NonNullable<typeof mediaProcessingQueue>, "add"> | null = mediaProcessingQueue,
+  database: typeof db = db,
 ): Promise<boolean> {
-  if (!mediaProcessingQueue) {
+  if (!publisher) {
     logger.warn({ mediaAssetId }, "media-processing: Redis unavailable; asset remains pending");
     return false;
   }
 
   const jobTypes = mediaJobsForType(mediaType, compositionManifest);
+  const [assetContext] = await database.select({
+    context_kind: mediaAssetsTable.context_kind,
+    context_id: mediaAssetsTable.context_id,
+  }).from(mediaAssetsTable)
+    .where(eq(mediaAssetsTable.id, mediaAssetId))
+    .limit(1);
+  if (!assetContext) return false;
+
+  const transitionAsset = async (executor: Pick<typeof database, "update" | "select">): Promise<boolean> => {
+    const conditions = [
+      eq(mediaAssetsTable.id, mediaAssetId),
+      eq(mediaAssetsTable.context_kind, assetContext.context_kind),
+      eq(mediaAssetsTable.context_id, assetContext.context_id),
+      inArray(mediaAssetsTable.status, ["pending", "failed", "processing"]),
+    ];
+    const [transitioned] = await executor.update(mediaAssetsTable)
+      .set({ status: "processing", failure_reason: null, updated_at: new Date() })
+      .where(and(...conditions))
+      .returning({ id: mediaAssetsTable.id });
+    if (transitioned) return true;
+
+    const [asset] = await executor.select({ status: mediaAssetsTable.status })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1);
+    return asset?.status === "ready";
+  };
+
+  if (assetContext.context_kind === "story") {
+    const canTransition = await database.transaction(async (tx) => {
+      // Match Story deletion's lock order: Story first, then media asset.
+      // The context lookup above intentionally takes no asset row lock.
+      const [story] = await tx.select({ status: communityStoriesTable.status })
+        .from(communityStoriesTable)
+        .where(eq(communityStoriesTable.id, assetContext.context_id))
+        .limit(1)
+        .for("share");
+      if (!story || story.status === "deletion_pending") return false;
+      return transitionAsset(tx);
+    });
+    if (!canTransition) return false;
+  } else if (!(await transitionAsset(database))) {
+    return false;
+  }
+
   for (const jobType of jobTypes) {
     assertSupportedMediaJob(jobType);
-    await db.insert(mediaProcessingJobsTable)
+    await database.insert(mediaProcessingJobsTable)
       .values({ media_asset_id: mediaAssetId, job_type: jobType })
       .onConflictDoNothing({
         target: [mediaProcessingJobsTable.media_asset_id, mediaProcessingJobsTable.job_type],
       });
     try {
-      await mediaProcessingQueue.add(
+      await publisher.add(
         jobType,
         { mediaAssetId, jobType } satisfies MediaProcessingJobData,
         { jobId: `media-${mediaAssetId}-${jobType}` },
@@ -43,9 +97,6 @@ export async function enqueueMediaAssetProcessing(
       throw error;
     }
   }
-  await db.update(mediaAssetsTable)
-    .set({ status: "processing", updated_at: new Date() })
-    .where(eq(mediaAssetsTable.id, mediaAssetId));
   return true;
 }
 

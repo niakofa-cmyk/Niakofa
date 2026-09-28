@@ -54,6 +54,42 @@ export interface ListingQuery {
   limit?: number;
 }
 
+export interface ExchangeSpark {
+  id: number;
+  listing_id: number;
+  caption: string | null;
+  created_at: string;
+  expires_at: string;
+  media_url: string;
+  thumbnail_url: string | null;
+  neighborhood: string;
+}
+
+export interface ExchangeSparksResponse {
+  sparks: ExchangeSpark[];
+  next_cursor: string | null;
+}
+
+export interface ExchangeSparksQuery {
+  nearby?: boolean;
+  radius_miles?: number;
+  limit?: number;
+  cursor?: string | null;
+  signal?: AbortSignal;
+}
+
+export async function getExchangeSparks(query: ExchangeSparksQuery = {}): Promise<ExchangeSparksResponse> {
+  const params = new URLSearchParams();
+  if (query.nearby) params.set("nearby", "true");
+  if (query.radius_miles) params.set("radius_miles", String(Math.min(50, Math.max(1, Math.round(query.radius_miles)))));
+  if (query.limit) params.set("limit", String(Math.min(24, Math.max(1, Math.round(query.limit)))));
+  if (query.cursor) params.set("cursor", query.cursor);
+  const suffix = params.toString();
+  return request<ExchangeSparksResponse>(`/api/community/exchange/sparks${suffix ? `?${suffix}` : ""}`, {
+    signal: query.signal,
+  });
+}
+
 export async function getExchangeListings(query: ListingQuery): Promise<ExchangeListingsResponse> {
   const params = new URLSearchParams();
   if (query.type) params.set("type", query.type);

@@ -27,6 +27,7 @@ async function readableStory(id: number, userId: number) {
     author_user_id: communityStoriesTable.author_user_id,
     hub_id: communityStoriesTable.hub_id,
     community_id: communityStoriesTable.community_id,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
     audience: communityStoriesTable.audience,
     status: communityStoriesTable.status,
     expires_at: communityStoriesTable.expires_at,

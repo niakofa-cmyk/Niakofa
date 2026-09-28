@@ -64,6 +64,7 @@ import directCallRouter from "./direct-call";
 import realtimeEventsRouter from "./realtime-events";
 import mediaAssetsV21Router from "./media-assets-v21";
 import communityExchangeRouter from "./community-exchange";
+import communityExchangeSparkDraftsRouter from "./community-exchange-spark-drafts";
 import { stampLocationUpdatedAt } from "../middlewares/stamp-location-updated-at";
 import { messageActivityAudit } from "../middlewares/message-activity-audit";
 
@@ -151,5 +152,6 @@ router.use(directMessagesRouter);
 router.use(realtimeEventsRouter);
   router.use(mediaAssetsV21Router);
   router.use(communityExchangeRouter);
+  router.use(communityExchangeSparkDraftsRouter);
 
 export default router;

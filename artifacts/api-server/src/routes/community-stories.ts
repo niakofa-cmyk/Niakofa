@@ -4,17 +4,20 @@ import {
   communityStoriesTable,
   communityStoryElementsTable,
   communityStoryMediaTable,
+  directMessageBlocksTable,
   db,
   diasporaHubsTable,
+  exchangeListingsTable,
   hubMembershipsTable,
   mediaAssetsTable,
+  mediaProcessingJobsTable,
   usersTable,
   type StoryCompositionManifest,
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { communityPostLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
-import { deleteAsset, putAsset, streamAssetSameOrigin } from "../lib/storage";
+import { deleteAsset, deleteAssetStrict, putAsset, streamAssetRange, streamAssetSameOrigin } from "../lib/storage";
 import { hasExpectedSignature, inspectMedia } from "../lib/media-validation";
 import { broadcast } from "../lib/ws-hub";
 import { createMessageNotification } from "../lib/message-notifications";
@@ -24,6 +27,18 @@ import { isMediaPlatformV21Enabled } from "../lib/media-platform";
 import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
 import { mediaProcessingQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
+import {
+  canReadCommunityStoryAudience,
+  canReadExchangeLinkedStory,
+  isLinkedStoryVideoAssetReady,
+  storyVideoStreamContentType,
+} from "../lib/community-story-policy";
+import {
+  buildStoryPlaybackSetCookie,
+  issueStoryPlaybackGrant,
+  readStoryPlaybackCookie,
+  verifyStoryPlaybackGrant,
+} from "../lib/community-story-playback";
 
 const router = Router();
 const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
@@ -46,6 +61,7 @@ const storyElementSchema = z.object({
 const createStorySchema = z.object({
   caption: z.string().trim().max(1000).optional().default(""),
   hub_id: z.number().int().positive().nullable().optional(),
+  exchange_listing_id: z.number().int().positive().optional(),
   audience: z.enum(STORY_AUDIENCES).default("community"),
   reply_enabled: z.boolean().default(true),
   media: z.array(z.object({
@@ -153,11 +169,53 @@ async function approvedCanonicalHub(hubId: number): Promise<boolean> {
   return Boolean(hub);
 }
 
-export async function viewerCanReadStory(userId: number, story: { author_user_id: number; hub_id: number | null; community_id: number | null; audience: string }): Promise<boolean> {
-  if (story.author_user_id === userId || story.audience === "community" && story.community_id === null) return true;
+export async function viewerCanReadStory(userId: number, story: {
+  author_user_id: number;
+  hub_id: number | null;
+  community_id: number | null;
+  audience: string;
+  exchange_listing_id?: number | null;
+}): Promise<boolean> {
+  const [viewer] = await db.select({ community_id: usersTable.community_id })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (story.exchange_listing_id != null) {
+    const [listing] = await db.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status,
+      seller_approval_status: usersTable.approval_status,
+      seller_is_suspended: usersTable.is_suspended,
+    }).from(exchangeListingsTable)
+      .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
+      .where(eq(exchangeListingsTable.id, story.exchange_listing_id))
+      .limit(1);
+    const blocks = await db.select({
+      blocker_id: directMessageBlocksTable.blocker_id,
+      blocked_id: directMessageBlocksTable.blocked_id,
+    })
+      .from(directMessageBlocksTable)
+      .where(or(
+        and(eq(directMessageBlocksTable.blocker_id, userId), eq(directMessageBlocksTable.blocked_id, story.author_user_id)),
+        and(eq(directMessageBlocksTable.blocker_id, story.author_user_id), eq(directMessageBlocksTable.blocked_id, userId)),
+      )).limit(1);
+    if (!listing || !canReadExchangeLinkedStory({
+      viewerUserId: userId,
+      viewerCommunityId: viewer?.community_id ?? null,
+      authorUserId: story.author_user_id,
+      authorCommunityId: story.community_id,
+      listingSellerId: listing.seller_id,
+      listingStatus: listing.status,
+      listingModerationStatus: listing.moderation_status,
+      sellerApprovalStatus: listing.seller_approval_status,
+      sellerIsSuspended: listing.seller_is_suspended,
+      audience: story.audience,
+      blocks,
+    })) return false;
+    return true;
+  }
+  if (story.author_user_id === userId) return true;
   if (story.audience === "hub") return story.hub_id !== null && await approvedHubMember(userId, story.hub_id);
-  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  return story.audience === "community" && story.community_id !== null && viewer?.community_id === story.community_id;
+  return canReadCommunityStoryAudience(story.audience, viewer?.community_id ?? null, story.community_id);
 }
 
 function publicStory(row: {
@@ -173,11 +231,13 @@ function publicStory(row: {
   author_name: string;
   avatar_url: string | null;
   composition_manifest: typeof communityStoriesTable.$inferSelect["composition_manifest"];
+  exchange_listing_id: number | null;
 }, media: Array<typeof communityStoryMediaTable.$inferSelect>, elements: Array<typeof communityStoryElementsTable.$inferSelect>) {
   return {
     id: row.id,
     author_user_id: row.author_user_id,
     hub_id: row.hub_id,
+    exchange_listing_id: row.exchange_listing_id,
     community_id: row.community_id,
     caption: row.caption,
     audience: row.audience,
@@ -208,6 +268,39 @@ function publicStory(row: {
   };
 }
 
+async function readableStoryVideoMedia(mediaId: number, userId: number) {
+  const [row] = await db.select({
+    storage_key: communityStoryMediaTable.storage_key,
+    media_type: communityStoryMediaTable.media_type,
+    mime_type: communityStoryMediaTable.mime_type,
+    variant_key: mediaAssetsTable.variant_key,
+    media_asset_id: communityStoryMediaTable.media_asset_id,
+    asset_status: mediaAssetsTable.status,
+    author_user_id: communityStoriesTable.author_user_id,
+    hub_id: communityStoriesTable.hub_id,
+    community_id: communityStoriesTable.community_id,
+    audience: communityStoriesTable.audience,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
+    status: communityStoriesTable.status,
+    expires_at: communityStoriesTable.expires_at,
+  }).from(communityStoryMediaTable)
+    .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id))
+    .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
+    .where(eq(communityStoryMediaTable.id, mediaId))
+    .limit(1);
+  if (!row || row.media_type !== "video" || !row.mime_type.startsWith("video/")
+    || row.status !== "published"
+    || row.expires_at <= new Date() || !(await viewerCanReadStory(userId, row))) return null;
+  if (!isLinkedStoryVideoAssetReady({
+    linked: row.exchange_listing_id !== null,
+    mediaType: row.media_type,
+    mediaAssetId: row.media_asset_id,
+    assetStatus: row.asset_status,
+    variantKey: row.variant_key,
+  })) return null;
+  return row;
+}
+
 router.get("/community/stories", requireAuth, requireApproved, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const requestedHubId = req.query.hubId ? positiveId(req.query.hubId) : null;
@@ -220,7 +313,15 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
   const visibility = requestedHubId
     ? and(eq(communityStoriesTable.hub_id, requestedHubId), eq(communityStoriesTable.audience, "hub"))
     : or(
-      and(eq(communityStoriesTable.audience, "community"), viewer?.community_id ? eq(communityStoriesTable.community_id, viewer.community_id) : sql`true`),
+      and(
+        eq(communityStoriesTable.audience, "community"),
+        or(
+          eq(communityStoriesTable.author_user_id, userId),
+          viewer?.community_id == null
+            ? isNull(communityStoriesTable.community_id)
+            : eq(communityStoriesTable.community_id, viewer.community_id),
+        ),
+      ),
       and(eq(communityStoriesTable.audience, "hub"), viewer?.diaspora_hub_id ? eq(communityStoriesTable.hub_id, viewer.diaspora_hub_id) : sql`false`),
       eq(communityStoriesTable.author_user_id, userId),
     );
@@ -228,6 +329,7 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
     id: communityStoriesTable.id,
     author_user_id: communityStoriesTable.author_user_id,
     hub_id: communityStoriesTable.hub_id,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
     community_id: communityStoriesTable.community_id,
     caption: communityStoriesTable.caption,
     audience: communityStoriesTable.audience,
@@ -245,15 +347,64 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
       eq(usersTable.approval_status, "approved"),
       eq(usersTable.is_suspended, false),
       visibility,
+      or(
+        isNull(communityStoriesTable.exchange_listing_id),
+        sql`EXISTS (
+          SELECT 1
+          FROM exchange_listings linked_listing
+          WHERE linked_listing.id = ${communityStoriesTable.exchange_listing_id}
+            AND linked_listing.seller_id = ${communityStoriesTable.author_user_id}
+            AND linked_listing.status = 'active'
+            AND linked_listing.moderation_status = 'approved'
+            AND (
+              ${communityStoriesTable.author_user_id} = ${userId}
+              OR ${communityStoriesTable.community_id} IS NOT DISTINCT FROM ${viewer?.community_id ?? null}
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM direct_message_blocks listing_block
+              WHERE (listing_block.blocker_id = ${userId} AND listing_block.blocked_id = linked_listing.seller_id)
+                 OR (listing_block.blocker_id = linked_listing.seller_id AND listing_block.blocked_id = ${userId})
+            )
+        )`,
+      ),
+      or(
+        isNull(communityStoriesTable.exchange_listing_id),
+        sql`EXISTS (
+          SELECT 1
+          FROM community_story_media linked_media
+          LEFT JOIN media_assets linked_asset ON linked_asset.id = linked_media.media_asset_id
+          WHERE linked_media.story_id = ${communityStoriesTable.id}
+            AND linked_media.media_type = 'video'
+            AND (
+              linked_media.media_asset_id IS NULL
+              OR (linked_asset.status = 'ready' AND linked_asset.variant_key IS NOT NULL)
+            )
+        )`,
+      ),
     ))
     .orderBy(desc(communityStoriesTable.created_at))
     .limit(100);
 
   const ids = rows.map((row) => row.id);
-  const [media, elements] = ids.length ? await Promise.all([
-    db.select().from(communityStoryMediaTable).where(inArray(communityStoryMediaTable.story_id, ids)),
+  const [mediaRows, elements] = ids.length ? await Promise.all([
+    db.select({
+      media: communityStoryMediaTable,
+      linked_listing_id: communityStoriesTable.exchange_listing_id,
+      asset_status: mediaAssetsTable.status,
+      asset_variant_key: mediaAssetsTable.variant_key,
+    }).from(communityStoryMediaTable)
+      .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id))
+      .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
+      .where(inArray(communityStoryMediaTable.story_id, ids)),
     db.select().from(communityStoryElementsTable).where(inArray(communityStoryElementsTable.story_id, ids)).orderBy(communityStoryElementsTable.z_index),
   ]) : [[], []];
+  const media = mediaRows.filter((item) => isLinkedStoryVideoAssetReady({
+    linked: item.linked_listing_id !== null,
+    mediaType: item.media.media_type,
+    mediaAssetId: item.media.media_asset_id,
+    assetStatus: item.asset_status,
+    variantKey: item.asset_variant_key,
+  })).map((item) => item.media);
   const mediaByStory = new Map<number, Array<typeof communityStoryMediaTable.$inferSelect>>();
   media.forEach((item) => mediaByStory.set(item.story_id, [...(mediaByStory.get(item.story_id) ?? []), item]));
   const elementsByStory = new Map<number, Array<typeof communityStoryElementsTable.$inferSelect>>();
@@ -270,10 +421,34 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   if (!parsed.success) return res.status(400).json({ error: "Story data is invalid. Add a photo, video, or caption and try again." });
   const userId = req.authenticatedUserId!;
   const hubId = parsed.data.hub_id ?? null;
+  const exchangeListingId = parsed.data.exchange_listing_id ?? null;
   if (hubId && (!(await approvedCanonicalHub(hubId)) || !(await approvedHubMember(userId, hubId)))) {
     return res.status(403).json({ error: "Approved Hub membership is required to publish a Hub Story." });
   }
   if (parsed.data.audience === "hub" && !hubId) return res.status(400).json({ error: "Choose a Hub before sharing with a Hub audience." });
+  if (exchangeListingId !== null) {
+    if (parsed.data.audience !== "community") {
+      return res.status(400).json({ error: "An Exchange Spark must use the community audience." });
+    }
+    if (parsed.data.media.length !== 1 || parsed.data.media[0]?.media_type !== "video") {
+      return res.status(400).json({ error: "An Exchange Spark must contain one video." });
+    }
+    const [listing] = await db.select({
+      id: exchangeListingsTable.id,
+      seller_id: exchangeListingsTable.seller_id,
+    }).from(exchangeListingsTable)
+      .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
+      .where(and(
+        eq(exchangeListingsTable.id, exchangeListingId),
+        eq(exchangeListingsTable.seller_id, userId),
+        eq(exchangeListingsTable.status, "active"),
+        eq(exchangeListingsTable.moderation_status, "approved"),
+        eq(usersTable.approval_status, "approved"),
+        eq(usersTable.is_suspended, false),
+      ))
+      .limit(1);
+    if (!listing) return res.status(404).json({ error: "An active, approved Exchange listing you own is required." });
+  }
   if (!parsed.data.caption && parsed.data.media.length === 0 && parsed.data.elements.length === 0) {
     return res.status(400).json({ error: "A Story needs media, text, or a creative element." });
   }
@@ -334,6 +509,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         author_user_id: userId,
         hub_id: hubId,
         community_id: viewer?.community_id ?? null,
+        exchange_listing_id: exchangeListingId,
         caption,
         audience: parsed.data.audience,
         status: moderation.status === "approved" ? "published" : "pending",
@@ -432,12 +608,18 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
   if (!mediaId) return res.status(400).json({ error: "Invalid Story media id." });
   const [row] = await db.select({
     storage_key: communityStoryMediaTable.storage_key,
+    thumbnail_storage_key: communityStoryMediaTable.thumbnail_storage_key,
+    media_type: communityStoryMediaTable.media_type,
+    mime_type: communityStoryMediaTable.mime_type,
     media_asset_id: communityStoryMediaTable.media_asset_id,
     variant_key: mediaAssetsTable.variant_key,
+    asset_status: mediaAssetsTable.status,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
     author_user_id: communityStoriesTable.author_user_id,
     hub_id: communityStoriesTable.hub_id,
     community_id: communityStoriesTable.community_id,
     audience: communityStoriesTable.audience,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
     status: communityStoriesTable.status,
     expires_at: communityStoriesTable.expires_at,
   }).from(communityStoryMediaTable)
@@ -445,23 +627,196 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
     .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
     .where(eq(communityStoryMediaTable.id, mediaId))
     .limit(1);
-  if (!row || row.status !== "published" || row.expires_at <= new Date() || !(await viewerCanReadStory(req.authenticatedUserId!, row))) {
+  if (!row || row.status !== "published" || row.expires_at <= new Date()
+      || !(await viewerCanReadStory(req.authenticatedUserId!, row))) {
     return res.status(404).json({ error: "Story media not found." });
   }
+  if (!isLinkedStoryVideoAssetReady({
+    linked: row.exchange_listing_id !== null,
+    mediaType: row.media_type,
+    mediaAssetId: row.media_asset_id,
+    assetStatus: row.asset_status,
+    variantKey: row.variant_key,
+  })) return res.status(404).json({ error: "Story media not found." });
+  const thumbnail = req.query.thumbnail === "true";
+  if (thumbnail) {
+    if (row.thumbnail_storage_key || row.thumbnail_key) {
+      return streamAssetSameOrigin(row.thumbnail_storage_key ?? row.thumbnail_key!, res);
+    }
+    return res.status(404).json({ error: "Story thumbnail not found." });
+  }
+  if (row.media_type === "video") return streamAssetRange(
+    row.variant_key ?? row.storage_key,
+    req,
+    res,
+    storyVideoStreamContentType(row.variant_key, row.mime_type),
+  );
   return streamAssetSameOrigin(row.variant_key ?? row.storage_key, res);
+});
+
+router.post("/community/stories/media/:id/playback-grant", requireAuth, requireApproved, async (req, res) => {
+  const mediaId = positiveId(req.params.id);
+  if (!mediaId) return res.status(404).json({ error: "Story video not found." });
+  const userId = req.authenticatedUserId!;
+  const media = await readableStoryVideoMedia(mediaId, userId);
+  if (!media) return res.status(404).json({ error: "Story video not found." });
+
+  const [viewer] = await db.select({
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score,
+  }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const secret = process.env["SESSION_SECRET"];
+  if (!viewer || viewer.approval_status !== "approved" || viewer.is_suspended
+    || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Story video not found." });
+  }
+  if (req.authenticatedTokenVersion !== viewer.token_version) {
+    return res.status(401).json({ error: "Session expired — please log in again", error_code: "TOKEN_REVOKED" });
+  }
+  if (!secret || secret.length < 32) {
+    return res.status(503).json({ error: "Secure Story playback is temporarily unavailable." });
+  }
+
+  const grant = issueStoryPlaybackGrant({ mediaId, userId, tokenVersion: viewer.token_version }, secret);
+  const cookiePath = `/api/community/stories/media/${mediaId}/play`;
+  res.setHeader("Set-Cookie", buildStoryPlaybackSetCookie(grant.value, mediaId, req.secure || req.protocol === "https"));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
+  return res.json({
+    playback_url: cookiePath,
+    expires_at: new Date(grant.claims.expiresAt).toISOString(),
+  });
+});
+
+router.get("/community/stories/media/:id/play", async (req, res) => {
+  const mediaId = positiveId(req.params.id);
+  const cookieValue = readStoryPlaybackCookie(req.headers.cookie);
+  const secret = process.env["SESSION_SECRET"];
+  const claims = mediaId && secret
+    ? verifyStoryPlaybackGrant(cookieValue, mediaId, secret)
+    : null;
+  if (!mediaId || !claims) return res.status(404).json({ error: "Story video not found." });
+
+  const [viewer] = await db.select({
+    id: usersTable.id,
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score,
+  }).from(usersTable).where(eq(usersTable.id, claims.userId)).limit(1);
+  if (!viewer || viewer.token_version !== claims.tokenVersion
+    || viewer.approval_status !== "approved" || viewer.is_suspended
+    || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Story video not found." });
+  }
+  const media = await readableStoryVideoMedia(mediaId, claims.userId);
+  if (!media) return res.status(404).json({ error: "Story video not found." });
+  return streamAssetRange(
+    media.variant_key ?? media.storage_key,
+    req,
+    res,
+    storyVideoStreamContentType(media.variant_key, media.mime_type),
+  );
 });
 
 router.delete("/community/stories/:id", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
   const storyId = positiveId(req.params.id);
   if (!storyId) return res.status(400).json({ error: "Invalid Story id." });
-  const media = await db.select({ storage_key: communityStoryMediaTable.storage_key }).from(communityStoryMediaTable)
-    .where(eq(communityStoryMediaTable.story_id, storyId));
-  const deleted = await db.delete(communityStoriesTable).where(and(
+  const [ownedStory] = await db.update(communityStoriesTable).set({ status: "deletion_pending" }).where(and(
     eq(communityStoriesTable.id, storyId),
     eq(communityStoriesTable.author_user_id, req.authenticatedUserId!),
   )).returning({ id: communityStoriesTable.id });
-  if (deleted.length) await Promise.all(media.map((item) => deleteAsset(item.storage_key)));
-  return res.json({ deleted: deleted.length > 0 });
+  if (!ownedStory) return res.json({ deleted: false });
+  const universalAssets = await db.select({
+    id: mediaAssetsTable.id,
+    original_key: mediaAssetsTable.original_key,
+    variant_key: mediaAssetsTable.variant_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+  }).from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.context_kind, "story"),
+    eq(mediaAssetsTable.context_id, storyId),
+  ));
+  const assetIds = universalAssets.map((asset) => asset.id);
+  if (assetIds.length) {
+    await db.update(mediaProcessingJobsTable).set({
+      status: "cancelled",
+      updated_at: new Date(),
+    }).where(and(
+      inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+      inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
+    ));
+    const [processingJob] = await db.select({ id: mediaProcessingJobsTable.id })
+      .from(mediaProcessingJobsTable)
+      .where(and(
+        inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+        eq(mediaProcessingJobsTable.status, "processing"),
+      ))
+      .limit(1);
+    if (processingJob) {
+      return res.status(409).json({
+        deleted: false,
+        status: "deletion_pending",
+        error: "Story media processing must finish before cleanup can complete. Retry shortly.",
+        error_code: "STORY_MEDIA_PROCESSING",
+      });
+    }
+    await db.update(mediaAssetsTable).set({
+      status: "deletion_pending",
+      updated_at: new Date(),
+    }).where(inArray(mediaAssetsTable.id, assetIds));
+  }
+  const media = await db.select({
+    storage_key: communityStoryMediaTable.storage_key,
+    thumbnail_storage_key: communityStoryMediaTable.thumbnail_storage_key,
+    original_key: mediaAssetsTable.original_key,
+    variant_key: mediaAssetsTable.variant_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+  }).from(communityStoryMediaTable)
+    .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
+    .where(eq(communityStoryMediaTable.story_id, storyId));
+  const storageKeys = [...new Set([
+    ...media.flatMap((item) => [
+      item.storage_key,
+      item.thumbnail_storage_key,
+      item.original_key,
+      item.variant_key,
+      item.thumbnail_key,
+    ]),
+    ...universalAssets.flatMap((asset) => [
+      asset.original_key,
+      asset.variant_key,
+      asset.thumbnail_key,
+    ]),
+  ].filter((key): key is string => Boolean(key)))];
+  const cleanup = await Promise.allSettled(storageKeys.map((key) => deleteAssetStrict(key)));
+  const cleanupFailure = cleanup.find((result) => result.status === "rejected");
+  if (cleanupFailure?.status === "rejected") {
+    logger.error({ err: cleanupFailure.reason, storyId }, "community-story: storage cleanup failed; Story kept for retry");
+    return res.status(503).json({
+      deleted: false,
+      error: "Story media could not be fully removed. The Story was kept so cleanup can be retried.",
+      error_code: "STORY_MEDIA_CLEANUP_FAILED",
+    });
+  }
+  try {
+    // Keep universal asset rows as short-lived tombstones after the Story row
+    // is removed. The expiry scheduler repeats key deletion before purging
+    // these rows, catching binary uploads that were already in flight.
+    const deleted = await db.delete(communityStoriesTable).where(and(
+      eq(communityStoriesTable.id, storyId),
+      eq(communityStoriesTable.author_user_id, req.authenticatedUserId!),
+    )).returning({ id: communityStoriesTable.id });
+    return res.json({ deleted: deleted.length > 0 });
+  } catch (error) {
+    logger.error({ err: error, storyId }, "community-story: row cleanup failed; Story kept for retry");
+    return res.status(503).json({
+      deleted: false,
+      error: "Story cleanup could not be completed. The Story was kept so cleanup can be retried.",
+      error_code: "STORY_MEDIA_CLEANUP_FAILED",
+    });
+  }
 });
 
 export default router;

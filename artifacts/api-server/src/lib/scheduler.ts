@@ -20,9 +20,11 @@ import {
   exchangeListingsTable,
   exchangePickupRequestsTable,
   exchangeDigestDeliveriesTable,
+  mediaAssetsTable,
+  mediaProcessingJobsTable,
 } from "@workspace/db";
 import { randomUUID } from "node:crypto";
-import { eq, and, isNull, lte, sql, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNull, lte, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "./logger";
@@ -30,13 +32,14 @@ import { getStripeSecretKey } from "./stripe-config";
 import { isAmbiguousStripeError } from "./stripe-errors";
 import { buildCashoutTransferParams, cashoutIdempotencyKey } from "./stripe-cashout";
 import { workerRan } from "./worker-registry";
-import { deleteAsset } from "./storage";
+import { deleteAssetStrict } from "./storage";
 import { broadcast } from "./ws-hub";
 import { createMessageNotification } from "./message-notifications";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const STORY_ORPHAN_MEDIA_RETENTION_MS = 24 * 60 * 60 * 1000;
 const ACCOUNT_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 // Run hourly so a user's local weekly delivery window is not missed by a
 // six-hour UTC cadence. The archival query remains idempotent and indexed.
@@ -587,11 +590,90 @@ async function processCommunityStoryCleanup(): Promise<void> {
     .leftJoin(communityStoryMediaTable, eq(communityStoryMediaTable.story_id, communityStoriesTable.id))
     .where(lte(communityStoriesTable.expires_at, new Date()));
   const ids = [...new Set(expired.map((row) => row.id))];
-  if (!ids.length) return;
-  await db.delete(communityStoriesTable).where(inArray(communityStoriesTable.id, ids));
-  await Promise.all(expired.flatMap((row) => [row.media_key, row.thumbnail_key].filter((key): key is string => Boolean(key)).map((key) => deleteAsset(key).catch(() => {}))));
-  broadcast({ type: "community_story_expired", payload: { story_ids: ids } });
-  logger.info({ count: ids.length }, "community-story cleanup: expired stories and assets removed");
+  const deletedIds: number[] = [];
+  let cleanupFailed = false;
+  for (const id of ids) {
+    await db.update(communityStoriesTable)
+      .set({ status: "deletion_pending" })
+      .where(eq(communityStoriesTable.id, id));
+    const universalAssets = await db.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.context_kind, "story"),
+      eq(mediaAssetsTable.context_id, id),
+    ));
+    const assetIds = universalAssets.map((asset) => asset.id);
+    if (assetIds.length) {
+      await db.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        updated_at: new Date(),
+      }).where(and(
+        inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+        inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
+      ));
+      const [processingJob] = await db.select({ id: mediaProcessingJobsTable.id })
+        .from(mediaProcessingJobsTable)
+        .where(and(
+          inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+          eq(mediaProcessingJobsTable.status, "processing"),
+        ))
+        .limit(1);
+      if (processingJob) {
+        cleanupFailed = true;
+        continue;
+      }
+      await db.update(mediaAssetsTable).set({
+        status: "deletion_pending",
+        updated_at: new Date(),
+      }).where(inArray(mediaAssetsTable.id, assetIds));
+    }
+    const legacyKeys = expired.filter((row) => row.id === id)
+      .flatMap((row) => [row.media_key, row.thumbnail_key]);
+    const keys = [...new Set([
+      ...legacyKeys,
+      ...universalAssets.flatMap((asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key]),
+    ].filter((key): key is string => Boolean(key)))];
+    try {
+      // Storage deletion is idempotent; only remove the database owner after
+      // every object deletion succeeds so the next hourly pass can retry.
+      for (const key of keys) await deleteAssetStrict(key);
+      // Retain universal rows as cleanup tombstones until the orphan pass has
+      // repeated deletion after the maximum expected in-flight upload window.
+      await db.delete(communityStoriesTable).where(eq(communityStoriesTable.id, id));
+      deletedIds.push(id);
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, storyId: id }, "community-story cleanup: storage/database cleanup will retry");
+    }
+  }
+  const orphanedAssets = await db.select({
+    id: mediaAssetsTable.id,
+    original_key: mediaAssetsTable.original_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+    variant_key: mediaAssetsTable.variant_key,
+  }).from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.context_kind, "story"),
+    sql`NOT EXISTS (SELECT 1 FROM community_stories WHERE community_stories.id = ${mediaAssetsTable.context_id})`,
+    lte(mediaAssetsTable.updated_at, new Date(Date.now() - STORY_ORPHAN_MEDIA_RETENTION_MS)),
+  ));
+  for (const asset of orphanedAssets) {
+    try {
+      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key): key is string => Boolean(key)))];
+      for (const key of keys) await deleteAssetStrict(key);
+      await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
+    } catch (err) {
+      cleanupFailed = true;
+      logger.error({ err, mediaAssetId: asset.id }, "community-story cleanup: orphan media cleanup will retry");
+    }
+  }
+  if (deletedIds.length) {
+    broadcast({ type: "community_story_expired", payload: { story_ids: deletedIds } });
+    logger.info({ count: deletedIds.length }, "community-story cleanup: expired stories and assets removed");
+  }
+  if (cleanupFailed) throw new Error("COMMUNITY_STORY_STORAGE_CLEANUP_FAILED");
 }
 
 export function startCommunityStoryCleanupWorker(): () => void {

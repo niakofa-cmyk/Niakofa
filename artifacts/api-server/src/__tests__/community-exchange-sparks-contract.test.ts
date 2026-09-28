@@ -1,0 +1,199 @@
+import { promises as fs } from "node:fs";
+import { describe, expect, it } from "@jest/globals";
+import {
+  canReadCommunityStoryAudience,
+  canReadExchangeLinkedStory,
+  isLinkedStoryVideoAssetReady,
+  storyVideoStreamContentType,
+} from "../lib/community-story-policy";
+
+const storiesRoutePath = new URL("../routes/community-stories.ts", import.meta.url);
+const exchangeRoutePath = new URL("../routes/community-exchange.ts", import.meta.url);
+const interactionsRoutePath = new URL("../routes/community-story-interactions.ts", import.meta.url);
+const linkageMigrationPath = new URL(
+  "../../../../lib/db/migrations/0172_community_story_exchange_listing.sql",
+  import.meta.url,
+);
+const cascadeMigrationPath = new URL(
+  "../../../../lib/db/migrations/0173_community_story_exchange_listing_cascade.sql",
+  import.meta.url,
+);
+const restrictMigrationPath = new URL(
+  "../../../../lib/db/migrations/0174_community_story_exchange_listing_restrict.sql",
+  import.meta.url,
+);
+const mediaUploadGuardMigrationPath = new URL(
+  "../../../../lib/db/migrations/0175_media_assets_reject_deleting_story_context.sql",
+  import.meta.url,
+);
+const storiesSchemaPath = new URL("../../../../lib/db/src/schema/community-stories.ts", import.meta.url);
+const schedulerPath = new URL("../lib/scheduler.ts", import.meta.url);
+
+describe("Exchange Sparks authorization and discovery contract", () => {
+  const visibleStory = {
+    viewerUserId: 22,
+    viewerCommunityId: 4,
+    authorUserId: 11,
+    authorCommunityId: 4,
+    listingSellerId: 11,
+    listingStatus: "active",
+    listingModerationStatus: "approved",
+    sellerApprovalStatus: "approved",
+    sellerIsSuspended: false,
+    audience: "community",
+    blocks: [] as Array<{ blocker_id: number; blocked_id: number }>,
+  };
+
+  it("allows a visible linked Story only to its community, or its author", () => {
+    expect(canReadExchangeLinkedStory(visibleStory)).toBe(true);
+    expect(canReadExchangeLinkedStory({ ...visibleStory, viewerCommunityId: 5 })).toBe(false);
+    expect(canReadExchangeLinkedStory({ ...visibleStory, viewerCommunityId: null })).toBe(false);
+    expect(canReadExchangeLinkedStory({ ...visibleStory, authorCommunityId: null })).toBe(false);
+    expect(canReadExchangeLinkedStory({
+      ...visibleStory,
+      viewerUserId: visibleStory.authorUserId,
+      viewerCommunityId: 99,
+    })).toBe(true);
+  });
+
+  it("denies access for a stale, moderated, unsafe, or blocked Exchange listing", () => {
+    for (const listingStatus of ["reserved", "withdrawn", "archived"]) {
+      expect(canReadExchangeLinkedStory({ ...visibleStory, listingStatus })).toBe(false);
+    }
+    expect(canReadExchangeLinkedStory({ ...visibleStory, listingModerationStatus: "held" })).toBe(false);
+    expect(canReadExchangeLinkedStory({ ...visibleStory, sellerApprovalStatus: "pending" })).toBe(false);
+    expect(canReadExchangeLinkedStory({ ...visibleStory, sellerIsSuspended: true })).toBe(false);
+    expect(canReadExchangeLinkedStory({ ...visibleStory, listingSellerId: 999 })).toBe(false);
+    expect(canReadExchangeLinkedStory({
+      ...visibleStory,
+      blocks: [{ blocker_id: visibleStory.viewerUserId, blocked_id: visibleStory.authorUserId }],
+    })).toBe(false);
+    expect(canReadExchangeLinkedStory({
+      ...visibleStory,
+      blocks: [{ blocker_id: visibleStory.authorUserId, blocked_id: visibleStory.viewerUserId }],
+    })).toBe(false);
+    expect(canReadExchangeLinkedStory({ ...visibleStory, audience: "hub" })).toBe(false);
+  });
+
+  it("matches null Community ids exactly and hides linked media until its MP4 variant is ready", () => {
+    expect(canReadCommunityStoryAudience("community", null, null)).toBe(true);
+    expect(canReadCommunityStoryAudience("community", null, 4)).toBe(false);
+    expect(canReadCommunityStoryAudience("community", 4, null)).toBe(false);
+    expect(canReadCommunityStoryAudience("community", 4, 4)).toBe(true);
+
+    const linkedVideo = {
+      linked: true,
+      mediaType: "video",
+      mediaAssetId: 12,
+      assetStatus: "pending",
+      variantKey: null,
+    };
+    expect(isLinkedStoryVideoAssetReady(linkedVideo)).toBe(false);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, assetStatus: "failed" })).toBe(false);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, assetStatus: "ready" })).toBe(false);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, assetStatus: "ready", variantKey: "variants/story.mp4" })).toBe(true);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, mediaAssetId: null })).toBe(true);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, mediaType: "photo", mediaAssetId: null })).toBe(false);
+    expect(isLinkedStoryVideoAssetReady({ ...linkedVideo, linked: false })).toBe(true);
+
+    expect(storyVideoStreamContentType("variants/story.mp4", "video/webm")).toBe("video/mp4");
+    expect(storyVideoStreamContentType(null, "video/webm")).toBe("video/webm");
+  });
+
+  it("only links owned active approved listings to one public video and expires Stories after 24 hours", async () => {
+    const [route, migration, cascadeMigration, restrictMigration, uploadGuardMigration, schema] = await Promise.all([
+      fs.readFile(storiesRoutePath, "utf8"),
+      fs.readFile(linkageMigrationPath, "utf8"),
+      fs.readFile(cascadeMigrationPath, "utf8"),
+      fs.readFile(restrictMigrationPath, "utf8"),
+      fs.readFile(mediaUploadGuardMigrationPath, "utf8"),
+      fs.readFile(storiesSchemaPath, "utf8"),
+    ]);
+
+    expect(route).toMatch(/exchange_listing_id:\s*z\.number\(\)\.int\(\)\.positive\(\)\.optional\(\)/);
+    expect(route).toMatch(/parsed\.data\.media\.length !== 1 \|\| parsed\.data\.media\[0\]\?\.media_type !== "video"/);
+    expect(route).toMatch(/eq\(exchangeListingsTable\.seller_id, userId\)/);
+    expect(route).toMatch(/eq\(exchangeListingsTable\.status, "active"\)/);
+    expect(route).toMatch(/eq\(exchangeListingsTable\.moderation_status, "approved"\)/);
+    expect(route).toMatch(/new Date\(Date\.now\(\) \+ 24 \* 60 \* 60 \* 1000\)/);
+    expect(migration).toMatch(/ADD COLUMN IF NOT EXISTS exchange_listing_id integer/i);
+    expect(cascadeMigration).toMatch(/ON DELETE CASCADE/i); // Historical migration, upgraded below.
+    expect(restrictMigration).toMatch(/DROP CONSTRAINT IF EXISTS community_stories_exchange_listing_id_fkey/i);
+    expect(restrictMigration).toMatch(/REFERENCES exchange_listings\(id\)[\s\S]*ON DELETE RESTRICT/i);
+    expect(schema).toMatch(/exchange_listing_id: integer\("exchange_listing_id"\)\.references\(\(\) => exchangeListingsTable\.id, \{ onDelete: "restrict" \}\)/);
+    expect(uploadGuardMigration).toMatch(/FOR SHARE/);
+    expect(uploadGuardMigration).toMatch(/story_status = 'deletion_pending'/);
+    expect(uploadGuardMigration).toMatch(/NEW\.status IS DISTINCT FROM 'processing'/);
+  });
+
+  it("applies linked Story access policy to lists, authenticated media, and interactions", async () => {
+    const [storiesRoute, exchangeRoute, interactionsRoute] = await Promise.all([
+      fs.readFile(storiesRoutePath, "utf8"),
+      fs.readFile(exchangeRoutePath, "utf8"),
+      fs.readFile(interactionsRoutePath, "utf8"),
+    ]);
+
+    expect(storiesRoute).toMatch(/linked_listing\.status = 'active'/);
+    expect(storiesRoute).toMatch(/linked_listing\.moderation_status = 'approved'/);
+    expect(storiesRoute).toMatch(/viewer\?\.community_id == null[\s\S]*isNull\(communityStoriesTable\.community_id\)/);
+    expect(storiesRoute).toMatch(/communityStoriesTable\.community_id\} IS NOT DISTINCT FROM \$\{viewer\?\.community_id/);
+    expect(storiesRoute).toMatch(/linked_asset\.status = 'ready' AND linked_asset\.variant_key IS NOT NULL/);
+    expect(storiesRoute).toMatch(/isLinkedStoryVideoAssetReady\(\{/);
+    expect(storiesRoute.match(/viewerCanReadStory\(req\.authenticatedUserId!, row\)/)?.length).toBe(1);
+    expect(interactionsRoute).toMatch(/viewerCanReadStory\(userId, story\)/);
+    expect(exchangeRoute).toMatch(/communityVisibility/);
+    expect(exchangeRoute).toMatch(/spark_block\.blocker_id = \$\{userId\}[\s\S]*spark_block\.blocked_id = \$\{userId\}/);
+  });
+
+  it("serves protected videos with byte ranges and keeps Story deletion retryable", async () => {
+    const [route, scheduler] = await Promise.all([
+      fs.readFile(storiesRoutePath, "utf8"),
+      fs.readFile(schedulerPath, "utf8"),
+    ]);
+
+    expect(route).toMatch(/storyVideoStreamContentType\(row\.variant_key, row\.mime_type\)/);
+    expect(route).toMatch(/storyVideoStreamContentType\(media\.variant_key, media\.mime_type\)/);
+    expect(route).toMatch(/Promise\.allSettled\(storageKeys\.map\(\(key\) => deleteAssetStrict\(key\)\)\)/);
+    expect(route).toMatch(/STORY_MEDIA_CLEANUP_FAILED/);
+    expect(route.indexOf("deleteAssetStrict(key)")).toBeLessThan(route.indexOf("db.delete(communityStoriesTable)"));
+    expect(route).toMatch(/original_key: mediaAssetsTable\.original_key,[\s\S]*variant_key: mediaAssetsTable\.variant_key,[\s\S]*thumbnail_key: mediaAssetsTable\.thumbnail_key/);
+    expect(route).toMatch(/eq\(mediaAssetsTable\.context_kind, "story"\),[\s\S]*eq\(mediaAssetsTable\.context_id, storyId\)/);
+    expect(route).toMatch(/status: "deletion_pending"/);
+    expect(route).toMatch(/mediaProcessingJobsTable\.status, \["queued", "failed"\]/);
+    expect(route).toMatch(/error_code: "STORY_MEDIA_PROCESSING"/);
+    expect(route).toMatch(/const universalAssets = await db\.select\(\{[\s\S]*?\.from\(mediaAssetsTable\)\.where\(and\([\s\S]*?eq\(mediaAssetsTable\.context_kind, "story"\)[\s\S]*?eq\(mediaAssetsTable\.context_id, storyId\)/);
+    expect(route).toMatch(/Keep universal asset rows as short-lived tombstones/);
+    expect(route).not.toMatch(/db\.delete\(mediaAssetsTable\)/);
+    expect(scheduler).toMatch(/STORY_ORPHAN_MEDIA_RETENTION_MS/);
+    expect(scheduler).toMatch(/status: "deletion_pending"/);
+    expect(scheduler).toMatch(/mediaProcessingJobsTable\.status, \["queued", "failed"\]/);
+  });
+
+  it("locks the linked listing before locking a Spark Story for publication", async () => {
+    const route = await fs.readFile(
+      new URL("../routes/community-exchange-spark-drafts.ts", import.meta.url),
+      "utf8",
+    );
+    const publishOffset = route.indexOf('"/community/exchange/sparks/drafts/:sparkId/publish"');
+    const listingLockOffset = route.indexOf('.for("update")', publishOffset);
+    const storyLockOffset = route.indexOf('.for("update")', listingLockOffset + 1);
+
+    expect(publishOffset).toBeGreaterThanOrEqual(0);
+    expect(listingLockOffset).toBeGreaterThan(publishOffset);
+    expect(storyLockOffset).toBeGreaterThan(listingLockOffset);
+    expect(route.slice(publishOffset, storyLockOffset)).toMatch(/storyReference\.exchange_listing_id/);
+  });
+
+  it("provides bounded cursor discovery with coarse server-side nearby matching and same-origin media URLs", async () => {
+    const route = await fs.readFile(exchangeRoutePath, "utf8");
+
+    expect(route).toMatch(/EXCHANGE_SPARK_MAX_PAGE_SIZE = 40/);
+    expect(route).toMatch(/router\.get\("\/community\/exchange\/sparks"/);
+    expect(route).toMatch(/3958\.8 \* 2 \* ASIN\(SQRT/);
+    expect(route).toMatch(/locationCondition = sql`FALSE`/);
+    expect(route).toMatch(/media_url: `\/api\/community\/stories\/media\/\$\{row\.media_id\}`/);
+    expect(route).toMatch(/thumbnail_url: row\.thumbnail_storage_key \|\| row\.thumbnail_key[\s\S]*\?thumbnail=true/);
+    expect(route).toMatch(/listingId: row\.listing_id,[\s\S]*storyId: row\.story_id,[\s\S]*caption: row\.caption,[\s\S]*neighborhood: row\.neighborhood/);
+    expect(route).toMatch(/next_cursor: hasMore/);
+  });
+});

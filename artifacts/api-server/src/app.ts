@@ -8,10 +8,11 @@ import { voiceAudioRawParser } from "./routes/nia-voice";
 import { logger } from "./lib/logger";
 import { AppError, ErrorCode } from "./lib/errors";
 import { apiTrafficLimiter } from "./middlewares/rate-limit.hardened";
-import { parseAuth } from "./middlewares/auth";
+import { parseAuth, requireApproved, requireAuth } from "./middlewares/auth";
 import { requestTimeout } from "./middlewares/timeout";
 import helmet from "helmet";
 import { getNiaServiceUrl } from "./lib/nia-client";
+import { MAX_MEDIA_BYTES } from "./lib/media-validation";
 
 const app: Express = express();
 
@@ -181,7 +182,12 @@ app.use(
 );
 app.use(
   "/api/media-assets/:id/upload",
-  express.raw({ type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"], limit: "500mb" }),
+  requireAuth,
+  requireApproved,
+  express.raw({
+    type: ["image/*", "video/*", "audio/*", "application/octet-stream", "application/pdf"],
+    limit: `${MAX_MEDIA_BYTES}b`,
+  }),
 );
 
 // DNA exports are parsed in memory by the authenticated route. The raw bytes

@@ -1,6 +1,6 @@
 import { Worker, type Job } from "bullmq";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -12,15 +12,14 @@ import {
 } from "@workspace/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
-import { getAssetBuffer, putAsset } from "../lib/storage";
-import { inspectMedia } from "../lib/media-validation";
+import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset } from "../lib/storage";
+import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
 import { logger } from "../lib/logger";
 import { assertSupportedMediaJob, mediaJobsForType } from "../lib/media-platform";
 import { trackWorker } from "../lib/worker-lifecycle";
+import { randomUUID } from "node:crypto";
 
 const execFileAsync = promisify(execFile);
-const MAX_PROCESSING_BYTES = 100 * 1024 * 1024;
-
 type MediaJobData = { mediaAssetId: number; jobType: MediaJobType };
 
 async function runFfmpeg(args: string[]): Promise<void> {
@@ -28,6 +27,16 @@ async function runFfmpeg(args: string[]): Promise<void> {
     timeout: 120_000,
     maxBuffer: 2 * 1024 * 1024,
   });
+}
+
+async function readBoundedOutput(filePath: string): Promise<Buffer> {
+  const fileInfo = await stat(filePath);
+  if (!isAllowedMediaSize(fileInfo.size)) throw new Error("MEDIA_SIZE_INVALID");
+  const buffer = await readFile(filePath);
+  if (buffer.length !== fileInfo.size || !isAllowedMediaSize(buffer.length)) {
+    throw new Error("MEDIA_SIZE_INVALID");
+  }
+  return buffer;
 }
 
 async function markReadyIfComplete(mediaAssetId: number, mediaType: string, compositionManifest: Parameters<typeof mediaJobsForType>[1]): Promise<void> {
@@ -65,28 +74,34 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
 
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
   if (!asset) throw new Error(`media asset ${mediaAssetId} not found`);
-  await db.update(mediaAssetsTable).set({
-    status: "processing",
-    failure_reason: null,
-    updated_at: new Date(),
-  }).where(eq(mediaAssetsTable.id, mediaAssetId));
-
   let tempDir: string | undefined;
+  const generatedKeys: string[] = [];
   try {
-    const original = await getAssetBuffer(asset.original_key);
-    if (original.length === 0 || original.length > MAX_PROCESSING_BYTES) {
-      throw new Error("media asset is empty or exceeds the processing limit");
+    if (!isAllowedMediaSize(asset.byte_size)) throw new Error("MEDIA_SIZE_INVALID");
+    const originalInfo = await getAssetInfo(asset.original_key);
+    if (!originalInfo || !isAllowedMediaSize(originalInfo.contentLength) || originalInfo.contentLength !== asset.byte_size) {
+      throw new Error("MEDIA_SIZE_INVALID");
     }
+    const original = await getAssetBuffer(asset.original_key, MAX_MEDIA_BYTES);
+    if (original.length !== asset.byte_size || !isAllowedMediaSize(original.length)) {
+      throw new Error("MEDIA_SIZE_INVALID");
+    }
+    const metadata = await validateMediaBuffer(original, asset.media_type, asset.mime_type);
+    await db.update(mediaAssetsTable).set({
+      status: "processing",
+      failure_reason: null,
+      width: metadata.width,
+      height: metadata.height,
+      duration_ms: metadata.duration_ms,
+      metadata: { ...asset.metadata, signature_validated: true },
+      updated_at: new Date(),
+    }).where(eq(mediaAssetsTable.id, mediaAssetId));
 
     if (jobType === "probe") {
-      const metadata = await inspectMedia(original, asset.mime_type);
-      if (!metadata && !asset.mime_type.startsWith("application/")) {
-        throw new Error("FFprobe or media inspection could not read the asset");
-      }
       await db.update(mediaAssetsTable).set({
-        width: metadata?.width ?? asset.width,
-        height: metadata?.height ?? asset.height,
-        duration_ms: metadata?.duration_ms ?? asset.duration_ms,
+        width: metadata.width,
+        height: metadata.height,
+        duration_ms: metadata.duration_ms,
         metadata: { ...asset.metadata, probed: true },
         updated_at: new Date(),
       }).where(eq(mediaAssetsTable.id, mediaAssetId));
@@ -103,7 +118,10 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           "-q:v", "4", output,
         ]);
         const key = `media-assets/${asset.id}/thumbnail.jpg`;
-        await putAsset(key, await readFile(output), "image/jpeg");
+        const outputBuffer = await readBoundedOutput(output);
+        await validateMediaBuffer(outputBuffer, "photo", "image/jpeg");
+        await putAsset(key, outputBuffer, "image/jpeg");
+        generatedKeys.push(key);
         await db.update(mediaAssetsTable).set({ thumbnail_key: key, updated_at: new Date() })
           .where(eq(mediaAssetsTable.id, mediaAssetId));
       } else if (jobType === "transcode") {
@@ -127,7 +145,10 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           "-movflags", "+faststart", output,
         ]);
         const key = `media-assets/${asset.id}/variant.mp4`;
-        await putAsset(key, await readFile(output), "video/mp4");
+        const outputBuffer = await readBoundedOutput(output);
+        await validateMediaBuffer(outputBuffer, "video", "video/mp4");
+        await putAsset(key, outputBuffer, "video/mp4");
+        generatedKeys.push(key);
         await db.update(mediaAssetsTable).set({ variant_key: key, updated_at: new Date() })
           .where(eq(mediaAssetsTable.id, mediaAssetId));
       } else if (jobType === "audio_mix") {
@@ -139,8 +160,10 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         if (!music.track_key.startsWith("media-assets/")) {
           throw new Error("audio_mix track_key is outside the media asset namespace");
         }
-        const musicBuffer = await getAssetBuffer(music.track_key);
-        if (musicBuffer.length === 0 || musicBuffer.length > MAX_PROCESSING_BYTES) {
+        const musicInfo = await getAssetInfo(music.track_key);
+        if (!musicInfo || !isAllowedMediaSize(musicInfo.contentLength)) throw new Error("MEDIA_SIZE_INVALID");
+        const musicBuffer = await getAssetBuffer(music.track_key, MAX_MEDIA_BYTES);
+        if (musicBuffer.length === 0 || musicBuffer.length !== musicInfo.contentLength || musicBuffer.length > MAX_MEDIA_BYTES) {
           throw new Error("audio track is empty or exceeds the processing limit");
         }
         const musicInput = path.join(tempDir, "music");
@@ -169,7 +192,10 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           "-movflags", "+faststart", output,
         ]);
         const key = `media-assets/${asset.id}/variant-mixed.mp4`;
-        await putAsset(key, await readFile(output), "video/mp4");
+        const outputBuffer = await readBoundedOutput(output);
+        await validateMediaBuffer(outputBuffer, "video", "video/mp4");
+        await putAsset(key, outputBuffer, "video/mp4");
+        generatedKeys.push(key);
         await db.update(mediaAssetsTable).set({ variant_key: key, updated_at: new Date() })
           .where(eq(mediaAssetsTable.id, mediaAssetId));
       }
@@ -184,18 +210,38 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
     await markReadyIfComplete(mediaAssetId, asset.media_type, asset.composition_manifest);
     logger.info({ mediaAssetId, jobType }, "media-processing: job completed");
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const requestId = randomUUID();
+    const message = error instanceof Error && error.message === "STORAGE_OBJECT_TOO_LARGE"
+      ? "MEDIA_SIZE_INVALID"
+      : error instanceof Error && /^MEDIA_[A-Z_]+$/.test(error.message)
+      ? error.message
+      : "MEDIA_PROCESSING_FAILED";
+    for (const key of generatedKeys) {
+      try {
+        await deleteAssetStrict(key);
+      } catch {
+        logger.error({ requestId, mediaAssetId, jobType }, "media-processing: generated variant cleanup failed");
+      }
+    }
+    if (generatedKeys.length) {
+      await db.update(mediaAssetsTable).set({
+        ...(generatedKeys.some((key) => key.endsWith("/thumbnail.jpg")) ? { thumbnail_key: null } : {}),
+        ...(generatedKeys.some((key) => key.endsWith("/variant.mp4") || key.endsWith("/variant-mixed.mp4")) ? { variant_key: null } : {}),
+        updated_at: new Date(),
+      }).where(eq(mediaAssetsTable.id, mediaAssetId));
+    }
     await db.update(mediaProcessingJobsTable).set({
       status: "failed",
-      error: message.slice(0, 2_000),
+      error: message,
       updated_at: new Date(),
     }).where(eq(mediaProcessingJobsTable.id, claimed.id));
     await db.update(mediaAssetsTable).set({
       status: "failed",
-      failure_reason: message.slice(0, 2_000),
+      failure_reason: `${message};request_id=${requestId}`,
       updated_at: new Date(),
     }).where(eq(mediaAssetsTable.id, mediaAssetId));
-    throw error;
+    logger.error({ requestId, mediaAssetId, jobType, failureCode: message }, "media-processing: job failed");
+    throw new Error(`${message}; request_id=${requestId}`);
   } finally {
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
   }
@@ -206,10 +252,10 @@ export function startMediaProcessWorker(): Worker<MediaJobData> | null {
   if (!connection) return null;
   const worker = new Worker<MediaJobData>(QUEUE.MEDIA_PROCESSING, processMediaJob, {
     connection,
-    concurrency: 2,
+    concurrency: 1,
   });
   worker.on("failed", (job, error) => {
-    logger.error({ err: error, mediaAssetId: job?.data.mediaAssetId, jobType: job?.data.jobType }, "media-processing: BullMQ job failed");
+    logger.error({ mediaAssetId: job?.data.mediaAssetId, jobType: job?.data.jobType, failureCode: error.message.split(";")[0] }, "media-processing: BullMQ job failed");
   });
   return trackWorker(worker) ?? null;
 }

@@ -1,10 +1,13 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   db,
   directMessageBlocksTable,
   exchangeListingsTable,
   exchangePickupRequestsTable,
+  communityStoriesTable,
+  communityStoryMediaTable,
+  mediaAssetsTable,
   reportsTable,
   usersTable,
 } from "@workspace/db";
@@ -146,6 +149,7 @@ function serializeListing(listing: Record<string, unknown>): Record<string, unkn
 
 const EXCHANGE_LISTING_PAGE_SIZE = 24;
 const EXCHANGE_LISTING_MAX_PAGE_SIZE = 50;
+const EXCHANGE_SPARK_MAX_PAGE_SIZE = 40;
 
 type ListingCursor = { created_at: string; id: number };
 
@@ -169,6 +173,127 @@ function decodeListingCursor(value: unknown): ListingCursor | null {
     return null;
   }
 }
+
+router.get("/community/exchange/sparks", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const [viewer] = await db.select({ community_id: usersTable.community_id })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const communityVisibility = or(
+    eq(communityStoriesTable.author_user_id, userId),
+    viewer?.community_id == null
+      ? isNull(communityStoriesTable.community_id)
+      : eq(communityStoriesTable.community_id, viewer.community_id),
+  );
+  const nearby = req.query.nearby === "true";
+  if (nearby && req.query.radius_miles !== undefined && parseRadius(req.query.radius_miles) == null) {
+    return res.status(400).json({ error: "radius_miles must be between 1 and 50" });
+  }
+  const requestedLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : 24;
+  const pageSize = Number.isSafeInteger(requestedLimit)
+    ? Math.min(EXCHANGE_SPARK_MAX_PAGE_SIZE, Math.max(1, requestedLimit))
+    : 24;
+  const cursorValue = req.query.cursor;
+  const cursor = cursorValue == null ? null : decodeListingCursor(cursorValue);
+  if (cursorValue != null && !cursor) return res.status(400).json({ error: "Invalid Spark cursor" });
+
+  let locationCondition: ReturnType<typeof and> | ReturnType<typeof sql> | undefined;
+  if (nearby) {
+    const viewerLocation = await getExchangeMatchingLocation(userId);
+    if (viewerLocation?.lat != null && viewerLocation.lng != null
+      && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
+      const radius = req.query.radius_miles === undefined ? 15 : parseRadius(req.query.radius_miles)!;
+      const latDelta = radius / 69;
+      const lngDelta = radius / (69 * Math.max(0.25, Math.cos((viewerLocation.lat * Math.PI) / 180)));
+      locationCondition = and(
+        sql`${exchangeListingsTable.latitude} IS NOT NULL AND ${exchangeListingsTable.longitude} IS NOT NULL`,
+        sql`${exchangeListingsTable.latitude} BETWEEN ${viewerLocation.lat - latDelta} AND ${viewerLocation.lat + latDelta}`,
+        sql`${exchangeListingsTable.longitude} BETWEEN ${viewerLocation.lng - lngDelta} AND ${viewerLocation.lng + lngDelta}`,
+        sql`3958.8 * 2 * ASIN(SQRT(
+          POWER(SIN(RADIANS(${exchangeListingsTable.latitude} - ${viewerLocation.lat}) / 2), 2) +
+          COS(RADIANS(${viewerLocation.lat})) * COS(RADIANS(${exchangeListingsTable.latitude})) *
+          POWER(SIN(RADIANS(${exchangeListingsTable.longitude} - ${viewerLocation.lng}) / 2), 2)
+        )) <= ${radius}`,
+      );
+    } else {
+      // Missing viewer coordinates must not widen a nearby request to all Sparks.
+      locationCondition = sql`FALSE`;
+    }
+  }
+
+  const rows = await db.select({
+    story_id: communityStoriesTable.id,
+    created_at: communityStoriesTable.created_at,
+    expires_at: communityStoriesTable.expires_at,
+    listing_id: exchangeListingsTable.id,
+    caption: communityStoriesTable.caption,
+    neighborhood: exchangeListingsTable.neighborhood,
+    media_id: communityStoryMediaTable.id,
+    thumbnail_storage_key: communityStoryMediaTable.thumbnail_storage_key,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+  }).from(communityStoriesTable)
+    .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, communityStoriesTable.exchange_listing_id))
+    .innerJoin(usersTable, eq(usersTable.id, communityStoriesTable.author_user_id))
+    .innerJoin(communityStoryMediaTable, eq(communityStoryMediaTable.story_id, communityStoriesTable.id))
+    .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
+    .where(and(
+      eq(communityStoriesTable.status, "published"),
+      eq(communityStoriesTable.audience, "community"),
+      communityVisibility,
+      sql`${communityStoriesTable.expires_at} > NOW()`,
+      eq(communityStoryMediaTable.media_type, "video"),
+      sql`${communityStoryMediaTable.mime_type} LIKE 'video/%'`,
+      or(
+        isNull(mediaAssetsTable.id),
+        and(eq(mediaAssetsTable.status, "ready"), sql`${mediaAssetsTable.variant_key} IS NOT NULL`),
+      ),
+      eq(exchangeListingsTable.status, "active"),
+      eq(exchangeListingsTable.moderation_status, "approved"),
+      eq(exchangeListingsTable.seller_id, communityStoriesTable.author_user_id),
+      eq(usersTable.approval_status, "approved"),
+      eq(usersTable.is_suspended, false),
+      locationCondition,
+      sql`NOT EXISTS (
+        SELECT 1 FROM direct_message_blocks spark_block
+        WHERE (spark_block.blocker_id = ${userId} AND spark_block.blocked_id = ${communityStoriesTable.author_user_id})
+           OR (spark_block.blocker_id = ${communityStoriesTable.author_user_id} AND spark_block.blocked_id = ${userId})
+      )`,
+      cursor
+        ? or(
+          lt(communityStoriesTable.created_at, new Date(cursor.created_at)),
+          and(
+            eq(communityStoriesTable.created_at, new Date(cursor.created_at)),
+            lt(communityStoriesTable.id, cursor.id),
+          ),
+        )
+        : undefined,
+    ))
+    .orderBy(desc(communityStoriesTable.created_at), desc(communityStoriesTable.id))
+    .limit(pageSize + 1);
+  const hasMore = rows.length > pageSize;
+  const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
+  return res.json({
+    sparks: pageRows.map((row) => ({
+      listingId: row.listing_id,
+      storyId: row.story_id,
+      // Retain the Exchange client’s established snake-case identifiers while
+      // exposing the canonical linked Story/listing keys for newer clients.
+      id: row.story_id,
+      listing_id: row.listing_id,
+      caption: row.caption,
+      created_at: row.created_at.toISOString(),
+      expires_at: row.expires_at.toISOString(),
+      neighborhood: row.neighborhood,
+      media_url: `/api/community/stories/media/${row.media_id}`,
+      thumbnail_url: row.thumbnail_storage_key || row.thumbnail_key
+        ? `/api/community/stories/media/${row.media_id}?thumbnail=true`
+        : null,
+    })),
+    next_cursor: hasMore ? encodeListingCursor({
+      created_at: pageRows[pageRows.length - 1].created_at,
+      id: pageRows[pageRows.length - 1].story_id,
+    }) : null,
+  });
+});
 
 function parseRadius(value: unknown): number | null {
   if (typeof value !== "string" || value.trim() === "") return null;
