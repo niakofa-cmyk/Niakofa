@@ -17,6 +17,28 @@ describe("V21 media asset deletion safety", () => {
     expect(route).toMatch(/if \(!asset\) return res\.status\(404\)\.json\(\{ error: "Media asset not found\." \}\)/);
   });
 
+  it("keeps every media read, write, and grant route behind authentication", async () => {
+    const route = await fs.readFile(routePath, "utf8");
+    for (const declaration of [
+      'router.post("/media-assets/uploads"',
+      'router.put("/media-assets/:id/upload"',
+      'router.post("/media-assets/:id/complete"',
+      'router.delete("/media-assets/:id"',
+      'router.post("/media-assets/:id/playback-grant"',
+      'router.get("/media-assets/shared"',
+      'router.get("/media-assets/:id/thumbnail"',
+      'router.get("/media-assets/:id"',
+    ]) {
+      const start = route.indexOf(declaration);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const line = route.slice(start, route.indexOf("\n", start));
+      expect(line).toMatch(/requireAuth, requireApproved, generalApiLimiter/);
+    }
+    const playback = route.slice(route.indexOf('router.get("/media-assets/:id/play"'));
+    expect(playback).toMatch(/verifyExchangeSparkPlaybackGrant/);
+    expect(playback).toMatch(/if \(!assetId \|\| !claims\) return res\.status\(404\)/);
+  });
+
   it("hides the asset before strict, retryable object cleanup", async () => {
     const route = await fs.readFile(routePath, "utf8");
     const deletion = route.slice(route.indexOf('router.delete("/media-assets/:id"'));

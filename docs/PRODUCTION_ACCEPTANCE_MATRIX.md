@@ -50,6 +50,14 @@ or exercised against the deployed revision. The earlier production pass above
 remains evidence only for the commit it names; it does not certify the new
 Studio, cleanup, or draft-to-publish behavior.
 
+**Automated media contracts on current `main`:** CI now covers the raw-body
+64 MiB boundary, malformed and MIME-spoofed content, WebP VP8/VP8L metadata,
+short-lived playback-grant expiry/tamper rejection, authenticated route
+registration, deletion/worker race contracts, and durable cleanup behavior.
+These are regression protections for the source tree; they do not replace
+production storage-object inspection, approved-account isolation, worker
+runtime evidence, or physical-device checks.
+
 ## Gate 1 — Application and storage configuration
 
 - [x] CI, typecheck, and tests are green on the intended commit

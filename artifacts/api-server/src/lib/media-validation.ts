@@ -24,11 +24,26 @@ export function hasExpectedSignature(buffer: Buffer, mimeType: string): boolean 
 function imageDimensions(buffer: Buffer, mimeType: string): { width: number; height: number } | null {
   if (mimeType === "image/png" && buffer.length >= 24) return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
   if (mimeType === "image/gif" && buffer.length >= 10) return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
-  if (mimeType === "image/webp" && buffer.length >= 30 && buffer.subarray(12, 16).toString("ascii") === "VP8X") {
-    return {
-      width: 1 + buffer[24] + (buffer[25] << 8) + (buffer[26] << 16),
-      height: 1 + buffer[27] + (buffer[28] << 8) + (buffer[29] << 16),
-    };
+  if (mimeType === "image/webp" && buffer.length >= 20) {
+    const chunk = buffer.subarray(12, 16).toString("ascii");
+    if (chunk === "VP8X" && buffer.length >= 30) {
+      return {
+        width: 1 + buffer[24] + (buffer[25] << 8) + (buffer[26] << 16),
+        height: 1 + buffer[27] + (buffer[28] << 8) + (buffer[29] << 16),
+      };
+    }
+    if (chunk === "VP8L" && buffer.length >= 25 && buffer[20] === 0x2f) {
+      const widthMinusOne = buffer[21] | ((buffer[22] & 0x3f) << 8);
+      const heightMinusOne = (buffer[22] >> 6) | (buffer[23] << 2) | ((buffer[24] & 0x3f) << 10);
+      return { width: widthMinusOne + 1, height: heightMinusOne + 1 };
+    }
+    if (chunk === "VP8 " && buffer.length >= 30
+      && buffer[23] === 0x9d && buffer[24] === 0x01 && buffer[25] === 0x2a) {
+      return {
+        width: buffer.readUInt16LE(26) & 0x3fff,
+        height: buffer.readUInt16LE(28) & 0x3fff,
+      };
+    }
   }
   if (mimeType !== "image/jpeg") return null;
   let offset = 2;
@@ -114,6 +129,7 @@ export async function validateMediaBuffer(
   mediaType: string,
   mimeType: string,
 ): Promise<{ width: number | null; height: number | null; duration_ms: number | null }> {
+  mimeType = mimeType.trim().toLowerCase();
   const supported: Record<string, string[]> = {
     photo: ["image/jpeg", "image/png", "image/gif", "image/webp"],
     video: ["video/mp4", "video/webm"],
