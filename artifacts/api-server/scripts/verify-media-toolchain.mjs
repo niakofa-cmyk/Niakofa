@@ -83,7 +83,7 @@ async function main() {
           executable_checks: "ffmpeg-and-ffprobe-version",
           smoke_test: "ffmpeg-generated-mp4-to-ffprobe",
           dimensions: `${stream.width}x${stream.height}`,
-          media_platform_should_still_be_off: true,
+          media_platform_flag_unchanged: true,
         },
         null,
         2,

@@ -73,9 +73,15 @@ async function main() {
   const verifyDeleted = async () => {
     try {
       await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-    } catch {
-      // A missing object is the expected result after DELETE.
-      return;
+    } catch (error) {
+      const status = error?.$metadata?.httpStatusCode;
+      if (status === 404 && (error?.name === "NotFound" || error?.name === "NoSuchKey")) {
+        // Only the provider's explicit missing-object response proves deletion.
+        return;
+      }
+      throw new Error(
+        `DELETE verification inconclusive: expected NotFound/NoSuchKey (404), got ${error?.name ?? "unknown"} (${status ?? "no status"})`,
+      );
     }
     throw new Error("DELETE verification failed: object is still readable");
   };
@@ -116,7 +122,7 @@ async function main() {
           bytes: body.length,
           deleted: true,
           cleanup_attempts: cleanupAttempts,
-          media_platform_should_still_be_off: true,
+          media_platform_flag_unchanged: true,
         },
         null,
         2,
