@@ -1334,17 +1334,9 @@ router.get("/users/:id/availability", requireAuth, resolveMeParam, requireOwners
   return res.json(windows);
 });
 
-// POST /users/:id/logout — client-side sign-out signal only.
-// NOT server-side token revocation, despite bumping token_version below.
-// Auth tokens are stateless HMAC(userId) (see middlewares/auth.ts —
-// signTokenById/verifyToken never read token_version, by deliberate design,
-// to avoid a DB lookup on every authenticated request). Bumping
-// token_version here does not invalidate any previously issued token; a
-// token issued before this call remains valid until SESSION_SECRET itself
-// changes. This endpoint exists so the client has a server round-trip to
-// confirm before discarding its local token, and so token_version keeps
-// incrementing for potential future use, but it provides no actual
-// "log out everywhere" or stolen-token-revocation guarantee today.
+// POST /users/:id/logout — revoke every token issued before this request by
+// advancing the account token version. The next request made with an older
+// token is rejected by requireAuth/requireApproved.
 router.post("/users/:id/logout", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });

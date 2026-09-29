@@ -822,8 +822,15 @@ export function initWebSocketServer(server: HttpServer): WebSocketServer {
           // that user's targeted push events (chat messages, payment confirmations, etc.).
           const { userId, token } = msg.payload as { userId: number; token?: string };
           if (userId && token) {
-            const { userId: verifiedId, valid } = verifyToken(token);
-            if (valid && verifiedId === userId) {
+            const { userId: verifiedId, valid, tokenVersion } = verifyToken(token);
+            const [currentUser] = valid && verifiedId === userId
+              ? await db.select({ token_version: usersTable.token_version })
+                .from(usersTable)
+                .where(eq(usersTable.id, userId))
+                .limit(1)
+              : [];
+            if (valid && verifiedId === userId && currentUser
+              && tokenVersion !== undefined && tokenVersion === currentUser.token_version) {
               registeredUserId = userId;
               // Mark socket as authenticated so broadcast() includes it and the
               // auth timeout doesn't fire. Must be set before any broadcast call.

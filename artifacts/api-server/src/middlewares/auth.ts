@@ -18,16 +18,10 @@ import { eq } from "drizzle-orm";
  * user as anonymous. This format now matches nia-service's parser exactly;
  * nia-service required no changes.
  *
- * tokenVersion is carried in the token but is NOT checked against the DB by
- * this stateless verifyToken() itself (that would require a DB lookup on
- * every authenticated request, defeating the point of a stateless token).
- * It IS enforced by requireApproved() below, which already does a per-
- * request DB lookup for suspension/ban/approval checks and piggybacks the
- * token_version comparison onto that same query — so "logout everywhere"
- * and password-change revocation work today on any route that uses
- * requireApproved. Routes using plain requireAuth (no requireApproved) do
- * NOT get this check — see the audit note on requireApproved's own docstring
- * below for which routes that currently leaves out.
+ * tokenVersion is carried in the token but is not checked by this pure,
+ * stateless verifier. The requireAuth middleware performs the small DB lookup
+ * needed to compare it with the current account version, so logout and
+ * password-change revocation apply to every authenticated HTTP route.
  *
  * SERVER STARTUP GUARD
  * SESSION_SECRET must be set before this module is loaded.
@@ -114,10 +108,20 @@ export function parseAuth(req: Request, _res: Response, next: NextFunction): voi
   next();
 }
 
-/** Express middleware — rejects with 401 if no valid Bearer token. */
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+/** Express middleware — rejects with 401 if no valid Bearer token or revoked session. */
+export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!req.authenticatedUserId) {
     res.status(401).json({ error: "Unauthorized — valid Bearer token required" });
+    return;
+  }
+  const [user] = await db
+    .select({ token_version: usersTable.token_version })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.authenticatedUserId))
+    .limit(1);
+  if (!user || req.authenticatedTokenVersion === undefined ||
+      req.authenticatedTokenVersion !== user.token_version) {
+    res.status(401).json({ error: "Session expired — please log in again", error_code: "TOKEN_REVOKED" });
     return;
   }
   next();

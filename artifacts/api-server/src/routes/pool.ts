@@ -526,8 +526,9 @@ router.post("/pool/donate", paymentLimiter, async (req, res) => {
  * Compares the actual Stripe platform balance against the Community Pool ledger
  * sum so admins can detect drift between the accounting system and held funds.
  *
- * Drift is expected to be small (in-flight payouts, Stripe fees) but large gaps
- * may indicate a ledger bug, a missed webhook, or a reconciliation error.
+ * Pending funds are diagnostic only. The spendable comparison uses Stripe's
+ * available balance, matching the daily drift monitor; a large gap may indicate
+ * a ledger bug, a missed webhook, fees, or a reconciliation error.
  * The endpoint logs a structured warning when gap > $10.
  */
 router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
@@ -545,8 +546,8 @@ router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimit
 
     const stripeBalance = await _stripe.balance.retrieve();
 
-    // "available" is immediately accessible; "pending" is in transit.
-    // Sum USD amounts across both buckets for a full picture.
+    // "available" is immediately spendable. Pending funds are reported
+    // separately and must not make the ledger appear reconciled.
     const available = stripeBalance.available
       .filter(b => b.currency === "usd")
       .reduce((s, b) => s + b.amount, 0) / 100;
@@ -555,14 +556,13 @@ router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimit
       .filter(b => b.currency === "usd")
       .reduce((s, b) => s + b.amount, 0) / 100;
 
-    const totalStripe = available + pending;
-    const drift = Math.abs(totalStripe - ledgerBalance);
+    const drift = Math.abs(available - ledgerBalance);
     const driftAlert = drift > 10; // alert threshold: $10
 
     if (driftAlert) {
       logger.warn(
         { stripe_available: available, stripe_pending: pending, ledger_balance: ledgerBalance, drift },
-        "pool/stripe-balance: ledger vs Stripe drift exceeds $10 — review reconciliation"
+        "pool/stripe-balance: spendable ledger vs Stripe available drift exceeds $10 — review reconciliation"
       );
     }
 
@@ -570,7 +570,7 @@ router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimit
       stripe_configured: true,
       stripe_available: available,
       stripe_pending: pending,
-      stripe_total: totalStripe,
+      stripe_total: available + pending,
       ledger_balance: ledgerBalance,
       drift,
       drift_alert: driftAlert,
