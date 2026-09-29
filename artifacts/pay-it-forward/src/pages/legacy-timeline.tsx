@@ -29,6 +29,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { Z_MODAL } from "@/lib/zLayers";
 
 interface FamilySpace {
   id: number;
@@ -423,7 +424,10 @@ export default function LegacyTimelinePage() {
       </main>
 
       {showAddEvent && selectedFamilyId && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+          style={{ zIndex: Z_MODAL }}
+        >
           <div className="w-full max-w-md rounded-2xl bg-card border border-border shadow-2xl max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-border">
               <div>

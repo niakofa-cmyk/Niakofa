@@ -15,6 +15,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { Z_MODAL } from "@/lib/zLayers";
 import { parseOralHistoryIntent, persistPreserveScanContext, readPreserveScanIdFromSearch } from "@/lib/diaspora/oralHistoryDeepLink";
 
 interface FamilySpace {
@@ -258,7 +259,10 @@ export default function FamilySpacesPage() {
 
         {/* Create modal */}
         {showCreate && (
-          <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
+          <div
+            className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+            style={{ zIndex: Z_MODAL }}
+          >
             <div className="bg-card rounded-2xl p-6 w-full max-w-md shadow-xl">
               <h2 className="text-lg font-bold mb-1">Create a Family Space</h2>
               <p className="text-sm text-muted-foreground mb-4">

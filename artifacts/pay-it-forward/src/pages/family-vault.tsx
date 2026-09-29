@@ -25,6 +25,7 @@ import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
 import { parseOralHistoryIntent, persistPreserveScanContext, readPreserveScanIdFromSearch } from "@/lib/diaspora/oralHistoryDeepLink";
 import { useAuthorizedFamilyAsset } from "@/lib/family-asset-client";
+import { Z_MODAL } from "@/lib/zLayers";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -702,7 +703,10 @@ export default function FamilyVaultPage() {
 
       {/* ── Add Memory modal ── */}
       {showAddMemory && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+          style={{ zIndex: Z_MODAL }}
+        >
           <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-1">
               <h2 className="text-lg font-bold">Add a Memory</h2>
@@ -841,7 +845,10 @@ export default function FamilyVaultPage() {
 
       {/* ── Invite modal ── */}
       {showInvite && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+          style={{ zIndex: Z_MODAL }}
+        >
           <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-bold">Invite a Family Member</h2>
@@ -971,7 +978,10 @@ function GedcomImportModal({ familyId, onClose, onDone }: { familyId: number; on
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+      style={{ zIndex: Z_MODAL }}
+    >
       <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -1086,7 +1096,10 @@ function TranslateMemoryModal({ familyId, memory, onClose }: { familyId: number;
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+      style={{ zIndex: Z_MODAL }}
+    >
       <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -1338,7 +1351,10 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
   const prompt = ORAL_HISTORY_PROMPTS[promptIdx];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+      style={{ zIndex: Z_MODAL }}
+    >
       <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
