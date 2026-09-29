@@ -6,7 +6,18 @@ export type StoryMetrics = {
   reactions: number;
   shares: number;
   viewer_reaction: string | null;
+  comment_count?: number;
 };
+
+export type StoryComment = {
+  id: number;
+  body: string;
+  created_at: string;
+  author: { id: number | null; name: string; avatar_url: string | null };
+  viewer_can_delete: boolean;
+};
+
+export type StoryComments = { story_id: number; total: number; comments: StoryComment[] };
 
 async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(url, {
@@ -47,6 +58,20 @@ export async function shareStory(storyId: number): Promise<void> {
 
 export async function getStoryMetrics(storyId: number): Promise<StoryMetrics> {
   return requestJson(`/api/community/stories/${storyId}/interactions`);
+}
+
+export async function getStoryComments(storyId: number, signal?: AbortSignal): Promise<StoryComments> {
+  return requestJson(`/api/community/stories/${storyId}/comments`, { signal });
+}
+
+export async function postStoryComment(storyId: number, body: string): Promise<{ moderation_pending?: boolean; comment_id?: number }> {
+  return requestJson(`/api/community/stories/${storyId}/comments`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body }),
+  });
+}
+
+export async function deleteStoryComment(storyId: number, commentId: number): Promise<void> {
+  await requestJson(`/api/community/stories/${storyId}/comments/${commentId}`, { method: "DELETE" });
 }
 
 export async function sendStoryContextMessage(input: {

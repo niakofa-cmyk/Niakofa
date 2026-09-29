@@ -58,6 +58,21 @@ function pathParam(value: string | string[]): string {
   return Array.isArray(value) ? value[0] ?? "" : value;
 }
 
+/** Visibility policy shared by timeline callers and its regression tests. */
+export function isTimelineMemoryVisible(
+  memory: { visibility: string | null | undefined; author_id: number | null | undefined },
+  userId: number,
+  role: string,
+): boolean {
+  if (timelineCanSeeAll(role)) return true;
+  return memory.visibility === "family"
+    || (memory.visibility === "private" && memory.author_id === userId);
+}
+
+function timelineCanSeeAll(role: string): boolean {
+  return role === "owner" || role === "curator";
+}
+
 // ─── Dashboard stats ───────────────────────────────────────────────────────────
 router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, res) => {
   try {
@@ -891,6 +906,7 @@ router.get("/family/:id/timeline", requireAuth, generalApiLimiter, async (req, r
 
     const memories = await db.select({
       id: familyMemoriesTable.id,
+      author_id: familyMemoriesTable.author_id,
       title: familyMemoriesTable.title,
       description: familyMemoriesTable.description,
       memory_date: sql<string>`${familyMemoriesTable.memory_date}::text`,
@@ -901,6 +917,19 @@ router.get("/family/:id/timeline", requireAuth, generalApiLimiter, async (req, r
     .where(and(
       eq(familyMemoriesTable.family_id, familyId),
       sql`${familyMemoriesTable.memory_date} IS NOT NULL`,
+      // Keep timeline visibility identical to the Family Vault list.  Managers
+      // are the explicit policy exception; everyone else gets family memories
+      // and their own private memories.  Branch (and any future/unknown value)
+      // is intentionally excluded until a branch policy exists.
+      ...(timelineCanSeeAll(membership[0].role)
+        ? []
+        : [or(
+            eq(familyMemoriesTable.visibility, "family"),
+            and(
+              eq(familyMemoriesTable.visibility, "private"),
+              eq(familyMemoriesTable.author_id, userId),
+            ),
+          )]),
     ))
     .orderBy(familyMemoriesTable.memory_date);
 

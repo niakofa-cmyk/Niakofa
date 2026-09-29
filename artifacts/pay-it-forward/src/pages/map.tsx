@@ -32,6 +32,7 @@ import { HelperMarker } from "@/components/HelperMarker";
 import { CivicNeedMarker } from "@/components/CivicNeedMarker";
 import { CivicResourceMarker } from "@/components/CivicResourceMarker";
 import { BestMatchCard } from "@/components/BestMatchCard";
+import { lineStringToFeatureCollection, type MapGeoJSONFeatureCollection } from "@/lib/map-geojson";
 import {
   MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle,
   Navigation2, LocateFixed, Plus, Compass,
@@ -1147,7 +1148,7 @@ export default function MapScreen() {
   // GeoJSON feature collection for request markers — drives both the cluster
   // source (low zoom) and the demand heatmap layer. Re-computed only when the
   // open-requests list changes (not on every render).
-  const requestsGeoJSON = useMemo((): GeoJSON.FeatureCollection => ({
+  const requestsGeoJSON = useMemo((): MapGeoJSONFeatureCollection => ({
     type: "FeatureCollection",
     features: openRequests.map(r => ({
       type: "Feature",
@@ -1159,6 +1160,10 @@ export default function MapScreen() {
       geometry: { type: "Point", coordinates: [r.lng, r.lat] },
     })),
   }), [openRequests]);  
+  const activeHelperRouteGeoJSON = useMemo(
+    () => lineStringToFeatureCollection(activeHelperRouteData?.geometry),
+    [activeHelperRouteData?.geometry],
+  );
 
   // Show individual React Markers only when Mapbox's cluster has already broken
   // the points into individual features (i.e. zoom > CLUSTER_MAX_ZOOM).
@@ -1934,8 +1939,8 @@ export default function MapScreen() {
         ))}
 
         {/* ── Live route line ──────────────────────────────────────────────── */}
-        {activeHelperRouteData?.geometry && (
-          <Source id="helper-route" type="geojson" data={activeHelperRouteData.geometry as unknown as GeoJSON.FeatureCollection}>
+        {activeHelperRouteGeoJSON && (
+          <Source id="helper-route" type="geojson" data={activeHelperRouteGeoJSON}>
             <Layer
               id="helper-route-casing"
               type="line"

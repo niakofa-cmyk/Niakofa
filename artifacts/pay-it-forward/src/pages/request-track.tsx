@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
@@ -19,6 +19,7 @@ import { unwrapUnifiedRealtimeEvent } from "@/lib/unifiedRealtime";
 import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline";
 import { ArrivalState } from "@/components/request/ArrivalState";
 import { NavigationContext } from "@/components/request/NavigationContext";
+import { lineStringToFeatureCollection } from "@/lib/map-geojson";
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -75,6 +76,10 @@ export default function RequesterTrackingScreen() {
       queryKey: getGetRouteQueryKey(routeParams),
     }
   });
+  const routeFeatureCollection = useMemo(
+    () => lineStringToFeatureCollection(routeData?.geometry),
+    [routeData?.geometry],
+  );
 
   // ETA countdown
   useEffect(() => {
@@ -282,8 +287,8 @@ export default function RequesterTrackingScreen() {
           )}
 
           {/* Route line */}
-          {routeData?.geometry && (
-            <Source id="helper-route" type="geojson" data={routeData.geometry as unknown as GeoJSON.FeatureCollection}>
+          {routeFeatureCollection && (
+            <Source id="helper-route" type="geojson" data={routeFeatureCollection}>
               <Layer
                 id="route-casing"
                 type="line"

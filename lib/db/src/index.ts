@@ -32,6 +32,7 @@ export {
   communityStoryViewsTable,
   communityStoryReactionsTable,
   communityStorySharesTable,
+  communityStoryCommentsTable,
 } from "./schema/community-stories";
 
 // V21 Media Platform — same Jest/ESM stability pattern.

@@ -5,6 +5,7 @@ import { Clock3, MapPinned, Navigation2, Radio } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { wsSubscribe, type WsEvent } from "@/lib/wsClient";
+import { lineStringToFeatureCollection } from "@/lib/map-geojson";
 
 type RequestContext = {
   id: number;
@@ -100,7 +101,10 @@ export function RequestLiveMapCard({
   }, [request.lat, request.lng, startLat, startLng]);
 
   const center = start ?? { lat: request.lat, lng: request.lng };
-  const routeGeometry = useMemo(() => route?.geometry ?? null, [route?.geometry]);
+  const routeFeatureCollection = useMemo(
+    () => lineStringToFeatureCollection(route?.geometry),
+    [route?.geometry],
+  );
 
   if (!MAPBOX_TOKEN) {
     return (
@@ -135,8 +139,8 @@ export function RequestLiveMapCard({
         >
           {start && <Marker longitude={start.lng} latitude={start.lat} anchor="center"><div className="h-4 w-4 rounded-full border-2 border-white bg-primary shadow-[0_0_14px_rgba(0,212,255,0.9)]" /></Marker>}
           <Marker longitude={request.lng} latitude={request.lat} anchor="bottom"><MapPinned className="h-8 w-8 fill-primary text-primary drop-shadow-[0_0_10px_rgba(0,212,255,0.8)]" /></Marker>
-          {routeGeometry && (
-            <Source id={`request-route-${request.id}`} type="geojson" data={routeGeometry as unknown as GeoJSON.Feature<GeoJSON.LineString>}>
+          {routeFeatureCollection && (
+            <Source id={`request-route-${request.id}`} type="geojson" data={routeFeatureCollection}>
               <Layer id={`request-route-line-${request.id}`} type="line" paint={{ "line-color": "#00d4ff", "line-width": 5, "line-opacity": 0.9 }} layout={{ "line-cap": "round", "line-join": "round" }} />
             </Source>
           )}

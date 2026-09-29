@@ -39,6 +39,8 @@ import {
   streamOrRedirectAsset,
   isCloudStorageConfigured,
   getStorageBackend,
+  deleteAssetStrict,
+  assetExists,
 } from "../lib/storage";
 import {
   db,
@@ -61,6 +63,7 @@ import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { requestNia } from "../lib/nia-client";
 import { stripTags } from "../lib/sanitize";
+import { randomUUID } from "node:crypto";
 
 const router = Router();
 
@@ -280,6 +283,47 @@ async function getFamilyMembership(familyId: number, userId: number) {
   return row ?? null;
 }
 
+/**
+ * Resolve a memory only when the route family and memory family both match.
+ * This deliberately distinguishes a missing/cross-family row (404) from an
+ * existing private row the caller is not allowed to see (403).
+ */
+async function getAccessibleMemory(
+  familyId: number,
+  memoryId: number,
+  userId: number,
+  membership: Awaited<ReturnType<typeof getFamilyMembership>>,
+) {
+  const [memory] = await db.select().from(familyMemoriesTable).where(and(
+    eq(familyMemoriesTable.id, memoryId),
+    eq(familyMemoriesTable.family_id, familyId),
+  )).limit(1);
+  if (!memory) return { memory: null, forbidden: false };
+  const readable = familyMemoryVisibilityAllows(
+    memory.visibility, memory.author_id, userId, membership?.role as string | undefined,
+  );
+  return { memory, forbidden: !readable };
+}
+
+export function familyMemoryStorageKeyFor(familyId: number, memoryId: number, key: string): boolean {
+  const prefix = `families/${familyId}/memories/${memoryId}/`;
+  return key.startsWith(prefix) && key.length > prefix.length
+    && !key.includes("..") && !key.startsWith("/")
+    && !key.slice(prefix.length).includes("/");
+}
+
+export function familyMemoryVisibilityAllows(
+  visibility: string,
+  authorId: number | null,
+  userId: number,
+  role: string | undefined,
+): boolean {
+  return visibility === "family"
+    || (visibility === "private" && (
+      authorId === userId || CAN_MANAGE_ROLES.includes(role ?? "")
+    ));
+}
+
 const CAN_WRITE_ROLES: string[] = ["owner", "curator", "contributor"];
 const CAN_MANAGE_ROLES: string[] = ["owner", "curator"];
 
@@ -444,6 +488,28 @@ router.delete("/family/:id", generalApiLimiter, requireAuth, async (req, res) =>
     return res.status(403).json({ error: "Owner access required to delete a family" });
   }
 
+  const familyAssets = await db
+    .select({
+      storage_key: familyMemoryAssetsTable.storage_key,
+      thumbnail_key: familyMemoryAssetsTable.thumbnail_key,
+    })
+    .from(familyMemoryAssetsTable)
+    .innerJoin(
+      familyMemoriesTable,
+      eq(familyMemoryAssetsTable.memory_id, familyMemoriesTable.id),
+    )
+    .where(eq(familyMemoriesTable.family_id, familyId));
+  try {
+    for (const asset of familyAssets) {
+      await deleteAssetStrict(asset.storage_key);
+      if (asset.thumbnail_key) await deleteAssetStrict(asset.thumbnail_key);
+    }
+  } catch (error) {
+    logger.error({ error, familyId }, "family_storage_cleanup_failed");
+    return res.status(502).json({
+      error: "Family storage cleanup incomplete; database rows remain for retry. Some objects may already have been removed.",
+    });
+  }
   await db.delete(familiesTable).where(eq(familiesTable.id, familyId));
   logger.info({ familyId, userId }, "family_deleted");
   return res.json({ ok: true });
@@ -775,24 +841,12 @@ router.get("/family/:id/memories/:memoryId", generalApiLimiter, requireAuth, asy
   const membership = await getFamilyMembership(familyId, userId);
   if (!membership) return res.status(403).json({ error: "Not a member of this family" });
 
-  const [memory] = await db
-    .select()
-    .from(familyMemoriesTable)
-    .where(and(
-      eq(familyMemoriesTable.id, memoryId),
-      eq(familyMemoriesTable.family_id, familyId),
-    ))
-    .limit(1);
-  if (!memory) return res.status(404).json({ error: "Memory not found" });
-
-  // Visibility check
-  if (
-    memory.visibility === "private" &&
-    memory.author_id !== userId &&
-    !CAN_MANAGE_ROLES.includes(membership.role as string)
-  ) {
+  const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+  if (!access.memory) return res.status(404).json({ error: "Not found" });
+  if (access.forbidden) {
     return res.status(403).json({ error: "This memory is private" });
   }
+  const memory = access.memory;
 
   const [assets, tags, people, comments] = await Promise.all([
     db.select().from(familyMemoryAssetsTable).where(eq(familyMemoryAssetsTable.memory_id, memoryId)),
@@ -818,12 +872,10 @@ router.patch("/family/:id/memories/:memoryId", generalApiLimiter, requireAuth, a
   const membership = await getFamilyMembership(familyId, userId);
   if (!membership) return res.status(403).json({ error: "Not a member of this family" });
 
-  const [memory] = await db
-    .select()
-    .from(familyMemoriesTable)
-    .where(and(eq(familyMemoriesTable.id, memoryId), eq(familyMemoriesTable.family_id, familyId)))
-    .limit(1);
-  if (!memory) return res.status(404).json({ error: "Memory not found" });
+  const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+  if (!access.memory) return res.status(404).json({ error: "Not found" });
+  if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
+  const memory = access.memory;
 
   // Authors can edit their own; curators/owners can edit any
   if (memory.author_id !== userId && !CAN_MANAGE_ROLES.includes(membership.role as string)) {
@@ -870,18 +922,30 @@ router.delete("/family/:id/memories/:memoryId", generalApiLimiter, requireAuth, 
   const membership = await getFamilyMembership(familyId, userId);
   if (!membership) return res.status(403).json({ error: "Not a member of this family" });
 
-  const [memory] = await db
-    .select()
-    .from(familyMemoriesTable)
-    .where(and(eq(familyMemoriesTable.id, memoryId), eq(familyMemoriesTable.family_id, familyId)))
-    .limit(1);
-  if (!memory) return res.status(404).json({ error: "Memory not found" });
+  const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+  if (!access.memory) return res.status(404).json({ error: "Not found" });
+  const memory = access.memory;
 
   if (memory.author_id !== userId && !CAN_MANAGE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Only the author, a curator, or owner can delete this memory" });
   }
 
-  await db.delete(familyMemoriesTable).where(eq(familyMemoriesTable.id, memoryId));
+  const assets = await db.select().from(familyMemoryAssetsTable)
+    .where(eq(familyMemoryAssetsTable.memory_id, memoryId));
+  try {
+    for (const asset of assets) {
+      await deleteAssetStrict(asset.storage_key);
+      if (asset.thumbnail_key) await deleteAssetStrict(asset.thumbnail_key);
+    }
+  } catch (error) {
+    logger.error({ error, familyId, memoryId }, "family_memory_storage_cleanup_failed");
+    return res.status(502).json({
+      error: "Memory storage cleanup incomplete; database rows remain for retry. Some objects may already have been removed.",
+    });
+  }
+  await db.delete(familyMemoriesTable).where(and(
+    eq(familyMemoriesTable.id, memoryId), eq(familyMemoriesTable.family_id, familyId),
+  ));
   logger.info({ familyId, memoryId, userId }, "family_memory_deleted");
   return res.json({ ok: true });
 });
@@ -905,6 +969,9 @@ router.post(
     if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required" });
     }
+    const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
 
     const { filename, mime_type } = req.body ?? {};
     if (!filename || !mime_type) {
@@ -912,7 +979,7 @@ router.post(
     }
 
     const safeFile   = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
-    const storageKey = `families/${familyId}/memories/${memoryId}/${Date.now()}_${safeFile}`;
+    const storageKey = `families/${familyId}/memories/${memoryId}/${randomUUID()}_${safeFile}`;
 
     if (isCloudStorageConfigured()) {
       // Generate a real presigned PutObject URL via the storage module.
@@ -961,16 +1028,62 @@ router.post(
     if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required" });
     }
+    const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
 
     const parsed = ConfirmAssetSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
     }
+    if (!familyMemoryStorageKeyFor(familyId, memoryId, parsed.data.storage_key)
+      || !(await assetExists(parsed.data.storage_key))) {
+      return res.status(400).json({ error: "Invalid or unavailable server-issued storage key" });
+    }
 
-    const [asset] = await db
-      .insert(familyMemoryAssetsTable)
-      .values({ memory_id: memoryId, ...parsed.data })
-      .returning();
+    let asset: typeof familyMemoryAssetsTable.$inferSelect | undefined;
+    try {
+      [asset] = await db
+        .insert(familyMemoryAssetsTable)
+        .values({ memory_id: memoryId, ...parsed.data })
+        .returning();
+    } catch (error) {
+      let committedAsset: typeof familyMemoryAssetsTable.$inferSelect | undefined;
+      let commitCheckSucceeded = true;
+      try {
+        [committedAsset] = await db.select()
+          .from(familyMemoryAssetsTable)
+          .where(and(
+            eq(familyMemoryAssetsTable.memory_id, memoryId),
+            eq(familyMemoryAssetsTable.storage_key, parsed.data.storage_key),
+          ))
+          .limit(1);
+      } catch (checkError) {
+        commitCheckSucceeded = false;
+        logger.error({ error: checkError, familyId, memoryId }, "family_asset_commit_check_failed");
+      }
+      if (!commitCheckSucceeded) {
+        return res.status(502).json({ error: "Asset confirmation outcome uncertain; object retained. Please retry confirmation." });
+      }
+      if (committedAsset) {
+        return res.status(201).json({ asset: committedAsset });
+      }
+      try {
+        await deleteAssetStrict(parsed.data.storage_key);
+      } catch (cleanupError) {
+        logger.error({ error: cleanupError, familyId, memoryId }, "family_asset_orphan_cleanup_failed");
+      }
+      logger.error({ error, familyId, memoryId }, "family_asset_row_failed");
+      return res.status(502).json({ error: "Asset record creation failed; storage cleanup was attempted. Please retry." });
+    }
+    if (!asset) {
+      try {
+        await deleteAssetStrict(parsed.data.storage_key);
+      } catch (cleanupError) {
+        logger.error({ error: cleanupError, familyId, memoryId }, "family_asset_empty_row_cleanup_failed");
+      }
+      return res.status(502).json({ error: "Asset record creation returned no row; storage cleanup was attempted. Please retry." });
+    }
 
     return res.status(201).json({ asset });
   },
@@ -994,6 +1107,9 @@ router.post(
     if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required" });
     }
+    const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
 
     const { dataUrl, filename, mimeType, assetType } = (req.body ?? {}) as Record<string, string>;
     if (!dataUrl || !filename || !mimeType || !assetType) {
@@ -1012,22 +1128,57 @@ router.post(
     }
 
     const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
-    const storageKey   = `families/${familyId}/memories/${memoryId}/${Date.now()}_${safeFilename}`;
+    const storageKey   = `families/${familyId}/memories/${memoryId}/${randomUUID()}_${safeFilename}`;
 
     // Write to S3/R2 or local disk depending on STORAGE_BUCKET config
     await putAsset(storageKey, buffer, mimeType);
 
-    const [asset] = await db
-      .insert(familyMemoryAssetsTable)
-      .values({
-        memory_id:         memoryId,
-        asset_type:        assetType as "photo" | "video" | "audio" | "document",
-        storage_key:       storageKey,
-        mime_type:         mimeType,
-        byte_size:         buffer.length,
-        processing_status: "ready",
-      })
-      .returning();
+    let asset: typeof familyMemoryAssetsTable.$inferSelect | undefined;
+    try {
+      [asset] = await db
+        .insert(familyMemoryAssetsTable)
+        .values({
+          memory_id:         memoryId,
+          asset_type:        assetType as "photo" | "video" | "audio" | "document",
+          storage_key:       storageKey,
+          mime_type:         mimeType,
+          byte_size:         buffer.length,
+          processing_status: "ready",
+        })
+        .returning();
+    } catch (error) {
+      let committedAsset: { id: number } | undefined;
+      let commitCheckSucceeded = true;
+      try {
+        [committedAsset] = await db.select({ id: familyMemoryAssetsTable.id })
+          .from(familyMemoryAssetsTable)
+          .where(and(
+            eq(familyMemoryAssetsTable.memory_id, memoryId),
+            eq(familyMemoryAssetsTable.storage_key, storageKey),
+          ))
+          .limit(1);
+      } catch (checkError) {
+        commitCheckSucceeded = false;
+        logger.error({ error: checkError, familyId, memoryId, storageKey }, "family_direct_upload_commit_check_failed");
+      }
+      if (commitCheckSucceeded && !committedAsset) {
+        try {
+          await deleteAssetStrict(storageKey);
+        } catch (cleanupError) {
+          logger.error({ error: cleanupError, familyId, memoryId, storageKey }, "family_direct_upload_orphan_cleanup_failed");
+        }
+      }
+      logger.error({ error, familyId, memoryId, storageKey }, "family_direct_upload_asset_row_failed");
+      return res.status(502).json({ error: "Asset record creation failed; storage cleanup was attempted. Please retry." });
+    }
+    if (!asset) {
+      try {
+        await deleteAssetStrict(storageKey);
+      } catch (cleanupError) {
+        logger.error({ error: cleanupError, familyId, memoryId, storageKey }, "family_direct_upload_orphan_cleanup_failed");
+      }
+      return res.status(502).json({ error: "Asset record creation returned no row; storage cleanup was attempted. Please retry." });
+    }
 
     logger.info(
       { familyId, memoryId, assetId: asset.id, assetType, backend: getStorageBackend() },
@@ -1055,6 +1206,9 @@ router.post(
 
     const membership = await getFamilyMembership(familyId, userId);
     if (!membership) return res.status(403).json({ error: "Not a member of this family" });
+    const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
 
     const { text, targetLanguage = "en" } = (req.body ?? {}) as { text?: string; targetLanguage?: string };
     if (!text || typeof text !== "string" || !text.trim()) {
@@ -1124,13 +1278,22 @@ router.delete(
     if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required" });
     }
+    const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
 
-    await db
-      .delete(familyMemoryAssetsTable)
-      .where(and(
-        eq(familyMemoryAssetsTable.id, assetId),
-        eq(familyMemoryAssetsTable.memory_id, memoryId),
-      ));
+    const [asset] = await db.select().from(familyMemoryAssetsTable).where(and(
+      eq(familyMemoryAssetsTable.id, assetId), eq(familyMemoryAssetsTable.memory_id, memoryId),
+    )).limit(1);
+    if (!asset) return res.status(404).json({ error: "Asset not found" });
+    try {
+      await deleteAssetStrict(asset.storage_key);
+      if (asset.thumbnail_key) await deleteAssetStrict(asset.thumbnail_key);
+    } catch (error) {
+      logger.error({ error, familyId, memoryId, assetId }, "family_asset_storage_cleanup_failed");
+      return res.status(502).json({ error: "Asset storage cleanup failed; please retry." });
+    }
+    await db.delete(familyMemoryAssetsTable).where(eq(familyMemoryAssetsTable.id, assetId));
 
     return res.json({ ok: true });
   },
@@ -1151,6 +1314,9 @@ router.get(
 
     const membership = await getFamilyMembership(familyId, userId);
     if (!membership) return res.status(403).json({ error: "Not a member" });
+    const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
 
     const comments = await db
       .select()
@@ -1177,6 +1343,9 @@ router.post(
     if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required to comment" });
     }
+    const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
 
     const parsed = AddCommentSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1384,6 +1553,17 @@ router.post("/family/:id/stories", generalApiLimiter, requireAuth, async (req, r
   }
 
   const { title, body, category, language, teller_member_id, about_member_id, memory_id, tags } = parsed.data;
+  for (const memberId of [teller_member_id, about_member_id].filter((id): id is number => id !== undefined)) {
+    const [member] = await db.select({ id: familyMembersTable.id }).from(familyMembersTable).where(and(
+      eq(familyMembersTable.id, memberId), eq(familyMembersTable.family_id, familyId),
+    )).limit(1);
+    if (!member) return res.status(400).json({ error: "Story member must belong to this family" });
+  }
+  if (memory_id !== undefined) {
+    const access = await getAccessibleMemory(familyId, memory_id, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
+  }
 
   const [story] = await db
     .insert(familyStoriesTable)
@@ -1415,11 +1595,19 @@ router.get("/family/:id/stories", generalApiLimiter, requireAuth, async (req, re
   const membership = await getFamilyMembership(familyId, userId);
   if (!membership) return res.status(403).json({ error: "Not a member of this family" });
 
-  const stories = await db
+  const allStories = await db
     .select()
     .from(familyStoriesTable)
     .where(eq(familyStoriesTable.family_id, familyId))
     .orderBy(desc(familyStoriesTable.created_at));
+  const stories = [];
+  for (const story of allStories) {
+    if (story.memory_id !== null) {
+      const access = await getAccessibleMemory(familyId, story.memory_id, userId, membership);
+      if (!access.memory || access.forbidden) continue;
+    }
+    stories.push(story);
+  }
 
   return res.json({ stories });
 });

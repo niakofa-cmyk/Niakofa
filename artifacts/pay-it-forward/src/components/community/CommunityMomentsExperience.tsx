@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Heart, LoaderCircle, MessageCircle, Play, RefreshCw, Send, Share2 } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
-import { getStoryMetrics, reactToStory, recordStoryView, removeStoryReaction, sendStoryContextMessage, type StoryMetrics } from "@/lib/community-story-client";
+import { deleteStoryComment, getStoryComments, getStoryMetrics, postStoryComment, reactToStory, recordStoryView, removeStoryReaction, sendStoryContextMessage, type StoryComment, type StoryMetrics } from "@/lib/community-story-client";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { CommunityStoryRail } from "./CommunityStoryRail";
 import { StoryShareSheet } from "./StoryShareSheet";
@@ -104,6 +104,17 @@ export function CommunityMomentsExperience({
   const [replySendingId, setReplySendingId] = useState<number | null>(null);
   const [interactionError, setInteractionError] = useState("");
   const [shareSparkId, setShareSparkId] = useState<number | null>(null);
+  const [commentsOpenId, setCommentsOpenId] = useState<number | null>(null);
+  const [comments, setComments] = useState<StoryComment[]>([]);
+  const [commentsTotal, setCommentsTotal] = useState(0);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState("");
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentPosting, setCommentPosting] = useState(false);
+  const [commentNotice, setCommentNotice] = useState("");
+  const commentsDialogRef = useRef<HTMLElement | null>(null);
+  const commentsTriggerRef = useRef<HTMLElement | null>(null);
+  const commentsRequestRef = useRef<{ sequence: number; controller: AbortController | null }>({ sequence: 0, controller: null });
   const [feedInViewport, setFeedInViewport] = useState(false);
   const [documentVisible, setDocumentVisible] = useState(
     () => typeof document === "undefined" || document.visibilityState !== "hidden",
@@ -118,6 +129,7 @@ export function CommunityMomentsExperience({
   const moreControllerRef = useRef<AbortController | null>(null);
   const viewedIdsRef = useRef(new Set<number>());
   const activeSpark = sparks[activeIndex] ?? null;
+  const commentsSpark = commentsOpenId == null ? null : sparks.find((spark) => spark.id === commentsOpenId) ?? null;
   const activeMedia = activeSpark?.media[Math.min(activeMediaIndex, Math.max(0, activeSpark.media.length - 1))] ?? null;
   const currentMediaUrl = resolvedMediaKey === `${activeSpark?.id}-${activeMedia?.id}` ? mediaUrl : null;
   const playbackAllowed = feedInViewport && documentVisible;
@@ -263,6 +275,91 @@ export function CommunityMomentsExperience({
       // Viewing remains available when analytics recording is temporarily down.
     });
   }, [activeSpark, hubId]);
+
+  useEffect(() => {
+    if (commentsOpenId == null) return;
+    const dialog = commentsDialogRef.current;
+    const focusable = () => dialog
+      ? Array.from(dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex='-1'])"))
+      : [];
+    const first = focusable()[0];
+    first?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setCommentsOpenId(null);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      if (!elements.length) return;
+      const current = document.activeElement;
+      const index = elements.indexOf(current as HTMLElement);
+      if (event.shiftKey && (index <= 0 || current === dialog)) {
+        event.preventDefault(); elements[elements.length - 1]?.focus();
+      } else if (!event.shiftKey && (index === elements.length - 1 || index === -1 || current === dialog)) {
+        event.preventDefault(); elements[0]?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      commentsRequestRef.current.controller?.abort();
+      commentsRequestRef.current.controller = null;
+      commentsTriggerRef.current?.focus();
+    };
+  }, [commentsOpenId]);
+
+  const loadComments = useCallback(async (storyId: number) => {
+    const sequence = commentsRequestRef.current.sequence + 1;
+    commentsRequestRef.current.sequence = sequence;
+    commentsRequestRef.current.controller?.abort();
+    const controller = new AbortController();
+    commentsRequestRef.current.controller = controller;
+    setCommentsLoading(true); setCommentsError("");
+    try {
+      const result = await getStoryComments(storyId, controller.signal);
+      if (controller.signal.aborted || commentsRequestRef.current.sequence !== sequence) return;
+      setComments(result.comments); setCommentsTotal(result.total);
+      setMetricsById((current) => current[storyId]
+        ? { ...current, [storyId]: { ...current[storyId], comment_count: result.total } }
+        : current);
+    } catch (reason) {
+      if (controller.signal.aborted || commentsRequestRef.current.sequence !== sequence) return;
+      setCommentsError(reason instanceof Error ? reason.message : "Comments could not be loaded.");
+    } finally {
+      if (commentsRequestRef.current.sequence === sequence) {
+        commentsRequestRef.current.controller = null;
+        setCommentsLoading(false);
+      }
+    }
+  }, []);
+
+  const openComments = (storyId: number) => {
+    commentsTriggerRef.current = document.activeElement as HTMLElement | null;
+    setCommentsOpenId(storyId); setCommentDraft(""); setCommentNotice("");
+    setComments([]); setCommentsTotal(0);
+    void loadComments(storyId);
+  };
+
+  const submitComment = async () => {
+    if (commentsOpenId == null || !commentDraft.trim() || commentPosting) return;
+    setCommentPosting(true); setCommentNotice(""); setCommentsError("");
+    try {
+      const result = await postStoryComment(commentsOpenId, commentDraft.trim());
+      setCommentDraft("");
+      if (result.moderation_pending) setCommentNotice("Your comment is awaiting moderation and is not public yet.");
+      await loadComments(commentsOpenId);
+    } catch (reason) {
+      setCommentsError(reason instanceof Error ? reason.message : "Comment could not be posted.");
+    } finally { setCommentPosting(false); }
+  };
+
+  const removeComment = async (commentId: number) => {
+    if (commentsOpenId == null) return;
+    try { await deleteStoryComment(commentsOpenId, commentId); await loadComments(commentsOpenId); }
+    catch (reason) { setCommentsError(reason instanceof Error ? reason.message : "Comment could not be removed."); }
+  };
 
   useEffect(() => {
     if (!activeSpark || metricsById[activeSpark.id]) return;
@@ -594,6 +691,16 @@ export function CommunityMomentsExperience({
                           </button>
                           <button
                             type="button"
+                            onClick={() => openComments(spark.id)}
+                            className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-bold text-white hover:bg-white/10"
+                            aria-label={`View comments for Spark${metricsById[spark.id]?.comment_count ? `, ${metricsById[spark.id]?.comment_count} comments` : ""}`}
+                            data-testid={`button-spark-comments-${spark.id}`}
+                          >
+                            <MessageCircle className="h-4 w-4" />
+                            <span>{metricsById[spark.id]?.comment_count ?? 0}</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               setReplyOpenId((current) => current === spark.id ? null : spark.id);
                               setReplyDraft("");
@@ -647,6 +754,27 @@ export function CommunityMomentsExperience({
             return metrics ? { ...current, [shareSparkId]: { ...metrics, shares: metrics.shares + 1 } } : current;
           })}
         />
+      )}
+      {commentsSpark && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="spark-comments-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommentsOpenId(null); }}>
+          <section ref={commentsDialogRef} tabIndex={-1} className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-card p-4 shadow-2xl sm:rounded-2xl" data-testid="spark-comments-panel">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="spark-comments-title" className="text-lg font-black">Comments <span className="text-sm font-normal text-muted-foreground">({commentsTotal})</span></h2>
+              <button type="button" onClick={() => setCommentsOpenId(null)} className="min-h-10 rounded-lg px-3 font-bold hover:bg-muted" aria-label="Close comments">Close</button>
+            </div>
+            {commentsError && <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm" role="alert"><span>{commentsError}</span><button type="button" onClick={() => void loadComments(commentsSpark.id)} className="font-bold underline">Retry</button></div>}
+            {commentNotice && <p className="mt-3 rounded-lg bg-primary/10 p-3 text-sm" role="status" aria-live="polite">{commentNotice}</p>}
+            {commentsLoading ? <p className="grid min-h-24 place-items-center text-sm text-muted-foreground" role="status">Loading comments…</p>
+              : comments.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">No public comments yet. Start the conversation.</p>
+              : <ul className="mt-3 space-y-3" aria-live="polite">{comments.map((comment) => <li key={comment.id} className="rounded-xl bg-muted/50 p-3"><div className="flex items-start justify-between gap-3"><p className="text-xs font-bold">{comment.author.name}</p>{comment.viewer_can_delete && <button type="button" onClick={() => void removeComment(comment.id)} className="text-xs font-bold text-destructive underline" aria-label={`Delete comment by ${comment.author.name}`}>Delete</button>}</div><p className="mt-1 whitespace-pre-wrap text-sm">{comment.body}</p></li>)}</ul>}
+            <form className="mt-4 flex gap-2 border-t border-border pt-4" onSubmit={(event) => { event.preventDefault(); void submitComment(); }}>
+              <label className="sr-only" htmlFor="spark-comment-input">Write a public comment</label>
+              <input id="spark-comment-input" autoFocus value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} maxLength={500} placeholder="Write a public comment…" disabled={commentPosting} className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" aria-describedby="spark-comment-status" />
+              <button type="submit" disabled={!commentDraft.trim() || commentPosting} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground disabled:opacity-50" aria-label="Post public comment">{commentPosting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
+            </form>
+            <p id="spark-comment-status" className="mt-2 text-xs text-muted-foreground">Comments are public to people who can view this Spark.</p>
+          </section>
+        </div>
       )}
     </section>
   );

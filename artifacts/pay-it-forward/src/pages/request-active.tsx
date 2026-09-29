@@ -42,6 +42,7 @@ import { RequestLifecycleTimeline } from "@/components/RequestLifecycleTimeline"
 import { ArrivalState } from "@/components/request/ArrivalState";
 import { HelperContextCard } from "@/components/request/HelperContextCard";
 import { NavigationContext } from "@/components/request/NavigationContext";
+import { lineStringToFeatureCollection } from "@/lib/map-geojson";
 import { useLocationMarkerState } from "@/hooks/useLocationMarkerState";
 import { LocationPuck } from "@/components/LocationPuck";
 
@@ -302,6 +303,10 @@ export default function ActiveRequestScreen() {
       queryKey: getGetRouteQueryKey(routeParams),
     }
   });
+  const routeFeatureCollection = useMemo(
+    () => lineStringToFeatureCollection(routeData?.geometry),
+    [routeData?.geometry],
+  );
 
   const [completionPending, setCompletionPending] = useState(false);
   const enRouteMutation = useMarkEnRoute({
@@ -1017,8 +1022,8 @@ export default function ActiveRequestScreen() {
           />
         </Source>
 
-        {routeData?.geometry && (
-          <Source id="route" type="geojson" data={routeData.geometry as unknown as GeoJSON.FeatureCollection}>
+        {routeFeatureCollection && (
+          <Source id="route" type="geojson" data={routeFeatureCollection}>
             <Layer
               id="route-casing"
               type="line"
