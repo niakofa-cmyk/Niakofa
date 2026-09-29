@@ -16,3 +16,11 @@ The connected Railway MCP is not itself a SQL connection: its available tools ex
 **Why:** The Railway connection can be healthy while the agent has no SQL capability or quota, and no proxy may exist for a direct read-only client.
 
 **How to apply:** Check for an existing read-only proxy without creating one. If none exists and the Railway agent is unavailable, report the audit as unavailable rather than reading variables or substituting development data.
+
+## PostGIS maintenance
+
+When Niakofa is backed by separate Railway PostgreSQL services, `DATABASE_URL` must target the dedicated PostGIS service rather than the plain PostgreSQL service. For an explicitly authorized schema repair, use the repository's idempotent migration runner with the operator-provided secret transiently, then verify the `postgis` extension and required `geography` columns with read-only queries. Never print, persist, or commit the connection string.
+
+**Why:** The Railway MCP can inspect infrastructure but is not itself a SQL client, while the application depends on PostGIS geography types. A healthy Railway service or successful TCP connection alone does not prove that the application is using the spatial database.
+
+**How to apply:** Confirm the intended Railway database target before mutation, run migrations fail-closed, verify the extension and schema afterward, and keep Haversine fallback only for environments that intentionally lack PostGIS.
