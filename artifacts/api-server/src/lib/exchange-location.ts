@@ -59,7 +59,7 @@ export async function exchangeSpatialIndexReady(
           FROM pg_indexes
           WHERE schemaname = current_schema()
             AND tablename = 'exchange_listings'
-            AND indexname = 'exchange_listings_geo_idx'
+            AND indexname = 'exchange_listings_geog_gist_idx'
         )
       ) AS ready
     `).then((result) => {

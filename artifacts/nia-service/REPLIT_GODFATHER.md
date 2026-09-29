@@ -988,3 +988,28 @@ source and verified with two approved disposable Hub members:
 **Release lesson:** a clean preview does not prove private-media isolation or
 Nia-service type safety. Keep synthetic fixture evidence, authenticated
 two-account checks, and every service's typecheck in the release boundary.
+
+---
+
+### Session: September 29, 2026 — Exchange spatial CI and fallback repair
+
+The Exchange spatial release path was repaired without weakening its production
+authorization or privacy boundaries:
+
+- The stale Sparks contract now verifies the shared PostGIS/Haversine location
+  helper instead of asserting that the route must inline its old Haversine SQL.
+- Migration `0181` and repair migration `0182` keep no-PostGIS PostgreSQL
+  schema-compatible with Drizzle inserts while preserving the bounded
+  Haversine fallback.
+- Production PostGIS now has a distinct `exchange_listings_geog_gist_idx`;
+  this avoids colliding with the existing fallback B-tree
+  `exchange_listings_geo_idx`. Readiness checks require the GiST index before
+  selecting the `ST_DWithin` branch.
+- Backend tests, typechecks, frontend tests, lint, boundary checks, Diaspora
+  contracts, Nia tests, production build, and the disposable-database Exchange
+  lifecycle/spatial/security checks passed locally.
+
+**Release lesson:** optional PostGIS support requires both runtime capability
+  detection and schema parity. A fallback migration must still satisfy the
+  application schema, and spatial indexes must have names that cannot collide
+  with legacy fallback indexes.

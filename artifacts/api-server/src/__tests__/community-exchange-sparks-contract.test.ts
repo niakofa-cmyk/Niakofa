@@ -9,6 +9,7 @@ import {
 
 const storiesRoutePath = new URL("../routes/community-stories.ts", import.meta.url);
 const exchangeRoutePath = new URL("../routes/community-exchange.ts", import.meta.url);
+const exchangeLocationPath = new URL("../lib/exchange-location.ts", import.meta.url);
 const interactionsRoutePath = new URL("../routes/community-story-interactions.ts", import.meta.url);
 const linkageMigrationPath = new URL(
   "../../../../lib/db/migrations/0172_community_story_exchange_listing.sql",
@@ -192,12 +193,20 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(route.slice(publishOffset, storyLockOffset)).toMatch(/sparkReference\.listing_id/);
   });
 
-  it("provides bounded cursor discovery with coarse server-side nearby matching and same-origin media URLs", async () => {
-    const route = await fs.readFile(exchangeRoutePath, "utf8");
+  it("provides bounded cursor discovery with PostGIS-backed nearby matching and same-origin media URLs", async () => {
+    const [route, location] = await Promise.all([
+      fs.readFile(exchangeRoutePath, "utf8"),
+      fs.readFile(exchangeLocationPath, "utf8"),
+    ]);
 
     expect(route).toMatch(/EXCHANGE_SPARK_MAX_PAGE_SIZE = 40/);
     expect(route).toMatch(/router\.get\("\/community\/exchange\/sparks"/);
-    expect(route).toMatch(/3958\.8 \* 2 \* ASIN\(SQRT/);
+    expect(route).toMatch(/exchangeNearbyCondition\(/);
+    expect(route).toMatch(/await exchangeSpatialIndexReady\(\)/);
+    expect(location).toMatch(/exchangeListingsTable\.geog/);
+    expect(location).toMatch(/ST_DWithin/);
+    expect(location).toMatch(/\$\{radiusMiles \* 1609\.344\}/);
+    expect(location).toMatch(/3958\.8 \* 2 \* ASIN\(SQRT/);
     expect(route).toMatch(/locationCondition = sql`FALSE`/);
     expect(route).toMatch(/media_url: `\/api\/media-assets\/\$\{row\.media_asset_id\}`/);
     expect(route).toMatch(/thumbnail_url: row\.thumbnail_key[\s\S]*\/api\/media-assets\/\$\{row\.media_asset_id\}\/thumbnail/);

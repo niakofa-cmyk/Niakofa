@@ -5,6 +5,7 @@ const routePath = new URL("../routes/community-exchange.ts", import.meta.url);
 const locationPath = new URL("../lib/exchange-location.ts", import.meta.url);
 const schemaPath = new URL("../../../../lib/db/src/schema/exchange.ts", import.meta.url);
 const migrationPath = new URL("../../../../lib/db/migrations/0181_exchange_geography.sql", import.meta.url);
+const repairMigrationPath = new URL("../../../../lib/db/migrations/0182_exchange_geography_repair.sql", import.meta.url);
 
 describe("Exchange production spatial contract", () => {
   it("uses the stored geography column and ST_DWithin for nearby feeds", async () => {
@@ -28,7 +29,16 @@ describe("Exchange production spatial contract", () => {
 
     expect(migration).toMatch(/IF EXISTS \(SELECT 1 FROM pg_extension WHERE extname = 'postgis'\)/);
     expect(migration).toMatch(/CREATE TRIGGER trg_exchange_listings_sync_geog/);
-    expect(migration).toMatch(/CREATE INDEX IF NOT EXISTS exchange_listings_geo_idx[\s\S]*USING GIST \(geog\)/);
+    expect(migration).toMatch(/CREATE INDEX IF NOT EXISTS exchange_listings_geog_gist_idx[\s\S]*USING GIST \(geog\)/);
+    expect(migration).toMatch(/ADD COLUMN IF NOT EXISTS geog text/);
     expect(migration).toMatch(/Haversine fallback active/);
+  });
+
+  it("repairs the prior index-name collision and keeps fallback inserts schema-compatible", async () => {
+    const repairMigration = await fs.readFile(repairMigrationPath, "utf8");
+
+    expect(repairMigration).toMatch(/CREATE INDEX IF NOT EXISTS exchange_listings_geog_gist_idx[\s\S]*USING GIST \(geog\)/);
+    expect(repairMigration).toMatch(/ADD COLUMN IF NOT EXISTS geog text/);
+    expect(repairMigration).toMatch(/ADD COLUMN IF NOT EXISTS geog geography\(Point, 4326\)/);
   });
 });

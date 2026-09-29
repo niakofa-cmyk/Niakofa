@@ -1,3 +1,4 @@
+- [Exchange spatial fallback](exchange-spatial-fallback.md) — PostGIS and plain PostgreSQL must share schema parity while using distinct spatial-index names.
 - [Auth fixture contract](niakofa-auth-fixture-contract.md) — model token-version lookups and concurrent auth rows explicitly in native ESM route tests.
 - [CI package working directories](ci-working-directory.md) — API source-contract Jest tests must run from their package directory; root invocation can create false path failures.
 - [Deployed browser runner boundary](deployed-browser-runner-boundary.md) — use the repository Playwright runner with canonical USER_A_STATE and system Chromium; direct root imports can bypass workspace wiring.

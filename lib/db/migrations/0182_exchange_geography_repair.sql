@@ -1,6 +1,11 @@
--- Keep Exchange proximity matching on the stored PostGIS geography point.
--- Local PostgreSQL instances without PostGIS receive a nullable text tombstone
--- for schema compatibility; the API uses its bounded Haversine fallback there.
+-- Repair Exchange geography provisioning after the initial spatial migration.
+--
+-- 0168 already owns exchange_listings_geo_idx as the fallback latitude/
+-- longitude B-tree. The first PostGIS migration reused that name for a GiST
+-- index, so PostgreSQL treated the GiST CREATE INDEX IF NOT EXISTS as a
+-- no-op. This repair uses a distinct name and also makes the no-PostGIS
+-- schema compatible with Drizzle inserts, which include the optional geog
+-- column as DEFAULT.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis') THEN
@@ -37,7 +42,7 @@ BEGIN
   ELSE
     ALTER TABLE exchange_listings
       ADD COLUMN IF NOT EXISTS geog text;
-    RAISE NOTICE 'PostGIS not available — skipping Exchange geography (Haversine fallback active)';
+    RAISE NOTICE 'PostGIS not available — Exchange geography repair kept the Haversine fallback active';
   END IF;
 END;
 $$;
