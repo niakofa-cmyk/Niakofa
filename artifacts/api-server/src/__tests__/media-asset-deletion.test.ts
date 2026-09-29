@@ -49,7 +49,7 @@ describe("V21 media asset deletion safety", () => {
     const deletion = route.slice(route.indexOf('router.delete("/media-assets/:id"'));
     expect(deletion).toMatch(/status: "deleted"[\s\S]*storage_cleanup_pending/);
     expect(deletion).toMatch(/for\("update"\)/);
-    expect(deletion).toMatch(/new Set\(\[asset\.original_key, asset\.variant_key, asset\.thumbnail_key\]/);
+    expect(deletion).toMatch(/mediaStorageKeys\(asset\)/);
     expect(deletion).toMatch(/await deleteAssetStrict\(key\)/);
     expect(deletion).toMatch(/MEDIA_STORAGE_CLEANUP_INCOMPLETE/);
   });
@@ -164,7 +164,8 @@ describe("V21 media asset deletion safety", () => {
     const route = await fs.readFile(routePath, "utf8");
     const scheduler = await fs.readFile(schedulerPath, "utf8");
     const migration = await fs.readFile(cleanupMigrationPath, "utf8");
-    expect(storage).toMatch(/deleteAssetStrict[\s\S]*verifyAssetAbsent[\s\S]*STORAGE_OBJECT_DELETE_UNCONFIRMED/);
+    expect(storage).toMatch(/async function verifyAssetAbsent[\s\S]*STORAGE_OBJECT_DELETE_UNCONFIRMED/);
+    expect(storage).toMatch(/export async function deleteAssetStrict[\s\S]*await verifyAssetAbsent/);
     expect(worker).toMatch(/cleanup_keys/);
     expect(route).toMatch(/mediaStorageKeys\(asset\)/);
     expect(scheduler).toMatch(/mediaStorageKeys\(asset\)/);
