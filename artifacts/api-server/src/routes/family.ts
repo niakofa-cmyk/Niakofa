@@ -120,12 +120,59 @@ function parseGedcom(text: string): Array<{ name: string; birthYear?: string }> 
 //   • Local disk (dev/Replit):    sendFile() from uploads/ directory
 //
 // Registered BEFORE the /:id param route so "assets" isn't matched as a family ID.
-// No membership auth — storage keys are unguessable UUIDs; elevate if needed.
-router.use("/family/assets", generalApiLimiter, async (req, res, next) => {
+// Family assets are authenticated and membership-scoped. Storage keys include
+// family and memory ids, so they are not a substitute for authorization.
+router.use("/family/assets", generalApiLimiter, requireAuth, async (req, res, next) => {
   if (req.method !== "GET") return next();
-  // Strip leading slash; normalise away any ".." segments
-  const rel = decodeURIComponent(req.path).replace(/^\/+/, "").replace(/\.\./g, "");
-  if (!rel) return res.status(404).json({ error: "Not found" });
+
+  let rel: string;
+  try {
+    rel = decodeURIComponent(req.path).replace(/^\/+/, "");
+  } catch {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  const match = rel.match(/^families\/(\d+)\/memories\/(\d+)\/([^/]+)$/);
+  const familyId = Number(match?.[1]);
+  const memoryId = Number(match?.[2]);
+  if (!match || !Number.isSafeInteger(familyId) || !Number.isSafeInteger(memoryId)
+    || familyId < 1 || memoryId < 1 || rel.includes("..")) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  const membership = await getFamilyMembership(familyId, req.authenticatedUserId!);
+  if (!membership) return res.status(404).json({ error: "Not found" });
+
+  const [memory] = await db
+    .select({
+      id: familyMemoriesTable.id,
+      author_id: familyMemoriesTable.author_id,
+      visibility: familyMemoriesTable.visibility,
+    })
+    .from(familyMemoriesTable)
+    .where(and(
+      eq(familyMemoriesTable.id, memoryId),
+      eq(familyMemoriesTable.family_id, familyId),
+    ))
+    .limit(1);
+  if (!memory || (
+    memory.visibility === "private"
+    && memory.author_id !== req.authenticatedUserId
+    && !CAN_MANAGE_ROLES.includes(membership.role as string)
+  )) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  const [asset] = await db
+    .select({ storage_key: familyMemoryAssetsTable.storage_key })
+    .from(familyMemoryAssetsTable)
+    .where(and(
+      eq(familyMemoryAssetsTable.memory_id, memoryId),
+      eq(familyMemoryAssetsTable.storage_key, rel),
+    ))
+    .limit(1);
+  if (!asset) return res.status(404).json({ error: "Not found" });
+
   await streamOrRedirectAsset(rel, res);
 });
 

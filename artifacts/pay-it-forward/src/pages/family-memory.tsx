@@ -20,6 +20,7 @@ import {
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
+import { useAuthorizedFamilyAsset } from "@/lib/family-asset-client";
 
 interface Memory {
   id: number;
@@ -92,23 +93,16 @@ function mimeToAssetType(mime: string): "photo" | "audio" | "video" | "document"
 // ── Asset tile ─────────────────────────────────────────────────────────────────
 
 function AssetTile({ asset }: { asset: Asset }) {
-  const src = `/api/family/assets/${asset.storage_key}`;
+  const { url: src, error, loading } = useAuthorizedFamilyAsset(asset.storage_key);
 
   if (asset.asset_type === "photo") {
     return (
       <div className="rounded-xl overflow-hidden aspect-square bg-muted">
-        <img
-          src={src}
-          alt=""
-          className="w-full h-full object-cover"
-          onError={e => {
-            const el = e.target as HTMLImageElement;
-            el.style.display = "none";
-            el.parentElement!.classList.add("flex", "items-center", "justify-center");
-            el.parentElement!.innerHTML =
-              '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-muted-foreground"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
-          }}
-        />
+        {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : (
+          <div className="grid h-full place-items-center text-muted-foreground" role={error ? "img" : undefined} aria-label={error ?? (loading ? "Loading attachment" : "Attachment unavailable")}>
+            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Image className="w-8 h-8" />}
+          </div>
+        )}
       </div>
     );
   }
@@ -125,10 +119,10 @@ function AssetTile({ asset }: { asset: Asset }) {
             </span>
           )}
         </div>
-        <audio controls className="w-full h-9" style={{ borderRadius: "0.5rem" }}>
+        {src ? <audio controls className="w-full h-9" style={{ borderRadius: "0.5rem" }}>
           <source src={src} type={asset.mime_type} />
           Your browser does not support the audio player.
-        </audio>
+        </audio> : <p className="text-xs text-muted-foreground">{loading ? "Loading attachment…" : error ?? "Attachment unavailable."}</p>}
         {asset.processing_status === "uploaded" && (
           <p className="text-xs text-muted-foreground mt-1.5">Transcription pending…</p>
         )}
@@ -139,9 +133,10 @@ function AssetTile({ asset }: { asset: Asset }) {
   if (asset.asset_type === "video") {
     return (
       <div className="col-span-2 rounded-xl overflow-hidden bg-black">
-        <video controls className="w-full max-h-48">
+        {src ? <video controls className="w-full max-h-48">
           <source src={src} type={asset.mime_type} />
         </video>
+          : <p className="p-3 text-xs text-muted-foreground">{loading ? "Loading attachment…" : error ?? "Attachment unavailable."}</p>}
       </div>
     );
   }
@@ -149,12 +144,12 @@ function AssetTile({ asset }: { asset: Asset }) {
   // Document
   return (
     <a
-      href={src}
+      href={src ?? undefined}
       target="_blank"
       rel="noopener noreferrer"
       className="rounded-xl bg-muted flex flex-col items-center justify-center gap-1.5 p-4 aspect-square hover:bg-muted/80 transition-colors"
     >
-      <FileText className="w-8 h-8 text-muted-foreground" />
+      {src ? <FileText className="w-8 h-8 text-muted-foreground" /> : loading ? <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /> : <FileText className="w-8 h-8 text-muted-foreground" />}
       <span className="text-xs text-muted-foreground text-center leading-tight">
         {asset.mime_type.split("/")[1]?.toUpperCase() ?? "DOC"}
       </span>

@@ -24,6 +24,7 @@ import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
 import { parseOralHistoryIntent, persistPreserveScanContext, readPreserveScanIdFromSearch } from "@/lib/diaspora/oralHistoryDeepLink";
+import { useAuthorizedFamilyAsset } from "@/lib/family-asset-client";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -62,6 +63,22 @@ interface Memory {
     thumbnail_key: string | null;
     processing_status: string;
   } | null;
+}
+
+function FamilyMemoryThumbnail({ asset }: { asset: NonNullable<Memory["primary_asset"]> }) {
+  const { url, loading } = useAuthorizedFamilyAsset(asset.storage_key);
+  return (
+    <>
+      {asset.asset_type === "photo" && url ? (
+        <img src={url} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div className="text-muted-foreground">
+          {asset.asset_type === "audio" ? <Mic className="w-6 h-6" /> : asset.asset_type === "video" ? <Video className="w-6 h-6" /> : <Image className="w-6 h-6" />}
+          {loading && <span className="sr-only">Loading attachment</span>}
+        </div>
+      )}
+    </>
+  );
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -455,18 +472,7 @@ export default function FamilyVaultPage() {
               className="w-full flex gap-3 p-4 text-left active:bg-muted/50"
             >
               <div className="w-14 h-14 rounded-xl flex-shrink-0 bg-muted flex items-center justify-center overflow-hidden">
-                {m.primary_asset?.asset_type === "photo" ? (
-                  <img
-                    src={`/api/family/assets/${m.primary_asset.storage_key}`}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                  />
-                ) : m.primary_asset?.asset_type === "audio" ? (
-                  <Mic className="w-6 h-6 text-muted-foreground" />
-                ) : m.primary_asset?.asset_type === "video" ? (
-                  <Video className="w-6 h-6 text-muted-foreground" />
-                ) : (
+                {m.primary_asset ? <FamilyMemoryThumbnail asset={m.primary_asset} /> : (
                   <div className="text-muted-foreground">
                     {m.source === "interview" ? <Mic className="w-6 h-6" /> : <Image className="w-6 h-6" />}
                   </div>
