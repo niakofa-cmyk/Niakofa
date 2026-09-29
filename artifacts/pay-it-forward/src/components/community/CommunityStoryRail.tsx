@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
+import { validateCommunityMomentFile } from "@/lib/community-moments-upload";
 import { useAppContext } from "@/lib/AppContext";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
 import { useObjectUrls } from "./StoryComposerMedia";
@@ -121,6 +122,12 @@ export function CommunityStoryRail({
   const [storyProgress, setStoryProgress] = useState(0);
   const [storyPaused, setStoryPaused] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [musicFile, setMusicFile] = useState<File | null>(null);
+  const [musicRightsBasis, setMusicRightsBasis] = useState<"original" | "licensed">("original");
+  const [musicLicenseReference, setMusicLicenseReference] = useState("");
+  const [musicRightsAccepted, setMusicRightsAccepted] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(0.65);
+  const [uploadedMusicAssetId, setUploadedMusicAssetId] = useState<number | null>(null);
   const [trimming, setTrimming] = useState(false);
   const [caption, setCaption] = useState("");
   const [audience, setAudience] = useState<"community" | "hub">(hubId ? "hub" : "community");
@@ -184,6 +191,8 @@ export function CommunityStoryRail({
   const selectedStoryId = selectedStory?.id ?? null;
   const selectedMedia = selectedFrame?.media ?? null;
   const previewUrls = useObjectUrls(files);
+  const musicPreviewFiles = useMemo(() => musicFile ? [musicFile] : [], [musicFile]);
+  const musicPreviewUrls = useObjectUrls(musicPreviewFiles);
   const selectedPreviewFile = files[previewFileIndex] ?? files[0] ?? null;
   const selectedFileUrl = previewUrls[previewFileIndex] ?? previewUrls[0] ?? null;
   const selectedFiles = selectedStudioFiles(files, gallerySelection);
@@ -325,6 +334,12 @@ export function CommunityStoryRail({
     setDraftSaved(false);
     setDraftError("");
     setFiles(empty.files);
+    setMusicFile(empty.musicFile);
+    setMusicRightsBasis(empty.musicRightsBasis);
+    setMusicLicenseReference(empty.musicLicenseReference);
+    setMusicRightsAccepted(empty.musicRightsAccepted);
+    setMusicVolume(empty.musicVolume);
+    setUploadedMusicAssetId(empty.uploadedMusicAssetId);
     setGalleryOpen(false);
     setStudioStep("source");
     setGallerySelection(empty.selection);
@@ -360,6 +375,12 @@ export function CommunityStoryRail({
         uploadedIdsRef.current = draft.uploadedMediaAssetIds ?? [];
         publishAssetIdsRef.current = draft.publishAssetIds ?? [];
         setFiles(draft.files ?? []);
+        setMusicFile(draft.musicFile ?? null);
+        setMusicRightsBasis(draft.musicRightsBasis ?? "original");
+        setMusicLicenseReference(draft.musicLicenseReference ?? "");
+        setMusicRightsAccepted(draft.musicRightsAccepted ?? false);
+        setMusicVolume(draft.musicVolume ?? 0.65);
+        setUploadedMusicAssetId(draft.uploadedMusicAssetId ?? null);
         setGallerySelection(draft.selection ?? []);
         setPreviewFileIndex(draft.previewIndex ?? 0);
         setCaption(draft.caption ?? "");
@@ -407,6 +428,7 @@ export function CommunityStoryRail({
     attemptedSignature: publishAttemptRef.current ?? undefined,
     publishAssetIds: publishAssetIdsRef.current,
     effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes,
+    musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId,
     uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
     updatedAt: Date.now(),
   });
@@ -432,7 +454,10 @@ export function CommunityStoryRail({
   };
   const queueDraftSaveRef = useRef(queueDraftSave);
   queueDraftSaveRef.current = queueDraftSave;
-  const signature = studioPublishSignature({ files, selection: gallerySelection, caption, elements: editorElements, audience, hubId, textBackground, coverTimes });
+  const signature = studioPublishSignature({
+    files, selection: gallerySelection, caption, elements: editorElements, audience, hubId, textBackground, coverTimes,
+    musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume,
+  });
   const signatureRef = useRef(signature);
   signatureRef.current = signature;
   const rotateAttemptAfterEdit = () => {
@@ -441,6 +466,7 @@ export function CommunityStoryRail({
     clientPublishIdRef.current = newStudioPublishId();
     uploadedIdsRef.current = [];
     publishAssetIdsRef.current = [];
+    setUploadedMusicAssetId(null);
     draftWriteVersionRef.current++;
     setUploadedIds([]);
     setDraftSaved(false);
@@ -459,7 +485,7 @@ export function CommunityStoryRail({
     setDraftSaved(false);
     draftTimerRef.current = setTimeout(() => { void queueDraftSaveRef.current().catch(() => {}); }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-  }, [draftReady, userId, scopeKey, files, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds]);
+  }, [draftReady, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -538,6 +564,12 @@ export function CommunityStoryRail({
   const resetComposer = () => {
     if (scopeKey) scopeSnapshotsRef.current.delete(scopeKey);
     setFiles([]);
+    setMusicFile(null);
+    setMusicRightsBasis("original");
+    setMusicLicenseReference("");
+    setMusicRightsAccepted(false);
+    setMusicVolume(0.65);
+    setUploadedMusicAssetId(null);
     setPreviewFileIndex(0);
     setGalleryOpen(false);
     setGallerySelection([]);
@@ -621,6 +653,9 @@ export function CommunityStoryRail({
       if (signatureRef.current !== signature) throw new Error("The Spark changed while preparing it. Review the draft and try again.");
       const selectedIndexes = [...new Set(gallerySelection)].filter((index) => Number.isInteger(index) && index >= 0 && index < files.length);
       const publishFiles = selectedStudioFiles(files, selectedIndexes);
+      if (musicFile && exchangeListingId) {
+        throw new Error("Background music is supported for Community and Hub Moments, not Exchange listing Sparks yet.");
+      }
       if (exchangeDraftRef.current && !exchangeListingId) {
         throw new Error("Your listing-owned Exchange Spark is still saved. Resume that listing and video, or explicitly discard the Exchange draft before sharing a Moment.");
       }
@@ -734,6 +769,12 @@ export function CommunityStoryRail({
       publishAttemptRef.current = attemptSignature;
       await publishStudioMoment({
         userId, hubId, audience, files: publishFiles, caption, elements: elements as Array<{ type: string; payload: Record<string, unknown> }>, effect,
+        musicFile,
+        musicRightsBasis,
+        musicLicenseReference,
+        musicRightsAccepted,
+        musicVolume,
+        uploadedMusicAssetId,
         clientPublishId: attemptId,
         signal: controller.signal,
         uploadedIds: selectedIndexes.map((index) => uploadedIdsRef.current[index]),
@@ -746,17 +787,21 @@ export function CommunityStoryRail({
           uploadedIdsRef.current = next;
           setUploadedIds(next);
         },
+        onMusicAssetUploaded: (id) => setUploadedMusicAssetId(id),
         beforePublish: async (orderedAssetIds) => {
           if (signatureRef.current !== attemptSignature || clientPublishIdRef.current !== attemptId || activeScopeRef.current !== scopeKey) {
             throw new Error("The Spark changed during upload. Review your edits and publish again; nothing was posted.");
           }
           if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
           draftWriteVersionRef.current++;
+          const musicAssetId = musicFile ? orderedAssetIds[orderedAssetIds.length - 1] : null;
           publishAssetIdsRef.current = [...orderedAssetIds];
           const frozen: StudioDraft = { ...attemptSnapshot, clientPublishId: attemptId, attemptedSignature: attemptSignature,
-            uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0), publishAssetIds: [...orderedAssetIds] };
+            uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
+            uploadedMusicAssetId: musicAssetId,
+            publishAssetIds: [...orderedAssetIds] };
           draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(async () => {
-            const durable = await persistStudioPublishAttempt(frozen, selectedIndexes, orderedAssetIds);
+            const durable = await persistStudioPublishAttempt(frozen, selectedIndexes, orderedAssetIds, musicAssetId);
             if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, durable);
           });
           try {
@@ -1174,7 +1219,102 @@ export function CommunityStoryRail({
                     </label>
                   </div>
                 </div>}
-                {tool === "music" && <div className="nia-story-audio-note"><Volume2 size={19} /><div><strong>Original audio only</strong><p>Your video keeps the sound it was recorded with. Music tracks are not available yet.</p></div></div>}
+                {tool === "music" && <div className="space-y-4 rounded-2xl border border-white/15 bg-white/5 p-4" data-testid="panel-spark-music">
+                  <div>
+                    <p className="text-sm font-bold">Background music</p>
+                    <p className="mt-1 text-xs text-white/65">Add one MP3, OGG, or WAV track to a video Moment. Your video stays playable while the mixed version is prepared.</p>
+                  </div>
+                  <label className="block text-xs font-bold text-white/80">
+                    Music file
+                    <input
+                      type="file"
+                      accept=".mp3,.ogg,.wav,audio/mpeg,audio/ogg,audio/wav"
+                      className="mt-2 block min-h-11 w-full rounded-xl border border-white/15 bg-slate-950/40 p-2 text-xs"
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (!file) return;
+                        const fileError = validateCommunityMomentFile(file);
+                        if (fileError || !file.type.startsWith("audio/")) {
+                          setError(fileError || "Choose an MP3, OGG, or WAV music file.");
+                          event.currentTarget.value = "";
+                          return;
+                        }
+                        setError(null);
+                        setMusicFile(file);
+                        setUploadedMusicAssetId(null);
+                        setMusicRightsAccepted(false);
+                      }}
+                      data-testid="input-spark-music-file"
+                    />
+                  </label>
+                  {musicFile && <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate text-xs font-semibold" title={musicFile.name}>{musicFile.name}</span>
+                      <button type="button" onClick={() => {
+                        setMusicFile(null);
+                        setUploadedMusicAssetId(null);
+                        setMusicRightsAccepted(false);
+                        setMusicLicenseReference("");
+                      }} className="min-h-9 rounded-lg border border-white/20 px-3 text-xs font-bold hover:bg-white/10" data-testid="button-remove-spark-music">Remove</button>
+                    </div>
+                    {musicPreviewUrls[0] && <audio className="w-full" controls preload="metadata" src={musicPreviewUrls[0]}>Audio preview unavailable.</audio>}
+                    {!selectedVideo && <p className="text-xs text-amber-200">Select at least one video for background music.</p>}
+                    {!!exchangeListingId && <p className="text-xs text-amber-200">Background music is not supported for Exchange listing Sparks yet.</p>}
+                    <label className="block text-xs font-bold text-white/80">
+                      Rights basis
+                      <select
+                        value={musicRightsBasis}
+                        onChange={(event) => {
+                          setMusicRightsBasis(event.target.value as "original" | "licensed");
+                          setMusicRightsAccepted(false);
+                          setUploadedMusicAssetId(null);
+                        }}
+                        className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950 px-3 text-sm text-white"
+                        data-testid="select-spark-music-rights"
+                      >
+                        <option value="original">I created this recording</option>
+                        <option value="licensed">I have a license to use it</option>
+                      </select>
+                    </label>
+                    {musicRightsBasis === "licensed" && <label className="block text-xs font-bold text-white/80">
+                      License or source URL
+                      <input
+                        type="url"
+                        value={musicLicenseReference}
+                        onChange={(event) => setMusicLicenseReference(event.target.value)}
+                        placeholder="https://…"
+                        maxLength={1000}
+                        className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950/60 px-3 text-sm text-white placeholder:text-white/35"
+                        data-testid="input-spark-music-license-url"
+                      />
+                    </label>}
+                    <label className="flex items-start gap-2 text-xs leading-5 text-white/80">
+                      <input
+                        type="checkbox"
+                        checked={musicRightsAccepted}
+                        onChange={(event) => setMusicRightsAccepted(event.target.checked)}
+                        className="mt-1 size-4 shrink-0 accent-primary"
+                        data-testid="checkbox-spark-music-rights"
+                      />
+                      <span>I confirm I created this recording or have rights to reproduce and distribute it in this Moment.</span>
+                    </label>
+                    <label className="block text-xs font-bold text-white/80">
+                      Music volume
+                      <input
+                        type="range"
+                        min={0}
+                        max={2}
+                        step={0.05}
+                        value={musicVolume}
+                        onChange={(event) => setMusicVolume(Number(event.target.value))}
+                        className="mt-2 w-full"
+                        aria-label="Background music volume"
+                        data-testid="input-spark-music-volume"
+                      />
+                    </label>
+                    <p className="text-[11px] leading-4 text-white/55">Niakofa records your declaration but does not independently verify third-party music licenses. Upload audio only when you have the necessary rights.</p>
+                  </div>}
+                </div>}
                 {tool === "templates" && <div className="space-y-3" data-testid="panel-spark-templates">
                   <div><p className="text-sm font-bold">Reusable Spark formats</p><p className="text-xs text-white/60">Templates save text and layout on this device. Your photos and videos are never included.</p></div>
                   <div className="grid gap-2 sm:grid-cols-2">

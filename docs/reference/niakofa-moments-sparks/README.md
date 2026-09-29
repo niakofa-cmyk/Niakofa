@@ -14,6 +14,26 @@ The ZIP is retained as a reference, not copied into the application source.
 The app keeps its existing community-story API, media pipeline, identifiers,
 and authorization behavior behind the user-facing Moments/Sparks vocabulary.
 
+## Independent implementation record
+
+Niakofa now supports creator-uploaded background audio on Community and Hub
+video Moments. A creator must attest that they made the recording or have the
+rights to reproduce and distribute it; licensed tracks also require an HTTPS
+license/source link. The server stores that declaration, binds the soundtrack
+to an owned media-asset ID, and never accepts a client storage key or
+`licensed: true` flag as authorization. This is an attestation, not independent
+license verification or a licensed music catalog.
+
+The audio-mix worker writes a separate video variant so a ready video remains
+playable while mixing runs or if mixing fails. The soundtrack remains attached
+to the Moment for cleanup, is not exposed as a visible Moment frame, and cannot
+be deleted by itself after publication; deleting the Moment removes the linked
+media together. Exchange listing Sparks remain unsupported for music.
+
+These are local implementation changes only. They do not certify production
+storage, worker tooling, device playback, or rights clearance, and they did not
+change the production media flag or operational configuration.
+
 SHA-256 checksums:
 
 - `product-decision.txt`: `37f2abee91165d32a24d52ed1e6b1208521577f4bb023aa6adac5dc48dea3f41`

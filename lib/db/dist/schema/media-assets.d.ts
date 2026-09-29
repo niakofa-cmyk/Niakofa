@@ -16,13 +16,11 @@ export type StoryCompositionManifest = {
         payload: Record<string, unknown>;
     }>;
     music?: {
-        track_id?: string;
-        track_key?: string;
+        track_asset_id?: number;
         title?: string;
         start_ms?: number;
         end_ms?: number;
         volume?: number;
-        licensed?: boolean;
     } | null;
     effects?: string[];
     /** Per-asset video thumbnail frame selection, in milliseconds. */

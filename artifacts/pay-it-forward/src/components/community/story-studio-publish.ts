@@ -75,9 +75,16 @@ export async function publishStudioMoment(input: {
   caption: string;
   elements: StudioElement[];
   effect: string;
+  musicFile?: File | null;
+  musicRightsBasis?: "original" | "licensed";
+  musicLicenseReference?: string;
+  musicRightsAccepted?: boolean;
+  musicVolume?: number;
+  uploadedMusicAssetId?: number | null;
   signal: AbortSignal;
   onStatus: (status: string, percent: number) => void;
   onAssetUploaded?: (index: number, id: number) => void;
+  onMusicAssetUploaded?: (id: number) => void;
   /** Must commit the complete ordered asset list and publish identity to IDB before POST. */
   beforePublish: (orderedAssetIds: number[]) => Promise<void>;
   uploadedIds?: Array<number | null>;
@@ -89,7 +96,20 @@ export async function publishStudioMoment(input: {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.clientPublishId)) {
     throw new Error("The draft's publish identity is missing. Reopen the Studio and try again.");
   }
-  if (input.files.length > 6) throw new Error("Choose up to six media items.");
+  const musicFile = input.musicFile ?? null;
+  if (input.files.length + (musicFile ? 1 : 0) > 6) {
+    throw new Error("Choose up to five photos or videos when adding a music track.");
+  }
+  if (musicFile) {
+    const musicError = validateCommunityMomentFile(musicFile);
+    if (musicError || !musicFile.type.startsWith("audio/")) throw new Error(musicError || "Choose an MP3, OGG, or WAV music file.");
+    if (!input.files.some((file) => file.type.startsWith("video/"))) throw new Error("Add a video before adding a background music track.");
+    if (input.musicRightsAccepted !== true) throw new Error("Confirm that you created this recording or have rights to use and distribute it.");
+    if (input.musicRightsBasis === "licensed"
+      && !/^https:\/\/\S+$/i.test(input.musicLicenseReference?.trim() ?? "")) {
+      throw new Error("Add an HTTPS link to the music license or source.");
+    }
+  }
   const contextKind = input.audience === "hub" ? "hub_moment" : "community_moment";
   const contextId = input.audience === "hub" ? input.hubId! : input.userId;
   const ids: number[] = [];
@@ -108,6 +128,25 @@ export async function publishStudioMoment(input: {
     ids.push(id);
     input.onAssetUploaded?.(i, id);
   }
+  let musicAssetId = musicFile && validId(input.uploadedMusicAssetId) ? input.uploadedMusicAssetId : null;
+  if (musicFile && musicAssetId === null) {
+    if (input.signal.aborted) throw new DOMException("Upload cancelled", "AbortError");
+    input.onStatus("Uploading background music", 0);
+    musicAssetId = await uploadCommunityMomentMedia({
+      contextKind,
+      contextId,
+      file: musicFile,
+      signal: input.signal,
+      musicRights: {
+        confirmed: true,
+        basis: input.musicRightsBasis ?? "original",
+        ...(input.musicRightsBasis === "licensed" ? { licenseReference: input.musicLicenseReference!.trim() } : {}),
+      },
+      onProgress: (percent) => input.onStatus("Uploading background music", percent),
+    });
+    input.onMusicAssetUploaded?.(musicAssetId);
+  }
+  if (musicAssetId !== null) ids.push(musicAssetId);
   if (ids.length) {
     const query = new URLSearchParams({ contextKind, contextId: String(contextId), ids: ids.join(",") });
     const retried = new Set<number>();
@@ -153,7 +192,16 @@ export async function publishStudioMoment(input: {
       caption: input.caption.trim(), hub_id: input.audience === "hub" ? input.hubId : null,
       audience: input.audience, media_asset_ids: ids, elements: input.elements,
       client_publish_id: input.clientPublishId,
-      composition_manifest: { version: 1, canvas: { width: 1080, height: 1920, aspect: "9:16" }, elements: input.elements, effects, music: null },
+      composition_manifest: {
+        version: 1,
+        canvas: { width: 1080, height: 1920, aspect: "9:16" },
+        elements: input.elements,
+        effects,
+        music: musicAssetId === null ? null : {
+          track_asset_id: musicAssetId,
+          volume: Math.min(2, Math.max(0, input.musicVolume ?? 0.65)),
+        },
+      },
       ...(mediaEdits.length ? { media_edits: mediaEdits } : {}),
     }),
   });

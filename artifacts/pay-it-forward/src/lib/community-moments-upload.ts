@@ -68,6 +68,11 @@ export async function uploadCommunityMomentMedia(input: {
   file: File;
   signal: AbortSignal;
   onProgress?: (percent: number) => void;
+  musicRights?: {
+    confirmed: true;
+    basis: "original" | "licensed";
+    licenseReference?: string;
+  };
 }): Promise<number> {
   validateContextId(input.contextId);
   const fileError = validateCommunityMomentFile(input.file);
@@ -87,6 +92,7 @@ export async function uploadCommunityMomentMedia(input: {
       mimeType: input.file.type,
       byteSize: input.file.size,
       originalName: input.file.name,
+      ...(input.musicRights ? { musicRights: input.musicRights } : {}),
     }),
     signal: input.signal,
   });

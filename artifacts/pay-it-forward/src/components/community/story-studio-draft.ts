@@ -14,6 +14,12 @@ export type StudioDraft = CommunityMomentDraft & {
   destinationListingId: string;
   elements: StudioElement[];
   effect: "none" | "warmth" | "contrast" | "grayscale" | "vignette";
+  musicFile?: File | null;
+  musicRightsBasis?: "original" | "licensed";
+  musicLicenseReference?: string;
+  musicRightsAccepted?: boolean;
+  musicVolume?: number;
+  uploadedMusicAssetId?: number | null;
   textBackground: string;
   textColor: string;
   textSize: string;
@@ -30,6 +36,8 @@ export const newStudioPublishId = () => crypto.randomUUID();
 export function studioPublishSignature(input: {
   files: File[]; selection: number[]; caption: string; elements: StudioElement[];
   audience: "community" | "hub"; hubId: number | null; textBackground: string; coverTimes?: Record<number, number>;
+  musicFile?: File | null; musicRightsBasis?: "original" | "licensed"; musicLicenseReference?: string;
+  musicRightsAccepted?: boolean; musicVolume?: number;
 }): string {
   return JSON.stringify({
     files: input.selection.filter((index) => Number.isInteger(index) && index >= 0 && index < input.files.length)
@@ -38,6 +46,13 @@ export function studioPublishSignature(input: {
     audience: input.audience, hubId: input.audience === "hub" ? input.hubId : null,
     background: input.selection.length ? null : input.textBackground,
     coverTimes: input.coverTimes ?? {},
+    music: input.musicFile ? {
+      file: studioFileFingerprint(input.musicFile),
+      rightsBasis: input.musicRightsBasis ?? "original",
+      licenseReference: input.musicRightsBasis === "licensed" ? input.musicLicenseReference?.trim() ?? "" : "",
+      rightsAccepted: input.musicRightsAccepted === true,
+      volume: input.musicVolume ?? 0.65,
+    } : null,
   });
 }
 
@@ -81,6 +96,12 @@ export function emptyStudioScope(hubId: number | null) {
     uploadedIds: [] as number[],
     listingId: "",
     caption: "",
+    musicFile: null as File | null,
+    musicRightsBasis: "original" as "original" | "licensed",
+    musicLicenseReference: "",
+    musicRightsAccepted: false,
+    musicVolume: 0.65,
+    uploadedMusicAssetId: null as number | null,
   };
 }
 
@@ -93,16 +114,25 @@ export async function persistStudioPublishAttempt(
   draft: StudioDraft,
   selectedIndexes: number[],
   orderedAssetIds: number[],
+  musicAssetId: number | null = null,
 ): Promise<StudioDraft> {
-  if (!draft.clientPublishId || !draft.attemptedSignature || selectedIndexes.length !== orderedAssetIds.length
+  const visualAssetIds = musicAssetId === null ? orderedAssetIds : orderedAssetIds.slice(0, -1);
+  if (!draft.clientPublishId || !draft.attemptedSignature || selectedIndexes.length !== visualAssetIds.length
     || selectedIndexes.some((index) => !Number.isInteger(index) || index < 0 || index >= draft.files.length)
     || orderedAssetIds.some((id) => !Number.isSafeInteger(id) || id < 1)
+    || musicAssetId !== null && orderedAssetIds[orderedAssetIds.length - 1] !== musicAssetId
     || new Set(orderedAssetIds).size !== orderedAssetIds.length) {
     throw new Error("The Spark upload sequence could not be saved safely. Nothing was published.");
   }
   const slots = Array.from({ length: draft.files.length }, (_, index) => draft.uploadedMediaAssetIds?.[index] ?? 0);
-  selectedIndexes.forEach((index, position) => { slots[index] = orderedAssetIds[position]; });
-  const durable = { ...draft, uploadedMediaAssetIds: slots, publishAssetIds: [...orderedAssetIds], updatedAt: Date.now() };
+  selectedIndexes.forEach((index, position) => { slots[index] = visualAssetIds[position]; });
+  const durable = {
+    ...draft,
+    uploadedMediaAssetIds: slots,
+    uploadedMusicAssetId: musicAssetId,
+    publishAssetIds: [...orderedAssetIds],
+    updatedAt: Date.now(),
+  };
   try {
     await saveStudioDraft(durable);
   } catch (reason) {
@@ -112,7 +142,7 @@ export async function persistStudioPublishAttempt(
 }
 
 export async function persistStudioDraft(draft: StudioDraft): Promise<void> {
-  if (!draft.files.length && !draft.caption.trim() && !draft.elements.length && !draft.exchangeDraftId) {
+  if (!draft.files.length && !draft.caption.trim() && !draft.elements.length && !draft.exchangeDraftId && !draft.musicFile) {
     await discardStudioDraft(draft.userId, draft.contextKind === "hub_moment" ? draft.contextId : null);
     return;
   }

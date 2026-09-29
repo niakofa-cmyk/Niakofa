@@ -15,7 +15,7 @@ import { getRedisConnection, QUEUE } from "../lib/queue";
 import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset } from "../lib/storage";
 import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
 import { logger } from "../lib/logger";
-import { assertSupportedMediaJob, mediaJobsForType } from "../lib/media-platform";
+import { assertSupportedMediaJob, isMomentMusicAsset, mediaJobsForType } from "../lib/media-platform";
 import { trackWorker } from "../lib/worker-lifecycle";
 import { randomUUID } from "node:crypto";
 import { getMediaToolPaths } from "../lib/mediaCapabilities";
@@ -177,7 +177,8 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
     await cancelClaimedJob(claimed.id);
     return;
   }
-  const preservesReadyVideo = jobType === "thumbnail" && asset.media_type === "video" && asset.status === "ready";
+  const preservesReadyVideo = (jobType === "thumbnail" || jobType === "audio_mix")
+    && asset.media_type === "video" && asset.status === "ready";
   const requestedCoverTimeMs = jobType === "thumbnail" && asset.media_type === "video"
     ? Number.isFinite(asset.composition_manifest?.cover_time_ms)
       ? Math.max(0, asset.composition_manifest!.cover_time_ms!)
@@ -290,18 +291,37 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       } else if (jobType === "audio_mix") {
         if (!asset.mime_type.startsWith("video/")) throw new Error("audio_mix is only valid for video assets");
         const music = asset.composition_manifest?.music;
-        if (!music?.track_key || music.licensed !== true) {
-          throw new Error("audio_mix requires an explicitly licensed track_key");
+        const trackAssetId = music?.track_asset_id;
+        if (!Number.isSafeInteger(trackAssetId) || !trackAssetId || trackAssetId < 1) {
+          throw new Error("MEDIA_MUSIC_TRACK_INVALID");
         }
-        if (!music.track_key.startsWith("media-assets/")) {
-          throw new Error("audio_mix track_key is outside the media asset namespace");
+        const [musicAsset] = await db.select({
+          owner_user_id: mediaAssetsTable.owner_user_id,
+          context_kind: mediaAssetsTable.context_kind,
+          context_id: mediaAssetsTable.context_id,
+          media_type: mediaAssetsTable.media_type,
+          mime_type: mediaAssetsTable.mime_type,
+          original_key: mediaAssetsTable.original_key,
+          byte_size: mediaAssetsTable.byte_size,
+          status: mediaAssetsTable.status,
+          metadata: mediaAssetsTable.metadata,
+        }).from(mediaAssetsTable)
+          .where(eq(mediaAssetsTable.id, trackAssetId))
+          .limit(1);
+        if (!musicAsset || musicAsset.owner_user_id !== asset.owner_user_id
+          || musicAsset.context_kind !== asset.context_kind || musicAsset.context_id !== asset.context_id
+          || musicAsset.media_type !== "audio" || !musicAsset.mime_type.startsWith("audio/")
+          || musicAsset.status !== "ready" || !isMomentMusicAsset(musicAsset.metadata, asset.owner_user_id)) {
+          throw new Error("MEDIA_MUSIC_RIGHTS_INVALID");
         }
-        const musicInfo = await getAssetInfo(music.track_key);
-        if (!musicInfo || !isAllowedMediaSize(musicInfo.contentLength)) throw new Error("MEDIA_SIZE_INVALID");
-        const musicBuffer = await getAssetBuffer(music.track_key, MAX_MEDIA_BYTES);
+        const musicInfo = await getAssetInfo(musicAsset.original_key);
+        if (!musicInfo || !isAllowedMediaSize(musicInfo.contentLength)
+          || musicInfo.contentLength !== musicAsset.byte_size) throw new Error("MEDIA_SIZE_INVALID");
+        const musicBuffer = await getAssetBuffer(musicAsset.original_key, MAX_MEDIA_BYTES);
         if (musicBuffer.length === 0 || musicBuffer.length !== musicInfo.contentLength || musicBuffer.length > MAX_MEDIA_BYTES) {
           throw new Error("audio track is empty or exceeds the processing limit");
         }
+        await validateMediaBuffer(musicBuffer, "audio", musicAsset.mime_type);
         const musicInput = path.join(tempDir, "music");
         const output = path.join(tempDir, "variant-mixed.mp4");
         await writeFile(musicInput, musicBuffer);
@@ -318,7 +338,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         }
         const mixArgs = hasOriginalAudio
           ? [
-            "-filter_complex", `[0:a]volume=1[original];[1:a]volume=${volume}[music];[original][music]amix=inputs=2:duration=first:dropout_transition=2[a]`,
+            "-filter_complex", `[0:a]volume=1[original];[1:a]volume=${volume}[music];[original][music]amix=inputs=2:duration=longest:dropout_transition=2[a]`,
             "-map", "0:v:0", "-map", "[a]",
           ]
           : ["-map", "0:v:0", "-map", "1:a:0"];

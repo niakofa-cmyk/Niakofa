@@ -23,7 +23,7 @@ import { broadcast } from "../lib/ws-hub";
 import { createMessageNotification } from "../lib/message-notifications";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { isMediaPlatformV21Enabled, isMomentMusicAsset } from "../lib/media-platform";
 import { enqueueMediaAssetProcessing, enqueuePendingMediaAssetThumbnail, regenerateMediaAssetThumbnail } from "../lib/mediaProcessingQueue";
 import { mediaProcessingQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
@@ -116,14 +116,9 @@ const createStorySchema = z.object({
     }),
     elements: z.array(storyElementSchema).max(30),
     music: z.object({
-      track_id: z.string().trim().min(1).max(200).optional(),
-      track_key: z.string().trim().min(1).max(500).optional(),
-      title: z.string().trim().max(200).optional(),
-      start_ms: z.number().int().min(0).optional(),
-      end_ms: z.number().int().positive().optional(),
+      track_asset_id: z.number().int().positive(),
       volume: z.number().min(0).max(2).optional(),
-      licensed: z.boolean().optional(),
-    }).nullable().optional(),
+    }).strict().nullable().optional(),
     effects: z.array(z.enum(["grayscale", "sepia", "blur"])).max(6).optional(),
   }).optional(),
 });
@@ -192,7 +187,10 @@ function normalizeCompositionManifest(
       rotation: element.rotation,
       z_index: element.z_index,
     })),
-    music: input?.music ?? null,
+    music: input?.music ? {
+      track_asset_id: input.music.track_asset_id,
+      volume: input.music.volume ?? 0.65,
+    } : null,
     effects: input?.effects ?? [],
   };
 }
@@ -323,9 +321,11 @@ function publicStory(row: {
     reply_enabled: row.reply_enabled,
     created_at: serializeDate(row.created_at),
     expires_at: serializeDate(row.expires_at),
-    composition_manifest: row.composition_manifest,
+    composition_manifest: row.composition_manifest
+      ? { ...row.composition_manifest, music: null }
+      : null,
     author: { id: row.author_user_id, name: row.author_name, avatar_url: row.avatar_url },
-    media: media.map((item) => ({
+    media: media.filter((item) => item.media_asset_id !== row.composition_manifest?.music?.track_asset_id).map((item) => ({
       id: item.id,
       media_type: item.media_type,
       mime_type: item.mime_type,
@@ -733,6 +733,10 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   if (!parsed.data.caption && parsed.data.media.length === 0 && mediaAssetIds.length === 0 && parsed.data.elements.length === 0) {
     return res.status(400).json({ error: "A Story needs media, text, or a creative element." });
   }
+  if (compositionManifest.music?.track_asset_id
+    && !mediaAssetIds.includes(compositionManifest.music.track_asset_id)) {
+    return res.status(400).json({ error: "The background music track must be uploaded as part of this Moment." });
+  }
   const stagedContextKind = parsed.data.audience === "hub" ? "hub_moment" : "community_moment";
   const stagedContextId = parsed.data.audience === "hub" ? hubId : userId;
   if (mediaAssetIds.length) {
@@ -743,6 +747,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       mime_type: mediaAssetsTable.mime_type,
       variant_key: mediaAssetsTable.variant_key,
       duration_ms: mediaAssetsTable.duration_ms,
+      metadata: mediaAssetsTable.metadata,
     }).from(mediaAssetsTable)
       .where(and(
         inArray(mediaAssetsTable.id, mediaAssetIds),
@@ -777,6 +782,19 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       || asset.media_type === "video" && !asset.mime_type.startsWith("video/")
       || asset.media_type === "audio" && !asset.mime_type.startsWith("audio/"))) {
       return res.status(400).json({ error: "Uploaded media type does not match its file format." });
+    }
+    const musicAssetId = compositionManifest.music?.track_asset_id ?? null;
+    const musicAsset = musicAssetId === null ? null : stagedAssets.find((asset) => asset.id === musicAssetId);
+    const attestedMusicAssets = stagedAssets.filter((asset) => isMomentMusicAsset(asset.metadata, userId));
+    if (attestedMusicAssets.some((asset) => asset.id !== musicAssetId)
+      || musicAssetId !== null && (!musicAsset || musicAsset.media_type !== "audio"
+        || !musicAsset.mime_type.startsWith("audio/")
+        || !isMomentMusicAsset(musicAsset.metadata, userId))) {
+      return res.status(400).json({ error: "Choose an audio track uploaded with your account and confirm its music rights before publishing." });
+    }
+    if (musicAssetId !== null && (exchangeListingId !== null
+      || !stagedAssets.some((asset) => asset.media_type === "video"))) {
+      return res.status(400).json({ error: "Background music is available for video Community and Hub Moments, not Exchange Sparks or photo-only Moments." });
     }
   }
   const moderation = moderatePostText(caption ?? "");
@@ -848,6 +866,18 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         || asset.media_type === "video" && (!asset.variant_key || !asset.duration_ms)
         || !["photo", "video", "audio"].includes(asset.media_type))) {
         return { kind: "media_not_ready" as const };
+      }
+      const musicAssetId = compositionManifest.music?.track_asset_id ?? null;
+      const musicAsset = musicAssetId === null ? null : stagedAssets.find((asset) => asset.id === musicAssetId);
+      if (stagedAssets.some((asset) => asset.media_type === "audio" && asset.id !== musicAssetId)
+        || stagedAssets.some((asset) => isMomentMusicAsset(asset.metadata, userId) && asset.id !== musicAssetId)
+        || musicAssetId !== null && (!musicAsset || musicAsset.media_type !== "audio"
+          || !isMomentMusicAsset(musicAsset.metadata, userId))) {
+        return { kind: "music_invalid" as const };
+      }
+      if (musicAssetId !== null && (exchangeListingId !== null
+        || !stagedAssets.some((asset) => asset.media_type === "video"))) {
+        return { kind: "music_context_invalid" as const };
       }
       const coverEdits = new Map(mediaEdits.map((edit) => [edit.media_asset_id, edit.cover_time_ms]));
       if (coverEdits.size) {
@@ -938,14 +968,21 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           ));
         for (const asset of stagedAssets) {
           const coverTime = coverEdits.get(asset.id);
-          if (coverTime !== undefined) {
+          if (coverTime !== undefined || musicAssetId !== null && asset.media_type === "video") {
+            const assetManifest: StoryCompositionManifest = {
+              ...compositionManifest,
+              ...(asset.composition_manifest?.cover_time_ms !== undefined
+                ? { cover_time_ms: asset.composition_manifest.cover_time_ms }
+                : {}),
+              ...(coverTime !== undefined ? { cover_time_ms: coverTime } : {}),
+            };
             await tx.update(mediaAssetsTable).set({
-              composition_manifest: {
-                ...(asset.composition_manifest ?? compositionManifest),
-                cover_time_ms: coverTime,
-              },
+              composition_manifest: assetManifest,
               updated_at: new Date(),
             }).where(eq(mediaAssetsTable.id, asset.id));
+          }
+          if (musicAssetId !== null && asset.media_type === "video") {
+            mediaAssetJobs.push({ id: asset.id, mediaType: asset.media_type, manifest: compositionManifest });
           }
         }
       }
@@ -986,6 +1023,8 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
     }
     if (result.kind === "media_failed") return res.status(409).json({ error: "One or more uploaded assets failed processing.", error_code: "MOMENT_MEDIA_FAILED" });
+    if (result.kind === "music_invalid") return res.status(400).json({ error: "The selected soundtrack is not an attested audio asset owned by this account." });
+    if (result.kind === "music_context_invalid") return res.status(400).json({ error: "Background music is available for video Community and Hub Moments, not Exchange Sparks or photo-only Moments." });
     if (result.kind === "media_too_long") return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
     if (result.kind === "invalid_cover_time") return res.status(400).json({ error: "Each video cover time must be within the probed video duration." });
     if (result.kind === "media_not_ready") return res.status(409).json({ error: "Moment media is still processing. Retry after every file is ready.", error_code: "MOMENT_MEDIA_NOT_READY" });

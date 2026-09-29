@@ -17,6 +17,8 @@ describe("V21 media asset deletion safety", () => {
     expect(route).toMatch(/router\.delete\("\/media-assets\/:id", requireAuth, requireApproved, generalApiLimiter/);
     expect(route).toMatch(/eq\(mediaAssetsTable\.owner_user_id, req\.authenticatedUserId!\)/);
     expect(route).toMatch(/if \(!asset\) return res\.status\(404\)\.json\(\{ error: "Media asset not found\." \}\)/);
+    expect(route).toMatch(/locked\.context_kind === "story" && isMomentMusicAsset\(locked\.metadata, req\.authenticatedUserId!\)/);
+    expect(route).toContain("MOMENT_MUSIC_LINKED");
   });
 
   it("keeps every media read, write, and grant route behind authentication", async () => {
@@ -145,7 +147,8 @@ describe("V21 media asset deletion safety", () => {
     const store = worker.slice(worker.indexOf("async function storeGeneratedAsset"), worker.indexOf("async function runFfmpeg"));
     expect(store).toMatch(/\.for\("update"\)/);
     expect(store.indexOf("await putAsset(key, bytes, mimeType)")).toBeGreaterThan(store.indexOf('.for("update")'));
-    expect(store).toMatch(/if \(!asset \|\| asset\.status === "deleted"\) return false/);
+    expect(store).toMatch(/if \(!asset \|\| asset\.status === "deleted"\) return "deleted"/);
+    expect(store).toMatch(/Promise<"stored" \| "deleted" \| "superseded">/);
     expect(worker).toMatch(/ne\(mediaAssetsTable\.status, "deleted"\)/);
     expect(worker).toMatch(/generatedCleanupSucceeded/);
   });

@@ -73,3 +73,4 @@
 - [Community Media fixture reference](niakofa-community-media-fixture.md) — the generated Hub 1 fixture and its privacy-acceptance evidence are documented under docs/reference/.
 - [Production state secret validation](production-state-secret-validation.md) — a secure-form confirmation proves presence, not usable browser state; validate before any production mutation.
 - [Cover thumbnail job versioning](cover-thumbnail-job-versioning.md) — keep ready video playback intact and reject stale cover jobs after newer edits.
+- [Moment audio mix duration](moment-audio-mix-duration.md) — looped background audio should cover the video; bound output to video duration, not a shorter source-audio stream.

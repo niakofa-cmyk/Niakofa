@@ -184,6 +184,9 @@ Android camera, gallery, playback, or accessibility behavior.
 - [ ] Inspect the actual worker runtime for FFmpeg/FFprobe and verify its thumbnail/variant keys are in the intended private bucket
 - [ ] Confirm account/listing deletion and failed processing leave no inaccessible-but-retained objects, stalled cleanup markers, or worker temporary files
 - [ ] Complete physical iOS and Android capture, interruption/retry, private playback, and accessibility checks
+- [ ] Verify creator-uploaded music on Community and Hub video Moments: HTTPS license/source references, server-owned asset IDs, owner/context checks, and no client-supplied storage keys or `licensed` booleans
+- [ ] Confirm mixing writes a separate variant and preserves the already-ready video on processing failure; confirm Moment deletion cleans the attached soundtrack and mixed variant together
+- [ ] Confirm Exchange listing Sparks reject music and that the creator-attestation flow is not presented as third-party license verification or a music catalog
 
 The Exchange runner cannot prove bucket placement, account erasure, or native
 device behavior. It requires an approved disposable listing, two validated

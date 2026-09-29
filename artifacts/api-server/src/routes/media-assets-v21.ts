@@ -17,7 +17,7 @@ import {
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset, streamAssetRange } from "../lib/storage";
-import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { buildMomentMusicRightsMetadata, isMediaPlatformV21Enabled, isMomentMusicAsset } from "../lib/media-platform";
 import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
 import { mediaProcessingQueue } from "../lib/queue";
 import { randomUUID } from "node:crypto";
@@ -309,6 +309,37 @@ const uploadRequestSchema = z.object({
   mimeType: z.string().trim().min(3).max(120),
   originalName: z.string().trim().max(255).optional(),
   byteSize: z.number().int().refine(isAllowedMediaSize, `Must be between 1 and ${MAX_MEDIA_BYTES} bytes.`),
+  musicRights: z.object({
+    confirmed: z.literal(true),
+    basis: z.enum(["original", "licensed"]),
+    licenseReference: z.string().trim().max(1000).url().optional(),
+  }).optional(),
+}).superRefine((input, context) => {
+  if (["community_moment", "hub_moment"].includes(input.contextKind)
+    && input.mediaType === "audio" && !input.musicRights) {
+    context.addIssue({
+      code: "custom",
+      path: ["musicRights"],
+      message: "Community and Hub Moment audio requires a creator rights attestation.",
+    });
+  }
+  if (!input.musicRights) return;
+  if (!["community_moment", "hub_moment"].includes(input.contextKind) || input.mediaType !== "audio"
+    || !input.mimeType.startsWith("audio/")) {
+    context.addIssue({
+      code: "custom",
+      path: ["musicRights"],
+      message: "Moment music rights can only be attested for an audio upload to a Community or Hub Moment.",
+    });
+  }
+  if (input.musicRights.basis === "licensed"
+    && (!input.musicRights.licenseReference || !input.musicRights.licenseReference.startsWith("https://"))) {
+    context.addIssue({
+      code: "custom",
+      path: ["musicRights", "licenseReference"],
+      message: "A licensed track needs an HTTPS link to its license or source.",
+    });
+  }
 });
 
 function extensionForMime(mimeType: string): string {
@@ -341,6 +372,9 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
     original_name: input.originalName ?? null,
     original_key: key,
     byte_size: input.byteSize,
+    metadata: input.musicRights
+      ? buildMomentMusicRightsMetadata(req.authenticatedUserId!, input.musicRights)
+      : {},
   };
   let asset: { id: number } | undefined;
   if (input.contextKind === "exchange_spark" && input.mediaType === "video") {
@@ -646,6 +680,7 @@ router.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimit
       thumbnail_key: mediaAssetsTable.thumbnail_key,
       cleanup_keys: mediaAssetsTable.cleanup_keys,
       metadata: mediaAssetsTable.metadata,
+      context_kind: mediaAssetsTable.context_kind,
     }).from(mediaAssetsTable)
       .where(and(
         eq(mediaAssetsTable.id, assetId),
@@ -654,6 +689,9 @@ router.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimit
       .limit(1)
       .for("update");
     if (!locked) return null;
+    if (locked.context_kind === "story" && isMomentMusicAsset(locked.metadata, req.authenticatedUserId!)) {
+      return { kind: "music_attached" as const };
+    }
     const [updated] = await tx.update(mediaAssetsTable)
       .set({
         status: "deleted",
@@ -674,6 +712,12 @@ router.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimit
     return updated ?? locked;
   });
   if (!asset) return res.status(404).json({ error: "Media asset not found." });
+  if ("kind" in asset) {
+    return res.status(409).json({
+      error: "This soundtrack is linked to a published Moment. Delete the Moment to remove both the mixed video and its music.",
+      error_code: "MOMENT_MUSIC_LINKED",
+    });
+  }
 
   try {
     for (const key of mediaStorageKeys(asset)) {

@@ -22,14 +22,20 @@ describe("universal media foundation", () => {
     expect(mediaJobsForType("audio")).toEqual(["probe"]);
   });
 
-  it("only schedules audio mixing for an explicitly licensed composition track", () => {
+  it("only schedules audio mixing for a server-owned asset-ID soundtrack", () => {
     expect(mediaJobsForType("video")).not.toContain("audio_mix");
     expect(mediaJobsForType("video", {
       version: 1,
       canvas: { width: 1080, height: 1920, aspect: "9:16" },
       elements: [],
-      music: { track_key: "media-assets/track-1", licensed: true },
+      music: { track_asset_id: 12 },
     })).toContain("audio_mix");
+    expect(mediaJobsForType("video", {
+      version: 1,
+      canvas: { width: 1080, height: 1920, aspect: "9:16" },
+      elements: [],
+      music: { track_key: "media-assets/track-1", licensed: true },
+    } as never)).not.toContain("audio_mix");
     expect(() => assertSupportedMediaJob("audio_mix")).not.toThrow();
   });
 });
