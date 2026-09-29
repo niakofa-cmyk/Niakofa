@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 export type EditableStoryElement = {
   id: string | number;
-  type: "text" | "sticker" | "mention" | "music";
+  type: "text" | "sticker" | "mention" | "music" | "drawing";
   payload: Record<string, unknown>;
   position_x: number;
   position_y: number;
@@ -23,18 +23,31 @@ type DragState = {
   moved: boolean;
 };
 
-const EDITABLE_TYPES = new Set<EditableStoryElement["type"]>(["text", "sticker", "mention", "music"]);
+type DrawingState = { id: string; before: EditableStoryElement[] };
+
+const EDITABLE_TYPES = new Set<EditableStoryElement["type"]>(["text", "sticker", "mention", "music", "drawing"]);
+const MAX_DRAWING_POINTS = 1000;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
 function clone(elements: EditableStoryElement[]): EditableStoryElement[] {
-  return elements.map((element) => ({ ...element, payload: { ...element.payload } }));
+  return elements.map((element) => ({
+    ...element,
+    payload: {
+      ...element.payload,
+      ...(Array.isArray(element.payload.points)
+        ? { points: element.payload.points.map((point) => Array.isArray(point) ? [...point] : point) }
+        : {}),
+    },
+  }));
 }
 
 function elementLabel(element: EditableStoryElement) {
-  return element.type === "sticker"
+  return element.type === "drawing"
+    ? "drawing"
+    : element.type === "sticker"
     ? String(element.payload.sticker ?? "sticker")
     : element.type === "music"
       ? String(element.payload.track ?? "music")
@@ -52,16 +65,23 @@ export function StoryEditorCanvas({
   onChange,
   children,
   className,
+  drawingMode = false,
+  drawingColor = "#ffffff",
+  drawingWidth = 4,
 }: {
   elements: EditableStoryElement[];
   onChange: (elements: EditableStoryElement[]) => void;
   children?: ReactNode;
   className?: string;
+  drawingMode?: boolean;
+  drawingColor?: string;
+  drawingWidth?: number;
 }) {
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
   const [past, setPast] = useState<HistoryState>([]);
   const [future, setFuture] = useState<HistoryState>([]);
   const dragRef = useRef<DragState | null>(null);
+  const drawingRef = useRef<DrawingState | null>(null);
   const selected = useMemo(
     () => elements.find((element) => element.id === selectedId) ?? null,
     [elements, selectedId],
@@ -104,6 +124,7 @@ export function StoryEditorCanvas({
 
   const beginDrag = useCallback(
     (event: React.PointerEvent<HTMLDivElement>, element: EditableStoryElement) => {
+      if (drawingMode || element.type === "drawing") return;
       const canvas = event.currentTarget.parentElement;
       if (!canvas) return;
       event.preventDefault();
@@ -120,11 +141,12 @@ export function StoryEditorCanvas({
       };
       setSelectedId(element.id);
     },
-    [elements],
+    [drawingMode, elements],
   );
 
   const moveDrag = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      if (drawingMode) return;
       const drag = dragRef.current;
       const rect = event.currentTarget.parentElement?.getBoundingClientRect();
       if (!drag || !rect || rect.width <= 0 || rect.height <= 0) return;
@@ -139,7 +161,7 @@ export function StoryEditorCanvas({
           }
         : element));
     },
-    [elements, onChange],
+    [drawingMode, elements, onChange],
   );
 
   const endDrag = useCallback(() => {
@@ -151,6 +173,62 @@ export function StoryEditorCanvas({
       setFuture([]);
     }
   }, []);
+
+  const beginDrawing = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!drawingMode) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const id = `drawing-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Date.now()}`;
+    const point = [
+      clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100),
+      clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100),
+    ];
+    drawingRef.current = { id, before: clone(elements) };
+    setSelectedId(null);
+    onChange([...elements, {
+      id,
+      type: "drawing",
+      payload: { points: [point], color: drawingColor, width: clamp(drawingWidth, 1, 12) },
+      position_x: 50,
+      position_y: 50,
+      scale: 1,
+      rotation: 0,
+      z_index: 25,
+    }]);
+  }, [drawingColor, drawingMode, drawingWidth, elements, onChange]);
+
+  const continueDrawing = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drawing = drawingRef.current;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!drawing || rect.width <= 0 || rect.height <= 0) return;
+    const point = [
+      clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100),
+      clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100),
+    ];
+    onChange(elements.map((element) => {
+      if (element.id !== drawing.id) return element;
+      const points = Array.isArray(element.payload.points) ? element.payload.points : [];
+      if (points.length >= MAX_DRAWING_POINTS) return element;
+      return { ...element, payload: { ...element.payload, points: [...points, point] } };
+    }));
+  }, [elements, onChange]);
+
+  const endDrawing = useCallback(() => {
+    const drawing = drawingRef.current;
+    if (!drawing) return;
+    drawingRef.current = null;
+    const element = elements.find((item) => item.id === drawing.id);
+    const pointCount = Array.isArray(element?.payload.points) ? element.payload.points.length : 0;
+    if (pointCount < 2) {
+      onChange(elements.filter((item) => item.id !== drawing.id));
+      return;
+    }
+    setPast((current) => [...current.slice(-19), drawing.before]);
+    setFuture([]);
+    setSelectedId(drawing.id);
+  }, [elements, onChange]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -185,12 +263,45 @@ export function StoryEditorCanvas({
       aria-label="Spark editor"
     >
       <div
-        className="relative h-full w-full touch-none select-none overflow-hidden"
-        onPointerDown={() => setSelectedId(null)}
+        className={`relative h-full w-full touch-none select-none overflow-hidden ${drawingMode ? "cursor-crosshair" : ""}`}
+        onPointerDown={(event) => {
+          if (drawingMode) beginDrawing(event);
+          else setSelectedId(null);
+        }}
+        onPointerMove={continueDrawing}
+        onPointerUp={endDrawing}
+        onPointerCancel={endDrawing}
       >
         {children && <div className="absolute inset-0 z-0">{children}</div>}
+        <svg
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {elements.filter((element) => element.type === "drawing").map((element) => {
+            const rawPoints = element.payload.points;
+            if (!Array.isArray(rawPoints)) return null;
+            const points = rawPoints.filter((point): point is [number, number] =>
+              Array.isArray(point) && point.length === 2
+              && Number.isFinite(point[0]) && Number.isFinite(point[1]));
+            if (points.length < 2) return null;
+            const path = points.map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x} ${y}`).join(" ");
+            const selectedDrawing = selectedId === element.id;
+            return <path
+              key={element.id}
+              d={path}
+              fill="none"
+              stroke={typeof element.payload.color === "string" && /^#[0-9a-f]{6}$/i.test(element.payload.color) ? element.payload.color : "#ffffff"}
+              strokeWidth={Math.max(1, Math.min(12, Number(element.payload.width) || 4)) + (selectedDrawing ? 1 : 0)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />;
+          })}
+        </svg>
         {elements
-          .filter((element) => EDITABLE_TYPES.has(element.type))
+          .filter((element) => EDITABLE_TYPES.has(element.type) && element.type !== "drawing")
           .slice()
           .sort((a, b) => a.z_index - b.z_index)
           .map((element) => {
@@ -248,15 +359,17 @@ export function StoryEditorCanvas({
           onPointerDown={(event) => event.stopPropagation()}
           aria-label={`Controls for ${selected.type}`}
         >
-          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ scale: clamp(selected.scale - 0.1, 0.5, 3) })} aria-label="Shrink Spark element">
-            <Shrink className="h-4 w-4" />
-          </button>
-          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ scale: clamp(selected.scale + 0.1, 0.5, 3) })} aria-label="Grow Spark element">
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ rotation: ((selected.rotation + 15 + 180) % 360) - 180 })} aria-label="Rotate Spark element">
-            <RotateCw className="h-4 w-4" />
-          </button>
+          {selected.type !== "drawing" && <>
+            <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ scale: clamp(selected.scale - 0.1, 0.5, 3) })} aria-label="Shrink Spark element">
+              <Shrink className="h-4 w-4" />
+            </button>
+            <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ scale: clamp(selected.scale + 0.1, 0.5, 3) })} aria-label="Grow Spark element">
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => updateSelected({ rotation: ((selected.rotation + 15 + 180) % 360) - 180 })} aria-label="Rotate Spark element">
+              <RotateCw className="h-4 w-4" />
+            </button>
+          </>}
           <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10" onClick={() => { commit(elements.filter((element) => element.id !== selected.id)); setSelectedId(null); }} aria-label="Delete Spark element">
             <Trash2 className="h-4 w-4" />
           </button>

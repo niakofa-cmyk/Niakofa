@@ -1,5 +1,7 @@
 import {
   AtSign,
+  Brush,
+  Layers3,
   Volume2,
   Sparkles,
   Sticker,
@@ -57,8 +59,16 @@ import type { CommunityStory, Effect, StoryAuthor, StoryMedia } from "./story-ra
 import { TEXT_STORY_BACKGROUNDS } from "./story-rail-types";
 import { StoryCameraRecorder } from "./StoryCameraRecorder";
 import { trimVideoFile } from "./story-media-tools";
+import {
+  BUILT_IN_STORY_TEMPLATES,
+  instantiateStoryTemplate,
+  loadSavedStoryTemplates,
+  removeStoryTemplate,
+  saveStoryTemplate,
+  type StoryStudioTemplate,
+} from "./story-studio-templates";
 
-type Tool = "music" | "stickers" | "text" | "effects" | "mention";
+type Tool = "music" | "templates" | "draw" | "stickers" | "text" | "effects" | "mention";
 
 function groupStories(stories: CommunityStory[]): StoryAuthor[] {
   const byAuthor = new Map<number, StoryAuthor>();
@@ -125,6 +135,11 @@ export function CommunityStoryRail({
   const [textAlign, setTextAlign] = useState<"left" | "center" | "right">("center");
   const [textBackground, setTextBackground] = useState<string>(TEXT_STORY_BACKGROUNDS[0]);
   const [editorElements, setEditorElements] = useState<EditableStoryElement[]>([]);
+  const [drawingColor, setDrawingColor] = useState("#ffffff");
+  const [drawingWidth, setDrawingWidth] = useState(4);
+  const [studioTemplates, setStudioTemplates] = useState<StoryStudioTemplate[]>([]);
+  const [templateName, setTemplateName] = useState("");
+  const [templateError, setTemplateError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState("");
   const [publishProgress, setPublishProgress] = useState(0);
@@ -157,6 +172,10 @@ export function CommunityStoryRail({
   const previewVideo = useRef<HTMLVideoElement>(null);
   const autoOpenedRef = useRef(false);
   const deepLinkedStoryRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setStudioTemplates(userId ? loadSavedStoryTemplates(userId) : []);
+  }, [userId]);
 
   const authors = useMemo(() => groupStories(stories), [stories]);
   const selectedAuthor = viewerIndex === null ? null : authors[viewerIndex] ?? null;
@@ -221,6 +240,33 @@ export function CommunityStoryRail({
       next[index] = { ...next[index], ...element, payload: { ...next[index].payload, ...element.payload } };
       return next;
     });
+  };
+
+  const applyStudioTemplate = (template: StoryStudioTemplate) => {
+    setEditorElements(instantiateStoryTemplate(template));
+    setTextBackground(template.textBackground);
+    updateCaption(template.caption);
+    setTool(null);
+    setTemplateError("");
+  };
+
+  const saveCurrentStudioTemplate = () => {
+    if (!userId || !templateName.trim()) return;
+    const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `template-${Date.now()}`;
+    try {
+      const template: StoryStudioTemplate = {
+        id,
+        name: templateName.trim(),
+        caption,
+        textBackground: /^#[0-9a-f]{6}$/i.test(textBackground) ? textBackground : "#172554",
+        elements: editorElements.filter((element) => ["text", "sticker", "drawing"].includes(element.type)),
+      };
+      setStudioTemplates(saveStoryTemplate(userId, template));
+      setTemplateName("");
+      setTemplateError("");
+    } catch (reason) {
+      setTemplateError(reason instanceof Error ? reason.message : "This layout could not be saved.");
+    }
   };
 
   const updateCaption = (value: string) => {
@@ -776,9 +822,9 @@ export function CommunityStoryRail({
     event.target.value = "";
   };
 
-  const onCameraVideo = (recorded: File) => {
+  const onCameraVideo = (recorded: File[]) => {
     setCameraOpen(false);
-    selectStudioFiles([recorded]);
+    selectStudioFiles(recorded);
   };
 
   const discardDraft = async () => {
@@ -956,6 +1002,8 @@ export function CommunityStoryRail({
 
   const toolButtons: Array<{ key: StoryVisualTool; label: string; icon: ReactNode }> = [
     { key: "music", label: "Audio", icon: <Volume2 size={22} /> },
+    { key: "templates", label: "Templates", icon: <Layers3 size={22} /> },
+    { key: "draw", label: "Draw", icon: <Brush size={22} /> },
     { key: "stickers", label: "Stickers", icon: <Sticker size={22} /> },
     { key: "text", label: "Text", icon: <Type size={22} /> },
     { key: "effects", label: "Effects", icon: <Sparkles size={22} /> },
@@ -1005,6 +1053,9 @@ export function CommunityStoryRail({
                   elements={editorElements}
                   onChange={setEditorElements}
                   className="nia-story-editor-surface"
+                  drawingMode={tool === "draw"}
+                  drawingColor={drawingColor}
+                  drawingWidth={drawingWidth}
                 >
                   <div className="relative flex h-full w-full items-center justify-center overflow-hidden" style={!selectedFileUrl ? { background: textBackground } : undefined}>
                     {selectedFileUrl ? (
@@ -1124,6 +1175,41 @@ export function CommunityStoryRail({
                   </div>
                 </div>}
                 {tool === "music" && <div className="nia-story-audio-note"><Volume2 size={19} /><div><strong>Original audio only</strong><p>Your video keeps the sound it was recorded with. Music tracks are not available yet.</p></div></div>}
+                {tool === "templates" && <div className="space-y-3" data-testid="panel-spark-templates">
+                  <div><p className="text-sm font-bold">Reusable Spark formats</p><p className="text-xs text-white/60">Templates save text and layout on this device. Your photos and videos are never included.</p></div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {[...BUILT_IN_STORY_TEMPLATES, ...studioTemplates].map((template) => (
+                      <div key={template.id} className="flex min-w-0 items-stretch gap-2 rounded-xl border border-white/15 bg-white/5 p-2">
+                        <button type="button" onClick={() => applyStudioTemplate(template)} className="min-h-11 min-w-0 flex-1 rounded-lg px-2 text-left text-xs font-bold hover:bg-white/10" aria-label={`Apply ${template.name} Spark template`}>
+                          <span className="block truncate">{template.name}</span>
+                          <span className="mt-1 block truncate font-normal text-white/60">{template.caption || "Reusable layout"}</span>
+                        </button>
+                        {!BUILT_IN_STORY_TEMPLATES.some((item) => item.id === template.id) && <button type="button" onClick={() => {
+                          if (!userId) return;
+                          try {
+                            setStudioTemplates(removeStoryTemplate(userId, template.id));
+                            setTemplateError("");
+                          } catch (reason) {
+                            setTemplateError(reason instanceof Error ? reason.message : "This template could not be removed.");
+                          }
+                        }} className="min-h-11 rounded-lg px-3 text-xs text-white/65 hover:bg-white/10 hover:text-white" aria-label={`Delete ${template.name} template`}>Delete</button>}
+                      </div>
+                    ))}
+                  </div>
+                  <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); saveCurrentStudioTemplate(); }}>
+                    <input value={templateName} onChange={(event) => { setTemplateName(event.target.value); setTemplateError(""); }} maxLength={60} className="min-h-11 min-w-0 flex-1 rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="Name this layout" aria-label="Template name" />
+                    <button type="submit" disabled={!userId || !templateName.trim()} className="min-h-11 rounded-xl bg-white px-3 text-xs font-bold text-slate-900 disabled:opacity-40" data-testid="button-save-spark-template">Save layout</button>
+                  </form>
+                  {templateError && <p role="alert" className="text-xs text-rose-200">{templateError}</p>}
+                </div>}
+                {tool === "draw" && <div className="flex flex-wrap items-end gap-3" data-testid="panel-spark-drawing">
+                  <label className="text-xs font-bold text-white/75">Brush color<input type="color" value={drawingColor} onChange={(event) => setDrawingColor(event.target.value)} className="mt-1 block h-10 w-14 cursor-pointer rounded-lg border border-white/20 bg-white/10" /></label>
+                  <label className="min-w-36 flex-1 text-xs font-bold text-white/75">Brush size
+                    <input type="range" min={1} max={12} step={1} value={drawingWidth} onChange={(event) => setDrawingWidth(Number(event.target.value))} className="mt-2 w-full" aria-label="Drawing brush size" />
+                  </label>
+                  <button type="button" onClick={() => setEditorElements((current) => current.filter((element) => element.type !== "drawing"))} disabled={!editorElements.some((element) => element.type === "drawing")} className="min-h-10 rounded-lg border border-white/20 px-3 text-xs font-bold disabled:opacity-40">Clear drawings</button>
+                  <p className="w-full text-xs text-white/60">Draw on the preview. Use Undo to remove the last stroke.</p>
+                </div>}
                 {tool === "stickers" && <div className="flex gap-2 overflow-x-auto pb-1">{["💙", "🙏", "🤝", "🌍", "🙌", "✨", "📍"].map((item) => <button key={item} type="button" onClick={() => { setSticker(item); upsertEditorElement({ id: "sticker", type: "sticker", payload: { sticker: item }, position_x: 50, position_y: 50, scale: 1, rotation: 0, z_index: 15 }); }} className={`h-11 w-11 shrink-0 rounded-xl border text-xl ${sticker === item ? "border-primary bg-primary/10" : "border-white/20"}`} aria-label={`Add ${item} sticker`}>{item}</button>)}</div>}
                 {tool === "effects" && <div className="flex gap-2 overflow-x-auto pb-1">{(["none", "warmth", "contrast", "grayscale", "vignette"] as Effect[]).map((item) => <button key={item} type="button" onClick={() => setEffect(item)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold capitalize ${effect === item ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}>{item}</button>)}</div>}
                 {tool === "mention" && <div className="space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); setEditorElements((current) => current.filter((element) => element.id !== "mention")); }} className="min-h-11 w-full rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); upsertEditorElement({ id: "mention", type: "mention", payload: { display_name: candidate.name, mention_user_id: candidate.id }, position_x: 50, position_y: 65, scale: 1, rotation: 0, z_index: 18 }); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}

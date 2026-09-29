@@ -8,7 +8,7 @@ function recorderMimeType() {
   return recorderTypes.find((type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) ?? "";
 }
 
-export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) => void; onCancel: () => void }) {
+export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]) => void; onCancel: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordingAudioRef = useRef<MediaStream | null>(null);
@@ -22,13 +22,17 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
   const [phase, setPhase] = useState<"idle" | "camera" | "recording" | "paused" | "preview">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [file, setFile] = useState<File | null>(null);
+  const [clips, setClips] = useState<File[]>([]);
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
 
-  const stopTracks = () => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+  const stopRecordingAudio = () => {
     recordingAudioRef.current?.getTracks().forEach((track) => track.stop());
     recordingAudioRef.current = null;
+  };
+  const stopTracks = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    stopRecordingAudio();
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
   };
@@ -44,6 +48,15 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
   }, []);
+  useEffect(() => {
+    if (phase !== "camera" || !streamRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    video.srcObject = streamRef.current;
+    void video.play().catch(() => setError("The camera preview could not be resumed. Try reopening the camera."));
+    return () => {
+      if (video.srcObject === streamRef.current) video.srcObject = null;
+    };
+  }, [phase]);
   useEffect(() => {
     if (!file) { setPreviewUrl(""); return; }
     const url = URL.createObjectURL(file); setPreviewUrl(url);
@@ -62,6 +75,10 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
   const startCamera = async () => {
     setError("");
     cancelledRef.current = false;
+    if (streamRef.current) {
+      setPhase("camera");
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setError("Camera access is not supported in this browser. Choose media from your device.");
       return;
@@ -89,6 +106,10 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
   };
   const startRecording = async () => {
     const stream = streamRef.current;
+    if (clips.length >= 6) {
+      setError("A Spark can contain up to six clips. Add the clips you have or remove one first.");
+      return;
+    }
     if (!stream || typeof MediaRecorder === "undefined") {
       setError("Video recording is not supported in this browser. You can still take a photo or choose a video.");
       return;
@@ -132,8 +153,9 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
         const baseType = mimeType.split(";")[0];
         const recorded = new File([blob], `spark-${Date.now()}.${baseType === "video/mp4" ? "mp4" : "webm"}`, { type: baseType, lastModified: Date.now() });
         setFile(recorded);
+        setClips((current) => [...current, recorded].slice(0, 6));
         setPhase("preview");
-        stopTracks();
+        stopRecordingAudio();
       };
       elapsedRef.current = 0;
       setElapsed(0);
@@ -145,6 +167,7 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
       recordingAudioRef.current?.getTracks().forEach((track) => track.stop());
       recordingAudioRef.current = null;
       if (!cancelledRef.current) setError(reason instanceof Error ? reason.message : "Video recording could not be started.");
+      stopRecordingAudio();
     } finally {
       recordingStartingRef.current = false;
     }
@@ -171,7 +194,9 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
       }
       if (cancelledRef.current) return;
       stopTracks();
-      setFile(new File([blob], `spark-${Date.now()}.jpg`, { type: "image/jpeg", lastModified: Date.now() }));
+      const photo = new File([blob], `spark-${Date.now()}.jpg`, { type: "image/jpeg", lastModified: Date.now() });
+      setClips((current) => [...current, photo].slice(0, 6));
+      setFile(photo);
       setPhase("preview");
     }, "image/jpeg", 0.92);
   };
@@ -186,7 +211,22 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
     startedAtRef.current = Date.now(); recorder.resume(); setPhase("recording"); startClock();
   };
   const finish = () => { if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop(); };
-  const retake = () => { setFile(null); setElapsed(0); elapsedRef.current = 0; setPhase("idle"); setError(""); };
+  const retake = () => {
+    const remaining = clips.slice(0, -1);
+    setClips(remaining);
+    setFile(remaining.at(-1) ?? null);
+    setElapsed(0);
+    elapsedRef.current = 0;
+    setPhase(streamRef.current ? "camera" : "idle");
+    setError("");
+  };
+  const recordAnother = () => {
+    setFile(null);
+    setElapsed(0);
+    elapsedRef.current = 0;
+    setError("");
+    setPhase("camera");
+  };
   const cancel = () => {
     cancelledRef.current = true;
     clearTimer();
@@ -204,9 +244,14 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
           : <img src={previewUrl} alt="Captured Spark photo preview" className="h-full w-full object-contain" />)}
       </div>
       <div className="flex items-center justify-between gap-3 p-4">
-        <span aria-live="polite" data-testid="status-spark-camera">{error || (phase === "preview" ? "Preview your Spark" : `${Math.ceil(elapsed / 1000)} / 60 seconds`)}</span>
+        <span aria-live="polite" data-testid="status-spark-camera">{error || (phase === "preview" ? `Preview ${clips.length} of 6 clip${clips.length === 1 ? "" : "s"}` : `${Math.ceil(elapsed / 1000)} / 60 seconds`)}</span>
         <button type="button" onClick={cancel} aria-label="Cancel camera" data-testid="button-cancel-spark-camera"><X /></button>
       </div>
+      {phase === "preview" && clips.length > 0 && <ol className="flex gap-2 overflow-x-auto px-4 pb-2" aria-label="Recorded Spark clip sequence">
+        {clips.map((clip, index) => <li key={`${clip.name}-${index}`} className={`shrink-0 rounded-lg border px-3 py-1 text-xs ${clip === file ? "border-white bg-white/15" : "border-white/20"}`} aria-current={clip === file ? "step" : undefined}>
+          {clip.type.startsWith("video/") ? "Video" : "Photo"} {index + 1}
+        </li>)}
+      </ol>}
       {error && <p className="px-4 text-sm text-rose-300" role="alert" data-testid="error-spark-camera">{error}</p>}
       <div className="flex justify-center gap-3 p-4">
         {phase === "idle" && <button type="button" onClick={() => void startCamera()} className="rounded-full bg-white px-5 py-3 font-bold text-slate-900" data-testid="button-start-spark-camera">Start camera</button>}
@@ -220,7 +265,8 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (file: File) =
         </>}
         {phase === "preview" && file && <>
           <button type="button" onClick={retake} aria-label={`Retake Spark ${file.type.startsWith("video/") ? "video" : "photo"}`} data-testid="button-retake-spark-camera"><RotateCcw /> Retake</button>
-          <button type="button" onClick={() => onUse(file)} className="rounded-xl bg-white px-4 py-2 font-bold text-slate-900" data-testid="button-use-spark-camera">Use {file.type.startsWith("video/") ? "video" : "photo"}</button>
+          {clips.length < 6 && <button type="button" onClick={recordAnother} className="rounded-xl border border-white/30 px-4 py-2 font-bold" data-testid="button-record-another-spark-clip">Add another clip</button>}
+          <button type="button" onClick={() => onUse(clips)} className="rounded-xl bg-white px-4 py-2 font-bold text-slate-900" data-testid="button-use-spark-camera">Add {clips.length} to Spark</button>
         </>}
       </div>
     </div>

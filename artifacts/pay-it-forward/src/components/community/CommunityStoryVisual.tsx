@@ -2,10 +2,12 @@ import {
   AtSign,
   ArrowLeft,
   ArrowRight,
+  Brush,
   Camera,
   ChevronLeft,
   Heart,
   ImagePlus,
+  Layers3,
   MoreHorizontal,
   Music2,
   Play,
@@ -31,6 +33,8 @@ export type StoryVisualAuthor = {
 
 export type StoryVisualTool =
   | "music"
+  | "templates"
+  | "draw"
   | "stickers"
   | "text"
   | "effects"
@@ -444,6 +448,8 @@ export function StoryToolIcons() {
   return (
     <>
       <Music2 size={22} />
+      <Layers3 size={22} />
+      <Brush size={22} />
       <Sticker size={22} />
       <Type size={22} />
       <Sparkles size={22} />

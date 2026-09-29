@@ -56,6 +56,34 @@ const storyElementSchema = z.object({
   scale: z.number().min(0.5).max(3).default(1),
   rotation: z.number().min(-180).max(180).default(0),
   z_index: z.number().int().min(0).max(100).default(0),
+}).superRefine((element, context) => {
+  if (element.type !== "drawing") return;
+  const points = element.payload.points;
+  if (!Array.isArray(points) || points.length < 2 || points.length > 1000
+    || points.some((point) => !Array.isArray(point) || point.length !== 2
+      || !point.every((coordinate) => typeof coordinate === "number"
+        && Number.isFinite(coordinate) && coordinate >= 0 && coordinate <= 100))) {
+    context.addIssue({
+      code: "custom",
+      path: ["payload", "points"],
+      message: "Drawing strokes must contain 2–1000 normalized points.",
+    });
+  }
+  if (typeof element.payload.color !== "string" || !/^#[0-9a-f]{6}$/i.test(element.payload.color)) {
+    context.addIssue({
+      code: "custom",
+      path: ["payload", "color"],
+      message: "Drawing color must be a six-digit hex color.",
+    });
+  }
+  if (typeof element.payload.width !== "number" || !Number.isFinite(element.payload.width)
+    || element.payload.width < 1 || element.payload.width > 12) {
+    context.addIssue({
+      code: "custom",
+      path: ["payload", "width"],
+      message: "Drawing width must be between 1 and 12.",
+    });
+  }
 });
 
 const createStorySchema = z.object({

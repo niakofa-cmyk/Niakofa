@@ -46,11 +46,21 @@ describe("media-less Community Story publication idempotency contract", () => {
     const route = await fs.readFile(storiesRoutePath, "utf8");
 
     expect(route).toMatch(/media_asset_ids: payload\.mediaAssetIds/);
-    expect(route).toMatch(/mediaAssetIds,\s*\n\s*\}\)\s*\n\s*: null/);
+    expect(route).toMatch(/mediaAssetIds,\s*mediaEdits,\s*\}\)\s*\n\s*: null/);
     expect(route).toMatch(/parsed\.data\.client_publish_id && parsed\.data\.media\.length/);
     expect(route).not.toMatch(/client_publish_id && \(parsed\.data\.media\.length \|\| mediaAssetIds\.length\)/);
     expect(route).toMatch(/if \(parsed\.data\.media\.length \|\| existing\.publish_payload_hash !== publishPayloadHash\)/);
     expect(route).toMatch(/if \(result\.kind === "media_not_found"\) \{[\s\S]*?eq\(communityStoriesTable\.client_publish_id, parsed\.data\.client_publish_id\)[\s\S]*?return res\.status\(200\)/);
     expect(route).toMatch(/parsed\.data\.client_publish_id && databaseError\.code === "23505"/);
+  });
+
+  it("bounds persisted drawing strokes and validates normalized coordinates and style", async () => {
+    const route = await fs.readFile(storiesRoutePath, "utf8");
+
+    expect(route).toMatch(/if \(element\.type !== "drawing"\) return/);
+    expect(route).toMatch(/points\.length < 2 \|\| points\.length > 1000/);
+    expect(route).toMatch(/coordinate >= 0 && coordinate <= 100/);
+    expect(route).toMatch(/Drawing color must be a six-digit hex color/);
+    expect(route).toMatch(/Drawing width must be between 1 and 12/);
   });
 });

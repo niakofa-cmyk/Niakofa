@@ -101,6 +101,43 @@ export function StoryElementLayer({
             );
           }
 
+          if (element.type === "drawing") {
+            const rawPoints = payload.points;
+            if (!Array.isArray(rawPoints)) return null;
+            const points = rawPoints.filter((point): point is [number, number] =>
+              Array.isArray(point) && point.length === 2
+              && Number.isFinite(point[0]) && Number.isFinite(point[1])
+              && point[0] >= 0 && point[0] <= 100 && point[1] >= 0 && point[1] <= 100);
+            if (points.length < 2) return null;
+            const path = points.map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x} ${y}`).join(" ");
+            return (
+              <svg
+                key={element.id}
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  zIndex: element.z_index ?? 0,
+                  pointerEvents: "none",
+                }}
+              >
+                <path
+                  d={path}
+                  fill="none"
+                  stroke={typeof payload.color === "string" && /^#[0-9a-f]{6}$/i.test(payload.color) ? payload.color : "#ffffff"}
+                  strokeWidth={Math.max(1, Math.min(12, Number(payload.width) || 4))}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+            );
+          }
+
           return null;
         })}
     </div>
