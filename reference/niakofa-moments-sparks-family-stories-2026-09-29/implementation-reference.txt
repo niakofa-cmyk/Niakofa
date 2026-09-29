@@ -1,0 +1,139 @@
+Niakofa Moments, Sparks & Family Stories — implementation review
+
+I checked the current main branch of niakofa-cmyk/Niakofa 
+and reviewed the product decision document, Sparks workflow contract, current Community Story rail and composer, Exchange Spark composer, and media release acceptance matrix.
+
+The core product architecture is already documented and partly implemented, but the complete visual experience you described is not yet finished or production-certified.
+
+1. Product terminology to lock in
+
+Moments
+
+Viewing destination
+
+Full-screen, vertical discovery for watching and interacting with Sparks. Think of Moments as Niakofa's viewing experience—not the name of each post.
+
+Sparks
+
+Individual content
+
+The short-form videos, photos, responses, and creative posts people capture and publish. The creation action is Create a Spark.
+
+Niakofa Family Stories / Griot Family Stories
+
+Enduring family legacy
+
+Family narratives, oral histories, elders' memories, genealogy, and preserved family milestones. These belong in the Family Vault / Legacy experience—not in the 24-hour short-form feed.
+
+This aligns with the repository's product decision: “Create a Spark,” “Explore Moments,” and reserve Stories for longer-form narratives and Legacy for preserved cultural and family memory. View product decision in GitHub
+
+2. Current repository: implementation status
+
+Review basis: current GitHub main source and documentation as of September 29, 2026.
+
+Feature area
+
+	
+
+Current status
+
+
+
+
+Create Spark camera/gallery and studio workflow
+
+	
+
+Partially implemented
+
+
+
+
+Draft persistence, upload progress, cancellation and retry foundations
+
+	
+
+Present in existing components; end-to-end release verification remains
+
+
+
+
+Exchange Spark video upload and playback
+
+	
+
+Separate implementation exists; retain its listing-specific lifecycle
+
+
+
+
+Dedicated vertical Moments discovery feed
+
+	
+
+Explicitly identified as remaining work
+
+
+
+
+Unified Community/Hub binary media upload
+
+	
+
+Documented as incomplete for ordinary Moments
+
+
+
+
+Family Stories / Griot Family Stories
+
+	
+
+Family Vault and Legacy foundations exist; dedicated unified narrative experience still needs integration
+
+
+
+
+Production media certification
+
+	
+
+Incomplete; do not treat green CI or healthy deployment as certification
+
+Sources: Sparks workflow and known gaps 
+, production acceptance matrix 
+.
+
+My recommendations
+
+Build Moments as a dedicated viewing destination, reusing existing authorized media and Story compatibility rather than replacing the backend.
+
+Use one consistent Create Spark visual journey across Community and Spirals, but preserve the distinct Exchange listing upload lifecycle.
+
+Give Family Stories a separate, private-by-default experience in Family Vault / Legacy, with oral histories, transcripts, family contributors, timeline, and preservation controls.
+
+Complete the remaining server-backed discovery, moderation, remix rights, accessibility, analytics, and media cleanup loops before describing the full feature set as complete.
+
+Keep Nia AI separate from the Niakofa media pipeline.
+
+3. Download the visual code package
+
+Niakofa Moments + Sparks + Family Stories
+
+ZIP · React/TypeScript visual components, CSS, SVG icons, integration guidance, and acceptance checklist
+
+Download the visual code package
+
+The package contains:
+
+MomentsExperience.tsx — vertical Sparks feed presentation, creator identity, action rail, sound controls, and discovery entry points.
+
+SparkCreationFlow.tsx — camera/gallery, preview, caption, audience, draft, and publishing visual shell.
+
+niakofa-moments-sparks.css — responsive Niakofa styling, mobile full-screen layout, and accessible focus/reduced-motion styles.
+
+Original Moments, Spark, and Family Stories SVG icons.
+
+Repository-specific integration recommendations and a feature acceptance checklist.
+
+Important: This is an additive code package, not a commit to GitHub. It supplies the visual components and integration contract; it does not claim to wire every backend action or complete production certification. The existing Niakofa components and authorization/media services must remain the source of truth when integrating it.

@@ -1,0 +1,55 @@
+check the updated repo @GitHub for your improvements, how well were they implemented? Do you have any recommendations? Provide the improved and enhanced code package to apply the Visual experience for This: Niakofa Stories are Niakofa Family Stories or Griot Family stories for users Family Legacy family fault. Provide the Imporved and enhanced Image package for Niakofa for Moments
+Reels + Shorts-inspired
+
+Full-screen, swipeable short-form video and photo discovery with creation tools, sounds, comments, likes, sharing, creator profiles, and discovery.
+
+svg
+
+## Sparks
+
+Creation and participation
+
+Individual pieces of content people create and share, with easy capture, text, images, video, sound, templates, drafts, and community participation.
+
+svg
+
+## Stories
+
+Facebook Stories-inspired
+
+Temporary everyday updates, sequential photo/video segments, audience privacy, reactions, replies, viewer lists, and optional preservation as lasting narratives. Remenber Niakofa Sparks is the youtube short, or instagram reel, or Facebook stories feature. Evaluate the current build and infrastructure of the current features in Niakofa to Provide the improved and enhanced image for These Features: Creation
+[ ] In-app photo and video capture
+[ ] Multi-clip recording and trimming
+[ ] Text, captions, stickers, and drawing
+[ ] Music and original audio
+[ ] Drafts, preview, and cover selection
+[ ] Templates and reusable creative formats
+
+Viewing and discovery
+[ ] Full-screen vertical Moments feed
+[ ] Tap/swipe navigation and playback controls
+[ ] Personalized and local/community discovery
+[ ] Search, topics, tags, and audio discovery
+[ ] Creator profiles and published-content tabs
+
+Community engagement
+[ ] Likes, reactions, and comments
+[ ] Private replies and messaging
+[ ] Share to Spirals, profiles, and Exchange where appropriate
+[ ] Remix, response videos, and attribution
+[ ] Prompts and community participation
+
+Privacy, safety, and lifecycle
+[ ] 24-hour expiration for Stories
+[ ] Story archive and featured narrative preservation
+[ ] Audience controls and account privacy
+[ ] Mute, block, report, and moderation tools
+[ ] Content deletion and durable media cleanup
+[ ] Rights management and remix permissions
+
+Creator and platform operations
+[ ] Views, watch time, retention, and engagement insights
+[ ] Creator and community growth analytics
+[ ] Upload progress, retry, and recoverable drafts
+[ ] Video processing, thumbnails, and playback variants
+[ ] Accessibility captions and content reporting. to the Niakofa app
