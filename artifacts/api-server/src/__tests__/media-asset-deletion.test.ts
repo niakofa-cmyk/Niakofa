@@ -164,7 +164,8 @@ describe("V21 media asset deletion safety", () => {
     const route = await fs.readFile(routePath, "utf8");
     const scheduler = await fs.readFile(schedulerPath, "utf8");
     const migration = await fs.readFile(cleanupMigrationPath, "utf8");
-    expect(storage).toMatch(/async function verifyAssetAbsent[\s\S]*STORAGE_OBJECT_DELETE_UNCONFIRMED/);\n    expect(storage).toMatch(/export async function deleteAssetStrict[\s\S]*await verifyAssetAbsent/);
+    expect(storage).toMatch(/async function verifyAssetAbsent[\s\S]*STORAGE_OBJECT_DELETE_UNCONFIRMED/);
+    expect(storage).toMatch(/export async function deleteAssetStrict[\s\S]*await verifyAssetAbsent/);
     expect(worker).toMatch(/cleanup_keys/);
     expect(route).toMatch(/mediaStorageKeys\(asset\)/);
     expect(scheduler).toMatch(/mediaStorageKeys\(asset\)/);
