@@ -10,9 +10,11 @@ type Person = { id: number; name: string; avatar_url: string | null };
 export function StoryShareSheet({
   storyId,
   onClose,
+  onShared,
 }: {
   storyId: number;
   onClose: () => void;
+  onShared?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [people, setPeople] = useState<Person[]>([]);
@@ -58,6 +60,7 @@ export function StoryShareSheet({
     try {
       await sendStoryContextMessage({ recipientId: person.id, storyId, body: message });
       await shareStory(storyId);
+      onShared?.();
       trackCommunityContent("community_spark_shared", { spark_id: storyId });
       onClose();
     } catch (reason) {

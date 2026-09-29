@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, LoaderCircle, Play, RefreshCw } from "lucide-react";
+import { useLocation } from "wouter";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Heart, LoaderCircle, MessageCircle, Play, RefreshCw, Send, Share2 } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
-import { recordStoryView } from "@/lib/community-story-client";
+import { getStoryMetrics, reactToStory, recordStoryView, removeStoryReaction, sendStoryContextMessage, type StoryMetrics } from "@/lib/community-story-client";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { CommunityStoryRail } from "./CommunityStoryRail";
+import { StoryShareSheet } from "./StoryShareSheet";
 import { StoryElementLayer, storyEffectFilter, type StoryElement } from "./StoryElementLayer";
 
 const MOMENTS_PAGE_SIZE = 12;
@@ -24,6 +26,7 @@ type MomentSpark = {
   hub_id: number | null;
   caption: string | null;
   audience: string;
+  reply_enabled?: boolean;
   created_at: string | null;
   author: { id: number; name: string; avatar_url: string | null };
   media: MomentMedia[];
@@ -94,11 +97,19 @@ export function CommunityMomentsExperience({
   const [resolvedMediaKey, setResolvedMediaKey] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState("");
   const [mediaRetry, setMediaRetry] = useState(0);
+  const [metricsById, setMetricsById] = useState<Record<number, StoryMetrics>>({});
+  const [reactionPendingId, setReactionPendingId] = useState<number | null>(null);
+  const [replyOpenId, setReplyOpenId] = useState<number | null>(null);
+  const [replyDraft, setReplyDraft] = useState("");
+  const [replySendingId, setReplySendingId] = useState<number | null>(null);
+  const [interactionError, setInteractionError] = useState("");
+  const [shareSparkId, setShareSparkId] = useState<number | null>(null);
   const [feedInViewport, setFeedInViewport] = useState(false);
   const [documentVisible, setDocumentVisible] = useState(
     () => typeof document === "undefined" || document.visibilityState !== "hidden",
   );
   const [videoMuted, setVideoMuted] = useState(true);
+  const [, navigate] = useLocation();
   const cardRefs = useRef(new Map<number, HTMLElement>());
   const feedRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -142,6 +153,10 @@ export function CommunityMomentsExperience({
     setLoading(true);
     setLoadingMore(false);
     setError("");
+    setMetricsById({});
+    setReplyOpenId(null);
+    setReplyDraft("");
+    setInteractionError("");
     viewedIdsRef.current.clear();
     void fetchMomentPage(hubId, null, controller.signal)
       .then((page) => {
@@ -250,6 +265,21 @@ export function CommunityMomentsExperience({
   }, [activeSpark, hubId]);
 
   useEffect(() => {
+    if (!activeSpark || metricsById[activeSpark.id]) return;
+    let cancelled = false;
+    void getStoryMetrics(activeSpark.id)
+      .then((metrics) => {
+        if (!cancelled) setMetricsById((current) => ({ ...current, [activeSpark.id]: metrics }));
+      })
+      .catch(() => {
+        // Playback and browsing remain available when interaction counts are unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSpark, metricsById]);
+
+  useEffect(() => {
     if (!activeMedia || !playbackAllowed) {
       setMediaUrl(null);
       setResolvedMediaKey(null);
@@ -338,6 +368,51 @@ export function CommunityMomentsExperience({
     setActiveIndex(index);
   };
 
+  const toggleReaction = async (spark: MomentSpark) => {
+    if (reactionPendingId !== null) return;
+    setReactionPendingId(spark.id);
+    setInteractionError("");
+    try {
+      const metrics = metricsById[spark.id] ?? await getStoryMetrics(spark.id);
+      const reacted = Boolean(metrics.viewer_reaction);
+      if (reacted) await removeStoryReaction(spark.id);
+      else await reactToStory(spark.id);
+      setMetricsById((current) => ({
+        ...current,
+        [spark.id]: {
+          ...metrics,
+          reactions: Math.max(0, metrics.reactions + (reacted ? -1 : 1)),
+          viewer_reaction: reacted ? null : "💙",
+        },
+      }));
+      trackCommunityContent("community_spark_reacted", {
+        spark_id: spark.id,
+        action: reacted ? "removed" : "added",
+      });
+    } catch (reason) {
+      setInteractionError(reason instanceof Error ? reason.message : "Could not update your reaction.");
+    } finally {
+      setReactionPendingId(null);
+    }
+  };
+
+  const submitReply = async (spark: MomentSpark) => {
+    const body = replyDraft.trim();
+    if (!body || replySendingId !== null || spark.reply_enabled === false) return;
+    setReplySendingId(spark.id);
+    setInteractionError("");
+    try {
+      await sendStoryContextMessage({ recipientId: spark.author_user_id, storyId: spark.id, body });
+      setReplyDraft("");
+      setReplyOpenId(null);
+      navigate(`/messages?mode=direct&recipientId=${spark.author_user_id}&storyId=${spark.id}`);
+    } catch (reason) {
+      setInteractionError(reason instanceof Error ? reason.message : "Could not send your Spark reply.");
+    } finally {
+      setReplySendingId(null);
+    }
+  };
+
   return (
     <section className="space-y-4" aria-label={hubId === null ? "Community Moments" : "Hub Moments"} data-testid="community-moments-experience">
       {!compact && (
@@ -376,6 +451,12 @@ export function CommunityMomentsExperience({
             <button type="button" onClick={() => sparks.length === 0 ? setRetry((value) => value + 1) : void loadMore()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-3 font-bold" data-testid="button-retry-moments">
               <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
             </button>
+          </div>
+        )}
+        {interactionError && (
+          <div className="mx-4 mt-4 flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/80 px-3 py-2 text-sm text-white" role="alert">
+            <span>{interactionError}</span>
+            <button type="button" onClick={() => setInteractionError("")} className="rounded-lg px-2 py-1 font-bold hover:bg-white/10" aria-label="Dismiss interaction error">Dismiss</button>
           </div>
         )}
 
@@ -474,6 +555,73 @@ export function CommunityMomentsExperience({
                       {spark.audience === "hub" && <p className="mt-1 text-xs font-semibold text-white/75">Hub Spark</p>}
                       {spark.caption && media && <p className="mt-2 max-w-xl text-sm font-semibold leading-relaxed sm:text-base">{spark.caption}</p>}
                     </div>
+                    {current && (
+                      <div className="absolute inset-x-4 bottom-4 z-20 flex flex-col items-end gap-2 text-white sm:inset-x-6">
+                        {replyOpenId === spark.id && (
+                          <form
+                            className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-2xl border border-white/15 bg-black/80 p-2 shadow-xl backdrop-blur"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void submitReply(spark);
+                            }}
+                          >
+                            <input
+                              value={replyDraft}
+                              onChange={(event) => setReplyDraft(event.target.value)}
+                              maxLength={500}
+                              autoFocus
+                              placeholder={spark.reply_enabled === false ? "Replies are off" : "Reply to this Spark…"}
+                              disabled={spark.reply_enabled === false || replySendingId === spark.id}
+                              className="min-h-10 min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-white/55 focus:border-primary"
+                              aria-label="Reply to Spark"
+                            />
+                            <button type="submit" disabled={!replyDraft.trim() || spark.reply_enabled === false || replySendingId === spark.id} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground disabled:opacity-50" aria-label="Send reply">
+                              {replySendingId === spark.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                            </button>
+                          </form>
+                        )}
+                        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/15 bg-black/70 px-2 py-1.5 shadow-xl backdrop-blur">
+                          <button
+                            type="button"
+                            onClick={() => void toggleReaction(spark)}
+                            disabled={reactionPendingId === spark.id}
+                            className={`inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-bold transition-colors ${metricsById[spark.id]?.viewer_reaction ? "bg-rose-500/25 text-rose-100" : "text-white hover:bg-white/10"}`}
+                            aria-label={metricsById[spark.id]?.viewer_reaction ? "Remove reaction from Spark" : "React to Spark"}
+                            aria-pressed={Boolean(metricsById[spark.id]?.viewer_reaction)}
+                          >
+                            {reactionPendingId === spark.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${metricsById[spark.id]?.viewer_reaction ? "fill-current" : ""}`} />}
+                            <span>{metricsById[spark.id]?.reactions ?? 0}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyOpenId((current) => current === spark.id ? null : spark.id);
+                              setReplyDraft("");
+                              setInteractionError("");
+                            }}
+                            disabled={spark.reply_enabled === false}
+                            className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-bold text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-45"
+                            aria-label={spark.reply_enabled === false ? "Replies are off" : "Reply to Spark"}
+                          >
+                            <MessageCircle className="h-4 w-4" />
+                            <span>Reply</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShareSparkId(spark.id)}
+                            className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-bold text-white hover:bg-white/10"
+                            aria-label="Share Spark"
+                          >
+                            <Share2 className="h-4 w-4" />
+                            <span>{metricsById[spark.id]?.shares ?? 0}</span>
+                          </button>
+                          <span className="inline-flex min-h-10 items-center gap-1.5 px-2 text-xs font-bold text-white/70" aria-label={`${metricsById[spark.id]?.views ?? 0} views`}>
+                            <Eye className="h-4 w-4" />
+                            <span>{metricsById[spark.id]?.views ?? 0}</span>
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </article>
                 );
               })}
@@ -490,6 +638,16 @@ export function CommunityMomentsExperience({
         )}
       </section>
       <p className="text-xs leading-relaxed text-muted-foreground">Only media for the Spark in view is opened. Videos start muted, and secure playback is authorized for your account.</p>
+      {shareSparkId !== null && (
+        <StoryShareSheet
+          storyId={shareSparkId}
+          onClose={() => setShareSparkId(null)}
+          onShared={() => setMetricsById((current) => {
+            const metrics = current[shareSparkId];
+            return metrics ? { ...current, [shareSparkId]: { ...metrics, shares: metrics.shares + 1 } } : current;
+          })}
+        />
+      )}
     </section>
   );
 }

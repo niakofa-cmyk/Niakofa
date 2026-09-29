@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import {
-  Users, Plus, ChevronRight, BookHeart, Lock, Globe, Loader2,
+  Users, Plus, ChevronRight, BookHeart, BookOpen, Lock, Globe, Loader2, Mic, TreePine,
   Mail, Crown, UserCheck, Check, X, Clock, UserPlus,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
@@ -140,6 +140,7 @@ export default function FamilySpacesPage() {
   // Split by real membership status returned from API
   const mySpaces    = families.filter(f => f.status === "active");
   const invitations = families.filter(f => f.status === "invited");
+  const primaryFamily = mySpaces[0] ?? null;
 
   // Auto-switch to invitations tab if user has pending invites and no active spaces
   useEffect(() => {
@@ -217,6 +218,44 @@ export default function FamilySpacesPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-4">
+        <section className="mb-4 rounded-2xl border border-rose-500/20 bg-gradient-to-br from-rose-500/10 via-primary/5 to-transparent p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-500">
+              <BookOpen className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-rose-500">Family Stories · private by default</p>
+              <h2 className="mt-1 text-base font-black">Preserve the voices that outlast a Moment.</h2>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Record oral histories in your Family Vault, then carry dated memories into Legacy. These enduring stories stay separate from 24-hour Community Sparks.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => primaryFamily ? navigate(`/family/${primaryFamily.id}?intent=oral-history`) : setShowCreate(true)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-rose-500 px-3 py-2 text-xs font-black text-white hover:bg-rose-600"
+            >
+              <Mic className="h-4 w-4" /> Record a story
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/diaspora/timeline")}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-600 dark:text-amber-300"
+            >
+              <TreePine className="h-4 w-4" /> Open Legacy
+            </button>
+            <button
+              type="button"
+              onClick={() => primaryFamily ? navigate(`/family/${primaryFamily.id}`) : setShowCreate(true)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-muted"
+            >
+              <BookHeart className="h-4 w-4 text-primary" /> Family Vault
+            </button>
+          </div>
+        </section>
+
         {/* Create modal */}
         {showCreate && (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
