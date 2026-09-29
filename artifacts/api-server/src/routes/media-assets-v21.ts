@@ -31,6 +31,7 @@ import {
   canWriteStoryMediaContext,
   isDuplicateExchangeStoryVideoSession,
 } from "../lib/community-story-policy";
+import { mediaStorageKeys } from "../lib/media-cleanup";
 
 const router = Router();
 const CONTEXT_KINDS = new Set([
@@ -643,6 +644,8 @@ router.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimit
       original_key: mediaAssetsTable.original_key,
       variant_key: mediaAssetsTable.variant_key,
       thumbnail_key: mediaAssetsTable.thumbnail_key,
+      cleanup_keys: mediaAssetsTable.cleanup_keys,
+      metadata: mediaAssetsTable.metadata,
     }).from(mediaAssetsTable)
       .where(and(
         eq(mediaAssetsTable.id, assetId),
@@ -665,15 +668,15 @@ router.delete("/media-assets/:id", requireAuth, requireApproved, generalApiLimit
         original_key: mediaAssetsTable.original_key,
         variant_key: mediaAssetsTable.variant_key,
         thumbnail_key: mediaAssetsTable.thumbnail_key,
+        cleanup_keys: mediaAssetsTable.cleanup_keys,
+        metadata: mediaAssetsTable.metadata,
       });
     return updated ?? locked;
   });
   if (!asset) return res.status(404).json({ error: "Media asset not found." });
 
   try {
-    for (const key of new Set([asset.original_key, asset.variant_key, asset.thumbnail_key].filter(
-      (value): value is string => Boolean(value),
-    ))) {
+    for (const key of mediaStorageKeys(asset)) {
       await deleteAssetStrict(key);
     }
   } catch {

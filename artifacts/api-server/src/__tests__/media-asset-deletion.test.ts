@@ -8,6 +8,8 @@ const storyRoutePath = new URL("../routes/community-stories.ts", import.meta.url
 const usersRoutePath = new URL("../routes/users.ts", import.meta.url);
 const workerToolchainPath = new URL("../lib/mediaCapabilities.ts", import.meta.url);
 const migrationPath = new URL("../../../../lib/db/migrations/0178_media_asset_moment_contexts.sql", import.meta.url);
+const cleanupMigrationPath = new URL("../../../../lib/db/migrations/0180_media_cleanup_ledger.sql", import.meta.url);
+const storagePath = new URL("../lib/storage.ts", import.meta.url);
 
 describe("V21 media asset deletion safety", () => {
   it("requires authentication and scopes deletion to the asset owner", async () => {
@@ -154,5 +156,26 @@ describe("V21 media asset deletion safety", () => {
     expect(worker).toMatch(/status: "cancelled"[\s\S]*error: "MEDIA_ASSET_DELETED"[\s\S]*completed_at: new Date\(\)/);
     expect(worker).toMatch(/if \(!asset \|\| asset\.status === "deleted"\) \{\s*await cancelClaimedJob\(claimed\.id\)/);
     expect(worker).toMatch(/if \(!currentAsset \|\| currentAsset\.status === "deleted"\) \{\s*await cancelClaimedJob\(claimed\.id\)/);
+  });
+
+  it("verifies provider absence and durably retains generated and temp cleanup keys", async () => {
+    const storage = await fs.readFile(storagePath, "utf8");
+    const worker = await fs.readFile(workerPath, "utf8");
+    const route = await fs.readFile(routePath, "utf8");
+    const scheduler = await fs.readFile(schedulerPath, "utf8");
+    const migration = await fs.readFile(cleanupMigrationPath, "utf8");
+    expect(storage).toMatch(/deleteAssetStrict[\s\S]*verifyAssetAbsent[\s\S]*STORAGE_OBJECT_DELETE_UNCONFIRMED/);
+    expect(worker).toMatch(/cleanup_keys/);
+    expect(route).toMatch(/mediaStorageKeys\(asset\)/);
+    expect(scheduler).toMatch(/mediaStorageKeys\(asset\)/);
+    expect(migration).toMatch(/cleanup_keys jsonb NOT NULL DEFAULT '\[\]'/);
+  });
+
+  it("finalizes a claimed worker job and ready state under the asset row lock", async () => {
+    const worker = await fs.readFile(workerPath, "utf8");
+    expect(worker).toMatch(/async function completeClaimedJob/);
+    expect(worker).toMatch(/\.for\("update"\)/);
+    expect(worker).toMatch(/status: "cancelled"[\s\S]*MEDIA_ASSET_DELETED/);
+    expect(worker).toMatch(/status: "completed"[\s\S]*status: "ready"/);
   });
 });

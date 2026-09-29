@@ -46,6 +46,7 @@ export const mediaAssetsTable = pgTable("media_assets", {
   original_key: text("original_key").notNull(),
   thumbnail_key: text("thumbnail_key"),
   variant_key: text("variant_key"),
+  cleanup_keys: jsonb("cleanup_keys").$type<string[]>().notNull().default([]),
   byte_size: integer("byte_size").notNull(),
   width: integer("width"),
   height: integer("height"),

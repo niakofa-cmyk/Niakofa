@@ -36,6 +36,7 @@ import { workerRan } from "./worker-registry";
 import { deleteAssetStrict } from "./storage";
 import { broadcast } from "./ws-hub";
 import { createMessageNotification } from "./message-notifications";
+import { mediaStorageKeys } from "./media-cleanup";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
@@ -639,6 +640,7 @@ async function processCommunityStoryCleanup(): Promise<void> {
       original_key: mediaAssetsTable.original_key,
       thumbnail_key: mediaAssetsTable.thumbnail_key,
       variant_key: mediaAssetsTable.variant_key,
+      cleanup_keys: mediaAssetsTable.cleanup_keys,
       metadata: mediaAssetsTable.metadata,
     }).from(mediaAssetsTable).where(and(
       eq(mediaAssetsTable.status, "deleted"),
@@ -653,8 +655,7 @@ async function processCommunityStoryCleanup(): Promise<void> {
     const failedAssetIds: number[] = [];
     for (const asset of tombstones) {
       try {
-        const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key]
-          .filter((key): key is string => Boolean(key)))];
+        const keys = mediaStorageKeys(asset);
         for (const key of keys) await deleteAssetStrict(key);
         if (asset.metadata?.["account_cleanup_pending"] === true
           || asset.metadata?.["stale_upload_cleanup_pending"] === true) {
@@ -704,6 +705,8 @@ async function processCommunityStoryCleanup(): Promise<void> {
       original_key: mediaAssetsTable.original_key,
       thumbnail_key: mediaAssetsTable.thumbnail_key,
       variant_key: mediaAssetsTable.variant_key,
+      cleanup_keys: mediaAssetsTable.cleanup_keys,
+      metadata: mediaAssetsTable.metadata,
     }).from(mediaAssetsTable).where(and(
       eq(mediaAssetsTable.context_kind, "story"),
       eq(mediaAssetsTable.context_id, id),
@@ -736,9 +739,9 @@ async function processCommunityStoryCleanup(): Promise<void> {
     const legacyKeys = expired.filter((row) => row.id === id)
       .flatMap((row) => [row.media_key, row.thumbnail_key]);
     const keys = [...new Set([
-      ...legacyKeys,
-      ...universalAssets.flatMap((asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key]),
-    ].filter((key): key is string => Boolean(key)))];
+      ...legacyKeys.filter((key): key is string => Boolean(key)),
+      ...universalAssets.flatMap((asset) => mediaStorageKeys(asset)),
+    ])];
     try {
       // Storage deletion is idempotent; only remove the database owner after
       // every object deletion succeeds so the next hourly pass can retry.
@@ -757,6 +760,8 @@ async function processCommunityStoryCleanup(): Promise<void> {
     original_key: mediaAssetsTable.original_key,
     thumbnail_key: mediaAssetsTable.thumbnail_key,
     variant_key: mediaAssetsTable.variant_key,
+    cleanup_keys: mediaAssetsTable.cleanup_keys,
+    metadata: mediaAssetsTable.metadata,
   }).from(mediaAssetsTable).where(and(
     eq(mediaAssetsTable.context_kind, "story"),
     sql`NOT EXISTS (SELECT 1 FROM community_stories WHERE community_stories.id = ${mediaAssetsTable.context_id})`,
@@ -764,7 +769,7 @@ async function processCommunityStoryCleanup(): Promise<void> {
   ));
   for (const asset of orphanedAssets) {
     try {
-      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key].filter((key): key is string => Boolean(key)))];
+      const keys = mediaStorageKeys(asset);
       for (const key of keys) await deleteAssetStrict(key);
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
     } catch (err) {
@@ -812,6 +817,8 @@ async function processCommunityStoryCleanup(): Promise<void> {
       original_key: mediaAssetsTable.original_key,
       thumbnail_key: mediaAssetsTable.thumbnail_key,
       variant_key: mediaAssetsTable.variant_key,
+      cleanup_keys: mediaAssetsTable.cleanup_keys,
+      metadata: mediaAssetsTable.metadata,
     }).from(mediaAssetsTable).where(and(
       eq(mediaAssetsTable.context_kind, "exchange_spark"),
       eq(mediaAssetsTable.context_id, spark.id),
@@ -848,10 +855,7 @@ async function processCommunityStoryCleanup(): Promise<void> {
         updated_at: new Date(),
       }).where(inArray(mediaAssetsTable.id, assetIds));
     }
-    const keys = [...new Set(
-      assets.flatMap((asset) => [asset.original_key, asset.thumbnail_key, asset.variant_key])
-        .filter((key): key is string => Boolean(key)),
-    )];
+    const keys = [...new Set(assets.flatMap((asset) => mediaStorageKeys(asset)))];
     try {
       for (const key of keys) await deleteAssetStrict(key);
       // Keep media rows as tombstones. The orphan pass repeats deletion after
@@ -874,6 +878,8 @@ async function processCommunityStoryCleanup(): Promise<void> {
     original_key: mediaAssetsTable.original_key,
     thumbnail_key: mediaAssetsTable.thumbnail_key,
     variant_key: mediaAssetsTable.variant_key,
+    cleanup_keys: mediaAssetsTable.cleanup_keys,
+    metadata: mediaAssetsTable.metadata,
   }).from(mediaAssetsTable).where(and(
     eq(mediaAssetsTable.context_kind, "exchange_spark"),
     sql`NOT EXISTS (SELECT 1 FROM exchange_sparks WHERE exchange_sparks.id = ${mediaAssetsTable.context_id})`,
@@ -881,8 +887,7 @@ async function processCommunityStoryCleanup(): Promise<void> {
   ));
   for (const asset of orphanedSparkAssets) {
     try {
-      const keys = [...new Set([asset.original_key, asset.thumbnail_key, asset.variant_key]
-        .filter((key): key is string => Boolean(key)))];
+      const keys = mediaStorageKeys(asset);
       for (const key of keys) await deleteAssetStrict(key);
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
     } catch (err) {

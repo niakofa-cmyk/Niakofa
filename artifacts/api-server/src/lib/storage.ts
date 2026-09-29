@@ -211,6 +211,36 @@ export async function assetExists(key: string): Promise<boolean> {
   return existsSync(path.resolve(UPLOADS_BASE, key));
 }
 
+/**
+ * Strict deletion uses this instead of assetExists(), because an unavailable
+ * provider must fail cleanup rather than being mistaken for a missing object.
+ */
+async function verifyAssetAbsent(key: string): Promise<void> {
+  if (isCloudStorageConfigured()) {
+    const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    try {
+      await client.send(new HeadObjectCommand({
+        Bucket: process.env["STORAGE_BUCKET"]!,
+        Key: key,
+      }));
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      if (status === 404 || (error as { name?: string }).name === "NotFound"
+        || (error as { name?: string }).name === "NoSuchKey") return;
+      throw error;
+    }
+    throw new Error("STORAGE_OBJECT_DELETE_UNCONFIRMED");
+  }
+  try {
+    await fs.stat(path.resolve(UPLOADS_BASE, key));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error("STORAGE_OBJECT_DELETE_UNCONFIRMED");
+}
+
 export async function collectAssetBuffer(
   source: AsyncIterable<Uint8Array>,
   maxBytes?: number,
@@ -536,6 +566,7 @@ export async function deleteAssetStrict(key: string): Promise<void> {
         Key: key,
       }),
     );
+    await verifyAssetAbsent(key);
     logger.debug({ key }, "storage: deleteAssetStrict → s3");
     return;
   }
@@ -546,4 +577,5 @@ export async function deleteAssetStrict(key: string): Promise<void> {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== "ENOENT") throw err;
   }
+  await verifyAssetAbsent(key);
 }

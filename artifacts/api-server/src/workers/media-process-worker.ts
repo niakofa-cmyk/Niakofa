@@ -10,7 +10,7 @@ import {
   mediaProcessingJobsTable,
   type MediaJobType,
 } from "@workspace/db";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset } from "../lib/storage";
 import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
@@ -41,6 +41,17 @@ async function storeGeneratedAsset(
       .limit(1)
       .for("update");
     if (!asset || asset.status === "deleted") return false;
+    // Register the provider key before the external write. If deletion wins
+    // later, its tombstone has a durable reconciliation list even when this
+    // worker is interrupted before the generated column is committed.
+    await tx.update(mediaAssetsTable).set({
+      cleanup_keys: sql`CASE
+        WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${key})
+          THEN ${mediaAssetsTable.cleanup_keys}
+        ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${key})
+      END`,
+      updated_at: new Date(),
+    }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     await putAsset(key, bytes, mimeType);
     const [updated] = await tx.update(mediaAssetsTable)
       .set({ [field]: key, updated_at: new Date() })
@@ -71,18 +82,50 @@ async function readBoundedOutput(filePath: string): Promise<Buffer> {
   return buffer;
 }
 
-async function markReadyIfComplete(mediaAssetId: number, mediaType: string, compositionManifest: Parameters<typeof mediaJobsForType>[1]): Promise<void> {
-  const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
-  if (!asset || asset.status === "failed" || asset.status === "deleted") return;
-  const jobs = await db.select({ job_type: mediaProcessingJobsTable.job_type, status: mediaProcessingJobsTable.status })
-    .from(mediaProcessingJobsTable)
-    .where(eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId));
-  const required = new Set(mediaJobsForType(mediaType, compositionManifest));
-  if ([...required].every((type) => jobs.some((job) => job.job_type === type && job.status === "completed"))) {
-    await db.update(mediaAssetsTable)
-      .set({ status: "ready", failure_reason: null, updated_at: new Date() })
-      .where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
-  }
+async function completeClaimedJob(
+  mediaAssetId: number,
+  jobId: number,
+  mediaType: string,
+  compositionManifest: Parameters<typeof mediaJobsForType>[1],
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    // Deletion takes this same asset lock. Exactly one transition wins:
+    // deletion produces a tombstone, or completion can advance to ready.
+    const [asset] = await tx.select({ status: mediaAssetsTable.status })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1)
+      .for("update");
+    if (!asset || asset.status === "deleted") {
+      await tx.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        error: "MEDIA_ASSET_DELETED",
+        completed_at: new Date(),
+        updated_at: new Date(),
+      }).where(eq(mediaProcessingJobsTable.id, jobId));
+      return false;
+    }
+    await tx.update(mediaProcessingJobsTable).set({
+      status: "completed",
+      completed_at: new Date(),
+      error: null,
+      updated_at: new Date(),
+    }).where(eq(mediaProcessingJobsTable.id, jobId));
+    const jobs = await tx.select({
+      job_type: mediaProcessingJobsTable.job_type,
+      status: mediaProcessingJobsTable.status,
+    }).from(mediaProcessingJobsTable)
+      .where(eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId));
+    const required = new Set(mediaJobsForType(mediaType, compositionManifest));
+    if ([...required].every((type) => jobs.some((job) => job.job_type === type && job.status === "completed"))) {
+      await tx.update(mediaAssetsTable).set({
+        status: "ready",
+        failure_reason: null,
+        updated_at: new Date(),
+      }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+    }
+    return true;
+  });
 }
 
 async function cancelClaimedJob(jobId: number): Promise<void> {
@@ -254,13 +297,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       return;
     }
 
-    await db.update(mediaProcessingJobsTable).set({
-      status: "completed",
-      completed_at: new Date(),
-      error: null,
-      updated_at: new Date(),
-    }).where(eq(mediaProcessingJobsTable.id, claimed.id));
-    await markReadyIfComplete(mediaAssetId, asset.media_type, asset.composition_manifest);
+    if (!(await completeClaimedJob(mediaAssetId, claimed.id, asset.media_type, asset.composition_manifest))) return;
     logger.info({ mediaAssetId, jobType }, "media-processing: job completed");
   } catch (error) {
     const requestId = randomUUID();

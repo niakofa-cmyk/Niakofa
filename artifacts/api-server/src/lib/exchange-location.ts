@@ -6,8 +6,30 @@ export type ExchangeMatchingLocation = {
   lng: number | null;
 };
 
-function coarseCoordinate(value: number | null | undefined): number | null {
+export function coarseExchangeCoordinate(value: number | null | undefined): number | null {
   return value == null || !Number.isFinite(value) ? null : Math.round(value * 100) / 100;
+}
+
+export function exchangeDistanceMiles(
+  first: { lat: number; lng: number },
+  second: { lat: number; lng: number },
+): number {
+  const lat1 = first.lat * Math.PI / 180;
+  const lat2 = second.lat * Math.PI / 180;
+  const dLat = (second.lat - first.lat) * Math.PI / 180;
+  const dLng = (second.lng - first.lng) * Math.PI / 180;
+  const haversine = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 3958.8 * 2 * Math.asin(Math.sqrt(Math.min(1, haversine)));
+}
+
+export function isWithinExchangeRadius(
+  first: { lat: number; lng: number },
+  second: { lat: number; lng: number },
+  radiusMiles: number,
+): boolean {
+  return Number.isFinite(radiusMiles) && radiusMiles >= 0
+    && exchangeDistanceMiles(first, second) <= radiusMiles;
 }
 
 /**
@@ -22,5 +44,5 @@ export async function getExchangeMatchingLocation(userId: number): Promise<Excha
     .where(eq(usersTable.id, userId))
     .limit(1);
   if (!user) return null;
-  return { lat: coarseCoordinate(user.lat), lng: coarseCoordinate(user.lng) };
+  return { lat: coarseExchangeCoordinate(user.lat), lng: coarseExchangeCoordinate(user.lng) };
 }
