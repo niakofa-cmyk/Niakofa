@@ -1,3 +1,4 @@
+- [Auth fixture contract](niakofa-auth-fixture-contract.md) — model token-version lookups and concurrent auth rows explicitly in native ESM route tests.
 - [CI package working directories](ci-working-directory.md) — API source-contract Jest tests must run from their package directory; root invocation can create false path failures.
 - [Deployed browser runner boundary](deployed-browser-runner-boundary.md) — use the repository Playwright runner with canonical USER_A_STATE and system Chromium; direct root imports can bypass workspace wiring.
 - [Workspace package manager](toolchain-install.md) — use the repository-pinned pnpm through npm exec when the system pnpm shim self-manages and stalls.

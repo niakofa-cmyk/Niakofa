@@ -73,7 +73,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     },
     cityNeighborhoodsTable: { id: "id", name: "name", emoji: "emoji" },
     neighborhoodBoundaryImportsTable: { id: "id", city_key: "city_key", neighborhood_id: "neighborhood_id" },
-    usersTable: { id: "id", name: "name", avatar_url: "avatar_url", is_admin: "is_admin", approval_status: "approval_status" },
+    usersTable: { id: "id", name: "name", avatar_url: "avatar_url", is_admin: "is_admin", approval_status: "approval_status", token_version: "token_version" },
     audioCircleFollowsTable: { id: "id", user_id: "user_id", circle_id: "circle_id" },
     audioCircleMessagesTable: {
       id: "id", session_id: "session_id", sender_id: "sender_id", body: "body", sent_at: "sent_at",
@@ -165,10 +165,17 @@ beforeEach(() => {
   (db.then as jest.Mock).mockReset().mockImplementation((resolve: unknown, reject: unknown) =>
     Promise.resolve([]).then(resolve, reject)
   );
+  // Every authenticated request now performs a token-version lookup before
+  // the route's own session/participant queries. Keep that fixture explicit so
+  // route-level mock queues remain in their documented order.
+  (db.limit as jest.Mock).mockResolvedValueOnce([{ token_version: 0 }]);
 });
 
 describe("Audio Circles — auth gates", () => {
   it("serves the Spirals browse alias through the Circle handler", async () => {
+    // Both requests pass through requireAuth concurrently, so each needs its
+    // own current-user row before the route handlers run.
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ token_version: 0 }]);
     const [circleResponse, spiralResponse] = await Promise.all([
       request(app).get("/api/audio-circles").set("Authorization", bearerToken(42)),
       request(app).get("/api/audio-spirals").set("Authorization", bearerToken(42)),

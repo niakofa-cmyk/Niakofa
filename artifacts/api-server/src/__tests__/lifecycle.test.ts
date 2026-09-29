@@ -61,7 +61,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     // "does not provide an export named X" at import time, not at use time.
     requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id", lat: "lat", lng: "lng", urgency: "urgency", category: "category" },
     hubCommunityLeadersTable: { id: "id", user_id: "user_id", hub_id: "hub_id", approved: "approved", approved_at: "approved_at" },
-    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng" },
+    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng", token_version: "token_version" },
     userSettingsTable: { id: "id", user_id: "user_id", max_travel_miles: "max_travel_miles" },
     transactionsTable: { id: "id" },
     stripeAccountsTable: { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
@@ -198,10 +198,13 @@ beforeEach(() => {
   (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   (db.onConflictDoNothing as jest.Mock).mockReset().mockResolvedValue([]);
   (db.onConflictDoUpdate as jest.Mock).mockReset().mockResolvedValue([]);
-  // requireApproved (used on claim/en-route/arrived/complete) makes one DB
-  // lookup before each route handler runs. Pre-seed it here so every test
-  // that sends a valid auth token gets past requireApproved automatically.
-  // Tests without auth (401) never reach this DB call, so this is harmless.
+  // requireAuth now makes one DB lookup to enforce token-version revocation.
+  // Seed a realistic current user for that lookup, then seed a second row for
+  // requireApproved on lifecycle routes. Tests without auth (401) never reach
+  // either DB call, so this is harmless.
+  (db.limit as jest.Mock).mockResolvedValueOnce([{
+    token_version: 0,
+  }]);
   (db.limit as jest.Mock).mockResolvedValueOnce([{
     is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0,
   }]);

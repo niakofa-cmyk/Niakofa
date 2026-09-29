@@ -55,7 +55,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id", lat: "lat", lng: "lng", urgency: "urgency", category: "category", title: "title" },
     reportsTable: { id: "id", type: "type", reported_request_id: "reported_request_id", reporter_id: "reporter_id", status: "status", created_at: "created_at" },
     hubCommunityLeadersTable: { id: "id", user_id: "user_id", hub_id: "hub_id", approved: "approved", approved_at: "approved_at" },
-    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng" },
+    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng", token_version: "token_version" },
     userSettingsTable: { id: "id", user_id: "user_id", max_travel_miles: "max_travel_miles" },
     transactionsTable: { id: "id", user_id: "user_id" },
     stripeAccountsTable: { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
@@ -176,6 +176,9 @@ beforeEach(() => {
   (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   broadcastMock.mockReset();
   sendToUserMock.mockReset();
+  // requireAuth checks the current token_version before the safety route
+  // performs its request lookup.
+  (db.limit as jest.Mock).mockResolvedValueOnce([{ token_version: 0 }]);
 });
 
 describe("POST /api/requests/:id/safety-ping", () => {

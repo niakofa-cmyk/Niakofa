@@ -58,7 +58,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id", lat: "lat", lng: "lng", urgency: "urgency", category: "category" },
     reportsTable: { id: "id", type: "type", reported_request_id: "reported_request_id", reporter_id: "reporter_id", status: "status", created_at: "created_at" },
     hubCommunityLeadersTable: { id: "id", user_id: "user_id", hub_id: "hub_id", approved: "approved", approved_at: "approved_at" },
-    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng" },
+    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng", token_version: "token_version" },
     userSettingsTable: { id: "id", user_id: "user_id", max_travel_miles: "max_travel_miles" },
     transactionsTable: { id: "id" },
     stripeAccountsTable: { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
@@ -189,19 +189,19 @@ function bearerToken(userId: number): string {
 
 // ── Reset mocks between tests ─────────────────────────────────────────────────
 beforeEach(() => {
-  (db.select as jest.Mock).mockClear().mockReturnThis();
-  (db.update as jest.Mock).mockClear().mockReturnThis();
-  (db.insert as jest.Mock).mockClear().mockReturnThis();
-  (db.delete as jest.Mock).mockClear().mockReturnThis();
-  (db.from as jest.Mock).mockClear().mockReturnThis();
-  (db.where as jest.Mock).mockClear().mockReturnThis();
-  (db.set as jest.Mock).mockClear().mockReturnThis();
-  (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  // requireApproved (used on /claim) makes one DB lookup before the route
-  // handler. Pre-seed it so authenticated tests get past requireApproved.
-  // Tests without auth (401) never reach this call.
+  (db.select as jest.Mock).mockReset().mockReturnThis();
+  (db.update as jest.Mock).mockReset().mockReturnThis();
+  (db.insert as jest.Mock).mockReset().mockReturnThis();
+  (db.delete as jest.Mock).mockReset().mockReturnThis();
+  (db.from as jest.Mock).mockReset().mockReturnThis();
+  (db.where as jest.Mock).mockReset().mockReturnThis();
+  (db.set as jest.Mock).mockReset().mockReturnThis();
+  (db.values as jest.Mock).mockReset().mockReturnThis();
+  (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  // requireAuth checks token_version before requireApproved performs its
+  // approval/suspension check. Keep both rows explicit and ordered.
+  (db.limit as jest.Mock).mockResolvedValueOnce([{ token_version: 0 }]);
   (db.limit as jest.Mock).mockResolvedValueOnce([{
     is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0,
   }]);

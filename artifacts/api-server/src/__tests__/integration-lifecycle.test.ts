@@ -41,6 +41,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     set: jest.fn().mockReturnThis(),
     values: jest.fn().mockReturnThis(),
     limit: jest.fn(),
+    offset: jest.fn().mockReturnThis(),
     returning: jest.fn(),
     groupBy: jest.fn().mockReturnValue([]),
     catch: jest.fn().mockResolvedValue([null]),
@@ -71,7 +72,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     griotTranscriptionJobsTable: { id: "id", story_id: "story_id", status: "status" },
     gratitudePostsTable: { id: "id", request_id: "request_id", helper_id: "helper_id", requester_id: "requester_id", created_at: "created_at", moderation_status: "moderation_status" },
     gratitudeLikesTable: { id: "id", post_id: "post_id", user_id: "user_id" },
-    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng", is_helper: "is_helper", neighborhood: "neighborhood", city: "city", avatar_url: "avatar_url", diaspora_hub_id: "diaspora_hub_id", approval_status: "approval_status", is_suspended: "is_suspended" },
+    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng", is_helper: "is_helper", neighborhood: "neighborhood", city: "city", avatar_url: "avatar_url", diaspora_hub_id: "diaspora_hub_id", approval_status: "approval_status", is_suspended: "is_suspended", token_version: "token_version" },
     userSettingsTable: { id: "id", user_id: "user_id", max_travel_miles: "max_travel_miles" },
     transactionsTable: { id: "id", user_id: "user_id", request_id: "request_id", type: "type", amount: "amount", description: "description" },
     stripeAccountsTable: { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
@@ -216,6 +217,7 @@ beforeEach(() => {
   (db.where as jest.Mock).mockReset().mockReturnThis();
   (db.set as jest.Mock).mockReset().mockReturnThis();
   (db.values as jest.Mock).mockReset().mockReturnThis();
+  (db.offset as jest.Mock).mockReset().mockReturnThis();
   (db.leftJoin as jest.Mock).mockReset().mockReturnThis();
   (db.orderBy as jest.Mock).mockReset().mockReturnThis();
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
@@ -227,6 +229,9 @@ beforeEach(() => {
   (db.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(db));
   (db.onConflictDoNothing as jest.Mock).mockReset().mockResolvedValue([]);
   (db.onConflictDoUpdate as jest.Mock).mockReset().mockResolvedValue([]);
+  // requireAuth checks token_version before routes that also use
+  // requireApproved. Keep both user rows in the queue for those requests.
+  (db.limit as jest.Mock).mockResolvedValueOnce([{ token_version: 0 }]);
 });
 
 describe("Full Request Lifecycle", () => {
@@ -277,6 +282,7 @@ describe("Full Request Lifecycle", () => {
 
     const claimedRequest = { ...newRequest, status: "claimed", helper_id: helperId, claimed_at: new Date() };
     (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ token_version: 0 }])
       .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }])
       .mockResolvedValueOnce([{ requester_id: requesterId, urgency: "medium", lat: 32.7767, lng: -96.7970, category: "groceries", hub_id: 1 }])
       .mockResolvedValueOnce([])
@@ -294,7 +300,9 @@ describe("Full Request Lifecycle", () => {
     expect(claimRes.body.status).toBe("claimed");
 
     const enRouteRequest = { ...claimedRequest, status: "en_route", en_route_at: new Date() };
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]);
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ token_version: 0 }])
+      .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]);
     (db.returning as jest.Mock).mockResolvedValueOnce([enRouteRequest]);
 
     const enRouteRes = await request(app)
@@ -306,7 +314,9 @@ describe("Full Request Lifecycle", () => {
     expect(enRouteRes.body.status).toBe("en_route");
 
     const arrivedRequest = { ...enRouteRequest, status: "arrived", arrived_at: new Date() };
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]);
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ token_version: 0 }])
+      .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]);
     (db.returning as jest.Mock).mockResolvedValueOnce([arrivedRequest]);
 
     const arrivedRes = await request(app)
@@ -319,6 +329,7 @@ describe("Full Request Lifecycle", () => {
 
     const completedRequest = { ...arrivedRequest, status: "completed", completed_at: new Date(), payment_type: "goodwill", pay_it_forward_amount: 0, title: "Need help with groceries" };
     (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ token_version: 0 }])
       .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ help_count: 0, trust_score: 50, name: "Helper" }]);

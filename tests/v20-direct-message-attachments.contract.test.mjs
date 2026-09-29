@@ -38,7 +38,7 @@ describe("Niakofa V20 Direct-message attachment contracts", () => {
     const architecture = await read("docs/reference/niakofa-v20/README.md");
     const messagesPage = await read("artifacts/pay-it-forward/src/pages/messages.tsx");
     assert.match(architecture, /All \| Direct \| Requests \| Hubs/);
-    assert.match(messagesPage, /MetaStyleDirectPane/);
+    assert.match(messagesPage, /MessagesShell/);
     assert.match(messagesPage, /HubMessagesPanel/);
   });
 });
