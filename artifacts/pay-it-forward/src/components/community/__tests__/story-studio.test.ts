@@ -1,9 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { publishStudioMoment, selectedStudioFiles } from "../story-studio-publish";
+import { publishStudioMoment, selectedStudioFiles, validStudioMediaEdits } from "../story-studio-publish";
+import { trimVideoFile } from "../story-media-tools";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
 
 const file = (name: string) => Object.assign(new Blob(["bytes"], { type: "image/jpeg" }), { name, lastModified: 1 }) as File;
+
+test("cover edits only include video assets and nonnegative timestamps", () => {
+  const video = Object.assign(new Blob(["video"], { type: "video/webm" }), { name: "clip.webm", lastModified: 1 }) as File;
+  assert.deepEqual(validStudioMediaEdits([video, file("photo")], [12, 13], [
+    { index: 0, coverTimeMs: 1234.6 }, { index: 1, coverTimeMs: 500 }, { index: 0, coverTimeMs: -1 },
+  ]), [{ media_asset_id: 12, cover_time_ms: 1235 }]);
+});
+
+test("video trimming rejects non-video files and empty or reversed ranges", async () => {
+  const video = Object.assign(new Blob(["video"], { type: "video/webm" }), { name: "clip.webm", lastModified: 1 }) as File;
+  await assert.rejects(trimVideoFile(file("photo"), 0, 1), /valid video range/);
+  await assert.rejects(trimVideoFile(video, 2, 2), /valid video range/);
+  await assert.rejects(trimVideoFile(video, 3, 2), /valid video range/);
+});
 
 test("sequence is the selected order, not the gallery's file order", () => {
   assert.deepEqual(selectedStudioFiles([file("first"), file("second")], [1, 0, 1]).map((item) => item.name), ["second", "first"]);

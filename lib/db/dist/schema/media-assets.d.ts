@@ -25,6 +25,8 @@ export type StoryCompositionManifest = {
         licensed?: boolean;
     } | null;
     effects?: string[];
+    /** Per-asset video thumbnail frame selection, in milliseconds. */
+    cover_time_ms?: number;
 };
 export declare const mediaAssetsTable: import("drizzle-orm/pg-core").PgTableWithColumns<{
     name: "media_assets";
@@ -200,6 +202,25 @@ export declare const mediaAssetsTable: import("drizzle-orm/pg-core").PgTableWith
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        cleanup_keys: import("drizzle-orm/pg-core").PgColumn<{
+            name: "cleanup_keys";
+            tableName: "media_assets";
+            dataType: "json";
+            columnType: "PgJsonb";
+            data: string[];
+            driverParam: unknown;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            $type: string[];
+        }>;
         byte_size: import("drizzle-orm/pg-core").PgColumn<{
             name: "byte_size";
             tableName: "media_assets";

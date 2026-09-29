@@ -55,6 +55,8 @@ import {
 } from "./CommunityStoryRailOverlays";
 import type { CommunityStory, Effect, StoryAuthor, StoryMedia } from "./story-rail-types";
 import { TEXT_STORY_BACKGROUNDS } from "./story-rail-types";
+import { StoryCameraRecorder } from "./StoryCameraRecorder";
+import { trimVideoFile } from "./story-media-tools";
 
 type Tool = "music" | "stickers" | "text" | "effects" | "mention";
 
@@ -88,6 +90,7 @@ export function CommunityStoryRail({
   const [error, setError] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   useEffect(() => {
     // The page-level signal starts at 0, so a positive value is always an
     // explicit Create → Story action. This also works when the rail is
@@ -108,6 +111,7 @@ export function CommunityStoryRail({
   const [storyProgress, setStoryProgress] = useState(0);
   const [storyPaused, setStoryPaused] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [trimming, setTrimming] = useState(false);
   const [caption, setCaption] = useState("");
   const [audience, setAudience] = useState<"community" | "hub">(hubId ? "hub" : "community");
   const [tool, setTool] = useState<Tool | null>(null);
@@ -136,6 +140,7 @@ export function CommunityStoryRail({
   const uploadedIdsRef = useRef<Array<number | null>>([]);
   const publishAssetIdsRef = useRef<number[]>([]);
   const [trimPreview, setTrimPreview] = useState<Record<number, { start: number; end: number }>>({});
+  const [coverTimes, setCoverTimes] = useState<Record<number, number>>({});
   const exchangeDraftRef = useRef<{ id: number; listingId: string; fingerprint: string } | null>(null);
   const clientPublishIdRef = useRef<string>(newStudioPublishId());
   const publishAttemptRef = useRef<string | null>(null);
@@ -148,7 +153,6 @@ export function CommunityStoryRail({
   const activeScopeRef = useRef(scopeKey);
   const recoveredScopeRef = useRef<string | null>(null);
   const scopeSnapshotsRef = useRef(new Map<string, StudioDraft>());
-  const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const previewVideo = useRef<HTMLVideoElement>(null);
   const autoOpenedRef = useRef(false);
@@ -165,6 +169,12 @@ export function CommunityStoryRail({
   const selectedFileUrl = previewUrls[previewFileIndex] ?? previewUrls[0] ?? null;
   const selectedFiles = selectedStudioFiles(files, gallerySelection);
   const selectedVideo = selectedFiles.some((file) => file.type.startsWith("video/"));
+  const rawTrimRange = trimPreview[previewFileIndex] ?? { start: 0, end: videoDuration };
+  const trimStart = Math.min(Math.max(0, rawTrimRange.start), Math.max(0, videoDuration - 0.1));
+  const trimEnd = Math.min(videoDuration, Math.max(trimStart + Math.min(0.1, videoDuration), rawTrimRange.end));
+  const coverMinMs = Math.ceil(trimStart * 1000);
+  const coverMaxMs = Math.max(coverMinMs, Math.floor(trimEnd * 1000) - 1);
+  const coverValueMs = Math.min(coverMaxMs, Math.max(coverMinMs, coverTimes[previewFileIndex] ?? coverMinMs));
   const visualAuthors = useMemo<StoryVisualAuthor[]>(
     () => authors.map((author) => ({
       id: author.author_user_id,
@@ -279,6 +289,7 @@ export function CommunityStoryRail({
     setEditorElements([]);
     setEffect("none");
     setTrimPreview({});
+    setCoverTimes({});
     setExchangeListingId(empty.listingId);
     setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
     setTextColor("#ffffff");
@@ -315,6 +326,7 @@ export function CommunityStoryRail({
         setTextSize(draft.textSize ?? "18");
         setTextAlign(draft.textAlign ?? "center");
         setTrimPreview(draft.trimPreview ?? {});
+        setCoverTimes(draft.coverTimes ?? {});
         setUploadedIds(draft.uploadedMediaAssetIds ?? []);
         setDraftSaved(true);
       }
@@ -348,7 +360,7 @@ export function CommunityStoryRail({
     clientPublishId: clientPublishIdRef.current,
     attemptedSignature: publishAttemptRef.current ?? undefined,
     publishAssetIds: publishAssetIdsRef.current,
-    effect, textBackground, textColor, textSize, textAlign, trimPreview,
+    effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes,
     uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
     updatedAt: Date.now(),
   });
@@ -374,7 +386,7 @@ export function CommunityStoryRail({
   };
   const queueDraftSaveRef = useRef(queueDraftSave);
   queueDraftSaveRef.current = queueDraftSave;
-  const signature = studioPublishSignature({ files, selection: gallerySelection, caption, elements: editorElements, audience, hubId, textBackground });
+  const signature = studioPublishSignature({ files, selection: gallerySelection, caption, elements: editorElements, audience, hubId, textBackground, coverTimes });
   const signatureRef = useRef(signature);
   signatureRef.current = signature;
   const rotateAttemptAfterEdit = () => {
@@ -401,7 +413,7 @@ export function CommunityStoryRail({
     setDraftSaved(false);
     draftTimerRef.current = setTimeout(() => { void queueDraftSaveRef.current().catch(() => {}); }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-  }, [draftReady, userId, scopeKey, files, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, uploadedIds]);
+  }, [draftReady, userId, scopeKey, files, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -506,6 +518,7 @@ export function CommunityStoryRail({
     setExchangeListingsError("");
     setUploadedIds([]);
     setTrimPreview({});
+    setCoverTimes({});
   };
 
   const closeComposer = () => {
@@ -519,10 +532,13 @@ export function CommunityStoryRail({
     if (!composerOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const dialog = document.querySelector<HTMLElement>(galleryOpen ? ".nia-story-gallery" : ".nia-story-composer");
+    const dialog = document.querySelector<HTMLElement>(cameraOpen
+      ? '[data-testid="dialog-spark-camera"]'
+      : galleryOpen ? ".nia-story-gallery" : ".nia-story-composer");
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        if (cameraOpen) { setCameraOpen(false); return; }
         if (galleryOpen) { setGalleryOpen(false); return; }
         if (studioStep !== "source") { setStudioStep(studioStep === "destination" ? "edit" : "source"); return; }
         closeComposer();
@@ -538,9 +554,13 @@ export function CommunityStoryRail({
     dialog?.querySelector<HTMLElement>("button")?.focus();
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); };
-  }, [composerOpen, galleryOpen, studioStep, draftReady]);
+  }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady]);
 
   const publish = async () => {
+    if (trimming) {
+      setError("Wait for video trimming to finish before publishing.");
+      return;
+    }
     if (publishing || (!caption.trim() && gallerySelection.length === 0)) {
       setError("Add a photo, video, or a few words before publishing.");
       return;
@@ -671,6 +691,9 @@ export function CommunityStoryRail({
         clientPublishId: attemptId,
         signal: controller.signal,
         uploadedIds: selectedIndexes.map((index) => uploadedIdsRef.current[index]),
+        mediaEdits: selectedIndexes.flatMap((fileIndex, publishIndex) => coverTimes[fileIndex] !== undefined
+          ? [{ index: publishIndex, coverTimeMs: coverTimes[fileIndex] }]
+          : []),
         onAssetUploaded: (index, id) => {
           const next = [...uploadedIdsRef.current];
           next[selectedIndexes[index]] = id;
@@ -726,14 +749,15 @@ export function CommunityStoryRail({
     }
   };
 
-  const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { files: selected, errors } = chooseStudioFiles([...files, ...Array.from(event.target.files ?? [])]);
+  const selectStudioFiles = (incoming: File[]) => {
+    const { files: selected, errors } = chooseStudioFiles([...files, ...incoming]);
     if (errors.length) setError(errors[0]);
     if (selected.length) {
       uploadedIdsRef.current = [];
       publishAssetIdsRef.current = [];
       setUploadedIds([]);
       setTrimPreview({});
+      setCoverTimes({});
       setFiles(selected);
       setGallerySelection(selected.map((_, index) => index));
       setPreviewFileIndex(Math.max(0, selected.length - 1));
@@ -741,7 +765,20 @@ export function CommunityStoryRail({
       setGalleryOpen(false);
       if (!errors.length) setError(null);
     }
+  };
+
+  const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (trimming) {
+      event.target.value = "";
+      return;
+    }
+    selectStudioFiles(Array.from(event.target.files ?? []));
     event.target.value = "";
+  };
+
+  const onCameraVideo = (recorded: File) => {
+    setCameraOpen(false);
+    selectStudioFiles([recorded]);
   };
 
   const discardDraft = async () => {
@@ -956,8 +993,7 @@ export function CommunityStoryRail({
       {composerOpen && (!draftReady || activeScopeRef.current !== scopeKey) && <div className="nia-story-composer-overlay" role="status" aria-live="polite"><div className="nia-story-composer-shell p-8 text-center text-white">Recovering your saved Spark…</div></div>}
       {composerOpen && draftReady && activeScopeRef.current === scopeKey && (
         <div className="nia-story-composer-overlay">
-          <input ref={cameraInput} type="file" accept="image/*,video/*" capture="environment" className="sr-only" onChange={onFileChange} aria-label="Capture Spark media" />
-          <input ref={galleryInput} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={onFileChange} aria-label="Choose Spark media" />
+          <input ref={galleryInput} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={onFileChange} aria-label="Choose Spark media" disabled={trimming} />
           <div className="nia-story-composer-shell">
             {studioStep === "source" && exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-slate-900 px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
             <StoryComposerChrome
@@ -987,8 +1023,8 @@ export function CommunityStoryRail({
               onTool={(nextTool) => setTool(tool === nextTool ? null : nextTool)}
               onClose={closeComposer}
               onSettings={() => { setStudioStep("destination"); window.setTimeout(() => document.getElementById("story-audience")?.focus(), 0); }}
-              onGallery={() => setGalleryOpen(true)}
-              onCamera={() => cameraInput.current?.click()}
+              onGallery={() => { if (!trimming) setGalleryOpen(true); }}
+              onCamera={() => { if (!trimming) setCameraOpen(true); }}
               onPublish={() => void publish()}
               publishing={publishing}
               galleryCount={files.length}
@@ -1019,16 +1055,72 @@ export function CommunityStoryRail({
                     : `Confirm: ${audience === "hub" ? "this Hub's members" : "your approved community"} can see this Spark for 24 hours. ${selectedFiles.length ? `${selectedFiles.length} media item${selectedFiles.length === 1 ? "" : "s"} in your chosen order.` : "Text-only Spark."}`}</p>
                 </> : <>
                 {files.length > 0 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="Spark media sequence">
-                  {files.map((file, index) => <button key={`${file.name}-${index}`} type="button" onClick={() => setPreviewFileIndex(index)} className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 ${previewFileIndex === index ? "border-primary" : "border-white/20"}`} aria-label={`Preview Spark item ${index + 1}`}>
+                  {files.map((file, index) => <button key={`${file.name}-${index}`} type="button" disabled={trimming} onClick={() => setPreviewFileIndex(index)} className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 ${previewFileIndex === index ? "border-primary" : "border-white/20"}`} aria-label={`Preview Spark item ${index + 1}`}>
                     {previewUrls[index] ? (file.type.startsWith("video/") ? <video src={previewUrls[index]} muted playsInline className="h-full w-full object-cover" /> : <img src={previewUrls[index]} alt="" className="h-full w-full object-cover" />) : <span className="grid h-full place-items-center text-xs">{index + 1}</span>}
                     <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[9px] text-white">{index + 1}</span>
                   </button>)}
                 </div>}
                 {selectedPreviewFile?.type.startsWith("video/") && videoDuration > 0 && <div className="mb-3 rounded-xl border border-white/20 bg-white/5 p-3 text-xs text-white/80">
-                  <p className="mb-2 font-bold">Playback range preview · original video is published in full</p>
+                  <p className="mb-2 font-bold">Edit video</p>
                   <div className="grid grid-cols-2 gap-3">
-                    <label>Start {Math.round(trimPreview[previewFileIndex]?.start ?? 0)}s<input type="range" min={0} max={Math.max(0, Math.floor(videoDuration) - 1)} value={trimPreview[previewFileIndex]?.start ?? 0} onChange={(event) => { const start = Number(event.target.value); setTrimPreview((current) => ({ ...current, [previewFileIndex]: { start, end: Math.max(start + 1, current[previewFileIndex]?.end ?? videoDuration) } })); if (previewVideo.current) previewVideo.current.currentTime = start; }} className="w-full" data-testid="input-spark-preview-start" /></label>
-                    <label>End {Math.round(trimPreview[previewFileIndex]?.end ?? videoDuration)}s<input type="range" min={1} max={Math.ceil(videoDuration)} value={trimPreview[previewFileIndex]?.end ?? videoDuration} onChange={(event) => setTrimPreview((current) => ({ ...current, [previewFileIndex]: { start: Math.min(current[previewFileIndex]?.start ?? 0, Number(event.target.value) - 1), end: Number(event.target.value) } }))} className="w-full" data-testid="input-spark-preview-end" /></label>
+                    <label>Start {Math.round(trimStart)}s<input type="range" min={0} max={Math.max(0, Math.floor(videoDuration * 10 - 1) / 10)} step={0.1} value={trimStart} disabled={trimming} onChange={(event) => {
+                      const start = Math.min(Number(event.target.value), Math.max(0, videoDuration - 0.1));
+                      const end = Math.min(videoDuration, Math.max(start + Math.min(0.1, videoDuration), trimEnd));
+                      setTrimPreview((current) => ({ ...current, [previewFileIndex]: { start, end } }));
+                      setCoverTimes((current) => {
+                        if (current[previewFileIndex] === undefined) return current;
+                        const min = Math.ceil(start * 1000);
+                        const max = Math.max(min, Math.floor(end * 1000) - 1);
+                        return { ...current, [previewFileIndex]: Math.max(min, Math.min(current[previewFileIndex], max)) };
+                      });
+                      if (previewVideo.current) previewVideo.current.currentTime = start;
+                    }} className="w-full" data-testid="input-spark-preview-start" /></label>
+                    <label>End {Math.round(trimEnd)}s<input type="range" min={Math.min(videoDuration, trimStart + Math.min(0.1, videoDuration))} max={videoDuration} step={0.1} value={trimEnd} disabled={trimming} onChange={(event) => {
+                      const end = Math.min(videoDuration, Number(event.target.value));
+                      const start = Math.min(trimStart, Math.max(0, end - Math.min(0.1, videoDuration)));
+                      setTrimPreview((current) => ({ ...current, [previewFileIndex]: { start, end } }));
+                      setCoverTimes((current) => {
+                        if (current[previewFileIndex] === undefined) return current;
+                        const min = Math.ceil(start * 1000);
+                        const max = Math.max(min, Math.floor(end * 1000) - 1);
+                        return { ...current, [previewFileIndex]: Math.max(min, Math.min(current[previewFileIndex], max)) };
+                      });
+                    }} className="w-full" data-testid="input-spark-preview-end" /></label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button type="button" className="rounded-lg border border-white/20 px-3 py-2 font-bold" data-testid="button-trim-spark-video" disabled={trimming || (trimStart <= 0 && trimEnd >= videoDuration)} onClick={async () => {
+                      const bounds = { start: trimStart, end: trimEnd };
+                      setTrimming(true);
+                      try {
+                        setError(null);
+                        const trimmed = await trimVideoFile(selectedPreviewFile!, bounds.start, bounds.end);
+                        const nextFiles = files.slice(); nextFiles[previewFileIndex] = trimmed;
+                        setFiles(nextFiles);
+                        const nextIds = [...uploadedIdsRef.current]; nextIds[previewFileIndex] = null;
+                        uploadedIdsRef.current = nextIds;
+                        publishAssetIdsRef.current = [];
+                        setUploadedIds(nextIds);
+                        setCoverTimes((current) => {
+                          if (current[previewFileIndex] === undefined) return current;
+                          const next = { ...current };
+                          next[previewFileIndex] = Math.max(0, Math.min(
+                            Math.round(current[previewFileIndex] - bounds.start * 1000),
+                            Math.max(0, Math.floor((bounds.end - bounds.start) * 1000) - 1),
+                          ));
+                          return next;
+                        });
+                        setTrimPreview((current) => { const next = { ...current }; delete next[previewFileIndex]; return next; });
+                      } catch (reason) { setError(reason instanceof Error ? reason.message : "Video trimming is not supported."); }
+                      finally { setTrimming(false); }
+                    }}>{trimming ? "Trimming…" : "Apply trim"}</button>
+                    <label className="flex items-center gap-2">Cover frame
+                      <input type="range" min={coverMinMs} max={coverMaxMs} step={100} value={coverValueMs} disabled={trimming} onChange={(event) => {
+                        const time = Math.max(coverMinMs, Math.min(Number(event.target.value), coverMaxMs));
+                        setCoverTimes((current) => ({ ...current, [previewFileIndex]: time }));
+                        if (previewVideo.current) previewVideo.current.currentTime = time / 1000;
+                      }} data-testid="input-spark-cover-time" aria-label="Cover frame time" />
+                      <span>{Math.round(coverValueMs / 1000)}s</span>
+                    </label>
                   </div>
                 </div>}
                 {tool === "music" && <div className="nia-story-audio-note"><Volume2 size={19} /><div><strong>Original audio only</strong><p>Your video keeps the sound it was recorded with. Music tracks are not available yet.</p></div></div>}
@@ -1038,8 +1130,8 @@ export function CommunityStoryRail({
                 {tool === "text" && <div className="grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-white/65">Color<input type="color" value={textColor} onChange={(event) => { const value = event.target.value; setTextColor(value); updateEditorElement("caption", { payload: { color: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-white/10" /></label><label className="text-[10px] font-bold text-white/65">Size<select value={textSize} onChange={(event) => { const value = event.target.value; setTextSize(value); updateEditorElement("caption", { payload: { font_size: Number(value) } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-white/65">Align<select value={textAlign} onChange={(event) => { const value = event.target.value as "left" | "center" | "right"; setTextAlign(value); updateEditorElement("caption", { payload: { align: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-white/65">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
                 <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={2} className="mt-3 w-full resize-none rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white outline-none focus:border-primary" placeholder="Add text to your Spark…" />
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="text-[10px] leading-relaxed text-white/55">Original audio is preserved. Trim and effects are preview-only; the original media is uploaded. Text and stickers are saved as Story overlays.</p>
-                  {files.length > 0 && <button type="button" onClick={() => { setFiles([]); setGallerySelection([]); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
+                  <p className="text-[10px] leading-relaxed text-white/55">Original audio is preserved. Apply trim to replace the clip before upload; visual effects remain preview-only. Text and stickers are saved as Story overlays.</p>
+                  {files.length > 0 && <button type="button" disabled={trimming} onClick={() => { setFiles([]); setGallerySelection([]); setTrimPreview({}); setCoverTimes({}); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
                 </div>
                 </>}
               </div>
@@ -1047,6 +1139,7 @@ export function CommunityStoryRail({
           </div>
         </div>
       )}
+      {cameraOpen && <StoryCameraRecorder onUse={onCameraVideo} onCancel={() => setCameraOpen(false)} />}
 
       {selectedStory && selectedAuthor && (
         <CommunityStoryViewerOverlay
@@ -1092,7 +1185,7 @@ export function CommunityStoryRail({
           onSelect={(id) => toggleGallerySelection(Number(id))}
           onMultiple={() => setGallerySelection(files.map((_, index) => index))}
           onClose={() => setGalleryOpen(false)}
-          onCamera={() => cameraInput.current?.click()}
+          onCamera={() => { if (!trimming) setCameraOpen(true); }}
           onChooseFiles={() => galleryInput.current?.click()}
           onDone={() => setGalleryOpen(false)}
         />

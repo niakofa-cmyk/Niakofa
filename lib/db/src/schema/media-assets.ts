@@ -33,6 +33,8 @@ export type StoryCompositionManifest = {
     licensed?: boolean;
   } | null;
   effects?: string[];
+  /** Per-asset video thumbnail frame selection, in milliseconds. */
+  cover_time_ms?: number;
 };
 
 export const mediaAssetsTable = pgTable("media_assets", {

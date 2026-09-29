@@ -24,7 +24,7 @@ import { createMessageNotification } from "../lib/message-notifications";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isMediaPlatformV21Enabled } from "../lib/media-platform";
-import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
+import { enqueueMediaAssetProcessing, enqueuePendingMediaAssetThumbnail, regenerateMediaAssetThumbnail } from "../lib/mediaProcessingQueue";
 import { mediaProcessingQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 import {
@@ -74,6 +74,10 @@ const createStorySchema = z.object({
     height: z.number().int().positive().max(10_000).nullable().optional(),
   })).min(0).max(MAX_MEDIA_ITEMS).default([]),
   media_asset_ids: z.array(z.number().int().positive()).max(MAX_MEDIA_ITEMS).optional(),
+  media_edits: z.array(z.object({
+    media_asset_id: z.number().int().positive(),
+    cover_time_ms: z.number().int().nonnegative(),
+  })).max(MAX_MEDIA_ITEMS).optional().default([]),
   elements: z.array(storyElementSchema).max(30).default([]),
   composition_manifest: z.object({
     version: z.literal(1),
@@ -106,8 +110,9 @@ export function communityStoryPublishPayloadHash(payload: {
   elements: z.infer<typeof storyElementSchema>[];
   compositionManifest: StoryCompositionManifest;
   mediaAssetIds: number[];
+  mediaEdits?: Array<{ media_asset_id: number; cover_time_ms: number }>;
 }): string {
-  const canonicalPayload = JSON.stringify({
+  const canonicalBody: Record<string, unknown> = {
     caption: payload.caption,
     audience: payload.audience,
     hub_id: payload.hubId,
@@ -117,7 +122,10 @@ export function communityStoryPublishPayloadHash(payload: {
     elements: payload.elements,
     composition_manifest: payload.compositionManifest,
     media_asset_ids: payload.mediaAssetIds,
-  }, (_key, value: unknown) => value && typeof value === "object" && !Array.isArray(value)
+  };
+  // Preserve hashes for older clients that published without per-media edits.
+  if (payload.mediaEdits?.length) canonicalBody.media_edits = payload.mediaEdits;
+  const canonicalPayload = JSON.stringify(canonicalBody, (_key, value: unknown) => value && typeof value === "object" && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)))
     : value);
   return createHash("sha256").update(canonicalPayload).digest("hex");
@@ -558,6 +566,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   const hubId = parsed.data.hub_id ?? null;
   const exchangeListingId = parsed.data.exchange_listing_id ?? null;
   const mediaAssetIds = parsed.data.media_asset_ids ?? [];
+  const mediaEdits = parsed.data.media_edits;
   const [viewer] = await db.select({ community_id: usersTable.community_id })
     .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   const caption = cleanText(parsed.data.caption, 1000) || null;
@@ -573,6 +582,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       elements: parsed.data.elements,
       compositionManifest,
       mediaAssetIds,
+      mediaEdits,
     })
     : null;
   if (parsed.data.client_publish_id) {
@@ -589,6 +599,17 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       if (parsed.data.media.length || existing.publish_payload_hash !== publishPayloadHash) {
         return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
       }
+      if (mediaEdits.length) {
+        try {
+          await Promise.all(mediaEdits.map((edit) => enqueuePendingMediaAssetThumbnail(edit.media_asset_id)));
+        } catch (error) {
+          logger.error({ err: error, storyId: existing.id }, "media-processing: pending cover thumbnail could not be republished");
+          return res.status(503).json({
+            error: "Story saved, but cover thumbnail processing is temporarily unavailable. Please refresh shortly.",
+            error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+          });
+        }
+      }
       return res.status(200).json({
         story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() },
       });
@@ -602,6 +623,15 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   }
   if (new Set(mediaAssetIds).size !== mediaAssetIds.length) {
     return res.status(400).json({ error: "Moment media asset ids must be unique." });
+  }
+  if (new Set(mediaEdits.map((edit) => edit.media_asset_id)).size !== mediaEdits.length) {
+    return res.status(400).json({ error: "Media edits must contain unique asset ids." });
+  }
+  if (mediaEdits.some((edit) => !mediaAssetIds.includes(edit.media_asset_id))) {
+    return res.status(400).json({ error: "Every media edit must target an attached media asset." });
+  }
+  if (mediaEdits.length && parsed.data.media.length) {
+    return res.status(400).json({ error: "Media edits require uploaded media assets." });
   }
   if (mediaAssetIds.length && exchangeListingId !== null) {
     return res.status(400).json({ error: "Exchange-linked Sparks must use their dedicated media upload flow." });
@@ -701,6 +731,15 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     if (stagedAssets.some((asset) => asset.media_type === "video" && (asset.duration_ms ?? 0) > 60_000)) {
       return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
     }
+    const stagedById = new Map(stagedAssets.map((asset) => [asset.id, asset]));
+    if (mediaEdits.some((edit) => {
+      const asset = stagedById.get(edit.media_asset_id);
+      return !asset || asset.media_type !== "video" || asset.duration_ms == null
+        || !Number.isFinite(edit.cover_time_ms) || edit.cover_time_ms < 0
+        || edit.cover_time_ms >= asset.duration_ms;
+    })) {
+      return res.status(400).json({ error: "Each video cover time must be within the probed video duration." });
+    }
     if (stagedAssets.some((asset) => asset.status !== "ready"
       || asset.media_type === "video" && (!asset.variant_key || !asset.duration_ms)
       || !["photo", "video", "audio"].includes(asset.media_type))) {
@@ -782,6 +821,16 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         || !["photo", "video", "audio"].includes(asset.media_type))) {
         return { kind: "media_not_ready" as const };
       }
+      const coverEdits = new Map(mediaEdits.map((edit) => [edit.media_asset_id, edit.cover_time_ms]));
+      if (coverEdits.size) {
+        for (const asset of stagedAssets) {
+          const coverTime = coverEdits.get(asset.id);
+          if (coverTime !== undefined && (asset.media_type !== "video" || asset.duration_ms == null
+            || !Number.isFinite(coverTime) || coverTime < 0 || coverTime >= asset.duration_ms)) {
+            return { kind: "invalid_cover_time" as const };
+          }
+        }
+      }
       const [story] = await tx.insert(communityStoriesTable).values({
         author_user_id: userId,
         hub_id: hubId,
@@ -859,6 +908,18 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
             eq(mediaAssetsTable.context_kind, stagedContextKind),
             eq(mediaAssetsTable.context_id, stagedContextId!),
           ));
+        for (const asset of stagedAssets) {
+          const coverTime = coverEdits.get(asset.id);
+          if (coverTime !== undefined) {
+            await tx.update(mediaAssetsTable).set({
+              composition_manifest: {
+                ...(asset.composition_manifest ?? compositionManifest),
+                cover_time_ms: coverTime,
+              },
+              updated_at: new Date(),
+            }).where(eq(mediaAssetsTable.id, asset.id));
+          }
+        }
       }
       if (parsed.data.elements.length) {
         await tx.insert(communityStoryElementsTable).values(parsed.data.elements.map((element) => ({
@@ -898,6 +959,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     }
     if (result.kind === "media_failed") return res.status(409).json({ error: "One or more uploaded assets failed processing.", error_code: "MOMENT_MEDIA_FAILED" });
     if (result.kind === "media_too_long") return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    if (result.kind === "invalid_cover_time") return res.status(400).json({ error: "Each video cover time must be within the probed video duration." });
     if (result.kind === "media_not_ready") return res.status(409).json({ error: "Moment media is still processing. Retry after every file is ready.", error_code: "MOMENT_MEDIA_NOT_READY" });
     if (result.mediaAssetJobs.length) {
       try {
@@ -908,6 +970,18 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         logger.error({ err: error, storyId: result.story.id }, "media-processing: Story jobs could not be published");
         return res.status(503).json({
           error: "Story saved, but media processing is temporarily unavailable. Please refresh shortly.",
+          error_code: "MEDIA_PROCESSING_UNAVAILABLE",
+        });
+      }
+    }
+    if (mediaEdits.length) {
+      try {
+        const regenerated = await Promise.all(mediaEdits.map((edit) => regenerateMediaAssetThumbnail(edit.media_asset_id)));
+        if (regenerated.some((queued) => !queued)) throw new Error("A selected video cover could not be queued.");
+      } catch (error) {
+        logger.error({ err: error, storyId: result.story.id }, "media-processing: cover thumbnail could not be published");
+        return res.status(503).json({
+          error: "Story saved, but cover thumbnail processing is temporarily unavailable. Please refresh shortly.",
           error_code: "MEDIA_PROCESSING_UNAVAILABLE",
         });
       }

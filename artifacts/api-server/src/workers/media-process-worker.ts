@@ -30,17 +30,23 @@ async function storeGeneratedAsset(
   key: string,
   bytes: Buffer,
   mimeType: string,
-): Promise<boolean> {
+  expectedCoverTimeMs?: number | null,
+): Promise<"stored" | "deleted" | "superseded"> {
   // Serialize object creation with deletion's media-row lock. Either the
   // worker registers the new key before deletion snapshots keys, or it sees
   // the deleted state and never creates the object.
   return db.transaction(async (tx) => {
-    const [asset] = await tx.select({ status: mediaAssetsTable.status })
+    const [asset] = await tx.select({
+      status: mediaAssetsTable.status,
+      composition_manifest: mediaAssetsTable.composition_manifest,
+    })
       .from(mediaAssetsTable)
       .where(eq(mediaAssetsTable.id, mediaAssetId))
       .limit(1)
       .for("update");
-    if (!asset || asset.status === "deleted") return false;
+    if (!asset || asset.status === "deleted") return "deleted";
+    if (expectedCoverTimeMs !== undefined
+      && (asset.composition_manifest?.cover_time_ms ?? null) !== expectedCoverTimeMs) return "superseded";
     // Register the provider key before the external write. If deletion wins
     // later, its tombstone has a durable reconciliation list even when this
     // worker is interrupted before the generated column is committed.
@@ -59,9 +65,9 @@ async function storeGeneratedAsset(
       .returning({ id: mediaAssetsTable.id });
     if (!updated) {
       await deleteAssetStrict(key);
-      return false;
+      return "deleted";
     }
-    return true;
+    return "stored";
   });
 }
 
@@ -87,11 +93,15 @@ async function completeClaimedJob(
   jobId: number,
   mediaType: string,
   compositionManifest: Parameters<typeof mediaJobsForType>[1],
+  expectedCoverTimeMs?: number | null,
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
     // Deletion takes this same asset lock. Exactly one transition wins:
     // deletion produces a tombstone, or completion can advance to ready.
-    const [asset] = await tx.select({ status: mediaAssetsTable.status })
+    const [asset] = await tx.select({
+      status: mediaAssetsTable.status,
+      composition_manifest: mediaAssetsTable.composition_manifest,
+    })
       .from(mediaAssetsTable)
       .where(eq(mediaAssetsTable.id, mediaAssetId))
       .limit(1)
@@ -105,12 +115,18 @@ async function completeClaimedJob(
       }).where(eq(mediaProcessingJobsTable.id, jobId));
       return false;
     }
-    await tx.update(mediaProcessingJobsTable).set({
+    if (expectedCoverTimeMs !== undefined
+      && (asset.composition_manifest?.cover_time_ms ?? null) !== expectedCoverTimeMs) return false;
+    const [completedJob] = await tx.update(mediaProcessingJobsTable).set({
       status: "completed",
       completed_at: new Date(),
       error: null,
       updated_at: new Date(),
-    }).where(eq(mediaProcessingJobsTable.id, jobId));
+    }).where(and(
+      eq(mediaProcessingJobsTable.id, jobId),
+      eq(mediaProcessingJobsTable.status, "processing"),
+    )).returning({ id: mediaProcessingJobsTable.id });
+    if (!completedJob) return false;
     const jobs = await tx.select({
       job_type: mediaProcessingJobsTable.job_type,
       status: mediaProcessingJobsTable.status,
@@ -161,6 +177,12 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
     await cancelClaimedJob(claimed.id);
     return;
   }
+  const preservesReadyVideo = jobType === "thumbnail" && asset.media_type === "video" && asset.status === "ready";
+  const requestedCoverTimeMs = jobType === "thumbnail" && asset.media_type === "video"
+    ? Number.isFinite(asset.composition_manifest?.cover_time_ms)
+      ? Math.max(0, asset.composition_manifest!.cover_time_ms!)
+      : null
+    : undefined;
   let tempDir: string | undefined;
   const generatedKeys: string[] = [];
   try {
@@ -175,8 +197,8 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
     }
     const metadata = await validateMediaBuffer(original, asset.media_type, asset.mime_type);
     await db.update(mediaAssetsTable).set({
-      status: "processing",
-      failure_reason: null,
+      status: preservesReadyVideo ? "ready" : "processing",
+      ...(preservesReadyVideo ? {} : { failure_reason: null }),
       width: metadata.width,
       height: metadata.height,
       duration_ms: metadata.duration_ms,
@@ -199,17 +221,44 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
 
       if (jobType === "thumbnail") {
         const output = path.join(tempDir, "thumbnail.jpg");
+        const coverTimeMs = requestedCoverTimeMs ?? null;
+        const jobSuffix = String(job.id ?? randomUUID()).replace(/[^a-zA-Z0-9_-]/g, "").slice(-48);
         await runFfmpeg([
-          "-y", "-i", input, "-frames:v", "1",
+          "-y",
+          "-i", input,
+          ...(coverTimeMs !== null ? ["-ss", String(coverTimeMs / 1000)] : []),
+          "-frames:v", "1",
           "-vf", "scale=w='min(640,iw)':h=-2",
           "-q:v", "4", output,
         ]);
-        const key = `media-assets/${asset.id}/thumbnail.jpg`;
+        const key = coverTimeMs === null
+          ? `media-assets/${asset.id}/thumbnail.jpg`
+          : `media-assets/${asset.id}/thumbnail-${coverTimeMs}-${jobSuffix}.jpg`;
+        const previousThumbnailKey = asset.thumbnail_key;
         const outputBuffer = await readBoundedOutput(output);
         await validateMediaBuffer(outputBuffer, "photo", "image/jpeg");
         generatedKeys.push(key);
-        if (!(await storeGeneratedAsset(mediaAssetId, "thumbnail_key", key, outputBuffer, "image/jpeg"))) {
+        const stored = await storeGeneratedAsset(
+          mediaAssetId,
+          "thumbnail_key",
+          key,
+          outputBuffer,
+          "image/jpeg",
+          requestedCoverTimeMs,
+        );
+        if (stored === "superseded") {
+          logger.info({ mediaAssetId, jobType, requestedCoverTimeMs }, "media-processing: cover thumbnail superseded by a newer selection");
+          return;
+        }
+        if (stored !== "stored") {
           throw new Error("MEDIA_ASSET_DELETED");
+        }
+        if (previousThumbnailKey && previousThumbnailKey !== key) {
+          try {
+            await deleteAssetStrict(previousThumbnailKey);
+          } catch {
+            logger.error({ mediaAssetId, jobType }, "media-processing: replaced thumbnail cleanup failed");
+          }
         }
       } else if (jobType === "transcode") {
         if (!asset.mime_type.startsWith("video/")) throw new Error("transcode is only valid for video assets");
@@ -235,7 +284,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         const outputBuffer = await readBoundedOutput(output);
         await validateMediaBuffer(outputBuffer, "video", "video/mp4");
         generatedKeys.push(key);
-        if (!(await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4"))) {
+        if ((await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4")) !== "stored") {
           throw new Error("MEDIA_ASSET_DELETED");
         }
       } else if (jobType === "audio_mix") {
@@ -282,7 +331,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         const outputBuffer = await readBoundedOutput(output);
         await validateMediaBuffer(outputBuffer, "video", "video/mp4");
         generatedKeys.push(key);
-        if (!(await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4"))) {
+        if ((await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4")) !== "stored") {
           throw new Error("MEDIA_ASSET_DELETED");
         }
       }
@@ -297,7 +346,13 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       return;
     }
 
-    if (!(await completeClaimedJob(mediaAssetId, claimed.id, asset.media_type, asset.composition_manifest))) return;
+    if (!(await completeClaimedJob(
+      mediaAssetId,
+      claimed.id,
+      asset.media_type,
+      asset.composition_manifest,
+      requestedCoverTimeMs,
+    ))) return;
     logger.info({ mediaAssetId, jobType }, "media-processing: job completed");
   } catch (error) {
     const requestId = randomUUID();
@@ -315,23 +370,60 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         logger.error({ requestId, mediaAssetId, jobType }, "media-processing: generated variant cleanup failed");
       }
     }
-    if (generatedKeys.length && generatedCleanupSucceeded) {
+    if (generatedKeys.length && generatedCleanupSucceeded && !preservesReadyVideo) {
       await db.update(mediaAssetsTable).set({
-        ...(generatedKeys.some((key) => key.endsWith("/thumbnail.jpg")) ? { thumbnail_key: null } : {}),
+        ...(generatedKeys.some((key) => /\/thumbnail(?:-[^/]+)?\.jpg$/.test(key)) ? { thumbnail_key: null } : {}),
         ...(generatedKeys.some((key) => key.endsWith("/variant.mp4") || key.endsWith("/variant-mixed.mp4")) ? { variant_key: null } : {}),
         updated_at: new Date(),
       }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     }
-    await db.update(mediaProcessingJobsTable).set({
-      status: "failed",
-      error: message,
-      updated_at: new Date(),
-    }).where(eq(mediaProcessingJobsTable.id, claimed.id));
-    await db.update(mediaAssetsTable).set({
-      status: "failed",
-      failure_reason: `${message};request_id=${requestId}`,
-      updated_at: new Date(),
-    }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+    if (requestedCoverTimeMs !== undefined) {
+      const failureIsCurrent = await db.transaction(async (tx) => {
+        const [current] = await tx.select({
+          status: mediaAssetsTable.status,
+          composition_manifest: mediaAssetsTable.composition_manifest,
+        }).from(mediaAssetsTable)
+          .where(eq(mediaAssetsTable.id, mediaAssetId))
+          .limit(1)
+          .for("update");
+        if (!current || current.status === "deleted") {
+          await tx.update(mediaProcessingJobsTable).set({
+            status: "cancelled",
+            error: "MEDIA_ASSET_DELETED",
+            completed_at: new Date(),
+            updated_at: new Date(),
+          }).where(eq(mediaProcessingJobsTable.id, claimed.id));
+          return false;
+        }
+        if ((current.composition_manifest?.cover_time_ms ?? null) !== requestedCoverTimeMs) return false;
+        await tx.update(mediaProcessingJobsTable).set({
+          status: "failed",
+          error: message,
+          updated_at: new Date(),
+        }).where(and(
+          eq(mediaProcessingJobsTable.id, claimed.id),
+          eq(mediaProcessingJobsTable.status, "processing"),
+        ));
+        return true;
+      });
+      if (!failureIsCurrent) {
+        logger.info({ mediaAssetId, jobType, requestedCoverTimeMs }, "media-processing: stale cover job failure ignored");
+        return;
+      }
+    } else {
+      await db.update(mediaProcessingJobsTable).set({
+        status: "failed",
+        error: message,
+        updated_at: new Date(),
+      }).where(eq(mediaProcessingJobsTable.id, claimed.id));
+    }
+    if (!preservesReadyVideo) {
+      await db.update(mediaAssetsTable).set({
+        status: "failed",
+        failure_reason: `${message};request_id=${requestId}`,
+        updated_at: new Date(),
+      }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+    }
     logger.error({ requestId, mediaAssetId, jobType, failureCode: message }, "media-processing: job failed");
     throw new Error(`${message}; request_id=${requestId}`);
   } finally {

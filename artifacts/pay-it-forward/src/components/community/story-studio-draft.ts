@@ -19,16 +19,17 @@ export type StudioDraft = CommunityMomentDraft & {
   textSize: string;
   textAlign: "left" | "center" | "right";
   trimPreview: Record<number, { start: number; end: number }>;
+  coverTimes?: Record<number, number>;
   uploadedMediaAssetIds?: number[];
 };
 
 export const studioFileFingerprint = (file: File) => `${file.name}\u0000${file.size}\u0000${file.type}\u0000${file.lastModified}`;
 export const newStudioPublishId = () => crypto.randomUUID();
 
-/** Preview-only controls are deliberately excluded; changing published content starts a new attempt. */
+/** Preview-only controls are excluded; persistent cover edits are part of the published content. */
 export function studioPublishSignature(input: {
   files: File[]; selection: number[]; caption: string; elements: StudioElement[];
-  audience: "community" | "hub"; hubId: number | null; textBackground: string;
+  audience: "community" | "hub"; hubId: number | null; textBackground: string; coverTimes?: Record<number, number>;
 }): string {
   return JSON.stringify({
     files: input.selection.filter((index) => Number.isInteger(index) && index >= 0 && index < input.files.length)
@@ -36,6 +37,7 @@ export function studioPublishSignature(input: {
     caption: input.caption.trim(), elements: input.elements,
     audience: input.audience, hubId: input.audience === "hub" ? input.hubId : null,
     background: input.selection.length ? null : input.textBackground,
+    coverTimes: input.coverTimes ?? {},
   });
 }
 

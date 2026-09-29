@@ -53,6 +53,19 @@ export async function validateStudioFiles(files: File[]): Promise<void> {
 
 const validId = (id: number) => Number.isSafeInteger(id) && id > 0;
 
+export function validStudioMediaEdits(
+  files: File[],
+  ids: number[],
+  edits: Array<{ index: number; coverTimeMs: number }> = [],
+): Array<{ media_asset_id: number; cover_time_ms: number }> {
+  return edits.flatMap((edit) => {
+    const assetId = ids[edit.index];
+    const file = files[edit.index];
+    return validId(assetId) && file?.type.startsWith("video/") && Number.isFinite(edit.coverTimeMs) && edit.coverTimeMs >= 0
+      ? [{ media_asset_id: assetId, cover_time_ms: Math.round(edit.coverTimeMs) }] : [];
+  });
+}
+
 export async function publishStudioMoment(input: {
   userId: number;
   hubId: number | null;
@@ -68,6 +81,7 @@ export async function publishStudioMoment(input: {
   /** Must commit the complete ordered asset list and publish identity to IDB before POST. */
   beforePublish: (orderedAssetIds: number[]) => Promise<void>;
   uploadedIds?: Array<number | null>;
+  mediaEdits?: Array<{ index: number; coverTimeMs: number }>;
 }): Promise<void> {
   if (!validId(input.userId) || (input.hubId !== null && !validId(input.hubId))) throw new Error("Your account or Hub could not be confirmed.");
   if (input.audience === "hub" && input.hubId === null) throw new Error("Choose a Hub before sharing with Hub members.");
@@ -131,6 +145,7 @@ export async function publishStudioMoment(input: {
   // The source file is not transcoded with Studio preview filters. Keep the
   // publish manifest neutral until the Story player guarantees filter parity.
   const effects: string[] = [];
+  const mediaEdits = validStudioMediaEdits(input.files, ids, input.mediaEdits);
   const response = await fetch("/api/community/stories", {
     method: "POST", credentials: "same-origin", signal: input.signal,
     headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -139,6 +154,7 @@ export async function publishStudioMoment(input: {
       audience: input.audience, media_asset_ids: ids, elements: input.elements,
       client_publish_id: input.clientPublishId,
       composition_manifest: { version: 1, canvas: { width: 1080, height: 1920, aspect: "9:16" }, elements: input.elements, effects, music: null },
+      ...(mediaEdits.length ? { media_edits: mediaEdits } : {}),
     }),
   });
   const result = await response.json().catch(() => ({})) as { error?: string };

@@ -4,16 +4,20 @@ import type { enqueueMediaAssetProcessing as EnqueueMediaAssetProcessing } from 
 const state = { assetStatus: "pending" };
 const order: string[] = [];
 let selectResults: unknown[][] = [];
-const queueAdd = jest.fn(async () => {
-  state.assetStatus = "ready";
-  order.push("worker-ready");
+const queueAdd = jest.fn(async (_name?: string, _data?: unknown, _options?: unknown) => {
+  if (_name !== "thumbnail") {
+    state.assetStatus = "ready";
+    order.push("worker-ready");
+  }
 });
 
 const mockDb = {
   update: jest.fn(() => ({
-    set: jest.fn((values: { status: string }) => {
-      state.assetStatus = values.status;
-      order.push("asset-processing");
+    set: jest.fn((values: { status?: string }) => {
+      if (values.status && values.status !== "queued") {
+        state.assetStatus = values.status;
+        order.push("asset-processing");
+      }
       return {
         where: jest.fn(() => ({
           returning: jest.fn(async () => [{ id: 42 }]),
@@ -26,8 +30,9 @@ const mockDb = {
       onConflictDoNothing: jest.fn(async () => undefined),
     })),
   })),
-  select: jest.fn(() => ({
-    from: jest.fn(() => ({
+  select: jest.fn(() => {
+    const query = {
+      innerJoin: jest.fn(() => query),
       where: jest.fn(() => ({
         limit: jest.fn(() => ({
           then: (resolve: (results: unknown[]) => unknown, reject: (error: unknown) => unknown) =>
@@ -38,8 +43,9 @@ const mockDb = {
           }),
         })),
       })),
-    })),
-  })),
+    };
+    return { from: jest.fn(() => query) };
+  }),
   transaction: jest.fn(async (callback: (transaction: unknown) => Promise<unknown>) => callback(mockDb)),
 };
 
@@ -48,9 +54,11 @@ jest.unstable_mockModule("../lib/logger", () => ({
 }));
 
 let enqueueMediaAssetProcessing: typeof EnqueueMediaAssetProcessing;
+let regenerateMediaAssetThumbnail: typeof import("../lib/mediaProcessingQueue.js").regenerateMediaAssetThumbnail;
+let enqueuePendingMediaAssetThumbnail: typeof import("../lib/mediaProcessingQueue.js").enqueuePendingMediaAssetThumbnail;
 
 beforeAll(async () => {
-  ({ enqueueMediaAssetProcessing } = await import("../lib/mediaProcessingQueue.js"));
+  ({ enqueueMediaAssetProcessing, regenerateMediaAssetThumbnail, enqueuePendingMediaAssetThumbnail } = await import("../lib/mediaProcessingQueue.js"));
 });
 
 beforeEach(() => {
@@ -132,5 +140,90 @@ describe("media job enqueue state transition", () => {
     expect(order).toEqual(["story-share"]);
     expect(mockDb.update).not.toHaveBeenCalled();
     expect(queueAdd).not.toHaveBeenCalled();
+  });
+
+  it("regenerates a video cover without taking an already-ready asset out of service", async () => {
+    state.assetStatus = "ready";
+    selectResults = [
+      [{ id: 42, media_type: "video", status: "ready" }],
+      [{ updatedAt: new Date(123) }],
+      [{ updatedAt: new Date(123456789) }],
+    ];
+
+    const result = await regenerateMediaAssetThumbnail(42, { add: queueAdd } as never, mockDb as never);
+
+    expect(result).toBe(true);
+    expect(state.assetStatus).toBe("ready");
+    expect(queueAdd).toHaveBeenCalledWith(
+      "thumbnail",
+      { mediaAssetId: 42, jobType: "thumbnail" },
+      { jobId: expect.stringMatching(/^media-42-thumbnail-cover-\d+$/) },
+    );
+  });
+
+  it("does not queue a cover job for media that is no longer ready", async () => {
+    selectResults = [[{ id: 42, media_type: "video", status: "processing" }]];
+
+    const result = await regenerateMediaAssetThumbnail(42, { add: queueAdd } as never, mockDb as never);
+
+    expect(result).toBe(false);
+    expect(queueAdd).not.toHaveBeenCalled();
+  });
+
+  it("replays the stable queued thumbnail job after an idempotent publish retry", async () => {
+    const updatedAt = new Date(123456789);
+    const database = {
+      select: () => ({
+        from: () => ({
+          innerJoin: () => ({
+            where: () => ({ limit: async () => [{ updatedAt }] }),
+          }),
+        }),
+      }),
+    };
+
+    const result = await enqueuePendingMediaAssetThumbnail(42, { add: queueAdd } as never, database as never);
+
+    expect(result).toBe(true);
+    expect(queueAdd).toHaveBeenCalledWith(
+      "thumbnail",
+      { mediaAssetId: 42, jobType: "thumbnail" },
+      { jobId: "media-42-thumbnail-cover-123456789" },
+    );
+  });
+
+  it("requeues a failed cover job with a new durable job id", async () => {
+    let requeuedAt: Date | null = null;
+    const database = {
+      select: () => ({
+        from: () => ({
+          innerJoin: () => ({
+            where: () => ({
+              limit: async () => [{ id: 9, status: "failed", updatedAt: new Date(123) }],
+            }),
+          }),
+        }),
+      }),
+      update: () => ({
+        set: (values: { updated_at: Date }) => {
+          requeuedAt = values.updated_at;
+          return {
+            where: () => ({
+              returning: async () => [{ updatedAt: requeuedAt }],
+            }),
+          };
+        },
+      }),
+    };
+
+    const result = await enqueuePendingMediaAssetThumbnail(42, { add: queueAdd } as never, database as never);
+
+    expect(result).toBe(true);
+    expect(requeuedAt).toBeInstanceOf(Date);
+    expect(queueAdd).toHaveBeenCalledWith(
+      "thumbnail",
+      { mediaAssetId: 42, jobType: "thumbnail" },
+      { jobId: `media-42-thumbnail-cover-${requeuedAt!.getTime()}` },
+    );
   });
 });

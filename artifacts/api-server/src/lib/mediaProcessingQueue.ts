@@ -113,6 +113,102 @@ export async function enqueueMediaAssetProcessing(
 }
 
 /**
+ * Publishes the stable BullMQ job represented by a ready asset's queued or
+ * failed thumbnail row. Safe to call after a Story retry or worker restart.
+ */
+export async function enqueuePendingMediaAssetThumbnail(
+  mediaAssetId: number,
+  publisher: Pick<NonNullable<typeof mediaProcessingQueue>, "add"> | null = mediaProcessingQueue,
+  database: typeof db = db,
+): Promise<boolean> {
+  const [pending] = await database.select({
+    id: mediaProcessingJobsTable.id,
+    status: mediaProcessingJobsTable.status,
+    updatedAt: mediaProcessingJobsTable.updated_at,
+  }).from(mediaProcessingJobsTable)
+    .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, mediaProcessingJobsTable.media_asset_id))
+    .where(and(
+      eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId),
+      eq(mediaProcessingJobsTable.job_type, "thumbnail"),
+      inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
+      eq(mediaAssetsTable.status, "ready"),
+    )).limit(1);
+  if (!pending) return false;
+  if (!publisher) throw new Error("Media-processing queue is unavailable.");
+  let queuedAt = pending.updatedAt;
+  if (pending.status === "failed") {
+    queuedAt = new Date(Math.max(Date.now(), pending.updatedAt.getTime() + 1));
+    const [requeued] = await database.update(mediaProcessingJobsTable).set({
+      status: "queued",
+      error: null,
+      started_at: null,
+      completed_at: null,
+      updated_at: queuedAt,
+    }).where(and(
+      eq(mediaProcessingJobsTable.id, pending.id),
+      eq(mediaProcessingJobsTable.status, "failed"),
+    )).returning({ updatedAt: mediaProcessingJobsTable.updated_at });
+    if (!requeued) return false;
+    queuedAt = requeued.updatedAt;
+  }
+  await publisher.add(
+    "thumbnail",
+    { mediaAssetId, jobType: "thumbnail" } satisfies MediaProcessingJobData,
+    { jobId: `media-${mediaAssetId}-thumbnail-cover-${queuedAt.getTime()}` },
+  );
+  return true;
+}
+
+/**
+ * Re-runs only the thumbnail job after a user selects a new video cover frame.
+ * Keep playback and the previous thumbnail available until the replacement is
+ * stored. The queued database row is recoverable if Redis publication fails.
+ */
+export async function regenerateMediaAssetThumbnail(
+  mediaAssetId: number,
+  publisher: Pick<NonNullable<typeof mediaProcessingQueue>, "add"> | null = mediaProcessingQueue,
+  database: typeof db = db,
+): Promise<boolean> {
+  let queuedAt = new Date();
+  const changed = await database.transaction(async (tx) => {
+    const [asset] = await tx.select({
+      id: mediaAssetsTable.id,
+      media_type: mediaAssetsTable.media_type,
+      status: mediaAssetsTable.status,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1).for("update");
+    if (!asset || asset.media_type !== "video" || asset.status !== "ready") return false;
+    const [previousJob] = await tx.select({
+      updatedAt: mediaProcessingJobsTable.updated_at,
+    }).from(mediaProcessingJobsTable).where(and(
+      eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId),
+      eq(mediaProcessingJobsTable.job_type, "thumbnail"),
+    )).limit(1).for("update");
+    queuedAt = new Date(Math.max(Date.now(), (previousJob?.updatedAt.getTime() ?? 0) + 1));
+    await tx.update(mediaAssetsTable).set({
+      updated_at: queuedAt,
+    }).where(eq(mediaAssetsTable.id, mediaAssetId));
+    await tx.insert(mediaProcessingJobsTable)
+      .values({ media_asset_id: mediaAssetId, job_type: "thumbnail", status: "queued" })
+      .onConflictDoNothing({
+        target: [mediaProcessingJobsTable.media_asset_id, mediaProcessingJobsTable.job_type],
+      });
+    await tx.update(mediaProcessingJobsTable).set({
+      status: "queued",
+      error: null,
+      started_at: null,
+      completed_at: null,
+      updated_at: queuedAt,
+    }).where(and(
+      eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId),
+      eq(mediaProcessingJobsTable.job_type, "thumbnail"),
+    ));
+    return true;
+  });
+  if (!changed) return false;
+  return enqueuePendingMediaAssetThumbnail(mediaAssetId, publisher, database);
+}
+
+/**
  * Republish durable DB jobs left behind by a transient Redis outage or a
  * process restart. BullMQ job IDs remain deterministic, so this is safe to
  * run on every worker boot without creating duplicate work.
@@ -137,6 +233,29 @@ export async function requeueStaleMediaAssets(limit = 100): Promise<number> {
       }
     } catch (error) {
       logger.warn({ err: error, mediaAssetId: asset.id }, "media-processing: stale asset republish failed");
+    }
+  }
+  const queuedThumbnailJobs = await db.select({
+    jobId: mediaProcessingJobsTable.id,
+    mediaAssetId: mediaAssetsTable.id,
+    updatedAt: mediaProcessingJobsTable.updated_at,
+  }).from(mediaProcessingJobsTable)
+    .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, mediaProcessingJobsTable.media_asset_id))
+    .where(and(
+      eq(mediaProcessingJobsTable.job_type, "thumbnail"),
+      eq(mediaProcessingJobsTable.status, "queued"),
+      eq(mediaAssetsTable.status, "ready"),
+    )).limit(limit);
+  for (const pending of queuedThumbnailJobs) {
+    try {
+      await mediaProcessingQueue.add(
+        "thumbnail",
+        { mediaAssetId: pending.mediaAssetId, jobType: "thumbnail" } satisfies MediaProcessingJobData,
+        { jobId: `media-${pending.mediaAssetId}-thumbnail-cover-${pending.updatedAt.getTime()}` },
+      );
+      republished += 1;
+    } catch (error) {
+      logger.warn({ err: error, mediaAssetId: pending.mediaAssetId }, "media-processing: pending thumbnail republish failed");
     }
   }
   return republished;
