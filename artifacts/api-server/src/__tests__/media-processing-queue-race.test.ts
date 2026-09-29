@@ -1,5 +1,9 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
-import type { enqueueMediaAssetProcessing as EnqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue.js";
+import type {
+  enqueueMediaAssetProcessing as EnqueueMediaAssetProcessing,
+  enqueuePendingMediaAssetThumbnail as EnqueuePendingMediaAssetThumbnail,
+  regenerateMediaAssetThumbnail as RegenerateMediaAssetThumbnail,
+} from "../lib/mediaProcessingQueue.js";
 
 const state = { assetStatus: "pending" };
 const order: string[] = [];
@@ -54,8 +58,8 @@ jest.unstable_mockModule("../lib/logger", () => ({
 }));
 
 let enqueueMediaAssetProcessing: typeof EnqueueMediaAssetProcessing;
-let regenerateMediaAssetThumbnail: typeof import("../lib/mediaProcessingQueue.js").regenerateMediaAssetThumbnail;
-let enqueuePendingMediaAssetThumbnail: typeof import("../lib/mediaProcessingQueue.js").enqueuePendingMediaAssetThumbnail;
+let regenerateMediaAssetThumbnail: typeof RegenerateMediaAssetThumbnail;
+let enqueuePendingMediaAssetThumbnail: typeof EnqueuePendingMediaAssetThumbnail;
 
 beforeAll(async () => {
   ({ enqueueMediaAssetProcessing, regenerateMediaAssetThumbnail, enqueuePendingMediaAssetThumbnail } = await import("../lib/mediaProcessingQueue.js"));

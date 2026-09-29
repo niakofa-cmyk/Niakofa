@@ -301,11 +301,13 @@ export function CommunityMomentsExperience({
         event.preventDefault(); elements[0]?.focus();
       }
     };
+    const commentsRequest = commentsRequestRef.current;
+    const requestController = commentsRequest.controller;
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      commentsRequestRef.current.controller?.abort();
-      commentsRequestRef.current.controller = null;
+      requestController?.abort();
+      if (commentsRequest.controller === requestController) commentsRequest.controller = null;
       commentsTriggerRef.current?.focus();
     };
   }, [commentsOpenId]);
