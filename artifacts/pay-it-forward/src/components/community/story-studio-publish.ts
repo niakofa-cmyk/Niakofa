@@ -128,7 +128,11 @@ export async function publishStudioMoment(input: {
     ids.push(id);
     input.onAssetUploaded?.(i, id);
   }
-  let musicAssetId = musicFile && validId(input.uploadedMusicAssetId) ? input.uploadedMusicAssetId : null;
+  const cachedMusicAssetId = input.uploadedMusicAssetId;
+  let musicAssetId: number | null = null;
+  if (musicFile && typeof cachedMusicAssetId === "number" && validId(cachedMusicAssetId)) {
+    musicAssetId = cachedMusicAssetId;
+  }
   if (musicFile && musicAssetId === null) {
     if (input.signal.aborted) throw new DOMException("Upload cancelled", "AbortError");
     input.onStatus("Uploading background music", 0);
