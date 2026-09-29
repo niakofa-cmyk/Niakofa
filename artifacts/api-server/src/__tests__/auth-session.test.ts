@@ -76,6 +76,35 @@ describe("session authentication runtime contract", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("fails closed when the authentication database is unavailable", async () => {
+    db.limit.mockRejectedValueOnce(new Error("database unavailable"));
+    const req = { authenticatedUserId: 42, authenticatedTokenVersion: 0 } as never;
+    const res = responseMock();
+    const next = jest.fn();
+
+    await requireAuth(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Authentication service unavailable",
+      error_code: "AUTH_BACKEND_UNAVAILABLE",
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects a token after its user row has been deleted", async () => {
+    db.limit.mockResolvedValueOnce([]);
+    const req = { authenticatedUserId: 42, authenticatedTokenVersion: 0 } as never;
+    const res = responseMock();
+    const next = jest.fn();
+
+    await requireAuth(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error_code: "TOKEN_REVOKED" }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["suspended", { is_suspended: true, trust_score: 50, approval_status: "approved" }, /suspended/i],
     ["unapproved", { is_suspended: false, trust_score: 50, approval_status: "pending" }, /pending approval/i],

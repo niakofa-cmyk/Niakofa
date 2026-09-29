@@ -1,0 +1,53 @@
+Implementation quality and recommendations
+
+Area
+
+Assessment
+
+Recommendation
+
+Session revocation
+
+Production enforcement preserved; fixtures now model token versions.
+
+Add an end-to-end test proving an existing token fails immediately after a real account token-version increment.
+
+Authentication tests
+
+Expired, revoked, suspended, and unapproved cases are covered.
+
+Add database-unavailable and deleted-user cases to prove authentication continues to fail closed.
+
+Concurrent requests
+
+Fixtures now account for multiple auth lookups and reset mock queues.
+
+Prefer reusable typed auth fixtures to reduce fragile, manually ordered .mockResolvedValueOnce() chains.
+
+Messages architecture
+
+Stale MetaStyleDirectPane assertion replaced with MessagesShell.
+
+Add a behavioral test for the current Messages navigation and its key panels, not just component-name assertions.
+
+PostGIS
+
+Repository documentation now defines the dedicated database target and safe migration process.
+
+Verify production application queries actually use PostGIS, not merely that the extension and columns exist.
+
+PostGIS and Railway
+
+The latest commit documents the dedicated PostGIS target, transient handling of the database URL, migration verification, and the separation between production and development fallbacks.
+
+The supplied report states that Railway has PostgreSQL 18, PostGIS 3.6.4, 192 applied migrations, and the required geography columns. Those are consistent with the intended setup. However, the live Railway database was not independently queried in that review; the GitHub deployment check alone does not prove those database facts.
+
+3. Recommended next priorities
+
+1. Complete production auth verification: test real token issuance, revocation, account suspension, and deleted-user behavior against an approved test account.
+
+2. Complete the Exchange media release gate: continue the outstanding physical iOS/Android, media playback, signed-grant expiry, and private-storage lifecycle checks tracked in Issue #89.
+
+3. Verify spatial behavior in production: confirm proximity discovery uses the production PostGIS geography indexes, applies authorized radius limits, and never exposes exact user coordinates.
+
+Bottom line: The authentication/session-revocation repair is implemented and the latest GitHub checks pass. The most important remaining work is production-level verification of authentication, PostGIS-backed proximity, and the media lifecycle—not weakening or bypassing the existing security controls.

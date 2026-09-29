@@ -92,6 +92,22 @@ async function runFallbackBenchmark(client) {
   ], "Production route: bounding box + Haversine");
 }
 
+async function runPostgisBenchmark(client) {
+  const query = [
+    "SELECT COUNT(*)::int AS count",
+    "FROM exchange_listings",
+    "WHERE status = 'active'",
+    "AND moderation_status = 'approved'",
+    "AND geog IS NOT NULL",
+    "AND ST_DWithin(",
+    "geog,",
+    "ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,",
+    "$3 * 1609.344",
+    ")",
+  ].join(" ");
+  return benchmark(client, query, [CENTER_LAT, CENTER_LNG, RADIUS_MILES], "Production route: PostGIS ST_DWithin");
+}
+
 async function main() {
   const client = await pool.connect();
   try {
@@ -106,10 +122,9 @@ async function main() {
     console.log("");
 
     const results = [];
-    // Benchmark the exact production route predicate. PostGIS parity is
-    // covered separately by the disposable integration test; the route itself
-    // currently uses bounding-box + Haversine, not ST_DWithin.
-    results.push(await runFallbackBenchmark(client));
+    // Benchmark the same branch the API selects. PostGIS is required for the
+    // production geography index; local PostgreSQL keeps the safe fallback.
+    results.push(postgis ? await runPostgisBenchmark(client) : await runFallbackBenchmark(client));
 
     for (const result of results) {
       console.log(
@@ -123,31 +138,40 @@ async function main() {
       );
     }
 
-    const indexResult = await client.query(
-      "SELECT indexname FROM pg_indexes WHERE tablename = 'exchange_listings' AND indexname = 'exchange_listings_geo_idx'",
-    );
-    if (indexResult.rowCount !== 1) {
-      console.error("FAIL: exchange_listings_geo_idx is missing.");
-      process.exitCode = 1;
-    } else {
-      console.log("PASS: migration-defined exchange_listings_geo_idx is present.");
+    if (postgis) {
+      const indexResult = await client.query(
+        "SELECT indexname FROM pg_indexes WHERE tablename = 'exchange_listings' AND indexname = 'exchange_listings_geo_idx'",
+      );
+      if (indexResult.rowCount !== 1) {
+        console.error("FAIL: exchange_listings_geo_idx is missing.");
+        process.exitCode = 1;
+      } else {
+        console.log("PASS: migration-defined exchange_listings_geo_idx is present.");
+      }
     }
 
+    const explainQuery = postgis
+      ? `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+         SELECT COUNT(*)::int FROM exchange_listings
+         WHERE status = 'active' AND moderation_status = 'approved'
+           AND geog IS NOT NULL
+           AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint($2, $1),4326)::geography,$3 * 1609.344)`
+      : `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+         SELECT COUNT(*)::int FROM exchange_listings
+         WHERE status = 'active' AND moderation_status = 'approved'
+           AND latitude IS NOT NULL AND longitude IS NOT NULL
+           AND latitude BETWEEN $1 AND $2 AND longitude BETWEEN $3 AND $4
+           AND 3958.8 * 2 * ASIN(SQRT(
+             POWER(SIN(RADIANS(latitude - $5) / 2), 2) +
+             COS(RADIANS($5)) * COS(RADIANS(latitude)) *
+             POWER(SIN(RADIANS(longitude - $6) / 2), 2)
+           )) <= $7`;
     const explain = await client.query(
-      `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-       SELECT COUNT(*)::int FROM exchange_listings
-       WHERE status = 'active' AND moderation_status = 'approved'
-         AND latitude IS NOT NULL AND longitude IS NOT NULL
-         AND latitude BETWEEN $1 AND $2 AND longitude BETWEEN $3 AND $4
-         AND 3958.8 * 2 * ASIN(SQRT(
-           POWER(SIN(RADIANS(latitude - $5) / 2), 2) +
-           COS(RADIANS($5)) * COS(RADIANS(latitude)) *
-           POWER(SIN(RADIANS(longitude - $6) / 2), 2)
-         )) <= $7`,
-      [...BOUNDS, CENTER_LAT, CENTER_LNG, RADIUS_MILES],
+      explainQuery,
+      postgis ? [CENTER_LAT, CENTER_LNG, RADIUS_MILES] : [...BOUNDS, CENTER_LAT, CENTER_LNG, RADIUS_MILES],
     );
     console.log("");
-    console.log("Fallback EXPLAIN ANALYZE:");
+    console.log(postgis ? "PostGIS EXPLAIN ANALYZE:" : "Fallback EXPLAIN ANALYZE:");
     console.log(explain.rows.map((row) => row["QUERY PLAN"]).join("\n"));
 
     // Latency is diagnostic, not a hard correctness gate. Production SLOs

@@ -18,7 +18,11 @@ import { generalApiLimiter, communityPostLimiter } from "../middlewares/rate-lim
 import { moderatePostText } from "../lib/post-moderation";
 import { sendPushToUser } from "./push";
 import { createMessageNotification } from "../lib/message-notifications";
-import { getExchangeMatchingLocation } from "../lib/exchange-location";
+import {
+  exchangeNearbyCondition,
+  exchangeSpatialIndexReady,
+  getExchangeMatchingLocation,
+} from "../lib/exchange-location";
 import { sanitizePublicPickupArea } from "../lib/exchange-privacy";
 import { exchangePickupDisputesTable } from "@workspace/db/schema";
 import { requireAdmin } from "../middlewares/authz";
@@ -232,17 +236,10 @@ router.get("/community/exchange/sparks", requireAuth, requireApproved, generalAp
     if (viewerLocation?.lat != null && viewerLocation.lng != null
       && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
       const radius = req.query.radius_miles === undefined ? 15 : parseRadius(req.query.radius_miles)!;
-      const latDelta = radius / 69;
-      const lngDelta = radius / (69 * Math.max(0.25, Math.cos((viewerLocation.lat * Math.PI) / 180)));
-      locationCondition = and(
-        sql`${exchangeListingsTable.latitude} IS NOT NULL AND ${exchangeListingsTable.longitude} IS NOT NULL`,
-        sql`${exchangeListingsTable.latitude} BETWEEN ${viewerLocation.lat - latDelta} AND ${viewerLocation.lat + latDelta}`,
-        sql`${exchangeListingsTable.longitude} BETWEEN ${viewerLocation.lng - lngDelta} AND ${viewerLocation.lng + lngDelta}`,
-        sql`3958.8 * 2 * ASIN(SQRT(
-          POWER(SIN(RADIANS(${exchangeListingsTable.latitude} - ${viewerLocation.lat}) / 2), 2) +
-          COS(RADIANS(${viewerLocation.lat})) * COS(RADIANS(${exchangeListingsTable.latitude})) *
-          POWER(SIN(RADIANS(${exchangeListingsTable.longitude} - ${viewerLocation.lng}) / 2), 2)
-        )) <= ${radius}`,
+      locationCondition = exchangeNearbyCondition(
+        { lat: viewerLocation.lat, lng: viewerLocation.lng },
+        radius,
+        await exchangeSpatialIndexReady(),
       );
     } else {
       // Missing viewer coordinates must not widen a nearby request to all Sparks.
@@ -484,19 +481,10 @@ router.get("/community/exchange/listings", requireAuth, requireApproved, general
   if (nearby && viewerLocation?.lat != null && viewerLocation.lng != null
       && Number.isFinite(viewerLocation.lat) && Number.isFinite(viewerLocation.lng)) {
     const radius = req.query.radius_miles === undefined ? 15 : parseRadius(req.query.radius_miles)!;
-    const latDelta = radius / 69;
-    const lngDelta = radius / (69 * Math.max(0.25, Math.cos((viewerLocation.lat * Math.PI) / 180)));
-    // The bounding box uses the composite geo index; the Haversine expression
-    // removes the box's corner false positives without requiring PostGIS.
-    locationCondition = and(
-      sql`${exchangeListingsTable.latitude} IS NOT NULL AND ${exchangeListingsTable.longitude} IS NOT NULL`,
-      sql`${exchangeListingsTable.latitude} BETWEEN ${viewerLocation.lat - latDelta} AND ${viewerLocation.lat + latDelta}`,
-      sql`${exchangeListingsTable.longitude} BETWEEN ${viewerLocation.lng - lngDelta} AND ${viewerLocation.lng + lngDelta}`,
-      sql`3958.8 * 2 * ASIN(SQRT(
-        POWER(SIN(RADIANS(${exchangeListingsTable.latitude} - ${viewerLocation.lat}) / 2), 2) +
-        COS(RADIANS(${viewerLocation.lat})) * COS(RADIANS(${exchangeListingsTable.latitude})) *
-        POWER(SIN(RADIANS(${exchangeListingsTable.longitude} - ${viewerLocation.lng}) / 2), 2)
-      )) <= ${radius}`,
+    locationCondition = exchangeNearbyCondition(
+      { lat: viewerLocation.lat, lng: viewerLocation.lng },
+      radius,
+      await exchangeSpatialIndexReady(),
     );
   } else if (neighborhood) {
     locationCondition = eq(exchangeListingsTable.neighborhood, neighborhood);

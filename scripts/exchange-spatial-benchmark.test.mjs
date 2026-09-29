@@ -16,6 +16,8 @@ test("benchmark bounds the query before exact distance calculation", () => {
   assert.match(benchmark, /longitude BETWEEN \$3 AND \$4/);
   assert.match(benchmark, /ST_DWithin/);
   assert.match(benchmark, /Haversine/);
+  assert.match(benchmark, /exchange_listings_geo_idx/);
+  assert.match(benchmark, /geog IS NOT NULL/);
 });
 
 test("benchmark is read-only and never seeds mock data or embeds service credentials", () => {

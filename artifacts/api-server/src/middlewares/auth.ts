@@ -114,17 +114,24 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     res.status(401).json({ error: "Unauthorized — valid Bearer token required" });
     return;
   }
-  const [user] = await db
-    .select({ token_version: usersTable.token_version })
-    .from(usersTable)
-    .where(eq(usersTable.id, req.authenticatedUserId))
-    .limit(1);
-  if (!user || req.authenticatedTokenVersion === undefined ||
-      req.authenticatedTokenVersion !== user.token_version) {
-    res.status(401).json({ error: "Session expired — please log in again", error_code: "TOKEN_REVOKED" });
-    return;
+  try {
+    const [user] = await db
+      .select({ token_version: usersTable.token_version })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.authenticatedUserId))
+      .limit(1);
+    if (!user || req.authenticatedTokenVersion === undefined ||
+        req.authenticatedTokenVersion !== user.token_version) {
+      res.status(401).json({ error: "Session expired — please log in again", error_code: "TOKEN_REVOKED" });
+      return;
+    }
+    next();
+  } catch {
+    // Never allow a database outage to turn a syntactically valid token into
+    // an authenticated request. A retryable response is explicit, but the
+    // request is still fail-closed and the handler is never reached.
+    res.status(503).json({ error: "Authentication service unavailable", error_code: "AUTH_BACKEND_UNAVAILABLE" });
   }
-  next();
 }
 
 /** Express middleware — rejects with 403 if user account is suspended, banned,
@@ -151,41 +158,45 @@ export async function requireApproved(req: Request, res: Response, next: NextFun
     res.status(401).json({ error: "Unauthorized — valid Bearer token required" });
     return;
   }
-  const [user] = await db
-    .select({
-      is_suspended: usersTable.is_suspended,
-      trust_score: usersTable.trust_score,
-      approval_status: usersTable.approval_status,
-      token_version: usersTable.token_version,
-    })
-    .from(usersTable)
-    .where(eq(usersTable.id, req.authenticatedUserId))
-    .limit(1);
-  if (!user) {
-    res.status(401).json({ error: "User not found" });
-    return;
+  try {
+    const [user] = await db
+      .select({
+        is_suspended: usersTable.is_suspended,
+        trust_score: usersTable.trust_score,
+        approval_status: usersTable.approval_status,
+        token_version: usersTable.token_version,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.authenticatedUserId))
+      .limit(1);
+    if (!user) {
+      res.status(401).json({ error: "User not found" });
+      return;
+    }
+    // Token was issued before a subsequent logout or password change bumped
+    // token_version — reject it. This is the enforcement side of the version
+    // field every token has carried since the nia-service format alignment;
+    // signing already embeds it, this is what makes it actually mean something.
+    if (req.authenticatedTokenVersion === undefined || req.authenticatedTokenVersion !== user.token_version) {
+      res.status(401).json({ error: "Session expired — please log in again", error_code: "TOKEN_REVOKED" });
+      return;
+    }
+    if (user.is_suspended) {
+      res.status(403).json({ error: "Account suspended — contact support" });
+      return;
+    }
+    if (user.trust_score !== null && user.trust_score <= -1) {
+      res.status(403).json({ error: "Account banned — contact support" });
+      return;
+    }
+    if (user.approval_status !== "approved") {
+      res.status(403).json({ error: "Account pending approval", approval_status: user.approval_status ?? "pending" });
+      return;
+    }
+    next();
+  } catch {
+    res.status(503).json({ error: "Authentication service unavailable", error_code: "AUTH_BACKEND_UNAVAILABLE" });
   }
-  // Token was issued before a subsequent logout or password change bumped
-  // token_version — reject it. This is the enforcement side of the version
-  // field every token has carried since the nia-service format alignment;
-  // signing already embeds it, this is what makes it actually mean something.
-  if (req.authenticatedTokenVersion === undefined || req.authenticatedTokenVersion !== user.token_version) {
-    res.status(401).json({ error: "Session expired — please log in again", error_code: "TOKEN_REVOKED" });
-    return;
-  }
-  if (user.is_suspended) {
-    res.status(403).json({ error: "Account suspended — contact support" });
-    return;
-  }
-  if (user.trust_score !== null && user.trust_score <= -1) {
-    res.status(403).json({ error: "Account banned — contact support" });
-    return;
-  }
-  if (user.approval_status !== "approved") {
-    res.status(403).json({ error: "Account pending approval", approval_status: user.approval_status ?? "pending" });
-    return;
-  }
-  next();
 }
 
 /** Returns true only when the authenticated user IS the target user. */

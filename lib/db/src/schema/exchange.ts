@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, real, boolean } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { geographyPoint } from "./geography";
 
 export const exchangePickupLocationType = pgEnum("exchange_pickup_location_type", [
   "public_place",
@@ -32,6 +33,11 @@ export const exchangeListingsTable = pgTable("exchange_listings", {
   // These are never returned by the Exchange API.
   latitude: real("latitude"),
   longitude: real("longitude"),
+  // PostGIS geography point maintained by the migration trigger. The API
+  // uses this column for production proximity queries so the GiST index can
+  // participate in ST_DWithin; development databases without PostGIS use the
+  // existing bounded Haversine fallback.
+  geog: geographyPoint("geog"),
   status: text("status").notNull().default("active"),
   moderation_status: text("moderation_status").notNull().default("approved"),
   moderation_reason: text("moderation_reason"),
