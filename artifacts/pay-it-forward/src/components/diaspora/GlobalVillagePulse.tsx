@@ -103,7 +103,7 @@ export function GlobalVillagePulse({ navigate }: PulseProps) {
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-teal-300/75">The Global Village</p>
           <h2 className="mt-1 text-lg font-black text-white">Alive from member to Spiral.</h2>
-          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-white/40">Live Hub relationships connect real members, presence, helpers, Stories, requests, Community Pools, neighborhoods, and Spirals. GPS verifies the neighborhood layer privately.</p>
+          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-white/40">Live Hub relationships connect real members, presence, helpers, Moments, requests, Community Pools, neighborhoods, and Spirals. GPS verifies the neighborhood layer privately.</p>
         </div>
         <span className="hidden rounded-full border border-teal-300/20 bg-teal-300/5 px-2.5 py-1 text-[10px] font-semibold text-teal-200 sm:inline-flex">Live pulse</span>
       </div>
@@ -157,9 +157,9 @@ export function GlobalVillagePulse({ navigate }: PulseProps) {
                     <div className="rounded-xl bg-white/[0.035] p-2"><span className="block text-white/30">Live</span><strong className="text-teal-200">{Number(hub.live_user_count ?? 0).toLocaleString()}</strong></div>
                     <div className="rounded-xl bg-white/[0.035] p-2"><span className="block text-white/30">Helping</span><strong className="text-sky-200">{Number(hub.activity?.active_helpers ?? 0).toLocaleString()}</strong></div>
                   </div>
-                  <div className="mt-2 grid grid-cols-4 gap-2 text-[9px] text-white/45"><span>Stories <strong className="text-white/70">{Number(hub.story_count ?? 0).toLocaleString()}</strong></span><span>Requests <strong className="text-white/70">{Number(hub.open_requests ?? 0).toLocaleString()}</strong></span><span>Neighborhoods <strong className="text-white/70">{Number(hub.neighborhood_count ?? 0).toLocaleString()}</strong></span><span>Spirals <strong className="text-white/70">{Number(hub.spiral_count ?? 0).toLocaleString()}</strong></span></div>
+                  <div className="mt-2 grid grid-cols-4 gap-2 text-[9px] text-white/45"><span>Moments <strong className="text-white/70">{Number(hub.story_count ?? 0).toLocaleString()}</strong></span><span>Requests <strong className="text-white/70">{Number(hub.open_requests ?? 0).toLocaleString()}</strong></span><span>Neighborhoods <strong className="text-white/70">{Number(hub.neighborhood_count ?? 0).toLocaleString()}</strong></span><span>Spirals <strong className="text-white/70">{Number(hub.spiral_count ?? 0).toLocaleString()}</strong></span></div>
                   <div className="mt-3 flex items-center justify-between rounded-xl border border-emerald-300/10 bg-emerald-300/[0.035] px-2.5 py-2"><span className="flex items-center gap-1.5 text-[9px] text-white/40"><WalletCards className="h-3 w-3 text-emerald-300/70" />Community Pool</span><strong className="text-[10px] text-emerald-200">${pool.toFixed(2)}</strong></div>
-                  <p className="mt-2 text-[9px] leading-relaxed text-white/25">Metrics come from approved Hub membership/leadership, live GPS presence, published Stories, help requests, Community Pool ledger activity, reviewed neighborhoods, and city Spirals. Proximity is never treated as membership.</p>
+                  <p className="mt-2 text-[9px] leading-relaxed text-white/25">Metrics come from approved Hub membership/leadership, live GPS presence, published Moments, help requests, Community Pool ledger activity, reviewed neighborhoods, and city Spirals. Proximity is never treated as membership.</p>
                 </article>
               );
             })}

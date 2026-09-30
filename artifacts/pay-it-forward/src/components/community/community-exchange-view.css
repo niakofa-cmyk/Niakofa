@@ -1,31 +1,14 @@
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap");
-
 .nia-exchange {
-  --background: 35 40% 97%;
-  --foreground: 222 31% 16%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 31% 16%;
-  --card-border: 32 23% 87%;
-  --border: 32 23% 87%;
-  --input: 32 23% 85%;
-  --muted: 35 28% 93%;
-  --muted-foreground: 219 13% 46%;
-  --primary: 21 92% 52%;
-  --primary-foreground: 0 0% 100%;
-  --accent: 142 38% 93%;
-  --accent-foreground: 155 54% 23%;
-  --ring: 21 92% 52%;
-  --app-font-sans: "Manrope", sans-serif;
-  color: hsl(var(--foreground));
-  font-family: var(--app-font-sans);
+  color: var(--nk-ink, hsl(var(--foreground)));
+  font-family: inherit;
 }
 
 .nia-exchange > header {
-  border-color: hsl(21 72% 76% / .75);
+  border-color: color-mix(in srgb, var(--nk-coral, #ed6b43) 45%, transparent);
   background:
-    radial-gradient(ellipse at 100% 0%, hsl(21 92% 52% / .15), transparent 37%),
-    linear-gradient(135deg, hsl(39 100% 97%), hsl(0 0% 100%) 68%);
-  box-shadow: 0 16px 38px hsl(30 37% 32% / .07);
+    radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--nk-gold, #e7b650) 20%, transparent), transparent 37%),
+    linear-gradient(135deg, var(--nk-paper, #f6f5ed), hsl(var(--card)) 68%);
+  box-shadow: 0 16px 38px color-mix(in srgb, var(--nk-ink, #183d3b) 8%, transparent);
 }
 
 .nia-exchange > header::after {
@@ -33,11 +16,11 @@
   display: block;
   height: 4px;
   margin: 1.5rem -1rem -1rem;
-  background: linear-gradient(90deg, hsl(21 92% 52%) 0 72%, hsl(149 51% 35%) 72%);
+  background: linear-gradient(90deg, var(--nk-teal, #116a60) 0 72%, var(--nk-coral, #ed6b43) 72%);
 }
 
 .nia-exchange > header h1 {
-  font-family: "Space Grotesk", sans-serif;
+  font-family: inherit;
   max-width: 42rem;
   letter-spacing: -.055em;
 }
@@ -51,30 +34,30 @@
 .nia-exchange input:focus-visible,
 .nia-exchange select:focus-visible,
 .nia-exchange textarea:focus-visible {
-  outline: 3px solid hsl(21 92% 52% / .42);
+  outline: 3px solid color-mix(in srgb, var(--nk-gold, #e7b650) 75%, transparent);
   outline-offset: 2px;
 }
 
 .nia-exchange [data-testid^="card-listing-"] {
   min-height: 13rem;
   border-radius: 1.35rem;
-  border-color: hsl(32 23% 87%);
-  box-shadow: 0 8px 22px hsl(30 37% 32% / .045);
+  border-color: hsl(var(--border));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--nk-ink, #183d3b) 5%, transparent);
 }
 
 .nia-exchange [data-testid^="card-listing-"]:hover {
-  border-color: hsl(21 92% 52% / .65);
-  box-shadow: 0 14px 30px hsl(30 37% 32% / .09);
+  border-color: var(--nk-coral, #ed6b43);
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--nk-ink, #183d3b) 10%, transparent);
 }
 
 .nia-exchange [role="tablist"] {
   border-radius: 1rem;
-  background: hsl(0 0% 100%);
+  background: hsl(var(--card));
 }
 
 .nia-exchange [role="tab"][aria-selected="true"] {
-  background: hsl(21 92% 52%);
-  color: white;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
 }
 
 .nia-exchange [role="dialog"][aria-modal="true"] > div.relative {
@@ -82,8 +65,8 @@
 }
 
 .nia-exchange [data-testid="status-exchange-notice"] {
-  border-color: hsl(148 40% 67%);
-  background: hsl(145 45% 95%);
+  border-color: color-mix(in srgb, var(--nk-teal, #116a60) 55%, var(--nk-paper, #f6f5ed));
+  background: color-mix(in srgb, var(--nk-teal, #116a60) 9%, var(--nk-paper, #f6f5ed));
 }
 
 @media (max-width: 640px) {

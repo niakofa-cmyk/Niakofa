@@ -54,15 +54,15 @@ export function CreatorInsightsPanel({ days = 30 }: { days?: number }) {
     <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm" aria-labelledby="creator-watch-insights-title">
       <div className="mb-4">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Creator analytics</p>
-        <h2 id="creator-watch-insights-title" className="mt-1 text-lg font-semibold text-slate-900">Story watch time</h2>
-        <p className="mt-1 text-sm text-slate-500">Daily watch time for all your Stories, including expired ones. Retention requires {data?.retention_minimum_plays ?? 5} plays in the rolling {data?.retention_window_days ?? 90}-day window and {data?.retention_minimum_plays ?? 5} plays in that day’s cohort.</p>
+        <h2 id="creator-watch-insights-title" className="mt-1 text-lg font-semibold text-slate-900">Moment watch time</h2>
+        <p className="mt-1 text-sm text-slate-500">Daily watch time for all your Moments, including expired ones. Retention requires {data?.retention_minimum_plays ?? 5} plays in the rolling {data?.retention_window_days ?? 90}-day window and {data?.retention_minimum_plays ?? 5} plays in that day’s cohort.</p>
       </div>
       {loading && <p className="py-6 text-sm text-slate-500" role="status">Loading your watch insights…</p>}
       {!loading && error && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800" role="alert">{error}</p>}
       {!loading && !error && data && !data.has_data && (
         <div className="rounded-xl bg-slate-50 px-4 py-6 text-center">
           <p className="font-medium text-slate-800">No watch activity yet</p>
-          <p className="mt-1 text-sm text-slate-500">When people watch your published Stories, daily insights will appear here.</p>
+          <p className="mt-1 text-sm text-slate-500">When people watch your published Moments, daily insights will appear here.</p>
         </div>
       )}
       {!loading && !error && data?.has_data && (

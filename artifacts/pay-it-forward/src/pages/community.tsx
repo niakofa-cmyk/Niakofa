@@ -55,8 +55,20 @@ export default function CommunityScreen() {
   }, [requestedSection, search, setLocation]);
 
   const [sparkComposerSignal, setSparkComposerSignal] = useState(0);
+  const [sparkComposerSection, setSparkComposerSection] = useState(normalizedSection);
+  // A bumped signal represents an explicit Create a Spark action. Reset it on
+  // tab changes so returning to Home or Moments cannot reopen the composer.
+  useEffect(() => {
+    setSparkComposerSignal(0);
+  }, [normalizedSection]);
+  const scopedSparkComposerSignal = sparkComposerSection === normalizedSection ? sparkComposerSignal : 0;
 
   const [communitySearch, setCommunitySearch] = useState("");
+  const openSparkComposerInCurrentSection = () => {
+    if (normalizedSection !== "home" && normalizedSection !== "moments") return;
+    setSparkComposerSection(normalizedSection);
+    setSparkComposerSignal((signal) => signal + 1);
+  };
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const hubContextId = useMemo(() => {
@@ -110,7 +122,13 @@ export default function CommunityScreen() {
       active={normalizedSection as CommunityNavKey}
       onNavigate={(key) => setLocation(key === "home" ? "/community" : `/community/${key}`)}
       onRoute={setLocation}
-      onCreate={() => setLocation("/community/moments?composer=1")}
+      onCreate={() => {
+        if (normalizedSection === "home" || normalizedSection === "moments") {
+          openSparkComposerInCurrentSection();
+          return;
+        }
+        setLocation("/community/moments?composer=1");
+      }}
       onSearch={(value) => {
         setCommunitySearch(value);
         if (value.trim() && normalizedSection !== "home") setLocation("/community");
@@ -122,10 +140,10 @@ export default function CommunityScreen() {
           <CommunityHomeView
             hubId={effectiveHubId}
             hubResolved={defaultHubResolved}
-            sparkComposerSignal={sparkComposerSignal}
+            sparkComposerSignal={scopedSparkComposerSignal}
             openSparkId={openSparkId}
             openPostId={openPostId}
-            onOpenSparkComposer={() => setSparkComposerSignal((signal) => signal + 1)}
+            onOpenSparkComposer={openSparkComposerInCurrentSection}
             searchQuery={communitySearch}
           />
         )}
@@ -133,7 +151,7 @@ export default function CommunityScreen() {
           <CommunityMomentsView
             hubId={effectiveHubId}
             openSparkId={openSparkId}
-            openComposerSignal={openMomentsComposerSignal}
+            openComposerSignal={openMomentsComposerSignal + scopedSparkComposerSignal}
           />
         )}
         {normalizedSection === "people" && <CommunityPeopleView hubId={effectiveHubId} />}

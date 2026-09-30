@@ -931,7 +931,7 @@ export function CommunityMomentsExperience({
         >
           <span>
             <span className="block text-sm font-bold">Creator insights</span>
-            <span className="mt-0.5 block text-xs text-muted-foreground">Daily Story watch time and completion retention</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">Daily Moment watch time and completion retention</span>
           </span>
           {creatorInsightsOpen
             ? <ArrowUp className="h-4 w-4 shrink-0" aria-hidden="true" />

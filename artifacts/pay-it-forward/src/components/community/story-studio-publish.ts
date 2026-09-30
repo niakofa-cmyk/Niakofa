@@ -79,7 +79,7 @@ export class CameraClipReelPendingError extends Error {
   readonly storyId: number;
 
   constructor(storyId: number, message: string) {
-    super(`Story posted, but stitching is pending. ${message}`);
+    super(`Spark posted, but stitching is pending. ${message}`);
     this.name = "CameraClipReelPendingError";
     this.storyId = storyId;
   }
@@ -116,7 +116,7 @@ export async function getCameraClipReelStatus(storyId: number, signal?: AbortSig
   durationMs: number | null;
   playbackGrantUrl: string;
 }> {
-  if (!validId(storyId)) throw new Error("Story not found.");
+  if (!validId(storyId)) throw new Error("Spark not found.");
   const response = await fetch(`/api/community/stories/${storyId}/moment-composition`, {
     headers: authHeaders(),
     credentials: "same-origin",
@@ -316,7 +316,7 @@ export async function publishStudioMoment(input: {
   if (!response.ok) throw new Error(result.error || "Could not publish your Spark. Your draft is saved.");
   const storyId = result.story?.id;
   if (input.cameraClipReel && !validId(storyId ?? 0)) {
-    throw new Error("Story may have posted, but its ID could not be confirmed. Retry with the saved publish identity.");
+    throw new Error("Spark may have been published, but its ID could not be confirmed. Retry with the saved publish identity.");
   }
   if (input.cameraClipReel) {
     try {

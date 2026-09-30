@@ -55,7 +55,7 @@ import {
   sendStoryContextMessage,
 } from "@/lib/community-story-client";
 import {
-  StoryComposerChrome,
+  SparkComposerChrome,
   StoryVisualRail,
   type StoryVisualAuthor,
   type StoryVisualTool,
@@ -109,7 +109,7 @@ export function CommunityStoryRail({
   openStoryId?: number | null;
   compact?: boolean;
 }) {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { currentUser } = useAppContext();
   const userId = currentUser?.id ?? null;
   const [stories, setStories] = useState<CommunityStory[]>([]);
@@ -815,6 +815,12 @@ export function CommunityStoryRail({
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     void queueDraftSaveRef.current().catch(() => {});
     setComposerOpen(false);
+    const query = new URLSearchParams(window.location.search);
+    if (location === "/community/moments" && query.getAll("composer").length === 1 && query.get("composer") === "1") {
+      query.delete("composer");
+      const remainingQuery = query.toString();
+      navigate(`${location}${remainingQuery ? `?${remainingQuery}` : ""}`);
+    }
   };
 
   useEffect(() => {
@@ -1075,7 +1081,7 @@ export function CommunityStoryRail({
         if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, pendingSnapshot);
         draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => saveStudioDraft(pendingSnapshot));
         void draftQueueRef.current.catch((saveReason: unknown) => {
-          setDraftError(saveReason instanceof Error ? saveReason.message : "The posted Story's stitching retry could not be saved on this device.");
+          setDraftError(saveReason instanceof Error ? saveReason.message : "The posted Spark's stitching retry could not be saved on this device.");
         });
       } else {
         setError(reason instanceof Error && reason.name === "AbortError"
@@ -1094,7 +1100,7 @@ export function CommunityStoryRail({
     if (!pendingCameraReelStoryId || !validCameraClipReel || !userId || publishing) return;
     const cameraAssetIds = publishAssetIdsRef.current.slice(0, selectedFiles.length);
     if (cameraAssetIds.length !== selectedFiles.length) {
-      setError("Story posted but stitching is pending. The saved ordered camera assets are incomplete; keep this draft and try again.");
+      setError("Spark posted but stitching is pending. The saved ordered camera assets are incomplete; keep this draft and try again.");
       return;
     }
     const controller = new AbortController();
@@ -1113,7 +1119,7 @@ export function CommunityStoryRail({
       setRefreshNonce((value) => value + 1);
     } catch (reason) {
       const detail = reason instanceof Error ? reason.message : "Retry stitching from the saved Studio draft.";
-      setError(detail.startsWith("Story posted") ? detail : `Story posted, but stitching is pending. ${detail}`);
+      setError(detail.startsWith("Spark posted") ? detail : `Spark posted, but stitching is pending. ${detail}`);
     } finally {
       publishControllerRef.current = null;
       setPublishing(false);
@@ -1410,7 +1416,7 @@ export function CommunityStoryRail({
           <input ref={galleryInput} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={onFileChange} aria-label="Choose Spark media" disabled={trimming} />
           <div className="nia-story-composer-shell">
             {studioStep === "source" && exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-slate-900 px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
-            <StoryComposerChrome
+            <SparkComposerChrome
               step={studioStep}
               onStep={(next) => { setStudioStep(next); setTool(null); }}
               canContinue={Boolean(caption.trim() || gallerySelection.length)}
@@ -1453,8 +1459,8 @@ export function CommunityStoryRail({
                 </div>
                 {draftError && <p role="alert" className="mb-2 rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-xs text-amber-100">{draftError} Keep this tab open or try editing again to save.</p>}
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
-                {validCameraClipReel && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">These camera-recorded clips will be stitched into one video frame after the Story posts. Choosing or changing media clears this camera-only marker.</p>}
-                {pendingCameraReelStoryId !== null && <button type="button" onClick={() => void retryCameraClipStitching()} disabled={publishing || !validCameraClipReel} className="mb-3 min-h-10 rounded-xl border border-amber-300/50 px-4 text-xs font-bold text-amber-100 disabled:opacity-50" data-testid="button-retry-camera-reel">Retry stitching — Story already posted</button>}
+                {validCameraClipReel && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">These camera-recorded clips will be stitched into one Spark video after publishing. Choosing or changing media clears this camera-only marker.</p>}
+                {pendingCameraReelStoryId !== null && <button type="button" onClick={() => void retryCameraClipStitching()} disabled={publishing || !validCameraClipReel} className="mb-3 min-h-10 rounded-xl border border-amber-300/50 px-4 text-xs font-bold text-amber-100 disabled:opacity-50" data-testid="button-retry-camera-reel">Retry stitching — Spark already posted</button>}
                 {publishing && publishStatus && <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs"><p>{publishStatus}{publishProgress ? ` ${publishProgress}%` : ""}</p>{publishProgress > 0 && <progress aria-label="Spark upload progress" value={publishProgress} max={100} className="mt-2 w-full" />}<button type="button" className="mt-2 min-h-10 rounded-lg border border-white/20 px-3 font-bold" onClick={() => publishControllerRef.current?.abort()}>Cancel upload</button></div>}
                 {studioStep === "destination" ? <>
                   <div className="nia-story-destination-intro"><p className="nia-story-kicker">The final step</p><h2>Where should<br /><em>this Spark land?</em></h2><p>Choose who gets to see your moment before it goes live.</p></div>
@@ -1701,12 +1707,12 @@ export function CommunityStoryRail({
                    {exchangeListingId && <p role="status" className="text-[11px] leading-4 text-amber-100">Moment tags and attachment descriptions are not sent to Exchange Sparks. Clear these fields or unlink the listing before publishing.</p>}
                  </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="text-[10px] leading-relaxed text-white/55">Original audio is preserved. Apply trim to replace the clip before upload; visual effects remain preview-only. Text and stickers are saved as Story overlays.</p>
+                  <p className="text-[10px] leading-relaxed text-white/55">Original audio is preserved. Apply trim to replace the clip before upload; visual effects remain preview-only. Text and stickers stay with your Spark.</p>
                   {files.length > 0 && <button type="button" disabled={trimming} onClick={() => { setFiles([]); setGallerySelection([]); setCameraClipReelMarker(null); setPendingCameraReelStoryId(null); setMomentAccessibility((current) => ({ ...current, momentAltTexts: {}, momentCaptionsVtt: {} })); setTrimPreview({}); setCoverTimes({}); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
                 </div>
                 </>}
               </div>
-            </StoryComposerChrome>
+            </SparkComposerChrome>
           </div>
         </div>
       )}

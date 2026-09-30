@@ -132,13 +132,22 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(exchange, /href="\/community\/moments\?composer=1"/);
     assert.match(exchange, /Create in Studio/);
     assert.match(communityPage, /composerValues\.length === 1 && composerValues\[0\] === "1"/);
-    assert.match(communityPage, /openComposerSignal=\{openMomentsComposerSignal\}/);
+    assert.match(communityPage, /openComposerSignal=\{openMomentsComposerSignal \+ scopedSparkComposerSignal\}/);
     assert.match(momentsView, /openComposerSignal=\{openComposerSignal\}/);
     assert.match(moments, /openComposerSignal=\{openComposerSignal\}/);
     assert.match(exchangeComposer, /listExchangeSparkDrafts\(controller\.signal\)/);
     assert.match(exchangeComposer, /if \(!draftEntryVisible\) return null/);
     assert.match(exchangeComposer, /Resume saved video draft/);
     assert.match(exchangeView, /Post to Exchange/);
+  });
+
+  test("Create a Spark uses a tab-scoped signal and clears one-shot composer links on close", () => {
+    assert.match(communityPage, /if \(normalizedSection === "home" \|\| normalizedSection === "moments"\)/);
+    assert.match(communityPage, /setSparkComposerSection\(normalizedSection\)/);
+    assert.match(communityPage, /sparkComposerSection === normalizedSection \? sparkComposerSignal : 0/);
+    assert.match(communityPage, /useEffect\(\(\) => \{\s*setSparkComposerSignal\(0\);\s*\}, \[normalizedSection\]\)/);
+    assert.match(studio, /location === "\/community\/moments"[\s\S]*query\.getAll\("composer"\)\.length === 1/);
+    assert.match(studio, /query\.delete\("composer"\)/);
   });
 
   test("Studio publishes processed staged assets while preserving the legacy uploader export", () => {

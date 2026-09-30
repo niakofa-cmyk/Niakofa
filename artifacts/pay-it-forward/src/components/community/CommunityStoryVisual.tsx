@@ -250,7 +250,7 @@ export function StoryViewerChrome({
   );
 }
 
-export function StoryComposerChrome({
+export function SparkComposerChrome({
   preview,
   tools,
   activeTool,
