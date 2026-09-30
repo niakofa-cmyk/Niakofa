@@ -22,6 +22,14 @@ describe("Community Moment moderation contracts", () => {
     expect(interactionRoutes).toContain("const story = await readableStory(id, req.authenticatedUserId!)");
   });
 
+  it("keeps Story mention notifications visibility-scoped and avoids global metadata broadcasts", () => {
+    expect(storyRoutes).toContain("filterStoryMentionRecipientsByVisibility(");
+    expect(storyRoutes).toContain("viewerCanReadStory(recipientUserId, result.story)");
+    expect(storyRoutes).toContain("createMessageNotification({");
+    expect(storyRoutes).not.toContain("community_story_created");
+    expect(storyRoutes).not.toContain("broadcast(");
+  });
+
   it("keeps mute preferences private and reversible", () => {
     expect(storyRoutes).toContain('router.get("/community/stories/muted-authors", requireAuth, requireApproved');
     expect(storyRoutes).toContain('router.put("/community/stories/authors/:id/mute", requireAuth, requireApproved');

@@ -3,6 +3,7 @@ import {
   canReadCommunityStoryAudience,
   canReadExchangeLinkedStory,
   canWriteStoryMediaContext,
+  filterStoryMentionRecipientsByVisibility,
   isDuplicateExchangeStoryVideoSession,
   type ExchangeStoryVisibilityPolicyInput,
 } from "../lib/community-story-policy";
@@ -70,6 +71,37 @@ describe("community story audience matching", () => {
     expect(canReadCommunityStoryAudience("community", null, 7)).toBe(false);
     expect(canReadCommunityStoryAudience("community", 7, null)).toBe(false);
     expect(canReadCommunityStoryAudience("hub", null, null)).toBe(false);
+  });
+});
+
+describe("Story mention notification visibility", () => {
+  it("excludes the author and recipients who cannot read the Story", async () => {
+    const candidates = [{ id: 11 }, { id: 22 }, { id: 33 }];
+    const checked: number[] = [];
+    const recipients = await filterStoryMentionRecipientsByVisibility(
+      candidates,
+      11,
+      async (viewerUserId) => {
+        checked.push(viewerUserId);
+        return viewerUserId === 22;
+      },
+    );
+
+    expect([...checked].sort()).toEqual([22, 33]);
+    expect(recipients).toEqual([{ id: 22 }]);
+  });
+
+  it("fails closed for a recipient whose Story visibility check errors", async () => {
+    const recipients = await filterStoryMentionRecipientsByVisibility(
+      [{ id: 22 }, { id: 33 }],
+      11,
+      async (viewerUserId) => {
+        if (viewerUserId === 22) throw new Error("visibility unavailable");
+        return true;
+      },
+    );
+
+    expect(recipients).toEqual([{ id: 33 }]);
   });
 });
 

@@ -21,7 +21,6 @@ import { communityPostLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
 import { deleteAsset, deleteAssetStrict, putAsset, streamAssetRange, streamAssetSameOrigin } from "../lib/storage";
 import { hasExpectedSignature, inspectMedia } from "../lib/media-validation";
-import { broadcast } from "../lib/ws-hub";
 import { createMessageNotification } from "../lib/message-notifications";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -33,6 +32,7 @@ import { logger } from "../lib/logger";
 import {
   canReadCommunityStoryAudience,
   canReadExchangeLinkedStory,
+  filterStoryMentionRecipientsByVisibility,
   isLinkedStoryVideoAssetReady,
   storyVideoStreamContentType,
 } from "../lib/community-story-policy";
@@ -1456,17 +1456,31 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       }
     }
     if (result.story.status === "published") {
-      broadcast({ type: "community_story_created", payload: { story_id: result.story.id, author_user_id: userId, audience: result.story.audience, hub_id: result.story.hub_id } });
-      const [author] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-      await Promise.all(mentionUsers.filter((user) => user.id !== userId).map((user) => createMessageNotification({
-        userId: user.id,
-        actorUserId: userId,
-        type: "story_mention",
-        title: "You were mentioned in a Story",
-        body: `${author?.name ?? "A neighbor"} mentioned you in a Community Story.`,
-         actionUrl: `/community?storyId=${result.story.id}`,
-         metadata: { story_id: result.story.id, mention_user_id: user.id },
-      })));
+      // Story audiences are community/Hub-scoped; a global event would disclose
+      // private Story IDs and author/Hub metadata to unrelated connected users.
+      try {
+        const visibleMentionUsers = await filterStoryMentionRecipientsByVisibility(
+          mentionUsers,
+          userId,
+          (recipientUserId) => viewerCanReadStory(recipientUserId, result.story),
+        );
+        if (visibleMentionUsers.length) {
+          const [author] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+          await Promise.all(visibleMentionUsers.map((user) => createMessageNotification({
+            userId: user.id,
+            actorUserId: userId,
+            type: "story_mention",
+            title: "You were mentioned in a Story",
+            body: `${author?.name ?? "A neighbor"} mentioned you in a Community Story.`,
+            actionUrl: `/community?storyId=${result.story.id}`,
+            metadata: { story_id: result.story.id, mention_user_id: user.id },
+          })));
+        }
+      } catch (error) {
+        // Publication already committed. Notification failure must not trigger
+        // upload-object cleanup for a Story whose media is now live.
+        logger.warn({ err: error, storyId: result.story.id }, "community-story mention notification dispatch failed after publish");
+      }
     }
     return res.status(201).json({ story: { id: result.story.id, status: result.story.status, expires_at: result.story.expires_at.toISOString() } });
   } catch (error) {

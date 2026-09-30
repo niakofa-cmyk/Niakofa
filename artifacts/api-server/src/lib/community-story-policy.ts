@@ -20,6 +20,23 @@ export function canReadCommunityStoryAudience(
   return audience === "community" && viewerCommunityId === storyCommunityId;
 }
 
+export async function filterStoryMentionRecipientsByVisibility<T extends { id: number }>(
+  candidates: readonly T[],
+  authorUserId: number,
+  canReadStory: (viewerUserId: number) => Promise<boolean>,
+): Promise<T[]> {
+  const recipients = candidates.filter((candidate) => candidate.id !== authorUserId);
+  const visibility = await Promise.all(recipients.map(async (candidate) => {
+    try {
+      return await canReadStory(candidate.id);
+    } catch {
+      // Visibility lookup failures must not disclose a Story through a notification.
+      return false;
+    }
+  }));
+  return recipients.filter((_candidate, index) => visibility[index]);
+}
+
 export type StoryMediaWritePolicyInput = {
   userId: number;
   authorUserId: number;

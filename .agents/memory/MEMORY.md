@@ -42,6 +42,7 @@
 - [Production fail-closed boundaries](niakofa-production-fail-closed.md) — production CORS and migration startup must fail closed; development may retain explicit fallbacks.
 - [Production queue boundary](niakofa-production-queues.md) — durable Redis-backed workers are required before production API startup; interval fallbacks remain development-only.
 - [Railway production database boundary](railway-production-db-boundary.md) — Railway production is external to Replit; use the dedicated PostGIS target and a transient approved operator path.
+- [Railway variable redaction](railway-variable-redaction.md) — variable presence does not reveal a production flag value when the Railway OAuth inventory redacts values; use safe readiness signals.
 - [Uploaded reference security](uploaded-reference-security.md) — scan imported archives for credential-shaped values before staging or syncing them.
 - [Workspace dependency linking](niakofa-workspace-dependency-linking.md) — this checkout can lose pnpm worker/bin links during managed installs; standalone checks may need isolated cached Node tooling.
 - [OpenAPI contract codegen](niakofa-openapi-codegen.md) — refresh generated server/client types in the same commit whenever the contract source changes.
