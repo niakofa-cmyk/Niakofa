@@ -1,141 +1,302 @@
 #!/usr/bin/env node
 /**
- * Verify the production S3-compatible bucket before enabling media.
- *
- * Required: STORAGE_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
- * Optional: STORAGE_ENDPOINT, STORAGE_REGION
- *
- * Exit 2 means STORAGE_BUCKET is absent and local-disk mode is still the
- * expected safe state. The script never enables MEDIA_PLATFORM_V21.
- *
- * Cleanup is attempted even when PUT or HEAD reports an error. S3-compatible
- * providers can accept a write before a client-side timeout, so a failed
- * probe must not intentionally leave its random object behind.
+ * One-off certification of production object storage. This never changes any
+ * application flags. Provider operations and cleanup are deliberately bounded.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 
-const bucket = (process.env.STORAGE_BUCKET ?? "").trim();
-const endpoint = (process.env.STORAGE_ENDPOINT ?? "").trim() || undefined;
-const region =
-  (process.env.STORAGE_REGION ?? "").trim() ||
-  (endpoint ? "auto" : "us-east-1");
-const accessKey = (process.env.AWS_ACCESS_KEY_ID ?? "").trim();
-const secretKey = (process.env.AWS_SECRET_ACCESS_KEY ?? "").trim();
+const OPERATION_TIMEOUT_MS = 6_000;
+const CLEANUP_ATTEMPTS = 3;
+const PROBE_BODY_MAX_BYTES = 256;
 
-const fail = (message, code = 1) => {
-  process.stderr.write(`verify-object-storage: FAIL — ${message}\n`);
-  process.exitCode = code;
-};
+function statusOf(error) {
+  return error?.$metadata?.httpStatusCode;
+}
 
-async function main() {
-  if (!bucket) {
-    fail(
-      "STORAGE_BUCKET is missing; production remains local-disk until a real bucket is provisioned.",
-      2,
-    );
-    return;
-  }
-  if (!accessKey || !secretKey) {
-    fail("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required.");
-    return;
-  }
-
-  const { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } =
-    await import("@aws-sdk/client-s3");
-
-  const client = new S3Client({
-    region,
-    credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
-    ...(endpoint ? { endpoint, forcePathStyle: false } : {}),
-  });
-
-  const key = `media-assets/_probe/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.txt`;
-  const body = Buffer.from(
-    `niakofa storage probe ${new Date().toISOString()} ${randomUUID()}\n`,
-    "utf8",
+function isExplicitMissing(error) {
+  return (
+    statusOf(error) === 404 &&
+    (error?.name === "NotFound" || error?.name === "NoSuchKey")
   );
-  let cleanupAttempts = 0;
-  let cleanupSucceeded = false;
+}
 
-  const cleanup = async () => {
-    while (cleanupAttempts < 3 && !cleanupSucceeded) {
-      cleanupAttempts += 1;
-      try {
-        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-        cleanupSucceeded = true;
-      } catch {
-        // Retry a bounded number of times; never log credentials or URLs.
-      }
-    }
-  };
+async function withTimeout(operation, label, timeoutMs) {
+  const controller = new AbortController();
+  let timer;
+  try {
+    return await Promise.race([
+      operation(controller.signal),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error(`${label} timed out`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-  const verifyDeleted = async () => {
-    try {
-      await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-    } catch (error) {
-      const status = error?.$metadata?.httpStatusCode;
-      if (status === 404 && (error?.name === "NotFound" || error?.name === "NoSuchKey")) {
-        // Only the provider's explicit missing-object response proves deletion.
-        return;
+async function readBoundedBody(body, byteLimit) {
+  if (body == null) throw new Error("GET returned no body");
+  if (body instanceof Uint8Array) {
+    if (body.byteLength > byteLimit) throw new Error("GET body exceeded limit");
+    return Buffer.from(body);
+  }
+  if (typeof body[Symbol.asyncIterator] === "function") {
+    const chunks = [];
+    let length = 0;
+    for await (const chunk of body) {
+      const bytes = Buffer.from(chunk);
+      length += bytes.length;
+      if (length > byteLimit) {
+        body.destroy?.();
+        throw new Error("GET body exceeded limit");
       }
-      throw new Error(
-        `DELETE verification inconclusive: expected NotFound/NoSuchKey (404), got ${error?.name ?? "unknown"} (${status ?? "no status"})`,
-      );
+      chunks.push(bytes);
     }
-    throw new Error("DELETE verification failed: object is still readable");
+    return Buffer.concat(chunks, length);
+  }
+  if (typeof body.transformToByteArray === "function") {
+    const bytes = await body.transformToByteArray();
+    if (bytes.byteLength > byteLimit) throw new Error("GET body exceeded limit");
+    return Buffer.from(bytes);
+  }
+  throw new Error("GET returned an unsupported body");
+}
+
+function probeError(message, cleanupComplete, attempts, key) {
+  const error = new Error(message);
+  error.cleanupComplete = cleanupComplete;
+  error.cleanupAttempts = attempts;
+  error.safeForLogging = true;
+  if (!cleanupComplete) error.manualCleanupKey = key;
+  return error;
+}
+
+/**
+ * Injected command constructors make this exact certification flow testable
+ * without credentials, network access, or a real bucket.
+ */
+export async function certifyObjectStorage({
+  client,
+  commands,
+  bucket,
+  key = `media-assets/_probe/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.txt`,
+  body = Buffer.from(`storage probe ${randomUUID()}\n`, "utf8"),
+  timeoutMs = OPERATION_TIMEOUT_MS,
+}) {
+  const expectedHash = createHash("sha256").update(body).digest("hex");
+  let primaryFailure;
+  let currentOperation = "storage";
+  let putAttempted = false;
+  let putAcknowledged = false;
+
+  const send = (Command, input, operation) => {
+    currentOperation = operation;
+    return withTimeout(
+      (abortSignal) => client.send(new Command(input), { abortSignal }),
+      operation,
+      timeoutMs,
+    );
   };
 
   try {
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: body,
-        ContentType: "text/plain",
-      }),
+    putAttempted = true;
+    await send(
+      commands.PutObjectCommand,
+      { Bucket: bucket, Key: key, Body: body, ContentType: "text/plain" },
+      "PUT",
     );
-    const head = await client.send(
-      new HeadObjectCommand({ Bucket: bucket, Key: key }),
+    putAcknowledged = true;
+
+    const head = await send(
+      commands.HeadObjectCommand,
+      { Bucket: bucket, Key: key },
+      "HEAD",
     );
     if (Number(head.ContentLength ?? -1) !== body.length) {
-      throw new Error(
-        `HEAD size mismatch: expected ${body.length}, got ${head.ContentLength ?? "unknown"}`,
-      );
+      throw new Error(`HEAD size mismatch (expected ${body.length} bytes)`);
     }
-    await cleanup();
-    if (!cleanupSucceeded) {
-      throw new Error(`DELETE failed after ${cleanupAttempts} attempts`);
-    }
-    await verifyDeleted();
 
+    const response = await send(
+      commands.GetObjectCommand,
+      { Bucket: bucket, Key: key },
+      "GET",
+    );
+    const received = await withTimeout(
+      (abortSignal) => {
+        abortSignal.addEventListener(
+          "abort",
+          () => response.Body?.destroy?.(),
+          { once: true },
+        );
+        return readBoundedBody(response.Body, PROBE_BODY_MAX_BYTES);
+      },
+      "GET body",
+      timeoutMs,
+    );
+    if (!received.equals(body)) throw new Error("GET body mismatch");
+    const receivedHash = createHash("sha256").update(received).digest("hex");
+    if (receivedHash !== expectedHash) throw new Error("GET SHA-256 mismatch");
+  } catch (error) {
+    if (putAttempted && !putAcknowledged && currentOperation === "PUT") {
+      // A client-side failure cannot establish whether a remote PUT committed.
+      primaryFailure = "PUT outcome ambiguous";
+    } else {
+      const message = error instanceof Error ? error.message : "";
+      const status = statusOf(error);
+      primaryFailure =
+        /^(?:PUT|HEAD|GET|GET body) timed out$/.test(message) ||
+        /^HEAD size mismatch \(expected \d+ bytes\)$/.test(message) ||
+        /^GET (?:body|SHA-256) mismatch$/.test(message) ||
+        /^GET body exceeded limit$/.test(message)
+          ? message
+          : `${currentOperation} failed (${status ? `provider returned HTTP ${status}` : "provider operation failed"})`;
+    }
+  }
+
+  // Always attempt cleanup, including after an ambiguous PUT timeout/error:
+  // the provider may have committed the object despite the client error.
+  let deletionProven = false;
+  let cleanupAttempts = 0;
+  for (; cleanupAttempts < CLEANUP_ATTEMPTS && !deletionProven; cleanupAttempts += 1) {
+    try {
+      await send(
+        commands.DeleteObjectCommand,
+        { Bucket: bucket, Key: key },
+        "DELETE",
+      );
+    } catch {
+      // A failed DELETE response is ambiguous; the following HEAD decides.
+    }
+    try {
+      await send(
+        commands.HeadObjectCommand,
+        { Bucket: bucket, Key: key },
+        "DELETE verification HEAD",
+      );
+    } catch (error) {
+      if (isExplicitMissing(error)) deletionProven = true;
+    }
+  }
+
+  if (putAttempted && !putAcknowledged) {
+    throw probeError(
+      `CLEANUP INCOMPLETE: PUT outcome ambiguous; current absence cannot rule out a late commit after ${cleanupAttempts} cleanup attempts. Reconcile this key manually${primaryFailure ? ` (${primaryFailure})` : ""}`,
+      false,
+      cleanupAttempts,
+      key,
+    );
+  }
+  if (!deletionProven) {
+    const cause = primaryFailure ? `; probe failed: ${primaryFailure}` : "";
+    throw probeError(
+      `CLEANUP INCOMPLETE after ${cleanupAttempts} bounded attempts${cause}`,
+      false,
+      cleanupAttempts,
+      key,
+    );
+  }
+  if (primaryFailure) {
+    throw probeError(
+      `${primaryFailure}; cleanup verified absent`,
+      true,
+      cleanupAttempts,
+      key,
+    );
+  }
+
+  return {
+    ok: true,
+    probe: "put-head-get-delete",
+    bytes: body.length,
+    sha256: expectedHash,
+    deleted: true,
+    cleanup_attempts: cleanupAttempts,
+    media_platform_flag_unchanged: true,
+  };
+}
+
+async function main() {
+  const bucket = (process.env.STORAGE_BUCKET ?? "").trim();
+  const endpoint = (process.env.STORAGE_ENDPOINT ?? "").trim() || undefined;
+  const region =
+    (process.env.STORAGE_REGION ?? "").trim() ||
+    (endpoint ? "auto" : "us-east-1");
+  const accessKey = (process.env.AWS_ACCESS_KEY_ID ?? "").trim();
+  const secretKey = (process.env.AWS_SECRET_ACCESS_KEY ?? "").trim();
+
+  if (!bucket) {
+    process.stderr.write(
+      "verify-object-storage: FAIL — STORAGE_BUCKET is missing; local-disk mode remains the safe state.\n",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  if (!accessKey || !secretKey) {
+    process.stderr.write(
+      "verify-object-storage: FAIL — AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required.\n",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  let client;
+  try {
+    const {
+      S3Client,
+      PutObjectCommand,
+      HeadObjectCommand,
+      GetObjectCommand,
+      DeleteObjectCommand,
+    } = await import("@aws-sdk/client-s3");
+    client = new S3Client({
+      region,
+      credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
+      maxAttempts: 1,
+      ...(endpoint ? { endpoint, forcePathStyle: false } : {}),
+    });
+
+    const result = await certifyObjectStorage({
+      client,
+      bucket,
+      commands: {
+        PutObjectCommand,
+        HeadObjectCommand,
+        GetObjectCommand,
+        DeleteObjectCommand,
+      },
+    });
     process.stdout.write(
       JSON.stringify(
         {
-          ok: true,
+          ...result,
           backend: endpoint ? "s3-compatible" : "aws-s3",
-          bucket,
-          region,
-          endpoint: endpoint ?? null,
-          probe: "put-head-delete",
-          key,
-          bytes: body.length,
-          deleted: true,
-          cleanup_attempts: cleanupAttempts,
-          media_platform_flag_unchanged: true,
         },
         null,
         2,
       ) + "\n",
     );
   } catch (error) {
-    await cleanup();
-    const primaryError = error instanceof Error ? error.message : String(error);
-    const cleanupSuffix = cleanupSucceeded
-      ? ""
-      : `; cleanup failed after ${cleanupAttempts} attempts`;
-    fail(`${primaryError}${cleanupSuffix}`);
+    const message = error?.safeForLogging
+      ? error.message
+      : "storage client initialization or certification failed";
+    process.stderr.write(`verify-object-storage: FAIL — ${message}\n`);
+    if (error?.manualCleanupKey) {
+      process.stderr.write(
+        `CLEANUP INCOMPLETE — manual cleanup may be required for opaque key: ${error.manualCleanupKey}\n`,
+      );
+    }
+    process.exitCode = 1;
+  } finally {
+    client?.destroy();
   }
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

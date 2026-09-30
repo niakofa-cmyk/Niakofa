@@ -259,7 +259,15 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
 
       const readiness = await preflight.get("/api/readiness");
       expect(readiness.ok(), "Readiness endpoint must be healthy before any production write.").toBeTruthy();
-      expect((await readiness.json() as { ready?: boolean }).ready).toBe(true);
+      const readinessBody = await readiness.json() as {
+        ready?: boolean;
+        dependencies?: { media_worker?: { required?: boolean; status?: string } };
+        required?: { media_worker?: boolean };
+      };
+      expect(readinessBody.ready).toBe(true);
+      expect(readinessBody.dependencies?.media_worker?.required, "V21 readiness must require the media worker before any production write.").toBe(true);
+      expect(readinessBody.dependencies?.media_worker?.status, "The media worker's bounded BullMQ readiness check must pass before any production write.").toBe("ready");
+      expect(readinessBody.required?.media_worker, "The aggregate readiness contract must mark the media worker required.").toBe(true);
 
       const version = await preflight.get("/api/version");
       expect(version.ok(), "Version endpoint must be available before any production write.").toBeTruthy();

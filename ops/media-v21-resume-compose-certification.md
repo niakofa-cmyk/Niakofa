@@ -13,8 +13,13 @@ Community where even that temporary visibility is inappropriate.
 - The V21 production feature flag must already be deliberately activated.
   The spec checks `/api/healthz` for `media_platform_flag`,
   `cloud_configured`, and `credentials_present`, checks `/api/readiness`, and
+  checks that readiness explicitly requires the `media-processing` worker and
+  reports its bounded BullMQ `waitUntilReady()` check successful. It also
   checks `/api/version` against the exact full `EXPECTED_COMMIT` before its
   first write. An inactive flag fails preflight; the test does not enable it.
+  With V21 enabled, API readiness fails closed if that worker is missing,
+  cannot establish its initial Redis connection, or reports a connection
+  error/closure; Redis configuration alone is not sufficient.
 - `BASE_URL` must be the deployed HTTPS origin, with no path, query, fragment,
   username, or password. `EXPECTED_COMMIT` must be the full 40-character
   served release commit.
@@ -76,3 +81,10 @@ new upload-asset ID or a persistent infrastructure/storage failure can prevent
 automated cleanup from proving completion. The acceptance spec stops and
 reports cleanup uncertainty rather than claiming success. Do not start a run
 unless an operator is available to resolve that exceptional case.
+
+The readiness worker status comes from the API's in-process worker registry.
+It is a BullMQ registration/Redis-connectivity signal: it proves initial
+`waitUntilReady()` succeeded and tracks BullMQ error, close, and reconnect
+events, but it is not proof that a job was consumed or successfully processed.
+The acceptance flow separately verifies completed media status for both
+uploads and successful composition before it passes.

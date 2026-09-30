@@ -84,6 +84,12 @@ export function workerNoRedis(name: string, label = name) {
   registry.set(name, { ...entry, status: "no_redis", startedAt: undefined });
 }
 
+/** Call when an established worker's connection closes or it is shut down. */
+export function workerStopped(name: string, label = name) {
+  const entry = ensureEntry(name, label, false);
+  registry.set(name, { ...entry, status: "stopped", startedAt: undefined });
+}
+
 /** Call when a worker threw at startup or crashed. */
 export function workerFailed(name: string, label = name, error: unknown) {
   const entry = ensureEntry(name, label, false);

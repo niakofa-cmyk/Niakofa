@@ -180,13 +180,18 @@ server.listen(port, async () => {
       workerFailed("cleanup-worker", "Cleanup Worker", err);
     });
      if (isMediaPlatformV21Enabled()) {
-       const mediaWorker = startMediaProcessWorker();
-       if (mediaWorker) {
-         workerStarted("media-processing", "Universal Media Processing", true);
-         const republished = await requeueStaleMediaAssets();
-         if (republished > 0) logger.info({ republished }, "media-processing: stale assets republished");
+        try {
+          const mediaWorker = await startMediaProcessWorker();
+          if (mediaWorker) {
+            const republished = await requeueStaleMediaAssets();
+            if (republished > 0) logger.info({ republished }, "media-processing: stale assets republished");
+          } else {
+            workerNoRedis("media-processing", "Universal Media Processing");
+          }
+        } catch (err) {
+          workerFailed("media-processing", "Universal Media Processing", err);
+          logger.error({ err }, "media-processing: worker failed readiness; V21 processing remains unavailable");
        }
-       else workerNoRedis("media-processing", "Universal Media Processing");
      }
     logger.info("bullmq: all workers started");
   } else {

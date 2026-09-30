@@ -20,6 +20,13 @@ import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib
 import { logger } from "../lib/logger";
 import { assertSupportedMediaJob, isMediaPlatformV21Enabled, isMomentMusicAsset, mediaJobsForType } from "../lib/media-platform";
 import { trackWorker } from "../lib/worker-lifecycle";
+import { workerFailed, workerStarted, workerStopped } from "../lib/worker-registry";
+import {
+  monitorMediaWorker,
+  type MediaWorkerBlockingConnection,
+  type MediaWorkerLifecycleEmitter,
+  type MediaWorkerStartup,
+} from "../lib/media-worker-lifecycle";
 import { randomUUID } from "node:crypto";
 import { getMediaToolPaths } from "../lib/mediaCapabilities";
 import {
@@ -1040,15 +1047,36 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
   }
 }
 
-export function startMediaProcessWorker(): Worker<MediaJobData> | null {
+export async function startMediaProcessWorker(): Promise<Worker<MediaJobData> | null> {
   const connection = getRedisConnection();
   if (!connection) return null;
   const worker = new Worker<MediaJobData>(QUEUE.MEDIA_PROCESSING, processMediaJob, {
     connection,
     concurrency: 1,
   });
+  const tracked = trackWorker(worker);
+  if (!tracked) return null;
+  const blockingConnection = (tracked as unknown as {
+    blockingConnection?: MediaWorkerBlockingConnection;
+  }).blockingConnection;
+  if (!blockingConnection || typeof blockingConnection.on !== "function") {
+    await tracked.close(true).catch(() => undefined);
+    throw new Error("BullMQ worker blocking connection lifecycle is unavailable");
+  }
   worker.on("failed", (job, error) => {
     logger.error({ mediaAssetId: job?.data.mediaAssetId, jobType: job?.data.jobType, failureCode: error.message.split(";")[0] }, "media-processing: BullMQ job failed");
   });
-  return trackWorker(worker) ?? null;
+  await monitorMediaWorker(
+    tracked as unknown as Worker<MediaJobData> & MediaWorkerStartup & MediaWorkerLifecycleEmitter,
+    blockingConnection,
+    {
+      ready: () => workerStarted("media-processing", "Universal Media Processing", true),
+      failed: (error) => {
+        workerFailed("media-processing", "Universal Media Processing", error);
+        logger.error({ err: error }, "media-processing: BullMQ worker is not ready");
+      },
+      stopped: () => workerStopped("media-processing", "Universal Media Processing"),
+    },
+  );
+  return tracked;
 }

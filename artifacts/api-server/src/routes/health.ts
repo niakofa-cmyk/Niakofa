@@ -15,6 +15,8 @@ import { getStorageDescription } from "../lib/storage";
 import { getStorageReadiness } from "../lib/storageReadiness";
 import { isValidLiveKitUrl } from "../lib/circleMediaConfig";
 import { getNiaServiceUrl } from "../lib/nia-client";
+import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import type { WorkerEntry } from "../lib/worker-registry";
 
 // ── Region bucketing ──────────────────────────────────────────────────────────
 // Maps a lat/lng point to one of the platform's target regions.
@@ -94,6 +96,23 @@ function getLiveKitReadiness(): {
         status: "degraded",
         detail: "LIVEKIT_URL and server credentials are incomplete or invalid",
       };
+}
+
+export function getMediaWorkerReadiness(
+  v21Enabled: boolean,
+  workers: readonly Pick<WorkerEntry, "name" | "status">[],
+): { required: true; status: "ready" | "degraded"; detail: string } | undefined {
+  if (!v21Enabled) return undefined;
+
+  const worker = workers.find(({ name }) => name === "media-processing");
+  const running = worker?.status === "running";
+  return {
+    required: true,
+    status: running ? "ready" : "degraded",
+    detail: running
+      ? "BullMQ media-processing worker registered and initial Redis connection ready"
+      : `BullMQ media-processing worker readiness is ${worker?.status ?? "missing"}`,
+  };
 }
 
 async function checkNiaService(): Promise<{ status: "ok" | "unavailable"; httpStatus?: number }> {
@@ -214,6 +233,10 @@ router.get("/readiness", async (req, res) => {
     Boolean(getStripeWebhookSecret());
   const livekit = getLiveKitReadiness();
   const storageReadiness = getStorageReadiness();
+  const v21Enabled = isMediaPlatformV21Enabled();
+  const mediaWorker = v21Enabled
+    ? getMediaWorkerReadiness(true, getWorkerHealth())
+    : undefined;
   const dependencies = {
     database: {
       required: true,
@@ -269,6 +292,7 @@ router.get("/readiness", async (req, res) => {
       status: livekit.status,
       detail: livekit.detail,
     },
+    ...(mediaWorker ? { media_worker: mediaWorker } : {}),
   } as const;
   const ready =
     database === "ready" &&
@@ -276,6 +300,7 @@ router.get("/readiness", async (req, res) => {
     (!circlesScope || livekit.status === "ready") &&
     (!paymentsScope || stripeConfigured) &&
     (!redisRequired || redisReady) &&
+    (!v21Enabled || mediaWorker?.status === "ready") &&
     storageReadiness.production_media_safe;
   const degraded = Object.values(dependencies).some((dependency) => dependency.status === "degraded");
 
@@ -289,6 +314,7 @@ router.get("/readiness", async (req, res) => {
       storage: storageReadiness.media_platform_flag
         ? storageReadiness.production_media_safe
         : undefined,
+      ...(mediaWorker ? { media_worker: mediaWorker.status === "ready" } : {}),
     },
     scope: [circlesScope && "circles", paymentsScope && "payments"].filter(Boolean).join(",") || "platform",
     dependencies,

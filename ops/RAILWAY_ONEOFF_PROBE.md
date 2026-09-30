@@ -14,16 +14,37 @@ Credentials stay inside Railway and are never pasted into chat or committed.
 node artifacts/api-server/scripts/verify-object-storage.mjs
 ```
 
+Success means a tiny object completed real `PUT → HEAD` (exact byte size) →
+bounded `GET` (exact bytes and SHA-256) → `DELETE` → `HEAD` with an explicit
+object-not-found 404. Provider calls have one SDK attempt and a six-second
+client-side bound; cleanup gets at most three delete/verification attempts.
+The script never logs credentials, bucket names, or endpoint URLs, and never
+changes `MEDIA_PLATFORM_V21`.
+
 Success includes:
 
 ```json
 {
   "ok": true,
-  "probe": "put-head-delete",
+  "probe": "put-head-get-delete",
   "deleted": true,
-  "media_platform_should_still_be_off": true
+  "media_platform_flag_unchanged": true
 }
 ```
+
+If cleanup cannot be proven, the command fails with `CLEANUP INCOMPLETE` and
+prints the opaque random object key needed for manual cleanup. Do not interpret
+any failed or interrupted probe as certification success. As with any remote
+object store, client timeouts cannot guarantee provider-side cancellation; the
+script bounds its wait and retries cleanup, but a persistent outage or
+inconsistent provider may require manual inspection/deletion.
+
+In particular, if the PUT response is lost or times out, the provider may
+commit the object after the script's final cleanup check. The command therefore
+always reports `CLEANUP INCOMPLETE` with that key, even if a cleanup HEAD saw
+404. An operator must reconcile that exact key (check for it, delete if
+present, and verify absence) before starting another probe; do not rerun with a
+new key while the previous ambiguous PUT remains unchecked.
 
 ## Media toolchain
 
