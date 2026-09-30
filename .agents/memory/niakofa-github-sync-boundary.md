@@ -3,20 +3,20 @@ name: GitHub sync boundary
 description: Safe synchronization rule for the private Niakofa repository when GitHub write authorization is unavailable.
 ---
 
-The Niakofa repository's current GitHub visibility is private, so shell
-fetch/pull may fail even when the connected GitHub API can read and write it.
-A local commit is never evidence that GitHub `main` changed. When the
-supported GitHub connection is unavailable, stop at the push boundary rather
-than using a token pasted into chat or force-pushing.
+Repository visibility and shell read access can change. A local commit is
+never evidence that GitHub `main` changed. When a supported managed
+credential or GitHub connection is unavailable, stop at the push boundary
+rather than using a token pasted into chat or force-pushing.
 
-**Why:** The repository metadata currently reports private visibility, and a
-shell `git pull` failed with GitHub token authentication while the installed
-connection remained usable.
+**Why:** An earlier shell pull failed authentication while the installed
+connection worked; a later unauthenticated read succeeded. Do not assume
+the earlier visibility or credential behavior still applies.
 
-**How to apply:** Compare local `HEAD` with the authenticated remote `main` ref
-after every push attempt. If the HTTPS remote rejects authentication, use the
-attached GitHub connection's authenticated API for the write and then compare
-both hashes independently; never paste or print a token.
+**How to apply:** Compare local `HEAD` with a fresh remote `main` ref after
+every push attempt. If the default HTTPS helper rejects authentication,
+prefer a one-shot helper using an existing workspace-managed credential for
+full Git transport; otherwise use the attached connection's authenticated
+API. Never paste, print, or persist a token.
 
 An installed GitHub integration may still be `not_added` in the current
 execution context. Resolve its exact connection ID and bind it before calling
@@ -44,9 +44,10 @@ are preserved exactly.
 GitHub connection, but the connection-backed API can publish safely without
 accessing the token value.
 
-**How to apply:** Prefer the connector-backed Git Data API when the runtime
-does not expose the documented gitPush callback. Guard the ref update on an
-exact tree and commit SHA match; otherwise stop before moving `main`.
+**How to apply:** Prefer full Git transport for large binary files when an
+existing managed credential is available. Otherwise use the connector-backed
+Git Data API and guard the ref update on exact blob, tree, and commit SHA
+matches; stop before moving `main` on any mismatch.
 
 The GitHub commit endpoint preserves the supplied message bytes, so a local
 Git commit's final newline matters. A message with no final newline or two
