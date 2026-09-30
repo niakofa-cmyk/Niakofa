@@ -40,6 +40,11 @@ import {
   readStoryPlaybackCookie,
   verifyStoryPlaybackGrant,
 } from "../lib/community-story-playback";
+import {
+  escapeMomentSearchTerm,
+  validateMomentCaptionsVtt,
+  validateNewMomentVisualAltText,
+} from "../lib/moment-accessibility";
 
 const router = Router();
 const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
@@ -90,6 +95,8 @@ const storyElementSchema = z.object({
 const createStorySchema = z.object({
   client_publish_id: z.string().uuid().optional(),
   caption: z.string().trim().max(1000).optional().default(""),
+  tags: z.array(z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{0,29}$/))
+    .max(10).optional().default([]),
   hub_id: z.number().int().positive().nullable().optional(),
   exchange_listing_id: z.number().int().positive().optional(),
   audience: z.enum(STORY_AUDIENCES).default("community"),
@@ -101,8 +108,15 @@ const createStorySchema = z.object({
     duration_ms: z.number().int().positive().max(60_000).nullable().optional(),
     width: z.number().int().positive().max(10_000).nullable().optional(),
     height: z.number().int().positive().max(10_000).nullable().optional(),
+    alt_text: z.string().trim().max(250).optional(),
+    captions_vtt: z.string().max(64 * 1024).optional(),
   })).min(0).max(MAX_MEDIA_ITEMS).default([]),
   media_asset_ids: z.array(z.number().int().positive()).max(MAX_MEDIA_ITEMS).optional(),
+  media_accessibility: z.array(z.object({
+    media_asset_id: z.number().int().positive(),
+    alt_text: z.string().trim().max(250).default(""),
+    captions_vtt: z.string().max(64 * 1024).optional(),
+  }).strict()).max(MAX_MEDIA_ITEMS).optional().default([]),
   media_edits: z.array(z.object({
     media_asset_id: z.number().int().positive(),
     cover_time_ms: z.number().int().nonnegative(),
@@ -134,6 +148,8 @@ export function communityStoryPublishPayloadHash(payload: {
   elements: z.infer<typeof storyElementSchema>[];
   compositionManifest: StoryCompositionManifest;
   mediaAssetIds: number[];
+  tags?: string[];
+  mediaAccessibility?: Array<{ media_asset_id: number; alt_text: string; captions_vtt?: string }>;
   mediaEdits?: Array<{ media_asset_id: number; cover_time_ms: number }>;
 }): string {
   const canonicalBody: Record<string, unknown> = {
@@ -147,6 +163,8 @@ export function communityStoryPublishPayloadHash(payload: {
     composition_manifest: payload.compositionManifest,
     media_asset_ids: payload.mediaAssetIds,
   };
+  if (payload.tags?.length) canonicalBody.tags = payload.tags;
+  if (payload.mediaAccessibility?.length) canonicalBody.media_accessibility = payload.mediaAccessibility;
   // Preserve hashes for older clients that published without per-media edits.
   if (payload.mediaEdits?.length) canonicalBody.media_edits = payload.mediaEdits;
   const canonicalPayload = JSON.stringify(canonicalBody, (_key, value: unknown) => value && typeof value === "object" && !Array.isArray(value)
@@ -312,6 +330,7 @@ function publicStory(row: {
   hub_id: number | null;
   community_id: number | null;
   caption: string | null;
+  tags: string[];
   audience: string;
   reply_enabled: boolean;
   created_at: Date;
@@ -328,6 +347,7 @@ function publicStory(row: {
     exchange_listing_id: row.exchange_listing_id,
     community_id: row.community_id,
     caption: row.caption,
+    tags: row.tags,
     audience: row.audience,
     reply_enabled: row.reply_enabled,
     created_at: serializeDate(row.created_at),
@@ -343,6 +363,8 @@ function publicStory(row: {
       duration_ms: item.duration_ms,
       width: item.width,
       height: item.height,
+      alt_text: item.alt_text,
+      captions_vtt: item.captions_vtt,
       media_url: `/api/community/stories/media/${item.id}`,
     })),
     elements: elements.map((item) => ({
@@ -443,6 +465,18 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
   if (req.query.hubId && !requestedHubId) return res.status(400).json({ error: "hubId must be a positive integer." });
   if (requestedHubId && !(await approvedCanonicalHub(requestedHubId))) return res.status(404).json({ error: "Canonical Hub not found." });
   if (requestedHubId && !(await approvedHubMember(userId, requestedHubId))) return res.status(403).json({ error: "Approved Hub membership is required to view this Hub's Stories." });
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  if (req.query.search !== undefined && (typeof req.query.search !== "string" || search.length > 100 || /[\u0000-\u001f\u007f]/.test(search))) {
+    return res.status(400).json({ error: "search must be at most 100 printable characters." });
+  }
+  const rawTag = typeof req.query.tag === "string" ? req.query.tag.trim().replace(/^#/, "").toLowerCase() : "";
+  if (req.query.tag !== undefined && !/^[a-z0-9][a-z0-9-]{0,29}$/.test(rawTag)) {
+    return res.status(400).json({ error: "tag must contain 1–30 letters, numbers, or hyphens." });
+  }
+  const requestedAuthorId = req.query.authorId === undefined ? null : positiveId(req.query.authorId);
+  if (req.query.authorId !== undefined && !requestedAuthorId) return res.status(400).json({ error: "authorId must be a positive integer." });
+  const searchPattern = search ? `%${escapeMomentSearchTerm(search)}%` : null;
+  const hasDiscoveryFilter = Boolean(searchPattern || rawTag || requestedAuthorId);
   const requestedLimit = req.query.limit === undefined ? 100 : Number(req.query.limit);
   if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
     return res.status(400).json({ error: "limit must be an integer between 1 and 100." });
@@ -491,6 +525,7 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
   const queriedRows = await db.select({
     id: communityStoriesTable.id,
     author_user_id: communityStoriesTable.author_user_id,
+    tags: communityStoriesTable.tags,
     hub_id: communityStoriesTable.hub_id,
     exchange_listing_id: communityStoriesTable.exchange_listing_id,
     community_id: communityStoriesTable.community_id,
@@ -522,6 +557,12 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
           AND story_mute.muted_user_id = ${communityStoriesTable.author_user_id}
       )`,
       visibility,
+      hasDiscoveryFilter ? isNull(communityStoriesTable.exchange_listing_id) : undefined,
+      requestedAuthorId === null ? undefined : eq(communityStoriesTable.author_user_id, requestedAuthorId),
+      rawTag ? sql`${communityStoriesTable.tags} @> ARRAY[${rawTag}]::text[]` : undefined,
+      searchPattern
+        ? sql`coalesce(${communityStoriesTable.caption}, '') ILIKE ${searchPattern} ESCAPE E'\\\\'`
+        : undefined,
       or(
         isNull(communityStoriesTable.exchange_listing_id),
         sql`EXISTS (
@@ -663,10 +704,26 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   const hubId = parsed.data.hub_id ?? null;
   const exchangeListingId = parsed.data.exchange_listing_id ?? null;
   const mediaAssetIds = parsed.data.media_asset_ids ?? [];
+  const mediaAccessibility = parsed.data.media_accessibility;
+  const accessibilityByAssetId = new Map(mediaAccessibility.map((item) => [item.media_asset_id, item]));
   const mediaEdits = parsed.data.media_edits;
   const [viewer] = await db.select({ community_id: usersTable.community_id })
     .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   const caption = cleanText(parsed.data.caption, 1000) || null;
+  const tags = parsed.data.tags;
+  if (new Set(tags).size !== tags.length) return res.status(400).json({ error: "Moment tags must be unique." });
+  if (new Set(mediaAccessibility.map((item) => item.media_asset_id)).size !== mediaAccessibility.length) {
+    return res.status(400).json({ error: "Each Moment attachment can have only one accessibility description." });
+  }
+  if (mediaAccessibility.some((item) => !mediaAssetIds.includes(item.media_asset_id))) {
+    return res.status(400).json({ error: "Accessibility descriptions must target attached media assets." });
+  }
+  for (const item of [...mediaAccessibility, ...parsed.data.media]) {
+    if (item.captions_vtt) {
+      const captionError = validateMomentCaptionsVtt(item.captions_vtt);
+      if (captionError) return res.status(400).json({ error: captionError });
+    }
+  }
   const compositionManifest = normalizeCompositionManifest(parsed.data.composition_manifest, parsed.data.elements);
   const publishPayloadHash = parsed.data.client_publish_id
     ? communityStoryPublishPayloadHash({
@@ -679,6 +736,8 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       elements: parsed.data.elements,
       compositionManifest,
       mediaAssetIds,
+      tags,
+      mediaAccessibility,
       mediaEdits,
     })
     : null;
@@ -799,6 +858,10 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       .limit(1);
     if (!listing) return res.status(404).json({ error: "An active, approved Exchange listing you own is required." });
   }
+  if (exchangeListingId === null) {
+    const altTextError = validateNewMomentVisualAltText(parsed.data.media, false);
+    if (altTextError) return res.status(400).json({ error: altTextError });
+  }
   if (!parsed.data.caption && parsed.data.media.length === 0 && mediaAssetIds.length === 0 && parsed.data.elements.length === 0) {
     return res.status(400).json({ error: "A Story needs media, text, or a creative element." });
   }
@@ -827,11 +890,31 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     if (stagedAssets.length !== mediaAssetIds.length) {
       return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
     }
+    if (exchangeListingId === null) {
+      const altTextError = validateNewMomentVisualAltText(stagedAssets
+        .filter((asset) => asset.id !== compositionManifest.music?.track_asset_id)
+        .map((asset) => ({
+          media_type: asset.media_type,
+          alt_text: accessibilityByAssetId.get(asset.id)?.alt_text,
+        })), false);
+      if (altTextError) return res.status(400).json({ error: altTextError });
+    }
     if (stagedAssets.some((asset) => asset.status === "failed")) {
       return res.status(409).json({ error: "One or more uploaded assets failed processing. Retry processing or choose another file.", error_code: "MOMENT_MEDIA_FAILED" });
     }
     if (stagedAssets.some((asset) => asset.media_type === "video" && (asset.duration_ms ?? 0) > 60_000)) {
       return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    }
+    for (const asset of stagedAssets) {
+      const accessibility = accessibilityByAssetId.get(asset.id);
+      if (!accessibility) continue;
+      if (!["photo", "video"].includes(asset.media_type) || accessibility.captions_vtt && asset.media_type !== "video") {
+        return res.status(400).json({ error: "Alt text is for image/video attachments and caption cues are for videos." });
+      }
+      if (accessibility.captions_vtt) {
+        const captionError = validateMomentCaptionsVtt(accessibility.captions_vtt, (asset.duration_ms ?? 60_000) / 1000);
+        if (captionError) return res.status(400).json({ error: captionError });
+      }
     }
     const stagedById = new Map(stagedAssets.map((asset) => [asset.id, asset]));
     if (mediaEdits.some((edit) => {
@@ -901,6 +984,15 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     if (decodedMedia.some((item) => item.media_type === "video" && (!item.metadata || !item.metadata.duration_ms))) {
       return res.status(503).json({ error: "Video processing is temporarily unavailable. Please try again shortly." });
     }
+    for (const item of decodedMedia) {
+      if (item.captions_vtt && item.media_type !== "video") {
+        return res.status(400).json({ error: "Caption cues can only be added to video attachments." });
+      }
+      if (item.captions_vtt) {
+        const captionError = validateMomentCaptionsVtt(item.captions_vtt, (item.metadata?.duration_ms ?? 60_000) / 1000);
+        if (captionError) return res.status(400).json({ error: captionError });
+      }
+    }
     if (decodedMedia.some((item) => (item.metadata?.duration_ms ?? 0) > 60_000)) {
       return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
     }
@@ -966,6 +1058,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         client_publish_id: parsed.data.client_publish_id ?? null,
         publish_payload_hash: publishPayloadHash,
         caption,
+        tags,
         audience: parsed.data.audience,
         status: moderation.status === "approved" ? "published" : "pending",
         reply_enabled: parsed.data.reply_enabled,
@@ -1009,6 +1102,8 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           duration_ms: item.metadata?.duration_ms ?? null,
           width: item.metadata?.width ?? null,
           height: item.metadata?.height ?? null,
+          alt_text: cleanText(item.alt_text, 250) || null,
+          captions_vtt: item.captions_vtt?.replace(/\r\n?/g, "\n").trim() ?? null,
         });
       }
       if (stagedAssets.length) {
@@ -1022,6 +1117,8 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           duration_ms: asset.duration_ms,
           width: asset.width,
           height: asset.height,
+          alt_text: cleanText(accessibilityByAssetId.get(asset.id)?.alt_text, 250) || null,
+          captions_vtt: accessibilityByAssetId.get(asset.id)?.captions_vtt?.replace(/\r\n?/g, "\n").trim() ?? null,
         })));
         await tx.update(mediaAssetsTable)
           .set({

@@ -16,9 +16,18 @@ import { authHeaders } from "@/lib/auth";
 import { validateCommunityMomentFile } from "@/lib/community-moments-upload";
 import { useAppContext } from "@/lib/AppContext";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
-import { useObjectUrls } from "./StoryComposerMedia";
+import { useObjectUrls, useWebVttObjectUrl } from "./StoryComposerMedia";
+import {
+  buildMomentMediaAccessibility,
+  emptyMomentStudioAccessibility,
+  persistMomentStudioDraft,
+  parseMomentStudioTags,
+  restoreMomentStudioAccessibility,
+  validateMomentStudioWebVtt,
+  type MomentStudioAccessibilityDraft,
+} from "./moment-studio-accessibility";
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
-import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, newStudioPublishId, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
+import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, newStudioPublishId, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
 import { chooseStudioFiles, publishStudioMoment, selectedStudioFiles, validateStudioFiles } from "./story-studio-publish";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { getExchangeListings } from "@/lib/community-exchange-client";
@@ -122,6 +131,7 @@ export function CommunityStoryRail({
   const [storyProgress, setStoryProgress] = useState(0);
   const [storyPaused, setStoryPaused] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [momentAccessibility, setMomentAccessibility] = useState<MomentStudioAccessibilityDraft>(emptyMomentStudioAccessibility);
   const [musicFile, setMusicFile] = useState<File | null>(null);
   const [musicRightsBasis, setMusicRightsBasis] = useState<"original" | "licensed">("original");
   const [musicLicenseReference, setMusicLicenseReference] = useState("");
@@ -195,6 +205,7 @@ export function CommunityStoryRail({
   const musicPreviewUrls = useObjectUrls(musicPreviewFiles);
   const selectedPreviewFile = files[previewFileIndex] ?? files[0] ?? null;
   const selectedFileUrl = previewUrls[previewFileIndex] ?? previewUrls[0] ?? null;
+  const previewCaptionsTrackUrl = useWebVttObjectUrl(momentAccessibility.momentCaptionsVtt[previewFileIndex] ?? "");
   const selectedFiles = selectedStudioFiles(files, gallerySelection);
   const selectedVideo = selectedFiles.some((file) => file.type.startsWith("video/"));
   const rawTrimRange = trimPreview[previewFileIndex] ?? { start: 0, end: videoDuration };
@@ -334,6 +345,7 @@ export function CommunityStoryRail({
     setDraftSaved(false);
     setDraftError("");
     setFiles(empty.files);
+    setMomentAccessibility(emptyMomentStudioAccessibility());
     setMusicFile(empty.musicFile);
     setMusicRightsBasis(empty.musicRightsBasis);
     setMusicLicenseReference(empty.musicLicenseReference);
@@ -375,6 +387,7 @@ export function CommunityStoryRail({
         uploadedIdsRef.current = draft.uploadedMediaAssetIds ?? [];
         publishAssetIdsRef.current = draft.publishAssetIds ?? [];
         setFiles(draft.files ?? []);
+        setMomentAccessibility(restoreMomentStudioAccessibility(draft));
         setMusicFile(draft.musicFile ?? null);
         setMusicRightsBasis(draft.musicRightsBasis ?? "original");
         setMusicLicenseReference(draft.musicLicenseReference ?? "");
@@ -410,13 +423,13 @@ export function CommunityStoryRail({
       const outgoing = scopeSnapshots.get(outgoingKey);
       scopeSnapshots.delete(outgoingKey);
       if (outgoing && recoveredScopeRef.current === studioDraftKey(userId, hubId)) {
-        draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => persistStudioDraft(outgoing));
+        draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => persistMomentStudioDraft(outgoing));
         void draftQueueRef.current.catch(() => {});
       }
     };
   }, [userId, hubId, scopeKey]);
 
-  const draftSnapshot = (): StudioDraft => ({
+  const draftSnapshot = (): StudioDraft & MomentStudioAccessibilityDraft => ({
     id: studioDraftKey(userId!, hubId), userId: userId!,
     contextKind: hubId === null ? "community_moment" : "hub_moment",
     contextId: hubId ?? userId!, caption, files,
@@ -430,6 +443,7 @@ export function CommunityStoryRail({
     effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes,
     musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId,
     uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
+    ...momentAccessibility,
     updatedAt: Date.now(),
   });
   const snapshotRef = useRef(draftSnapshot);
@@ -444,7 +458,7 @@ export function CommunityStoryRail({
     const version = draftWriteVersionRef.current;
     draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(async () => {
       if (generation !== draftGenerationRef.current || version !== draftWriteVersionRef.current) return;
-      await persistStudioDraft(snapshot);
+      await persistMomentStudioDraft(snapshot);
       if (generation === draftGenerationRef.current) { setDraftSaved(true); setDraftError(""); }
     }).catch((reason: unknown) => {
       setDraftError(`Draft not saved on this device: ${reason instanceof Error ? reason.message : "Storage unavailable."}`);
@@ -454,10 +468,10 @@ export function CommunityStoryRail({
   };
   const queueDraftSaveRef = useRef(queueDraftSave);
   queueDraftSaveRef.current = queueDraftSave;
-  const signature = studioPublishSignature({
+  const signature = `${studioPublishSignature({
     files, selection: gallerySelection, caption, elements: editorElements, audience, hubId, textBackground, coverTimes,
     musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume,
-  });
+  })}::${JSON.stringify(momentAccessibility)}`;
   const signatureRef = useRef(signature);
   signatureRef.current = signature;
   const rotateAttemptAfterEdit = () => {
@@ -485,7 +499,7 @@ export function CommunityStoryRail({
     setDraftSaved(false);
     draftTimerRef.current = setTimeout(() => { void queueDraftSaveRef.current().catch(() => {}); }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-  }, [draftReady, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds]);
+  }, [draftReady, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds, momentAccessibility]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -564,6 +578,7 @@ export function CommunityStoryRail({
   const resetComposer = () => {
     if (scopeKey) scopeSnapshotsRef.current.delete(scopeKey);
     setFiles([]);
+    setMomentAccessibility(emptyMomentStudioAccessibility());
     setMusicFile(null);
     setMusicRightsBasis("original");
     setMusicLicenseReference("");
@@ -659,6 +674,11 @@ export function CommunityStoryRail({
       if (exchangeDraftRef.current && !exchangeListingId) {
         throw new Error("Your listing-owned Exchange Spark is still saved. Resume that listing and video, or explicitly discard the Exchange draft before sharing a Moment.");
       }
+      if (exchangeListingId && (momentAccessibility.momentTagsInput.trim()
+        || Object.values(momentAccessibility.momentAltTexts).some((text) => text.trim())
+        || Object.values(momentAccessibility.momentCaptionsVtt).some((text) => text.trim()))) {
+        throw new Error("Moment tags and accessibility descriptions are not published to Exchange Sparks. Unlink the listing to publish these as a 24-hour Moment, or clear the Moment-only fields.");
+      }
       const controller = new AbortController();
       publishControllerRef.current = controller;
       const attemptId = clientPublishIdRef.current;
@@ -748,7 +768,22 @@ export function CommunityStoryRail({
           publishControllerRef.current = null;
         }
       }
-      await validateStudioFiles(publishFiles);
+      const videoDurationsMs = await validateStudioFiles(publishFiles);
+      const tags = parseMomentStudioTags(momentAccessibility.momentTagsInput);
+      const mediaAltTexts = selectedIndexes.map((index) => momentAccessibility.momentAltTexts[index] ?? "");
+      const mediaCaptionsVtt = selectedIndexes.map((index) => momentAccessibility.momentCaptionsVtt[index] ?? "");
+      mediaCaptionsVtt.forEach((captionsVtt, index) => {
+        if (!captionsVtt.trim() || !publishFiles[index].type.startsWith("video/")) return;
+        const captionError = validateMomentStudioWebVtt(captionsVtt, videoDurationsMs[index]);
+        if (captionError) throw new Error(`${publishFiles[index].name}: ${captionError}`);
+      });
+      buildMomentMediaAccessibility(
+        publishFiles,
+        publishFiles.map((_, index) => index),
+        publishFiles.map((_, index) => index + 1),
+        Object.fromEntries(mediaAltTexts.map((text, index) => [index, text])),
+        Object.fromEntries(mediaCaptionsVtt.map((text, index) => [index, text])),
+      );
       const elements: Array<Record<string, unknown>> = [];
       if (!publishFiles.length) elements.push({ type: "background", payload: { color: textBackground }, position_x: 50, position_y: 50, z_index: 0 });
       const draftElements = editorElements.slice();
@@ -768,7 +803,9 @@ export function CommunityStoryRail({
       // Preview-only effects and trim are not included in the published manifest.
       publishAttemptRef.current = attemptSignature;
       await publishStudioMoment({
-        userId, hubId, audience, files: publishFiles, caption, elements: elements as Array<{ type: string; payload: Record<string, unknown> }>, effect,
+        userId, hubId, audience, files: publishFiles, caption, tags,
+        mediaAltTexts, mediaCaptionsVtt,
+        elements: elements as Array<{ type: string; payload: Record<string, unknown> }>, effect,
         musicFile,
         musicRightsBasis,
         musicLicenseReference,
@@ -844,6 +881,19 @@ export function CommunityStoryRail({
     const { files: selected, errors } = chooseStudioFiles([...files, ...incoming]);
     if (errors.length) setError(errors[0]);
     if (selected.length) {
+      const nextAltTexts: Record<number, string> = {};
+      const nextCaptions: Record<number, string> = {};
+      selected.forEach((file, index) => {
+        const previousIndex = files.indexOf(file);
+        if (previousIndex < 0) return;
+        if (momentAccessibility.momentAltTexts[previousIndex]) nextAltTexts[index] = momentAccessibility.momentAltTexts[previousIndex];
+        if (momentAccessibility.momentCaptionsVtt[previousIndex]) nextCaptions[index] = momentAccessibility.momentCaptionsVtt[previousIndex];
+      });
+      setMomentAccessibility((current) => ({
+        ...current,
+        momentAltTexts: nextAltTexts,
+        momentCaptionsVtt: nextCaptions,
+      }));
       uploadedIdsRef.current = [];
       publishAssetIdsRef.current = [];
       setUploadedIds([]);
@@ -1104,10 +1154,10 @@ export function CommunityStoryRail({
                 >
                   <div className="relative flex h-full w-full items-center justify-center overflow-hidden" style={!selectedFileUrl ? { background: textBackground } : undefined}>
                     {selectedFileUrl ? (
-                      selectedPreviewFile?.type.startsWith("video/") ? <video ref={previewVideo} key={selectedFileUrl} src={selectedFileUrl} controls playsInline className="h-full w-full object-contain" style={{ filter }} onLoadedMetadata={(event) => { setVideoDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0); event.currentTarget.currentTime = trimPreview[previewFileIndex]?.start ?? 0; }} onPlay={(event) => { if (event.currentTarget.currentTime < (trimPreview[previewFileIndex]?.start ?? 0)) event.currentTarget.currentTime = trimPreview[previewFileIndex].start; }} onTimeUpdate={(event) => {
+                      selectedPreviewFile?.type.startsWith("video/") ? <video ref={previewVideo} key={selectedFileUrl} src={selectedFileUrl} controls playsInline aria-label={momentAccessibility.momentAltTexts[previewFileIndex] || `Spark video attachment ${previewFileIndex + 1}`} className="h-full w-full object-contain" style={{ filter }} onLoadedMetadata={(event) => { setVideoDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0); event.currentTarget.currentTime = trimPreview[previewFileIndex]?.start ?? 0; }} onPlay={(event) => { if (event.currentTarget.currentTime < (trimPreview[previewFileIndex]?.start ?? 0)) event.currentTarget.currentTime = trimPreview[previewFileIndex].start; }} onTimeUpdate={(event) => {
                         const bounds = trimPreview[previewFileIndex];
                         if (bounds && event.currentTarget.currentTime >= bounds.end) { event.currentTarget.pause(); event.currentTarget.currentTime = bounds.start; }
-                      }} /> : <img src={selectedFileUrl} alt="Spark preview" className="h-full w-full object-contain" style={{ filter }} />
+                      }} >{previewCaptionsTrackUrl && <track kind="captions" src={previewCaptionsTrackUrl} srcLang="und" label="Creator captions" default />}</video> : <img src={selectedFileUrl} alt={momentAccessibility.momentAltTexts[previewFileIndex] || `Spark photo attachment ${previewFileIndex + 1}`} className="h-full w-full object-contain" style={{ filter }} />
                     ) : (
                       <div className="nia-story-text-preview"><span>Niakofa / Spark</span>{!caption && <p>Your words belong here.</p>}<small>{caption ? "Drag the text to place it" : "Write a few words below to begin"}</small></div>
                     )}
@@ -1128,7 +1178,7 @@ export function CommunityStoryRail({
               <div className="nia-story-composer__form">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-white/75" aria-live="polite">
                   <span>{draftReady ? draftError ? "Local save unavailable" : draftSaved ? "Draft saved on this device" : "Saving draft…" : "Recovering your draft…"}</span>
-                  {(files.length > 0 || caption.trim() || exchangeDraftRef.current) && <button type="button" className="rounded-lg border border-white/30 px-3 py-2 font-semibold" onClick={() => void discardDraft()} disabled={publishing} data-testid="button-discard-studio-draft">Discard draft</button>}
+                  {(files.length > 0 || caption.trim() || momentAccessibility.momentTagsInput.trim() || exchangeDraftRef.current) && <button type="button" className="rounded-lg border border-white/30 px-3 py-2 font-semibold" onClick={() => void discardDraft()} disabled={publishing} data-testid="button-discard-studio-draft">Discard draft</button>}
                 </div>
                 {draftError && <p role="alert" className="mb-2 rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-xs text-amber-100">{draftError} Keep this tab open or try editing again to save.</p>}
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
@@ -1355,9 +1405,29 @@ export function CommunityStoryRail({
                 {tool === "mention" && <div className="space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); setEditorElements((current) => current.filter((element) => element.id !== "mention")); }} className="min-h-11 w-full rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); upsertEditorElement({ id: "mention", type: "mention", payload: { display_name: candidate.name, mention_user_id: candidate.id }, position_x: 50, position_y: 65, scale: 1, rotation: 0, z_index: 18 }); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
                 {tool === "text" && <div className="grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-white/65">Color<input type="color" value={textColor} onChange={(event) => { const value = event.target.value; setTextColor(value); updateEditorElement("caption", { payload: { color: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-white/10" /></label><label className="text-[10px] font-bold text-white/65">Size<select value={textSize} onChange={(event) => { const value = event.target.value; setTextSize(value); updateEditorElement("caption", { payload: { font_size: Number(value) } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-white/65">Align<select value={textAlign} onChange={(event) => { const value = event.target.value as "left" | "center" | "right"; setTextAlign(value); updateEditorElement("caption", { payload: { align: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-white/65">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
                 <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={2} className="mt-3 w-full resize-none rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white outline-none focus:border-primary" placeholder="Add text to your Spark…" />
+                 <div className="mt-4 space-y-4 rounded-2xl border border-white/15 bg-black/15 p-3" data-testid="panel-moment-accessibility">
+                   <div>
+                     <label htmlFor="spark-moment-tags" className="block text-xs font-bold text-white/85">Moment tags <span className="font-normal text-white/55">(optional, up to 10)</span></label>
+                     <input id="spark-moment-tags" value={momentAccessibility.momentTagsInput} onChange={(event) => setMomentAccessibility((current) => ({ ...current, momentTagsInput: event.target.value.slice(0, 320) }))} maxLength={320} className="mt-2 min-h-11 w-full rounded-xl border border-white/20 bg-slate-950/60 px-3 text-sm text-white placeholder:text-white/35" placeholder="community, art, celebration" aria-describedby="spark-moment-tags-help" data-testid="input-spark-moment-tags" />
+                     <p id="spark-moment-tags-help" className="mt-1 text-[11px] leading-4 text-white/55">Separate tags with commas. Letters, numbers, and hyphens only; saved as lowercase.</p>
+                   </div>
+                   {selectedPreviewFile && (selectedPreviewFile.type.startsWith("image/") || selectedPreviewFile.type.startsWith("video/")) && (
+                     <div className="space-y-3 border-t border-white/10 pt-3">
+                       <p className="text-xs font-bold text-white/85">Accessibility for attachment {previewFileIndex + 1}: <span className="font-normal text-white/65">{selectedPreviewFile.name}</span></p>
+                       <label htmlFor="spark-moment-alt" className="block text-xs font-bold text-white/85">Alternative text <span className="font-normal text-white/55">(required, up to 250 characters)</span>
+                         <textarea id="spark-moment-alt" value={momentAccessibility.momentAltTexts[previewFileIndex] ?? ""} onChange={(event) => setMomentAccessibility((current) => ({ ...current, momentAltTexts: { ...current.momentAltTexts, [previewFileIndex]: event.target.value } }))} maxLength={250} rows={2} className="mt-2 w-full rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-white/35" placeholder="Describe the important visual information" data-testid="input-spark-moment-alt" />
+                       </label>
+                       {selectedPreviewFile.type.startsWith("video/") && <label htmlFor="spark-moment-captions" className="block text-xs font-bold text-white/85">Creator video captions <span className="font-normal text-white/55">(optional plain-text WebVTT)</span>
+                         <textarea id="spark-moment-captions" value={momentAccessibility.momentCaptionsVtt[previewFileIndex] ?? ""} onChange={(event) => setMomentAccessibility((current) => ({ ...current, momentCaptionsVtt: { ...current.momentCaptionsVtt, [previewFileIndex]: event.target.value } }))} maxLength={64 * 1024} rows={4} className="mt-2 w-full rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 font-mono text-xs text-white placeholder:text-white/35" placeholder={"WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nSpoken words"} aria-describedby="spark-moment-captions-help" data-testid="input-spark-moment-captions" />
+                         <span id="spark-moment-captions-help" className="mt-1 block font-normal text-white/55">Plain-text cues only, ending within this video and the 60-second Moment limit.</span>
+                       </label>}
+                     </div>
+                   )}
+                   {exchangeListingId && <p role="status" className="text-[11px] leading-4 text-amber-100">Moment tags and attachment descriptions are not sent to Exchange Sparks. Clear these fields or unlink the listing before publishing.</p>}
+                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <p className="text-[10px] leading-relaxed text-white/55">Original audio is preserved. Apply trim to replace the clip before upload; visual effects remain preview-only. Text and stickers are saved as Story overlays.</p>
-                  {files.length > 0 && <button type="button" disabled={trimming} onClick={() => { setFiles([]); setGallerySelection([]); setTrimPreview({}); setCoverTimes({}); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
+                  {files.length > 0 && <button type="button" disabled={trimming} onClick={() => { setFiles([]); setGallerySelection([]); setMomentAccessibility((current) => ({ ...current, momentAltTexts: {}, momentCaptionsVtt: {} })); setTrimPreview({}); setCoverTimes({}); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
                 </div>
                 </>}
               </div>

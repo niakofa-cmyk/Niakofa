@@ -228,6 +228,23 @@ function serializeUser(user: { id: number; name: string; avatar_url: string | nu
   return { id: user.id, name: user.name, avatar_url: user.avatar_url };
 }
 
+router.get("/messages/direct/blocked-users", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  // Deliberately select only rows where the caller is the blocker. Incoming
+  // blocks are private and must never be surfaced by this management view.
+  const blockedUsers = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      avatar_url: usersTable.avatar_url,
+    })
+    .from(directMessageBlocksTable)
+    .innerJoin(usersTable, eq(usersTable.id, directMessageBlocksTable.blocked_id))
+    .where(eq(directMessageBlocksTable.blocker_id, userId))
+    .orderBy(asc(usersTable.name));
+  return res.json({ blocked_users: blockedUsers });
+});
+
 router.get("/messages/direct/users", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const query = String(req.query.q ?? "").trim();

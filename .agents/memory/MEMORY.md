@@ -16,7 +16,7 @@
 - [Backend test wiring](backend-test-wiring.md) — API Jest uses serialized ESM runners and pins external service URLs to local test boundaries.
 - [Orval Zod generation](orval-zod-generation.md) — pin generated Zod output to the workspace’s installed major; newer Orval auto-detection can emit incompatible helpers.
 - [Circle media hardening](circle-media-hardening.md) — preserve LiveKit-only media, independent mic/camera lifecycles, bounded recovery, and real-device certification as the release gate.
-- [Fresh development database readiness](fresh-development-db-readiness.md) — connectivity can succeed while the schema is empty; run the canonical dev migration flow before diagnosing API readiness.
+- [Fresh development database readiness](fresh-development-db-readiness.md) — connectivity and migrations do not prove ORM/schema parity; exercise changed read/write paths.
 - [Civic Census coverage](civic-census-coverage.md) — Census may return non-JSON missing-key HTML; keep verified offline county fallback explicit and use an optional key for full refresh.
 - [Civic seed sequence repair](civic-seed-sequence-repair.md) — idempotent civic imports must realign serial IDs before inserting rows.
 - [Census ACS geography endpoint](census-acs-endpoint.md) — use available ACS5 geography data; normalize ACS state suffixes and do not assume PEP paths exist.
@@ -74,3 +74,6 @@
 - [Production state secret validation](production-state-secret-validation.md) — a secure-form confirmation proves presence, not usable browser state; validate before any production mutation.
 - [Cover thumbnail job versioning](cover-thumbnail-job-versioning.md) — keep ready video playback intact and reject stale cover jobs after newer edits.
 - [Moment audio mix duration](moment-audio-mix-duration.md) — looped background audio should cover the video; bound output to video duration, not a shorter source-audio stream.
+- [Community watch privacy](community-watch-privacy.md) — creator-level thresholds do not protect small daily cohorts; bound viewer-linked watch data to the insight window.
+- [Family Story provenance](family-story-provenance.md) — unknown legacy authors remain unknown, and private story activity must not use global broadcasts.
+- [Moment family preservation](moment-family-preservation.md) — saving a Moment to Family Vault preserves private caption text, not expiring media.

@@ -45,7 +45,7 @@ describe("Community Moment moderation contracts", () => {
     expect(reportRoutes).toContain("reported_community_story_caption");
     expect(reportRoutes).toContain("reported_community_story_author_name");
     expect(reportRoutes).toContain('if (updated.reported_community_story_id && status === "resolved_banned")');
-    expect(reportRoutes).toContain('.set({ status: "removed" })');
+    expect(reportRoutes).toContain('.set({ status: "removed", expires_at: removedAt })');
     expect(reportRoutes).toContain("Auto-dismissed: Moment already removed via report");
   });
 });

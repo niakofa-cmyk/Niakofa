@@ -58,6 +58,17 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /URL\.revokeObjectURL/);
     assert.match(moments, /muted=\{videoMuted\} playsInline controls/);
     assert.match(moments, /Turn Spark sound on/);
+    assert.match(moments, /<track kind="captions"/);
+    assert.match(moments, /media\.alt_text/);
+  });
+
+  test("Moments discovery sends search, tag and author filters to the authenticated feed endpoint", () => {
+    assert.match(moments, /query\.set\("search", filters\.search\)/);
+    assert.match(moments, /query\.set\("tag", filters\.tag\)/);
+    assert.match(moments, /query\.set\("authorId", filters\.authorId\)/);
+    assert.match(moments, /aria-label="Discover Moments"/);
+    assert.match(storiesRoute, /hasDiscoveryFilter \? isNull\(communityStoriesTable\.exchange_listing_id\)/);
+    assert.match(storiesRoute, /escapeMomentSearchTerm\(search\)/);
   });
 
   test("Moments uses persisted composition elements and renders text-only Story backgrounds", () => {
@@ -80,6 +91,7 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /document\.addEventListener\("visibilitychange"/);
     assert.match(moments, /new IntersectionObserver\(\(\[entry\]\)/);
     assert.match(moments, /if \(!activeMedia \|\| !playbackAllowed\)/);
+    assert.match(moments, /\[activeMedia, activeSpark\?\.id, flushCurrentWatchContribution, mediaRetry, playbackAllowed\]/);
     assert.match(moments, /controller\.abort\(\)/);
     assert.match(moments, /video\.pause\(\)/);
     assert.match(moments, /moreControllerRef\.current\?\.abort\(\)/);
@@ -122,7 +134,7 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(studioPublish, /asset\.status === "ready"/);
     assert.match(studioPublish, /media_asset_ids: ids/);
     assert.match(studioPublish, /"hub_moment" : "community_moment"/);
-    assert.match(uploader, /onComplete\(\{ caption: caption\.trim\(\), mediaAssetIds \}\)/);
+    assert.match(uploader, /mediaAccessibility: mediaAssetIds\.flatMap/);
     assert.match(mediaRoute, /if \(contextKind === "community_moment" \|\| contextKind === "hub_moment"\) return false/);
   });
 

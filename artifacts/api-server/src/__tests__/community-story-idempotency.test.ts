@@ -46,7 +46,8 @@ describe("media-less Community Story publication idempotency contract", () => {
     const route = await fs.readFile(storiesRoutePath, "utf8");
 
     expect(route).toMatch(/media_asset_ids: payload\.mediaAssetIds/);
-    expect(route).toMatch(/mediaAssetIds,\s*mediaEdits,\s*\}\)\s*\n\s*: null/);
+    expect(route).toMatch(/mediaAssetIds,\s*tags,\s*mediaAccessibility,\s*mediaEdits,\s*\}\)\s*\n\s*: null/);
+    expect(route).toMatch(/if \(payload\.mediaAccessibility\?\.length\) canonicalBody\.media_accessibility = payload\.mediaAccessibility/);
     expect(route).toMatch(/parsed\.data\.client_publish_id && parsed\.data\.media\.length/);
     expect(route).not.toMatch(/client_publish_id && \(parsed\.data\.media\.length \|\| mediaAssetIds\.length\)/);
     expect(route).toMatch(/if \(parsed\.data\.media\.length \|\| existing\.publish_payload_hash !== publishPayloadHash\)/);

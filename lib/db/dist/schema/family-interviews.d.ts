@@ -199,7 +199,7 @@ export declare const familyInterviewsTable: import("drizzle-orm/pg-core").PgTabl
             tableName: "family_interviews";
             dataType: "string";
             columnType: "PgEnumColumn";
-            data: "review" | "published" | "transcribing" | "completed" | "scheduled" | "recording" | "in_progress" | "transcribed";
+            data: "review" | "published" | "completed" | "transcribing" | "scheduled" | "recording" | "in_progress" | "transcribed";
             driverParam: string;
             notNull: true;
             hasDefault: true;

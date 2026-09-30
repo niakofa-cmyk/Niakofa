@@ -26,11 +26,17 @@ export function CommunityMomentsUploader({
   contextKind: CommunityMomentContext;
   contextId: number;
   userId: number;
-  onComplete: (input: { caption: string; mediaAssetIds: number[] }) => Promise<void>;
+  onComplete: (input: {
+    caption: string;
+    mediaAssetIds: number[];
+    mediaAccessibility: Array<{ mediaAssetId: number; altText: string; captionsVtt?: string }>;
+  }) => Promise<void>;
 }) {
   const draftId = `${contextKind}:${contextId}:${userId}`;
   const [caption, setCaption] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [altTexts, setAltTexts] = useState<string[]>([]);
+  const [captionsVtt, setCaptionsVtt] = useState<string[]>([]);
   const [uploadedMediaAssetIds, setUploadedMediaAssetIds] = useState<number[]>([]);
   const [loadingDraft, setLoadingDraft] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -46,6 +52,8 @@ export function CommunityMomentsUploader({
     setInitialized(false);
     setCaption("");
     setFiles([]);
+    setAltTexts([]);
+    setCaptionsVtt([]);
     setUploadedMediaAssetIds([]);
     void getCommunityMomentDraft(draftId, userId)
       .then((draft) => {
@@ -53,6 +61,8 @@ export function CommunityMomentsUploader({
         if (draft && draft.contextKind === contextKind && draft.contextId === contextId) {
           setCaption(draft.caption);
           setFiles(draft.files);
+          setAltTexts(draft.files.map(() => ""));
+          setCaptionsVtt(draft.files.map(() => ""));
           setUploadedMediaAssetIds(draft.uploadedMediaAssetIds ?? []);
           setDraftNotice("Your saved draft was restored on this device.");
         }
@@ -114,11 +124,20 @@ export function CommunityMomentsUploader({
       next.push(file);
     }
     setFiles(next);
+    setAltTexts((current) => next.map((_, index) => current[index] ?? ""));
+    setCaptionsVtt((current) => next.map((_, index) => current[index] ?? ""));
     setError(selectionError);
   };
 
   const submit = async () => {
     if (uploading || loadingDraft || (!caption.trim() && files.length === 0)) return;
+    const missingDescription = files.findIndex((file, index) => (
+      (file.type.startsWith("image/") || file.type.startsWith("video/")) && !altTexts[index]?.trim()
+    ));
+    if (missingDescription >= 0) {
+      setError(`Add alternative text for ${files[missingDescription].name} before uploading.`);
+      return;
+    }
     setUploading(true);
     setError("");
     setProgress(0);
@@ -147,10 +166,26 @@ export function CommunityMomentsUploader({
           updatedAt: Date.now(),
         });
       }
-      await onComplete({ caption: caption.trim(), mediaAssetIds });
+      await onComplete({
+        caption: caption.trim(),
+        mediaAssetIds,
+        mediaAccessibility: mediaAssetIds.flatMap((mediaAssetId, index) => {
+          const file = files[index];
+          if (!file || !(file.type.startsWith("image/") || file.type.startsWith("video/"))) return [];
+          return [{
+            mediaAssetId,
+            altText: altTexts[index].trim(),
+            ...(file.type.startsWith("video/") && captionsVtt[index]?.trim()
+              ? { captionsVtt: captionsVtt[index].trim() }
+              : {}),
+          }];
+        }),
+      });
       await deleteCommunityMomentDraft(draftId, userId);
       setCaption("");
       setFiles([]);
+      setAltTexts([]);
+      setCaptionsVtt([]);
       setUploadedMediaAssetIds([]);
       setDraftNotice("");
       setProgress(100);
@@ -167,6 +202,8 @@ export function CommunityMomentsUploader({
       await deleteCommunityMomentDraft(draftId, userId);
       setCaption("");
       setFiles([]);
+      setAltTexts([]);
+      setCaptionsVtt([]);
       setUploadedMediaAssetIds([]);
       setDraftNotice("Saved draft removed.");
       setError("");
@@ -213,12 +250,41 @@ export function CommunityMomentsUploader({
       {fileNames.length > 0 && (
         <ul className="space-y-1" aria-label="Selected media">
           {files.map((file, index) => (
-            <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center gap-2 rounded-lg bg-background/70 px-3 py-2 text-xs">
-              <span className="min-w-0 flex-1 truncate">{file.name}</span>
-              <span className="shrink-0 text-muted-foreground">{Math.max(1, Math.round(file.size / 1024))} KB</span>
-              <button type="button" data-testid={`button-remove-community-moment-file-${index}`} disabled={uploading || uploadedMediaAssetIds.length > 0} onClick={() => setFiles((current) => current.filter((_, item) => item !== index))} className="rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-50" aria-label={`Remove ${file.name}`}>
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+            <li key={`${file.name}-${file.lastModified}-${index}`} className="space-y-2 rounded-lg bg-background/70 px-3 py-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                <span className="shrink-0 text-muted-foreground">{Math.max(1, Math.round(file.size / 1024))} KB</span>
+                <button type="button" data-testid={`button-remove-community-moment-file-${index}`} disabled={uploading || uploadedMediaAssetIds.length > 0} onClick={() => {
+                  setFiles((current) => current.filter((_, item) => item !== index));
+                  setAltTexts((current) => current.filter((_, item) => item !== index));
+                  setCaptionsVtt((current) => current.filter((_, item) => item !== index));
+                }} className="rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-50" aria-label={`Remove ${file.name}`}>
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+              {(file.type.startsWith("image/") || file.type.startsWith("video/")) && (
+                <div className="space-y-2">
+                  <label htmlFor={`moment-alt-${draftId}-${index}`} className="block font-bold">
+                    Alternative text <span className="font-normal text-muted-foreground">(required, up to 250 characters)</span>
+                  </label>
+                  <textarea id={`moment-alt-${draftId}-${index}`} value={altTexts[index] ?? ""} maxLength={250} rows={2}
+                    onChange={(event) => setAltTexts((current) => current.map((value, item) => item === index ? event.target.value : value))}
+                    placeholder="Describe the important visual information"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" data-testid={`input-community-moment-alt-${index}`} />
+                </div>
+              )}
+              {file.type.startsWith("video/") && (
+                <div className="space-y-2">
+                  <label htmlFor={`moment-captions-${draftId}-${index}`} className="block font-bold">
+                    Video captions <span className="font-normal text-muted-foreground">(optional plain-text WebVTT cues)</span>
+                  </label>
+                  <textarea id={`moment-captions-${draftId}-${index}`} value={captionsVtt[index] ?? ""} maxLength={64 * 1024} rows={4}
+                    onChange={(event) => setCaptionsVtt((current) => current.map((value, item) => item === index ? event.target.value : value))}
+                    placeholder={"WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nSpoken words"}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs" data-testid={`input-community-moment-captions-${index}`} />
+                  <p className="text-muted-foreground">Use plain text, with cues ending within this video and the 60-second Moment limit.</p>
+                </div>
+              )}
             </li>
           ))}
         </ul>

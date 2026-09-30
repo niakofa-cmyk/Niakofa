@@ -576,8 +576,9 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, a
 
   if (updated.reported_community_story_id && status === "resolved_banned") {
     const storyId = updated.reported_community_story_id;
+    const removedAt = new Date();
     await db.update(communityStoriesTable)
-      .set({ status: "removed" })
+      .set({ status: "removed", expires_at: removedAt })
       .where(eq(communityStoriesTable.id, storyId));
     const autoClosed = await db.update(reportsTable)
       .set({

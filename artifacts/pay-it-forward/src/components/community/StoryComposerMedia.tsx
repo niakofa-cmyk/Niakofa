@@ -123,3 +123,24 @@ export function useObjectUrls(files: File[]): string[] {
 
   return urls;
 }
+
+/** Creates a revocable same-document WebVTT URL for the native video track. */
+export function useWebVttObjectUrl(value: string): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const source = value.trim();
+    if (!source) {
+      setUrl(null);
+      return;
+    }
+    const nextUrl = URL.createObjectURL(new Blob([source], { type: "text/vtt;charset=utf-8" }));
+    setUrl(nextUrl);
+    return () => {
+      URL.revokeObjectURL(nextUrl);
+      setUrl((current) => current === nextUrl ? null : current);
+    };
+  }, [value]);
+
+  return url;
+}

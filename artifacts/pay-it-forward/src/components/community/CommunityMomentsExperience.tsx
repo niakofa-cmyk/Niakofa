@@ -3,18 +3,25 @@ import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetCommunityStoryMutedAuthorsQueryKey,
+  getGetDirectMessageBlockedUsersQueryKey,
+  useBlockDirectMessageUser,
   useGetCommunityStoryMutedAuthors,
+  useGetDirectMessageBlockedUsers,
   useMuteCommunityStoryAuthor,
+  useUnblockDirectMessageUser,
   useUnmuteCommunityStoryAuthor,
 } from "@workspace/api-client-react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Flag, Heart, LoaderCircle, MessageCircle, MoreHorizontal, Play, RefreshCw, Send, Share2, VolumeX, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookHeart, ChevronLeft, ChevronRight, Eye, Flag, Heart, LoaderCircle, MessageCircle, MoreHorizontal, Play, RefreshCw, Send, Share2, VolumeX, X } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { deleteStoryComment, getStoryComments, getStoryMetrics, postStoryComment, reactToStory, recordStoryView, removeStoryReaction, sendStoryContextMessage, type StoryComment, type StoryMetrics } from "@/lib/community-story-client";
+import { createCommunityStoryWatchContribution, MAX_COMMUNITY_STORY_WATCH_CONTRIBUTION_MS, postCommunityStoryWatchContribution, type CommunityStoryWatchContribution } from "@/lib/communityStoryWatchClient";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { ReportModal } from "@/components/ReportModal";
 import { CommunityStoryRail } from "./CommunityStoryRail";
+import { CreatorInsightsPanel } from "./CreatorInsightsPanel";
 import { StoryShareSheet } from "./StoryShareSheet";
 import { StoryElementLayer, storyEffectFilter, type StoryElement } from "./StoryElementLayer";
+import { KeepForMyFamilyDialog } from "@/components/family/KeepForMyFamilyDialog";
 
 const MOMENTS_PAGE_SIZE = 12;
 
@@ -24,6 +31,8 @@ type MomentMedia = {
   mime_type: string;
   media_url: string;
   duration_ms?: number | null;
+  alt_text?: string | null;
+  captions_vtt?: string | null;
 };
 
 type MomentElement = Omit<StoryElement, "id"> & { id: string | number };
@@ -33,6 +42,7 @@ type MomentSpark = {
   author_user_id: number;
   hub_id: number | null;
   caption: string | null;
+  tags?: string[];
   audience: string;
   reply_enabled?: boolean;
   created_at: string | null;
@@ -48,6 +58,14 @@ type MomentSpark = {
 
 type MomentPage = { stories?: MomentSpark[]; next_cursor?: string | null; viewer_user_id?: number; error?: string };
 
+type WatchPlaybackState = {
+  storyId: number;
+  mediaId: number;
+  lastMediaTime: number | null;
+  seeking: boolean;
+  accumulatedMs: number;
+};
+
 function hasCaptionOverlay(spark: MomentSpark): boolean {
   const elements = spark.composition_manifest?.elements?.length
     ? spark.composition_manifest.elements
@@ -59,10 +77,20 @@ function hasCaptionOverlay(spark: MomentSpark): boolean {
   ));
 }
 
-async function fetchMomentPage(hubId: number | null, cursor: string | null, signal: AbortSignal) {
+type MomentDiscoveryFilters = { search: string; tag: string; authorId: string };
+
+async function fetchMomentPage(
+  hubId: number | null,
+  cursor: string | null,
+  signal: AbortSignal,
+  filters: MomentDiscoveryFilters,
+) {
   const query = new URLSearchParams({ limit: String(MOMENTS_PAGE_SIZE) });
   if (hubId !== null) query.set("hubId", String(hubId));
   if (cursor) query.set("cursor", cursor);
+  if (filters.search) query.set("search", filters.search);
+  if (filters.tag) query.set("tag", filters.tag);
+  if (filters.authorId) query.set("authorId", filters.authorId);
   const response = await fetch(`/api/community/stories?${query.toString()}`, {
     headers: authHeaders(),
     credentials: "same-origin",
@@ -100,12 +128,17 @@ export function CommunityMomentsExperience({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
+  const [tagInput, setTagInput] = useState("");
+  const [authorInput, setAuthorInput] = useState("");
+  const [discoveryFilters, setDiscoveryFilters] = useState<MomentDiscoveryFilters>({ search: "", tag: "", authorId: "" });
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [resolvedMediaKey, setResolvedMediaKey] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState("");
   const [mediaRetry, setMediaRetry] = useState(0);
+  const [captionsTrackUrl, setCaptionsTrackUrl] = useState<string | null>(null);
   const [metricsById, setMetricsById] = useState<Record<number, StoryMetrics>>({});
   const [reactionPendingId, setReactionPendingId] = useState<number | null>(null);
   const [replyOpenId, setReplyOpenId] = useState<number | null>(null);
@@ -134,6 +167,10 @@ export function CommunityMomentsExperience({
   const [moderationPendingAuthorId, setModerationPendingAuthorId] = useState<number | null>(null);
   const [moderationNotice, setModerationNotice] = useState("");
   const [mutedAuthorsOpen, setMutedAuthorsOpen] = useState(false);
+  const [blockedUsersOpen, setBlockedUsersOpen] = useState(false);
+  const [blockPendingAuthorId, setBlockPendingAuthorId] = useState<number | null>(null);
+  const [keepMomentId, setKeepMomentId] = useState<number | null>(null);
+  const [creatorInsightsOpen, setCreatorInsightsOpen] = useState(false);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const mutedAuthorsQuery = useGetCommunityStoryMutedAuthors({
@@ -143,11 +180,23 @@ export function CommunityMomentsExperience({
     },
     request: { headers: authHeaders() },
   });
+  const blockedUsersQuery = useGetDirectMessageBlockedUsers({
+    query: {
+      enabled: blockedUsersOpen,
+      queryKey: getGetDirectMessageBlockedUsersQueryKey(),
+    },
+    request: { headers: authHeaders() },
+  });
   const muteAuthorMutation = useMuteCommunityStoryAuthor({ request: { headers: authHeaders() } });
   const unmuteAuthorMutation = useUnmuteCommunityStoryAuthor({ request: { headers: authHeaders() } });
+  const blockUserMutation = useBlockDirectMessageUser({ request: { headers: authHeaders() } });
+  const unblockUserMutation = useUnblockDirectMessageUser({ request: { headers: authHeaders() } });
   const cardRefs = useRef(new Map<number, HTMLElement>());
   const feedRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const watchPlaybackRef = useRef<WatchPlaybackState | null>(null);
+  const pendingWatchContributionsRef = useRef<CommunityStoryWatchContribution[]>([]);
+  const sendingWatchContributionsRef = useRef(false);
   const feedGenerationRef = useRef(0);
   const initialControllerRef = useRef<AbortController | null>(null);
   const moreControllerRef = useRef<AbortController | null>(null);
@@ -174,6 +223,110 @@ export function CommunityMomentsExperience({
   const visualElements = storyElements.filter((element) => element.type !== "background");
   const mediaFilter = storyEffectFilter(storyElements);
 
+  const drainWatchContributions = useCallback(async () => {
+    if (sendingWatchContributionsRef.current) return;
+    sendingWatchContributionsRef.current = true;
+    try {
+      while (pendingWatchContributionsRef.current.length > 0) {
+        const contribution = pendingWatchContributionsRef.current[0];
+        try {
+          await postCommunityStoryWatchContribution(contribution);
+          if (pendingWatchContributionsRef.current[0] === contribution) {
+            pendingWatchContributionsRef.current.shift();
+          }
+        } catch {
+          // Keep the same event UUID queued; a later playback boundary retries it.
+          break;
+        }
+      }
+    } finally {
+      sendingWatchContributionsRef.current = false;
+    }
+  }, []);
+
+  const flushWatchContribution = useCallback((storyId: number, mediaId: number, completed = false) => {
+    const playback = watchPlaybackRef.current;
+    if (!playback || playback.storyId !== storyId || playback.mediaId !== mediaId) return;
+    const durationMs = Math.min(
+      MAX_COMMUNITY_STORY_WATCH_CONTRIBUTION_MS,
+      Math.floor(playback.accumulatedMs),
+    );
+    playback.accumulatedMs = 0;
+    playback.lastMediaTime = null;
+    if (durationMs > 0 || completed) {
+      try {
+        pendingWatchContributionsRef.current.push(
+          createCommunityStoryWatchContribution(storyId, durationMs, completed),
+        );
+      } catch {
+        // Analytics is fail-open; playback must remain unaffected if UUID generation is unavailable.
+      }
+    }
+    void drainWatchContributions();
+  }, [drainWatchContributions]);
+
+  const startWatchPlayback = useCallback((
+    storyId: number,
+    mediaId: number,
+    authorId: number,
+    currentTime: number,
+  ) => {
+    const previous = watchPlaybackRef.current;
+    if (previous && (previous.storyId !== storyId || previous.mediaId !== mediaId)) {
+      flushWatchContribution(previous.storyId, previous.mediaId);
+    }
+    if (authorId === viewerId) {
+      watchPlaybackRef.current = null;
+      return;
+    }
+    const current = watchPlaybackRef.current;
+    if (current?.storyId === storyId && current.mediaId === mediaId) {
+      current.lastMediaTime = currentTime;
+      current.seeking = false;
+      return;
+    }
+    watchPlaybackRef.current = {
+      storyId,
+      mediaId,
+      lastMediaTime: currentTime,
+      seeking: false,
+      accumulatedMs: 0,
+    };
+  }, [flushWatchContribution, viewerId]);
+
+  const accumulateWatchTime = useCallback((
+    storyId: number,
+    mediaId: number,
+    video: HTMLVideoElement,
+    includeFinalFrame = false,
+  ) => {
+    const playback = watchPlaybackRef.current;
+    if (!playback || playback.storyId !== storyId || playback.mediaId !== mediaId || playback.seeking) return;
+    if (video.paused && !includeFinalFrame) return;
+    const currentTime = video.currentTime;
+    if (!Number.isFinite(currentTime)) return;
+    const previousTime = playback.lastMediaTime;
+    playback.lastMediaTime = currentTime;
+    if (previousTime === null) return;
+    const deltaMs = (currentTime - previousTime) * 1000;
+    // Ignore seeks and playback gaps; timeupdate only accumulates media time and
+    // never sends a request itself.
+    if (deltaMs > 0 && deltaMs <= 5000) {
+      playback.accumulatedMs = Math.min(
+        MAX_COMMUNITY_STORY_WATCH_CONTRIBUTION_MS,
+        playback.accumulatedMs + deltaMs,
+      );
+    }
+  }, []);
+
+  const flushCurrentWatchContribution = useCallback(() => {
+    const playback = watchPlaybackRef.current;
+    const video = videoRef.current;
+    if (!playback) return;
+    if (video) accumulateWatchTime(playback.storyId, playback.mediaId, video, true);
+    flushWatchContribution(playback.storyId, playback.mediaId);
+  }, [accumulateWatchTime, flushWatchContribution]);
+
   useEffect(() => {
     setActiveMediaIndex(0);
   }, [activeSpark?.id]);
@@ -195,7 +348,7 @@ export function CommunityMomentsExperience({
     setReplyDraft("");
     setInteractionError("");
     viewedIdsRef.current.clear();
-    void fetchMomentPage(hubId, null, controller.signal)
+    void fetchMomentPage(hubId, null, controller.signal, discoveryFilters)
       .then((page) => {
         if (controller.signal.aborted || generation !== feedGenerationRef.current) return;
         setViewerId(page.viewerId);
@@ -211,7 +364,7 @@ export function CommunityMomentsExperience({
         if (!controller.signal.aborted && generation === feedGenerationRef.current) setLoading(false);
       });
     return () => controller.abort();
-  }, [hubId, retry]);
+  }, [discoveryFilters, hubId, retry]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
@@ -222,7 +375,7 @@ export function CommunityMomentsExperience({
     setLoadingMore(true);
     setError("");
     try {
-      const page = await fetchMomentPage(hubId, cursor, controller.signal);
+      const page = await fetchMomentPage(hubId, cursor, controller.signal, discoveryFilters);
       if (controller.signal.aborted || generation !== feedGenerationRef.current) return;
       setSparks((current) => {
         const existing = new Set(current.map((spark) => spark.id));
@@ -236,7 +389,7 @@ export function CommunityMomentsExperience({
     } finally {
       if (!controller.signal.aborted && generation === feedGenerationRef.current) setLoadingMore(false);
     }
-  }, [cursor, hubId, loadingMore]);
+  }, [cursor, discoveryFilters, hubId, loadingMore]);
 
   useEffect(() => {
     const root = feedRef.current;
@@ -262,23 +415,29 @@ export function CommunityMomentsExperience({
     }
     const observer = new IntersectionObserver(([entry]) => {
       const visible = Boolean(entry?.isIntersecting && entry.intersectionRatio >= 0.1);
-      if (!visible) videoRef.current?.pause();
+      if (!visible) {
+        flushCurrentWatchContribution();
+        videoRef.current?.pause();
+      }
       setFeedInViewport(visible);
     }, { threshold: [0, 0.1] });
     observer.observe(root);
     return () => observer.disconnect();
-  }, [sparks.length, loading]);
+  }, [flushCurrentWatchContribution, sparks.length, loading]);
 
   useEffect(() => {
     const updateVisibility = () => {
       const visible = document.visibilityState !== "hidden";
-      if (!visible) videoRef.current?.pause();
+      if (!visible) {
+        flushCurrentWatchContribution();
+        videoRef.current?.pause();
+      }
       setDocumentVisible(visible);
     };
     document.addEventListener("visibilitychange", updateVisibility);
     updateVisibility();
     return () => document.removeEventListener("visibilitychange", updateVisibility);
-  }, []);
+  }, [flushCurrentWatchContribution]);
 
   useEffect(() => {
     setVideoMuted(true);
@@ -287,8 +446,9 @@ export function CommunityMomentsExperience({
   useEffect(() => () => {
     initialControllerRef.current?.abort();
     moreControllerRef.current?.abort();
+    flushCurrentWatchContribution();
     videoRef.current?.pause();
-  }, []);
+  }, [flushCurrentWatchContribution]);
 
   useEffect(() => {
     if (!activeSpark || viewedIdsRef.current.has(activeSpark.id)) return;
@@ -469,13 +629,25 @@ export function CommunityMomentsExperience({
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
+      flushCurrentWatchContribution();
       if (video) {
         video.pause();
         video.removeAttribute("src");
         video.load();
       }
     };
-  }, [activeMedia, activeSpark?.id, mediaRetry, playbackAllowed]);
+  }, [activeMedia, activeSpark?.id, flushCurrentWatchContribution, mediaRetry, playbackAllowed]);
+
+  useEffect(() => {
+    const cues = activeMedia?.captions_vtt?.trim();
+    if (!cues) {
+      setCaptionsTrackUrl(null);
+      return;
+    }
+    const trackUrl = URL.createObjectURL(new Blob([cues], { type: "text/vtt;charset=utf-8" }));
+    setCaptionsTrackUrl(trackUrl);
+    return () => URL.revokeObjectURL(trackUrl);
+  }, [activeMedia?.captions_vtt]);
 
   useEffect(() => {
     if (openSparkId == null || loading) return;
@@ -570,6 +742,43 @@ export function CommunityMomentsExperience({
     }
   };
 
+  const blockAuthor = async (spark: MomentSpark) => {
+    const authorId = spark.author_user_id;
+    if (blockPendingAuthorId !== null || authorId === viewerId) return;
+    const authorName = spark.author.name || "this author";
+    if (!window.confirm(`Block ${authorName}? Blocking also prevents direct messages between you and this account.`)) return;
+    setBlockPendingAuthorId(authorId);
+    setInteractionError("");
+    try {
+      await blockUserMutation.mutateAsync({ id: authorId });
+      await queryClient.invalidateQueries({ queryKey: getGetDirectMessageBlockedUsersQueryKey() });
+      const remaining = sparks.filter((item) => item.author_user_id !== authorId);
+      const removedBeforeActive = sparks.slice(0, activeIndex).filter((item) => item.author_user_id === authorId).length;
+      setSparks(remaining);
+      setActiveIndex(Math.min(Math.max(0, activeIndex - removedBeforeActive), Math.max(0, remaining.length - 1)));
+      setActionMenuSparkId(null);
+      setModerationNotice(`${authorName} was blocked. Their Moments were removed from this feed.`);
+    } catch (reason) {
+      setInteractionError(reason instanceof Error ? reason.message : "Could not block this author.");
+    } finally {
+      setBlockPendingAuthorId(null);
+    }
+  };
+
+  const unblockUser = async (userId: number) => {
+    if (blockPendingAuthorId !== null) return;
+    setBlockPendingAuthorId(userId);
+    setInteractionError("");
+    try {
+      await unblockUserMutation.mutateAsync({ id: userId });
+      await queryClient.invalidateQueries({ queryKey: getGetDirectMessageBlockedUsersQueryKey() });
+    } catch (reason) {
+      setInteractionError(reason instanceof Error ? reason.message : "Could not unblock this account.");
+    } finally {
+      setBlockPendingAuthorId(null);
+    }
+  };
+
   return (
     <section className="space-y-4" aria-label={hubId === null ? "Community Moments" : "Hub Moments"} data-testid="community-moments-experience">
       {!compact && (
@@ -586,6 +795,25 @@ export function CommunityMomentsExperience({
         compact
       />
 
+      <section className="overflow-hidden rounded-2xl border border-border bg-card" aria-label="Creator analytics">
+        <button
+          type="button"
+          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40"
+          aria-expanded={creatorInsightsOpen}
+          onClick={() => setCreatorInsightsOpen((open) => !open)}
+          data-testid="button-toggle-creator-insights"
+        >
+          <span>
+            <span className="block text-sm font-bold">Creator insights</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">Daily Story watch time and completion retention</span>
+          </span>
+          {creatorInsightsOpen
+            ? <ArrowUp className="h-4 w-4 shrink-0" aria-hidden="true" />
+            : <ArrowDown className="h-4 w-4 shrink-0" aria-hidden="true" />}
+        </button>
+        {creatorInsightsOpen && <div className="border-t border-border p-3 sm:p-4"><CreatorInsightsPanel /></div>}
+      </section>
+
       <section className="overflow-hidden rounded-2xl border border-border bg-card" aria-label="Spark feed">
         <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-4 py-2">
           <p className="text-sm font-bold">Sparks shared with you</p>
@@ -593,6 +821,9 @@ export function CommunityMomentsExperience({
             <button type="button" onClick={() => setMutedAuthorsOpen(true)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted" aria-label="Manage hidden Moment authors" data-testid="button-manage-hidden-authors">
               <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />
               Hidden authors
+            </button>
+            <button type="button" onClick={() => setBlockedUsersOpen(true)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted" aria-label="Manage accounts you blocked" data-testid="button-manage-blocked-users">
+              Blocked accounts
             </button>
             {!loading && sparks.length > 0 && (
               <>
@@ -607,6 +838,36 @@ export function CommunityMomentsExperience({
             )}
           </div>
         </div>
+
+        <form
+          className="grid gap-2 border-b border-border bg-muted/20 p-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.7fr)_minmax(10rem,0.8fr)_auto]"
+          aria-label="Discover Moments"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setDiscoveryFilters({
+              search: searchInput.trim(),
+              tag: tagInput.trim().replace(/^#/, "").toLowerCase(),
+              authorId: authorInput,
+            });
+          }}
+        >
+          <label className="sr-only" htmlFor="moment-search">Search Moments</label>
+          <input id="moment-search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)}
+            maxLength={100} placeholder="Search Moments" className="min-h-10 rounded-lg border border-border bg-background px-3 text-sm" data-testid="input-moment-search" />
+          <label className="sr-only" htmlFor="moment-tag-filter">Filter by tag</label>
+          <input id="moment-tag-filter" value={tagInput} onChange={(event) => setTagInput(event.target.value)}
+            maxLength={31} placeholder="Tag (e.g. garden)" className="min-h-10 rounded-lg border border-border bg-background px-3 text-sm" data-testid="input-moment-tag-filter" />
+          <label className="sr-only" htmlFor="moment-author-filter">Filter by author</label>
+          <select id="moment-author-filter" value={authorInput} onChange={(event) => setAuthorInput(event.target.value)}
+            className="min-h-10 rounded-lg border border-border bg-background px-3 text-sm" data-testid="select-moment-author-filter">
+            <option value="">All authors</option>
+            {authorInput && !sparks.some((spark) => String(spark.author_user_id) === authorInput) && <option value={authorInput}>Selected author</option>}
+            {Array.from(new Map(sparks.map((spark) => [spark.author_user_id, spark.author.name])).entries()).map(([id, name]) => (
+              <option key={id} value={id}>{name || `Author ${id}`}</option>
+            ))}
+          </select>
+          <button type="submit" className="min-h-10 rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground" data-testid="button-discover-moments">Discover</button>
+        </form>
 
         {error && (
           <div className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm" role="alert" data-testid="status-moments-error">
@@ -669,13 +930,49 @@ export function CommunityMomentsExperience({
                     data-testid={`card-moment-${spark.id}`}
                   >
                     {current && playbackAllowed && currentMediaUrl && media?.media_type === "video" && (
-                      <video ref={videoRef} key={`${spark.id}-${media.id}`} src={currentMediaUrl} autoPlay muted={videoMuted} playsInline controls preload="metadata" className="absolute inset-0 h-full w-full object-contain" style={{ filter: mediaFilter }} aria-label={spark.caption || "Community Spark video"} onVolumeChange={(event) => setVideoMuted(event.currentTarget.muted)} onError={() => {
+                      <video
+                        ref={videoRef}
+                        key={`${spark.id}-${media.id}`}
+                        src={currentMediaUrl}
+                        autoPlay muted={videoMuted} playsInline controls preload="metadata"
+                        className="absolute inset-0 h-full w-full object-contain"
+                        style={{ filter: mediaFilter }}
+                        aria-label={media.alt_text?.trim() || spark.caption || `Community Spark video shared by ${spark.author.name}`}
+                        onPlay={(event) => startWatchPlayback(spark.id, media.id, spark.author_user_id, event.currentTarget.currentTime)}
+                        onTimeUpdate={(event) => accumulateWatchTime(spark.id, media.id, event.currentTarget)}
+                        onSeeking={() => {
+                          const playback = watchPlaybackRef.current;
+                          if (playback?.storyId === spark.id && playback.mediaId === media.id) {
+                            playback.seeking = true;
+                            playback.lastMediaTime = null;
+                          }
+                        }}
+                        onSeeked={(event) => {
+                          const playback = watchPlaybackRef.current;
+                          if (playback?.storyId === spark.id && playback.mediaId === media.id) {
+                            playback.seeking = false;
+                            playback.lastMediaTime = event.currentTarget.currentTime;
+                          }
+                        }}
+                        onPause={(event) => {
+                          accumulateWatchTime(spark.id, media.id, event.currentTarget, true);
+                          flushWatchContribution(spark.id, media.id);
+                        }}
+                        onEnded={(event) => {
+                          accumulateWatchTime(spark.id, media.id, event.currentTarget, true);
+                          flushWatchContribution(spark.id, media.id, true);
+                        }}
+                        onVolumeChange={(event) => setVideoMuted(event.currentTarget.muted)}
+                        onError={() => {
                         setMediaUrl(null);
                         setMediaError("The Spark video could not be played. Request a fresh playback link.");
-                      }} />
+                        }}
+                      >
+                        {captionsTrackUrl && <track kind="captions" src={captionsTrackUrl} srcLang="en" label="Creator captions" default />}
+                      </video>
                     )}
                     {current && playbackAllowed && currentMediaUrl && media?.media_type === "photo" && (
-                      <img src={currentMediaUrl} alt={spark.caption ? `Spark from ${spark.author.name}: ${spark.caption}` : `Spark shared by ${spark.author.name}`} className="absolute inset-0 h-full w-full object-contain" style={{ filter: mediaFilter }} />
+                      <img src={currentMediaUrl} alt={media.alt_text?.trim() || (spark.caption ? `Spark from ${spark.author.name}: ${spark.caption}` : `Spark shared by ${spark.author.name}`)} className="absolute inset-0 h-full w-full object-contain" style={{ filter: mediaFilter }} />
                     )}
                     {current && playbackAllowed && currentMediaUrl && media?.media_type === "audio" && (
                       <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-indigo-950 via-slate-900 to-emerald-950 p-8">
@@ -794,13 +1091,13 @@ export function CommunityMomentsExperience({
                             <Share2 className="h-4 w-4" />
                             <span>{metricsById[spark.id]?.shares ?? 0}</span>
                           </button>
-                          {spark.author_user_id !== viewerId && (
+                          {(spark.author_user_id !== viewerId || (spark.caption?.trim() ?? "") !== "") && (
                             <div className="relative">
                               <button
                                 type="button"
                                 onClick={() => setActionMenuSparkId((currentId) => currentId === spark.id ? null : spark.id)}
                                 className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-full text-white hover:bg-white/10"
-                                aria-label={`More actions for Moment by ${spark.author.name || "this author"}`}
+                                aria-label={`More actions for ${spark.author_user_id === viewerId ? "your Moment" : `Moment by ${spark.author.name || "this author"}`}`}
                                 aria-expanded={actionMenuSparkId === spark.id}
                                 data-testid={`button-moment-actions-${spark.id}`}
                               >
@@ -813,10 +1110,23 @@ export function CommunityMomentsExperience({
                                   <button type="button" onClick={() => { setReportSparkId(spark.id); setActionMenuSparkId(null); }} className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold text-white hover:bg-white/10" data-testid={`button-report-moment-${spark.id}`}>
                                     <Flag className="h-4 w-4" aria-hidden="true" /> Report Moment
                                   </button>
-                                  <button type="button" onClick={() => void muteAuthor(spark)} disabled={moderationPendingAuthorId === spark.author_user_id} className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold text-white hover:bg-white/10 disabled:opacity-50" data-testid={`button-mute-moment-author-${spark.id}`}>
-                                    {moderationPendingAuthorId === spark.author_user_id ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <VolumeX className="h-4 w-4" aria-hidden="true" />}
-                                    Hide this author
-                                  </button>
+                                  {spark.author_user_id !== viewerId ? (
+                                    <>
+                                      <button type="button" onClick={() => void muteAuthor(spark)} disabled={moderationPendingAuthorId === spark.author_user_id} className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold text-white hover:bg-white/10 disabled:opacity-50" data-testid={`button-mute-moment-author-${spark.id}`}>
+                                        {moderationPendingAuthorId === spark.author_user_id ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <VolumeX className="h-4 w-4" aria-hidden="true" />}
+                                        Hide this author
+                                      </button>
+                                      <button type="button" onClick={() => void blockAuthor(spark)} disabled={blockPendingAuthorId === spark.author_user_id} className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold text-white hover:bg-white/10 disabled:opacity-50" data-testid={`button-block-moment-author-${spark.id}`}>
+                                        {blockPendingAuthorId === spark.author_user_id ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+                                        Block author
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button type="button" onClick={() => { setKeepMomentId(spark.id); setActionMenuSparkId(null); }} className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold text-white hover:bg-white/10" data-testid={`button-keep-moment-${spark.id}`}>
+                                      <BookHeart className="h-4 w-4" aria-hidden="true" />
+                                      Keep caption for my family
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -905,6 +1215,60 @@ export function CommunityMomentsExperience({
           </section>
         </div>
       )}
+      {blockedUsersOpen && (
+        <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="blocked-users-title" data-testid="dialog-blocked-users" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setBlockedUsersOpen(false);
+        }} onKeyDown={(event) => {
+          if (event.key === "Escape") setBlockedUsersOpen(false);
+        }}>
+          <section className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-card p-4 shadow-2xl sm:rounded-2xl" aria-label="Accounts you blocked">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 id="blocked-users-title" className="text-lg font-black">Blocked accounts</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Accounts you blocked. Unblocking lets direct messages between you resume.</p>
+              </div>
+              <button type="button" onClick={() => setBlockedUsersOpen(false)} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-border hover:bg-muted" aria-label="Close blocked accounts" data-testid="button-close-blocked-users">
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            {interactionError && (
+              <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm" role="alert" data-testid="status-blocked-users-error">{interactionError}</p>
+            )}
+            {blockedUsersQuery.isLoading ? (
+              <p className="mt-5 text-sm text-muted-foreground" role="status">Loading blocked accounts…</p>
+            ) : blockedUsersQuery.isError ? (
+              <div className="mt-5 flex items-center justify-between gap-3 text-sm" role="alert">
+                <span>Blocked accounts could not be loaded.</span>
+                <button type="button" onClick={() => void blockedUsersQuery.refetch()} className="font-bold underline" data-testid="button-retry-blocked-users">Retry</button>
+              </div>
+            ) : (blockedUsersQuery.data?.blocked_users.length ?? 0) === 0 ? (
+              <p className="mt-5 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground" data-testid="status-no-blocked-users">You have not blocked any accounts.</p>
+            ) : (
+              <ul className="mt-4 space-y-2">
+                {blockedUsersQuery.data?.blocked_users.map((user) => (
+                  <li key={user.id} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3" data-testid={`row-blocked-user-${user.id}`}>
+                    <div className="flex min-w-0 items-center gap-3">
+                      {user.avatar_url
+                        ? <img src={user.avatar_url} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+                        : <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted text-sm font-bold" aria-hidden="true">{user.name.slice(0, 1) || "?"}</span>}
+                      <p className="truncate text-sm font-bold" data-testid={`text-blocked-user-${user.id}`}>{user.name}</p>
+                    </div>
+                    <button type="button" onClick={() => void unblockUser(user.id)} disabled={blockPendingAuthorId === user.id} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-bold hover:bg-muted disabled:opacity-50" data-testid={`button-unblock-user-${user.id}`}>
+                      {blockPendingAuthorId === user.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+                      Unblock
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
+      <KeepForMyFamilyDialog
+        open={keepMomentId !== null}
+        momentId={keepMomentId ?? 0}
+        onClose={() => setKeepMomentId(null)}
+      />
       {commentsSpark && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="spark-comments-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommentsOpenId(null); }}>
           <section ref={commentsDialogRef} tabIndex={-1} className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-card p-4 shadow-2xl sm:rounded-2xl" data-testid="spark-comments-panel">

@@ -53,11 +53,13 @@ import {
   familyMemoryAssetsTable,
   familyInterviewsTable,
   familyStoriesTable,
+  familyStoryKeepsTable,
+  communityStoriesTable,
   usersTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { eq, and, desc, sql, or, ilike, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, or, ilike, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
@@ -251,16 +253,104 @@ const UpdateInterviewSchema = z.object({
   resulting_memory_id: z.number().int().positive().optional(),
 });
 
-const CreateStorySchema = z.object({
+const StoryFieldsSchema = z.object({
   title:            z.string().min(1).max(200).transform((s) => stripTags(s)),
   body:             z.string().min(1).max(50000).transform((s) => stripTags(s)),
+  audience:         z.enum(["family", "private"]).default("family"),
   category:         z.enum(["oral", "written", "tradition", "recipe", "song", "proverb", "biography"]).optional(),
   language:         z.string().max(50).optional().transform((s) => (s ? stripTags(s) : s)),
   teller_member_id: z.number().int().positive().optional(),
   about_member_id:  z.number().int().positive().optional(),
   memory_id:        z.number().int().positive().optional(),
+  date_year:        z.number().int().min(1).max(9999).optional(),
+  date_month:       z.number().int().min(1).max(12).optional(),
+  date_day:         z.number().int().min(1).max(31).optional(),
+  date_precision:   z.enum(["day", "month", "year", "decade", "circa"]).optional(),
   tags:             z.array(z.string().max(50)).max(20).optional(),
 });
+
+function validateStoryDate(
+  data: Partial<z.infer<typeof StoryFieldsSchema>>,
+  ctx: z.RefinementCtx,
+) {
+  const hasDateParts = data.date_year !== undefined || data.date_month !== undefined || data.date_day !== undefined;
+  if ((hasDateParts || data.date_precision !== undefined) && data.date_year === undefined) {
+    ctx.addIssue({ code: "custom", path: ["date_year"], message: "A year is required when specifying a date" });
+  }
+  if (hasDateParts && data.date_precision === undefined) {
+    ctx.addIssue({ code: "custom", path: ["date_precision"], message: "A year and explicit date precision are required" });
+  }
+  if (data.date_precision === "day" && (data.date_month === undefined || data.date_day === undefined)) {
+    ctx.addIssue({ code: "custom", path: ["date_day"], message: "Day precision requires year, month, and day" });
+  }
+  if (data.date_precision === "month" && data.date_month === undefined) {
+    ctx.addIssue({ code: "custom", path: ["date_month"], message: "Month precision requires year and month" });
+  }
+  if (data.date_precision === "decade" && data.date_year !== undefined && data.date_year % 10 !== 0) {
+    ctx.addIssue({ code: "custom", path: ["date_year"], message: "Decade dates must use the decade's first year" });
+  }
+  if (data.date_precision !== "day" && data.date_day !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["date_day"], message: "Day is only valid with day precision" });
+  }
+  if (!["day", "month"].includes(data.date_precision ?? "") && data.date_month !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["date_month"], message: "Month is only valid with day or month precision" });
+  }
+  if (data.date_precision === "day" && data.date_year !== undefined && data.date_month !== undefined && data.date_day !== undefined) {
+    const date = new Date(Date.UTC(data.date_year, data.date_month - 1, data.date_day));
+    if (date.getUTCFullYear() !== data.date_year || date.getUTCMonth() + 1 !== data.date_month || date.getUTCDate() !== data.date_day) {
+      ctx.addIssue({ code: "custom", path: ["date_day"], message: "Invalid calendar date" });
+    }
+  }
+}
+
+const CreateStorySchema = StoryFieldsSchema.superRefine(validateStoryDate);
+const StoryDateSchema = z.object({
+  date_year: z.number().int().min(1).max(9999).optional(),
+  date_month: z.number().int().min(1).max(12).optional(),
+  date_day: z.number().int().min(1).max(31).optional(),
+  date_precision: z.enum(["day", "month", "year", "decade", "circa"]).optional(),
+}).superRefine(validateStoryDate);
+export const UpdateStorySchema = StoryFieldsSchema.partial().extend({
+  memory_id: z.number().int().positive().nullable().optional(),
+  date_year: z.number().int().min(1).max(9999).nullable().optional(),
+  date_month: z.number().int().min(1).max(12).nullable().optional(),
+  date_day: z.number().int().min(1).max(31).nullable().optional(),
+  date_precision: z.enum(["day", "month", "year", "decade", "circa"]).nullable().optional(),
+});
+export function validateStoryDateUpdate(
+  patch: Pick<z.infer<typeof UpdateStorySchema>, "date_year" | "date_month" | "date_day" | "date_precision">,
+  current: Pick<typeof familyStoriesTable.$inferSelect, "date_year" | "date_month" | "date_day" | "date_precision">,
+) {
+  return StoryDateSchema.safeParse({
+    date_year: patch.date_year === undefined ? current.date_year ?? undefined : patch.date_year ?? undefined,
+    date_month: patch.date_month === undefined ? current.date_month ?? undefined : patch.date_month ?? undefined,
+    date_day: patch.date_day === undefined ? current.date_day ?? undefined : patch.date_day ?? undefined,
+    date_precision: patch.date_precision === undefined ? current.date_precision ?? undefined : patch.date_precision ?? undefined,
+  });
+}
+const KeepMomentSchema = z.object({
+  moment_id: z.number().int().positive(),
+});
+
+export function formatFamilyStoryDate(input: {
+  date_year: number | null;
+  date_month: number | null;
+  date_day: number | null;
+  date_precision: string | null;
+}): string | null {
+  if (input.date_year === null || !input.date_precision) return null;
+  if (input.date_precision === "decade") return `${Math.floor(input.date_year / 10) * 10}s`;
+  if (input.date_precision === "circa") return `c. ${input.date_year}`;
+  if (input.date_precision === "month" && input.date_month !== null) {
+    return new Date(Date.UTC(input.date_year, input.date_month - 1, 1))
+      .toLocaleDateString("en", { year: "numeric", month: "long", timeZone: "UTC" });
+  }
+  if (input.date_precision === "day" && input.date_month !== null && input.date_day !== null) {
+    return new Date(Date.UTC(input.date_year, input.date_month - 1, input.date_day))
+      .toLocaleDateString("en", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+  }
+  return String(input.date_year);
+}
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -326,6 +416,15 @@ export function familyMemoryVisibilityAllows(
 
 const CAN_WRITE_ROLES: string[] = ["owner", "curator", "contributor"];
 const CAN_MANAGE_ROLES: string[] = ["owner", "curator"];
+
+export function familyStoryCanManage(
+  authorId: number | null,
+  userId: number,
+  role: string | undefined,
+): boolean {
+  return authorId === userId
+    || (authorId === null && CAN_MANAGE_ROLES.includes(role ?? ""));
+}
 
 // ─── Family Space CRUD ────────────────────────────────────────────────────────
 
@@ -1552,7 +1651,10 @@ router.post("/family/:id/stories", generalApiLimiter, requireAuth, async (req, r
     return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { title, body, category, language, teller_member_id, about_member_id, memory_id, tags } = parsed.data;
+  const {
+    title, body, audience, category, language, teller_member_id, about_member_id, memory_id,
+    date_year, date_month, date_day, date_precision, tags,
+  } = parsed.data;
   for (const memberId of [teller_member_id, about_member_id].filter((id): id is number => id !== undefined)) {
     const [member] = await db.select({ id: familyMembersTable.id }).from(familyMembersTable).where(and(
       eq(familyMembersTable.id, memberId), eq(familyMembersTable.family_id, familyId),
@@ -1569,24 +1671,64 @@ router.post("/family/:id/stories", generalApiLimiter, requireAuth, async (req, r
     .insert(familyStoriesTable)
     .values({
       family_id: familyId,
+      author_id: userId,
       title,
       body,
+      audience,
       category: category ?? null,
       language: language ?? null,
       teller_member_id: teller_member_id ?? null,
       about_member_id: about_member_id ?? null,
       memory_id: memory_id ?? null,
+      date_year: date_year ?? null,
+      date_month: date_month ?? null,
+      date_day: date_day ?? null,
+      date_precision: date_precision ?? null,
       tags: tags ?? [],
     })
     .returning();
 
-  broadcast({ type: "family_story_created", payload: { family_id: familyId, story_id: story.id, author_id: userId } });
-
   logger.info({ familyId, storyId: story.id, userId }, "family_story_created");
-  return res.status(201).json({ story });
+  return res.status(201).json({ story: { ...story, date_label: formatFamilyStoryDate(story) } });
 });
 
-// GET /family/:id/stories — list stories
+function storyVisibilityWhere(
+  familyId: number,
+  userId: number,
+  role: string,
+) {
+  const canReadPrivateMemory = CAN_MANAGE_ROLES.includes(role);
+  const privateStoryVisibility = canReadPrivateMemory
+    ? or(eq(familyStoriesTable.author_id, userId), isNull(familyStoriesTable.author_id))
+    : eq(familyStoriesTable.author_id, userId);
+  return and(
+    eq(familyStoriesTable.family_id, familyId),
+    or(
+      eq(familyStoriesTable.audience, "family"),
+      and(eq(familyStoriesTable.audience, "private"), privateStoryVisibility),
+    ),
+    or(
+      isNull(familyStoriesTable.memory_id),
+      sql`EXISTS (
+        SELECT 1 FROM family_memories fm
+        WHERE fm.id = ${familyStoriesTable.memory_id}
+          AND fm.family_id = ${familyId}
+          AND (
+            fm.visibility = 'family'
+            OR fm.author_id = ${userId}
+            OR (${canReadPrivateMemory} AND fm.visibility = 'private')
+          )
+      )`,
+    ),
+  );
+}
+
+const FamilyStoryListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(100000).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+// GET /family/:id/stories — paged list with one author join (no per-story queries)
 router.get("/family/:id/stories", generalApiLimiter, requireAuth, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const familyId = Number(req.params.id);
@@ -1595,21 +1737,225 @@ router.get("/family/:id/stories", generalApiLimiter, requireAuth, async (req, re
   const membership = await getFamilyMembership(familyId, userId);
   if (!membership) return res.status(403).json({ error: "Not a member of this family" });
 
-  const allStories = await db
-    .select()
+  const parsedQuery = FamilyStoryListQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ error: "Invalid pagination", details: parsedQuery.error.flatten() });
+  }
+  const { page, limit } = parsedQuery.data;
+  const where = storyVisibilityWhere(familyId, userId, membership.role as string);
+  const [rows, [{ total }]] = await Promise.all([
+    db
+    .select({
+      story: familyStoriesTable,
+      author: {
+        id: usersTable.id,
+        name: usersTable.name,
+        avatar_url: usersTable.avatar_url,
+      },
+    })
     .from(familyStoriesTable)
-    .where(eq(familyStoriesTable.family_id, familyId))
-    .orderBy(desc(familyStoriesTable.created_at));
-  const stories = [];
-  for (const story of allStories) {
-    if (story.memory_id !== null) {
-      const access = await getAccessibleMemory(familyId, story.memory_id, userId, membership);
-      if (!access.memory || access.forbidden) continue;
-    }
-    stories.push(story);
+    .leftJoin(usersTable, eq(familyStoriesTable.author_id, usersTable.id))
+    .where(where)
+    .orderBy(desc(familyStoriesTable.created_at), desc(familyStoriesTable.id))
+    .limit(limit)
+    .offset((page - 1) * limit),
+    db.select({ total: sql<number>`count(*)::int` })
+      .from(familyStoriesTable)
+      .where(where),
+  ]);
+  const stories = rows.map(({ story, author }) => ({
+    ...story,
+    author,
+    date_label: formatFamilyStoryDate(story),
+    viewer_can_manage: familyStoryCanManage(story.author_id, userId, membership.role as string),
+  }));
+  return res.json({
+    stories,
+    page,
+    limit,
+    total,
+    has_more: page * limit < total,
+  });
+});
+
+// PATCH /family/:id/stories/:storyId — only the story author while an active family member
+router.patch("/family/:id/stories/:storyId", generalApiLimiter, requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const familyId = Number(req.params.id);
+  const storyId = Number(req.params.storyId);
+  if (!familyId || !storyId) return res.status(400).json({ error: "Invalid ids" });
+
+  const membership = await getFamilyMembership(familyId, userId);
+  if (!membership) return res.status(403).json({ error: "Not a member of this family" });
+  const [existing] = await db.select().from(familyStoriesTable).where(and(
+    eq(familyStoriesTable.id, storyId),
+    eq(familyStoriesTable.family_id, familyId),
+  )).limit(1);
+  if (!existing || !familyStoryCanManage(existing.author_id, userId, membership.role as string)) {
+    return res.status(404).json({ error: "Story not found" });
   }
 
-  return res.json({ stories });
+  const parsed = UpdateStorySchema.safeParse(req.body);
+  if (!parsed.success || Object.keys(parsed.success ? parsed.data : {}).length === 0) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.success ? undefined : parsed.error.flatten() });
+  }
+  const effectiveDate = validateStoryDateUpdate(parsed.data, existing);
+  if (!effectiveDate.success) {
+    return res.status(400).json({ error: "Invalid story date", details: effectiveDate.error.flatten() });
+  }
+  for (const memberId of [parsed.data.teller_member_id, parsed.data.about_member_id].filter((id): id is number => id !== undefined)) {
+    const [member] = await db.select({ id: familyMembersTable.id }).from(familyMembersTable).where(and(
+      eq(familyMembersTable.id, memberId), eq(familyMembersTable.family_id, familyId),
+    )).limit(1);
+    if (!member) return res.status(400).json({ error: "Story member must belong to this family" });
+  }
+  if (parsed.data.memory_id !== undefined && parsed.data.memory_id !== null) {
+    const access = await getAccessibleMemory(familyId, parsed.data.memory_id, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
+  }
+  const updates: Partial<typeof familyStoriesTable.$inferInsert> = { updated_at: new Date() };
+  for (const key of [
+    "title", "body", "audience", "category", "language", "teller_member_id", "about_member_id",
+    "memory_id", "tags",
+  ] as const) {
+    const value = parsed.data[key];
+    if (value !== undefined) Object.assign(updates, { [key]: value });
+  }
+  for (const key of ["date_year", "date_month", "date_day", "date_precision"] as const) {
+    const value = parsed.data[key];
+    if (value !== undefined) Object.assign(updates, { [key]: value });
+  }
+  const [story] = await db.update(familyStoriesTable).set(updates).where(and(
+    eq(familyStoriesTable.id, storyId),
+    eq(familyStoriesTable.family_id, familyId),
+    existing.author_id === null
+      ? isNull(familyStoriesTable.author_id)
+      : eq(familyStoriesTable.author_id, userId),
+  )).returning();
+  if (!story) return res.status(404).json({ error: "Story not found" });
+  return res.json({ story: { ...story, date_label: formatFamilyStoryDate(story) } });
+});
+
+// DELETE /family/:id/stories/:storyId — remove only the caller's own story
+router.delete("/family/:id/stories/:storyId", generalApiLimiter, requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const familyId = Number(req.params.id);
+  const storyId = Number(req.params.storyId);
+  if (!familyId || !storyId) return res.status(400).json({ error: "Invalid ids" });
+  const membership = await getFamilyMembership(familyId, userId);
+  if (!membership) return res.status(403).json({ error: "Not a member of this family" });
+  const [existing] = await db.select({
+    id: familyStoriesTable.id,
+    author_id: familyStoriesTable.author_id,
+  }).from(familyStoriesTable).where(and(
+    eq(familyStoriesTable.id, storyId),
+    eq(familyStoriesTable.family_id, familyId),
+  )).limit(1);
+  if (!existing || !familyStoryCanManage(existing.author_id, userId, membership.role as string)) {
+    return res.status(404).json({ error: "Story not found" });
+  }
+  const [deleted] = await db.delete(familyStoriesTable).where(and(
+    eq(familyStoriesTable.id, storyId),
+    eq(familyStoriesTable.family_id, familyId),
+    existing.author_id === null
+      ? isNull(familyStoriesTable.author_id)
+      : eq(familyStoriesTable.author_id, userId),
+  )).returning({ id: familyStoriesTable.id });
+  if (!deleted) return res.status(404).json({ error: "Story not found" });
+  return res.json({ ok: true });
+});
+
+// POST /family/:id/stories/keep-moment — copy only an author's live Moment caption
+router.post("/family/:id/stories/keep-moment", generalApiLimiter, requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const familyId = Number(req.params.id);
+  if (!familyId) return res.status(400).json({ error: "Invalid family id" });
+  const membership = await getFamilyMembership(familyId, userId);
+  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
+    return res.status(403).json({ error: "Contributor access or higher required" });
+  }
+  const parsed = KeepMomentSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  const { moment_id: momentId } = parsed.data;
+
+  const [priorKeep] = await db.select({
+    keep: familyStoryKeepsTable,
+    story: familyStoriesTable,
+  }).from(familyStoryKeepsTable)
+    .leftJoin(familyStoriesTable, eq(familyStoryKeepsTable.story_id, familyStoriesTable.id))
+    .where(and(
+      eq(familyStoryKeepsTable.family_id, familyId),
+      eq(familyStoryKeepsTable.moment_id, momentId),
+      eq(familyStoryKeepsTable.created_by, userId),
+    )).limit(1);
+  if (priorKeep) {
+    return res.status(200).json({
+      saved: true,
+      already_saved: true,
+      story: priorKeep.story ? { ...priorKeep.story, date_label: formatFamilyStoryDate(priorKeep.story) } : null,
+    });
+  }
+
+  const [moment] = await db.select({
+    id: communityStoriesTable.id,
+    author_user_id: communityStoriesTable.author_user_id,
+    caption: communityStoriesTable.caption,
+    status: communityStoriesTable.status,
+    expires_at: communityStoriesTable.expires_at,
+  }).from(communityStoriesTable).where(and(
+    eq(communityStoriesTable.id, momentId),
+    eq(communityStoriesTable.author_user_id, userId),
+    eq(communityStoriesTable.status, "published"),
+    sql`${communityStoriesTable.expires_at} > NOW()`,
+  )).limit(1);
+  if (!moment) return res.status(404).json({ error: "Moment not found or no longer available" });
+  const caption = moment.caption;
+  if (!caption?.trim()) return res.status(400).json({ error: "Only Moments with a caption can be kept" });
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [story] = await tx.insert(familyStoriesTable).values({
+        family_id: familyId,
+        author_id: userId,
+        title: "Saved Moment",
+        body: caption,
+        audience: "private",
+        category: "written",
+        tags: [],
+      }).returning();
+      await tx.insert(familyStoryKeepsTable).values({
+        family_id: familyId,
+        moment_id: momentId,
+        story_id: story.id,
+        created_by: userId,
+      });
+      return story;
+    });
+    return res.status(201).json({
+      saved: true,
+      already_saved: false,
+      story: { ...result, date_label: formatFamilyStoryDate(result) },
+    });
+  } catch (error) {
+    if ((error as { code?: string })?.code !== "23505") throw error;
+    const [racedKeep] = await db.select({
+      keep: familyStoryKeepsTable,
+      story: familyStoriesTable,
+    }).from(familyStoryKeepsTable)
+      .leftJoin(familyStoriesTable, eq(familyStoryKeepsTable.story_id, familyStoriesTable.id))
+      .where(and(
+        eq(familyStoryKeepsTable.family_id, familyId),
+        eq(familyStoryKeepsTable.moment_id, momentId),
+        eq(familyStoryKeepsTable.created_by, userId),
+      )).limit(1);
+    if (!racedKeep) throw error;
+    return res.status(200).json({
+      saved: true,
+      already_saved: true,
+      story: racedKeep.story ? { ...racedKeep.story, date_label: formatFamilyStoryDate(racedKeep.story) } : null,
+    });
+  }
 });
 
 export default router;

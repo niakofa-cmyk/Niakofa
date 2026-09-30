@@ -7,6 +7,8 @@ export type StoryPlayerMedia = {
   mime_type: string;
   media_url: string;
   duration_ms: number | null;
+  alt_text?: string | null;
+  captions_vtt?: string | null;
 };
 
 const DEFAULT_PHOTO_MS = 5_000;
@@ -31,6 +33,7 @@ export function StoryMediaPlayer({
   const photoElapsedRef = useRef(0);
   const photoLastTimeRef = useRef<number | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [captionsTrackUrl, setCaptionsTrackUrl] = useState<string | null>(null);
   const durationMs = useMemo(
     () => (media && media.media_type !== "photo" && media.duration_ms ? Math.max(1_000, media.duration_ms) : DEFAULT_PHOTO_MS),
     [media],
@@ -65,6 +68,19 @@ export function StoryMediaPlayer({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [media, durationMs, onComplete, onProgress, paused]);
+
+  useEffect(() => {
+    if (!media?.captions_vtt || media.media_type !== "video") {
+      setCaptionsTrackUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([media.captions_vtt], { type: "text/vtt;charset=utf-8" }));
+    setCaptionsTrackUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+      setCaptionsTrackUrl((current) => current === url ? null : current);
+    };
+  }, [media?.captions_vtt, media?.id, media?.media_type]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -118,12 +134,14 @@ export function StoryMediaPlayer({
           playsInline
           muted
           preload="auto"
+          controls
+          aria-label={media.alt_text || "Community Moment video"}
           onCanPlay={() => setLoaded(true)}
           onEnded={onComplete}
           onError={() => setLoaded(true)}
           className="max-h-full max-w-full object-contain"
           style={{ filter }}
-        />
+        >{captionsTrackUrl && <track kind="captions" src={captionsTrackUrl} srcLang="und" label="Creator captions" default />}</video>
       ) : media.media_type === "audio" ? (
         <div className="grid h-full w-full place-items-center bg-gradient-to-br from-slate-950 via-indigo-950 to-emerald-950 p-6">
           <audio
@@ -143,7 +161,7 @@ export function StoryMediaPlayer({
         <img
           key={media.id}
           src={media.media_url}
-          alt=""
+          alt={media.alt_text || "Community Moment photo"}
           onLoad={() => setLoaded(true)}
           onError={() => setLoaded(true)}
           className="max-h-full max-w-full object-contain"

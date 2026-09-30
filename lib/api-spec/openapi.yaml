@@ -35,6 +35,10 @@ tags:
     description: Griot Globe diaspora hub stories, leaders, crisis status, and cross-hub pledges
   - name: community
     description: Authenticated Hub community feeds and private media saves
+  - name: family
+    description: Family Vault Stories and preserved family narratives
+  - name: messages
+    description: Direct messaging and account block controls
 
 paths:
   /healthz:
@@ -272,6 +276,393 @@ paths:
                 $ref: "#/components/schemas/CommunityStoryMuteResponse"
         "400":
           description: Invalid author id
+
+  /community/stories:
+    get:
+      operationId: getCommunityStories
+      tags: [community]
+      summary: List visible Moments with cursor pagination and discovery filters
+      parameters:
+        - name: hubId
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: search
+          in: query
+          description: Printable caption search text, up to 100 characters.
+          schema:
+            type: string
+            maxLength: 100
+        - name: tag
+          in: query
+          description: One normalized tag (optional leading # accepted).
+          schema:
+            type: string
+            maxLength: 31
+            pattern: "^#?[a-zA-Z0-9][a-zA-Z0-9-]{0,29}$"
+        - name: authorId
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "200":
+          description: Visible Moment page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentPage"
+        "400":
+          description: Invalid filter, cursor, or limit
+        "403":
+          description: Approved Hub membership required
+        "404":
+          description: Canonical Hub not found
+    post:
+      operationId: createCommunityStory
+      tags: [community]
+      summary: Publish a Community or Hub Moment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityMomentCreateInput"
+      responses:
+        "200":
+          description: Existing Moment returned for an idempotent publish retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentPublishResponse"
+        "201":
+          description: Moment published or submitted for moderation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentPublishResponse"
+        "400":
+          description: Invalid Moment data, media, tags, accessibility, or audience
+        "403":
+          description: Approved Hub membership required
+        "409":
+          description: Media is not ready or publish id conflicts with prior content
+        "503":
+          description: Media processing is temporarily unavailable
+
+  /community/stories/{id}/watch:
+    post:
+      operationId: recordCommunityStoryWatch
+      tags: [community]
+      summary: Record an idempotent Moment watch event
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityStoryWatchInput"
+      responses:
+        "200":
+          description: Duplicate event or creator self-view not counted as an audience play
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityStoryWatchResponse"
+        "201":
+          description: Watch event recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityStoryWatchResponse"
+        "400":
+          description: Invalid Moment id or watch event
+        "404":
+          description: Moment not found or not visible to the caller
+
+  /community/creator/watch-insights:
+    get:
+      operationId: getCommunityCreatorWatchInsights
+      tags: [community]
+      summary: Get the authenticated creator's daily Moment watch insights
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 30
+      responses:
+        "200":
+          description: Daily creator watch metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityCreatorWatchInsights"
+        "400":
+          description: days must be an integer between 1 and 90
+
+  /messages/direct/blocked-users:
+    get:
+      operationId: getDirectMessageBlockedUsers
+      tags: [messages]
+      summary: List accounts blocked by the authenticated caller
+      description: Returns only outgoing blocks created by the caller. Incoming blocks are never disclosed.
+      responses:
+        "200":
+          description: The caller's outgoing block list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectMessageBlockedUsers"
+        "401":
+          description: Authentication required
+
+  /messages/direct/users/{id}/block:
+    post:
+      operationId: blockDirectMessageUser
+      tags: [messages]
+      summary: Block another approved user from direct messaging
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: User is blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectMessageBlockResponse"
+        "400":
+          description: Invalid user id or self-block
+        "404":
+          description: User not found
+    delete:
+      operationId: unblockDirectMessageUser
+      tags: [messages]
+      summary: Unblock a user previously blocked by the caller
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: User is unblocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectMessageBlockResponse"
+        "400":
+          description: Invalid user id
+
+  /family/{id}/stories:
+    get:
+      operationId: getFamilyStories
+      tags: [family]
+      summary: List visible Family Stories with page-based pagination
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Family Story page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyStoryPage"
+        "400":
+          description: Invalid family id or pagination
+        "403":
+          description: Active family membership required
+    post:
+      operationId: createFamilyStory
+      tags: [family]
+      summary: Create a Family Story
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FamilyStoryInput"
+      responses:
+        "201":
+          description: Family Story created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyStoryMutationResponse"
+        "400":
+          description: Invalid Family Story or invalid referenced family member/memory
+        "403":
+          description: Contributor access or higher required
+
+  /family/{id}/stories/{storyId}:
+    patch:
+      operationId: updateFamilyStory
+      tags: [family]
+      summary: Update the caller's Family Story
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: storyId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FamilyStoryUpdateInput"
+      responses:
+        "200":
+          description: Family Story updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyStoryMutationResponse"
+        "400":
+          description: Invalid Family Story update
+        "403":
+          description: Active family membership required
+        "404":
+          description: Story not found or not authored by the caller
+    delete:
+      operationId: deleteFamilyStory
+      tags: [family]
+      summary: Delete the caller's Family Story
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: storyId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Family Story deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        "400":
+          description: Invalid family or story id
+        "403":
+          description: Active family membership required
+        "404":
+          description: Story not found or not authored by the caller
+
+  /family/{id}/stories/keep-moment:
+    post:
+      operationId: keepCommunityMomentInFamily
+      tags: [family]
+      summary: Keep the caller's live Moment caption as a private Family Story
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [moment_id]
+              properties:
+                moment_id:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: Moment was already kept by this caller in the family
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyStoryKeepResponse"
+        "201":
+          description: Moment caption copied into a private Family Story
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyStoryKeepResponse"
+        "400":
+          description: Invalid Moment id or Moment has no caption
+        "403":
+          description: Contributor access or higher required
+        "404":
+          description: Moment not found or no longer available
 
   /users/{id}:
     get:
@@ -2834,6 +3225,653 @@ components:
         viewer_reaction:
           type: ["string", "null"]
           maxLength: 16
+
+    CommunityMomentPage:
+      type: object
+      required: [stories, viewer_user_id, expires_after_hours, next_cursor]
+      properties:
+        stories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityMoment"
+        viewer_user_id:
+          type: integer
+        expires_after_hours:
+          type: integer
+          const: 24
+        next_cursor:
+          type: ["string", "null"]
+
+    CommunityMoment:
+      type: object
+      required: [id, author_user_id, hub_id, exchange_listing_id, community_id, caption, tags, audience, reply_enabled, created_at, expires_at, composition_manifest, author, media, elements]
+      properties:
+        id:
+          type: integer
+        author_user_id:
+          type: integer
+        hub_id:
+          type: ["integer", "null"]
+        exchange_listing_id:
+          type: ["integer", "null"]
+        community_id:
+          type: ["integer", "null"]
+        caption:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        audience:
+          type: string
+          enum: [community, hub]
+        reply_enabled:
+          type: boolean
+        created_at:
+          type: ["string", "null"]
+          format: date-time
+        expires_at:
+          type: ["string", "null"]
+          format: date-time
+        composition_manifest:
+          type: ["object", "null"]
+          additionalProperties: true
+        author:
+          type: object
+          required: [id, name, avatar_url]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            avatar_url:
+              type: ["string", "null"]
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityMomentMedia"
+        elements:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityMomentElement"
+
+    CommunityMomentMedia:
+      type: object
+      required: [id, media_type, mime_type, duration_ms, width, height, alt_text, captions_vtt, media_url]
+      properties:
+        id:
+          type: integer
+        media_type:
+          type: string
+          enum: [photo, video, audio]
+        mime_type:
+          type: string
+        duration_ms:
+          type: ["integer", "null"]
+        width:
+          type: ["integer", "null"]
+        height:
+          type: ["integer", "null"]
+        alt_text:
+          type: ["string", "null"]
+        captions_vtt:
+          type: ["string", "null"]
+        media_url:
+          type: string
+
+    CommunityMomentElement:
+      type: object
+      required: [id, type, payload, position_x, position_y, scale, rotation, z_index]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        position_x:
+          type: number
+        position_y:
+          type: number
+        scale:
+          type: number
+        rotation:
+          type: number
+        z_index:
+          type: integer
+
+    CommunityMomentCreateInput:
+      type: object
+      description: >-
+        For ordinary non-Exchange Moments, alt text is required for every photo
+        and video attachment, supplied inline or through media_accessibility.
+        Audio attachments do not require alt text. Exchange-linked Stories are
+        exempt from the visual alt-text requirement.
+      properties:
+        client_publish_id:
+          type: string
+          format: uuid
+        caption:
+          type: string
+          maxLength: 1000
+          default: ""
+        tags:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9-]{0,29}$"
+        hub_id:
+          type: ["integer", "null"]
+          minimum: 1
+        exchange_listing_id:
+          type: integer
+          minimum: 1
+        audience:
+          type: string
+          enum: [community, hub]
+          default: community
+        reply_enabled:
+          type: boolean
+          default: true
+        media:
+          type: array
+          maxItems: 6
+          items:
+            $ref: "#/components/schemas/CommunityMomentInlineMediaInput"
+        media_asset_ids:
+          type: array
+          maxItems: 6
+          items:
+            type: integer
+            minimum: 1
+        media_accessibility:
+          type: array
+          maxItems: 6
+          items:
+            $ref: "#/components/schemas/CommunityMomentMediaAccessibilityInput"
+        media_edits:
+          type: array
+          maxItems: 6
+          items:
+            type: object
+            required: [media_asset_id, cover_time_ms]
+            properties:
+              media_asset_id:
+                type: integer
+                minimum: 1
+              cover_time_ms:
+                type: integer
+                minimum: 0
+        elements:
+          type: array
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/CommunityMomentElementInput"
+        composition_manifest:
+          $ref: "#/components/schemas/CommunityMomentCompositionManifestInput"
+
+    CommunityMomentInlineMediaInput:
+      type: object
+      required: [data_url, media_type, mime_type]
+      properties:
+        data_url:
+          type: string
+          maxLength: 18000000
+        media_type:
+          type: string
+          enum: [photo, video]
+        mime_type:
+          type: string
+          maxLength: 100
+        duration_ms:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 60000
+        width:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 10000
+        height:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 10000
+        alt_text:
+          type: string
+          maxLength: 250
+          description: Required for visual attachments in ordinary Moments; optional for audio (which is not accepted by this inline-media input) and exempt for Exchange-linked Stories.
+        captions_vtt:
+          type: string
+          maxLength: 65536
+
+    CommunityMomentMediaAccessibilityInput:
+      type: object
+      required: [media_asset_id]
+      additionalProperties: false
+      properties:
+        media_asset_id:
+          type: integer
+          minimum: 1
+        alt_text:
+          type: string
+          maxLength: 250
+          default: ""
+          description: Required for photo/video assets in ordinary Moments; not required for audio or Exchange-linked Stories.
+        captions_vtt:
+          type: string
+          maxLength: 65536
+
+    CommunityMomentElementInput:
+      type: object
+      required: [type]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        type:
+          type: string
+          minLength: 1
+          maxLength: 40
+        payload:
+          type: object
+          additionalProperties: true
+          default: {}
+        position_x:
+          type: number
+          minimum: 0
+          maximum: 100
+          default: 50
+        position_y:
+          type: number
+          minimum: 0
+          maximum: 100
+          default: 50
+        scale:
+          type: number
+          minimum: 0.5
+          maximum: 3
+          default: 1
+        rotation:
+          type: number
+          minimum: -180
+          maximum: 180
+          default: 0
+        z_index:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 0
+
+    CommunityMomentCompositionManifestInput:
+      type: object
+      required: [version, canvas, elements]
+      properties:
+        version:
+          type: integer
+          const: 1
+        canvas:
+          type: object
+          required: [width, height, aspect]
+          properties:
+            width:
+              type: number
+              exclusiveMinimum: 0
+              maximum: 10000
+            height:
+              type: number
+              exclusiveMinimum: 0
+              maximum: 10000
+            aspect:
+              type: string
+              enum: ["9:16", "1:1", "16:9"]
+        elements:
+          type: array
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/CommunityMomentElementInput"
+        music:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [track_asset_id]
+              additionalProperties: false
+              properties:
+                track_asset_id:
+                  type: integer
+                  minimum: 1
+                volume:
+                  type: number
+                  minimum: 0
+                  maximum: 2
+        effects:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+            enum: [grayscale, sepia, blur]
+
+    CommunityMomentPublishResponse:
+      type: object
+      required: [story]
+      properties:
+        story:
+          type: object
+          required: [id, status, expires_at]
+          properties:
+            id:
+              type: integer
+            status:
+              type: string
+              enum: [pending, published]
+            expires_at:
+              type: string
+              format: date-time
+
+    CommunityStoryWatchInput:
+      type: object
+      required: [event_id, duration_ms, completed]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        duration_ms:
+          type: integer
+          minimum: 0
+          maximum: 300000
+        completed:
+          type: boolean
+
+    CommunityStoryWatchResponse:
+      type: object
+      required: [ok, recorded]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        recorded:
+          type: boolean
+        reason:
+          type: string
+          enum: [creator_view]
+
+    CommunityCreatorWatchInsights:
+      type: object
+      required: [days, retention_minimum_plays, retention_window_days, total_recorded_plays, retention_available, has_data, daily]
+      properties:
+        days:
+          type: integer
+        retention_minimum_plays:
+          type: integer
+          const: 5
+        retention_window_days:
+          type: integer
+          const: 90
+        total_recorded_plays:
+          type: integer
+          description: Creator-wide recorded play count over the rolling retention window.
+        retention_available:
+          type: boolean
+        has_data:
+          type: boolean
+        daily:
+          type: array
+          items:
+            type: object
+            required: [day, watch_time_ms, plays, retention_rate]
+            properties:
+              day:
+                type: string
+                format: date
+              watch_time_ms:
+                type: integer
+              plays:
+                type: integer
+              retention_rate:
+                type: ["number", "null"]
+                description: Non-null only when the creator has at least five recorded plays in the rolling 90-day window and this day has at least five plays.
+
+    DirectMessageBlockResponse:
+      type: object
+      required: [blocked]
+      properties:
+        blocked:
+          type: boolean
+
+    DirectMessageBlockedUsers:
+      type: object
+      required: [blocked_users]
+      properties:
+        blocked_users:
+          type: array
+          items:
+            type: object
+            required: [id, name, avatar_url]
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              avatar_url:
+                type: ["string", "null"]
+
+    FamilyStoryFields:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+          maxLength: 50000
+        audience:
+          type: string
+          enum: [family, private]
+        category:
+          type: string
+          enum: [oral, written, tradition, recipe, song, proverb, biography]
+        language:
+          type: string
+          maxLength: 50
+        teller_member_id:
+          type: integer
+          minimum: 1
+        about_member_id:
+          type: integer
+          minimum: 1
+        memory_id:
+          type: integer
+          minimum: 1
+        date_year:
+          type: integer
+          minimum: 1
+          maximum: 9999
+        date_month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        date_day:
+          type: integer
+          minimum: 1
+          maximum: 31
+        date_precision:
+          type: string
+          enum: [day, month, year, decade, circa]
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 50
+
+    FamilyStoryInput:
+      allOf:
+        - $ref: "#/components/schemas/FamilyStoryFields"
+      required: [title, body]
+
+    FamilyStoryUpdateInput:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+          maxLength: 50000
+        audience:
+          type: string
+          enum: [family, private]
+        category:
+          type: string
+          enum: [oral, written, tradition, recipe, song, proverb, biography]
+        language:
+          type: string
+          maxLength: 50
+        teller_member_id:
+          type: integer
+          minimum: 1
+        about_member_id:
+          type: integer
+          minimum: 1
+        memory_id:
+          type: ["integer", "null"]
+          minimum: 1
+        date_year:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 9999
+        date_month:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 12
+        date_day:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 31
+        date_precision:
+          type: ["string", "null"]
+          enum: [day, month, year, decade, circa, null]
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 50
+
+    FamilyStoryRecord:
+      type: object
+      required: [id, family_id, author_id, teller_member_id, about_member_id, title, body, audience, category, language, memory_id, date_year, date_month, date_day, date_precision, tags, created_at, updated_at, date_label]
+      properties:
+        id:
+          type: integer
+        family_id:
+          type: integer
+        author_id:
+          type: ["integer", "null"]
+        teller_member_id:
+          type: ["integer", "null"]
+        about_member_id:
+          type: ["integer", "null"]
+        title:
+          type: string
+        body:
+          type: string
+        audience:
+          type: string
+          enum: [family, private]
+          description: Private stories with a null author remain private and are visible to owner/curator members only.
+        category:
+          type: ["string", "null"]
+          enum: [oral, written, tradition, recipe, song, proverb, biography, null]
+        language:
+          type: ["string", "null"]
+        memory_id:
+          type: ["integer", "null"]
+        date_year:
+          type: ["integer", "null"]
+        date_month:
+          type: ["integer", "null"]
+        date_day:
+          type: ["integer", "null"]
+        date_precision:
+          type: ["string", "null"]
+          enum: [day, month, year, decade, circa, null]
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        date_label:
+          type: ["string", "null"]
+
+    FamilyStory:
+      allOf:
+        - $ref: "#/components/schemas/FamilyStoryRecord"
+        - type: object
+          required: [author, viewer_can_manage]
+          properties:
+            author:
+              type: object
+              required: [id, name, avatar_url]
+              properties:
+                id:
+                  type: ["integer", "null"]
+                name:
+                  type: ["string", "null"]
+                avatar_url:
+                  type: ["string", "null"]
+            viewer_can_manage:
+              type: boolean
+              description: True for the story author, or for an owner/curator when this is a legacy story with a null author.
+
+    FamilyStoryMutationResponse:
+      type: object
+      required: [story]
+      properties:
+        story:
+          $ref: "#/components/schemas/FamilyStoryRecord"
+
+    FamilyStoryPage:
+      type: object
+      required: [stories, page, limit, total, has_more]
+      properties:
+        stories:
+          type: array
+          items:
+            $ref: "#/components/schemas/FamilyStory"
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        has_more:
+          type: boolean
+
+    FamilyStoryKeepResponse:
+      type: object
+      required: [saved, already_saved, story]
+      properties:
+        saved:
+          type: boolean
+          const: true
+        already_saved:
+          type: boolean
+        story:
+          oneOf:
+            - $ref: "#/components/schemas/FamilyStoryRecord"
+            - type: "null"
 
     PoolStats:
       type: object

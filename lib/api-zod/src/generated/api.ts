@@ -244,6 +244,630 @@ export const UnmuteCommunityStoryAuthorResponse = zod.object({
 
 
 /**
+ * @summary List visible Moments with cursor pagination and discovery filters
+ */
+
+export const getCommunityStoriesQuerySearchMax = 100;
+
+export const getCommunityStoriesQueryTagMax = 31;
+
+
+export const getCommunityStoriesQueryTagRegExp = new RegExp('^#?[a-zA-Z0-9][a-zA-Z0-9-]{0,29}$');
+
+export const getCommunityStoriesQueryLimitDefault = 100;
+export const getCommunityStoriesQueryLimitMax = 100;
+
+export const getCommunityStoriesQueryCursorMax = 512;
+
+
+
+export const GetCommunityStoriesQueryParams = zod.object({
+  "hubId": zod.coerce.number().int().min(1).optional(),
+  "search": zod.coerce.string().max(getCommunityStoriesQuerySearchMax).optional().describe('Printable caption search text, up to 100 characters.'),
+  "tag": zod.coerce.string().max(getCommunityStoriesQueryTagMax).regex(getCommunityStoriesQueryTagRegExp).optional().describe('One normalized tag (optional leading'),
+  "authorId": zod.coerce.number().int().min(1).optional(),
+  "limit": zod.coerce.number().int().min(1).max(getCommunityStoriesQueryLimitMax).default(getCommunityStoriesQueryLimitDefault),
+  "cursor": zod.coerce.string().max(getCommunityStoriesQueryCursorMax).optional()
+})
+
+export const GetCommunityStoriesResponse = zod.object({
+  "stories": zod.array(zod.object({
+  "id": zod.number().int(),
+  "author_user_id": zod.number().int(),
+  "hub_id": zod.number().int().nullable(),
+  "exchange_listing_id": zod.number().int().nullable(),
+  "community_id": zod.number().int().nullable(),
+  "caption": zod.string().nullable(),
+  "tags": zod.array(zod.string()),
+  "audience": zod.enum(['community', 'hub']),
+  "reply_enabled": zod.boolean(),
+  "created_at": zod.coerce.date().nullable(),
+  "expires_at": zod.coerce.date().nullable(),
+  "composition_manifest": zod.record(zod.string(), zod.unknown()).nullable(),
+  "author": zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "avatar_url": zod.string().nullable()
+}),
+  "media": zod.array(zod.object({
+  "id": zod.number().int(),
+  "media_type": zod.enum(['photo', 'video', 'audio']),
+  "mime_type": zod.string(),
+  "duration_ms": zod.number().int().nullable(),
+  "width": zod.number().int().nullable(),
+  "height": zod.number().int().nullable(),
+  "alt_text": zod.string().nullable(),
+  "captions_vtt": zod.string().nullable(),
+  "media_url": zod.string()
+})),
+  "elements": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "payload": zod.record(zod.string(), zod.unknown()),
+  "position_x": zod.number(),
+  "position_y": zod.number(),
+  "scale": zod.number(),
+  "rotation": zod.number(),
+  "z_index": zod.number().int()
+}))
+})),
+  "viewer_user_id": zod.number().int(),
+  "expires_after_hours": zod.literal(24),
+  "next_cursor": zod.string().nullable()
+})
+
+
+/**
+ * @summary Publish a Community or Hub Moment
+ */
+export const createCommunityStoryBodyCaptionDefault = ``;
+export const createCommunityStoryBodyCaptionMax = 1000;
+
+export const createCommunityStoryBodyTagsItemRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,29}$');
+export const createCommunityStoryBodyTagsMax = 10;
+
+
+
+export const createCommunityStoryBodyAudienceDefault = `community`;
+export const createCommunityStoryBodyReplyEnabledDefault = true;
+export const createCommunityStoryBodyMediaItemDataUrlMax = 18000000;
+
+export const createCommunityStoryBodyMediaItemMimeTypeMax = 100;
+
+export const createCommunityStoryBodyMediaItemDurationMsMax = 60000;
+
+export const createCommunityStoryBodyMediaItemWidthMax = 10000;
+
+export const createCommunityStoryBodyMediaItemHeightMax = 10000;
+
+export const createCommunityStoryBodyMediaItemAltTextMax = 250;
+
+export const createCommunityStoryBodyMediaItemCaptionsVttMax = 65536;
+
+export const createCommunityStoryBodyMediaMax = 6;
+
+
+export const createCommunityStoryBodyMediaAssetIdsMax = 6;
+
+
+export const createCommunityStoryBodyMediaAccessibilityItemAltTextDefault = ``;
+export const createCommunityStoryBodyMediaAccessibilityItemAltTextMax = 250;
+
+export const createCommunityStoryBodyMediaAccessibilityItemCaptionsVttMax = 65536;
+
+export const createCommunityStoryBodyMediaAccessibilityMax = 6;
+
+
+export const createCommunityStoryBodyMediaEditsItemCoverTimeMsMin = 0;
+
+export const createCommunityStoryBodyMediaEditsMax = 6;
+
+export const createCommunityStoryBodyElementsItemIdMax = 100;
+
+export const createCommunityStoryBodyElementsItemTypeMax = 40;
+
+export const createCommunityStoryBodyElementsItemPayloadDefault = {};
+export const createCommunityStoryBodyElementsItemPositionXDefault = 50;
+export const createCommunityStoryBodyElementsItemPositionXMin = 0;
+export const createCommunityStoryBodyElementsItemPositionXMax = 100;
+
+export const createCommunityStoryBodyElementsItemPositionYDefault = 50;
+export const createCommunityStoryBodyElementsItemPositionYMin = 0;
+export const createCommunityStoryBodyElementsItemPositionYMax = 100;
+
+export const createCommunityStoryBodyElementsItemScaleDefault = 1;
+export const createCommunityStoryBodyElementsItemScaleMin = 0.5;
+export const createCommunityStoryBodyElementsItemScaleMax = 3;
+
+export const createCommunityStoryBodyElementsItemRotationDefault = 0;
+export const createCommunityStoryBodyElementsItemRotationMin = -180;
+export const createCommunityStoryBodyElementsItemRotationMax = 180;
+
+export const createCommunityStoryBodyElementsItemZIndexDefault = 0;
+export const createCommunityStoryBodyElementsItemZIndexMin = 0;
+export const createCommunityStoryBodyElementsItemZIndexMax = 100;
+
+export const createCommunityStoryBodyElementsMax = 30;
+
+export const createCommunityStoryBodyCompositionManifestCanvasWidthExclusiveMin = 0;
+export const createCommunityStoryBodyCompositionManifestCanvasWidthMax = 10000;
+
+export const createCommunityStoryBodyCompositionManifestCanvasHeightExclusiveMin = 0;
+export const createCommunityStoryBodyCompositionManifestCanvasHeightMax = 10000;
+
+export const createCommunityStoryBodyCompositionManifestElementsItemIdMax = 100;
+
+export const createCommunityStoryBodyCompositionManifestElementsItemTypeMax = 40;
+
+export const createCommunityStoryBodyCompositionManifestElementsItemPayloadDefault = {};
+export const createCommunityStoryBodyCompositionManifestElementsItemPositionXDefault = 50;
+export const createCommunityStoryBodyCompositionManifestElementsItemPositionXMin = 0;
+export const createCommunityStoryBodyCompositionManifestElementsItemPositionXMax = 100;
+
+export const createCommunityStoryBodyCompositionManifestElementsItemPositionYDefault = 50;
+export const createCommunityStoryBodyCompositionManifestElementsItemPositionYMin = 0;
+export const createCommunityStoryBodyCompositionManifestElementsItemPositionYMax = 100;
+
+export const createCommunityStoryBodyCompositionManifestElementsItemScaleDefault = 1;
+export const createCommunityStoryBodyCompositionManifestElementsItemScaleMin = 0.5;
+export const createCommunityStoryBodyCompositionManifestElementsItemScaleMax = 3;
+
+export const createCommunityStoryBodyCompositionManifestElementsItemRotationDefault = 0;
+export const createCommunityStoryBodyCompositionManifestElementsItemRotationMin = -180;
+export const createCommunityStoryBodyCompositionManifestElementsItemRotationMax = 180;
+
+export const createCommunityStoryBodyCompositionManifestElementsItemZIndexDefault = 0;
+export const createCommunityStoryBodyCompositionManifestElementsItemZIndexMin = 0;
+export const createCommunityStoryBodyCompositionManifestElementsItemZIndexMax = 100;
+
+export const createCommunityStoryBodyCompositionManifestElementsMax = 30;
+
+
+export const createCommunityStoryBodyCompositionManifestMusicTwoVolumeMin = 0;
+export const createCommunityStoryBodyCompositionManifestMusicTwoVolumeMax = 2;
+
+export const createCommunityStoryBodyCompositionManifestEffectsMax = 6;
+
+
+
+export const CreateCommunityStoryBody = zod.object({
+  "client_publish_id": zod.string().uuid().optional(),
+  "caption": zod.string().max(createCommunityStoryBodyCaptionMax).default(createCommunityStoryBodyCaptionDefault),
+  "tags": zod.array(zod.string().regex(createCommunityStoryBodyTagsItemRegExp)).max(createCommunityStoryBodyTagsMax).optional(),
+  "hub_id": zod.number().int().min(1).nullish(),
+  "exchange_listing_id": zod.number().int().min(1).optional(),
+  "audience": zod.enum(['community', 'hub']).default(createCommunityStoryBodyAudienceDefault),
+  "reply_enabled": zod.boolean().default(createCommunityStoryBodyReplyEnabledDefault),
+  "media": zod.array(zod.object({
+  "data_url": zod.string().max(createCommunityStoryBodyMediaItemDataUrlMax),
+  "media_type": zod.enum(['photo', 'video']),
+  "mime_type": zod.string().max(createCommunityStoryBodyMediaItemMimeTypeMax),
+  "duration_ms": zod.number().int().min(1).max(createCommunityStoryBodyMediaItemDurationMsMax).nullish(),
+  "width": zod.number().int().min(1).max(createCommunityStoryBodyMediaItemWidthMax).nullish(),
+  "height": zod.number().int().min(1).max(createCommunityStoryBodyMediaItemHeightMax).nullish(),
+  "alt_text": zod.string().max(createCommunityStoryBodyMediaItemAltTextMax).optional().describe('Required for visual attachments in ordinary Moments; optional for audio (which is not accepted by this inline-media input) and exempt for Exchange-linked Stories.'),
+  "captions_vtt": zod.string().max(createCommunityStoryBodyMediaItemCaptionsVttMax).optional()
+})).max(createCommunityStoryBodyMediaMax).optional(),
+  "media_asset_ids": zod.array(zod.number().int().min(1)).max(createCommunityStoryBodyMediaAssetIdsMax).optional(),
+  "media_accessibility": zod.array(zod.object({
+  "media_asset_id": zod.number().int().min(1),
+  "alt_text": zod.string().max(createCommunityStoryBodyMediaAccessibilityItemAltTextMax).default(createCommunityStoryBodyMediaAccessibilityItemAltTextDefault).describe('Required for photo\/video assets in ordinary Moments; not required for audio or Exchange-linked Stories.'),
+  "captions_vtt": zod.string().max(createCommunityStoryBodyMediaAccessibilityItemCaptionsVttMax).optional()
+})).max(createCommunityStoryBodyMediaAccessibilityMax).optional(),
+  "media_edits": zod.array(zod.object({
+  "media_asset_id": zod.number().int().min(1),
+  "cover_time_ms": zod.number().int().min(createCommunityStoryBodyMediaEditsItemCoverTimeMsMin)
+})).max(createCommunityStoryBodyMediaEditsMax).optional(),
+  "elements": zod.array(zod.object({
+  "id": zod.string().min(1).max(createCommunityStoryBodyElementsItemIdMax).optional(),
+  "type": zod.string().min(1).max(createCommunityStoryBodyElementsItemTypeMax),
+  "payload": zod.record(zod.string(), zod.unknown()).default(createCommunityStoryBodyElementsItemPayloadDefault),
+  "position_x": zod.number().min(createCommunityStoryBodyElementsItemPositionXMin).max(createCommunityStoryBodyElementsItemPositionXMax).default(createCommunityStoryBodyElementsItemPositionXDefault),
+  "position_y": zod.number().min(createCommunityStoryBodyElementsItemPositionYMin).max(createCommunityStoryBodyElementsItemPositionYMax).default(createCommunityStoryBodyElementsItemPositionYDefault),
+  "scale": zod.number().min(createCommunityStoryBodyElementsItemScaleMin).max(createCommunityStoryBodyElementsItemScaleMax).default(createCommunityStoryBodyElementsItemScaleDefault),
+  "rotation": zod.number().min(createCommunityStoryBodyElementsItemRotationMin).max(createCommunityStoryBodyElementsItemRotationMax).default(createCommunityStoryBodyElementsItemRotationDefault),
+  "z_index": zod.number().int().min(createCommunityStoryBodyElementsItemZIndexMin).max(createCommunityStoryBodyElementsItemZIndexMax).default(createCommunityStoryBodyElementsItemZIndexDefault)
+})).max(createCommunityStoryBodyElementsMax).optional(),
+  "composition_manifest": zod.object({
+  "version": zod.literal(1),
+  "canvas": zod.object({
+  "width": zod.number().gt(createCommunityStoryBodyCompositionManifestCanvasWidthExclusiveMin).max(createCommunityStoryBodyCompositionManifestCanvasWidthMax),
+  "height": zod.number().gt(createCommunityStoryBodyCompositionManifestCanvasHeightExclusiveMin).max(createCommunityStoryBodyCompositionManifestCanvasHeightMax),
+  "aspect": zod.enum(['9:16', '1:1', '16:9'])
+}),
+  "elements": zod.array(zod.object({
+  "id": zod.string().min(1).max(createCommunityStoryBodyCompositionManifestElementsItemIdMax).optional(),
+  "type": zod.string().min(1).max(createCommunityStoryBodyCompositionManifestElementsItemTypeMax),
+  "payload": zod.record(zod.string(), zod.unknown()).default(createCommunityStoryBodyCompositionManifestElementsItemPayloadDefault),
+  "position_x": zod.number().min(createCommunityStoryBodyCompositionManifestElementsItemPositionXMin).max(createCommunityStoryBodyCompositionManifestElementsItemPositionXMax).default(createCommunityStoryBodyCompositionManifestElementsItemPositionXDefault),
+  "position_y": zod.number().min(createCommunityStoryBodyCompositionManifestElementsItemPositionYMin).max(createCommunityStoryBodyCompositionManifestElementsItemPositionYMax).default(createCommunityStoryBodyCompositionManifestElementsItemPositionYDefault),
+  "scale": zod.number().min(createCommunityStoryBodyCompositionManifestElementsItemScaleMin).max(createCommunityStoryBodyCompositionManifestElementsItemScaleMax).default(createCommunityStoryBodyCompositionManifestElementsItemScaleDefault),
+  "rotation": zod.number().min(createCommunityStoryBodyCompositionManifestElementsItemRotationMin).max(createCommunityStoryBodyCompositionManifestElementsItemRotationMax).default(createCommunityStoryBodyCompositionManifestElementsItemRotationDefault),
+  "z_index": zod.number().int().min(createCommunityStoryBodyCompositionManifestElementsItemZIndexMin).max(createCommunityStoryBodyCompositionManifestElementsItemZIndexMax).default(createCommunityStoryBodyCompositionManifestElementsItemZIndexDefault)
+})).max(createCommunityStoryBodyCompositionManifestElementsMax),
+  "music": zod.union([zod.null(),zod.object({
+  "track_asset_id": zod.number().int().min(1),
+  "volume": zod.number().min(createCommunityStoryBodyCompositionManifestMusicTwoVolumeMin).max(createCommunityStoryBodyCompositionManifestMusicTwoVolumeMax).optional()
+})]).optional(),
+  "effects": zod.array(zod.enum(['grayscale', 'sepia', 'blur'])).max(createCommunityStoryBodyCompositionManifestEffectsMax).optional()
+}).optional()
+}).describe('For ordinary non-Exchange Moments, alt text is required for every photo and video attachment, supplied inline or through media_accessibility. Audio attachments do not require alt text. Exchange-linked Stories are exempt from the visual alt-text requirement.')
+
+export const CreateCommunityStoryResponse = zod.object({
+  "story": zod.object({
+  "id": zod.number().int(),
+  "status": zod.enum(['pending', 'published']),
+  "expires_at": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Record an idempotent Moment watch event
+ */
+
+
+
+export const RecordCommunityStoryWatchParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const recordCommunityStoryWatchBodyDurationMsMin = 0;
+export const recordCommunityStoryWatchBodyDurationMsMax = 300000;
+
+
+
+export const RecordCommunityStoryWatchBody = zod.object({
+  "event_id": zod.string().uuid(),
+  "duration_ms": zod.number().int().min(recordCommunityStoryWatchBodyDurationMsMin).max(recordCommunityStoryWatchBodyDurationMsMax),
+  "completed": zod.boolean()
+})
+
+export const RecordCommunityStoryWatchResponse = zod.object({
+  "ok": zod.literal(true),
+  "recorded": zod.boolean(),
+  "reason": zod.enum(['creator_view']).optional()
+})
+
+
+/**
+ * @summary Get the authenticated creator's daily Moment watch insights
+ */
+export const getCommunityCreatorWatchInsightsQueryDaysDefault = 30;
+export const getCommunityCreatorWatchInsightsQueryDaysMax = 90;
+
+
+
+export const GetCommunityCreatorWatchInsightsQueryParams = zod.object({
+  "days": zod.coerce.number().int().min(1).max(getCommunityCreatorWatchInsightsQueryDaysMax).default(getCommunityCreatorWatchInsightsQueryDaysDefault)
+})
+
+export const GetCommunityCreatorWatchInsightsResponse = zod.object({
+  "days": zod.number().int(),
+  "retention_minimum_plays": zod.literal(5),
+  "retention_window_days": zod.literal(90),
+  "total_recorded_plays": zod.number().int().describe('Creator-wide recorded play count over the rolling retention window.'),
+  "retention_available": zod.boolean(),
+  "has_data": zod.boolean(),
+  "daily": zod.array(zod.object({
+  "day": zod.coerce.date(),
+  "watch_time_ms": zod.number().int(),
+  "plays": zod.number().int(),
+  "retention_rate": zod.number().nullable().describe('Non-null only when the creator has at least five recorded plays in the rolling 90-day window and this day has at least five plays.')
+}))
+})
+
+
+/**
+ * Returns only outgoing blocks created by the caller. Incoming blocks are never disclosed.
+ * @summary List accounts blocked by the authenticated caller
+ */
+export const GetDirectMessageBlockedUsersResponse = zod.object({
+  "blocked_users": zod.array(zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "avatar_url": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary Block another approved user from direct messaging
+ */
+
+
+
+export const BlockDirectMessageUserParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const BlockDirectMessageUserResponse = zod.object({
+  "blocked": zod.boolean()
+})
+
+
+/**
+ * @summary Unblock a user previously blocked by the caller
+ */
+
+
+
+export const UnblockDirectMessageUserParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const UnblockDirectMessageUserResponse = zod.object({
+  "blocked": zod.boolean()
+})
+
+
+/**
+ * @summary List visible Family Stories with page-based pagination
+ */
+
+
+
+export const GetFamilyStoriesParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const getFamilyStoriesQueryPageDefault = 1;
+export const getFamilyStoriesQueryPageMax = 100000;
+
+export const getFamilyStoriesQueryLimitDefault = 20;
+export const getFamilyStoriesQueryLimitMax = 100;
+
+
+
+export const GetFamilyStoriesQueryParams = zod.object({
+  "page": zod.coerce.number().int().min(1).max(getFamilyStoriesQueryPageMax).default(getFamilyStoriesQueryPageDefault),
+  "limit": zod.coerce.number().int().min(1).max(getFamilyStoriesQueryLimitMax).default(getFamilyStoriesQueryLimitDefault)
+})
+
+export const GetFamilyStoriesResponse = zod.object({
+  "stories": zod.array(zod.object({
+  "id": zod.number().int(),
+  "family_id": zod.number().int(),
+  "author_id": zod.number().int().nullable(),
+  "teller_member_id": zod.number().int().nullable(),
+  "about_member_id": zod.number().int().nullable(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "audience": zod.enum(['family', 'private']).describe('Private stories with a null author remain private and are visible to owner\/curator members only.'),
+  "category": zod.union([zod.literal('oral'),zod.literal('written'),zod.literal('tradition'),zod.literal('recipe'),zod.literal('song'),zod.literal('proverb'),zod.literal('biography'),zod.literal(null)]).nullable(),
+  "language": zod.string().nullable(),
+  "memory_id": zod.number().int().nullable(),
+  "date_year": zod.number().int().nullable(),
+  "date_month": zod.number().int().nullable(),
+  "date_day": zod.number().int().nullable(),
+  "date_precision": zod.union([zod.literal('day'),zod.literal('month'),zod.literal('year'),zod.literal('decade'),zod.literal('circa'),zod.literal(null)]).nullable(),
+  "tags": zod.array(zod.string()),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date(),
+  "date_label": zod.string().nullable()
+}).and(zod.object({
+  "author": zod.object({
+  "id": zod.number().int().nullable(),
+  "name": zod.string().nullable(),
+  "avatar_url": zod.string().nullable()
+}),
+  "viewer_can_manage": zod.boolean().describe('True for the story author, or for an owner\/curator when this is a legacy story with a null author.')
+}))),
+  "page": zod.number().int(),
+  "limit": zod.number().int(),
+  "total": zod.number().int(),
+  "has_more": zod.boolean()
+})
+
+
+/**
+ * @summary Create a Family Story
+ */
+
+
+
+export const CreateFamilyStoryParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const createFamilyStoryBodyOneTitleMax = 200;
+
+export const createFamilyStoryBodyOneBodyMax = 50000;
+
+export const createFamilyStoryBodyOneLanguageMax = 50;
+
+
+
+
+export const createFamilyStoryBodyOneDateYearMax = 9999;
+
+export const createFamilyStoryBodyOneDateMonthMax = 12;
+
+export const createFamilyStoryBodyOneDateDayMax = 31;
+
+export const createFamilyStoryBodyOneTagsItemMax = 50;
+
+export const createFamilyStoryBodyOneTagsMax = 20;
+
+
+
+export const CreateFamilyStoryBody = zod.object({
+  "title": zod.string().min(1).max(createFamilyStoryBodyOneTitleMax),
+  "body": zod.string().min(1).max(createFamilyStoryBodyOneBodyMax),
+  "audience": zod.enum(['family', 'private']).optional(),
+  "category": zod.enum(['oral', 'written', 'tradition', 'recipe', 'song', 'proverb', 'biography']).optional(),
+  "language": zod.string().max(createFamilyStoryBodyOneLanguageMax).optional(),
+  "teller_member_id": zod.number().int().min(1).optional(),
+  "about_member_id": zod.number().int().min(1).optional(),
+  "memory_id": zod.number().int().min(1).optional(),
+  "date_year": zod.number().int().min(1).max(createFamilyStoryBodyOneDateYearMax).optional(),
+  "date_month": zod.number().int().min(1).max(createFamilyStoryBodyOneDateMonthMax).optional(),
+  "date_day": zod.number().int().min(1).max(createFamilyStoryBodyOneDateDayMax).optional(),
+  "date_precision": zod.enum(['day', 'month', 'year', 'decade', 'circa']).optional(),
+  "tags": zod.array(zod.string().max(createFamilyStoryBodyOneTagsItemMax)).max(createFamilyStoryBodyOneTagsMax).optional()
+})
+
+export const CreateFamilyStoryResponse = zod.object({
+  "story": zod.object({
+  "id": zod.number().int(),
+  "family_id": zod.number().int(),
+  "author_id": zod.number().int().nullable(),
+  "teller_member_id": zod.number().int().nullable(),
+  "about_member_id": zod.number().int().nullable(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "audience": zod.enum(['family', 'private']).describe('Private stories with a null author remain private and are visible to owner\/curator members only.'),
+  "category": zod.union([zod.literal('oral'),zod.literal('written'),zod.literal('tradition'),zod.literal('recipe'),zod.literal('song'),zod.literal('proverb'),zod.literal('biography'),zod.literal(null)]).nullable(),
+  "language": zod.string().nullable(),
+  "memory_id": zod.number().int().nullable(),
+  "date_year": zod.number().int().nullable(),
+  "date_month": zod.number().int().nullable(),
+  "date_day": zod.number().int().nullable(),
+  "date_precision": zod.union([zod.literal('day'),zod.literal('month'),zod.literal('year'),zod.literal('decade'),zod.literal('circa'),zod.literal(null)]).nullable(),
+  "tags": zod.array(zod.string()),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date(),
+  "date_label": zod.string().nullable()
+})
+})
+
+
+/**
+ * @summary Update the caller's Family Story
+ */
+
+
+
+
+export const UpdateFamilyStoryParams = zod.object({
+  "id": zod.coerce.number().int().min(1),
+  "storyId": zod.coerce.number().int().min(1)
+})
+
+export const updateFamilyStoryBodyTitleMax = 200;
+
+export const updateFamilyStoryBodyBodyMax = 50000;
+
+export const updateFamilyStoryBodyLanguageMax = 50;
+
+
+
+
+export const updateFamilyStoryBodyDateYearMax = 9999;
+
+export const updateFamilyStoryBodyDateMonthMax = 12;
+
+export const updateFamilyStoryBodyDateDayMax = 31;
+
+export const updateFamilyStoryBodyTagsItemMax = 50;
+
+export const updateFamilyStoryBodyTagsMax = 20;
+
+
+
+export const UpdateFamilyStoryBody = zod.object({
+  "title": zod.string().min(1).max(updateFamilyStoryBodyTitleMax).optional(),
+  "body": zod.string().min(1).max(updateFamilyStoryBodyBodyMax).optional(),
+  "audience": zod.enum(['family', 'private']).optional(),
+  "category": zod.enum(['oral', 'written', 'tradition', 'recipe', 'song', 'proverb', 'biography']).optional(),
+  "language": zod.string().max(updateFamilyStoryBodyLanguageMax).optional(),
+  "teller_member_id": zod.number().int().min(1).optional(),
+  "about_member_id": zod.number().int().min(1).optional(),
+  "memory_id": zod.number().int().min(1).nullish(),
+  "date_year": zod.number().int().min(1).max(updateFamilyStoryBodyDateYearMax).nullish(),
+  "date_month": zod.number().int().min(1).max(updateFamilyStoryBodyDateMonthMax).nullish(),
+  "date_day": zod.number().int().min(1).max(updateFamilyStoryBodyDateDayMax).nullish(),
+  "date_precision": zod.union([zod.literal('day'),zod.literal('month'),zod.literal('year'),zod.literal('decade'),zod.literal('circa'),zod.literal(null)]).nullish(),
+  "tags": zod.array(zod.string().max(updateFamilyStoryBodyTagsItemMax)).max(updateFamilyStoryBodyTagsMax).optional()
+})
+
+export const UpdateFamilyStoryResponse = zod.object({
+  "story": zod.object({
+  "id": zod.number().int(),
+  "family_id": zod.number().int(),
+  "author_id": zod.number().int().nullable(),
+  "teller_member_id": zod.number().int().nullable(),
+  "about_member_id": zod.number().int().nullable(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "audience": zod.enum(['family', 'private']).describe('Private stories with a null author remain private and are visible to owner\/curator members only.'),
+  "category": zod.union([zod.literal('oral'),zod.literal('written'),zod.literal('tradition'),zod.literal('recipe'),zod.literal('song'),zod.literal('proverb'),zod.literal('biography'),zod.literal(null)]).nullable(),
+  "language": zod.string().nullable(),
+  "memory_id": zod.number().int().nullable(),
+  "date_year": zod.number().int().nullable(),
+  "date_month": zod.number().int().nullable(),
+  "date_day": zod.number().int().nullable(),
+  "date_precision": zod.union([zod.literal('day'),zod.literal('month'),zod.literal('year'),zod.literal('decade'),zod.literal('circa'),zod.literal(null)]).nullable(),
+  "tags": zod.array(zod.string()),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date(),
+  "date_label": zod.string().nullable()
+})
+})
+
+
+/**
+ * @summary Delete the caller's Family Story
+ */
+
+
+
+
+export const DeleteFamilyStoryParams = zod.object({
+  "id": zod.coerce.number().int().min(1),
+  "storyId": zod.coerce.number().int().min(1)
+})
+
+export const DeleteFamilyStoryResponse = zod.object({
+  "ok": zod.literal(true)
+})
+
+
+/**
+ * @summary Keep the caller's live Moment caption as a private Family Story
+ */
+
+
+
+export const KeepCommunityMomentInFamilyParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+
+
+
+export const KeepCommunityMomentInFamilyBody = zod.object({
+  "moment_id": zod.number().int().min(1)
+})
+
+export const KeepCommunityMomentInFamilyResponse = zod.object({
+  "saved": zod.literal(true),
+  "already_saved": zod.boolean(),
+  "story": zod.union([zod.object({
+  "id": zod.number().int(),
+  "family_id": zod.number().int(),
+  "author_id": zod.number().int().nullable(),
+  "teller_member_id": zod.number().int().nullable(),
+  "about_member_id": zod.number().int().nullable(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "audience": zod.enum(['family', 'private']).describe('Private stories with a null author remain private and are visible to owner\/curator members only.'),
+  "category": zod.union([zod.literal('oral'),zod.literal('written'),zod.literal('tradition'),zod.literal('recipe'),zod.literal('song'),zod.literal('proverb'),zod.literal('biography'),zod.literal(null)]).nullable(),
+  "language": zod.string().nullable(),
+  "memory_id": zod.number().int().nullable(),
+  "date_year": zod.number().int().nullable(),
+  "date_month": zod.number().int().nullable(),
+  "date_day": zod.number().int().nullable(),
+  "date_precision": zod.union([zod.literal('day'),zod.literal('month'),zod.literal('year'),zod.literal('decade'),zod.literal('circa'),zod.literal(null)]).nullable(),
+  "tags": zod.array(zod.string()),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date(),
+  "date_label": zod.string().nullable()
+}),zod.null()])
+})
+
+
+/**
  * @summary Get user profile
  */
 export const GetUserParams = zod.object({

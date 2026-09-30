@@ -88,6 +88,646 @@ export interface CommunityStoryInteractions {
   viewer_reaction: string | null;
 }
 
+export type CommunityMomentAudience = typeof CommunityMomentAudience[keyof typeof CommunityMomentAudience];
+
+
+export const CommunityMomentAudience = {
+  community: 'community',
+  hub: 'hub',
+} as const;
+
+export type CommunityMomentMediaMediaType = typeof CommunityMomentMediaMediaType[keyof typeof CommunityMomentMediaMediaType];
+
+
+export const CommunityMomentMediaMediaType = {
+  photo: 'photo',
+  video: 'video',
+  audio: 'audio',
+} as const;
+
+export interface CommunityMomentMedia {
+  id: number;
+  media_type: CommunityMomentMediaMediaType;
+  mime_type: string;
+  /** @nullable */
+  duration_ms: number | null;
+  /** @nullable */
+  width: number | null;
+  /** @nullable */
+  height: number | null;
+  /** @nullable */
+  alt_text: string | null;
+  /** @nullable */
+  captions_vtt: string | null;
+  media_url: string;
+}
+
+export type CommunityMomentElementPayload = { [key: string]: unknown };
+
+export interface CommunityMomentElement {
+  id: string;
+  type: string;
+  payload: CommunityMomentElementPayload;
+  position_x: number;
+  position_y: number;
+  scale: number;
+  rotation: number;
+  z_index: number;
+}
+
+/**
+ * @nullable
+ */
+export type CommunityMomentCompositionManifest = { [key: string]: unknown } | null;
+
+export type CommunityMomentAuthor = {
+  id: number;
+  name: string;
+  /** @nullable */
+  avatar_url: string | null;
+};
+
+export interface CommunityMoment {
+  id: number;
+  author_user_id: number;
+  /** @nullable */
+  hub_id: number | null;
+  /** @nullable */
+  exchange_listing_id: number | null;
+  /** @nullable */
+  community_id: number | null;
+  /** @nullable */
+  caption: string | null;
+  tags: string[];
+  audience: CommunityMomentAudience;
+  reply_enabled: boolean;
+  /** @nullable */
+  created_at: string | null;
+  /** @nullable */
+  expires_at: string | null;
+  /** @nullable */
+  composition_manifest: CommunityMomentCompositionManifest;
+  author: CommunityMomentAuthor;
+  media: CommunityMomentMedia[];
+  elements: CommunityMomentElement[];
+}
+
+export interface CommunityMomentPage {
+  stories: CommunityMoment[];
+  viewer_user_id: number;
+  expires_after_hours: 24;
+  /** @nullable */
+  next_cursor: string | null;
+}
+
+export type CommunityMomentCreateInputAudience = typeof CommunityMomentCreateInputAudience[keyof typeof CommunityMomentCreateInputAudience];
+
+
+export const CommunityMomentCreateInputAudience = {
+  community: 'community',
+  hub: 'hub',
+} as const;
+
+export type CommunityMomentCreateInputMediaEditsItem = {
+  /** @minimum 1 */
+  media_asset_id: number;
+  /** @minimum 0 */
+  cover_time_ms: number;
+};
+
+export type CommunityMomentInlineMediaInputMediaType = typeof CommunityMomentInlineMediaInputMediaType[keyof typeof CommunityMomentInlineMediaInputMediaType];
+
+
+export const CommunityMomentInlineMediaInputMediaType = {
+  photo: 'photo',
+  video: 'video',
+} as const;
+
+export interface CommunityMomentInlineMediaInput {
+  /** @maxLength 18000000 */
+  data_url: string;
+  media_type: CommunityMomentInlineMediaInputMediaType;
+  /** @maxLength 100 */
+  mime_type: string;
+  /**
+     * @minimum 1
+     * @maximum 60000
+     * @nullable
+     */
+  duration_ms?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 10000
+     * @nullable
+     */
+  width?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 10000
+     * @nullable
+     */
+  height?: number | null;
+  /**
+     * Required for visual attachments in ordinary Moments; optional for audio (which is not accepted by this inline-media input) and exempt for Exchange-linked Stories.
+     * @maxLength 250
+     */
+  alt_text?: string;
+  /** @maxLength 65536 */
+  captions_vtt?: string;
+}
+
+export interface CommunityMomentMediaAccessibilityInput {
+  /** @minimum 1 */
+  media_asset_id: number;
+  /**
+     * Required for photo/video assets in ordinary Moments; not required for audio or Exchange-linked Stories.
+     * @maxLength 250
+     */
+  alt_text?: string;
+  /** @maxLength 65536 */
+  captions_vtt?: string;
+}
+
+export type CommunityMomentElementInputPayload = { [key: string]: unknown };
+
+export interface CommunityMomentElementInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  id?: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  type: string;
+  payload?: CommunityMomentElementInputPayload;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  position_x?: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  position_y?: number;
+  /**
+     * @minimum 0.5
+     * @maximum 3
+     */
+  scale?: number;
+  /**
+     * @minimum -180
+     * @maximum 180
+     */
+  rotation?: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  z_index?: number;
+}
+
+export type CommunityMomentCompositionManifestInputCanvasAspect = typeof CommunityMomentCompositionManifestInputCanvasAspect[keyof typeof CommunityMomentCompositionManifestInputCanvasAspect];
+
+
+export const CommunityMomentCompositionManifestInputCanvasAspect = {
+  '9:16': '9:16',
+  '1:1': '1:1',
+  '16:9': '16:9',
+} as const;
+
+export type CommunityMomentCompositionManifestInputEffectsItem = typeof CommunityMomentCompositionManifestInputEffectsItem[keyof typeof CommunityMomentCompositionManifestInputEffectsItem];
+
+
+export const CommunityMomentCompositionManifestInputEffectsItem = {
+  grayscale: 'grayscale',
+  sepia: 'sepia',
+  blur: 'blur',
+} as const;
+
+export type CommunityMomentCompositionManifestInputCanvas = {
+  /**
+     * @maximum 10000
+     * @exclusiveMinimum 0
+     */
+  width: number;
+  /**
+     * @maximum 10000
+     * @exclusiveMinimum 0
+     */
+  height: number;
+  aspect: CommunityMomentCompositionManifestInputCanvasAspect;
+};
+
+export type CommunityMomentCompositionManifestInputMusic = {
+  /** @minimum 1 */
+  track_asset_id: number;
+  /**
+     * @minimum 0
+     * @maximum 2
+     */
+  volume?: number;
+} | null;
+
+export interface CommunityMomentCompositionManifestInput {
+  version: 1;
+  canvas: CommunityMomentCompositionManifestInputCanvas;
+  /** @maxItems 30 */
+  elements: CommunityMomentElementInput[];
+  music?: CommunityMomentCompositionManifestInputMusic;
+  /** @maxItems 6 */
+  effects?: CommunityMomentCompositionManifestInputEffectsItem[];
+}
+
+/**
+ * For ordinary non-Exchange Moments, alt text is required for every photo and video attachment, supplied inline or through media_accessibility. Audio attachments do not require alt text. Exchange-linked Stories are exempt from the visual alt-text requirement.
+ */
+export interface CommunityMomentCreateInput {
+  client_publish_id?: string;
+  /** @maxLength 1000 */
+  caption?: string;
+  /**
+     * @maxItems 10
+     * @items.pattern ^[a-z0-9][a-z0-9-]{0,29}$
+     */
+  tags?: string[];
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  hub_id?: number | null;
+  /** @minimum 1 */
+  exchange_listing_id?: number;
+  audience?: CommunityMomentCreateInputAudience;
+  reply_enabled?: boolean;
+  /** @maxItems 6 */
+  media?: CommunityMomentInlineMediaInput[];
+  /**
+     * @maxItems 6
+     * @items.minimum 1
+     */
+  media_asset_ids?: number[];
+  /** @maxItems 6 */
+  media_accessibility?: CommunityMomentMediaAccessibilityInput[];
+  /** @maxItems 6 */
+  media_edits?: CommunityMomentCreateInputMediaEditsItem[];
+  /** @maxItems 30 */
+  elements?: CommunityMomentElementInput[];
+  composition_manifest?: CommunityMomentCompositionManifestInput;
+}
+
+export type CommunityMomentPublishResponseStoryStatus = typeof CommunityMomentPublishResponseStoryStatus[keyof typeof CommunityMomentPublishResponseStoryStatus];
+
+
+export const CommunityMomentPublishResponseStoryStatus = {
+  pending: 'pending',
+  published: 'published',
+} as const;
+
+export type CommunityMomentPublishResponseStory = {
+  id: number;
+  status: CommunityMomentPublishResponseStoryStatus;
+  expires_at: string;
+};
+
+export interface CommunityMomentPublishResponse {
+  story: CommunityMomentPublishResponseStory;
+}
+
+export interface CommunityStoryWatchInput {
+  event_id: string;
+  /**
+     * @minimum 0
+     * @maximum 300000
+     */
+  duration_ms: number;
+  completed: boolean;
+}
+
+export type CommunityStoryWatchResponseReason = typeof CommunityStoryWatchResponseReason[keyof typeof CommunityStoryWatchResponseReason];
+
+
+export const CommunityStoryWatchResponseReason = {
+  creator_view: 'creator_view',
+} as const;
+
+export interface CommunityStoryWatchResponse {
+  ok: true;
+  recorded: boolean;
+  reason?: CommunityStoryWatchResponseReason;
+}
+
+export type CommunityCreatorWatchInsightsDailyItem = {
+  day: string;
+  watch_time_ms: number;
+  plays: number;
+  /**
+     * Non-null only when the creator has at least five recorded plays in the rolling 90-day window and this day has at least five plays.
+     * @nullable
+     */
+  retention_rate: number | null;
+};
+
+export interface CommunityCreatorWatchInsights {
+  days: number;
+  retention_minimum_plays: 5;
+  retention_window_days: 90;
+  /** Creator-wide recorded play count over the rolling retention window. */
+  total_recorded_plays: number;
+  retention_available: boolean;
+  has_data: boolean;
+  daily: CommunityCreatorWatchInsightsDailyItem[];
+}
+
+export interface DirectMessageBlockResponse {
+  blocked: boolean;
+}
+
+export type DirectMessageBlockedUsersBlockedUsersItem = {
+  id: number;
+  name: string;
+  /** @nullable */
+  avatar_url: string | null;
+};
+
+export interface DirectMessageBlockedUsers {
+  blocked_users: DirectMessageBlockedUsersBlockedUsersItem[];
+}
+
+export type FamilyStoryFieldsAudience = typeof FamilyStoryFieldsAudience[keyof typeof FamilyStoryFieldsAudience];
+
+
+export const FamilyStoryFieldsAudience = {
+  family: 'family',
+  private: 'private',
+} as const;
+
+export type FamilyStoryFieldsCategory = typeof FamilyStoryFieldsCategory[keyof typeof FamilyStoryFieldsCategory];
+
+
+export const FamilyStoryFieldsCategory = {
+  oral: 'oral',
+  written: 'written',
+  tradition: 'tradition',
+  recipe: 'recipe',
+  song: 'song',
+  proverb: 'proverb',
+  biography: 'biography',
+} as const;
+
+export type FamilyStoryFieldsDatePrecision = typeof FamilyStoryFieldsDatePrecision[keyof typeof FamilyStoryFieldsDatePrecision];
+
+
+export const FamilyStoryFieldsDatePrecision = {
+  day: 'day',
+  month: 'month',
+  year: 'year',
+  decade: 'decade',
+  circa: 'circa',
+} as const;
+
+export interface FamilyStoryFields {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title?: string;
+  /**
+     * @minLength 1
+     * @maxLength 50000
+     */
+  body?: string;
+  audience?: FamilyStoryFieldsAudience;
+  category?: FamilyStoryFieldsCategory;
+  /** @maxLength 50 */
+  language?: string;
+  /** @minimum 1 */
+  teller_member_id?: number;
+  /** @minimum 1 */
+  about_member_id?: number;
+  /** @minimum 1 */
+  memory_id?: number;
+  /**
+     * @minimum 1
+     * @maximum 9999
+     */
+  date_year?: number;
+  /**
+     * @minimum 1
+     * @maximum 12
+     */
+  date_month?: number;
+  /**
+     * @minimum 1
+     * @maximum 31
+     */
+  date_day?: number;
+  date_precision?: FamilyStoryFieldsDatePrecision;
+  /**
+     * @maxItems 20
+     * @items.maxLength 50
+     */
+  tags?: string[];
+}
+
+export type FamilyStoryInput = FamilyStoryFields & Required<Pick<FamilyStoryFields, 'title' | 'body'>>;
+
+export type FamilyStoryUpdateInputAudience = typeof FamilyStoryUpdateInputAudience[keyof typeof FamilyStoryUpdateInputAudience];
+
+
+export const FamilyStoryUpdateInputAudience = {
+  family: 'family',
+  private: 'private',
+} as const;
+
+export type FamilyStoryUpdateInputCategory = typeof FamilyStoryUpdateInputCategory[keyof typeof FamilyStoryUpdateInputCategory];
+
+
+export const FamilyStoryUpdateInputCategory = {
+  oral: 'oral',
+  written: 'written',
+  tradition: 'tradition',
+  recipe: 'recipe',
+  song: 'song',
+  proverb: 'proverb',
+  biography: 'biography',
+} as const;
+
+/**
+ * @nullable
+ */
+export type FamilyStoryUpdateInputDatePrecision = typeof FamilyStoryUpdateInputDatePrecision[keyof typeof FamilyStoryUpdateInputDatePrecision] | null;
+
+
+export const FamilyStoryUpdateInputDatePrecision = {
+  day: 'day',
+  month: 'month',
+  year: 'year',
+  decade: 'decade',
+  circa: 'circa',
+} as const;
+
+export interface FamilyStoryUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title?: string;
+  /**
+     * @minLength 1
+     * @maxLength 50000
+     */
+  body?: string;
+  audience?: FamilyStoryUpdateInputAudience;
+  category?: FamilyStoryUpdateInputCategory;
+  /** @maxLength 50 */
+  language?: string;
+  /** @minimum 1 */
+  teller_member_id?: number;
+  /** @minimum 1 */
+  about_member_id?: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  memory_id?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 9999
+     * @nullable
+     */
+  date_year?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 12
+     * @nullable
+     */
+  date_month?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 31
+     * @nullable
+     */
+  date_day?: number | null;
+  /** @nullable */
+  date_precision?: FamilyStoryUpdateInputDatePrecision;
+  /**
+     * @maxItems 20
+     * @items.maxLength 50
+     */
+  tags?: string[];
+}
+
+/**
+ * Private stories with a null author remain private and are visible to owner/curator members only.
+ */
+export type FamilyStoryRecordAudience = typeof FamilyStoryRecordAudience[keyof typeof FamilyStoryRecordAudience];
+
+
+export const FamilyStoryRecordAudience = {
+  family: 'family',
+  private: 'private',
+} as const;
+
+/**
+ * @nullable
+ */
+export type FamilyStoryRecordCategory = typeof FamilyStoryRecordCategory[keyof typeof FamilyStoryRecordCategory] | null;
+
+
+export const FamilyStoryRecordCategory = {
+  oral: 'oral',
+  written: 'written',
+  tradition: 'tradition',
+  recipe: 'recipe',
+  song: 'song',
+  proverb: 'proverb',
+  biography: 'biography',
+} as const;
+
+/**
+ * @nullable
+ */
+export type FamilyStoryRecordDatePrecision = typeof FamilyStoryRecordDatePrecision[keyof typeof FamilyStoryRecordDatePrecision] | null;
+
+
+export const FamilyStoryRecordDatePrecision = {
+  day: 'day',
+  month: 'month',
+  year: 'year',
+  decade: 'decade',
+  circa: 'circa',
+} as const;
+
+export interface FamilyStoryRecord {
+  id: number;
+  family_id: number;
+  /** @nullable */
+  author_id: number | null;
+  /** @nullable */
+  teller_member_id: number | null;
+  /** @nullable */
+  about_member_id: number | null;
+  title: string;
+  body: string;
+  /** Private stories with a null author remain private and are visible to owner/curator members only. */
+  audience: FamilyStoryRecordAudience;
+  /** @nullable */
+  category: FamilyStoryRecordCategory;
+  /** @nullable */
+  language: string | null;
+  /** @nullable */
+  memory_id: number | null;
+  /** @nullable */
+  date_year: number | null;
+  /** @nullable */
+  date_month: number | null;
+  /** @nullable */
+  date_day: number | null;
+  /** @nullable */
+  date_precision: FamilyStoryRecordDatePrecision;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  /** @nullable */
+  date_label: string | null;
+}
+
+export type FamilyStoryAuthor = {
+  /** @nullable */
+  id: number | null;
+  /** @nullable */
+  name: string | null;
+  /** @nullable */
+  avatar_url: string | null;
+};
+
+export type FamilyStory = FamilyStoryRecord & {
+  author: FamilyStoryAuthor;
+  /** True for the story author, or for an owner/curator when this is a legacy story with a null author. */
+  viewer_can_manage: boolean;
+};
+
+export interface FamilyStoryMutationResponse {
+  story: FamilyStoryRecord;
+}
+
+export interface FamilyStoryPage {
+  stories: FamilyStory[];
+  page: number;
+  limit: number;
+  total: number;
+  has_more: boolean;
+}
+
+export interface FamilyStoryKeepResponse {
+  saved: true;
+  already_saved: boolean;
+  story: FamilyStoryRecord | null;
+}
+
 /**
  * healthy = reserve fully covered; low = 40-99%; critical = below 40%.
  */
@@ -1765,6 +2405,67 @@ export const GetSavedCommunityHubMediaKind = {
   video: 'video',
   audio: 'audio',
 } as const;
+
+export type GetCommunityStoriesParams = {
+/**
+ * @minimum 1
+ */
+hubId?: number;
+/**
+ * Printable caption search text, up to 100 characters.
+ * @maxLength 100
+ */
+search?: string;
+/**
+ * One normalized tag (optional leading
+ * @maxLength 31
+ * @pattern ^#?[a-zA-Z0-9][a-zA-Z0-9-]{0,29}$
+ */
+tag?: string;
+/**
+ * @minimum 1
+ */
+authorId?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @maxLength 512
+ */
+cursor?: string;
+};
+
+export type GetCommunityCreatorWatchInsightsParams = {
+/**
+ * @minimum 1
+ * @maximum 90
+ */
+days?: number;
+};
+
+export type GetFamilyStoriesParams = {
+/**
+ * @minimum 1
+ * @maximum 100000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type DeleteFamilyStory200 = {
+  ok: true;
+};
+
+export type KeepCommunityMomentInFamilyBody = {
+  /** @minimum 1 */
+  moment_id: number;
+};
 
 export type DeleteUser200 = {
   ok?: boolean;

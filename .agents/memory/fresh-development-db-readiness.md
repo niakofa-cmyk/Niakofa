@@ -1,10 +1,10 @@
 ---
 name: Fresh development database readiness
-description: How to interpret a reachable but unmigrated development database in this project.
+description: Verify development schema readiness and physical column parity after migration.
 ---
 
-A newly provisioned development PostgreSQL database may be reachable while still lacking the application schema. API readiness should be evaluated only after the repository's canonical development migration flow has run; never compensate by adding startup-time or production DDL.
+A reachable development PostgreSQL database may still lack the application schema. Even after migrations succeed, an ORM declaration for an existing table can disagree with its physical columns. Neither typechecks nor source-contract tests prove a changed route can read and write against that database. Never compensate with startup-time or production DDL.
 
-**Why:** A fresh workspace can produce a misleading combination of successful database connectivity and an unready API because required tables do not exist yet.
+**Why:** A fresh workspace can have connectivity without tables; an additive feature can also compile and migrate successfully while a legacy column name mismatch still causes runtime failures.
 
-**How to apply:** Check connectivity and required-table presence separately. If the development schema is absent, use the ordered, idempotent development migration runner, restart the API workers, and recheck the readiness endpoint. Production schema changes belong to the platform publish flow.
+**How to apply:** Run the ordered, idempotent development migrations, then compare changed ORM mappings to physical columns and exercise representative authenticated read and write paths. For rejected forms, inspect field-level validation and distinguish omitted fields from explicit nulls. Production schema changes belong to the platform publish flow.

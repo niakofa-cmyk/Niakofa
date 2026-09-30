@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { parseOralHistoryIntent, persistPreserveScanContext, readPreserveScanIdFromSearch } from "@/lib/diaspora/oralHistoryDeepLink";
 import { useAuthorizedFamilyAsset } from "@/lib/family-asset-client";
 import { Z_MODAL } from "@/lib/zLayers";
+import FamilyStoriesExperience from "@/components/family/FamilyStoriesExperience";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-type TabId = "memories" | "members" | "interviews";
+type TabId = "memories" | "stories" | "members" | "interviews";
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -337,7 +338,7 @@ export default function FamilyVaultPage() {
       if (uploadOk) {
         toast.success("Memory saved!");
       } else {
-        toast("Memory saved — tap 'Retry upload' to attach the file.", { icon: "⚠️" });
+        toast("Memory saved — tap 'Retry upload' to attach the file.");
       }
       setShowAddMemory(false);
       setMTitle(""); setMDesc(""); setMDate(""); setMLoc(""); setMTags(""); setMFile(null);
@@ -557,7 +558,7 @@ export default function FamilyVaultPage() {
                 <TreePine className="w-4.5 h-4.5" />
               </button>
             )}
-            {canWrite && (
+            {canWrite && tab === "memories" && (
               <button
                 onClick={() => setShowAddMemory(true)}
                 className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-sm font-medium active:opacity-80"
@@ -570,7 +571,7 @@ export default function FamilyVaultPage() {
 
         {/* Tabs */}
         <div className="max-w-lg mx-auto flex border-b border-border">
-          {(["memories", "members", "interviews"] as TabId[]).map(t => (
+          {(["memories", "stories", "members", "interviews"] as TabId[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -645,6 +646,14 @@ export default function FamilyVaultPage() {
             </div>
             {memoriesBody}
           </>
+        )}
+
+        {tab === "stories" && (
+          <FamilyStoriesExperience
+            familyId={familyId}
+            familyName={family?.name ?? "your family"}
+            canWrite={canWrite}
+          />
         )}
 
         {/* Members tab */}

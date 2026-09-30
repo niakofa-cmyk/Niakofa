@@ -17,6 +17,8 @@ import {
   transactionsTable,
   communityStoriesTable,
   communityStoryMediaTable,
+  communityStoryWatchDailyTable,
+  communityStoryWatchEventKeysTable,
   exchangeListingsTable,
   exchangeSparksTable,
   exchangePickupRequestsTable,
@@ -25,7 +27,7 @@ import {
   mediaProcessingJobsTable,
 } from "@workspace/db";
 import { randomUUID } from "node:crypto";
-import { eq, and, inArray, isNull, lte, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "./logger";
@@ -41,6 +43,7 @@ import { mediaStorageKeys } from "./media-cleanup";
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 const STORY_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const COMMUNITY_STORY_WATCH_RETENTION_DAYS = 90;
 const STORY_ORPHAN_MEDIA_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MEDIA_UPLOAD_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MEDIA_CLEANUP_BATCH_SIZE = 100;
@@ -899,6 +902,14 @@ async function processCommunityStoryCleanup(): Promise<void> {
     broadcast({ type: "community_story_expired", payload: { story_ids: deletedIds } });
     logger.info({ count: deletedIds.length }, "community-story cleanup: expired stories and assets removed");
   }
+  const retentionStart = new Date();
+  retentionStart.setUTCHours(0, 0, 0, 0);
+  retentionStart.setUTCDate(retentionStart.getUTCDate() - (COMMUNITY_STORY_WATCH_RETENTION_DAYS - 1));
+  const retentionStartDay = retentionStart.toISOString().slice(0, 10);
+  await Promise.all([
+    db.delete(communityStoryWatchDailyTable).where(lt(communityStoryWatchDailyTable.play_day, retentionStartDay)),
+    db.delete(communityStoryWatchEventKeysTable).where(lt(communityStoryWatchEventKeysTable.play_day, retentionStartDay)),
+  ]);
   if (cleanupFailed) throw new Error("COMMUNITY_STORY_STORAGE_CLEANUP_FAILED");
 }
 

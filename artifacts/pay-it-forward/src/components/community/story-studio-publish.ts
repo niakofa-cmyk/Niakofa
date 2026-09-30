@@ -1,5 +1,6 @@
 import { authHeaders } from "@/lib/auth";
 import { uploadCommunityMomentMedia, validateCommunityMomentFile } from "@/lib/community-moments-upload";
+import { buildMomentMediaAccessibility, type MomentMediaAccessibilityPayload } from "./moment-studio-accessibility";
 
 export type StudioElement = {
   type: string;
@@ -28,11 +29,15 @@ export function chooseStudioFiles(files: File[]): { files: File[]; errors: strin
   return { files: accepted.slice(0, 6), errors };
 }
 
-export async function validateStudioFiles(files: File[]): Promise<void> {
+export async function validateStudioFiles(files: File[]): Promise<Array<number | null>> {
   const result = chooseStudioFiles(files);
   if (result.errors.length || result.files.length !== files.length) throw new Error(result.errors[0] || "Choose up to six media items.");
+  const videoDurationsMs: Array<number | null> = [];
   for (const file of files) {
-    if (!file.type.startsWith("video/")) continue;
+    if (!file.type.startsWith("video/")) {
+      videoDurationsMs.push(null);
+      continue;
+    }
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
     try {
@@ -43,12 +48,14 @@ export async function validateStudioFiles(files: File[]): Promise<void> {
         video.onerror = () => reject(new Error(`${file.name}: Video could not be inspected.`));
       });
       if (!Number.isFinite(video.duration) || video.duration <= 0 || video.duration > 60) throw new Error(`${file.name}: Moment videos must be 60 seconds or shorter.`);
+      videoDurationsMs.push(Math.round(video.duration * 1000));
     } finally {
       video.removeAttribute("src");
       video.load();
       URL.revokeObjectURL(url);
     }
   }
+  return videoDurationsMs;
 }
 
 const validId = (id: number) => Number.isSafeInteger(id) && id > 0;
@@ -73,6 +80,10 @@ export async function publishStudioMoment(input: {
   clientPublishId: string;
   files: File[];
   caption: string;
+  tags?: string[];
+  mediaAccessibility?: MomentMediaAccessibilityPayload[];
+  mediaAltTexts?: string[];
+  mediaCaptionsVtt?: string[];
   elements: StudioElement[];
   effect: string;
   musicFile?: File | null;
@@ -189,12 +200,21 @@ export async function publishStudioMoment(input: {
   // publish manifest neutral until the Story player guarantees filter parity.
   const effects: string[] = [];
   const mediaEdits = validStudioMediaEdits(input.files, ids, input.mediaEdits);
+  const mediaAccessibility = input.mediaAccessibility ?? buildMomentMediaAccessibility(
+    input.files,
+    input.files.map((_, index) => index),
+    ids.slice(0, input.files.length),
+    Object.fromEntries((input.mediaAltTexts ?? []).map((text, index) => [index, text])),
+    Object.fromEntries((input.mediaCaptionsVtt ?? []).map((text, index) => [index, text])),
+  );
   const response = await fetch("/api/community/stories", {
     method: "POST", credentials: "same-origin", signal: input.signal,
     headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({
       caption: input.caption.trim(), hub_id: input.audience === "hub" ? input.hubId : null,
       audience: input.audience, media_asset_ids: ids, elements: input.elements,
+      ...(input.tags?.length ? { tags: input.tags } : {}),
+      ...(mediaAccessibility.length ? { media_accessibility: mediaAccessibility } : {}),
       client_publish_id: input.clientPublishId,
       composition_manifest: {
         version: 1,

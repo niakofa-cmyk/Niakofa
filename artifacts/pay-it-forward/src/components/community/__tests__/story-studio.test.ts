@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { publishStudioMoment, selectedStudioFiles, validStudioMediaEdits } from "../story-studio-publish";
+import { buildMomentMediaAccessibility, parseMomentStudioTags, restoreMomentStudioAccessibility, validateMomentStudioWebVtt, type MomentStudioAccessibilityDraft } from "../moment-studio-accessibility";
 import { trimVideoFile } from "../story-media-tools";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
 
@@ -24,9 +25,32 @@ test("sequence is the selected order, not the gallery's file order", () => {
   assert.deepEqual(selectedStudioFiles([file("first"), file("second")], [1, 0, 1]).map((item) => item.name), ["second", "first"]);
 });
 
+test("Moment tags and accessibility metadata are bounded and retain selected attachment order", () => {
+  assert.deepEqual(parseMomentStudioTags("#Community, ART, helping-neighbors"), ["community", "art", "helping-neighbors"]);
+  assert.throws(() => parseMomentStudioTags(Array.from({ length: 11 }, (_, index) => `tag${index}`).join(",")), /no more than 10/);
+  assert.throws(() => parseMomentStudioTags("two words"), /letters, numbers, or hyphens/);
+  const photo = file("neighbors.jpg");
+  const video = Object.assign(new Blob(["video"], { type: "video/webm" }), { name: "voices.webm", lastModified: 1 }) as File;
+  const vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello neighbors";
+  assert.equal(validateMomentStudioWebVtt(vtt), null);
+  assert.match(validateMomentStudioWebVtt(vtt, 1_000) ?? "", /within this video/);
+  assert.match(validateMomentStudioWebVtt("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<unsafe>") ?? "", /plain text/);
+  assert.deepEqual(buildMomentMediaAccessibility(
+    [photo, video], [1, 0], [72, 71],
+    { 0: "A welcoming neighborhood gathering", 1: "A volunteer greets a neighbor" },
+    { 1: vtt },
+  ), [
+    { media_asset_id: 72, alt_text: "A volunteer greets a neighbor", captions_vtt: vtt },
+    { media_asset_id: 71, alt_text: "A welcoming neighborhood gathering" },
+  ]);
+  assert.deepEqual(restoreMomentStudioAccessibility({
+    momentTagsInput: "community", momentAltTexts: { 0: "Description" }, momentCaptionsVtt: { 0: vtt },
+  }), { momentTagsInput: "community", momentAltTexts: { 0: "Description" }, momentCaptionsVtt: { 0: vtt } });
+});
+
 test("scope reset starts without prior user's or Hub's files, audience, listing or uploaded assets", () => {
-  assert.deepEqual(emptyStudioScope(null), { files: [], selection: [], audience: "community", uploadedIds: [], listingId: "", caption: "" });
-  assert.deepEqual(emptyStudioScope(41), { files: [], selection: [], audience: "hub", uploadedIds: [], listingId: "", caption: "" });
+  assert.deepEqual(emptyStudioScope(null), { files: [], selection: [], audience: "community", uploadedIds: [], listingId: "", caption: "", musicFile: null, musicRightsBasis: "original", musicLicenseReference: "", musicRightsAccepted: false, musicVolume: 0.65, uploadedMusicAssetId: null });
+  assert.deepEqual(emptyStudioScope(41), { files: [], selection: [], audience: "hub", uploadedIds: [], listingId: "", caption: "", musicFile: null, musicRightsBasis: "original", musicLicenseReference: "", musicRightsAccepted: false, musicVolume: 0.65, uploadedMusicAssetId: null });
   assert.notEqual(studioDraftKey(73, 41), studioDraftKey(74, 41));
   assert.notEqual(studioDraftKey(73, 41), studioDraftKey(73, 42));
 });
@@ -72,12 +96,14 @@ test("studio uploads raw bytes and publishes asset IDs, elements and manifest wi
   };
   try {
     const image = file("neighborhood.jpg");
-    await publishStudioMoment({ userId: 73, hubId: null, audience: "community", clientPublishId: "00000000-0000-4000-8000-000000000002", files: [image], caption: "We helped", elements: [{ type: "text", payload: { text: "We helped" } }], effect: "none", signal: new AbortController().signal, onStatus: () => {}, beforePublish: async (ids) => { assert.deepEqual(ids, [41]); } });
+    await publishStudioMoment({ userId: 73, hubId: null, audience: "community", clientPublishId: "00000000-0000-4000-8000-000000000002", files: [image], caption: "We helped", tags: ["neighbors", "volunteers"], mediaAltTexts: ["A neighborhood volunteer hands out supplies"], elements: [{ type: "text", payload: { text: "We helped" } }], effect: "none", signal: new AbortController().signal, onStatus: () => {}, beforePublish: async (ids) => { assert.deepEqual(ids, [41]); } });
     assert.equal(raw, image);
     assert.equal(JSON.parse(sent[0].body!).contextKind, "community_moment");
     assert.equal(JSON.parse(sent[0].body!).contextId, 73);
     const published = JSON.parse(sent.at(-1)!.body!);
     assert.deepEqual(published.media_asset_ids, [41]);
+    assert.deepEqual(published.tags, ["neighbors", "volunteers"]);
+    assert.deepEqual(published.media_accessibility, [{ media_asset_id: 41, alt_text: "A neighborhood volunteer hands out supplies" }]);
     assert.equal(published.client_publish_id, "00000000-0000-4000-8000-000000000002");
     assert.equal(published.media, undefined);
     assert.equal(published.elements[0].type, "text");
@@ -126,7 +152,7 @@ test("failed publication does not remove a recoverable user-scoped draft", async
       return request;
     },
   };
-  const draft: StudioDraft = {
+  const draft: StudioDraft & MomentStudioAccessibilityDraft = {
     id: studioDraftKey(73, null), userId: 73, contextId: 73, contextKind: "community_moment",
     clientPublishId: "00000000-0000-4000-8000-000000000001",
     caption: "We helped", files: [file("first"), file("second")], selection: [1, 0],
@@ -134,6 +160,9 @@ test("failed publication does not remove a recoverable user-scoped draft", async
     elements: [{ type: "text", payload: { text: "We helped" } }], effect: "warmth",
     textBackground: "#172554", textColor: "#ffffff", textSize: "18", textAlign: "center",
     trimPreview: { 1: { start: 2, end: 5 } }, uploadedMediaAssetIds: [0, 0], updatedAt: Date.now(),
+    momentTagsInput: "community, neighbors",
+    momentAltTexts: { 0: "First attachment", 1: "Second attachment" },
+    momentCaptionsVtt: {},
   };
   let postedPublishId: string | undefined;
   globalThis.fetch = async (_input, init) => {
@@ -146,6 +175,8 @@ test("failed publication does not remove a recoverable user-scoped draft", async
     assert.equal(postedPublishId, draft.clientPublishId, "a text-only retry keeps the draft's publication identity");
     assert.equal((await loadStudioDraft(73, null))?.files[1].name, "second");
     assert.deepEqual((await loadStudioDraft(73, null))?.selection, [1, 0]);
+    assert.equal((await loadStudioDraft(73, null) as (StudioDraft & MomentStudioAccessibilityDraft) | null)?.momentTagsInput, "community, neighbors");
+    assert.deepEqual((await loadStudioDraft(73, null) as (StudioDraft & MomentStudioAccessibilityDraft) | null)?.momentAltTexts, { 0: "First attachment", 1: "Second attachment" });
     assert.equal((await loadStudioDraft(74, null)), null);
     assert.equal((await loadStudioDraft(73, 88)), null);
 
@@ -166,7 +197,7 @@ test("failed publication does not remove a recoverable user-scoped draft", async
     (globalThis as { XMLHttpRequest?: unknown }).XMLHttpRequest = Upload;
     let sessions = 0;
     let loseResponse = true;
-    const posts: Array<{ client_publish_id: string; media_asset_ids: number[] }> = [];
+    const posts: Array<{ client_publish_id: string; media_asset_ids: number[]; media_accessibility: unknown; tags: string[] }> = [];
     globalThis.fetch = async (path, init) => {
       const route = String(path);
       if (route === "/api/media-assets/uploads") {
@@ -175,7 +206,7 @@ test("failed publication does not remove a recoverable user-scoped draft", async
       }
       if (route.includes("moment-media-status")) return new Response(JSON.stringify({ assets: [201, 202].map((id) => ({ id, status: "ready", media_type: "photo", variant_ready: true })) }), { status: 200 });
       if (route === "/api/community/stories") {
-        const body = JSON.parse(String(init?.body)) as { client_publish_id: string; media_asset_ids: number[] };
+        const body = JSON.parse(String(init?.body)) as { client_publish_id: string; media_asset_ids: number[]; media_accessibility: unknown; tags: string[] };
         assert.deepEqual(records.get(binary.id)?.publishAssetIds, body.media_asset_ids, "IDB commit must precede each POST");
         assert.equal(records.get(binary.id)?.clientPublishId, body.client_publish_id);
         posts.push(body);
@@ -183,15 +214,18 @@ test("failed publication does not remove a recoverable user-scoped draft", async
       }
       return new Response("{}", { status: 200 });
     };
-    const publishBinary = (value: StudioDraft) => publishStudioMoment({
+    const publishBinary = (value: StudioDraft & MomentStudioAccessibilityDraft) => publishStudioMoment({
       userId: 73, hubId: null, audience: "community", clientPublishId: value.clientPublishId!,
       files: [value.files[1], value.files[0]], caption: value.caption, elements: value.elements,
+      tags: parseMomentStudioTags(value.momentTagsInput),
+      mediaAltTexts: [value.momentAltTexts[1], value.momentAltTexts[0]],
+      mediaCaptionsVtt: [value.momentCaptionsVtt[1] ?? "", value.momentCaptionsVtt[0] ?? ""],
       effect: value.effect, signal: new AbortController().signal, onStatus: () => {},
       uploadedIds: [value.uploadedMediaAssetIds?.[1] ?? 0, value.uploadedMediaAssetIds?.[0] ?? 0],
       beforePublish: async (ids) => { await persistStudioPublishAttempt(value, [1, 0], ids); },
     });
     await assert.rejects(publishBinary(binary), /Connection lost/);
-    const recovered = await loadStudioDraft(73, null);
+    const recovered = await loadStudioDraft(73, null) as (StudioDraft & MomentStudioAccessibilityDraft) | null;
     assert.deepEqual(recovered?.uploadedMediaAssetIds, [202, 201]);
     assert.deepEqual(recovered?.publishAssetIds, [201, 202]);
     assert.equal(recovered?.clientPublishId, binary.clientPublishId);
@@ -199,6 +233,11 @@ test("failed publication does not remove a recoverable user-scoped draft", async
     await publishBinary(recovered!);
     assert.equal(sessions, 2, "retries must not upload a second copy");
     assert.deepEqual(posts[0], posts[1], "retry keeps the same ordered IDs and publication identity");
+    assert.deepEqual(posts[0].media_accessibility, [
+      { media_asset_id: 201, alt_text: "Second attachment" },
+      { media_asset_id: 202, alt_text: "First attachment" },
+    ], "retries preserve the metadata mapped to the ordered attachments");
+    assert.deepEqual(posts[0].tags, ["community", "neighbors"]);
 
     // When the IDB write fails, not even a text-only POST may leave the device.
     let postedAfterFailure = false;

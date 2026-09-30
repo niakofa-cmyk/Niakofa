@@ -33,6 +33,7 @@ export const communityStoriesTable = pgTable("community_stories", {
   client_publish_id: varchar("client_publish_id", { length: 36 }),
   publish_payload_hash: varchar("publish_payload_hash", { length: 64 }),
   caption: text("caption"),
+  tags: text("tags").array().notNull().default(sql`ARRAY[]::text[]`),
   audience: text("audience").notNull().default("community"),
   status: text("status").notNull().default("published"),
   reply_enabled: boolean("reply_enabled").notNull().default(true),
@@ -44,6 +45,9 @@ export const communityStoriesTable = pgTable("community_stories", {
   index("community_stories_hub_expires_idx").on(table.hub_id, table.expires_at),
   index("community_stories_status_expires_idx").on(table.status, table.expires_at),
   index("community_stories_community_expires_idx").on(table.community_id, table.expires_at),
+  index("community_stories_author_feed_idx").on(table.author_user_id, table.status, table.expires_at, table.created_at),
+  index("community_stories_tags_gin_idx").using("gin", table.tags),
+  index("community_stories_caption_trgm_idx").using("gin", sql`coalesce(${table.caption}, '') gin_trgm_ops`),
   index("community_stories_exchange_listing_idx").on(table.exchange_listing_id, table.created_at),
   uniqueIndex("community_stories_author_client_publish_uidx")
     .on(table.author_user_id, table.client_publish_id)
@@ -62,6 +66,8 @@ export const communityStoryMediaTable = pgTable("community_story_media", {
   duration_ms: integer("duration_ms"),
   width: integer("width"),
   height: integer("height"),
+  alt_text: varchar("alt_text", { length: 250 }),
+  captions_vtt: text("captions_vtt"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("community_story_media_story_idx").on(table.story_id),

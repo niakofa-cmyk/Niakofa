@@ -3273,14 +3273,15 @@ function UserReportsSection({ authed, refreshTick = 0 }: { authed: boolean; refr
   });
   const reports = reportsQuery.data ?? [];
   const loading = authed && reportsQuery.isLoading;
+  const refetchReports = reportsQuery.refetch;
   const queryClient = useQueryClient();
   const refreshTickRef = useRef(refreshTick);
 
   useEffect(() => {
     if (refreshTickRef.current === refreshTick) return;
     refreshTickRef.current = refreshTick;
-    if (authed) void reportsQuery.refetch();
-  }, [authed, refreshTick, reportsQuery.refetch]);
+    if (authed) void refetchReports();
+  }, [authed, refreshTick, refetchReports]);
 
   useEffect(() => {
     if (authed && reportsQuery.isError) toast({ title: "Could not load reports", variant: "destructive" });

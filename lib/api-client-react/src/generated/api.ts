@@ -43,23 +43,40 @@ import type {
   CivicResourceNearby,
   CivicResourcesResponse,
   ClaimInput,
+  CommunityCreatorWatchInsights,
   CommunityMediaPage,
   CommunityMediaSaveResponse,
+  CommunityMomentCreateInput,
+  CommunityMomentPage,
+  CommunityMomentPublishResponse,
   CommunityStoryInteractions,
   CommunityStoryMuteResponse,
   CommunityStoryMutedAuthors,
+  CommunityStoryWatchInput,
+  CommunityStoryWatchResponse,
   CompleteInput,
   CreateCommunityInput,
   CreatePaymentIntent200,
   CreatePaymentIntentInput,
   CreateReportInput,
+  DeleteFamilyStory200,
   DeleteScheduledPayment200,
   DeleteUser200,
+  DirectMessageBlockResponse,
+  DirectMessageBlockedUsers,
+  FamilyStoryInput,
+  FamilyStoryKeepResponse,
+  FamilyStoryMutationResponse,
+  FamilyStoryPage,
+  FamilyStoryUpdateInput,
   GetBackgroundCheckStatus200,
   GetCivicNeedsNearbyParams,
   GetCivicResourcesNearbyParams,
   GetCivicResourcesParams,
+  GetCommunityCreatorWatchInsightsParams,
   GetCommunityHubMediaParams,
+  GetCommunityStoriesParams,
+  GetFamilyStoriesParams,
   GetGriotStoryReportsParams,
   GetHubSummary200,
   GetMyPoolLedgerParams,
@@ -88,6 +105,7 @@ import type {
   IdentityVerificationWebhook200,
   InitiateBackgroundCheck200,
   InitiateBackgroundCheckInput,
+  KeepCommunityMomentInFamilyBody,
   ListAdminAccountsParams,
   ListCommunities200,
   ListHelperApplicationsParams,
@@ -880,6 +898,971 @@ export const useUnmuteCommunityStoryAuthor = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUnmuteCommunityStoryAuthorMutationOptions(options));
+    }
+
+export const getGetCommunityStoriesUrl = (params?: GetCommunityStoriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/community/stories?${stringifiedParams}` : `/api/community/stories`
+}
+
+/**
+ * @summary List visible Moments with cursor pagination and discovery filters
+ */
+export const getCommunityStories = async (params?: GetCommunityStoriesParams, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMomentPage> => {
+
+  return customFetch<CommunityMomentPage>(getGetCommunityStoriesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCommunityStoriesQueryKey = (params?: GetCommunityStoriesParams,) => {
+    return [
+    `/api/community/stories`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCommunityStoriesQueryOptions = <TData = Awaited<ReturnType<typeof getCommunityStories>>, TError = ErrorType<void>>(params?: GetCommunityStoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCommunityStoriesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommunityStories>>> = ({ signal }) => getCommunityStories(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCommunityStories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCommunityStoriesQueryResult = NonNullable<Awaited<ReturnType<typeof getCommunityStories>>>
+export type GetCommunityStoriesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List visible Moments with cursor pagination and discovery filters
+ */
+
+export function useGetCommunityStories<TData = Awaited<ReturnType<typeof getCommunityStories>>, TError = ErrorType<void>>(
+ params?: GetCommunityStoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCommunityStoriesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCommunityStoryUrl = () => {
+
+
+
+
+  return `/api/community/stories`
+}
+
+/**
+ * @summary Publish a Community or Hub Moment
+ */
+export const createCommunityStory = async (communityMomentCreateInput: CommunityMomentCreateInput, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMomentPublishResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<CommunityMomentPublishResponse>(getCreateCommunityStoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(communityMomentCreateInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCommunityStoryMutationKey = () => ['createCommunityStory'] as const;
+
+export const getCreateCommunityStoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCommunityStory>>, TError,CreateCommunityStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCommunityStory>>, TError,CreateCommunityStoryMutationVariables, TContext> => {
+
+const mutationKey = getCreateCommunityStoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCommunityStory>>, CreateCommunityStoryMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCommunityStory(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCommunityStoryMutationResult = NonNullable<Awaited<ReturnType<typeof createCommunityStory>>>
+    export type CreateCommunityStoryMutationBody = BodyType<CommunityMomentCreateInput>
+    export type CreateCommunityStoryMutationError = ErrorType<void>
+    export type CreateCommunityStoryMutationVariables = {data: BodyType<CommunityMomentCreateInput>}
+
+    /**
+ * @summary Publish a Community or Hub Moment
+ */
+export const useCreateCommunityStory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCommunityStory>>, TError,CreateCommunityStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCommunityStory>>,
+        TError,
+        CreateCommunityStoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateCommunityStoryMutationOptions(options));
+    }
+
+export const getRecordCommunityStoryWatchUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/stories/${id}/watch`
+}
+
+/**
+ * @summary Record an idempotent Moment watch event
+ */
+export const recordCommunityStoryWatch = async (id: number,
+    communityStoryWatchInput: CommunityStoryWatchInput, options?: Parameters<typeof customFetch>[1]): Promise<CommunityStoryWatchResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<CommunityStoryWatchResponse>(getRecordCommunityStoryWatchUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(communityStoryWatchInput)
+  }
+);}
+
+
+
+
+
+export const getRecordCommunityStoryWatchMutationKey = () => ['recordCommunityStoryWatch'] as const;
+
+export const getRecordCommunityStoryWatchMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordCommunityStoryWatch>>, TError,RecordCommunityStoryWatchMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordCommunityStoryWatch>>, TError,RecordCommunityStoryWatchMutationVariables, TContext> => {
+
+const mutationKey = getRecordCommunityStoryWatchMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordCommunityStoryWatch>>, RecordCommunityStoryWatchMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  recordCommunityStoryWatch(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordCommunityStoryWatchMutationResult = NonNullable<Awaited<ReturnType<typeof recordCommunityStoryWatch>>>
+    export type RecordCommunityStoryWatchMutationBody = BodyType<CommunityStoryWatchInput>
+    export type RecordCommunityStoryWatchMutationError = ErrorType<void>
+    export type RecordCommunityStoryWatchMutationVariables = {id: number;data: BodyType<CommunityStoryWatchInput>}
+
+    /**
+ * @summary Record an idempotent Moment watch event
+ */
+export const useRecordCommunityStoryWatch = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordCommunityStoryWatch>>, TError,RecordCommunityStoryWatchMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordCommunityStoryWatch>>,
+        TError,
+        RecordCommunityStoryWatchMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRecordCommunityStoryWatchMutationOptions(options));
+    }
+
+export const getGetCommunityCreatorWatchInsightsUrl = (params?: GetCommunityCreatorWatchInsightsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/community/creator/watch-insights?${stringifiedParams}` : `/api/community/creator/watch-insights`
+}
+
+/**
+ * @summary Get the authenticated creator's daily Moment watch insights
+ */
+export const getCommunityCreatorWatchInsights = async (params?: GetCommunityCreatorWatchInsightsParams, options?: Parameters<typeof customFetch>[1]): Promise<CommunityCreatorWatchInsights> => {
+
+  return customFetch<CommunityCreatorWatchInsights>(getGetCommunityCreatorWatchInsightsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCommunityCreatorWatchInsightsQueryKey = (params?: GetCommunityCreatorWatchInsightsParams,) => {
+    return [
+    `/api/community/creator/watch-insights`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCommunityCreatorWatchInsightsQueryOptions = <TData = Awaited<ReturnType<typeof getCommunityCreatorWatchInsights>>, TError = ErrorType<void>>(params?: GetCommunityCreatorWatchInsightsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityCreatorWatchInsights>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCommunityCreatorWatchInsightsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommunityCreatorWatchInsights>>> = ({ signal }) => getCommunityCreatorWatchInsights(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCommunityCreatorWatchInsights>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCommunityCreatorWatchInsightsQueryResult = NonNullable<Awaited<ReturnType<typeof getCommunityCreatorWatchInsights>>>
+export type GetCommunityCreatorWatchInsightsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the authenticated creator's daily Moment watch insights
+ */
+
+export function useGetCommunityCreatorWatchInsights<TData = Awaited<ReturnType<typeof getCommunityCreatorWatchInsights>>, TError = ErrorType<void>>(
+ params?: GetCommunityCreatorWatchInsightsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityCreatorWatchInsights>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCommunityCreatorWatchInsightsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetDirectMessageBlockedUsersUrl = () => {
+
+
+
+
+  return `/api/messages/direct/blocked-users`
+}
+
+/**
+ * Returns only outgoing blocks created by the caller. Incoming blocks are never disclosed.
+ * @summary List accounts blocked by the authenticated caller
+ */
+export const getDirectMessageBlockedUsers = async ( options?: Parameters<typeof customFetch>[1]): Promise<DirectMessageBlockedUsers> => {
+
+  return customFetch<DirectMessageBlockedUsers>(getGetDirectMessageBlockedUsersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDirectMessageBlockedUsersQueryKey = () => {
+    return [
+    `/api/messages/direct/blocked-users`
+    ] as const;
+    }
+
+
+export const getGetDirectMessageBlockedUsersQueryOptions = <TData = Awaited<ReturnType<typeof getDirectMessageBlockedUsers>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDirectMessageBlockedUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDirectMessageBlockedUsersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDirectMessageBlockedUsers>>> = ({ signal }) => getDirectMessageBlockedUsers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDirectMessageBlockedUsers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDirectMessageBlockedUsersQueryResult = NonNullable<Awaited<ReturnType<typeof getDirectMessageBlockedUsers>>>
+export type GetDirectMessageBlockedUsersQueryError = ErrorType<void>
+
+
+/**
+ * @summary List accounts blocked by the authenticated caller
+ */
+
+export function useGetDirectMessageBlockedUsers<TData = Awaited<ReturnType<typeof getDirectMessageBlockedUsers>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDirectMessageBlockedUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDirectMessageBlockedUsersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getBlockDirectMessageUserUrl = (id: number,) => {
+
+
+
+
+  return `/api/messages/direct/users/${id}/block`
+}
+
+/**
+ * @summary Block another approved user from direct messaging
+ */
+export const blockDirectMessageUser = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<DirectMessageBlockResponse> => {
+
+  return customFetch<DirectMessageBlockResponse>(getBlockDirectMessageUserUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getBlockDirectMessageUserMutationKey = () => ['blockDirectMessageUser'] as const;
+
+export const getBlockDirectMessageUserMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockDirectMessageUser>>, TError,BlockDirectMessageUserMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof blockDirectMessageUser>>, TError,BlockDirectMessageUserMutationVariables, TContext> => {
+
+const mutationKey = getBlockDirectMessageUserMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof blockDirectMessageUser>>, BlockDirectMessageUserMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  blockDirectMessageUser(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BlockDirectMessageUserMutationResult = NonNullable<Awaited<ReturnType<typeof blockDirectMessageUser>>>
+
+    export type BlockDirectMessageUserMutationError = ErrorType<void>
+    export type BlockDirectMessageUserMutationVariables = {id: number}
+
+    /**
+ * @summary Block another approved user from direct messaging
+ */
+export const useBlockDirectMessageUser = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockDirectMessageUser>>, TError,BlockDirectMessageUserMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof blockDirectMessageUser>>,
+        TError,
+        BlockDirectMessageUserMutationVariables,
+        TContext
+      > => {
+      return useMutation(getBlockDirectMessageUserMutationOptions(options));
+    }
+
+export const getUnblockDirectMessageUserUrl = (id: number,) => {
+
+
+
+
+  return `/api/messages/direct/users/${id}/block`
+}
+
+/**
+ * @summary Unblock a user previously blocked by the caller
+ */
+export const unblockDirectMessageUser = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<DirectMessageBlockResponse> => {
+
+  return customFetch<DirectMessageBlockResponse>(getUnblockDirectMessageUserUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnblockDirectMessageUserMutationKey = () => ['unblockDirectMessageUser'] as const;
+
+export const getUnblockDirectMessageUserMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockDirectMessageUser>>, TError,UnblockDirectMessageUserMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unblockDirectMessageUser>>, TError,UnblockDirectMessageUserMutationVariables, TContext> => {
+
+const mutationKey = getUnblockDirectMessageUserMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unblockDirectMessageUser>>, UnblockDirectMessageUserMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  unblockDirectMessageUser(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnblockDirectMessageUserMutationResult = NonNullable<Awaited<ReturnType<typeof unblockDirectMessageUser>>>
+
+    export type UnblockDirectMessageUserMutationError = ErrorType<void>
+    export type UnblockDirectMessageUserMutationVariables = {id: number}
+
+    /**
+ * @summary Unblock a user previously blocked by the caller
+ */
+export const useUnblockDirectMessageUser = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockDirectMessageUser>>, TError,UnblockDirectMessageUserMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unblockDirectMessageUser>>,
+        TError,
+        UnblockDirectMessageUserMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUnblockDirectMessageUserMutationOptions(options));
+    }
+
+export const getGetFamilyStoriesUrl = (id: number,
+    params?: GetFamilyStoriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/family/${id}/stories?${stringifiedParams}` : `/api/family/${id}/stories`
+}
+
+/**
+ * @summary List visible Family Stories with page-based pagination
+ */
+export const getFamilyStories = async (id: number,
+    params?: GetFamilyStoriesParams, options?: Parameters<typeof customFetch>[1]): Promise<FamilyStoryPage> => {
+
+  return customFetch<FamilyStoryPage>(getGetFamilyStoriesUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFamilyStoriesQueryKey = (id: number,
+    params?: GetFamilyStoriesParams,) => {
+    return [
+    `/api/family/${id}/stories`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetFamilyStoriesQueryOptions = <TData = Awaited<ReturnType<typeof getFamilyStories>>, TError = ErrorType<void>>(id: number,
+    params?: GetFamilyStoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFamilyStories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFamilyStoriesQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFamilyStories>>> = ({ signal }) => getFamilyStories(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFamilyStories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFamilyStoriesQueryResult = NonNullable<Awaited<ReturnType<typeof getFamilyStories>>>
+export type GetFamilyStoriesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List visible Family Stories with page-based pagination
+ */
+
+export function useGetFamilyStories<TData = Awaited<ReturnType<typeof getFamilyStories>>, TError = ErrorType<void>>(
+ id: number,
+    params?: GetFamilyStoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFamilyStories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFamilyStoriesQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateFamilyStoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/family/${id}/stories`
+}
+
+/**
+ * @summary Create a Family Story
+ */
+export const createFamilyStory = async (id: number,
+    familyStoryInput: FamilyStoryInput, options?: Parameters<typeof customFetch>[1]): Promise<FamilyStoryMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<FamilyStoryMutationResponse>(getCreateFamilyStoryUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(familyStoryInput)
+  }
+);}
+
+
+
+
+
+export const getCreateFamilyStoryMutationKey = () => ['createFamilyStory'] as const;
+
+export const getCreateFamilyStoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createFamilyStory>>, TError,CreateFamilyStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createFamilyStory>>, TError,CreateFamilyStoryMutationVariables, TContext> => {
+
+const mutationKey = getCreateFamilyStoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createFamilyStory>>, CreateFamilyStoryMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createFamilyStory(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateFamilyStoryMutationResult = NonNullable<Awaited<ReturnType<typeof createFamilyStory>>>
+    export type CreateFamilyStoryMutationBody = BodyType<FamilyStoryInput>
+    export type CreateFamilyStoryMutationError = ErrorType<void>
+    export type CreateFamilyStoryMutationVariables = {id: number;data: BodyType<FamilyStoryInput>}
+
+    /**
+ * @summary Create a Family Story
+ */
+export const useCreateFamilyStory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createFamilyStory>>, TError,CreateFamilyStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createFamilyStory>>,
+        TError,
+        CreateFamilyStoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateFamilyStoryMutationOptions(options));
+    }
+
+export const getUpdateFamilyStoryUrl = (id: number,
+    storyId: number,) => {
+
+
+
+
+  return `/api/family/${id}/stories/${storyId}`
+}
+
+/**
+ * @summary Update the caller's Family Story
+ */
+export const updateFamilyStory = async (id: number,
+    storyId: number,
+    familyStoryUpdateInput: FamilyStoryUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<FamilyStoryMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<FamilyStoryMutationResponse>(getUpdateFamilyStoryUrl(id,storyId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(familyStoryUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateFamilyStoryMutationKey = () => ['updateFamilyStory'] as const;
+
+export const getUpdateFamilyStoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFamilyStory>>, TError,UpdateFamilyStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateFamilyStory>>, TError,UpdateFamilyStoryMutationVariables, TContext> => {
+
+const mutationKey = getUpdateFamilyStoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFamilyStory>>, UpdateFamilyStoryMutationVariables> = (props) => {
+          const {id,storyId,data} = props ?? {};
+
+          return  updateFamilyStory(id,storyId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateFamilyStoryMutationResult = NonNullable<Awaited<ReturnType<typeof updateFamilyStory>>>
+    export type UpdateFamilyStoryMutationBody = BodyType<FamilyStoryUpdateInput>
+    export type UpdateFamilyStoryMutationError = ErrorType<void>
+    export type UpdateFamilyStoryMutationVariables = {id: number;storyId: number;data: BodyType<FamilyStoryUpdateInput>}
+
+    /**
+ * @summary Update the caller's Family Story
+ */
+export const useUpdateFamilyStory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFamilyStory>>, TError,UpdateFamilyStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateFamilyStory>>,
+        TError,
+        UpdateFamilyStoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateFamilyStoryMutationOptions(options));
+    }
+
+export const getDeleteFamilyStoryUrl = (id: number,
+    storyId: number,) => {
+
+
+
+
+  return `/api/family/${id}/stories/${storyId}`
+}
+
+/**
+ * @summary Delete the caller's Family Story
+ */
+export const deleteFamilyStory = async (id: number,
+    storyId: number, options?: Parameters<typeof customFetch>[1]): Promise<DeleteFamilyStory200> => {
+
+  return customFetch<DeleteFamilyStory200>(getDeleteFamilyStoryUrl(id,storyId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteFamilyStoryMutationKey = () => ['deleteFamilyStory'] as const;
+
+export const getDeleteFamilyStoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteFamilyStory>>, TError,DeleteFamilyStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteFamilyStory>>, TError,DeleteFamilyStoryMutationVariables, TContext> => {
+
+const mutationKey = getDeleteFamilyStoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteFamilyStory>>, DeleteFamilyStoryMutationVariables> = (props) => {
+          const {id,storyId} = props ?? {};
+
+          return  deleteFamilyStory(id,storyId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteFamilyStoryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteFamilyStory>>>
+
+    export type DeleteFamilyStoryMutationError = ErrorType<void>
+    export type DeleteFamilyStoryMutationVariables = {id: number;storyId: number}
+
+    /**
+ * @summary Delete the caller's Family Story
+ */
+export const useDeleteFamilyStory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteFamilyStory>>, TError,DeleteFamilyStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteFamilyStory>>,
+        TError,
+        DeleteFamilyStoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteFamilyStoryMutationOptions(options));
+    }
+
+export const getKeepCommunityMomentInFamilyUrl = (id: number,) => {
+
+
+
+
+  return `/api/family/${id}/stories/keep-moment`
+}
+
+/**
+ * @summary Keep the caller's live Moment caption as a private Family Story
+ */
+export const keepCommunityMomentInFamily = async (id: number,
+    keepCommunityMomentInFamilyBody: KeepCommunityMomentInFamilyBody, options?: Parameters<typeof customFetch>[1]): Promise<FamilyStoryKeepResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<FamilyStoryKeepResponse>(getKeepCommunityMomentInFamilyUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(keepCommunityMomentInFamilyBody)
+  }
+);}
+
+
+
+
+
+export const getKeepCommunityMomentInFamilyMutationKey = () => ['keepCommunityMomentInFamily'] as const;
+
+export const getKeepCommunityMomentInFamilyMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof keepCommunityMomentInFamily>>, TError,KeepCommunityMomentInFamilyMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof keepCommunityMomentInFamily>>, TError,KeepCommunityMomentInFamilyMutationVariables, TContext> => {
+
+const mutationKey = getKeepCommunityMomentInFamilyMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof keepCommunityMomentInFamily>>, KeepCommunityMomentInFamilyMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  keepCommunityMomentInFamily(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type KeepCommunityMomentInFamilyMutationResult = NonNullable<Awaited<ReturnType<typeof keepCommunityMomentInFamily>>>
+    export type KeepCommunityMomentInFamilyMutationBody = BodyType<KeepCommunityMomentInFamilyBody>
+    export type KeepCommunityMomentInFamilyMutationError = ErrorType<void>
+    export type KeepCommunityMomentInFamilyMutationVariables = {id: number;data: BodyType<KeepCommunityMomentInFamilyBody>}
+
+    /**
+ * @summary Keep the caller's live Moment caption as a private Family Story
+ */
+export const useKeepCommunityMomentInFamily = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof keepCommunityMomentInFamily>>, TError,KeepCommunityMomentInFamilyMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof keepCommunityMomentInFamily>>,
+        TError,
+        KeepCommunityMomentInFamilyMutationVariables,
+        TContext
+      > => {
+      return useMutation(getKeepCommunityMomentInFamilyMutationOptions(options));
     }
 
 export const getGetUserUrl = (id: number,) => {

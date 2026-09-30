@@ -9,6 +9,7 @@ export * from "./request-message-attachments";
 export * from "./message-read-states";
 export * from "./message-notifications";
 export * from "./community-stories";
+export * from "./community-story-watch";
 export * from "./message-activity-events";
 export * from "./direct-messages";
 export * from "./direct-message-attachments";
