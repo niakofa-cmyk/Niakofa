@@ -1,20 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { certifyObjectStorage, runConfiguredObjectStorageProbe } from "./verify-object-storage.mjs";
-
-test("configured probe fails before client creation if the approved production bucket does not match", async () => {
-  const original = process.env.STORAGE_BUCKET;
-  try {
-    process.env.STORAGE_BUCKET = "unapproved-media-bucket";
-    await assert.rejects(
-      runConfiguredObjectStorageProbe({ expectedBucket: "niakofa-production-media" }),
-      /does not match the approved production target/,
-    );
-  } finally {
-    if (original === undefined) delete process.env.STORAGE_BUCKET;
-    else process.env.STORAGE_BUCKET = original;
-  }
-});
+import { certifyObjectStorage } from "./verify-object-storage.mjs";
 
 class PutObjectCommand {
   constructor(input) {

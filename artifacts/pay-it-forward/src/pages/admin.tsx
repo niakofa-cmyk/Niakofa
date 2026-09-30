@@ -6630,15 +6630,15 @@ type MediaProbeRecord = {
   toolchain?: "passed";
   storage?: { probe: string; bytes: number; deleted: true };
   stage?: "toolchain" | "storage";
+  reason?: string;
   cleanup?: "verified" | "unproven" | "not_started";
   manual_cleanup_key?: string;
 };
 
 function SystemTab() {
   const [health, setHealth] = useState<{
-    status: string;
-    redis_configured: boolean;
-    process_started_at: string;
+    all_critical_ok: boolean;
+    redis: { configured: boolean; status?: "not_set" | "invalid_format" | "valid" };
     workers: WorkerEntry[];
   } | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
@@ -6786,13 +6786,13 @@ function SystemTab() {
           </button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Before running: set MEDIA_CERT_PROBE_ENABLED=1 on the production API deployment and keep MEDIA_PLATFORM_V21=0. The window lasts 30 minutes; one attempt is allowed per served commit.
+          Before running: confirm the production S3 API bucket matches its endpoint and credentials, set MEDIA_CERT_PROBE_ENABLED=1 on the API deployment, and keep MEDIA_PLATFORM_V21=0. The window lasts 30 minutes; one attempt is allowed per served commit.
         </p>
         {mediaProbe && (
           <div role="status" className="rounded-xl border border-border bg-muted/40 p-3 text-xs space-y-1">
             <div className="font-bold capitalize">Probe: {mediaProbe.status}</div>
             {mediaProbe.status === "passed" && <p>FFmpeg and storage PUT, HEAD, GET, DELETE, and absence verification passed. V21 remains unchanged.</p>}
-            {mediaProbe.status === "failed" && <p>Failed at {mediaProbe.stage ?? "unknown"}; cleanup: {mediaProbe.cleanup ?? "unknown"}.</p>}
+            {mediaProbe.status === "failed" && <p>Failed at {mediaProbe.stage ?? "unknown"}{mediaProbe.reason ? ` (${mediaProbe.reason.replaceAll("_", " ")})` : ""}; cleanup: {mediaProbe.cleanup ?? "unknown"}.</p>}
             {mediaProbe.status === "interrupted" && <p>The probe was interrupted; cleanup: {mediaProbe.cleanup ?? "unknown"}.</p>}
             {mediaProbe.manual_cleanup_key && (
               <p className="text-destructive break-all">Manual storage reconciliation required for opaque key: {mediaProbe.manual_cleanup_key}</p>
@@ -6821,11 +6821,11 @@ function SystemTab() {
           <div className="flex items-center gap-3">
             {health && (
               <span className={`text-[10px] font-black px-2 py-1 rounded-full border ${
-                health.status === "ok"
+                health.all_critical_ok
                   ? "text-green-400 bg-green-400/10 border-green-400/20"
                   : "text-destructive bg-destructive/10 border-destructive/20"
               }`}>
-                {health.status === "ok" ? "All Systems OK" : "Degraded"}
+                {health.all_critical_ok ? "Critical Workers Running" : "Degraded"}
               </span>
             )}
             <button onClick={loadHealth} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors">
@@ -6836,12 +6836,12 @@ function SystemTab() {
 
         {health && (
           <div className={`flex items-center gap-2 text-xs rounded-xl px-3 py-2 border ${
-            health.redis_configured
+            health.redis.configured
               ? "text-green-400 bg-green-400/10 border-green-400/20"
               : "text-yellow-400 bg-yellow-400/10 border-yellow-400/20"
           }`}>
             <Server className="w-3.5 h-3.5 shrink-0" />
-            <span><span className="font-black">Redis:</span> {health.redis_configured ? "Connected — BullMQ workers active" : "Not configured — BullMQ workers disabled, using legacy scheduler"}</span>
+            <span><span className="font-black">Redis:</span> {health.redis.configured ? "Configured — check worker status below for live activity" : health.redis.status === "invalid_format" ? "Invalid connection setting — BullMQ disabled" : "Not configured — BullMQ workers disabled"}</span>
           </div>
         )}
 

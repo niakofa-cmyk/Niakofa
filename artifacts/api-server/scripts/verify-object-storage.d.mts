@@ -10,6 +10,5 @@ export interface ObjectStorageProbeResult {
 }
 
 export function runConfiguredObjectStorageProbe(options?: {
-  expectedBucket?: string;
   onBeforeWrite?: (key: string) => Promise<void> | void;
 }): Promise<ObjectStorageProbeResult>;

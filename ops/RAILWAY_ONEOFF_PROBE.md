@@ -17,8 +17,13 @@ the result is `passed` or `failed`; both endpoints respond without cache.
 No credential copying is needed. Do not paste tokens or full responses into
 chat; share non-secret status.
 
-The API accepts only the approved `niakofa-production-media` bucket in
-production. It records a permanent, atomic attempt in PostgreSQL per served
+The probe uses the production API service's configured `STORAGE_BUCKET` without
+printing its value. Before triggering it, an operator must verify in Railway
+that this is the **unique S3 API name of the intended production bucket**, and
+that the endpoint and credentials belong to the same bucket. The display name
+can differ from the S3 API name; hardcoding a display name would incorrectly
+reject a valid configuration. The probe certifies I/O, not bucket identity.
+It records a permanent, atomic attempt in PostgreSQL per served
 commit across API replicas and stores the opaque key before the PUT. If the
 process crashes mid-probe, a later GET reports `interrupted`
 and the key for manual reconciliation. `failed` with `cleanup: unproven`

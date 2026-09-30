@@ -18,7 +18,15 @@ const statusKey = `media-cert:oneoff:${commit}`;
 type ProbeStatus =
   | { status: "running"; started_at: string; pending_key?: string }
   | { status: "passed"; started_at: string; completed_at: string; toolchain: "passed"; storage: { probe: string; bytes: number; deleted: true } }
-  | { status: "failed"; started_at: string; completed_at: string; stage: "toolchain" | "storage"; cleanup: "verified" | "unproven" | "not_started"; manual_cleanup_key?: string };
+  | { status: "failed"; started_at: string; completed_at: string; stage: "toolchain" | "storage"; reason: string; cleanup: "verified" | "unproven" | "not_started"; manual_cleanup_key?: string };
+
+export function safeProbeFailureReason(error: unknown, stage: "toolchain" | "storage", pendingKey?: string): string {
+  if (stage === "toolchain") return "toolchain_failed";
+  const code = (error as { probeCode?: unknown } | null)?.probeCode;
+  if (code === "bucket_missing") return "bucket_missing";
+  if (code === "credentials_missing") return "credentials_missing";
+  return pendingKey ? "provider_or_cleanup_failed" : "client_or_prewrite_failed";
+}
 
 /** A crashed process cannot attest that an in-flight remote write was deleted. */
 export function publicProbeStatus(record: ProbeStatus, now = Date.now()) {
@@ -87,7 +95,6 @@ router.post("/admin/media-cert/probe", requireAuth, requireAdmin(), adminLimiter
       await verifyMediaToolchain();
       stage = "storage";
       const result = await runConfiguredObjectStorageProbe({
-        expectedBucket: process.env.NODE_ENV === "production" ? "niakofa-production-media" : undefined,
         onBeforeWrite: async (key) => {
           pendingKey = key;
       // Persist BEFORE issuing the PUT, so an interrupted process has a
@@ -112,11 +119,12 @@ router.post("/admin/media-cert/probe", requireAuth, requireAdmin(), adminLimiter
         started_at,
         completed_at: new Date().toISOString(),
         stage,
+        reason: safeProbeFailureReason(error, stage, pendingKey),
         cleanup: pendingKey ? (cleanupComplete === true ? "verified" : "unproven") : "not_started",
         ...(pendingKey && cleanupComplete !== true ? { manual_cleanup_key: pendingKey } : {}),
       };
       // Do not log SDK errors, binary paths, endpoints, buckets, or credentials.
-      logger.error({ stage, cleanup: failed.cleanup, manualCleanupKey: failed.manual_cleanup_key }, "media certification probe failed");
+      logger.error({ stage, reason: failed.reason, cleanup: failed.cleanup, manualCleanupKey: failed.manual_cleanup_key }, "media certification probe failed");
       try {
         await saveStatus(failed);
       } catch {

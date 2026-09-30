@@ -4,6 +4,16 @@ This is the release gate for the universal media foundation. A healthy
 deployment or a configured bucket is not enough to enable `MEDIA_PLATFORM_V21`.
 Record evidence for every checked row from the production runtime.
 
+**Current 2026-09-30 hold:** The new admin-only one-shot probe reached its
+storage stage after the synthetic FFmpeg/FFprobe check, but failed with
+`cleanup: not_started`. It did not report a PUT or an object requiring cleanup.
+The probe window was closed, production Redis readiness was independently
+`ready`, and V21 remained off. The old probe required a literal display-name
+bucket even though this provider's unique S3 API name can differ; that
+pre-write assumption is being removed. Gate 2 must be repeated against the
+served revision and intended bucket before any V21 activation. The 2026-09-28
+results below remain historical evidence, not current release approval.
+
 **Observed 2026-09-28:** The owner ran the probes from a one-off shell in the
 production API image on the served revision. The first storage probe failed
 with `NoSuchBucket` and three unsuccessful cleanup attempts: the service used
@@ -41,13 +51,13 @@ for review in that conversation. Temporary browser states and traces were
 removed. This pass does not certify physical devices, independently identify
 the stored bucket objects, or inspect the worker's temporary-file namespace.
 
-**Local implementation, not production acceptance:** The subsequent unified
+**Published implementation, not production acceptance:** The subsequent unified
 Sparks Studio changes replace new Community/Hub inline Base64 uploads with
 bounded, authenticated binary uploads while retaining legacy Story reads and
 older client compatibility. They also add retryable cleanup for abandoned
-uploads and account-owned media. These source changes have not been published
-or exercised against the deployed revision. The earlier production pass above
-remains evidence only for the commit it names; it does not certify the new
+uploads and account-owned media. These source changes have since been published
+but have not been exercised against the deployed revision. The earlier
+production pass above remains evidence only for the commit it names; it does not certify the new
 Studio, cleanup, or draft-to-publish behavior.
 
 **Automated media contracts on current `main`:** CI now covers the raw-body
@@ -65,19 +75,20 @@ runtime evidence, or physical-device checks.
 - [x] `/api/healthz` reports the intended S3-compatible backend
 - [x] `cloud_configured=true`, `credentials_present=true`, and `missing=[]`
 - [x] `/api/readiness` is healthy, including Redis/BullMQ
-- [ ] `MEDIA_PLATFORM_V21` remains unset or false until Gates 2 and 3 pass
+- [x] `MEDIA_PLATFORM_V21` remains unset or false until Gates 2 and 3 pass (2026-09-30)
 - [ ] `STORAGE_CDN_URL` remains unset for the private bucket/presigned model
 
 ## Gate 2 — Real production object-storage I/O
 
-- [x] PUT succeeds from the production API runtime/environment
-- [x] HEAD succeeds for the generated probe key
-- [x] HEAD `Content-Length` matches the uploaded byte count
-- [x] DELETE succeeds
-- [x] A post-delete HEAD returns a provider-specific not-found result; transient or ambiguous errors fail the probe
-- [x] A failed PUT or HEAD still triggers bounded cleanup attempts (first probe: three attempts, no success)
-- [x] The successful probe reports cleanup success and confirms its own object is gone
-- [x] No permanent public/admin storage-probe route was added
+- [ ] PUT succeeds from the current production API runtime/environment (historical pass only)
+- [ ] HEAD succeeds for the generated probe key
+- [ ] HEAD `Content-Length` matches the uploaded byte count
+- [ ] GET returns exact bytes and SHA-256
+- [ ] DELETE succeeds
+- [ ] A post-delete HEAD returns an explicit provider not-found response
+- [ ] A failed PUT or HEAD triggers bounded cleanup or durable manual reconciliation
+- [ ] The current probe reports cleanup success and confirms its own object is gone
+- [x] The operator route requires admin auth, a short explicit switch, and a one-shot durable claim
 
 Run the probe with:
 

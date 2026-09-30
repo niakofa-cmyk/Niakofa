@@ -221,10 +221,7 @@ export async function certifyObjectStorage({
   };
 }
 
-export async function runConfiguredObjectStorageProbe({
-  expectedBucket,
-  onBeforeWrite,
-} = {}) {
+export async function runConfiguredObjectStorageProbe({ onBeforeWrite } = {}) {
   const bucket = (process.env.STORAGE_BUCKET ?? "").trim();
   const endpoint = (process.env.STORAGE_ENDPOINT ?? "").trim() || undefined;
   const region =
@@ -234,13 +231,14 @@ export async function runConfiguredObjectStorageProbe({
   const secretKey = (process.env.AWS_SECRET_ACCESS_KEY ?? "").trim();
 
   if (!bucket) {
-    throw new Error("STORAGE_BUCKET is missing; local-disk mode remains the safe state");
-  }
-  if (expectedBucket && bucket !== expectedBucket) {
-    throw new Error("storage bucket does not match the approved production target");
+    const error = new Error("STORAGE_BUCKET is missing; local-disk mode remains the safe state");
+    error.probeCode = "bucket_missing";
+    throw error;
   }
   if (!accessKey || !secretKey) {
-    throw new Error("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required");
+    const error = new Error("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required");
+    error.probeCode = "credentials_missing";
+    throw error;
   }
 
   let client;

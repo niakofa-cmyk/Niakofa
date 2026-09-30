@@ -26,3 +26,9 @@ Verify the *served* production readiness dependency's `storage.required` field a
 **Why:** A production release was healthy with cloud storage configured but had the V21 flag on despite the intended certification hold. The flag had to be explicitly turned off and the resulting deployment rechecked.
 
 **How to apply:** While certification remains incomplete, require `storage.required === false` on the canonical host; a healthy status alone is not a flag-off certificate. Recheck after any variable update or redeploy.
+
+Do not equate a bucket's display label with its S3 API name when gating production probes. Verify the configured API bucket, endpoint, and credentials belong together through the operator console; a successful I/O probe alone cannot certify that the target is the intended bucket.
+
+**Why:** A previous provider configuration required the unique S3 API bucket name rather than the displayed label. A literal display-name assertion can stop an otherwise valid probe before it writes and give misleading evidence of storage failure.
+
+**How to apply:** Keep the storage I/O check bounded and independent of a hardcoded display name. Require separate operator confirmation of bucket identity before enabling V21; never silently swap a bucket used by existing media.

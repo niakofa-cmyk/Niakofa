@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { publicProbeStatus } from "../routes/media-cert-probe";
+import { publicProbeStatus, safeProbeFailureReason } from "../routes/media-cert-probe";
 
 describe("admin media certification status", () => {
   const started_at = "2026-09-30T12:00:00.000Z";
@@ -32,5 +32,13 @@ describe("admin media certification status", () => {
       started_at,
       cleanup: "not_started",
     });
+  });
+
+  it("reports only allowlisted failure categories, never provider error details", () => {
+    expect(safeProbeFailureReason({ probeCode: "bucket_missing", message: "hidden configuration" }, "storage")).toBe("bucket_missing");
+    expect(safeProbeFailureReason({ probeCode: "credentials_missing" }, "storage")).toBe("credentials_missing");
+    expect(safeProbeFailureReason({ probeCode: "endpoint-and-secret-value" }, "storage")).toBe("client_or_prewrite_failed");
+    expect(safeProbeFailureReason(new Error("provider internal URL"), "storage", "opaque-key")).toBe("provider_or_cleanup_failed");
+    expect(safeProbeFailureReason(new Error("binary path"), "toolchain")).toBe("toolchain_failed");
   });
 });
