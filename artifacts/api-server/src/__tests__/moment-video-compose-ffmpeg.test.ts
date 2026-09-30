@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -15,6 +15,11 @@ import {
 
 const execFileAsync = promisify(execFile);
 const { ffmpeg, ffprobe } = getMediaToolPaths();
+// Generic CI runners need not have FFmpeg installed. A release/toolchain
+// certification can require this real-media test instead of silently skipping it.
+const missingTool = [ffmpeg, ffprobe].find((tool) =>
+  spawnSync(tool, ["-version"], { stdio: "ignore", timeout: 5_000 }).error?.code === "ENOENT");
+const mediaIt = missingTool && process.env.REQUIRE_MEDIA_TOOLCHAIN_TEST !== "1" ? it.skip : it;
 
 async function runTool(executable: string, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync(executable, args, {
@@ -45,7 +50,7 @@ async function probe(filePath: string): Promise<{
 }
 
 describe("real FFmpeg Moment camera-clip composition", () => {
-  it("normalizes silent and audio clips, concatenates them, probes output, and removes all temporary files", async () => {
+  mediaIt("normalizes silent and audio clips, concatenates them, probes output, and removes all temporary files", async () => {
     await runTool(ffmpeg, ["-version"]);
     await runTool(ffprobe, ["-version"]);
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-moment-compose-test-"));
