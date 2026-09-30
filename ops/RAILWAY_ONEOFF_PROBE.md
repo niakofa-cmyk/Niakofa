@@ -4,6 +4,33 @@ Credentials stay inside Railway and are never pasted into chat or committed.
 
 ## Storage I/O
 
+### No-shell option (admin-only, disabled by default)
+
+The API can run the same bounded storage I/O and FFmpeg-to-FFprobe checks
+without a Railway shell. On the **production API service only**, set
+`MEDIA_CERT_PROBE_ENABLED=1` while keeping `MEDIA_PLATFORM_V21=0`, then
+redeploy. Within 30 minutes of that process starting, an authenticated admin
+can open **Admin → Configure → System** and click **Run one-time probe**.
+The page sends one `POST /api/admin/media-cert/probe` with the existing admin
+session and polls `GET /api/admin/media-cert/probe` until
+the result is `passed` or `failed`; both endpoints respond without cache.
+No credential copying is needed. Do not paste tokens or full responses into
+chat; share non-secret status.
+
+The API accepts only the approved `niakofa-production-media` bucket in
+production. It records a permanent, atomic attempt in PostgreSQL per served
+commit across API replicas and stores the opaque key before the PUT. If the
+process crashes mid-probe, a later GET reports `interrupted`
+and the key for manual reconciliation. `failed` with `cleanup: unproven`
+likewise requires checking and deleting that key in the bucket and verifying
+absence after the provider settles. **Never retry with a new key while cleanup
+is unproven.** Toolchain or bucket checks can fail without writing an object.
+Immediately reset `MEDIA_CERT_PROBE_ENABLED=0` after recording the result.
+Neither endpoint changes V21. A successful probe is not evidence that a real
+Story upload, composition, privacy rule, or phone camera has passed.
+
+### Railway service-shell option
+
 1. Open the production API service.
 2. Confirm its variables reference `niakofa-production-media`, not the older
    `niakofa-media`, unless that choice is intentional.

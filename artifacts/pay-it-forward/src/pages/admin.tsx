@@ -6625,6 +6625,15 @@ function DispatchSuggestSection() {
   );
 }
 
+type MediaProbeRecord = {
+  status: "running" | "passed" | "failed" | "interrupted";
+  toolchain?: "passed";
+  storage?: { probe: string; bytes: number; deleted: true };
+  stage?: "toolchain" | "storage";
+  cleanup?: "verified" | "unproven" | "not_started";
+  manual_cleanup_key?: string;
+};
+
 function SystemTab() {
   const [health, setHealth] = useState<{
     status: string;
@@ -6636,9 +6645,57 @@ function SystemTab() {
   const [hardship, setHardship] = useState<HardshipRequest[]>([]);
   const [hardshipLoading, setHardshipLoading] = useState(true);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  const [mediaProbe, setMediaProbe] = useState<MediaProbeRecord | null>(null);
+  const [mediaProbeBusy, setMediaProbeBusy] = useState(false);
+  const [mediaProbeNotice, setMediaProbeNotice] = useState<string | null>(null);
 
   const [_healthError, setHealthError] = useState<string | null>(null);
   const [_hardshipError, _setHardshipError] = useState<string | null>(null);
+
+  const loadMediaProbe = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/admin/media-cert/probe`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      if (res.status === 404) {
+        setMediaProbe(null);
+        return;
+      }
+      const body = await res.json() as MediaProbeRecord & { error?: string };
+      if (!res.ok) throw new Error(body.error ?? `Status check failed (${res.status})`);
+      setMediaProbe(body);
+      setMediaProbeNotice(null);
+    } catch (error) {
+      setMediaProbeNotice(error instanceof Error ? error.message : "Probe status unavailable");
+    }
+  }, []);
+
+  useEffect(() => { void loadMediaProbe(); }, [loadMediaProbe]);
+  useEffect(() => {
+    if (mediaProbe?.status !== "running") return;
+    const id = setInterval(() => { void loadMediaProbe(); }, 5000);
+    return () => clearInterval(id);
+  }, [mediaProbe?.status, loadMediaProbe]);
+
+  const startMediaProbe = async () => {
+    setMediaProbeBusy(true);
+    setMediaProbeNotice(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/media-cert/probe`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const body = await res.json() as { status?: MediaProbeRecord["status"]; error?: string };
+      if (!res.ok) throw new Error(body.error ?? `Probe could not start (${res.status})`);
+      setMediaProbe({ status: "running" });
+      void loadMediaProbe();
+    } catch (error) {
+      setMediaProbeNotice(error instanceof Error ? error.message : "Probe could not start");
+    } finally {
+      setMediaProbeBusy(false);
+    }
+  };
 
   const loadHealth = async () => {
     setHealthLoading(true);
@@ -6715,6 +6772,44 @@ function SystemTab() {
 
   return (
     <div className="space-y-5">
+
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider">One-time media certification probe</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Runs a tiny storage read/write/delete and FFmpeg check. It does not enable V21 or publish a Story.
+            </p>
+          </div>
+          <button type="button" onClick={() => void loadMediaProbe()} className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted" aria-label="Refresh media probe status">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Before running: set MEDIA_CERT_PROBE_ENABLED=1 on the production API deployment and keep MEDIA_PLATFORM_V21=0. The window lasts 30 minutes; one attempt is allowed per served commit.
+        </p>
+        {mediaProbe && (
+          <div role="status" className="rounded-xl border border-border bg-muted/40 p-3 text-xs space-y-1">
+            <div className="font-bold capitalize">Probe: {mediaProbe.status}</div>
+            {mediaProbe.status === "passed" && <p>FFmpeg and storage PUT, HEAD, GET, DELETE, and absence verification passed. V21 remains unchanged.</p>}
+            {mediaProbe.status === "failed" && <p>Failed at {mediaProbe.stage ?? "unknown"}; cleanup: {mediaProbe.cleanup ?? "unknown"}.</p>}
+            {mediaProbe.status === "interrupted" && <p>The probe was interrupted; cleanup: {mediaProbe.cleanup ?? "unknown"}.</p>}
+            {mediaProbe.manual_cleanup_key && (
+              <p className="text-destructive break-all">Manual storage reconciliation required for opaque key: {mediaProbe.manual_cleanup_key}</p>
+            )}
+          </div>
+        )}
+        {mediaProbeNotice && <p role="alert" className="text-xs text-destructive">{mediaProbeNotice}</p>}
+        <button
+          type="button"
+          onClick={() => void startMediaProbe()}
+          disabled={mediaProbeBusy || mediaProbe !== null}
+          className="rounded-lg border border-primary/40 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {mediaProbeBusy ? "Starting…" : "Run one-time probe"}
+        </button>
+        <p className="text-[11px] text-muted-foreground">After recording the result, set MEDIA_CERT_PROBE_ENABLED=0. Never retry while cleanup is unproven.</p>
+      </div>
 
       {/* Worker Health */}
       <div className="bg-card border border-border rounded-2xl p-5 space-y-4">

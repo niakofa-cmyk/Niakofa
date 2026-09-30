@@ -221,7 +221,10 @@ export async function certifyObjectStorage({
   };
 }
 
-async function main() {
+export async function runConfiguredObjectStorageProbe({
+  expectedBucket,
+  onBeforeWrite,
+} = {}) {
   const bucket = (process.env.STORAGE_BUCKET ?? "").trim();
   const endpoint = (process.env.STORAGE_ENDPOINT ?? "").trim() || undefined;
   const region =
@@ -231,18 +234,13 @@ async function main() {
   const secretKey = (process.env.AWS_SECRET_ACCESS_KEY ?? "").trim();
 
   if (!bucket) {
-    process.stderr.write(
-      "verify-object-storage: FAIL — STORAGE_BUCKET is missing; local-disk mode remains the safe state.\n",
-    );
-    process.exitCode = 2;
-    return;
+    throw new Error("STORAGE_BUCKET is missing; local-disk mode remains the safe state");
+  }
+  if (expectedBucket && bucket !== expectedBucket) {
+    throw new Error("storage bucket does not match the approved production target");
   }
   if (!accessKey || !secretKey) {
-    process.stderr.write(
-      "verify-object-storage: FAIL — AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required.\n",
-    );
-    process.exitCode = 1;
-    return;
+    throw new Error("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required");
   }
 
   let client;
@@ -261,9 +259,14 @@ async function main() {
       ...(endpoint ? { endpoint, forcePathStyle: false } : {}),
     });
 
+    const key = `media-assets/_probe/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.txt`;
+    // Persist the opaque key before sending a PUT. An aborted request/process
+    // cannot otherwise prove that a late provider commit will be cleaned up.
+    await onBeforeWrite?.(key);
     const result = await certifyObjectStorage({
       client,
       bucket,
+      key,
       commands: {
         PutObjectCommand,
         HeadObjectCommand,
@@ -271,16 +274,16 @@ async function main() {
         DeleteObjectCommand,
       },
     });
-    process.stdout.write(
-      JSON.stringify(
-        {
-          ...result,
-          backend: endpoint ? "s3-compatible" : "aws-s3",
-        },
-        null,
-        2,
-      ) + "\n",
-    );
+    return { ...result, backend: endpoint ? "s3-compatible" : "aws-s3" };
+  } finally {
+    client?.destroy();
+  }
+}
+
+async function main() {
+  try {
+    const result = await runConfiguredObjectStorageProbe();
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
   } catch (error) {
     const message = error?.safeForLogging
       ? error.message
@@ -292,11 +295,16 @@ async function main() {
       );
     }
     process.exitCode = 1;
-  } finally {
-    client?.destroy();
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// An API bundle may inline this file and rewrite import.meta.url to its own
+// entry URL. Check the intended CLI basename too, or a server boot could run
+// an unauthenticated PUT before the guarded admin route is ever requested.
+if (
+  process.argv[1] &&
+  /(?:^|[/\\])verify-object-storage\.mjs$/.test(process.argv[1]) &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   await main();
 }

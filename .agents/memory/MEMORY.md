@@ -78,3 +78,4 @@
 - [Family Story provenance](family-story-provenance.md) — unknown legacy authors remain unknown, and private story activity must not use global broadcasts.
 - [Moment family preservation](moment-family-preservation.md) — saving a Moment to Family Vault preserves private caption text, not expiring media.
 - [Media output atomicity](media-output-atomicity.md) — commit cleanup keys before provider writes, and reconcile ambiguous DB commits before deleting generated media.
+- [Bundled CLI entry guards](bundled-cli-entry-guards.md) — imported CLI helpers need an exact entrypoint guard; bundling can make URL-only checks run on API startup.

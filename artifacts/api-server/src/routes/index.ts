@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import mediaCertProbeRouter from "./media-cert-probe";
 import verificationRouter from "./verification";
 import usersRouter from "./users";
 import requestsRouter from "./requests";
@@ -83,6 +84,7 @@ router.use((req, _res, next) => {
 });
 
 router.use(healthRouter);
+router.use(mediaCertProbeRouter);
 router.use(verificationRouter);
 router.use(stampLocationUpdatedAt);
 router.use(messageActivityAudit);
