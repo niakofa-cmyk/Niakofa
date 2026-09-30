@@ -3,7 +3,8 @@
 // real database, while a production INTERNAL_SECRET can make in-process
 // service-auth assertions depend on deployed configuration.
 process.env.SESSION_SECRET = "test-session-secret-not-for-production-use-only";
-process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
+process.env.DATABASE_URL = process.env.FAMILY_STORY_RUNTIME_TEST_DATABASE_URL
+  ?? "postgresql://test:test@localhost:5432/test";
 process.env.INTERNAL_SECRET = "test-secret";
 // Keep API tests on the co-located Nia boundary even when the workspace has a
 // production NIA_SERVICE_URL configured for running workflows.

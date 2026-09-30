@@ -72,6 +72,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           DATABASE_SSL: "false"
+      - name: Family Stories migrated PostgreSQL runtime regression
+        run: node scripts/family-story-runtime.integration.mjs
+        env:
+          FAMILY_STORY_TEST_ADMIN_DATABASE_URL: postgresql://test:test@localhost:5432/test
       - name: Exchange PostGIS and Haversine integration
         run: node scripts/exchange-spatial.integration.test.mjs
         env:

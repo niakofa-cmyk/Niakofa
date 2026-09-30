@@ -39,6 +39,7 @@ import { deleteAssetStrict } from "./storage";
 import { broadcast } from "./ws-hub";
 import { createMessageNotification } from "./message-notifications";
 import { mediaStorageKeys } from "./media-cleanup";
+import { deleteMomentAfterStrictMediaCleanup } from "./moment-media-cleanup";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
@@ -748,10 +749,15 @@ async function processCommunityStoryCleanup(): Promise<void> {
     try {
       // Storage deletion is idempotent; only remove the database owner after
       // every object deletion succeeds so the next hourly pass can retry.
-      for (const key of keys) await deleteAssetStrict(key);
-      // Retain universal rows as cleanup tombstones until the orphan pass has
-      // repeated deletion after the maximum expected in-flight upload window.
-      await db.delete(communityStoriesTable).where(eq(communityStoriesTable.id, id));
+      await deleteMomentAfterStrictMediaCleanup(
+        keys,
+        deleteAssetStrict,
+        async () => {
+          // Retain universal rows as cleanup tombstones until the orphan pass
+          // has repeated deletion after the maximum expected in-flight window.
+          await db.delete(communityStoriesTable).where(eq(communityStoriesTable.id, id));
+        },
+      );
       deletedIds.push(id);
     } catch (err) {
       cleanupFailed = true;
