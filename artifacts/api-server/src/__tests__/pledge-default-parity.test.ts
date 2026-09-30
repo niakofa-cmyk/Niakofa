@@ -111,6 +111,8 @@ jest.unstable_mockModule("@workspace/db", () => ({
   // scheduler imports these tables for expired Community Story cleanup.
   communityStoriesTable: { id: "id", expires_at: "expires_at", author_user_id: "author_user_id" },
   communityStoryMediaTable: { id: "id", story_id: "story_id", storage_key: "storage_key" },
+  communityStoryWatchDailyTable: { story_id: "story_id", viewer_user_id: "viewer_user_id", play_day: "play_day" },
+  communityStoryWatchEventKeysTable: { story_id: "story_id", viewer_user_id: "viewer_user_id", play_day: "play_day" },
   mediaAssetsTable: { id: "id", context_kind: "context_kind", context_id: "context_id", status: "status" },
   mediaProcessingJobsTable: { id: "id", media_asset_id: "media_asset_id", job_type: "job_type", status: "status" },
   // scheduler's notification helper imports this table from @workspace/db.
