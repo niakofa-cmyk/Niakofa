@@ -1,21 +1,23 @@
-/* Moments inherits the Community shell's teal/coral/gold palette and body font. */
+/*
+ * Moments — immersive viewport.
+ * No @import: a render-blocking third-party font request is removed. Load the font once in index.html
+ * (<link rel="preconnect"> + <link rel="stylesheet">) and keep one family across Home, People and Moments.
+ */
 .nia-moments {
+  --primary: 262 76% 57%;           /* Moments purple, matches the shell accent */
+  --primary-foreground: 0 0% 100%;
+  --ring: 262 76% 57%;
   --nia-rail-gap: .5rem;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   color: hsl(var(--foreground));
-  font-family: inherit;
 }
 
+/* Keep the page title, but slim: the feed is the product. */
 .nia-moments > header {
   padding: .75rem 1rem;
   border-radius: 1rem;
 }
-
-.nia-moments > header h1 {
-  font-family: inherit;
-  font-size: 1.35rem;
-  letter-spacing: -.04em;
-}
-
+.nia-moments > header h1 { font-size: 1.35rem; letter-spacing: -.04em; }
 .nia-moments > header > p:first-child { display: none; }
 
 .nia-moments > section[aria-label="Creator analytics"],
@@ -24,57 +26,36 @@
   box-shadow: 0 12px 32px hsl(220 34% 25% / .06);
 }
 
-.nia-moments input,
-.nia-moments select {
-  color: hsl(var(--foreground));
-}
-
-.nia-moments input:focus,
-.nia-moments select:focus {
-  outline: 2px solid hsl(var(--ring) / .35);
-  outline-offset: 1px;
-}
-
-.nia-moments__filters-toggle { display: none; }
-.nia-moments [data-moment-filters] { background: hsl(var(--muted) / .35); }
-
+/* ---- Feed ---- */
 .nia-moments [data-testid="list-moments-feed"] {
   max-width: 440px;
-  height: min(calc(100vh - 11rem), 820px);
   height: min(calc(100dvh - 11rem), 820px);
   max-height: none;
-  background: #0b1514;
+  background: #0d0a16;
   scrollbar-width: none;
 }
-
 .nia-moments [data-testid="list-moments-feed"]::-webkit-scrollbar { display: none; }
 
 .nia-moments [data-moment-index] {
-  height: 100%;
   min-height: 100%;
-  flex: 0 0 100%;
   scroll-snap-stop: always;
+  border-bottom: 0;
 }
 
+/* Caption bottom-left, leaving the right rail clear. */
 .nia-moments [data-moment-caption] {
   padding: 7rem 4.75rem 1.1rem 1rem;
-  background: linear-gradient(to top, rgb(11 21 20 / .92), rgb(11 21 20 / .4) 60%, transparent);
+  background: linear-gradient(to top, rgb(13 10 22 / .92), rgb(13 10 22 / .4) 60%, transparent);
 }
 
+/* Action pill → vertical right rail (Reels/Shorts pattern). */
 .nia-moments [data-moment-tools] {
   inset-inline: .75rem;
   bottom: 1rem;
-  max-height: calc(100% - 3.5rem);
   align-items: flex-end;
 }
-
 .nia-moments [data-moment-tools] > form { width: 100%; max-width: none; }
-
 .nia-moments [data-moment-actions] {
-  min-height: 0;
-  max-height: 100%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   flex-direction: column;
   gap: var(--nia-rail-gap);
   padding: 0;
@@ -82,11 +63,7 @@
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
-  scrollbar-width: none;
 }
-
-.nia-moments [data-moment-actions]::-webkit-scrollbar { display: none; }
-
 .nia-moments [data-moment-actions] > button,
 .nia-moments [data-moment-actions] > span,
 .nia-moments [data-moment-actions] > div > button {
@@ -97,44 +74,45 @@
   min-height: 3rem;
   padding: .4rem;
   border-radius: 9999px;
-  background: rgb(11 21 20 / .5);
+  background: rgb(13 10 22 / .5);
   font-size: .68rem;
   line-height: 1;
 }
-
 .nia-moments [data-moment-actions] > div { align-self: center; }
-.nia-moments [data-moment-actions] button:active { transform: scale(.94); }
-.nia-moments [data-testid^="button-moment-sound-"] { background: rgb(11 21 20 / .6); }
+
+/* Sound toggle and attachment controls stay readable on bright media. */
+.nia-moments [data-testid^="button-moment-sound-"] { background: rgb(13 10 22 / .6); }
+
+/* Discovery filters */
+.nia-moments [data-moment-filters] { background: hsl(var(--muted) / .35); }
+.nia-moments input,
+.nia-moments select { color: hsl(var(--foreground)); }
+.nia-moments input:focus,
+.nia-moments select:focus { outline: 2px solid hsl(var(--ring) / .35); outline-offset: 1px; }
+.nia-moments__filters-toggle { display: none; }
 
 .nia-moments button:focus-visible,
 .nia-moments a:focus-visible,
 .nia-moments [data-testid="list-moments-feed"] button:focus-visible {
-  outline: 3px solid var(--nk-gold, #e7b650);
+  outline: 3px solid hsl(39 100% 65%);
   outline-offset: 2px;
 }
-
 .nia-moments [data-testid="list-moments-feed"] button { touch-action: manipulation; }
 .nia-moments button, .nia-moments a { transition: background-color .18s ease, border-color .18s ease, transform .18s ease; }
 .nia-moments [role="alert"] { border-radius: 1rem; }
 
+/* ---- Mobile: full-bleed, feed first ---- */
 @media (max-width: 640px) {
+  .nia-moments { margin-inline: -1rem; }
   .nia-moments > header,
   .nia-moments > section[aria-label="Creator analytics"] { margin-inline: 1rem; }
   .nia-moments > section[aria-label="Spark feed"] { border-radius: 0; border-inline: 0; box-shadow: none; }
   .nia-moments [data-testid="list-moments-feed"] {
     max-width: none;
-    height: max(18rem, calc(100vh - 10.5rem - env(safe-area-inset-bottom, 0px)));
-    height: max(18rem, calc(100dvh - 10.5rem - env(safe-area-inset-bottom, 0px)));
+    /* header ≈ 3.6rem, bottom tab bar ≈ 3.75rem + safe area, toolbar ≈ 3rem */
+    height: calc(100dvh - 10.5rem - env(safe-area-inset-bottom, 0px));
     border-radius: 0;
-    -webkit-overflow-scrolling: touch;
   }
-  .nia-moments [data-moment-text-only] { padding-inline: 1rem 4.75rem; }
-  .nia-moments [data-moment-actions] { -webkit-overflow-scrolling: touch; }
-  .nia-moments input,
-  .nia-moments select { min-height: 44px; font-size: 16px; }
-  .nia-moments [data-moment-filters] button,
-  .nia-moments > section[aria-label="Spark feed"] > div:first-child button { min-height: 44px; min-width: 44px; }
-  .nia-moments > section[aria-label="Spark feed"] > div:first-child button:active { background: hsl(var(--muted)); }
   .nia-moments__filters-toggle { display: inline-flex; }
   .nia-moments [data-moment-filters][data-open="false"] { display: none; }
   .nia-moments > section[aria-label="Spark feed"] > div:first-child { flex-wrap: wrap; padding-block: .5rem; }

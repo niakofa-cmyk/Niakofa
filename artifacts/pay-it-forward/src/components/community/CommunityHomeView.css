@@ -5,11 +5,11 @@
   --nia-paper: #f8fafc;
   --nia-card: #ffffff;
   --nia-line: #e1e8ef;
-  --nia-blue: #2866a6;
-  --nia-blue-soft: #edf5fc;
-  --nia-coral: #e97943;
+  --nia-blue: var(--nk-teal, #116a60);
+  --nia-blue-soft: #e7f2ef;
+  --nia-coral: var(--nk-coral, #ed6b43);
   color: var(--nia-ink);
-  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-family: inherit;
 }
 
 .nia-home {
@@ -24,11 +24,11 @@
   overflow: hidden;
   margin: 0 0 1rem;
   padding: 1.45rem 1.25rem 1.25rem;
-  border: 1px solid #dce7f0;
+  border: 1px solid rgba(24, 61, 59, .13);
   border-top: 3px solid var(--nia-blue);
   border-radius: 0 0 22px 22px;
   background:
-    radial-gradient(ellipse at 96% 0%, rgba(206, 227, 242, .58), transparent 34%),
+    radial-gradient(ellipse at 96% 0%, rgba(231, 182, 80, .18), transparent 34%),
     #fff;
 }
 
@@ -200,7 +200,7 @@
 .nia-people__search input:focus {
   border-color: var(--nia-coral);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(233, 121, 67, .15);
+  box-shadow: 0 0 0 3px rgba(237, 107, 67, .16);
 }
 
 .nia-people__search-icon {
@@ -321,11 +321,11 @@
 .nia-home button:focus-visible,
 .nia-people a:focus-visible,
 .nia-people button:focus-visible {
-  outline: 3px solid rgba(40, 102, 166, .4);
+  outline: 3px solid rgba(17, 106, 96, .5);
   outline-offset: 3px;
 }
 .nia-people a:focus-visible,
-.nia-people button:focus-visible { outline-color: rgba(233, 121, 67, .45); }
+.nia-people button:focus-visible { outline-color: rgba(237, 107, 67, .5); }
 
 @keyframes nia-shimmer {
   to { background-position: -200% 0; }

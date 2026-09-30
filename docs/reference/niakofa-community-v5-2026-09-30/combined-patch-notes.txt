@@ -1,0 +1,26 @@
+Working from the cloned repo: I've aligned the Moments and Home styling with the real shell tokens and lint passes. Next I'm typechecking and building a single patch that applies with git apply.
+
+I've combined everything into one patch, niakofa-community-v5.patch. It applies cleanly to main at d116f4b (checked with git apply --check), and the full CI lint command passes with it applied. I couldn't run typecheck or the tests, because the app's dependencies aren't installed in my sandbox. Run pnpm typecheck and the tests before merging.
+
+Corrections to my earlier messages
+
+I told you moments-immersive-v5.patch applied cleanly. That check was wrong, because I piped it through head and only saw the pipe's exit code. Ignore that file and the older shell patch. The new combined patch replaces both.
+My v2 mockup colors (purple, blue, orange) don't match your real design. The shell in main uses a teal, coral and gold system with a Georgia wordmark. The mockup is a layout reference only; the new patch follows the repo's actual tokens.
+
+What the patch changes
+
+ESLint fix: removes the unused BookOpen import in NotificationsDrawer.tsx. This was the only error in the whole repo and should unblock Release Validation.
+Moments (CommunityMomentsExperience.tsx, community-moments-experience.css):
+Vertical reels now fill the screen, and the action buttons become a right-hand rail.
+On mobile the feed is full-bleed and the filters collapse behind a Filters button.
+I removed the Google Fonts @import and the blue palette override, so Moments inherits the shell's teal, coral and gold system.
+Home and People (CommunityHomeView.css):
+Home's blue and People's coral now read from the shell's teal and coral tokens.
+The separate "Plus Jakarta Sans" font is gone, so they use the shell font.
+I also aligned the focus rings and the hero tint.
+
+Not done
+
+Following / Local tabs: the feed request only supports hubId, cursor, search, tag and authorId. I found no follow or scope filter in the API, so I didn't add tabs that wouldn't work. That needs a backend change first.
+Exchange and Story fonts: community-exchange-view.css and community-story-visual.css still load their own fonts (Manrope, Space Grotesk, DM Sans, Instrument Serif), so the app still has several type systems. Say the word and I'll unify those too.
+Phone check: the Moments layout needs a real-phone look, especially iOS Safari.

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  Bell, BellOff, BookOpen, CalendarDays, Check, CheckCircle2, CircleDollarSign,
+  Bell, BellOff, CalendarDays, Check, CheckCircle2, CircleDollarSign,
   Heart, MapPin, MessageCircle, Radio, RefreshCw, ShieldAlert, Share2, ShoppingBag,
   Users, X,
 } from "lucide-react";

@@ -93,7 +93,11 @@ The canonical `/notifications` route now renders a full notification history des
 
 The Community shell and the six destinations now use the supplied visual package as a direction, not as production imagery. The shell has labeled primary navigation and a Create a Spark action connected to the existing Moments composer. Home keeps its real Hub feed and Moment entry points; People keeps approved-user search and activity-based discovery; Moments keeps authorized media, reactions, and creation; Exchange keeps coarse location, moderation, and pickup safety flows. Profile retains existing account, helper, privacy, and payout controls while surfacing Family and Legacy links.
 
+The current Moments review adds a viewport-sized, snap-scrolling reel with a right-side action rail and a collapsible mobile discovery form. Reels crop to fill while other attached videos remain contained. Home, People, and Moments inherit the Community shell's body type and teal/coral/gold accents rather than loading separate page fonts or overriding the shell palette. The mobile form uses 16px inputs and the new controls have touch-sized targets. The supplied older purple Moments patch and stylesheet are retained only as references under `docs/reference/niakofa-community-v5-2026-09-30/`.
+
 The `/profile` destination now stays inside the same six-tab Community shell rather than showing the older global navigation. The package's illustrative portraits, scenes, connection counts, and media tiles are not rendered as fabricated member data. Real photography and creator imagery only appear when supplied through authorized app content. This visual work does not activate the production media platform or certify video upload, processing, playback, or cross-Community privacy.
+
+There are no Following or Local tabs. The existing feed has no saved-helper relationship or server-side saved-author scope. "Add to My Village" is reserved for a private, reversible save of an approved helper; "Village Feed" would require a server-enforced, cursor-compatible filter that preserves existing Story authorization. A future Hub-specific scope should be labeled "From your Hub", not imprecisely "Local". Neither is presented as working UI until backed by the API.
 
 ## Testing Contract
 

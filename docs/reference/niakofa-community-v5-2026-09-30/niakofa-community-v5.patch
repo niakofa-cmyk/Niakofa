@@ -1,0 +1,363 @@
+diff --git a/artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx b/artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx
+index 9abb295..c842ea3 100644
+--- a/artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx
++++ b/artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx
+@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
+ import { useLocation } from "wouter";
+ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+ import {
+-  Bell, BellOff, BookOpen, CalendarDays, Check, CheckCircle2, CircleDollarSign,
++  Bell, BellOff, CalendarDays, Check, CheckCircle2, CircleDollarSign,
+   Heart, MapPin, MessageCircle, Radio, RefreshCw, ShieldAlert, Share2, ShoppingBag,
+   Users, X,
+ } from "lucide-react";
+diff --git a/artifacts/pay-it-forward/src/components/community/CommunityHomeView.css b/artifacts/pay-it-forward/src/components/community/CommunityHomeView.css
+index 632891b..7acb60e 100644
+--- a/artifacts/pay-it-forward/src/components/community/CommunityHomeView.css
++++ b/artifacts/pay-it-forward/src/components/community/CommunityHomeView.css
+@@ -5,11 +5,11 @@
+   --nia-paper: #f8fafc;
+   --nia-card: #ffffff;
+   --nia-line: #e1e8ef;
+-  --nia-blue: #2866a6;
+-  --nia-blue-soft: #edf5fc;
+-  --nia-coral: #e97943;
++  --nia-blue: var(--nk-teal, #116a60);
++  --nia-blue-soft: #e7f2ef;
++  --nia-coral: var(--nk-coral, #ed6b43);
+   color: var(--nia-ink);
+-  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
++  font-family: inherit;
+ }
+ 
+ .nia-home {
+@@ -24,11 +24,11 @@
+   overflow: hidden;
+   margin: 0 0 1rem;
+   padding: 1.45rem 1.25rem 1.25rem;
+-  border: 1px solid #dce7f0;
++  border: 1px solid rgba(24, 61, 59, .13);
+   border-top: 3px solid var(--nia-blue);
+   border-radius: 0 0 22px 22px;
+   background:
+-    radial-gradient(ellipse at 96% 0%, rgba(206, 227, 242, .58), transparent 34%),
++    radial-gradient(ellipse at 96% 0%, rgba(231, 182, 80, .18), transparent 34%),
+     #fff;
+ }
+ 
+@@ -200,7 +200,7 @@
+ .nia-people__search input:focus {
+   border-color: var(--nia-coral);
+   background: #fff;
+-  box-shadow: 0 0 0 3px rgba(233, 121, 67, .15);
++  box-shadow: 0 0 0 3px rgba(237, 107, 67, .16);
+ }
+ 
+ .nia-people__search-icon {
+@@ -321,11 +321,11 @@
+ .nia-home button:focus-visible,
+ .nia-people a:focus-visible,
+ .nia-people button:focus-visible {
+-  outline: 3px solid rgba(40, 102, 166, .4);
++  outline: 3px solid rgba(17, 106, 96, .5);
+   outline-offset: 3px;
+ }
+ .nia-people a:focus-visible,
+-.nia-people button:focus-visible { outline-color: rgba(233, 121, 67, .45); }
++.nia-people button:focus-visible { outline-color: rgba(237, 107, 67, .5); }
+ 
+ @keyframes nia-shimmer {
+   to { background-position: -200% 0; }
+diff --git a/artifacts/pay-it-forward/src/components/community/CommunityMomentsExperience.tsx b/artifacts/pay-it-forward/src/components/community/CommunityMomentsExperience.tsx
+index f547c2b..d2d0029 100644
+--- a/artifacts/pay-it-forward/src/components/community/CommunityMomentsExperience.tsx
++++ b/artifacts/pay-it-forward/src/components/community/CommunityMomentsExperience.tsx
+@@ -176,6 +176,7 @@ export function CommunityMomentsExperience({
+   const [moderationPendingAuthorId, setModerationPendingAuthorId] = useState<number | null>(null);
+   const [moderationNotice, setModerationNotice] = useState("");
+   const [mutedAuthorsOpen, setMutedAuthorsOpen] = useState(false);
++  const [filtersOpen, setFiltersOpen] = useState(false); // collapsed on small screens via CSS only
+   const [blockedUsersOpen, setBlockedUsersOpen] = useState(false);
+   const [blockPendingAuthorId, setBlockPendingAuthorId] = useState<number | null>(null);
+   const [keepMomentId, setKeepMomentId] = useState<number | null>(null);
+@@ -943,6 +944,9 @@ export function CommunityMomentsExperience({
+         <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-4 py-2">
+           <p className="text-sm font-bold">Sparks shared with you</p>
+           <div className="flex items-center gap-2">
++            <button type="button" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls="moment-filters" className="nia-moments__filters-toggle inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted" data-testid="button-toggle-moment-filters">
++              Filters
++            </button>
+             <button type="button" onClick={() => setMutedAuthorsOpen(true)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted" aria-label="Manage hidden Moment authors" data-testid="button-manage-hidden-authors">
+               <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />
+               Hidden authors
+@@ -965,6 +969,9 @@ export function CommunityMomentsExperience({
+         </div>
+ 
+         <form
++          id="moment-filters"
++          data-moment-filters
++          data-open={filtersOpen}
+           className="grid gap-2 border-b border-border bg-muted/20 p-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.7fr)_minmax(10rem,0.8fr)_auto]"
+           aria-label="Discover Moments"
+           onSubmit={(event) => {
+@@ -1072,7 +1079,8 @@ export function CommunityMomentsExperience({
+                         key={`${spark.id}-${media.id}`}
+                         src={currentMediaUrl}
+                         autoPlay muted={videoMuted} playsInline controls preload="metadata"
+-                        className="absolute inset-0 h-full w-full object-contain"
++                        className={`absolute inset-0 h-full w-full ${media.isMomentReel ? "object-cover" : "object-contain"}`}
++                        data-moment-reel={media.isMomentReel ? "true" : undefined}
+                         style={{ filter: mediaFilter }}
+                         aria-label={media.alt_text?.trim() || spark.caption || `Community Spark video shared by ${spark.author.name}`}
+                         aria-describedby={spark.moment_video ? `moment-reel-sources-${spark.id}` : undefined}
+@@ -1171,13 +1179,13 @@ export function CommunityMomentsExperience({
+                         </button>
+                       </div>
+                     )}
+-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-5 pt-28 text-white sm:p-7 sm:pt-32">
++                    <div data-moment-caption className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-5 pt-28 text-white sm:p-7 sm:pt-32">
+                       <p className="text-sm font-black">{spark.author.name || "A neighbor"}</p>
+                       {spark.audience === "hub" && <p className="mt-1 text-xs font-semibold text-white/75">Hub Spark</p>}
+                       {spark.caption && media && <p className="mt-2 max-w-xl text-sm font-semibold leading-relaxed sm:text-base">{spark.caption}</p>}
+                     </div>
+                     {current && (
+-                      <div className="absolute inset-x-4 bottom-4 z-20 flex flex-col items-end gap-2 text-white sm:inset-x-6">
++                      <div data-moment-tools className="absolute inset-x-4 bottom-4 z-20 flex flex-col items-end gap-2 text-white sm:inset-x-6">
+                         {replyOpenId === spark.id && (
+                           <form
+                             className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-2xl border border-white/15 bg-black/80 p-2 shadow-xl backdrop-blur"
+@@ -1201,7 +1209,7 @@ export function CommunityMomentsExperience({
+                             </button>
+                           </form>
+                         )}
+-                        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/15 bg-black/70 px-2 py-1.5 shadow-xl backdrop-blur">
++                        <div data-moment-actions className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/15 bg-black/70 px-2 py-1.5 shadow-xl backdrop-blur">
+                           <button
+                             type="button"
+                             onClick={() => void toggleReaction(spark)}
+diff --git a/artifacts/pay-it-forward/src/components/community/community-moments-experience.css b/artifacts/pay-it-forward/src/components/community/community-moments-experience.css
+index df46647..43b0676 100644
+--- a/artifacts/pay-it-forward/src/components/community/community-moments-experience.css
++++ b/artifacts/pay-it-forward/src/components/community/community-moments-experience.css
+@@ -1,126 +1,124 @@
+-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
+-
++/*
++ * Moments — immersive viewport.
++ * No @import / token overrides: Moments now inherits the Community shell system
++ * (teal primary, coral + gold accents, shell typography).
++ */
+ .nia-moments {
+-  --background: 216 42% 97%;
+-  --foreground: 222 36% 14%;
+-  --card: 0 0% 100%;
+-  --card-foreground: 222 36% 14%;
+-  --card-border: 215 28% 88%;
+-  --border: 215 28% 88%;
+-  --input: 215 28% 86%;
+-  --muted: 213 35% 93%;
+-  --muted-foreground: 218 15% 45%;
+-  --primary: 219 78% 48%;
+-  --primary-foreground: 0 0% 100%;
+-  --accent: 38 100% 94%;
+-  --accent-foreground: 222 36% 14%;
+-  --ring: 219 78% 48%;
+-  --app-font-sans: "DM Sans", sans-serif;
++  /* Inherit the Community shell tokens (teal primary, coral/gold accents, shell font). */
++  --nia-rail-gap: .5rem;
++  font-family: inherit;
+   color: hsl(var(--foreground));
+-  font-family: var(--app-font-sans);
+ }
+ 
++/* Keep the page title, but slim: the feed is the product. */
+ .nia-moments > header {
+-  border-color: hsl(215 28% 88%);
+-  background:
+-    radial-gradient(ellipse at 90% 0%, hsl(39 100% 66% / .24), transparent 35%),
+-    linear-gradient(112deg, hsl(0 0% 100%), hsl(214 42% 95%));
+-  box-shadow: 0 14px 38px hsl(220 34% 25% / .06);
+-}
+-
+-.nia-moments > header::after {
+-  content: "";
+-  display: block;
+-  height: 3px;
+-  margin: 1.25rem -1rem -1rem;
+-  background: linear-gradient(90deg, hsl(219 78% 48%) 0 71%, hsl(38 100% 58%) 71%);
+-}
+-
+-.nia-moments > header h1 {
+-  font-family: "Space Grotesk", sans-serif;
+-  letter-spacing: -.055em;
++  padding: .75rem 1rem;
++  border-radius: 1rem;
+ }
++.nia-moments > header h1 { font-size: 1.35rem; letter-spacing: -.04em; font-family: Georgia, "Times New Roman", serif; }
++.nia-moments > header > p:first-child { display: none; }
+ 
+ .nia-moments > section[aria-label="Creator analytics"],
+ .nia-moments > section[aria-label="Spark feed"] {
+-  border-color: hsl(215 28% 88%);
+-  border-radius: 1.35rem;
+-  background: hsl(0 0% 100%);
+-  box-shadow: 0 12px 32px hsl(220 34% 25% / .045);
+-}
+-
+-.nia-moments > section[aria-label="Spark feed"] > div:first-child {
+-  min-height: 3.75rem;
+-}
+-
+-.nia-moments input,
+-.nia-moments select {
+-  color: hsl(222 36% 14%);
+-}
+-
+-.nia-moments input:focus,
+-.nia-moments select:focus {
+-  outline: 2px solid hsl(219 78% 48% / .28);
+-  outline-offset: 1px;
++  border-radius: 1.25rem;
++  box-shadow: 0 12px 32px hsl(220 34% 25% / .06);
+ }
+ 
++/* ---- Feed ---- */
+ .nia-moments [data-testid="list-moments-feed"] {
+-  border-radius: 0 0 1.35rem 1.35rem;
+-  background: #17263a;
+-  scrollbar-color: hsl(39 100% 66%) transparent;
++  max-width: 440px;
++  height: min(calc(100dvh - 11rem), 820px);
++  max-height: none;
++  background: #0b1514;
++  scrollbar-width: none;
+ }
++.nia-moments [data-testid="list-moments-feed"]::-webkit-scrollbar { display: none; }
+ 
+ .nia-moments [data-moment-index] {
+-  min-height: min(72dvh, 720px);
+-  border-bottom: 1px solid hsl(0 0% 100% / .12);
+-}
+-
+-.nia-moments [data-testid="list-moments-feed"] button {
+-  touch-action: manipulation;
+-}
++  min-height: 100%;
++  scroll-snap-stop: always;
++  border-bottom: 0;
++}
++
++/* Caption bottom-left, leaving the right rail clear. */
++.nia-moments [data-moment-caption] {
++  padding: 7rem 4.75rem 1.1rem 1rem;
++  background: linear-gradient(to top, rgb(11 21 20 / .92), rgb(11 21 20 / .4) 60%, transparent);
++}
++
++/* Action pill → vertical right rail (Reels/Shorts pattern). */
++.nia-moments [data-moment-tools] {
++  inset-inline: .75rem;
++  bottom: 1rem;
++  align-items: flex-end;
++}
++.nia-moments [data-moment-tools] > form { width: 100%; max-width: none; }
++.nia-moments [data-moment-actions] {
++  flex-direction: column;
++  gap: var(--nia-rail-gap);
++  padding: 0;
++  border: 0;
++  background: transparent;
++  box-shadow: none;
++  backdrop-filter: none;
++}
++.nia-moments [data-moment-actions] > button,
++.nia-moments [data-moment-actions] > span,
++.nia-moments [data-moment-actions] > div > button {
++  flex-direction: column;
++  justify-content: center;
++  gap: .15rem;
++  min-width: 3rem;
++  min-height: 3rem;
++  padding: .4rem;
++  border-radius: 9999px;
++  background: rgb(11 21 20 / .5);
++  font-size: .68rem;
++  line-height: 1;
++}
++.nia-moments [data-moment-actions] > div { align-self: center; }
++
++/* Sound toggle and attachment controls stay readable on bright media. */
++.nia-moments [data-testid^="button-moment-sound-"] { background: rgb(11 21 20 / .6); }
++
++/* Discovery filters */
++.nia-moments [data-moment-filters] { background: hsl(var(--muted) / .35); }
++.nia-moments input,
++.nia-moments select { color: hsl(var(--foreground)); }
++.nia-moments input:focus,
++.nia-moments select:focus { outline: 2px solid hsl(var(--ring) / .35); outline-offset: 1px; }
++.nia-moments__filters-toggle { display: none; }
+ 
+-.nia-moments [data-testid="list-moments-feed"] button:focus-visible,
+-.nia-moments > section button:focus-visible {
++.nia-moments button:focus-visible,
++.nia-moments a:focus-visible,
++.nia-moments [data-testid="list-moments-feed"] button:focus-visible {
+   outline: 3px solid hsl(39 100% 65%);
+   outline-offset: 2px;
+ }
++.nia-moments [data-testid="list-moments-feed"] button { touch-action: manipulation; }
++.nia-moments button, .nia-moments a { transition: background-color .18s ease, border-color .18s ease, transform .18s ease; }
++.nia-moments [role="alert"] { border-radius: 1rem; }
+ 
+-.nia-moments button,
+-.nia-moments a {
+-  transition: color .18s ease, background-color .18s ease, border-color .18s ease, transform .18s ease;
+-}
+-
+-.nia-moments > section[aria-label="Creator analytics"] > button:hover {
+-  background: hsl(213 35% 96%);
+-}
+-
+-.nia-moments [role="alert"] {
+-  border-radius: 1rem;
+-}
+-
++/* ---- Mobile: full-bleed, feed first ---- */
+ @media (max-width: 640px) {
+-  .nia-moments > section[aria-label="Spark feed"] > div:first-child {
+-    align-items: flex-start;
+-    flex-wrap: wrap;
+-    padding-block: .65rem;
+-  }
+-
++  .nia-moments { margin-inline: -1rem; }
++  .nia-moments > header,
++  .nia-moments > section[aria-label="Creator analytics"] { margin-inline: 1rem; }
++  .nia-moments > section[aria-label="Spark feed"] { border-radius: 0; border-inline: 0; box-shadow: none; }
+   .nia-moments [data-testid="list-moments-feed"] {
+-    height: min(76dvh, 740px);
+-    max-height: 740px;
++    max-width: none;
++    /* header ≈ 3.6rem, bottom tab bar ≈ 3.75rem + safe area, toolbar ≈ 3rem */
++    height: calc(100dvh - 10.5rem - env(safe-area-inset-bottom, 0px));
+     border-radius: 0;
+   }
+-
+-  .nia-moments [data-moment-index] {
+-    min-height: 68dvh;
+-  }
++  .nia-moments__filters-toggle { display: inline-flex; }
++  .nia-moments [data-moment-filters][data-open="false"] { display: none; }
++  .nia-moments > section[aria-label="Spark feed"] > div:first-child { flex-wrap: wrap; padding-block: .5rem; }
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-  .nia-moments *,
+-  .nia-moments *::before,
+-  .nia-moments *::after {
++  .nia-moments *, .nia-moments *::before, .nia-moments *::after {
+     scroll-behavior: auto !important;
+     transition-duration: .01ms !important;
+   }
+-}
+\ No newline at end of file
++}

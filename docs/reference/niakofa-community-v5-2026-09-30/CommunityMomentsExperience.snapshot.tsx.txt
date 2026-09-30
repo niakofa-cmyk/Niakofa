@@ -176,7 +176,7 @@ export function CommunityMomentsExperience({
   const [moderationPendingAuthorId, setModerationPendingAuthorId] = useState<number | null>(null);
   const [moderationNotice, setModerationNotice] = useState("");
   const [mutedAuthorsOpen, setMutedAuthorsOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false); // collapsed on small screens via CSS only
   const [blockedUsersOpen, setBlockedUsersOpen] = useState(false);
   const [blockPendingAuthorId, setBlockPendingAuthorId] = useState<number | null>(null);
   const [keepMomentId, setKeepMomentId] = useState<number | null>(null);
@@ -944,7 +944,7 @@ export function CommunityMomentsExperience({
         <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-4 py-2">
           <p className="text-sm font-bold">Sparks shared with you</p>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls="moment-filters" className="nia-moments__filters-toggle inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted active:bg-muted" data-testid="button-toggle-moment-filters">
+            <button type="button" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls="moment-filters" className="nia-moments__filters-toggle inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted" data-testid="button-toggle-moment-filters">
               Filters
             </button>
             <button type="button" onClick={() => setMutedAuthorsOpen(true)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted" aria-label="Manage hidden Moment authors" data-testid="button-manage-hidden-authors">
@@ -1129,7 +1129,7 @@ export function CommunityMomentsExperience({
                       <img src={currentMediaUrl} alt={media.alt_text?.trim() || (spark.caption ? `Spark from ${spark.author.name}: ${spark.caption}` : `Spark shared by ${spark.author.name}`)} className="absolute inset-0 h-full w-full object-contain" style={{ filter: mediaFilter }} />
                     )}
                     {current && playbackAllowed && currentMediaUrl && media?.media_type === "audio" && (
-                      <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-teal-950 via-emerald-950 to-slate-950 p-8">
+                      <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-indigo-950 via-slate-900 to-emerald-950 p-8">
                         <div className="w-full max-w-md rounded-2xl bg-black/40 p-5 text-center">
                           <p className="mb-3 font-bold">Audio Moment</p>
                           <audio src={currentMediaUrl} controls preload="metadata" className="w-full" aria-label={spark.caption || `Audio Moment shared by ${spark.author.name}`} />
@@ -1137,7 +1137,7 @@ export function CommunityMomentsExperience({
                       </div>
                     )}
                     {!media && (
-                      <div data-moment-text-only className={`absolute inset-0 grid place-items-center ${backgroundColor ? "" : "bg-gradient-to-br from-teal-950 via-emerald-950 to-slate-950"} p-8 text-center`} style={backgroundColor ? { backgroundColor } : undefined}>
+                      <div className={`absolute inset-0 grid place-items-center ${backgroundColor ? "" : "bg-gradient-to-br from-indigo-950 via-slate-900 to-emerald-950"} p-8 text-center`} style={backgroundColor ? { backgroundColor } : undefined}>
                         <div className="max-w-md"><Play className="mx-auto h-10 w-10 text-white/70" aria-hidden="true" />{spark.caption && !hasCaptionOverlay(spark) && <p className="mt-4 text-xl font-semibold leading-relaxed sm:text-2xl">{spark.caption}</p>}</div>
                       </div>
                     )}

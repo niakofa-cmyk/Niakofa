@@ -1,0 +1,37 @@
+The ESLint failure
+I ran CI's exact command (npx eslint . --max-warnings 0) on the whole repo. It reports one error:
+
+artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx:5 has an unused import, BookOpen, left behind by the notification refactor.
+
+I removed it and re-ran lint, which now passes with 0 errors and 0 warnings. eslint-fix.patch is a one-line change. Apply it with git apply eslint-fix.patch. That should unblock Release Validation, but I only ran ESLint here. I didn't run typecheck or the tests.
+
+Is Sparks live camera recording implemented? Yes.
+StoryCameraRecorder.tsx (615 lines) is wired into CommunityStoryRail.tsx. It already has:
+
+a 60s total cap and up to 6 clips per Spark
+front/back camera flip, torch where supported, and an optional countdown
+pause, resume and preview phases
+stopping the camera when the tab is hidden
+MIME negotiation through isTypeSupported
+
+It covers everything my earlier SparksCameraRecorder.tsx did, so that file would be redundant. The repo has a copy of it in attached_assets/, which ESLint ignores. Don't merge it. I'm withdrawing that recommendation.
+
+How well were the improvements implemented?
+
+Shell: the repo's CommunitySocialShell has already been updated in the current version (298 lines). It now has:
+a Create a Spark button
+the Notifications tab routing to /notifications
+an unread bell count, with the quick-notifications drawer kept
+a dot on the Notifications tab
+My earlier shell patch no longer applies cleanly to it (git apply --check fails). Discard that patch; the uploaded shell file was older than main.
+Moments: moments-immersive-v5.patch applies cleanly to the current main. It has the right-hand action rail, full-screen reels, mobile-first layout and collapsible filters. I haven't built it or run the tests.
+Not done: CommunityMomentsExperience.tsx still has no For You / Following / Local tabs or scope parameter. That needs a backend feed filter first.
+Coverage: the other Community views (Home, People, Exchange, Notifications, Profile) all changed in the last three commits. I read CommunityHomeView, CommunityNotificationsPage and the shell, but I did not audit them for quality.
+
+Recommendations
+
+Merge eslint-fix.patch, then make sure CI is all green.
+Apply the Moments patch and check it on a real phone. Look at rail spacing, dvh behavior on iOS Safari, and your Moments tests.
+Decide what "Following" and "Local" mean on the backend, then I'll add the tab strip.
+Pick one font and one accent table for Home, People and Moments.
+Get real photography and avatars. Better CSS alone won't get you to the reference image.

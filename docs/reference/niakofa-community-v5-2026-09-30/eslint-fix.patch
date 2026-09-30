@@ -1,0 +1,13 @@
+diff --git a/artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx b/artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx
+index 9abb295..c842ea3 100644
+--- a/artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx
++++ b/artifacts/pay-it-forward/src/components/NotificationsDrawer.tsx
+@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
+ import { useLocation } from "wouter";
+ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+ import {
+-  Bell, BellOff, BookOpen, CalendarDays, Check, CheckCircle2, CircleDollarSign,
++  Bell, BellOff, CalendarDays, Check, CheckCircle2, CircleDollarSign,
+   Heart, MapPin, MessageCircle, Radio, RefreshCw, ShieldAlert, Share2, ShoppingBag,
+   Users, X,
+ } from "lucide-react";

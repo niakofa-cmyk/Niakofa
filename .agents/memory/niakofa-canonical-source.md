@@ -22,4 +22,3 @@ description: Which directories are canonical vs stale/archived — critical for 
 ## Art & Reference Assets
 - `artifacts/pay-it-forward/public/legacy-character-assets/` — character art
 - `artifacts/pay-it-forward/public/legacy-environment-assets/` — environment art
-- `docs/NIAKOFA_ART_BIBLE.md` — canonical art spec
