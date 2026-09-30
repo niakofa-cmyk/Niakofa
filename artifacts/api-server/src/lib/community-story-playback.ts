@@ -78,14 +78,22 @@ export function verifyStoryPlaybackGrant(
   return claims;
 }
 
-export function buildStoryPlaybackSetCookie(value: string, mediaId: number, secure: boolean): string {
+export function buildStoryPlaybackSetCookie(
+  value: string,
+  mediaId: number,
+  secure: boolean,
+  cookiePath = `/api/community/stories/media/${mediaId}`,
+): string {
   if (!isPositiveSafeInteger(mediaId) || !/^[A-Za-z0-9._-]{1,256}$/.test(value)) {
     throw new Error("Invalid Story playback cookie.");
+  }
+  if (!/^\/api\/community\/stories\/(?:media\/[1-9]\d*|[1-9]\d*\/moment-composition\/play)$/.test(cookiePath)) {
+    throw new Error("Invalid Story playback cookie path.");
   }
   const secureAttribute = secure ? "; Secure" : "";
   // Scope the grant to this media resource so the legacy direct URL can be
   // protected without exposing a broader session cookie.
-  return `${STORY_PLAYBACK_COOKIE_NAME}=${value}; Path=/api/community/stories/media/${mediaId}; HttpOnly; SameSite=Strict; Max-Age=${STORY_PLAYBACK_TTL_SECONDS}${secureAttribute}`;
+  return `${STORY_PLAYBACK_COOKIE_NAME}=${value}; Path=${cookiePath}; HttpOnly; SameSite=Strict; Max-Age=${STORY_PLAYBACK_TTL_SECONDS}${secureAttribute}`;
 }
 
 /**

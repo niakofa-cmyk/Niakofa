@@ -51,6 +51,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     db: mockDb,
     exchangeSparksTable: { id: "id", author_user_id: "author_user_id", status: "status", draft_expires_at: "draft_expires_at" },
     communityStoriesTable: { id: "id", status: "status" },
+    communityStoryMomentCompositionsTable: { id: "id", story_id: "story_id", derived_media_asset_id: "derived_media_asset_id", source_media_asset_ids: "source_media_asset_ids", status: "status", updated_at: "updated_at" },
     // NOTE: this list must mirror EVERY table symbol requests.ts (and
     // anything it transitively imports, e.g. lib/community-pool.ts) pulls
     // from "@workspace/db" — under native ESM, a missing key here throws
@@ -77,6 +78,8 @@ jest.unstable_mockModule("@workspace/db", () => {
     ratingsTable: { id: "id", request_id: "request_id", rater_id: "rater_id", ratee_id: "ratee_id", stars: "stars", role: "role" },
     mediaAssetsTable: { id: "id", owner_user_id: "owner_user_id", context_kind: "context_kind", context_id: "context_id", media_type: "media_type", mime_type: "mime_type", original_key: "original_key", status: "status", byte_size: "byte_size" },
     mediaProcessingJobsTable: { id: "id", media_asset_id: "media_asset_id", job_type: "job_type", status: "status" },
+    mediaUploadSessionsTable: { media_asset_id: "media_asset_id", chunk_size: "chunk_size", next_offset: "next_offset", finalized: "finalized", created_at: "created_at", updated_at: "updated_at" },
+    mediaUploadChunksTable: { id: "id", media_asset_id: "media_asset_id", byte_offset: "byte_offset", byte_length: "byte_length", sha256: "sha256", object_key: "object_key", created_at: "created_at" },
     requestMessageAttachmentsTable: { id: "id", message_id: "message_id", media_asset_id: "media_asset_id", storage_key: "storage_key", mime_type: "mime_type" },
     paymentTransactionsTable: { id: "id", request_id: "request_id", state: "state" },
     scheduledPaymentsTable: { id: "id", user_id: "user_id" },

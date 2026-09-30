@@ -20,6 +20,8 @@ export function StoryMediaPlayer({
   onComplete,
   onProgress,
   paused = false,
+  onPlaybackError,
+  playbackAttempt = 0,
 }: {
   media: StoryPlayerMedia | null;
   elements: StoryElement[];
@@ -27,6 +29,8 @@ export function StoryMediaPlayer({
   onComplete: () => void;
   onProgress?: (fraction: number) => void;
   paused?: boolean;
+  onPlaybackError?: () => void;
+  playbackAttempt?: number;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -128,7 +132,7 @@ export function StoryMediaPlayer({
       {media.media_type === "video" ? (
         <video
           ref={videoRef}
-          key={media.id}
+          key={`${media.id}-${playbackAttempt}`}
           src={media.media_url}
           autoPlay
           playsInline
@@ -138,7 +142,7 @@ export function StoryMediaPlayer({
           aria-label={media.alt_text || "Community Moment video"}
           onCanPlay={() => setLoaded(true)}
           onEnded={onComplete}
-          onError={() => setLoaded(true)}
+          onError={() => { setLoaded(true); onPlaybackError?.(); }}
           className="max-h-full max-w-full object-contain"
           style={{ filter }}
         >{captionsTrackUrl && <track kind="captions" src={captionsTrackUrl} srcLang="und" label="Creator captions" default />}</video>

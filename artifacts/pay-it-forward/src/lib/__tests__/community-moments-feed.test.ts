@@ -62,6 +62,22 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /media\.alt_text/);
   });
 
+  test("camera reel feed treats the derivative as one frame and preserves original accessibility metadata", () => {
+    assert.match(moments, /moment_video\?:/);
+    assert.match(moments, /activeSpark\?\.moment_video && activeMomentVideoState\?\.status === "ready"/);
+    assert.match(moments, /moment-composition\/playback-grant/);
+    assert.match(moments, /moment-composition\/play/);
+    assert.match(moments, /validateMomentCompositionPlaybackUrl\(grant\.playback_url/);
+    assert.doesNotMatch(moments, /fetch\(playback\.pathname/);
+    assert.match(moments, /spark\.moment_video && activeMomentVideoState\?\.status !== "ready"/);
+    assert.match(moments, /!showReel && spark\.media\.length > 1/);
+    assert.match(moments, /Original clip descriptions and captions/);
+    assert.match(studio, /story\.moment_video\?\.status === "ready"/);
+    assert.match(studio, /validateMomentCompositionPlaybackUrl\(grant\.playback_url/);
+    assert.doesNotMatch(studio, /playbackResponse\.blob\(\)/);
+    assert.match(studio, /button-retry-camera-reel/);
+  });
+
   test("Moments discovery sends search, tag and author filters to the authenticated feed endpoint", () => {
     assert.match(moments, /query\.set\("search", filters\.search\)/);
     assert.match(moments, /query\.set\("tag", filters\.tag\)/);
@@ -91,7 +107,7 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /document\.addEventListener\("visibilitychange"/);
     assert.match(moments, /new IntersectionObserver\(\(\[entry\]\)/);
     assert.match(moments, /if \(!activeMedia \|\| !playbackAllowed\)/);
-    assert.match(moments, /\[activeMedia, activeSpark\?\.id, flushCurrentWatchContribution, mediaRetry, playbackAllowed\]/);
+    assert.match(moments, /\[activeMedia, activeMomentVideoState\?\.status, activeSpark\?\.id, flushCurrentWatchContribution, mediaRetry, playbackAllowed\]/);
     assert.match(moments, /controller\.abort\(\)/);
     assert.match(moments, /video\.pause\(\)/);
     assert.match(moments, /moreControllerRef\.current\?\.abort\(\)/);

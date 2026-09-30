@@ -5,6 +5,7 @@ import {
   communityStoryAuthorMutesTable,
   communityStoryElementsTable,
   communityStoryMediaTable,
+  communityStoryMomentCompositionsTable,
   directMessageBlocksTable,
   db,
   diasporaHubsTable,
@@ -25,7 +26,8 @@ import { createMessageNotification } from "../lib/message-notifications";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isMediaPlatformV21Enabled, isMomentMusicAsset } from "../lib/media-platform";
-import { enqueueMediaAssetProcessing, enqueuePendingMediaAssetThumbnail, regenerateMediaAssetThumbnail } from "../lib/mediaProcessingQueue";
+import { enqueueMediaAssetProcessing, enqueueMomentVideoComposition, enqueuePendingMediaAssetThumbnail, regenerateMediaAssetThumbnail } from "../lib/mediaProcessingQueue";
+import { mediaStorageKeys } from "../lib/media-cleanup";
 import { mediaProcessingQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 import {
@@ -45,6 +47,13 @@ import {
   validateMomentCaptionsVtt,
   validateNewMomentVisualAltText,
 } from "../lib/moment-accessibility";
+import {
+  MOMENT_COMPOSE_INTENT,
+  isPublishedStoryMediaContext,
+  momentCompositionFingerprint,
+  withinMomentDurationLimit,
+  validMomentComposeIds,
+} from "../lib/moment-video-compose";
 
 const router = Router();
 const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
@@ -52,6 +61,10 @@ const MAX_MEDIA_ITEMS = 6;
 const MAX_MEDIA_DIMENSION = 10_000;
 const ALLOWED_MEDIA = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm"]);
 const STORY_AUDIENCES = ["community", "hub"] as const;
+const momentCompositionRequestSchema = z.object({
+  intent: z.literal(MOMENT_COMPOSE_INTENT),
+  media_asset_ids: z.array(z.number().int().positive()).min(2).max(6),
+}).strict();
 
 const storyElementSchema = z.object({
   id: z.string().trim().min(1).max(100).optional(),
@@ -339,7 +352,11 @@ function publicStory(row: {
   avatar_url: string | null;
   composition_manifest: typeof communityStoriesTable.$inferSelect["composition_manifest"];
   exchange_listing_id: number | null;
-}, media: Array<typeof communityStoryMediaTable.$inferSelect>, elements: Array<typeof communityStoryElementsTable.$inferSelect>) {
+}, media: Array<typeof communityStoryMediaTable.$inferSelect>, elements: Array<typeof communityStoryElementsTable.$inferSelect>, momentVideo?: {
+  status: string;
+  duration_ms: number | null;
+  playback_grant_url: string;
+} | null) {
   return {
     id: row.id,
     author_user_id: row.author_user_id,
@@ -355,6 +372,7 @@ function publicStory(row: {
     composition_manifest: row.composition_manifest
       ? { ...row.composition_manifest, music: null }
       : null,
+    moment_video: momentVideo ?? null,
     author: { id: row.author_user_id, name: row.author_name, avatar_url: row.avatar_url },
     media: media.filter((item) => item.media_asset_id !== row.composition_manifest?.music?.track_asset_id).map((item) => ({
       id: item.id,
@@ -411,6 +429,32 @@ async function readableStoryVideoMedia(mediaId: number, userId: number) {
     variantKey: row.variant_key,
   })) return null;
   return row;
+}
+
+async function momentCompositionForStory(storyId: number) {
+  const [row] = await db.select({
+    story_id: communityStoryMomentCompositionsTable.story_id,
+    source_media_asset_ids: communityStoryMomentCompositionsTable.source_media_asset_ids,
+    status: communityStoryMomentCompositionsTable.status,
+    failure_code: communityStoryMomentCompositionsTable.failure_code,
+    derived_media_asset_id: communityStoryMomentCompositionsTable.derived_media_asset_id,
+    asset_status: mediaAssetsTable.status,
+    variant_key: mediaAssetsTable.variant_key,
+    mime_type: mediaAssetsTable.mime_type,
+    duration_ms: mediaAssetsTable.duration_ms,
+    author_user_id: communityStoriesTable.author_user_id,
+    hub_id: communityStoriesTable.hub_id,
+    community_id: communityStoriesTable.community_id,
+    audience: communityStoriesTable.audience,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
+    story_status: communityStoriesTable.status,
+    expires_at: communityStoriesTable.expires_at,
+  }).from(communityStoryMomentCompositionsTable)
+    .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMomentCompositionsTable.story_id))
+    .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMomentCompositionsTable.derived_media_asset_id))
+    .where(eq(communityStoryMomentCompositionsTable.story_id, storyId))
+    .limit(1);
+  return row ?? null;
 }
 
 router.get("/community/stories/muted-authors", requireAuth, requireApproved, async (req, res) => {
@@ -613,7 +657,7 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
   const rows = queriedRows.slice(0, requestedLimit);
 
   const ids = rows.map((row) => row.id);
-  const [mediaRows, elements] = ids.length ? await Promise.all([
+  const [mediaRows, elements, momentCompositionRows] = ids.length ? await Promise.all([
     db.select({
       media: communityStoryMediaTable,
       linked_listing_id: communityStoriesTable.exchange_listing_id,
@@ -625,7 +669,16 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
       .where(inArray(communityStoryMediaTable.story_id, ids))
       .orderBy(asc(communityStoryMediaTable.id)),
     db.select().from(communityStoryElementsTable).where(inArray(communityStoryElementsTable.story_id, ids)).orderBy(communityStoryElementsTable.z_index),
-  ]) : [[], []];
+    db.select({
+      story_id: communityStoryMomentCompositionsTable.story_id,
+      status: communityStoryMomentCompositionsTable.status,
+      asset_status: mediaAssetsTable.status,
+      variant_key: mediaAssetsTable.variant_key,
+      duration_ms: mediaAssetsTable.duration_ms,
+    }).from(communityStoryMomentCompositionsTable)
+      .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMomentCompositionsTable.derived_media_asset_id))
+      .where(inArray(communityStoryMomentCompositionsTable.story_id, ids)),
+  ]) : [[], [], []];
   const media = mediaRows.filter((item) => (item.media.media_asset_id === null || item.asset_status === "ready")
     && isLinkedStoryVideoAssetReady({
     linked: item.linked_listing_id !== null,
@@ -638,8 +691,26 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
   media.forEach((item) => mediaByStory.set(item.story_id, [...(mediaByStory.get(item.story_id) ?? []), item]));
   const elementsByStory = new Map<number, Array<typeof communityStoryElementsTable.$inferSelect>>();
   elements.forEach((item) => elementsByStory.set(item.story_id, [...(elementsByStory.get(item.story_id) ?? []), item]));
+  const momentVideoByStory = new Map<number, {
+    status: string;
+    duration_ms: number | null;
+    playback_grant_url: string;
+  }>();
+  momentCompositionRows.forEach((item) => {
+    const ready = item.status === "ready" && item.asset_status === "ready" && Boolean(item.variant_key);
+    momentVideoByStory.set(item.story_id, {
+      status: ready ? "ready" : item.status,
+      duration_ms: ready ? item.duration_ms : null,
+      playback_grant_url: `/api/community/stories/${item.story_id}/moment-composition/playback-grant`,
+    });
+  });
   return res.json({
-    stories: rows.map((row) => publicStory(row, mediaByStory.get(row.id) ?? [], elementsByStory.get(row.id) ?? [])),
+    stories: rows.map((row) => publicStory(
+      row,
+      mediaByStory.get(row.id) ?? [],
+      elementsByStory.get(row.id) ?? [],
+      isMediaPlatformV21Enabled() ? momentVideoByStory.get(row.id) ?? null : null,
+    )),
     viewer_user_id: userId,
     expires_after_hours: 24,
     next_cursor: hasMore && rows.length
@@ -694,6 +765,171 @@ router.get("/community/stories/moment-media-status", requireAuth, requireApprove
         ? asset.failure_reason?.match(/^MEDIA_[A-Z_]+/)?.[0] ?? "MEDIA_PROCESSING_FAILED"
         : null,
     })),
+  });
+});
+
+router.post("/community/stories/:id/moment-composition", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return res.status(404).json({ error: "Moment video composition is unavailable." });
+  const storyId = positiveId(req.params.id);
+  const parsed = momentCompositionRequestSchema.safeParse(req.body);
+  if (!storyId || !parsed.success || !validMomentComposeIds(parsed.data.media_asset_ids)) {
+    return res.status(400).json({
+      error: "Provide intent camera_clip_reel and an ordered list of two to six unique video media asset ids.",
+    });
+  }
+  const sourceIds = parsed.data.media_asset_ids;
+  const fingerprint = momentCompositionFingerprint(sourceIds);
+
+  let result: { mediaAssetId: number; status: string } | { error: "not_found" | "invalid" | "conflict" } = { error: "not_found" };
+  try {
+    result = await db.transaction(async (tx) => {
+      const [story] = await tx.select({
+        id: communityStoriesTable.id,
+        author_user_id: communityStoriesTable.author_user_id,
+        hub_id: communityStoriesTable.hub_id,
+        audience: communityStoriesTable.audience,
+        exchange_listing_id: communityStoriesTable.exchange_listing_id,
+        status: communityStoriesTable.status,
+        expires_at: communityStoriesTable.expires_at,
+      }).from(communityStoriesTable)
+        .where(eq(communityStoriesTable.id, storyId))
+        .limit(1)
+        .for("update");
+      if (!story || story.author_user_id !== req.authenticatedUserId
+        || story.status !== "published" || story.expires_at <= new Date()) return { error: "not_found" } as const;
+      if (story.exchange_listing_id !== null) return { error: "invalid" } as const;
+      if (story.audience === "hub" && !story.hub_id) return { error: "invalid" } as const;
+      const assets = await tx.select({
+        id: mediaAssetsTable.id,
+        owner_user_id: mediaAssetsTable.owner_user_id,
+        context_kind: mediaAssetsTable.context_kind,
+        context_id: mediaAssetsTable.context_id,
+        media_type: mediaAssetsTable.media_type,
+        mime_type: mediaAssetsTable.mime_type,
+        duration_ms: mediaAssetsTable.duration_ms,
+        status: mediaAssetsTable.status,
+      }).from(mediaAssetsTable)
+        .where(inArray(mediaAssetsTable.id, sourceIds))
+        .for("share");
+      const attachments = await tx.select({ media_asset_id: communityStoryMediaTable.media_asset_id })
+        .from(communityStoryMediaTable)
+        .where(and(
+          eq(communityStoryMediaTable.story_id, storyId),
+          inArray(communityStoryMediaTable.media_asset_id, sourceIds),
+        ));
+      if (assets.length !== sourceIds.length || attachments.length !== sourceIds.length
+        || assets.some((asset) => asset.owner_user_id !== req.authenticatedUserId
+          || !isPublishedStoryMediaContext(asset.context_kind, asset.context_id, story.id)
+          || asset.media_type !== "video" || !asset.mime_type.startsWith("video/")
+          || asset.status !== "ready" || !Number.isSafeInteger(asset.duration_ms) || asset.duration_ms! < 1)
+        || !withinMomentDurationLimit(sourceIds.map((id) => assets.find((asset) => asset.id === id)?.duration_ms ?? 0))) {
+        return { error: "invalid" } as const;
+      }
+
+      const [existing] = await tx.select({
+        derived_media_asset_id: communityStoryMomentCompositionsTable.derived_media_asset_id,
+        source_fingerprint: communityStoryMomentCompositionsTable.source_fingerprint,
+        status: communityStoryMomentCompositionsTable.status,
+      }).from(communityStoryMomentCompositionsTable)
+        .where(eq(communityStoryMomentCompositionsTable.story_id, storyId))
+        .limit(1)
+        .for("update");
+      if (existing) {
+        if (existing.source_fingerprint !== fingerprint) return { error: "conflict" } as const;
+        if (existing.status === "failed") {
+          const retriedAt = new Date();
+          await tx.update(communityStoryMomentCompositionsTable).set({
+            status: "queued", failure_code: null, updated_at: retriedAt,
+          }).where(eq(communityStoryMomentCompositionsTable.story_id, storyId));
+          await tx.update(mediaAssetsTable).set({
+            status: "processing", failure_reason: null, variant_key: null, updated_at: retriedAt,
+          }).where(eq(mediaAssetsTable.id, existing.derived_media_asset_id));
+          await tx.update(mediaProcessingJobsTable).set({
+            status: "queued", error: null, started_at: null, completed_at: null, updated_at: retriedAt,
+          }).where(and(
+            eq(mediaProcessingJobsTable.media_asset_id, existing.derived_media_asset_id),
+            eq(mediaProcessingJobsTable.job_type, "moment_compose"),
+          ));
+        }
+        return { mediaAssetId: existing.derived_media_asset_id, status: existing.status === "failed" ? "queued" : existing.status } as const;
+      }
+
+      const [derivedAsset] = await tx.insert(mediaAssetsTable).values({
+        owner_user_id: story.author_user_id,
+        context_kind: "story",
+        context_id: story.id,
+        media_type: "video",
+        mime_type: "video/mp4",
+        original_key: `media-assets/moment-compositions/${randomUUID()}.mp4`,
+        byte_size: 1,
+        status: "processing",
+        metadata: { derived_kind: "moment_camera_clip_reel", source_fingerprint: fingerprint },
+      }).returning({ id: mediaAssetsTable.id });
+      await tx.insert(communityStoryMomentCompositionsTable).values({
+        story_id: storyId,
+        derived_media_asset_id: derivedAsset.id,
+        source_media_asset_ids: sourceIds,
+        source_fingerprint: fingerprint,
+        status: "queued",
+      });
+      await tx.insert(mediaProcessingJobsTable).values({
+        media_asset_id: derivedAsset.id,
+        job_type: "moment_compose",
+        status: "queued",
+      });
+      return { mediaAssetId: derivedAsset.id, status: "queued" } as const;
+    });
+  } catch (error) {
+    logger.error({ err: error, storyId }, "moment-composition: request could not be persisted");
+    return res.status(503).json({ error: "Moment video composition could not be queued. Retry the same request safely." });
+  }
+  if ("error" in result) {
+    if (result.error === "conflict") {
+      return res.status(409).json({ error: "This Story already has a camera-clip reel with a different ordered source list." });
+    }
+    if (result.error === "invalid") {
+      return res.status(400).json({
+        error: "Camera-clip reels require two to six attached, ready videos owned by you in this Moment, with no more than 60 seconds total.",
+      });
+    }
+    return res.status(404).json({ error: "Story not found." });
+  }
+  try {
+    await enqueueMomentVideoComposition(result.mediaAssetId);
+  } catch (error) {
+    logger.warn({ err: error, storyId, mediaAssetId: result.mediaAssetId }, "moment-composition: durable request awaits queue recovery");
+    return res.status(503).json({ error: "The composition was saved but is waiting for the processing queue. Retry this request safely." });
+  }
+  const composition = await momentCompositionForStory(storyId);
+  res.setHeader("Cache-Control", "private, no-store");
+  return res.status(202).json({
+    composition: {
+      status: composition?.status ?? result.status,
+      playback_grant_url: `/api/community/stories/${storyId}/moment-composition/playback-grant`,
+      status_url: `/api/community/stories/${storyId}/moment-composition`,
+    },
+  });
+});
+
+router.get("/community/stories/:id/moment-composition", requireAuth, requireApproved, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return res.status(404).json({ error: "Moment video composition is unavailable." });
+  const storyId = positiveId(req.params.id);
+  if (!storyId) return res.status(404).json({ error: "Moment composition not found." });
+  const composition = await momentCompositionForStory(storyId);
+  if (!composition || composition.story_status !== "published" || composition.expires_at <= new Date()
+    || !(await viewerCanReadStory(req.authenticatedUserId!, composition))) {
+    return res.status(404).json({ error: "Moment composition not found." });
+  }
+  const ready = composition.status === "ready" && composition.asset_status === "ready" && Boolean(composition.variant_key);
+  res.setHeader("Cache-Control", "private, no-store");
+  return res.json({
+    composition: {
+      status: ready ? "ready" : composition.status,
+      failure_code: composition.status === "failed" ? composition.failure_code : null,
+      duration_ms: ready ? composition.duration_ms : null,
+      playback_grant_url: `/api/community/stories/${storyId}/moment-composition/playback-grant`,
+      source_count: Array.isArray(composition.source_media_asset_ids) ? composition.source_media_asset_ids.length : 0,
+    },
   });
 });
 
@@ -1394,6 +1630,90 @@ router.get("/community/stories/media/:id/play", async (req, res) => {
   );
 });
 
+router.post("/community/stories/:id/moment-composition/playback-grant", requireAuth, requireApproved, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return res.status(404).json({ error: "Moment video not found." });
+  const storyId = positiveId(req.params.id);
+  const userId = req.authenticatedUserId!;
+  const composition = storyId ? await momentCompositionForStory(storyId) : null;
+  if (!composition || composition.status !== "ready" || composition.asset_status !== "ready"
+    || !composition.variant_key || composition.story_status !== "published"
+    || composition.expires_at <= new Date() || !(await viewerCanReadStory(userId, composition))) {
+    return res.status(404).json({ error: "Moment video not found." });
+  }
+  const [viewer] = await db.select({
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score,
+  }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const secret = process.env["SESSION_SECRET"];
+  if (!viewer || viewer.approval_status !== "approved" || viewer.is_suspended
+    || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Moment video not found." });
+  }
+  if (req.authenticatedTokenVersion !== viewer.token_version) {
+    return res.status(401).json({ error: "Session expired — please log in again", error_code: "TOKEN_REVOKED" });
+  }
+  if (!secret || secret.length < 32) {
+    return res.status(503).json({ error: "Secure Moment playback is temporarily unavailable." });
+  }
+  const grant = issueStoryPlaybackGrant({
+    mediaId: composition.derived_media_asset_id,
+    userId,
+    tokenVersion: viewer.token_version,
+  }, secret);
+  const cookiePath = `/api/community/stories/${storyId}/moment-composition/play`;
+  res.setHeader("Set-Cookie", buildStoryPlaybackSetCookie(
+    grant.value,
+    composition.derived_media_asset_id,
+    req.secure || req.protocol === "https",
+    cookiePath,
+  ));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
+  return res.json({
+    playback_url: cookiePath,
+    expires_at: new Date(grant.claims.expiresAt).toISOString(),
+  });
+});
+
+router.get("/community/stories/:id/moment-composition/play", async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return res.status(404).json({ error: "Moment video not found." });
+  const storyId = positiveId(req.params.id);
+  const cookieValue = readStoryPlaybackCookie(req.headers.cookie);
+  const secret = process.env["SESSION_SECRET"];
+  const tokenMediaId = cookieValue ? positiveId(cookieValue.split(".")[1]) : null;
+  const claims = secret && tokenMediaId ? verifyStoryPlaybackGrant(cookieValue, tokenMediaId, secret) : null;
+  if (!storyId || !claims) return res.status(404).json({ error: "Moment video not found." });
+  const [viewer] = await db.select({
+    id: usersTable.id,
+    token_version: usersTable.token_version,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+    trust_score: usersTable.trust_score,
+  }).from(usersTable).where(eq(usersTable.id, claims.userId)).limit(1);
+  if (!viewer || viewer.token_version !== claims.tokenVersion
+    || viewer.approval_status !== "approved" || viewer.is_suspended
+    || viewer.trust_score !== null && viewer.trust_score <= -1) {
+    return res.status(404).json({ error: "Moment video not found." });
+  }
+  const composition = await momentCompositionForStory(storyId);
+  if (!composition || claims.mediaId !== composition.derived_media_asset_id
+    || composition.status !== "ready" || composition.asset_status !== "ready"
+    || !composition.variant_key || composition.story_status !== "published"
+    || composition.expires_at <= new Date() || !(await viewerCanReadStory(viewer.id, composition))) {
+    return res.status(404).json({ error: "Moment video not found." });
+  }
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie");
+  return streamAssetRange(
+    composition.variant_key,
+    req,
+    res,
+    storyVideoStreamContentType(composition.variant_key, composition.mime_type),
+  );
+});
+
 router.delete("/community/stories/:id", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
   const storyId = positiveId(req.params.id);
   if (!storyId) return res.status(400).json({ error: "Invalid Story id." });
@@ -1407,6 +1727,7 @@ router.delete("/community/stories/:id", requireAuth, requireApproved, communityP
     original_key: mediaAssetsTable.original_key,
     variant_key: mediaAssetsTable.variant_key,
     thumbnail_key: mediaAssetsTable.thumbnail_key,
+    cleanup_keys: mediaAssetsTable.cleanup_keys,
   }).from(mediaAssetsTable).where(and(
     eq(mediaAssetsTable.context_kind, "story"),
     eq(mediaAssetsTable.context_id, storyId),
@@ -1457,11 +1778,7 @@ router.delete("/community/stories/:id", requireAuth, requireApproved, communityP
       item.variant_key,
       item.thumbnail_key,
     ]),
-    ...universalAssets.flatMap((asset) => [
-      asset.original_key,
-      asset.variant_key,
-      asset.thumbnail_key,
-    ]),
+    ...universalAssets.flatMap((asset) => mediaStorageKeys(asset)),
   ].filter((key): key is string => Boolean(key)))];
   const cleanup = await Promise.allSettled(storageKeys.map((key) => deleteAssetStrict(key)));
   const cleanupFailure = cleanup.find((result) => result.status === "rejected");

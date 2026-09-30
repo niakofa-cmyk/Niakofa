@@ -5,6 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
+  communityStoryMediaTable,
+  communityStoryMomentCompositionsTable,
+  communityStoriesTable,
   db,
   mediaAssetsTable,
   mediaProcessingJobsTable,
@@ -15,10 +18,20 @@ import { getRedisConnection, QUEUE } from "../lib/queue";
 import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset } from "../lib/storage";
 import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
 import { logger } from "../lib/logger";
-import { assertSupportedMediaJob, isMomentMusicAsset, mediaJobsForType } from "../lib/media-platform";
+import { assertSupportedMediaJob, isMediaPlatformV21Enabled, isMomentMusicAsset, mediaJobsForType } from "../lib/media-platform";
 import { trackWorker } from "../lib/worker-lifecycle";
 import { randomUUID } from "node:crypto";
 import { getMediaToolPaths } from "../lib/mediaCapabilities";
+import {
+  isPublishedStoryMediaContext,
+  momentCompositionAttemptOwnsJob,
+  momentClipNormalizeArgs,
+  momentComposeAttemptOutputKey,
+  momentConcatArgs,
+  reconcileMomentCompositionPromotion,
+  withDurableCleanupLedger,
+  withinMomentDurationLimit,
+} from "../lib/moment-video-compose";
 
 const execFileAsync = promisify(execFile);
 type MediaJobData = { mediaAssetId: number; jobType: MediaJobType };
@@ -68,6 +81,318 @@ async function storeGeneratedAsset(
       return "deleted";
     }
     return "stored";
+  });
+}
+
+async function stageMomentCompositionOutput(
+  storyId: number,
+  mediaAssetId: number,
+  jobId: number,
+  attempt: number,
+  key: string,
+  bytes: Buffer,
+): Promise<boolean> {
+  // Each attempt has a unique key. Commit its cleanup ledger entry first in a
+  // separate transaction; a provider PUT followed by a failed DB commit must
+  // still leave a durable key for deletion/reconciliation to discover.
+  return withDurableCleanupLedger(
+    key,
+    async (ledgerKey) => db.transaction(async (tx) => {
+      const [story] = await tx.select({
+        status: communityStoriesTable.status,
+        expires_at: communityStoriesTable.expires_at,
+      }).from(communityStoriesTable)
+        .where(eq(communityStoriesTable.id, storyId))
+        .limit(1)
+        .for("share");
+      if (!story || story.status !== "published" || story.expires_at <= new Date()) return false;
+      const [asset] = await tx.select({ status: mediaAssetsTable.status })
+        .from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, mediaAssetId))
+        .limit(1)
+        .for("update");
+      if (!asset || asset.status === "deleted") return false;
+      const [job] = await tx.select({
+        status: mediaProcessingJobsTable.status,
+        attempts: mediaProcessingJobsTable.attempts,
+      }).from(mediaProcessingJobsTable)
+        .where(eq(mediaProcessingJobsTable.id, jobId))
+        .limit(1)
+        .for("update");
+      if (!job || !momentCompositionAttemptOwnsJob(job.status, job.attempts, attempt)) return false;
+      await tx.update(mediaAssetsTable).set({
+        cleanup_keys: sql`CASE
+          WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${ledgerKey})
+            THEN ${mediaAssetsTable.cleanup_keys}
+          ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${ledgerKey})
+        END`,
+        updated_at: new Date(),
+      }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+      return true;
+    }),
+    async () => db.transaction(async (tx) => {
+      // Recheck lease and deletion state under the same lock order immediately
+      // before the external write; phase one only guarantees cleanup coverage.
+      const [story] = await tx.select({
+        status: communityStoriesTable.status,
+        expires_at: communityStoriesTable.expires_at,
+      }).from(communityStoriesTable)
+        .where(eq(communityStoriesTable.id, storyId))
+        .limit(1)
+        .for("share");
+      if (!story || story.status !== "published" || story.expires_at <= new Date()) return false;
+      const [asset] = await tx.select({ status: mediaAssetsTable.status })
+        .from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, mediaAssetId))
+        .limit(1)
+        .for("update");
+      if (!asset || asset.status === "deleted") return false;
+      const [job] = await tx.select({
+        status: mediaProcessingJobsTable.status,
+        attempts: mediaProcessingJobsTable.attempts,
+      }).from(mediaProcessingJobsTable)
+        .where(eq(mediaProcessingJobsTable.id, jobId))
+        .limit(1)
+        .for("update");
+      if (!job || !momentCompositionAttemptOwnsJob(job.status, job.attempts, attempt)) return false;
+      await putAsset(key, bytes, "video/mp4");
+      return true;
+    }),
+  );
+}
+
+async function deleteMomentAttemptOutput(mediaAssetId: number, key: string): Promise<void> {
+  // Keep the durable entry if provider deletion fails; retry/retention cleanup
+  // can then reconcile it. Remove it only after strict absence is confirmed.
+  await deleteAssetStrict(key);
+  await db.update(mediaAssetsTable).set({
+    cleanup_keys: sql`${mediaAssetsTable.cleanup_keys} - ${key}`,
+    updated_at: new Date(),
+  }).where(eq(mediaAssetsTable.id, mediaAssetId));
+}
+
+async function beginMomentCompositionAttempt(
+  storyId: number,
+  mediaAssetId: number,
+  jobId: number,
+  attempt: number,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [story] = await tx.select({
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at,
+    }).from(communityStoriesTable)
+      .where(eq(communityStoriesTable.id, storyId))
+      .limit(1)
+      .for("share");
+    const [asset] = await tx.select({ status: mediaAssetsTable.status })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1)
+      .for("update");
+    const [claimedJob] = await tx.select({
+      status: mediaProcessingJobsTable.status,
+      attempts: mediaProcessingJobsTable.attempts,
+    }).from(mediaProcessingJobsTable)
+      .where(eq(mediaProcessingJobsTable.id, jobId))
+      .limit(1)
+      .for("update");
+    if (!claimedJob || !momentCompositionAttemptOwnsJob(claimedJob.status, claimedJob.attempts, attempt)) return false;
+    if (!story || story.status !== "published" || story.expires_at <= new Date()
+      || !asset || asset.status === "deleted") {
+      await tx.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        error: "MEDIA_ASSET_DELETED",
+        completed_at: new Date(),
+        updated_at: new Date(),
+      }).where(and(
+        eq(mediaProcessingJobsTable.id, jobId),
+        eq(mediaProcessingJobsTable.status, "processing"),
+        eq(mediaProcessingJobsTable.attempts, attempt),
+      ));
+      return false;
+    }
+    await tx.update(communityStoryMomentCompositionsTable).set({
+      status: "processing",
+      failure_code: null,
+      updated_at: new Date(),
+    }).where(and(
+      eq(communityStoryMomentCompositionsTable.story_id, storyId),
+      ne(communityStoryMomentCompositionsTable.status, "ready"),
+    ));
+    await tx.update(mediaAssetsTable).set({
+      status: "processing",
+      failure_reason: null,
+      updated_at: new Date(),
+    }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+    return true;
+  });
+}
+
+async function completeMomentCompositionAttempt(
+  storyId: number,
+  mediaAssetId: number,
+  jobId: number,
+  attempt: number,
+  outputKey: string,
+  outputDurationMs: number,
+  outputByteSize: number,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    // This follows Story deletion's Story-then-asset lock order. Deletion
+    // checks for a processing job while holding the Story lock.
+    const [story] = await tx.select({
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at,
+    }).from(communityStoriesTable)
+      .where(eq(communityStoriesTable.id, storyId))
+      .limit(1)
+      .for("share");
+    const [asset] = await tx.select({ status: mediaAssetsTable.status })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1)
+      .for("update");
+    if (!story || story.status !== "published" || story.expires_at <= new Date()
+      || !asset || asset.status === "deleted") {
+      await tx.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        error: "MEDIA_ASSET_DELETED",
+        completed_at: new Date(),
+        updated_at: new Date(),
+      }).where(and(
+        eq(mediaProcessingJobsTable.id, jobId),
+        eq(mediaProcessingJobsTable.status, "processing"),
+        eq(mediaProcessingJobsTable.attempts, attempt),
+      ));
+      return false;
+    }
+    const [completedJob] = await tx.update(mediaProcessingJobsTable).set({
+      status: "completed",
+      error: null,
+      completed_at: new Date(),
+      updated_at: new Date(),
+    }).where(and(
+      eq(mediaProcessingJobsTable.id, jobId),
+      eq(mediaProcessingJobsTable.status, "processing"),
+      eq(mediaProcessingJobsTable.attempts, attempt),
+    )).returning({ id: mediaProcessingJobsTable.id });
+    if (!completedJob) return false;
+    await tx.update(mediaAssetsTable).set({
+      variant_key: outputKey,
+      status: "ready",
+      failure_reason: null,
+      duration_ms: outputDurationMs,
+      width: 1080,
+      height: 1920,
+      byte_size: outputByteSize,
+      updated_at: new Date(),
+    }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+    await tx.update(communityStoryMomentCompositionsTable).set({
+      status: "ready",
+      failure_code: null,
+      updated_at: new Date(),
+    }).where(and(
+      eq(communityStoryMomentCompositionsTable.story_id, storyId),
+      ne(communityStoryMomentCompositionsTable.status, "ready"),
+    ));
+    return true;
+  });
+}
+
+async function readMomentCompositionPromotionState(
+  storyId: number,
+  mediaAssetId: number,
+  jobId: number,
+): Promise<{
+  job_status: string;
+  job_attempt: number;
+  asset_status: string;
+  variant_key: string | null;
+  composition_status: string;
+} | null> {
+  return db.transaction(async (tx) => {
+    const [story] = await tx.select({ id: communityStoriesTable.id })
+      .from(communityStoriesTable)
+      .where(eq(communityStoriesTable.id, storyId))
+      .limit(1)
+      .for("share");
+    if (!story) return null;
+    const [asset] = await tx.select({
+      status: mediaAssetsTable.status,
+      variant_key: mediaAssetsTable.variant_key,
+    }).from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1)
+      .for("update");
+    const [job] = await tx.select({
+      status: mediaProcessingJobsTable.status,
+      attempts: mediaProcessingJobsTable.attempts,
+    }).from(mediaProcessingJobsTable)
+      .where(eq(mediaProcessingJobsTable.id, jobId))
+      .limit(1)
+      .for("update");
+    const [composition] = await tx.select({
+      status: communityStoryMomentCompositionsTable.status,
+    }).from(communityStoryMomentCompositionsTable)
+      .where(eq(communityStoryMomentCompositionsTable.derived_media_asset_id, mediaAssetId))
+      .limit(1)
+      .for("update");
+    if (!asset || !job || !composition) return null;
+    return {
+      job_status: job.status,
+      job_attempt: job.attempts,
+      asset_status: asset.status,
+      variant_key: asset.variant_key,
+      composition_status: composition.status,
+    };
+  });
+}
+
+async function failMomentCompositionAttempt(
+  storyId: number | undefined,
+  mediaAssetId: number,
+  jobId: number,
+  attempt: number,
+  failure: string,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    // Preserve the Story -> asset lock order used by deletion and promotion.
+    if (storyId !== undefined) {
+      await tx.select({ id: communityStoriesTable.id }).from(communityStoriesTable)
+        .where(eq(communityStoriesTable.id, storyId))
+        .limit(1)
+        .for("share");
+    }
+    const [asset] = await tx.select({ status: mediaAssetsTable.status })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1)
+      .for("update");
+    const [failedJob] = await tx.update(mediaProcessingJobsTable).set({
+      status: "failed",
+      error: failure,
+      updated_at: new Date(),
+    }).where(and(
+      eq(mediaProcessingJobsTable.id, jobId),
+      eq(mediaProcessingJobsTable.status, "processing"),
+      eq(mediaProcessingJobsTable.attempts, attempt),
+    )).returning({ id: mediaProcessingJobsTable.id });
+    if (!failedJob) return false;
+    if (asset && asset.status !== "deleted") {
+      await tx.update(mediaAssetsTable).set({
+        status: "failed",
+        variant_key: null,
+        failure_reason: failure,
+        updated_at: new Date(),
+      }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
+    }
+    await tx.update(communityStoryMomentCompositionsTable).set({
+      status: "failed",
+      failure_code: failure,
+      updated_at: new Date(),
+    }).where(eq(communityStoryMomentCompositionsTable.derived_media_asset_id, mediaAssetId));
+    return true;
   });
 }
 
@@ -144,37 +469,301 @@ async function completeClaimedJob(
   });
 }
 
-async function cancelClaimedJob(jobId: number): Promise<void> {
+async function cancelClaimedJob(jobId: number, attempt?: number): Promise<void> {
   await db.update(mediaProcessingJobsTable).set({
     status: "cancelled",
     error: "MEDIA_ASSET_DELETED",
     completed_at: new Date(),
     updated_at: new Date(),
-  }).where(eq(mediaProcessingJobsTable.id, jobId));
+  }).where(and(
+    eq(mediaProcessingJobsTable.id, jobId),
+    attempt === undefined ? undefined : eq(mediaProcessingJobsTable.status, "processing"),
+    attempt === undefined ? undefined : eq(mediaProcessingJobsTable.attempts, attempt),
+  ));
+}
+
+type ProbedStreams = { codec_type?: string; width?: number; height?: number };
+async function probeCompositionFile(filePath: string): Promise<{ durationMs: number; streams: ProbedStreams[] }> {
+  const result = await execFileAsync(mediaToolPaths.ffprobe, [
+    "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", filePath,
+  ], { timeout: 10_000, maxBuffer: 256 * 1024 });
+  const parsed = JSON.parse(result.stdout) as {
+    format?: { duration?: string };
+    streams?: ProbedStreams[];
+  };
+  const seconds = Number(parsed.format?.duration);
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("MEDIA_COMPOSITION_INVALID");
+  return { durationMs: Math.round(seconds * 1000), streams: parsed.streams ?? [] };
+}
+
+async function processMomentComposition(mediaAssetId: number, jobId: number, attempt: number): Promise<void> {
+  let tempDir: string | undefined;
+  let generatedKey: string | undefined;
+  let compositionStoryId: number | undefined;
+  try {
+    const [composition] = await db.select({
+    story_id: communityStoryMomentCompositionsTable.story_id,
+    source_ids: communityStoryMomentCompositionsTable.source_media_asset_ids,
+    status: communityStoryMomentCompositionsTable.status,
+    author_user_id: communityStoriesTable.author_user_id,
+    hub_id: communityStoriesTable.hub_id,
+    audience: communityStoriesTable.audience,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
+    story_status: communityStoriesTable.status,
+    expires_at: communityStoriesTable.expires_at,
+    owner_user_id: mediaAssetsTable.owner_user_id,
+    }).from(communityStoryMomentCompositionsTable)
+      .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMomentCompositionsTable.story_id))
+      .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMomentCompositionsTable.derived_media_asset_id))
+      .where(eq(communityStoryMomentCompositionsTable.derived_media_asset_id, mediaAssetId))
+      .limit(1);
+    if (!composition) {
+      await db.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        error: "MEDIA_COMPOSITION_NOT_FOUND",
+        completed_at: new Date(),
+        updated_at: new Date(),
+      }).where(and(
+        eq(mediaProcessingJobsTable.id, jobId),
+        eq(mediaProcessingJobsTable.status, "processing"),
+        eq(mediaProcessingJobsTable.attempts, attempt),
+      ));
+      return;
+    }
+    compositionStoryId = composition.story_id;
+    if (!(await beginMomentCompositionAttempt(composition.story_id, mediaAssetId, jobId, attempt))) return;
+    if (composition.story_status !== "published" || composition.expires_at <= new Date()
+      || composition.exchange_listing_id !== null || composition.owner_user_id !== composition.author_user_id
+      || !Array.isArray(composition.source_ids) || composition.source_ids.length < 2
+      || composition.source_ids.length > 6
+      || composition.source_ids.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+      throw new Error("MEDIA_COMPOSITION_INVALID");
+    }
+    const sourceIds = composition.source_ids as number[];
+    const sources = await db.select({
+      id: mediaAssetsTable.id,
+      owner_user_id: mediaAssetsTable.owner_user_id,
+      context_kind: mediaAssetsTable.context_kind,
+      context_id: mediaAssetsTable.context_id,
+      media_type: mediaAssetsTable.media_type,
+      mime_type: mediaAssetsTable.mime_type,
+      original_key: mediaAssetsTable.original_key,
+      byte_size: mediaAssetsTable.byte_size,
+      status: mediaAssetsTable.status,
+    }).from(mediaAssetsTable).where(inArray(mediaAssetsTable.id, sourceIds));
+    const attached = await db.select({ media_asset_id: communityStoryMediaTable.media_asset_id })
+      .from(communityStoryMediaTable)
+      .where(and(
+        eq(communityStoryMediaTable.story_id, composition.story_id),
+        inArray(communityStoryMediaTable.media_asset_id, sourceIds),
+      ));
+    if (sources.length !== sourceIds.length || attached.length !== sourceIds.length
+      || sources.some((source) => source.owner_user_id !== composition.owner_user_id
+        || !isPublishedStoryMediaContext(source.context_kind, source.context_id, composition.story_id)
+        || source.media_type !== "video" || !source.mime_type.startsWith("video/")
+        || source.status !== "ready")) {
+      throw new Error("MEDIA_COMPOSITION_SOURCE_INVALID");
+    }
+
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-moment-compose-"));
+    const probedDurations: number[] = [];
+    const probedInputs: Array<{ inputPath: string; durationMs: number; hasAudio: boolean }> = [];
+    for (const [index, sourceId] of sourceIds.entries()) {
+      const source = sources.find((item) => item.id === sourceId)!;
+      if (!isAllowedMediaSize(source.byte_size)) throw new Error("MEDIA_SIZE_INVALID");
+      const info = await getAssetInfo(source.original_key);
+      if (!info || info.contentLength !== source.byte_size || !isAllowedMediaSize(info.contentLength)) {
+        throw new Error("MEDIA_SIZE_INVALID");
+      }
+      const buffer = await getAssetBuffer(source.original_key, MAX_MEDIA_BYTES);
+      if (buffer.length !== source.byte_size || !isAllowedMediaSize(buffer.length)) throw new Error("MEDIA_SIZE_INVALID");
+      await validateMediaBuffer(buffer, "video", source.mime_type);
+      const inputPath = path.join(tempDir, `source-${index + 1}`);
+      await writeFile(inputPath, buffer);
+      const probed = await probeCompositionFile(inputPath);
+      if (!probed.streams.some((stream) => stream.codec_type === "video")) {
+        throw new Error("MEDIA_COMPOSITION_SOURCE_INVALID");
+      }
+      probedDurations.push(probed.durationMs);
+      if (probed.durationMs > 60_000
+        || probedDurations.reduce((total, duration) => total + duration, 0) > 60_000) {
+        throw new Error("MEDIA_COMPOSITION_DURATION_INVALID");
+      }
+      probedInputs.push({
+        inputPath,
+        durationMs: probed.durationMs,
+        hasAudio: probed.streams.some((stream) => stream.codec_type === "audio"),
+      });
+    }
+    if (!withinMomentDurationLimit(probedDurations)) throw new Error("MEDIA_COMPOSITION_DURATION_INVALID");
+
+    const normalizedPaths: string[] = [];
+    for (const [index, input] of probedInputs.entries()) {
+      const normalizedPath = path.join(tempDir, `normalized-${index + 1}.mp4`);
+      await runFfmpeg(momentClipNormalizeArgs(
+        input.inputPath,
+        normalizedPath,
+        input.durationMs,
+        input.hasAudio,
+      ));
+      normalizedPaths.push(normalizedPath);
+    }
+
+    const concatFile = path.join(tempDir, "clips.txt");
+    await writeFile(concatFile, normalizedPaths.map((file) => `file ${file}`).join("\n") + "\n");
+    const outputPath = path.join(tempDir, "moment.mp4");
+    await runFfmpeg(momentConcatArgs(concatFile, outputPath, normalizedPaths.length));
+    const outputBuffer = await readBoundedOutput(outputPath);
+    await validateMediaBuffer(outputBuffer, "video", "video/mp4");
+    const outputProbe = await probeCompositionFile(outputPath);
+    if (outputProbe.durationMs > 61_000
+      || !outputProbe.streams.some((stream) => stream.codec_type === "video")
+      || !outputProbe.streams.some((stream) => stream.codec_type === "audio")) {
+      throw new Error("MEDIA_COMPOSITION_OUTPUT_INVALID");
+    }
+    for (const stream of outputProbe.streams) {
+      if (stream.codec_type === "video"
+        && (!Number.isSafeInteger(stream.width) || !Number.isSafeInteger(stream.height)
+          || stream.width! > 1920 || stream.height! > 1920)) {
+        throw new Error("MEDIA_COMPOSITION_OUTPUT_INVALID");
+      }
+    }
+    generatedKey = momentComposeAttemptOutputKey(mediaAssetId, attempt);
+    if (!(await stageMomentCompositionOutput(
+      composition.story_id,
+      mediaAssetId,
+      jobId,
+      attempt,
+      generatedKey,
+      outputBuffer,
+    ))) {
+      throw new Error("MEDIA_ASSET_DELETED");
+    }
+    const completed = await completeMomentCompositionAttempt(
+      composition.story_id,
+      mediaAssetId,
+      jobId,
+      attempt,
+      generatedKey,
+      outputProbe.durationMs,
+      outputBuffer.length,
+    );
+    if (!completed) {
+      await deleteMomentAttemptOutput(mediaAssetId, generatedKey);
+      generatedKey = undefined;
+      return;
+    }
+    // The attempt-specific object is now the live variant and must remain stored.
+    generatedKey = undefined;
+    logger.info({ mediaAssetId }, "moment-composition: composition completed");
+  } catch (error) {
+    if (generatedKey) {
+      const reconciliation = await reconcileMomentCompositionPromotion(
+        generatedKey,
+        attempt,
+        () => compositionStoryId === undefined
+          ? Promise.resolve(null)
+          : readMomentCompositionPromotionState(compositionStoryId, mediaAssetId, jobId),
+        (key) => deleteMomentAttemptOutput(mediaAssetId, key),
+      );
+      if (reconciliation === "promoted") {
+        generatedKey = undefined;
+        logger.info({ mediaAssetId, attempt }, "moment-composition: promotion acknowledgment recovered");
+        return;
+      }
+      if (reconciliation === "unknown") {
+        // Do not remove an output that may already be the committed live variant.
+        // Its durable cleanup ledger entry lets tombstone/retention cleanup retry.
+        logger.error({ mediaAssetId, attempt }, "moment-composition: promotion state ambiguous; retaining attempt output");
+      }
+      generatedKey = undefined;
+    }
+    const requestId = randomUUID();
+    const message = error instanceof Error && /^MEDIA_[A-Z_]+$/.test(error.message)
+      ? error.message
+      : "MEDIA_COMPOSITION_FAILED";
+    await failMomentCompositionAttempt(
+      compositionStoryId,
+      mediaAssetId,
+      jobId,
+      attempt,
+      `${message};request_id=${requestId}`,
+    );
+    logger.error({ requestId, mediaAssetId, failureCode: message }, "moment-composition: job failed");
+    throw new Error(`${message}; request_id=${requestId}`);
+  } finally {
+    if (tempDir) await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function claimMomentCompositionJob(mediaAssetId: number) {
+  const [composition] = await db.select({
+    story_id: communityStoryMomentCompositionsTable.story_id,
+  }).from(communityStoryMomentCompositionsTable)
+    .where(eq(communityStoryMomentCompositionsTable.derived_media_asset_id, mediaAssetId))
+    .limit(1);
+  if (!composition) return undefined;
+  return db.transaction(async (tx) => {
+    const [story] = await tx.select({
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at,
+    }).from(communityStoriesTable)
+      .where(eq(communityStoriesTable.id, composition.story_id))
+      .limit(1)
+      .for("share");
+    if (!story || story.status !== "published" || story.expires_at <= new Date()) return undefined;
+    const [asset] = await tx.select({ status: mediaAssetsTable.status })
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, mediaAssetId))
+      .limit(1)
+      .for("update");
+    if (!asset || asset.status === "deleted") return undefined;
+    const [claimed] = await tx.update(mediaProcessingJobsTable)
+      .set({
+        status: "processing",
+        attempts: sql`${mediaProcessingJobsTable.attempts} + 1`,
+        started_at: new Date(),
+        updated_at: new Date(),
+      })
+      .where(and(
+        eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId),
+        eq(mediaProcessingJobsTable.job_type, "moment_compose"),
+        inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
+      ))
+      .returning();
+    return claimed;
+  });
 }
 
 async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
   const { mediaAssetId, jobType } = job.data;
   assertSupportedMediaJob(jobType);
+  if (jobType === "moment_compose" && !isMediaPlatformV21Enabled()) return;
 
-  const [claimed] = await db.update(mediaProcessingJobsTable)
-    .set({
-      status: "processing",
-      attempts: job.attemptsMade + 1,
-      started_at: new Date(),
-      updated_at: new Date(),
-    })
-    .where(and(
-      eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId),
-      eq(mediaProcessingJobsTable.job_type, jobType),
-      inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
-    ))
-    .returning();
+  const [claimed] = jobType === "moment_compose"
+    ? [await claimMomentCompositionJob(mediaAssetId)].filter(Boolean)
+    : await db.update(mediaProcessingJobsTable)
+      .set({
+        status: "processing",
+        attempts: job.attemptsMade + 1,
+        started_at: new Date(),
+        updated_at: new Date(),
+      })
+      .where(and(
+        eq(mediaProcessingJobsTable.media_asset_id, mediaAssetId),
+        eq(mediaProcessingJobsTable.job_type, jobType),
+        inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
+      ))
+      .returning();
   if (!claimed) return;
 
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
   if (!asset || asset.status === "deleted") {
-    await cancelClaimedJob(claimed.id);
+    await cancelClaimedJob(claimed.id, jobType === "moment_compose" ? claimed.attempts : undefined);
+    return;
+  }
+  if (jobType === "moment_compose") {
+    await processMomentComposition(mediaAssetId, claimed.id, claimed.attempts);
     return;
   }
   const preservesReadyVideo = (jobType === "thumbnail" || jobType === "audio_mix")

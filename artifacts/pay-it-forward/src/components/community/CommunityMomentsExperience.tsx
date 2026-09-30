@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -20,6 +20,7 @@ import { ReportModal } from "@/components/ReportModal";
 import { CommunityStoryRail } from "./CommunityStoryRail";
 import { CreatorInsightsPanel } from "./CreatorInsightsPanel";
 import { StoryShareSheet } from "./StoryShareSheet";
+import { validateMomentCompositionPlaybackUrl } from "./story-studio-publish";
 import { StoryElementLayer, storyEffectFilter, type StoryElement } from "./StoryElementLayer";
 import { KeepForMyFamilyDialog } from "@/components/family/KeepForMyFamilyDialog";
 
@@ -33,6 +34,7 @@ type MomentMedia = {
   duration_ms?: number | null;
   alt_text?: string | null;
   captions_vtt?: string | null;
+  isMomentReel?: boolean;
 };
 
 type MomentElement = Omit<StoryElement, "id"> & { id: string | number };
@@ -48,6 +50,11 @@ type MomentSpark = {
   created_at: string | null;
   author: { id: number; name: string; avatar_url: string | null };
   media: MomentMedia[];
+  moment_video?: {
+    status: string;
+    duration_ms?: number | null;
+    playback_grant_url: string;
+  } | null;
   elements?: MomentElement[];
   composition_manifest?: {
     version?: number;
@@ -134,6 +141,7 @@ export function CommunityMomentsExperience({
   const [discoveryFilters, setDiscoveryFilters] = useState<MomentDiscoveryFilters>({ search: "", tag: "", authorId: "" });
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [momentVideoStates, setMomentVideoStates] = useState<Record<number, { status: string; failureCode: string | null; playbackGrantUrl: string }>>({});
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [resolvedMediaKey, setResolvedMediaKey] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState("");
@@ -204,7 +212,25 @@ export function CommunityMomentsExperience({
   const activeSpark = sparks[activeIndex] ?? null;
   const reportSpark = reportSparkId === null ? null : sparks.find((spark) => spark.id === reportSparkId) ?? null;
   const commentsSpark = commentsOpenId == null ? null : sparks.find((spark) => spark.id === commentsOpenId) ?? null;
-  const activeMedia = activeSpark?.media[Math.min(activeMediaIndex, Math.max(0, activeSpark.media.length - 1))] ?? null;
+  const activeMomentVideoState = useMemo(() => activeSpark?.moment_video
+    ? momentVideoStates[activeSpark.id] ?? {
+      status: activeSpark.moment_video.status,
+      failureCode: null,
+      playbackGrantUrl: activeSpark.moment_video.playback_grant_url,
+    }
+    : null, [activeSpark, momentVideoStates]);
+  const activeMedia = useMemo<MomentMedia | null>(() => activeSpark?.moment_video && activeMomentVideoState?.status === "ready"
+    ? {
+      id: activeSpark.id,
+      media_type: "video",
+      mime_type: "video/mp4",
+      media_url: activeMomentVideoState?.playbackGrantUrl ?? activeSpark.moment_video.playback_grant_url,
+      duration_ms: activeSpark.moment_video.duration_ms ?? null,
+      alt_text: `Stitched camera reel with ${activeSpark.media.length} original clips. ${activeSpark.media.map((item, index) => `Clip ${index + 1}: ${item.alt_text?.trim() || "No alternative text supplied."}`).join(" ")}`,
+      isMomentReel: true,
+    }
+    : activeSpark?.media[Math.min(activeMediaIndex, Math.max(0, activeSpark.media.length - 1))] ?? null,
+  [activeMediaIndex, activeMomentVideoState, activeSpark]);
   const currentMediaUrl = resolvedMediaKey === `${activeSpark?.id}-${activeMedia?.id}` ? mediaUrl : null;
   const playbackAllowed = feedInViewport && documentVisible;
   const activeElements = activeSpark?.composition_manifest?.elements?.length
@@ -338,6 +364,7 @@ export function CommunityMomentsExperience({
     initialControllerRef.current = controller;
     moreControllerRef.current?.abort();
     setSparks([]);
+    setMomentVideoStates({});
     setCursor(null);
     setActiveIndex(0);
     setLoading(true);
@@ -353,6 +380,11 @@ export function CommunityMomentsExperience({
         if (controller.signal.aborted || generation !== feedGenerationRef.current) return;
         setViewerId(page.viewerId);
         setSparks(page.stories);
+        setMomentVideoStates(Object.fromEntries(page.stories.flatMap((spark) => spark.moment_video ? [[spark.id, {
+          status: spark.moment_video.status,
+          failureCode: null,
+          playbackGrantUrl: spark.moment_video.playback_grant_url,
+        }]] : [])));
         setCursor(page.cursor);
       })
       .catch((reason: unknown) => {
@@ -380,6 +412,17 @@ export function CommunityMomentsExperience({
       setSparks((current) => {
         const existing = new Set(current.map((spark) => spark.id));
         return [...current, ...page.stories.filter((spark) => !existing.has(spark.id))];
+      });
+      setMomentVideoStates((current) => {
+        const next = { ...current };
+        page.stories.forEach((spark) => {
+          if (spark.moment_video && !next[spark.id]) next[spark.id] = {
+            status: spark.moment_video.status,
+            failureCode: null,
+            playbackGrantUrl: spark.moment_video.playback_grant_url,
+          };
+        });
+        return next;
       });
       setCursor(page.cursor);
     } catch (reason: unknown) {
@@ -576,8 +619,27 @@ export function CommunityMomentsExperience({
     setMediaUrl(null);
     setResolvedMediaKey(null);
     setMediaError("");
+    if (activeMedia.isMomentReel && activeMomentVideoState?.status !== "ready") return () => controller.abort();
     const resolveMedia = async () => {
       const reference = new URL(activeMedia.media_url, window.location.origin);
+      if (activeMedia.isMomentReel) {
+        const expectedGrant = `/api/community/stories/${activeSpark?.id}/moment-composition/playback-grant`;
+        if (reference.origin !== window.location.origin || reference.pathname !== expectedGrant
+          || reference.search || reference.hash || reference.username || reference.password) {
+          throw new Error("This Spark does not have a valid camera reel playback grant.");
+        }
+        const grantResponse = await fetch(reference.pathname, {
+          method: "POST",
+          headers: authHeaders(),
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        const grant = await grantResponse.json().catch(() => ({})) as { playback_url?: string; error?: string };
+        if (!grantResponse.ok || typeof grant.playback_url !== "string") {
+          throw new Error(grant.error || "Secure camera reel playback could not be opened.");
+        }
+        return validateMomentCompositionPlaybackUrl(grant.playback_url, activeSpark.id, window.location.origin);
+      }
       const match = reference.pathname.match(/^\/api\/community\/stories\/media\/(\d+)\/?$/);
       const mediaId = Number(match?.[1]);
       if (reference.origin !== window.location.origin || reference.search || reference.hash
@@ -636,7 +698,7 @@ export function CommunityMomentsExperience({
         video.load();
       }
     };
-  }, [activeMedia, activeSpark?.id, flushCurrentWatchContribution, mediaRetry, playbackAllowed]);
+  }, [activeMedia, activeMomentVideoState?.status, activeSpark?.id, flushCurrentWatchContribution, mediaRetry, playbackAllowed]);
 
   useEffect(() => {
     const cues = activeMedia?.captions_vtt?.trim();
@@ -648,6 +710,68 @@ export function CommunityMomentsExperience({
     setCaptionsTrackUrl(trackUrl);
     return () => URL.revokeObjectURL(trackUrl);
   }, [activeMedia?.captions_vtt]);
+
+  useEffect(() => {
+    const spark = activeSpark;
+    const state = activeMomentVideoState;
+    if (!spark?.moment_video || !playbackAllowed || !state || state.status === "ready") return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const controller = new AbortController();
+    if (state.status === "failed") {
+      void fetch(`/api/community/stories/${spark.id}/moment-composition`, {
+        headers: authHeaders(),
+        credentials: "same-origin",
+        signal: controller.signal,
+      }).then((response) => response.json().catch(() => ({}))).then((result: unknown) => {
+        if (!active || !result || typeof result !== "object") return;
+        const composition = (result as { composition?: { status?: string; failure_code?: string | null } }).composition;
+        if (composition?.status === "failed") setMomentVideoStates((current) => ({
+          ...current,
+          [spark.id]: { ...current[spark.id], status: "failed", failureCode: composition.failure_code ?? null },
+        }));
+      }).catch(() => {});
+      return () => { active = false; controller.abort(); };
+    }
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/community/stories/${spark.id}/moment-composition`, {
+          headers: authHeaders(),
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        const result = await response.json().catch(() => ({})) as {
+          error?: string;
+          composition?: { status?: string; failure_code?: string | null; duration_ms?: number | null; playback_grant_url?: string };
+        };
+        const composition = result.composition;
+        if (!response.ok || !composition || typeof composition.status !== "string"
+          || composition.playback_grant_url !== `/api/community/stories/${spark.id}/moment-composition/playback-grant`) {
+          throw new Error(result.error || "Camera reel status could not be confirmed.");
+        }
+        if (!active) return;
+        setMomentVideoStates((current) => ({
+          ...current,
+          [spark.id]: {
+            status: composition.status!,
+            failureCode: composition.failure_code ?? null,
+            playbackGrantUrl: composition.playback_grant_url!,
+          },
+        }));
+        if (composition.status !== "ready" && composition.status !== "failed") {
+          timer = setTimeout(() => { void refresh(); }, 2000);
+        }
+      } catch {
+        if (active && !controller.signal.aborted) timer = setTimeout(() => { void refresh(); }, 3000);
+      }
+    };
+    timer = setTimeout(() => { void refresh(); }, 1200);
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activeMomentVideoState, activeSpark, playbackAllowed]);
 
   useEffect(() => {
     if (openSparkId == null || loading) return;
@@ -913,7 +1037,19 @@ export function CommunityMomentsExperience({
               {sparks.map((spark, index) => {
                 const current = index === activeIndex;
                 const itemIndex = current ? Math.min(activeMediaIndex, Math.max(0, spark.media.length - 1)) : 0;
-                const media = spark.media[itemIndex];
+                const showReel = Boolean(spark.moment_video
+                  && (momentVideoStates[spark.id]?.status ?? spark.moment_video.status) === "ready");
+                const media: MomentMedia | undefined = showReel && spark.moment_video
+                  ? {
+                    id: spark.id,
+                    media_type: "video",
+                    mime_type: "video/mp4",
+                    media_url: momentVideoStates[spark.id]?.playbackGrantUrl ?? spark.moment_video.playback_grant_url,
+                    duration_ms: spark.moment_video.duration_ms ?? null,
+                    alt_text: `Stitched camera reel with ${spark.media.length} original clips. ${spark.media.map((item, sourceIndex) => `Clip ${sourceIndex + 1}: ${item.alt_text?.trim() || "No alternative text supplied."}`).join(" ")}`,
+                    isMomentReel: true,
+                  }
+                  : spark.media[itemIndex];
                 return (
                   <article
                     key={spark.id}
@@ -938,6 +1074,7 @@ export function CommunityMomentsExperience({
                         className="absolute inset-0 h-full w-full object-contain"
                         style={{ filter: mediaFilter }}
                         aria-label={media.alt_text?.trim() || spark.caption || `Community Spark video shared by ${spark.author.name}`}
+                        aria-describedby={spark.moment_video ? `moment-reel-sources-${spark.id}` : undefined}
                         onPlay={(event) => startWatchPlayback(spark.id, media.id, spark.author_user_id, event.currentTarget.currentTime)}
                         onTimeUpdate={(event) => accumulateWatchTime(spark.id, media.id, event.currentTarget)}
                         onSeeking={() => {
@@ -971,6 +1108,14 @@ export function CommunityMomentsExperience({
                         {captionsTrackUrl && <track kind="captions" src={captionsTrackUrl} srcLang="en" label="Creator captions" default />}
                       </video>
                     )}
+                    {current && spark.moment_video && (
+                      <span className="sr-only" id={`moment-reel-sources-${spark.id}`}>
+                        Original clip descriptions and captions: {spark.media.map((source, sourceIndex) => {
+                          const sourceCaptions = source.captions_vtt?.replace(/^WEBVTT[^\n]*\n?/m, "").replace(/^\d+\s*$/gm, "").replace(/^\d{2}:\d{2}:\d{2}\.\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}\.\d{3}.*$/gm, "").trim();
+                          return `Clip ${sourceIndex + 1}: ${source.alt_text?.trim() || "No alternative text supplied."}${sourceCaptions ? ` Original captions: ${sourceCaptions}` : ""}`;
+                        }).join(" ")}
+                      </span>
+                    )}
                     {current && playbackAllowed && currentMediaUrl && media?.media_type === "photo" && (
                       <img src={currentMediaUrl} alt={media.alt_text?.trim() || (spark.caption ? `Spark from ${spark.author.name}: ${spark.caption}` : `Spark shared by ${spark.author.name}`)} className="absolute inset-0 h-full w-full object-contain" style={{ filter: mediaFilter }} />
                     )}
@@ -985,6 +1130,15 @@ export function CommunityMomentsExperience({
                     {!media && (
                       <div className={`absolute inset-0 grid place-items-center ${backgroundColor ? "" : "bg-gradient-to-br from-indigo-950 via-slate-900 to-emerald-950"} p-8 text-center`} style={backgroundColor ? { backgroundColor } : undefined}>
                         <div className="max-w-md"><Play className="mx-auto h-10 w-10 text-white/70" aria-hidden="true" />{spark.caption && !hasCaptionOverlay(spark) && <p className="mt-4 text-xl font-semibold leading-relaxed sm:text-2xl">{spark.caption}</p>}</div>
+                      </div>
+                    )}
+                    {current && spark.moment_video && activeMomentVideoState?.status !== "ready" && (
+                      <div className="absolute inset-x-5 top-1/2 z-20 -translate-y-1/2 rounded-xl bg-black/85 p-4 text-center text-sm font-semibold text-white"
+                        role={activeMomentVideoState?.status === "failed" ? "alert" : "status"}
+                        data-testid={`status-moment-reel-${spark.id}`}>
+                        {activeMomentVideoState?.status === "failed"
+                          ? `Camera reel stitching failed${activeMomentVideoState.failureCode ? ` (${activeMomentVideoState.failureCode})` : ""}. The original clips remain attached to this Moment; the author can retry stitching from the Studio.`
+                          : "Camera reel is being stitched. Its original clips remain attached to this Moment."}
                       </div>
                     )}
                     {current && visualElements.length > 0 && <StoryElementLayer elements={visualElements} />}
@@ -1005,7 +1159,7 @@ export function CommunityMomentsExperience({
                         {videoMuted ? "Turn sound on" : "Mute sound"}
                       </button>
                     )}
-                    {current && spark.media.length > 1 && (
+                    {current && !showReel && spark.media.length > 1 && (
                       <div className="absolute inset-x-4 top-1/2 z-20 flex -translate-y-1/2 items-center justify-between" aria-label="Moment attachments">
                         <button type="button" onClick={() => setActiveMediaIndex((value) => Math.max(0, value - 1))} disabled={activeMediaIndex <= 0} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-black/70 text-white shadow-lg disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-white" aria-label="Show previous attachment" data-testid={`button-moment-media-previous-${spark.id}`}>
                           <ChevronLeft className="h-6 w-6" aria-hidden="true" />

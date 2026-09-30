@@ -44,6 +44,10 @@ describe("V21 media asset deletion safety", () => {
     const direct = route.slice(route.indexOf("async function streamMediaAsset"));
     expect(direct).toMatch(/asset\.context_kind === "exchange_spark" && asset\.media_type === "video"/);
     expect(direct).toMatch(/verifyExchangeSparkPlaybackGrant/);
+    expect(direct).toMatch(/communityStoryMomentCompositionsTable\.derived_media_asset_id, assetId/);
+    expect(direct).toMatch(/asset\.metadata\?\.derived_kind === "moment_camera_clip_reel"/);
+    expect(direct.indexOf("if (composition || asset.metadata")).toBeLessThan(direct.indexOf("streamAssetRange("));
+    expect(route).not.toMatch(/router\.head\(["']\/media-assets\/:id/);
   });
 
   it("hides the asset before strict, retryable object cleanup", async () => {
@@ -155,9 +159,10 @@ describe("V21 media asset deletion safety", () => {
 
   it("cancels a claimed job when its asset is tombstoned", async () => {
     const worker = await fs.readFile(workerPath, "utf8");
-    expect(worker).toMatch(/async function cancelClaimedJob\(jobId: number\)/);
+    expect(worker).toMatch(/async function cancelClaimedJob\(jobId: number, attempt\?: number\)/);
     expect(worker).toMatch(/status: "cancelled"[\s\S]*error: "MEDIA_ASSET_DELETED"[\s\S]*completed_at: new Date\(\)/);
-    expect(worker).toMatch(/if \(!asset \|\| asset\.status === "deleted"\) \{\s*await cancelClaimedJob\(claimed\.id\)/);
+    expect(worker).toMatch(/eq\(mediaProcessingJobsTable\.id, jobId\)[\s\S]*attempt === undefined \? undefined : eq\(mediaProcessingJobsTable\.status, "processing"\)[\s\S]*attempt === undefined \? undefined : eq\(mediaProcessingJobsTable\.attempts, attempt\)/);
+    expect(worker).toMatch(/if \(!asset \|\| asset\.status === "deleted"\) \{\s*await cancelClaimedJob\(claimed\.id, jobType === "moment_compose" \? claimed\.attempts : undefined\)/);
     expect(worker).toMatch(/if \(!currentAsset \|\| currentAsset\.status === "deleted"\) \{\s*await cancelClaimedJob\(claimed\.id\)/);
   });
 

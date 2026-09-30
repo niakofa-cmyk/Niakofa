@@ -6,6 +6,14 @@ export type StoryMedia = {
   media_url: string;
   width?: number | null;
   height?: number | null;
+  alt_text?: string | null;
+  captions_vtt?: string | null;
+};
+
+export type MomentVideo = {
+  status: string;
+  duration_ms?: number | null;
+  playback_grant_url: string;
 };
 
 export type CommunityStory = {
@@ -20,6 +28,7 @@ export type CommunityStory = {
   expires_at: string | null;
   author: { id: number; name: string; avatar_url: string | null };
   media: StoryMedia[];
+  moment_video?: MomentVideo | null;
   elements: Array<{
     id: number;
     type: string;
@@ -32,7 +41,7 @@ export type CommunityStory = {
   }>;
 };
 
-export type StoryFrame = { story: CommunityStory; media: StoryMedia | null };
+export type StoryFrame = { story: CommunityStory; media: StoryMedia | null; isMomentReel?: boolean };
 export type StoryAuthor = {
   author_user_id: number;
   author: CommunityStory["author"];

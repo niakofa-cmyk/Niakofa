@@ -1,7 +1,8 @@
-import { Router, type Request, type Response } from "express";
-import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import express, { Router, type Request, type Response } from "express";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
   communityStoriesTable,
+  communityStoryMomentCompositionsTable,
   db,
   directConversationMembersTable,
   directMessageBlocksTable,
@@ -11,6 +12,8 @@ import {
   exchangeSparksTable,
   hubMembershipsTable,
   mediaAssetsTable,
+  mediaUploadChunksTable,
+  mediaUploadSessionsTable,
   requestsTable,
   usersTable,
 } from "@workspace/db";
@@ -20,7 +23,7 @@ import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset, streamAssetR
 import { buildMomentMusicRightsMetadata, isMediaPlatformV21Enabled, isMomentMusicAsset } from "../lib/media-platform";
 import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
 import { mediaProcessingQueue } from "../lib/queue";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
 import { logger } from "../lib/logger";
@@ -32,6 +35,13 @@ import {
   isDuplicateExchangeStoryVideoSession,
 } from "../lib/community-story-policy";
 import { mediaStorageKeys } from "../lib/media-cleanup";
+import {
+  chunkStorageKey,
+  cleanupFinalizedChunkObjects,
+  decideMediaChunk,
+  MEDIA_UPLOAD_CHUNK_SIZE,
+  MEDIA_UPLOAD_MAX_BYTES,
+} from "../lib/resumable-media-upload";
 
 const router = Router();
 const CONTEXT_KINDS = new Set([
@@ -521,6 +531,16 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
     asset = created;
   }
   if (!asset) return res.status(500).json({ error: "Media upload could not be initialized." });
+  try {
+    await db.insert(mediaUploadSessionsTable).values({
+      media_asset_id: asset.id,
+      chunk_size: MEDIA_UPLOAD_CHUNK_SIZE,
+      next_offset: 0,
+      finalized: false,
+    });
+  } catch {
+    return res.status(500).json({ error: "Resumable media upload could not be initialized." });
+  }
 
   return res.status(201).json({
     media_asset_id: asset.id,
@@ -530,9 +550,245 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
       headers: { "Content-Type": input.mimeType },
       expires_in_seconds: null,
     },
+    resumable: {
+      chunk_size: MEDIA_UPLOAD_CHUNK_SIZE,
+      status_url: `/api/media-assets/${asset.id}/upload-session`,
+      chunk_url: `/api/media-assets/${asset.id}/upload/chunks`,
+    },
     complete_url: `/api/media-assets/${asset.id}/complete`,
   });
 });
+
+router.get("/media-assets/:id/upload-session", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  if (!isMediaPlatformV21Enabled()) return disabled(res);
+  const assetId = positiveId(req.params.id);
+  if (!assetId) return res.status(400).json({ error: "Invalid media asset id." });
+  const [session] = await db.select({
+    owner_user_id: mediaAssetsTable.owner_user_id,
+    context_kind: mediaAssetsTable.context_kind,
+    context_id: mediaAssetsTable.context_id,
+    byte_size: mediaAssetsTable.byte_size,
+    status: mediaAssetsTable.status,
+    chunk_size: mediaUploadSessionsTable.chunk_size,
+    next_offset: mediaUploadSessionsTable.next_offset,
+    finalized: mediaUploadSessionsTable.finalized,
+  }).from(mediaUploadSessionsTable)
+    .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, mediaUploadSessionsTable.media_asset_id))
+    .where(and(
+      eq(mediaAssetsTable.id, assetId),
+      eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+    ))
+    .limit(1);
+  if (!session || session.status === "deleted"
+    || !(await canWriteContext(req.authenticatedUserId!, session.context_kind, session.context_id))) {
+    return res.status(404).json({ error: "Upload session not found." });
+  }
+  if (session.finalized) {
+    const cleanup = await cleanupFinalizedMediaChunks(assetId, req.authenticatedUserId!);
+    if (cleanup === "storage-failed") {
+      return res.status(503).json({ error: "Finalized upload cleanup is pending. Retry upload status.", error_code: "MEDIA_STORAGE_CLEANUP_INCOMPLETE" });
+    }
+  }
+  return res.json({
+    media_asset_id: assetId,
+    offset: session.next_offset,
+    total_bytes: session.byte_size,
+    chunk_size: session.chunk_size,
+    finalized: session.finalized,
+    status: session.status,
+  });
+});
+
+router.put(
+  "/media-assets/:id/upload/chunks",
+  requireAuth,
+  requireApproved,
+  generalApiLimiter,
+  express.raw({ type: "application/octet-stream", limit: `${MEDIA_UPLOAD_CHUNK_SIZE}b` }),
+  async (req, res) => {
+    if (!isMediaPlatformV21Enabled()) return disabled(res);
+    const assetId = positiveId(req.params.id);
+    if (!assetId || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: "A raw media chunk is required." });
+    const offset = Number(req.headers["upload-offset"]);
+    const digest = String(req.headers["x-chunk-sha256"] ?? "").trim().toLowerCase();
+    const chunkMime = String(req.headers["x-media-mime-type"] ?? "").trim().toLowerCase();
+    if (!Number.isSafeInteger(offset) || offset < 0 || !/^[0-9a-f]{64}$/.test(digest)) {
+      return res.status(400).json({ error: "A valid chunk offset and SHA-256 digest are required." });
+    }
+    const computedDigest = createHash("sha256").update(req.body).digest("hex");
+    if (computedDigest !== digest) {
+      return res.status(422).json({ error: "Chunk SHA-256 digest does not match its bytes.", error_code: "MEDIA_CHUNK_CHECKSUM_INVALID" });
+    }
+    if (req.headers["content-length"] !== undefined && Number(req.headers["content-length"]) !== req.body.length) {
+      return res.status(400).json({ error: "Chunk content length does not match its bytes." });
+    }
+
+    const objectKey = chunkStorageKey(assetId, offset, digest);
+    let result: { kind: string; offset?: number } | undefined;
+    try {
+      // Validate first without touching storage. Each phase rechecks under the
+      // asset/session locks because another same-offset request may win.
+      const initial = await db.transaction(async (tx) => {
+        const [asset] = await tx.select().from(mediaAssetsTable)
+          .where(and(
+            eq(mediaAssetsTable.id, assetId),
+            eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+          ))
+          .limit(1)
+          .for("update");
+        if (!asset || asset.status !== "pending"
+          || !(await canWriteContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
+          return { kind: "not-found" };
+        }
+        if (!isAllowedMediaSize(asset.byte_size) || asset.byte_size > MEDIA_UPLOAD_MAX_BYTES) return { kind: "too-large" };
+        if (chunkMime !== asset.mime_type.toLowerCase()) return { kind: "wrong-type" };
+        const [session] = await tx.select().from(mediaUploadSessionsTable)
+          .where(eq(mediaUploadSessionsTable.media_asset_id, assetId))
+          .limit(1)
+          .for("update");
+        if (!session) return { kind: "not-found" };
+        const priorChunks = await tx.select({
+          byte_offset: mediaUploadChunksTable.byte_offset,
+          byte_length: mediaUploadChunksTable.byte_length,
+          sha256: mediaUploadChunksTable.sha256,
+        }).from(mediaUploadChunksTable)
+          .where(eq(mediaUploadChunksTable.media_asset_id, assetId));
+        const decision = decideMediaChunk({
+          expectedBytes: asset.byte_size,
+          chunkSize: session.chunk_size,
+          nextOffset: session.next_offset,
+          offset,
+          chunkLength: req.body.length,
+          sha256: digest,
+          acceptedChunks: priorChunks,
+        });
+        if (decision.kind === "replay") return { kind: "stored", offset: session.next_offset };
+        if (decision.kind === "conflict") return { kind: "conflict", offset: session.next_offset };
+        if (decision.kind === "out-of-order") return { kind: "out-of-order", offset: session.next_offset };
+        if (session.finalized) return { kind: "conflict", offset: session.next_offset };
+        return { kind: "accept", offset: decision.nextOffset };
+      });
+      result = initial;
+
+      if (initial.kind === "accept") {
+        // Commit the cleanup ledger key BEFORE any provider write. A crash or
+        // transaction rollback after PUT therefore leaves a discoverable key
+        // for completion retry or tombstone cleanup.
+        const registered = await db.transaction(async (tx) => {
+          const [asset] = await tx.select().from(mediaAssetsTable)
+            .where(and(
+              eq(mediaAssetsTable.id, assetId),
+              eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+            ))
+            .limit(1)
+            .for("update");
+          if (!asset || asset.status !== "pending"
+            || !(await canWriteContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
+            return { kind: "not-found" };
+          }
+          const [session] = await tx.select().from(mediaUploadSessionsTable)
+            .where(eq(mediaUploadSessionsTable.media_asset_id, assetId))
+            .limit(1)
+            .for("update");
+          if (!session || session.finalized) return { kind: "not-found" };
+          const priorChunks = await tx.select({
+            byte_offset: mediaUploadChunksTable.byte_offset,
+            byte_length: mediaUploadChunksTable.byte_length,
+            sha256: mediaUploadChunksTable.sha256,
+          }).from(mediaUploadChunksTable)
+            .where(eq(mediaUploadChunksTable.media_asset_id, assetId));
+          const decision = decideMediaChunk({
+            expectedBytes: asset.byte_size,
+            chunkSize: session.chunk_size,
+            nextOffset: session.next_offset,
+            offset,
+            chunkLength: req.body.length,
+            sha256: digest,
+            acceptedChunks: priorChunks,
+          });
+          if (decision.kind === "replay") return { kind: "stored", offset: session.next_offset };
+          if (decision.kind === "conflict") return { kind: "conflict", offset: session.next_offset };
+          if (decision.kind === "out-of-order") return { kind: "out-of-order", offset: session.next_offset };
+          await tx.update(mediaAssetsTable).set({
+            cleanup_keys: sql`CASE
+              WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${objectKey})
+                THEN ${mediaAssetsTable.cleanup_keys}
+              ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${objectKey})
+            END`,
+            updated_at: new Date(),
+          }).where(eq(mediaAssetsTable.id, assetId));
+          return { kind: "registered", offset: decision.nextOffset };
+        });
+        result = registered;
+
+        if (registered.kind === "registered") {
+          // Keep the asset lock through the provider PUT and offset commit. A
+          // concurrent DELETE waits, then sees the already-durable cleanup key.
+          result = await db.transaction(async (tx) => {
+            const [asset] = await tx.select().from(mediaAssetsTable)
+              .where(and(
+                eq(mediaAssetsTable.id, assetId),
+                eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+              ))
+              .limit(1)
+              .for("update");
+            if (!asset || asset.status !== "pending"
+              || !(await canWriteContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
+              return { kind: "not-found" };
+            }
+            const [session] = await tx.select().from(mediaUploadSessionsTable)
+              .where(eq(mediaUploadSessionsTable.media_asset_id, assetId))
+              .limit(1)
+              .for("update");
+            if (!session || session.finalized) return { kind: "not-found" };
+            const priorChunks = await tx.select({
+              byte_offset: mediaUploadChunksTable.byte_offset,
+              byte_length: mediaUploadChunksTable.byte_length,
+              sha256: mediaUploadChunksTable.sha256,
+            }).from(mediaUploadChunksTable)
+              .where(eq(mediaUploadChunksTable.media_asset_id, assetId));
+            const decision = decideMediaChunk({
+              expectedBytes: asset.byte_size,
+              chunkSize: session.chunk_size,
+              nextOffset: session.next_offset,
+              offset,
+              chunkLength: req.body.length,
+              sha256: digest,
+              acceptedChunks: priorChunks,
+            });
+            if (decision.kind === "replay") return { kind: "stored", offset: session.next_offset };
+            if (decision.kind === "conflict") return { kind: "conflict", offset: session.next_offset };
+            if (decision.kind === "out-of-order") return { kind: "out-of-order", offset: session.next_offset };
+            await putAsset(objectKey, req.body, "application/octet-stream");
+            await tx.insert(mediaUploadChunksTable).values({
+              media_asset_id: assetId,
+              byte_offset: offset,
+              byte_length: req.body.length,
+              sha256: digest,
+              object_key: objectKey,
+            });
+            await tx.update(mediaUploadSessionsTable).set({
+              next_offset: decision.nextOffset,
+              updated_at: new Date(),
+            }).where(eq(mediaUploadSessionsTable.media_asset_id, assetId));
+            return { kind: "stored", offset: decision.nextOffset };
+          });
+        }
+      }
+    } catch {
+      // The durable cleanup ledger was committed before the provider write.
+      return res.status(503).json({ error: "Media chunk could not be stored. Retry the chunk.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
+    }
+
+    if (result?.kind === "not-found") return res.status(404).json({ error: "Upload session not found." });
+    if (result?.kind === "too-large") return res.status(413).json({ error: "Media upload exceeds the 64 MiB limit.", error_code: "MEDIA_SIZE_INVALID" });
+    if (result?.kind === "wrong-type") return res.status(415).json({ error: "Chunk MIME type does not match the declared media MIME type.", error_code: "MEDIA_TYPE_INVALID" });
+    if (result?.kind === "conflict") return res.status(409).json({ error: "Chunk conflicts with the accepted upload bytes.", upload_offset: result.offset });
+    if (result?.kind === "out-of-order") return res.status(409).json({ error: "Chunks must be uploaded in order.", upload_offset: result.offset });
+    res.setHeader("Upload-Offset", String(result?.offset ?? 0));
+    return res.status(204).send();
+  },
+);
 
 router.put("/media-assets/:id/upload", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   if (!isMediaPlatformV21Enabled()) return disabled(res);
@@ -550,6 +806,11 @@ router.put("/media-assets/:id/upload", requireAuth, requireApproved, generalApiL
     if (!(await canWriteContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
       return "not-found" as const;
     }
+    const [resumable] = await tx.select({ next_offset: mediaUploadSessionsTable.next_offset })
+      .from(mediaUploadSessionsTable)
+      .where(eq(mediaUploadSessionsTable.media_asset_id, assetId))
+      .limit(1);
+    if (resumable && resumable.next_offset > 0) return "wrong-size" as const;
     if (!isAllowedMediaSize(asset.byte_size) || req.body.length > MAX_MEDIA_BYTES) return "too-large" as const;
     if (req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !== asset.mime_type.toLowerCase()) {
       return "wrong-type" as const;
@@ -576,6 +837,112 @@ router.put("/media-assets/:id/upload", requireAuth, requireApproved, generalApiL
   return res.status(204).send();
 });
 
+async function assembleResumableMedia(assetId: number, ownerUserId: number):
+Promise<"stored" | "incomplete" | "not-found" | "storage-failed" | "invalid"> {
+  return db.transaction(async (tx) => {
+    const [asset] = await tx.select().from(mediaAssetsTable)
+      .where(and(eq(mediaAssetsTable.id, assetId), eq(mediaAssetsTable.owner_user_id, ownerUserId)))
+      .limit(1)
+      .for("update");
+    if (!asset || (asset.status !== "pending" && asset.status !== "failed")
+      || !(await canWriteContext(ownerUserId, asset.context_kind, asset.context_id))) return "not-found";
+    const [session] = await tx.select().from(mediaUploadSessionsTable)
+      .where(eq(mediaUploadSessionsTable.media_asset_id, assetId))
+      .limit(1)
+      .for("update");
+    if (!session) return "incomplete";
+    if (!session.finalized && session.next_offset !== asset.byte_size) return "incomplete";
+
+    const chunks = await tx.select().from(mediaUploadChunksTable)
+      .where(eq(mediaUploadChunksTable.media_asset_id, assetId))
+      .orderBy(asc(mediaUploadChunksTable.byte_offset));
+    if (!session.finalized) {
+      let expectedOffset = 0;
+      const buffers: Buffer[] = [];
+      try {
+        for (const chunk of chunks) {
+          if (chunk.byte_offset !== expectedOffset || chunk.byte_length <= 0
+            || chunk.byte_length > session.chunk_size) return "incomplete";
+          const bytes = await getAssetBuffer(chunk.object_key, session.chunk_size);
+          if (bytes.length !== chunk.byte_length
+            || createHash("sha256").update(bytes).digest("hex") !== chunk.sha256) return "invalid";
+          buffers.push(bytes);
+          expectedOffset += bytes.length;
+        }
+        if (expectedOffset !== asset.byte_size) return "incomplete";
+        const fullMedia = Buffer.concat(buffers, expectedOffset);
+        if (fullMedia.length !== asset.byte_size || !isAllowedMediaSize(fullMedia.length)) return "invalid";
+        await putAsset(asset.original_key, fullMedia, asset.mime_type);
+      } catch {
+        return "storage-failed";
+      }
+      await tx.update(mediaUploadSessionsTable).set({
+        finalized: true,
+        updated_at: new Date(),
+      }).where(eq(mediaUploadSessionsTable.media_asset_id, assetId));
+    }
+
+    return "stored";
+  });
+}
+
+/**
+ * Finalization commits before provider deletes. The cleanup_keys ledger and
+ * chunk rows remain intact until every strict delete succeeds; a failed DB
+ * cleanup transaction is safe to retry because finalized media no longer
+ * depends on the chunk objects.
+ */
+async function cleanupFinalizedMediaChunks(assetId: number, ownerUserId: number):
+Promise<"clean" | "not-finalized" | "storage-failed"> {
+  const [state] = await db.select({
+    status: mediaAssetsTable.status,
+    cleanup_keys: mediaAssetsTable.cleanup_keys,
+    finalized: mediaUploadSessionsTable.finalized,
+  }).from(mediaAssetsTable)
+    .innerJoin(mediaUploadSessionsTable, eq(mediaUploadSessionsTable.media_asset_id, mediaAssetsTable.id))
+    .where(and(
+      eq(mediaAssetsTable.id, assetId),
+      eq(mediaAssetsTable.owner_user_id, ownerUserId),
+    ))
+    .limit(1);
+  if (!state || !state.finalized || state.status === "deleted") return "not-finalized";
+  const chunkKeys = new Set<string>([
+    ...((state.cleanup_keys ?? []).filter((key) => key.startsWith(`media-assets/${assetId}/upload-chunks/`))),
+    ...(await db.select({ object_key: mediaUploadChunksTable.object_key })
+      .from(mediaUploadChunksTable)
+      .where(eq(mediaUploadChunksTable.media_asset_id, assetId))).map((chunk) => chunk.object_key),
+  ]);
+  if (chunkKeys.size) {
+    const cleaned = await cleanupFinalizedChunkObjects(
+      [...chunkKeys],
+      deleteAssetStrict,
+      async () => {
+        await db.transaction(async (tx) => {
+        const [asset] = await tx.select().from(mediaAssetsTable)
+          .where(and(
+            eq(mediaAssetsTable.id, assetId),
+            eq(mediaAssetsTable.owner_user_id, ownerUserId),
+          ))
+          .limit(1)
+          .for("update");
+        if (!asset) return;
+        await tx.delete(mediaUploadChunksTable)
+          .where(and(
+            eq(mediaUploadChunksTable.media_asset_id, assetId),
+            inArray(mediaUploadChunksTable.object_key, [...chunkKeys]),
+          ));
+        await tx.update(mediaAssetsTable).set({
+          cleanup_keys: (asset.cleanup_keys ?? []).filter((key) => !chunkKeys.has(key)),
+          updated_at: new Date(),
+        }).where(eq(mediaAssetsTable.id, assetId));
+        });
+      },
+    );
+    if (!cleaned) return "storage-failed";
+  }
+  return "clean";
+}
+
 router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   if (!isMediaPlatformV21Enabled()) return disabled(res);
   const assetId = positiveId(req.params.id);
@@ -585,6 +952,10 @@ router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalA
     .limit(1);
   if (!asset) return res.status(404).json({ error: "Upload session not found." });
   if (asset.status !== "pending" && asset.status !== "failed") {
+    const cleanup = await cleanupFinalizedMediaChunks(asset.id, req.authenticatedUserId!);
+    if (cleanup === "storage-failed") {
+      return res.status(503).json({ error: "Finalized upload cleanup is pending. Retry completion.", error_code: "MEDIA_STORAGE_CLEANUP_INCOMPLETE" });
+    }
     return res.json({ media_asset_id: asset.id, status: asset.status });
   }
   if (!(await canWriteContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
@@ -592,6 +963,34 @@ router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalA
   }
   if (!isAllowedMediaSize(asset.byte_size)) {
     return res.status(413).json({ error: "Media upload exceeds the 64 MiB limit.", error_code: "MEDIA_SIZE_INVALID" });
+  }
+  const [resumable] = await db.select({
+    next_offset: mediaUploadSessionsTable.next_offset,
+    finalized: mediaUploadSessionsTable.finalized,
+  }).from(mediaUploadSessionsTable)
+    .where(eq(mediaUploadSessionsTable.media_asset_id, asset.id))
+    .limit(1);
+  if (resumable && (resumable.next_offset > 0 || resumable.finalized)) {
+    const assembled = await assembleResumableMedia(asset.id, req.authenticatedUserId!);
+    if (assembled === "not-found") return res.status(404).json({ error: "Upload session not found." });
+    if (assembled === "incomplete") {
+      return res.status(409).json({
+        error: "The upload is incomplete.",
+        error_code: "MEDIA_UPLOAD_INCOMPLETE",
+        upload_offset: resumable.next_offset,
+        expected_bytes: asset.byte_size,
+      });
+    }
+    if (assembled === "invalid") {
+      return res.status(422).json({ error: "Stored upload chunks failed integrity validation.", error_code: "MEDIA_CHUNK_CHECKSUM_INVALID" });
+    }
+    if (assembled === "storage-failed") {
+      return res.status(503).json({ error: "Media chunks could not be assembled or cleaned up. Retry completion.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
+    }
+    const cleanup = await cleanupFinalizedMediaChunks(asset.id, req.authenticatedUserId!);
+    if (cleanup === "storage-failed") {
+      return res.status(503).json({ error: "Media chunks were assembled, but cleanup is pending. Retry completion.", error_code: "MEDIA_STORAGE_CLEANUP_INCOMPLETE" });
+    }
   }
   const info = await getAssetInfo(asset.original_key);
   if (!info) return res.status(409).json({ error: "Uploaded object is not available yet." });
@@ -853,6 +1252,15 @@ async function streamMediaAsset(req: Request, res: Response, thumbnail: boolean)
   const assetId = positiveId(req.params.id);
   if (!assetId) return res.status(400).json({ error: "Invalid media asset id." });
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, assetId)).limit(1);
+  if (asset) {
+    const [composition] = await db.select({ id: communityStoryMomentCompositionsTable.id })
+      .from(communityStoryMomentCompositionsTable)
+      .where(eq(communityStoryMomentCompositionsTable.derived_media_asset_id, assetId))
+      .limit(1);
+    if (composition || asset.metadata?.derived_kind === "moment_camera_clip_reel") {
+      return res.status(404).json({ error: "Media asset not found." });
+    }
+  }
   if (!asset || asset.status === "deleted" || !(await canReadContext(req.authenticatedUserId!, asset.context_kind, asset.context_id))) {
     return res.status(404).json({ error: "Media asset not found." });
   }

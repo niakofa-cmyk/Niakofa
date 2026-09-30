@@ -77,3 +77,4 @@
 - [Community watch privacy](community-watch-privacy.md) — creator-level thresholds do not protect small daily cohorts; bound viewer-linked watch data to the insight window.
 - [Family Story provenance](family-story-provenance.md) — unknown legacy authors remain unknown, and private story activity must not use global broadcasts.
 - [Moment family preservation](moment-family-preservation.md) — saving a Moment to Family Vault preserves private caption text, not expiring media.
+- [Media output atomicity](media-output-atomicity.md) — commit cleanup keys before provider writes, and reconcile ambiguous DB commits before deleting generated media.

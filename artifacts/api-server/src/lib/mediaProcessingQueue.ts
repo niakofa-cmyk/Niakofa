@@ -1,20 +1,57 @@
 import {
   communityStoriesTable,
+  communityStoryMomentCompositionsTable,
   db,
   exchangeSparksTable,
   mediaAssetsTable,
   mediaProcessingJobsTable,
+  mediaUploadSessionsTable,
   type MediaJobType,
   type StoryCompositionManifest,
 } from "@workspace/db";
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, lt, ne, notInArray, or } from "drizzle-orm";
 import { mediaProcessingQueue } from "./queue";
 import { logger } from "./logger";
-import { assertSupportedMediaJob, mediaJobsForType } from "./media-platform";
+import { assertSupportedMediaJob, isMediaPlatformV21Enabled, mediaJobsForType } from "./media-platform";
+import { isUnfinishedResumableUpload } from "./moment-video-compose";
 
 export interface MediaProcessingJobData {
   mediaAssetId: number;
   jobType: MediaJobType;
+}
+
+/** Publishes the durable, idempotent Moment-only composition job. */
+export async function enqueueMomentVideoComposition(
+  mediaAssetId: number,
+  publisher: Pick<NonNullable<typeof mediaProcessingQueue>, "add"> | null = mediaProcessingQueue,
+  database: typeof db = db,
+): Promise<boolean> {
+  const [composition] = await database.select({
+    story_id: communityStoryMomentCompositionsTable.story_id,
+    status: communityStoryMomentCompositionsTable.status,
+    updated_at: communityStoryMomentCompositionsTable.updated_at,
+    asset_status: mediaAssetsTable.status,
+  }).from(communityStoryMomentCompositionsTable)
+    .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMomentCompositionsTable.derived_media_asset_id))
+    .where(eq(communityStoryMomentCompositionsTable.derived_media_asset_id, mediaAssetId))
+    .limit(1);
+  if (!composition || composition.asset_status === "deleted" || composition.status === "ready") return false;
+  if (!publisher) {
+    logger.warn({ mediaAssetId }, "moment-composition: Redis unavailable; composition remains queued");
+    return false;
+  }
+  await database.insert(mediaProcessingJobsTable).values({
+    media_asset_id: mediaAssetId,
+    job_type: "moment_compose",
+  }).onConflictDoNothing({
+    target: [mediaProcessingJobsTable.media_asset_id, mediaProcessingJobsTable.job_type],
+  });
+  await publisher.add(
+    "moment_compose",
+    { mediaAssetId, jobType: "moment_compose" } satisfies MediaProcessingJobData,
+    { jobId: `media-${mediaAssetId}-moment-compose-${composition.updated_at.getTime()}` },
+  );
+  return true;
 }
 
 /**
@@ -216,6 +253,23 @@ export async function regenerateMediaAssetThumbnail(
 export async function requeueStaleMediaAssets(limit = 100): Promise<number> {
   if (!mediaProcessingQueue) return 0;
   const staleBefore = new Date(Date.now() - 5 * 60 * 1000);
+  const staleProcessingBefore = new Date(Date.now() - 30 * 60 * 1000);
+  // Never let the legacy pending-asset recovery enqueue an upload whose
+  // resumable session is still open. This includes an untouched empty session
+  // (offset 0), as well as sessions with chunks already received.
+  const unfinishedUploadRows = await db.select({
+    media_asset_id: mediaUploadSessionsTable.media_asset_id,
+    next_offset: mediaUploadSessionsTable.next_offset,
+    finalized: mediaUploadSessionsTable.finalized,
+  }).from(mediaUploadSessionsTable)
+    .where(eq(mediaUploadSessionsTable.finalized, false));
+  const unfinishedUploadIds = unfinishedUploadRows
+    .filter((session) => isUnfinishedResumableUpload(session.finalized, session.next_offset))
+    .map((session) => session.media_asset_id);
+  const momentAssetRows = await db.select({
+    id: communityStoryMomentCompositionsTable.derived_media_asset_id,
+  }).from(communityStoryMomentCompositionsTable);
+  const momentAssetIds = momentAssetRows.map((row) => row.id);
   const assets = await db.select({
     id: mediaAssetsTable.id,
     media_type: mediaAssetsTable.media_type,
@@ -223,6 +277,8 @@ export async function requeueStaleMediaAssets(limit = 100): Promise<number> {
   }).from(mediaAssetsTable).where(and(
     inArray(mediaAssetsTable.status, ["pending", "processing", "failed"]),
     lt(mediaAssetsTable.updated_at, staleBefore),
+    unfinishedUploadIds.length ? notInArray(mediaAssetsTable.id, unfinishedUploadIds) : undefined,
+    momentAssetIds.length ? notInArray(mediaAssetsTable.id, momentAssetIds) : undefined,
   )).limit(limit);
 
   let republished = 0;
@@ -256,6 +312,84 @@ export async function requeueStaleMediaAssets(limit = 100): Promise<number> {
       republished += 1;
     } catch (error) {
       logger.warn({ err: error, mediaAssetId: pending.mediaAssetId }, "media-processing: pending thumbnail republish failed");
+    }
+  }
+  const momentJobs = await db.select({
+    jobId: mediaProcessingJobsTable.id,
+    mediaAssetId: mediaProcessingJobsTable.media_asset_id,
+    storyId: communityStoryMomentCompositionsTable.story_id,
+    status: mediaProcessingJobsTable.status,
+    updatedAt: mediaProcessingJobsTable.updated_at,
+  }).from(mediaProcessingJobsTable)
+    .innerJoin(communityStoryMomentCompositionsTable, eq(
+      communityStoryMomentCompositionsTable.derived_media_asset_id,
+      mediaProcessingJobsTable.media_asset_id,
+    ))
+    .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, mediaProcessingJobsTable.media_asset_id))
+    .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMomentCompositionsTable.story_id))
+    .where(and(
+      eq(mediaProcessingJobsTable.job_type, "moment_compose"),
+      or(
+        and(
+          inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
+          lt(mediaProcessingJobsTable.updated_at, staleBefore),
+        ),
+        and(
+          eq(mediaProcessingJobsTable.status, "processing"),
+          lt(mediaProcessingJobsTable.updated_at, staleProcessingBefore),
+        ),
+      ),
+      inArray(communityStoryMomentCompositionsTable.status, ["queued", "failed", "processing"]),
+      inArray(mediaAssetsTable.status, ["pending", "processing", "failed"]),
+    )).limit(limit);
+  if (!isMediaPlatformV21Enabled()) return republished;
+  for (const pending of momentJobs) {
+    try {
+      const requeuedAt = new Date();
+      const claimedForRetry = await db.transaction(async (tx) => {
+        // Match the worker's promotion and Story deletion lock order. A stale
+        // worker is fenced by the status/update-time CAS before a new claim.
+        const [story] = await tx.select({
+          status: communityStoriesTable.status,
+          expires_at: communityStoriesTable.expires_at,
+        }).from(communityStoriesTable)
+          .where(eq(communityStoriesTable.id, pending.storyId))
+          .limit(1)
+          .for("share");
+        if (!story || story.status !== "published" || story.expires_at <= new Date()) return false;
+        const [asset] = await tx.select({ status: mediaAssetsTable.status })
+          .from(mediaAssetsTable)
+          .where(eq(mediaAssetsTable.id, pending.mediaAssetId))
+          .limit(1)
+          .for("update");
+        if (!asset || asset.status === "deleted") return false;
+        const [requeued] = await tx.update(mediaProcessingJobsTable).set({
+          status: "queued",
+          error: null,
+          started_at: null,
+          completed_at: null,
+          updated_at: requeuedAt,
+        }).where(and(
+          eq(mediaProcessingJobsTable.id, pending.jobId),
+          eq(mediaProcessingJobsTable.status, pending.status),
+          eq(mediaProcessingJobsTable.updated_at, pending.updatedAt),
+        )).returning({ id: mediaProcessingJobsTable.id });
+        if (!requeued) return false;
+        await tx.update(communityStoryMomentCompositionsTable).set({
+          status: "queued",
+          failure_code: null,
+          updated_at: requeuedAt,
+        }).where(and(
+          eq(communityStoryMomentCompositionsTable.derived_media_asset_id, pending.mediaAssetId),
+          ne(communityStoryMomentCompositionsTable.status, "ready"),
+        ));
+        return true;
+      });
+      if (!claimedForRetry) continue;
+      await enqueueMomentVideoComposition(pending.mediaAssetId);
+      republished += 1;
+    } catch (error) {
+      logger.warn({ err: error, mediaAssetId: pending.mediaAssetId }, "moment-composition: stale job republish failed");
     }
   }
   return republished;

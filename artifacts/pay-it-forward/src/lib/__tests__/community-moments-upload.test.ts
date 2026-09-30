@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  authenticatedMediaDraftUserId,
   COMMUNITY_MOMENTS_MAX_BYTES,
   validateCommunityMomentFile,
 } from "../community-moments-upload";
@@ -33,4 +34,11 @@ test("draft and media helpers remain separate from Exchange Spark upload contrac
   assert.equal(typeof source.saveCommunityMomentDraft, "function");
   assert.equal(typeof source.getCommunityMomentDraft, "function");
   assert.equal(typeof source.deleteCommunityMomentDraft, "function");
+});
+
+test("resumable local draft scopes derive the authenticated account ID from the current token", () => {
+  assert.equal(authenticatedMediaDraftUserId("73.123.4.signature"), 73);
+  assert.equal(authenticatedMediaDraftUserId("0.123.4.signature"), null);
+  assert.equal(authenticatedMediaDraftUserId("not-a-token"), null);
+  assert.equal(authenticatedMediaDraftUserId(null), null);
 });

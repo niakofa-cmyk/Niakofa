@@ -1,5 +1,5 @@
-import { authHeaders } from "@/lib/auth";
-import { ensureSameOriginMediaPath, uploadBinaryMedia } from "./media-upload-client";
+import { authHeaders, getToken } from "@/lib/auth";
+import { ensureSameOriginMediaPath, uploadBinaryMedia, uploadResumableMedia } from "./media-upload-client";
 
 export const COMMUNITY_MOMENTS_MAX_BYTES = 64 * 1024 * 1024;
 export const COMMUNITY_MOMENTS_ALLOWED_TYPES = new Set([
@@ -24,6 +24,7 @@ export type CommunityMomentDraft = {
   caption: string;
   files: File[];
   uploadedMediaAssetIds?: number[];
+  resumableUploads?: Record<string, { mediaAssetId: number; offset: number; complete?: boolean }>;
   updatedAt: number;
 };
 
@@ -52,15 +53,44 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
     },
   });
   const payload = await response.json().catch(() => ({})) as { error?: string };
-  if (!response.ok) throw new Error(payload.error || `Media request failed (HTTP ${response.status}).`);
+  if (!response.ok) {
+    const error = new Error(payload.error || `Media request failed (HTTP ${response.status}).`) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
   return payload as T;
 }
 
 type UploadSession = {
   media_asset_id: number;
   upload: { method: "PUT"; url: string; headers: Record<string, string> };
+  resumable?: {
+    chunk_size: number;
+    status_url: string;
+    chunk_url: string;
+  };
   complete_url: string;
 };
+
+type ResumableStatus = {
+  media_asset_id: number;
+  offset: number;
+  total_bytes: number;
+  chunk_size: number;
+  finalized: boolean;
+  status: string;
+};
+
+async function communityFileDigest(file: File): Promise<string> {
+  if (!globalThis.crypto?.subtle) throw new Error("Secure upload recovery is unavailable in this browser.");
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function authenticatedMediaDraftUserId(token: string | null = getToken()): number | null {
+  const parsed = Number(token?.split(".")[0]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
 
 export async function uploadCommunityMomentMedia(input: {
   contextKind: CommunityMomentContext;
@@ -83,33 +113,148 @@ export async function uploadCommunityMomentMedia(input: {
     : input.file.type.startsWith("video/")
       ? "video"
       : "audio";
-  const session = await requestJson<UploadSession>("/api/media-assets/uploads", {
-    method: "POST",
-    body: JSON.stringify({
-      contextKind: input.contextKind,
-      contextId: input.contextId,
-      mediaType,
-      mimeType: input.file.type,
-      byteSize: input.file.size,
-      originalName: input.file.name,
-      ...(input.musicRights ? { musicRights: input.musicRights } : {}),
-    }),
-    signal: input.signal,
-  });
+  const digest = await communityFileDigest(input.file);
+  const authenticatedUserId = authenticatedMediaDraftUserId();
+  // The server still authenticates every request; this identity is only used
+  // to prevent local recovery records from crossing account boundaries.
+  const userId = authenticatedUserId ?? input.contextId;
+  const resumeKey = `${input.contextKind}:${input.contextId}:${digest}`;
+  const draftId = `media-upload:${resumeKey}`;
+  let savedDraft: CommunityMomentDraft | null = null;
+  let draftStoreAvailable = true;
+  if (authenticatedUserId !== null) {
+    try {
+      savedDraft = await getCommunityMomentDraft(draftId, authenticatedUserId);
+    } catch {
+      draftStoreAvailable = false;
+    }
+  }
+  let savedSessionId = savedDraft?.resumableUploads?.[digest]?.mediaAssetId;
+  let session: UploadSession | null = null;
+  let status: ResumableStatus | null = null;
+
+  if (savedSessionId && Number.isSafeInteger(savedSessionId) && savedSessionId > 0) {
+    try {
+      status = await requestJson<ResumableStatus>(
+        `/api/media-assets/${savedSessionId}/upload-session`,
+        { signal: input.signal },
+      );
+      if (status.total_bytes !== input.file.size || status.media_asset_id !== savedSessionId) {
+        throw new Error("The saved upload does not match this file.");
+      }
+      session = {
+        media_asset_id: savedSessionId,
+        upload: {
+          method: "PUT",
+          url: `/api/media-assets/${savedSessionId}/upload`,
+          headers: { "Content-Type": input.file.type },
+        },
+        resumable: {
+          chunk_size: status.chunk_size,
+          status_url: `/api/media-assets/${savedSessionId}/upload-session`,
+          chunk_url: `/api/media-assets/${savedSessionId}/upload/chunks`,
+        },
+        complete_url: `/api/media-assets/${savedSessionId}/complete`,
+      };
+    } catch (error) {
+      if ((error as Error & { status?: number }).status !== 404) throw error;
+      savedSessionId = undefined;
+      status = null;
+    }
+  }
+  if (!session) {
+    session = await requestJson<UploadSession>("/api/media-assets/uploads", {
+      method: "POST",
+      body: JSON.stringify({
+        contextKind: input.contextKind,
+        contextId: input.contextId,
+        mediaType,
+        mimeType: input.file.type,
+        byteSize: input.file.size,
+        originalName: input.file.name,
+        ...(input.musicRights ? { musicRights: input.musicRights } : {}),
+      }),
+      signal: input.signal,
+    });
+  }
   if (!Number.isSafeInteger(session.media_asset_id) || session.media_asset_id <= 0) {
     throw new Error("The media service returned an invalid upload session.");
   }
-  await uploadBinaryMedia({
-    upload: session.upload,
-    file: input.file,
-    signal: input.signal,
-    onProgress: (loaded, total) => input.onProgress?.(total > 0 ? Math.round(loaded / total * 100) : 0),
-  });
-  await requestJson<{ media_asset_id: number; status: string }>(ensureSameOriginMediaPath(session.complete_url), {
+  const persistSession = async (offset: number, complete = false) => {
+    const resumableUploads = {
+      ...(savedDraft?.resumableUploads ?? {}),
+      [digest]: { mediaAssetId: session!.media_asset_id, offset, ...(complete ? { complete: true } : {}) },
+    };
+    const record: CommunityMomentDraft = {
+      id: draftId,
+      userId,
+      contextKind: input.contextKind,
+      contextId: input.contextId,
+      caption: "",
+      files: [input.file],
+      resumableUploads,
+      updatedAt: Date.now(),
+    };
+    await saveCommunityMomentDraft(record);
+    savedDraft = record;
+  };
+  if (session.resumable) {
+    if (authenticatedUserId === null) {
+      throw new Error("Sign in again to save a resumable media upload to your account.");
+    }
+    if (!draftStoreAvailable) {
+      throw new Error("Upload recovery storage is unavailable. Nothing was uploaded; enable browser storage and retry.");
+    }
+    if (session.resumable.chunk_size < 1 || session.resumable.chunk_size > 4 * 1024 * 1024) {
+      throw new Error("The media service returned an invalid chunk size.");
+    }
+    if (!status) {
+      status = await requestJson<ResumableStatus>(
+        ensureSameOriginMediaPath(session.resumable.status_url),
+        { signal: input.signal },
+      );
+    }
+    if (status.total_bytes !== input.file.size || status.media_asset_id !== session.media_asset_id) {
+      throw new Error("The resumable upload does not match the selected file.");
+    }
+    await persistSession(status.offset);
+    if (status.status === "pending" || status.status === "failed") {
+      await uploadResumableMedia({
+        upload: {
+          method: "PUT",
+          url: ensureSameOriginMediaPath(session.resumable.chunk_url),
+          chunkSize: session.resumable.chunk_size,
+        },
+        file: input.file,
+        initialOffset: status.offset,
+        signal: input.signal,
+        onProgress: (loaded, total) => input.onProgress?.(total > 0 ? Math.min(99, Math.round(loaded / total * 100)) : 0),
+        onConfirmedOffset: (offset) => persistSession(offset),
+      });
+    } else if (status.offset !== input.file.size && !status.finalized) {
+      throw new Error("The server reports an incomplete upload in a non-retryable state.");
+    }
+  } else {
+    // Compatibility with older V21 servers; new server responses always
+    // advertise resumable chunks while retaining their original whole-file PUT.
+    await uploadBinaryMedia({
+      upload: session.upload,
+      file: input.file,
+      signal: input.signal,
+      onProgress: (loaded, total) => input.onProgress?.(total > 0 ? Math.min(99, Math.round(loaded / total * 100)) : 0),
+    });
+  }
+  const completion = await requestJson<{ media_asset_id: number; status: string }>(ensureSameOriginMediaPath(session.complete_url), {
     method: "POST",
     body: JSON.stringify({}),
     signal: input.signal,
   });
+  if (completion.media_asset_id !== session.media_asset_id
+    || !["processing", "ready", "uploaded"].includes(completion.status)) {
+    throw new Error("The media service did not confirm upload completion.");
+  }
+  if (session.resumable) await persistSession(input.file.size, true);
+  input.onProgress?.(100);
   return session.media_asset_id;
 }
 

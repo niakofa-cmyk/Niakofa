@@ -28,6 +28,7 @@ export * from "./schema";
 export {
   communityStoriesTable,
   communityStoryMediaTable,
+  communityStoryMomentCompositionsTable,
   communityStoryElementsTable,
   communityStoryViewsTable,
   communityStoryReactionsTable,
@@ -41,6 +42,8 @@ export {
 export {
   mediaAssetsTable,
   mediaProcessingJobsTable,
+  mediaUploadSessionsTable,
+  mediaUploadChunksTable,
 } from "./schema/media-assets";
 export { requestMessageAttachmentsTable } from "./schema/request-message-attachments";
 export {

@@ -73,6 +73,26 @@ export const communityStoryMediaTable = pgTable("community_story_media", {
   index("community_story_media_story_idx").on(table.story_id),
 ]);
 
+/**
+ * A deliberately opt-in, server-rendered camera-clip reel. Source media rows
+ * remain attached to the Story; this row only tracks the derived playback asset.
+ */
+export const communityStoryMomentCompositionsTable = pgTable("community_story_moment_compositions", {
+  id: serial("id").primaryKey(),
+  story_id: integer("story_id").notNull().references(() => communityStoriesTable.id, { onDelete: "cascade" }),
+  derived_media_asset_id: integer("derived_media_asset_id").notNull().references(() => mediaAssetsTable.id, { onDelete: "cascade" }),
+  source_media_asset_ids: jsonb("source_media_asset_ids").$type<number[]>().notNull(),
+  source_fingerprint: varchar("source_fingerprint", { length: 64 }).notNull(),
+  status: text("status").notNull().default("queued"),
+  failure_code: text("failure_code"),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("community_story_moment_compositions_story_uidx").on(table.story_id),
+  uniqueIndex("community_story_moment_compositions_asset_uidx").on(table.derived_media_asset_id),
+  index("community_story_moment_compositions_status_idx").on(table.status, table.updated_at),
+]);
+
 export const communityStoryElementsTable = pgTable("community_story_elements", {
   id: serial("id").primaryKey(),
   story_id: integer("story_id").notNull().references(() => communityStoriesTable.id, { onDelete: "cascade" }),

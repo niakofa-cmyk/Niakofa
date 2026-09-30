@@ -11,6 +11,12 @@ export function CommunityStoryViewerOverlay({
   story,
   media,
   playerMedia,
+  reelStatus,
+  reelFailureCode,
+  reelPlaybackError,
+  onRetryReel,
+  onPlaybackError,
+  playbackAttempt,
   progress,
   paused,
   onProgress,
@@ -28,6 +34,12 @@ export function CommunityStoryViewerOverlay({
   story: CommunityStory;
   media: StoryMedia | null;
   playerMedia: StoryMedia | null;
+  reelStatus?: string | null;
+  reelFailureCode?: string | null;
+  reelPlaybackError?: string | null;
+  onRetryReel?: () => void;
+  onPlaybackError?: () => void;
+  playbackAttempt?: number;
   progress: number;
   paused: boolean;
   onProgress: (progress: number) => void;
@@ -67,11 +79,36 @@ export function CommunityStoryViewerOverlay({
           <StoryMediaPlayer
             media={playerMedia}
             elements={story.elements}
-            fallbackText={media ? "Loading Spark media…" : story.caption || "Community Spark"}
+            fallbackText={reelStatus && reelStatus !== "ready"
+              ? reelStatus === "failed" ? "Camera reel stitching failed." : "Camera reel is being stitched."
+              : story.moment_video && reelStatus === "ready" && !playerMedia ? "Loading camera reel…"
+              : media ? "Loading Spark media…" : story.caption || "Community Spark"}
             onComplete={onNext}
             onProgress={onProgress}
-            paused={paused}
+            paused={paused || Boolean(reelStatus && reelStatus !== "ready" && !media)}
+            onPlaybackError={reelStatus === "ready" ? onPlaybackError : undefined}
+            playbackAttempt={playbackAttempt}
           />
+          {reelStatus && reelStatus !== "ready" && (
+            <p role={reelStatus === "failed" ? "alert" : "status"} className="absolute inset-x-4 top-1/2 z-10 -translate-y-1/2 rounded-xl bg-black/80 p-4 text-center text-sm font-semibold text-white">
+              {reelStatus === "failed"
+                ? `Camera reel stitching failed${reelFailureCode ? ` (${reelFailureCode})` : ""}. The original clips are still available in this Moment.`
+                : "Camera reel is being stitched. The original clips remain attached to this Moment."}
+            </p>
+          )}
+          {reelStatus === "ready" && reelPlaybackError && (
+            <p role="alert" className="absolute inset-x-4 bottom-4 z-10 rounded-xl bg-black/85 p-3 text-center text-xs text-white">
+              {reelPlaybackError} {onRetryReel && <button type="button" onClick={onRetryReel} className="ml-2 underline">Retry playback</button>}
+            </p>
+          )}
+          {story.moment_video && story.media.length > 0 && (
+            <span className="sr-only">
+              Original clip descriptions and captions: {story.media.map((item, index) => {
+                const captions = item.captions_vtt?.replace(/^WEBVTT[^\n]*\n?/m, "").replace(/^\d+\s*$/gm, "").replace(/^\d{2}:\d{2}:\d{2}\.\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}\.\d{3}.*$/gm, "").trim();
+                return `Clip ${index + 1}: ${item.alt_text?.trim() || "No alternative text supplied."}${captions ? ` Original captions: ${captions}` : ""}`;
+              }).join(" ")}
+            </span>
+          )}
           {story.caption && <p className="nia-story-viewer__caption">{story.caption}</p>}
         </div>
       </StoryViewerChrome>

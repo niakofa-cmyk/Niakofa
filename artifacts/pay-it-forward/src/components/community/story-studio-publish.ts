@@ -60,6 +60,85 @@ export async function validateStudioFiles(files: File[]): Promise<Array<number |
 
 const validId = (id: number) => Number.isSafeInteger(id) && id > 0;
 
+export function isCameraClipReelSelection(files: File[]): boolean {
+  return files.length >= 2 && files.length <= 6 && files.every((file) => file.type.startsWith("video/"));
+}
+
+export function validateMomentCompositionPlaybackUrl(playbackUrl: string, storyId: number, origin: string): string {
+  if (!validId(storyId)) throw new Error("The camera reel playback URL was invalid.");
+  const playback = new URL(playbackUrl, origin);
+  const expectedPath = `/api/community/stories/${storyId}/moment-composition/play`;
+  if (playback.origin !== origin || playback.pathname !== expectedPath || playback.search || playback.hash
+    || playback.username || playback.password) {
+    throw new Error("The camera reel playback URL was invalid.");
+  }
+  return playback.pathname;
+}
+
+export class CameraClipReelPendingError extends Error {
+  readonly storyId: number;
+
+  constructor(storyId: number, message: string) {
+    super(`Story posted, but stitching is pending. ${message}`);
+    this.name = "CameraClipReelPendingError";
+    this.storyId = storyId;
+  }
+}
+
+export async function requestCameraClipReel(storyId: number, mediaAssetIds: number[], signal?: AbortSignal): Promise<string> {
+  if (!validId(storyId) || mediaAssetIds.length < 2 || mediaAssetIds.length > 6
+    || mediaAssetIds.some((id) => !validId(id)) || new Set(mediaAssetIds).size !== mediaAssetIds.length) {
+    throw new Error("Camera stitching needs two to six unique video assets in camera order.");
+  }
+  const response = await fetch(`/api/community/stories/${storyId}/moment-composition`, {
+    method: "POST",
+    credentials: "same-origin",
+    ...(signal ? { signal } : {}),
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ intent: "camera_clip_reel", media_asset_ids: mediaAssetIds }),
+  });
+  const result = await response.json().catch(() => ({})) as {
+    error?: string;
+    composition?: { status?: string; playback_grant_url?: string; status_url?: string };
+  };
+  if (!response.ok) throw new CameraClipReelPendingError(storyId, result.error || "Retry stitching from the saved Studio draft.");
+  if (!result.composition || typeof result.composition.status !== "string"
+    || result.composition.playback_grant_url !== `/api/community/stories/${storyId}/moment-composition/playback-grant`
+    || result.composition.status_url !== `/api/community/stories/${storyId}/moment-composition`) {
+    throw new CameraClipReelPendingError(storyId, "The server returned an invalid stitching response. Retry safely from the saved Studio draft.");
+  }
+  return result.composition.status;
+}
+
+export async function getCameraClipReelStatus(storyId: number, signal?: AbortSignal): Promise<{
+  status: string;
+  failureCode: string | null;
+  durationMs: number | null;
+  playbackGrantUrl: string;
+}> {
+  if (!validId(storyId)) throw new Error("Story not found.");
+  const response = await fetch(`/api/community/stories/${storyId}/moment-composition`, {
+    headers: authHeaders(),
+    credentials: "same-origin",
+    ...(signal ? { signal } : {}),
+  });
+  const result = await response.json().catch(() => ({})) as {
+    error?: string;
+    composition?: { status?: string; failure_code?: string | null; duration_ms?: number | null; playback_grant_url?: string };
+  };
+  const composition = result.composition;
+  if (!response.ok || !composition || typeof composition.status !== "string"
+    || composition.playback_grant_url !== `/api/community/stories/${storyId}/moment-composition/playback-grant`) {
+    throw new Error(result.error || "Camera reel status could not be confirmed.");
+  }
+  return {
+    status: composition.status,
+    failureCode: composition.failure_code ?? null,
+    durationMs: composition.duration_ms ?? null,
+    playbackGrantUrl: composition.playback_grant_url,
+  };
+}
+
 export function validStudioMediaEdits(
   files: File[],
   ids: number[],
@@ -100,7 +179,8 @@ export async function publishStudioMoment(input: {
   beforePublish: (orderedAssetIds: number[]) => Promise<void>;
   uploadedIds?: Array<number | null>;
   mediaEdits?: Array<{ index: number; coverTimeMs: number }>;
-}): Promise<void> {
+  cameraClipReel?: boolean;
+}): Promise<number | null> {
   if (!validId(input.userId) || (input.hubId !== null && !validId(input.hubId))) throw new Error("Your account or Hub could not be confirmed.");
   if (input.audience === "hub" && input.hubId === null) throw new Error("Choose a Hub before sharing with Hub members.");
   if (!input.files.length && !input.caption.trim()) throw new Error("Add a photo, video, or a few words.");
@@ -110,6 +190,9 @@ export async function publishStudioMoment(input: {
   const musicFile = input.musicFile ?? null;
   if (input.files.length + (musicFile ? 1 : 0) > 6) {
     throw new Error("Choose up to five photos or videos when adding a music track.");
+  }
+  if (input.cameraClipReel && !isCameraClipReelSelection(input.files)) {
+    throw new Error("A camera reel must contain only two to six camera-recorded videos.");
   }
   if (musicFile) {
     const musicError = validateCommunityMomentFile(musicFile);
@@ -229,6 +312,19 @@ export async function publishStudioMoment(input: {
       ...(mediaEdits.length ? { media_edits: mediaEdits } : {}),
     }),
   });
-  const result = await response.json().catch(() => ({})) as { error?: string };
+  const result = await response.json().catch(() => ({})) as { error?: string; story?: { id?: number } };
   if (!response.ok) throw new Error(result.error || "Could not publish your Spark. Your draft is saved.");
+  const storyId = result.story?.id;
+  if (input.cameraClipReel && !validId(storyId ?? 0)) {
+    throw new Error("Story may have posted, but its ID could not be confirmed. Retry with the saved publish identity.");
+  }
+  if (input.cameraClipReel) {
+    try {
+      await requestCameraClipReel(storyId!, ids.slice(0, input.files.length), input.signal);
+    } catch (reason) {
+      if (reason instanceof CameraClipReelPendingError) throw reason;
+      throw new CameraClipReelPendingError(storyId!, reason instanceof Error ? reason.message : "Retry stitching from the saved Studio draft.");
+    }
+  }
+  return validId(storyId ?? 0) ? storyId! : null;
 }

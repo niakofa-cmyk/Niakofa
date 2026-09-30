@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -80,7 +81,30 @@ export const mediaProcessingJobsTable = pgTable("media_processing_jobs", {
   index("media_processing_jobs_queue_idx").on(table.status, table.created_at),
 ]);
 
+/** Durable resumable-upload state. Chunk bytes remain in provider-neutral object storage. */
+export const mediaUploadSessionsTable = pgTable("media_upload_sessions", {
+  media_asset_id: integer("media_asset_id").primaryKey().references(() => mediaAssetsTable.id, { onDelete: "cascade" }),
+  chunk_size: integer("chunk_size").notNull(),
+  next_offset: integer("next_offset").notNull().default(0),
+  finalized: boolean("finalized").notNull().default(false),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const mediaUploadChunksTable = pgTable("media_upload_chunks", {
+  id: serial("id").primaryKey(),
+  media_asset_id: integer("media_asset_id").notNull().references(() => mediaAssetsTable.id, { onDelete: "cascade" }),
+  byte_offset: integer("byte_offset").notNull(),
+  byte_length: integer("byte_length").notNull(),
+  sha256: text("sha256").notNull(),
+  object_key: text("object_key").notNull(),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("media_upload_chunks_asset_offset_uidx").on(table.media_asset_id, table.byte_offset),
+  uniqueIndex("media_upload_chunks_object_key_uidx").on(table.object_key),
+]);
+
 export type MediaAsset = typeof mediaAssetsTable.$inferSelect;
 export type NewMediaAsset = typeof mediaAssetsTable.$inferInsert;
 export type MediaProcessingJob = typeof mediaProcessingJobsTable.$inferSelect;
-export type MediaJobType = "probe" | "thumbnail" | "transcode" | "audio_mix";
+export type MediaJobType = "probe" | "thumbnail" | "transcode" | "audio_mix" | "moment_compose";

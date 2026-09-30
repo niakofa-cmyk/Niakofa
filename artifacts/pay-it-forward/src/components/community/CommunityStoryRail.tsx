@@ -28,7 +28,7 @@ import {
 } from "./moment-studio-accessibility";
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, newStudioPublishId, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
-import { chooseStudioFiles, publishStudioMoment, selectedStudioFiles, validateStudioFiles } from "./story-studio-publish";
+import { CameraClipReelPendingError, chooseStudioFiles, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validateStudioFiles } from "./story-studio-publish";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { getExchangeListings } from "@/lib/community-exchange-client";
 import type { ExchangeListing } from "@/lib/community-exchange-types";
@@ -84,12 +84,19 @@ function groupStories(stories: CommunityStory[]): StoryAuthor[] {
   const byAuthor = new Map<number, StoryAuthor>();
   for (const story of [...stories].sort((a, b) => Date.parse(a.created_at ?? "") - Date.parse(b.created_at ?? ""))) {
     const group = byAuthor.get(story.author_user_id) ?? { author_user_id: story.author_user_id, author: story.author, frames: [] };
-    if (story.media.length) story.media.forEach((media) => group.frames.push({ story, media }));
+    if (story.moment_video?.status === "ready") group.frames.push({ story, media: null, isMomentReel: true });
+    else if (story.media.length) story.media.forEach((media) => group.frames.push({ story, media }));
     else group.frames.push({ story, media: null });
     byAuthor.set(story.author_user_id, group);
   }
   return Array.from(byAuthor.values());
 }
+
+type CameraClipReelMarker = { orderedFingerprints: string[] };
+type ExtendedStudioDraft = StudioDraft & MomentStudioAccessibilityDraft & {
+  cameraClipReel?: CameraClipReelMarker | null;
+  cameraReelStoryId?: number | null;
+};
 
 export function CommunityStoryRail({
   hubId,
@@ -126,11 +133,21 @@ export function CommunityStoryRail({
   const [seenAuthorIds, setSeenAuthorIds] = useState<Set<number>>(() => new Set());
   const [mediaUrls, setMediaUrls] = useState<Record<number, string>>({});
   const mediaObjectUrlsRef = useRef<Record<number, string>>({});
+  const [momentVideoUrls, setMomentVideoUrls] = useState<Record<number, string>>({});
+  const momentVideoUrlsRef = useRef<Record<number, string>>({});
+  const momentVideoGrantExpiryRef = useRef<Record<number, number>>({});
+  const momentVideoLoadingRef = useRef(new Set<number>());
+  const momentVideoRefreshAttemptedRef = useRef(new Set<number>());
+  const [momentVideoVersions, setMomentVideoVersions] = useState<Record<number, number>>({});
+  const [momentVideoStates, setMomentVideoStates] = useState<Record<number, { status: string; failureCode: string | null; durationMs: number | null; playbackGrantUrl: string }>>({});
+  const [momentVideoPlaybackErrors, setMomentVideoPlaybackErrors] = useState<Record<number, string>>({});
   const [shareStoryId, setShareStoryId] = useState<number | null>(null);
   const [reactedStoryIds, setReactedStoryIds] = useState<Record<number, boolean>>({});
   const [storyProgress, setStoryProgress] = useState(0);
   const [storyPaused, setStoryPaused] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [cameraClipReelMarker, setCameraClipReelMarker] = useState<CameraClipReelMarker | null>(null);
+  const [pendingCameraReelStoryId, setPendingCameraReelStoryId] = useState<number | null>(null);
   const [momentAccessibility, setMomentAccessibility] = useState<MomentStudioAccessibilityDraft>(emptyMomentStudioAccessibility);
   const [musicFile, setMusicFile] = useState<File | null>(null);
   const [musicRightsBasis, setMusicRightsBasis] = useState<"original" | "licensed">("original");
@@ -189,6 +206,19 @@ export function CommunityStoryRail({
   const previewVideo = useRef<HTMLVideoElement>(null);
   const autoOpenedRef = useRef(false);
   const deepLinkedStoryRef = useRef<number | null>(null);
+  const momentVideoOwnerRef = useRef(userId);
+
+  useEffect(() => {
+    if (momentVideoOwnerRef.current === userId) return;
+    momentVideoOwnerRef.current = userId;
+    momentVideoUrlsRef.current = {};
+    momentVideoGrantExpiryRef.current = {};
+    momentVideoRefreshAttemptedRef.current.clear();
+    setMomentVideoUrls({});
+    setMomentVideoVersions({});
+    setMomentVideoStates({});
+    setMomentVideoPlaybackErrors({});
+  }, [userId]);
 
   useEffect(() => {
     setStudioTemplates(userId ? loadSavedStoryTemplates(userId) : []);
@@ -200,6 +230,14 @@ export function CommunityStoryRail({
   const selectedStory = selectedFrame?.story ?? null;
   const selectedStoryId = selectedStory?.id ?? null;
   const selectedMedia = selectedFrame?.media ?? null;
+  const selectedMomentVideoState = useMemo(() => selectedStory?.moment_video
+    ? momentVideoStates[selectedStory.id] ?? {
+      status: selectedStory.moment_video.status,
+      failureCode: null,
+      durationMs: selectedStory.moment_video.duration_ms ?? null,
+      playbackGrantUrl: selectedStory.moment_video.playback_grant_url,
+    }
+    : null, [momentVideoStates, selectedStory]);
   const previewUrls = useObjectUrls(files);
   const musicPreviewFiles = useMemo(() => musicFile ? [musicFile] : [], [musicFile]);
   const musicPreviewUrls = useObjectUrls(musicPreviewFiles);
@@ -207,6 +245,9 @@ export function CommunityStoryRail({
   const selectedFileUrl = previewUrls[previewFileIndex] ?? previewUrls[0] ?? null;
   const previewCaptionsTrackUrl = useWebVttObjectUrl(momentAccessibility.momentCaptionsVtt[previewFileIndex] ?? "");
   const selectedFiles = selectedStudioFiles(files, gallerySelection);
+  const validCameraClipReel = Boolean(cameraClipReelMarker
+    && isCameraClipReelSelection(selectedFiles)
+    && JSON.stringify(cameraClipReelMarker.orderedFingerprints) === JSON.stringify(selectedFiles.map(studioFileFingerprint)));
   const selectedVideo = selectedFiles.some((file) => file.type.startsWith("video/"));
   const rawTrimRange = trimPreview[previewFileIndex] ?? { start: 0, end: videoDuration };
   const trimStart = Math.min(Math.max(0, rawTrimRange.start), Math.max(0, videoDuration - 0.1));
@@ -317,7 +358,22 @@ export function CommunityStoryRail({
         const response = await fetch(`/api/community/stories${query}`, { headers: authHeaders() });
         const data = await response.json().catch(() => ({})) as { stories?: CommunityStory[]; error?: string };
         if (!response.ok) throw new Error(data.error || "Could not load Moments.");
-        if (!cancelled) setStories(Array.isArray(data.stories) ? data.stories : []);
+        if (!cancelled) {
+          const nextStories = Array.isArray(data.stories) ? data.stories : [];
+          setStories(nextStories);
+          setMomentVideoStates((current) => {
+            const next = { ...current };
+            nextStories.forEach((story) => {
+              if (story.moment_video && !next[story.id]) next[story.id] = {
+                status: story.moment_video.status,
+                failureCode: null,
+                durationMs: story.moment_video.duration_ms ?? null,
+                playbackGrantUrl: story.moment_video.playback_grant_url,
+              };
+            });
+            return next;
+          });
+        }
       } catch (reason: unknown) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load Moments.");
       } finally {
@@ -326,7 +382,7 @@ export function CommunityStoryRail({
     };
     void load();
     return () => { cancelled = true; };
-  }, [hubId, refreshNonce]);
+  }, [hubId, refreshNonce, userId]);
 
   useEffect(() => {
     const scopeSnapshots = scopeSnapshotsRef.current;
@@ -345,6 +401,8 @@ export function CommunityStoryRail({
     setDraftSaved(false);
     setDraftError("");
     setFiles(empty.files);
+    setCameraClipReelMarker(null);
+    setPendingCameraReelStoryId(null);
     setMomentAccessibility(emptyMomentStudioAccessibility());
     setMusicFile(empty.musicFile);
     setMusicRightsBasis(empty.musicRightsBasis);
@@ -387,6 +445,16 @@ export function CommunityStoryRail({
         uploadedIdsRef.current = draft.uploadedMediaAssetIds ?? [];
         publishAssetIdsRef.current = draft.publishAssetIds ?? [];
         setFiles(draft.files ?? []);
+        const extendedDraft = draft as ExtendedStudioDraft;
+        const recoveredFiles = draft.files ?? [];
+        const recoveredSelection = draft.selection ?? [];
+        const recoveredCameraFiles = selectedStudioFiles(recoveredFiles, recoveredSelection);
+        const recoveredMarker = extendedDraft.cameraClipReel;
+        const markerMatches = Boolean(recoveredMarker
+          && isCameraClipReelSelection(recoveredCameraFiles)
+          && JSON.stringify(recoveredMarker.orderedFingerprints) === JSON.stringify(recoveredCameraFiles.map(studioFileFingerprint)));
+        setCameraClipReelMarker(markerMatches ? recoveredMarker! : null);
+        setPendingCameraReelStoryId(Number.isSafeInteger(extendedDraft.cameraReelStoryId) ? extendedDraft.cameraReelStoryId! : null);
         setMomentAccessibility(restoreMomentStudioAccessibility(draft));
         setMusicFile(draft.musicFile ?? null);
         setMusicRightsBasis(draft.musicRightsBasis ?? "original");
@@ -429,7 +497,7 @@ export function CommunityStoryRail({
     };
   }, [userId, hubId, scopeKey]);
 
-  const draftSnapshot = (): StudioDraft & MomentStudioAccessibilityDraft => ({
+  const draftSnapshot = (): ExtendedStudioDraft => ({
     id: studioDraftKey(userId!, hubId), userId: userId!,
     contextKind: hubId === null ? "community_moment" : "hub_moment",
     contextId: hubId ?? userId!, caption, files,
@@ -443,6 +511,8 @@ export function CommunityStoryRail({
     effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes,
     musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId,
     uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
+    cameraClipReel: cameraClipReelMarker,
+    cameraReelStoryId: pendingCameraReelStoryId,
     ...momentAccessibility,
     updatedAt: Date.now(),
   });
@@ -471,7 +541,7 @@ export function CommunityStoryRail({
   const signature = `${studioPublishSignature({
     files, selection: gallerySelection, caption, elements: editorElements, audience, hubId, textBackground, coverTimes,
     musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume,
-  })}::${JSON.stringify(momentAccessibility)}`;
+  })}::${JSON.stringify(momentAccessibility)}::${JSON.stringify(cameraClipReelMarker)}`;
   const signatureRef = useRef(signature);
   signatureRef.current = signature;
   const rotateAttemptAfterEdit = () => {
@@ -494,12 +564,21 @@ export function CommunityStoryRail({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature, draftReady, scopeKey]);
   useEffect(() => {
+    if (!cameraClipReelMarker) return;
+    const currentFiles = selectedStudioFiles(files, gallerySelection);
+    if (!isCameraClipReelSelection(currentFiles)
+      || JSON.stringify(cameraClipReelMarker.orderedFingerprints) !== JSON.stringify(currentFiles.map(studioFileFingerprint))) {
+      setCameraClipReelMarker(null);
+      setPendingCameraReelStoryId(null);
+    }
+  }, [cameraClipReelMarker, files, gallerySelection]);
+  useEffect(() => {
     if (!draftReady || !userId || activeScopeRef.current !== scopeKey) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     setDraftSaved(false);
     draftTimerRef.current = setTimeout(() => { void queueDraftSaveRef.current().catch(() => {}); }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-  }, [draftReady, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds, momentAccessibility]);
+  }, [draftReady, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds, momentAccessibility, cameraClipReelMarker, pendingCameraReelStoryId]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -554,21 +633,136 @@ export function CommunityStoryRail({
     }
   }, []);
 
+  const loadMomentVideoUrl = useCallback(async (story: CommunityStory, forceGrant = false) => {
+    if (!story.moment_video || momentVideoLoadingRef.current.has(story.id)) return;
+    const grantedUrl = momentVideoUrlsRef.current[story.id];
+    if (!forceGrant && grantedUrl && momentVideoGrantExpiryRef.current[story.id] > Date.now() + 15_000) return;
+    momentVideoLoadingRef.current.add(story.id);
+    try {
+      const grantUrl = new URL(story.moment_video.playback_grant_url, window.location.origin);
+      if (grantUrl.origin !== window.location.origin || grantUrl.search || grantUrl.hash
+        || grantUrl.pathname !== `/api/community/stories/${story.id}/moment-composition/playback-grant`) {
+        throw new Error("The camera reel playback grant URL was invalid.");
+      }
+      const grantResponse = await fetch(grantUrl.pathname, {
+        method: "POST",
+        headers: authHeaders(),
+        credentials: "same-origin",
+      });
+      const grant = await grantResponse.json().catch(() => ({})) as { playback_url?: string; expires_at?: string; error?: string };
+      if (!grantResponse.ok || typeof grant.playback_url !== "string") {
+        throw new Error(grant.error || "Authorized camera reel playback could not be started.");
+      }
+      const url = validateMomentCompositionPlaybackUrl(grant.playback_url, story.id, window.location.origin);
+      const expiry = typeof grant.expires_at === "string" ? Date.parse(grant.expires_at) : Number.NaN;
+      if (!Number.isFinite(expiry)) throw new Error("The camera reel playback grant did not include a valid expiry.");
+      momentVideoUrlsRef.current[story.id] = url;
+      momentVideoGrantExpiryRef.current[story.id] = expiry;
+      setMomentVideoUrls((current) => ({ ...current, [story.id]: url }));
+      setMomentVideoVersions((current) => ({ ...current, [story.id]: (current[story.id] ?? 0) + 1 }));
+      setMomentVideoPlaybackErrors((current) => { const next = { ...current }; delete next[story.id]; return next; });
+    } catch (reason) {
+      setMomentVideoPlaybackErrors((current) => ({
+        ...current,
+        [story.id]: reason instanceof Error ? reason.message : "Camera reel playback could not be loaded.",
+      }));
+    } finally {
+      momentVideoLoadingRef.current.delete(story.id);
+    }
+  }, []);
+
   useEffect(() => {
-    const visible = stories.slice(0, 24).flatMap((story) => story.media);
+    const visible = stories.slice(0, 24).flatMap((story) => story.moment_video ? [] : story.media);
     void Promise.all(visible.map((media) => loadMediaUrl(media)));
   }, [loadMediaUrl, stories]);
 
   useEffect(() => {
+    const refreshAttempts = momentVideoRefreshAttemptedRef.current;
     return () => {
       Object.values(mediaObjectUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
       mediaObjectUrlsRef.current = {};
+      momentVideoUrlsRef.current = {};
+      momentVideoGrantExpiryRef.current = {};
+      refreshAttempts.clear();
     };
   }, []);
 
   useEffect(() => {
     if (selectedMedia) void loadMediaUrl(selectedMedia);
   }, [loadMediaUrl, selectedMedia]);
+
+  useEffect(() => {
+    const story = selectedStory;
+    if (!story?.moment_video || !selectedMomentVideoState) return;
+    if (selectedMomentVideoState.status === "ready") {
+      if (viewerIndex !== null) momentVideoRefreshAttemptedRef.current.delete(story.id);
+      void loadMomentVideoUrl(story, viewerIndex !== null);
+      return;
+    }
+    if (selectedMomentVideoState.status === "failed") {
+      const controller = new AbortController();
+      let active = true;
+      void getCameraClipReelStatus(story.id, controller.signal).then((state) => {
+        if (active) setMomentVideoStates((current) => {
+          const existing = current[story.id];
+          if (existing?.status === state.status && existing.failureCode === state.failureCode
+            && existing.durationMs === state.durationMs && existing.playbackGrantUrl === state.playbackGrantUrl) return current;
+          return {
+            ...current,
+            [story.id]: {
+            status: state.status,
+            failureCode: state.failureCode,
+            durationMs: state.durationMs,
+            playbackGrantUrl: state.playbackGrantUrl,
+            },
+          };
+        });
+      }).catch(() => {});
+      return () => { active = false; controller.abort(); };
+    }
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const controller = new AbortController();
+    const refresh = async () => {
+      try {
+        const state = await getCameraClipReelStatus(story.id, controller.signal);
+        if (!active) return;
+        setStories((current) => current.map((item) => {
+          if (item.id !== story.id || !item.moment_video
+            || (item.moment_video.status === state.status && item.moment_video.duration_ms === state.durationMs)) return item;
+          return { ...item, moment_video: { ...item.moment_video, status: state.status, duration_ms: state.durationMs } };
+        }));
+        setMomentVideoStates((current) => {
+          const existing = current[story.id];
+          if (existing?.status === state.status && existing.failureCode === state.failureCode
+            && existing.durationMs === state.durationMs && existing.playbackGrantUrl === state.playbackGrantUrl) return current;
+          return {
+            ...current,
+            [story.id]: {
+            status: state.status,
+            failureCode: state.failureCode,
+            durationMs: state.durationMs,
+            playbackGrantUrl: state.playbackGrantUrl,
+            },
+          };
+        });
+        if (state.status === "ready") {
+          if (selectedStoryId === story.id) setMediaIndex(0);
+          await loadMomentVideoUrl(story);
+          return;
+        }
+        if (state.status !== "failed") timer = setTimeout(() => { void refresh(); }, 2000);
+      } catch {
+        if (active && !controller.signal.aborted) timer = setTimeout(() => { void refresh(); }, 3000);
+      }
+    };
+    timer = setTimeout(() => { void refresh(); }, 1200);
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      controller.abort();
+    };
+  }, [loadMomentVideoUrl, selectedMomentVideoState, selectedStory, selectedStoryId, viewerIndex]);
 
   useEffect(() => {
     if (previewFileIndex >= files.length && files.length > 0) setPreviewFileIndex(0);
@@ -578,6 +772,8 @@ export function CommunityStoryRail({
   const resetComposer = () => {
     if (scopeKey) scopeSnapshotsRef.current.delete(scopeKey);
     setFiles([]);
+    setCameraClipReelMarker(null);
+    setPendingCameraReelStoryId(null);
     setMomentAccessibility(emptyMomentStudioAccessibility());
     setMusicFile(null);
     setMusicRightsBasis("original");
@@ -815,6 +1011,7 @@ export function CommunityStoryRail({
         clientPublishId: attemptId,
         signal: controller.signal,
         uploadedIds: selectedIndexes.map((index) => uploadedIdsRef.current[index]),
+        cameraClipReel: validCameraClipReel,
         mediaEdits: selectedIndexes.flatMap((fileIndex, publishIndex) => coverTimes[fileIndex] !== undefined
           ? [{ index: publishIndex, coverTimeMs: coverTimes[fileIndex] }]
           : []),
@@ -866,9 +1063,57 @@ export function CommunityStoryRail({
         setStories(Array.isArray(next.stories) ? next.stories : []);
       }
     } catch (reason: unknown) {
-      setError(reason instanceof Error && reason.name === "AbortError"
-        ? "Upload cancelled. Your Spark was not published."
-        : reason instanceof Error ? reason.message : "Could not publish your Spark.");
+      if (reason instanceof CameraClipReelPendingError) {
+        setPendingCameraReelStoryId(reason.storyId);
+        setError(reason.message);
+        setRefreshNonce((value) => value + 1);
+        const pendingSnapshot: ExtendedStudioDraft = {
+          ...snapshotRef.current(),
+          cameraClipReel: cameraClipReelMarker,
+          cameraReelStoryId: reason.storyId,
+        };
+        if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, pendingSnapshot);
+        draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => saveStudioDraft(pendingSnapshot));
+        void draftQueueRef.current.catch((saveReason: unknown) => {
+          setDraftError(saveReason instanceof Error ? saveReason.message : "The posted Story's stitching retry could not be saved on this device.");
+        });
+      } else {
+        setError(reason instanceof Error && reason.name === "AbortError"
+          ? "Upload cancelled. Your Spark was not published."
+          : reason instanceof Error ? reason.message : "Could not publish your Spark.");
+      }
+    } finally {
+      publishControllerRef.current = null;
+      setPublishing(false);
+      setPublishStatus("");
+      setPublishProgress(0);
+    }
+  };
+
+  const retryCameraClipStitching = async () => {
+    if (!pendingCameraReelStoryId || !validCameraClipReel || !userId || publishing) return;
+    const cameraAssetIds = publishAssetIdsRef.current.slice(0, selectedFiles.length);
+    if (cameraAssetIds.length !== selectedFiles.length) {
+      setError("Story posted but stitching is pending. The saved ordered camera assets are incomplete; keep this draft and try again.");
+      return;
+    }
+    const controller = new AbortController();
+    publishControllerRef.current = controller;
+    setPublishing(true);
+    setPublishStatus("Retrying camera clip stitching…");
+    setError(null);
+    try {
+      await requestCameraClipReel(pendingCameraReelStoryId, cameraAssetIds, controller.signal);
+      draftGenerationRef.current++;
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      await draftQueueRef.current.catch(() => {});
+      await discardStudioDraft(userId, hubId);
+      resetComposer();
+      setComposerOpen(false);
+      setRefreshNonce((value) => value + 1);
+    } catch (reason) {
+      const detail = reason instanceof Error ? reason.message : "Retry stitching from the saved Studio draft.";
+      setError(detail.startsWith("Story posted") ? detail : `Story posted, but stitching is pending. ${detail}`);
     } finally {
       publishControllerRef.current = null;
       setPublishing(false);
@@ -878,6 +1123,8 @@ export function CommunityStoryRail({
   };
 
   const selectStudioFiles = (incoming: File[]) => {
+    setCameraClipReelMarker(null);
+    setPendingCameraReelStoryId(null);
     const { files: selected, errors } = chooseStudioFiles([...files, ...incoming]);
     if (errors.length) setError(errors[0]);
     if (selected.length) {
@@ -919,7 +1166,15 @@ export function CommunityStoryRail({
 
   const onCameraVideo = (recorded: File[]) => {
     setCameraOpen(false);
+    const chosen = chooseStudioFiles([...files, ...recorded]).files;
+    const cameraOnlyGroup = files.length === 0
+      && isCameraClipReelSelection(recorded)
+      && chosen.length === recorded.length
+      && chosen.every((file, index) => file === recorded[index]);
     selectStudioFiles(recorded);
+    setCameraClipReelMarker(cameraOnlyGroup
+      ? { orderedFingerprints: recorded.map(studioFileFingerprint) }
+      : null);
   };
 
   const discardDraft = async () => {
@@ -974,6 +1229,8 @@ export function CommunityStoryRail({
   }, [authors, compact, loading, openStory, openStoryId]);
 
   const toggleGallerySelection = (index: number) => {
+    setCameraClipReelMarker(null);
+    setPendingCameraReelStoryId(null);
     setPreviewFileIndex(index);
     setGallerySelection((current) => current.includes(index)
       ? current.filter((item) => item !== index)
@@ -1073,11 +1330,25 @@ export function CommunityStoryRail({
   }, [advanceFrame, closeViewer, viewerIndex]);
 
   const selectedPlayerMedia = useMemo(() => {
+    if (selectedFrame?.isMomentReel && selectedStory?.moment_video) {
+      const mediaUrl = momentVideoUrls[selectedStory.id];
+      if (!mediaUrl) return null;
+      const descriptions = selectedStory.media.map((item, index) => `Clip ${index + 1}: ${item.alt_text?.trim() || "No alternative text supplied."}`).join(" ");
+      return {
+        id: -selectedStory.id,
+        media_type: "video" as const,
+        mime_type: "video/mp4",
+        duration_ms: selectedMomentVideoState?.durationMs ?? null,
+        media_url: mediaUrl,
+        alt_text: `Camera clip reel with ${selectedStory.media.length} original clips. ${descriptions}`,
+        captions_vtt: null,
+      };
+    }
     if (!selectedMedia) return null;
     const mediaUrl = mediaUrls[selectedMedia.id];
     if (!mediaUrl) return null;
     return { ...selectedMedia, media_url: mediaUrl };
-  }, [mediaUrls, selectedMedia]);
+  }, [mediaUrls, momentVideoUrls, selectedFrame?.isMomentReel, selectedMedia, selectedStory, selectedMomentVideoState?.durationMs]);
 
   async function toggleReaction() {
     if (!selectedStoryId) return;
@@ -1182,6 +1453,8 @@ export function CommunityStoryRail({
                 </div>
                 {draftError && <p role="alert" className="mb-2 rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-xs text-amber-100">{draftError} Keep this tab open or try editing again to save.</p>}
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
+                {validCameraClipReel && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">These camera-recorded clips will be stitched into one video frame after the Story posts. Choosing or changing media clears this camera-only marker.</p>}
+                {pendingCameraReelStoryId !== null && <button type="button" onClick={() => void retryCameraClipStitching()} disabled={publishing || !validCameraClipReel} className="mb-3 min-h-10 rounded-xl border border-amber-300/50 px-4 text-xs font-bold text-amber-100 disabled:opacity-50" data-testid="button-retry-camera-reel">Retry stitching — Story already posted</button>}
                 {publishing && publishStatus && <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs"><p>{publishStatus}{publishProgress ? ` ${publishProgress}%` : ""}</p>{publishProgress > 0 && <progress aria-label="Spark upload progress" value={publishProgress} max={100} className="mt-2 w-full" />}<button type="button" className="mt-2 min-h-10 rounded-lg border border-white/20 px-3 font-bold" onClick={() => publishControllerRef.current?.abort()}>Cancel upload</button></div>}
                 {studioStep === "destination" ? <>
                   <div className="nia-story-destination-intro"><p className="nia-story-kicker">The final step</p><h2>Where should<br /><em>this Spark land?</em></h2><p>Choose who gets to see your moment before it goes live.</p></div>
@@ -1242,6 +1515,8 @@ export function CommunityStoryRail({
                         const trimmed = await trimVideoFile(selectedPreviewFile!, bounds.start, bounds.end);
                         const nextFiles = files.slice(); nextFiles[previewFileIndex] = trimmed;
                         setFiles(nextFiles);
+                        setCameraClipReelMarker(null);
+                        setPendingCameraReelStoryId(null);
                         const nextIds = [...uploadedIdsRef.current]; nextIds[previewFileIndex] = null;
                         uploadedIdsRef.current = nextIds;
                         publishAssetIdsRef.current = [];
@@ -1427,7 +1702,7 @@ export function CommunityStoryRail({
                  </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <p className="text-[10px] leading-relaxed text-white/55">Original audio is preserved. Apply trim to replace the clip before upload; visual effects remain preview-only. Text and stickers are saved as Story overlays.</p>
-                  {files.length > 0 && <button type="button" disabled={trimming} onClick={() => { setFiles([]); setGallerySelection([]); setMomentAccessibility((current) => ({ ...current, momentAltTexts: {}, momentCaptionsVtt: {} })); setTrimPreview({}); setCoverTimes({}); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
+                  {files.length > 0 && <button type="button" disabled={trimming} onClick={() => { setFiles([]); setGallerySelection([]); setCameraClipReelMarker(null); setPendingCameraReelStoryId(null); setMomentAccessibility((current) => ({ ...current, momentAltTexts: {}, momentCaptionsVtt: {} })); setTrimPreview({}); setCoverTimes({}); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
                 </div>
                 </>}
               </div>
@@ -1443,6 +1718,10 @@ export function CommunityStoryRail({
           story={selectedStory}
           media={selectedMedia}
           playerMedia={selectedPlayerMedia}
+          playbackAttempt={selectedStory.moment_video ? momentVideoVersions[selectedStory.id] ?? 0 : 0}
+          reelStatus={selectedMomentVideoState?.status ?? null}
+          reelFailureCode={selectedMomentVideoState?.failureCode ?? null}
+          reelPlaybackError={selectedStory?.moment_video ? momentVideoPlaybackErrors[selectedStory.id] ?? null : null}
           progress={storyProgress}
           paused={storyPaused}
           onProgress={setStoryProgress}
@@ -1472,6 +1751,20 @@ export function CommunityStoryRail({
               });
           }}
           onShare={() => setShareStoryId(selectedStory.id)}
+          onRetryReel={selectedStory.moment_video ? () => {
+            momentVideoRefreshAttemptedRef.current.delete(selectedStory.id);
+            setMomentVideoPlaybackErrors((current) => { const next = { ...current }; delete next[selectedStory.id]; return next; });
+            void loadMomentVideoUrl(selectedStory, true);
+          } : undefined}
+          onPlaybackError={selectedStory.moment_video ? () => {
+            if (momentVideoRefreshAttemptedRef.current.has(selectedStory.id)) {
+              setMomentVideoPlaybackErrors((current) => ({ ...current, [selectedStory.id]: "The camera reel could not be played. Try refreshing its secure playback grant." }));
+              return;
+            }
+            momentVideoRefreshAttemptedRef.current.add(selectedStory.id);
+            setMomentVideoPlaybackErrors((current) => ({ ...current, [selectedStory.id]: "Refreshing secure camera reel playback…" }));
+            void loadMomentVideoUrl(selectedStory, true);
+          } : undefined}
         />
       )}
       {galleryOpen && composerOpen && draftReady && activeScopeRef.current === scopeKey && (
@@ -1479,7 +1772,7 @@ export function CommunityStoryRail({
           thumbnails={galleryThumbnails}
           selected={gallerySelection}
           onSelect={(id) => toggleGallerySelection(Number(id))}
-          onMultiple={() => setGallerySelection(files.map((_, index) => index))}
+          onMultiple={() => { setCameraClipReelMarker(null); setPendingCameraReelStoryId(null); setGallerySelection(files.map((_, index) => index)); }}
           onClose={() => setGalleryOpen(false)}
           onCamera={() => { if (!trimming) setCameraOpen(true); }}
           onChooseFiles={() => galleryInput.current?.click()}

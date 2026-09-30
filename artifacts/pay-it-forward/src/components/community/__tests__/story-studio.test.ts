@@ -1,11 +1,65 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { publishStudioMoment, selectedStudioFiles, validStudioMediaEdits } from "../story-studio-publish";
+import { getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
 import { buildMomentMediaAccessibility, parseMomentStudioTags, restoreMomentStudioAccessibility, validateMomentStudioWebVtt, type MomentStudioAccessibilityDraft } from "../moment-studio-accessibility";
 import { trimVideoFile } from "../story-media-tools";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
 
 const file = (name: string) => Object.assign(new Blob(["bytes"], { type: "image/jpeg" }), { name, lastModified: 1 }) as File;
+const videoFile = (name: string) => Object.assign(new Blob(["video"], { type: "video/webm" }), { name, lastModified: 1 }) as File;
+
+test("camera reel marker applies only to two through six all-video camera groups", () => {
+  assert.equal(isCameraClipReelSelection([videoFile("one.webm")]), false);
+  assert.equal(isCameraClipReelSelection([videoFile("one.webm"), videoFile("two.webm")]), true);
+  assert.equal(isCameraClipReelSelection([videoFile("one.webm"), file("photo.jpg")]), false);
+  assert.equal(isCameraClipReelSelection(Array.from({ length: 7 }, (_, index) => videoFile(`${index}.webm`))), false);
+});
+
+test("camera reel playback URL stays same-origin and query-free for native Range streaming", () => {
+  assert.equal(
+    validateMomentCompositionPlaybackUrl("/api/community/stories/52/moment-composition/play", 52, "https://niakofa.test"),
+    "/api/community/stories/52/moment-composition/play",
+  );
+  assert.throws(() => validateMomentCompositionPlaybackUrl("https://evil.test/api/community/stories/52/moment-composition/play", 52, "https://niakofa.test"), /invalid/);
+  assert.throws(() => validateMomentCompositionPlaybackUrl("/api/community/stories/52/moment-composition/play?token=secret", 52, "https://niakofa.test"), /invalid/);
+  assert.throws(() => validateMomentCompositionPlaybackUrl("/api/community/stories/53/moment-composition/play", 52, "https://niakofa.test"), /invalid/);
+});
+
+test("camera composition client sends the ordered id contract and consumes private playback contract", async () => {
+  const oldFetch = globalThis.fetch;
+  const calls: Array<{ path: string; method?: string; body?: string }> = [];
+  globalThis.fetch = async (path, init) => {
+    calls.push({ path: String(path), method: init?.method, body: init?.body as string | undefined });
+    if (String(path).endsWith("/moment-composition") && init?.method === "POST") {
+      return new Response(JSON.stringify({ composition: {
+        status: "queued",
+        playback_grant_url: "/api/community/stories/52/moment-composition/playback-grant",
+        status_url: "/api/community/stories/52/moment-composition",
+      } }), { status: 202 });
+    }
+    return new Response(JSON.stringify({ composition: {
+      status: "ready",
+      failure_code: null,
+      duration_ms: 4200,
+      playback_grant_url: "/api/community/stories/52/moment-composition/playback-grant",
+    } }), { status: 200 });
+  };
+  try {
+    assert.equal(await requestCameraClipReel(52, [71, 70]), "queued");
+    assert.deepEqual(JSON.parse(calls[0].body!), { intent: "camera_clip_reel", media_asset_ids: [71, 70] });
+    assert.equal(calls[0].method, "POST");
+    const status = await getCameraClipReelStatus(52);
+    assert.deepEqual(status, {
+      status: "ready",
+      failureCode: null,
+      durationMs: 4200,
+      playbackGrantUrl: "/api/community/stories/52/moment-composition/playback-grant",
+    });
+    await assert.rejects(requestCameraClipReel(52, [71, 71]), /unique video assets/);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
 
 test("cover edits only include video assets and nonnegative timestamps", () => {
   const video = Object.assign(new Blob(["video"], { type: "video/webm" }), { name: "clip.webm", lastModified: 1 }) as File;
@@ -91,6 +145,7 @@ test("studio uploads raw bytes and publishes asset IDs, elements and manifest wi
     const route = String(path);
     sent.push({ path: route, body: init?.body as string | undefined });
     if (route.endsWith("/uploads")) return new Response(JSON.stringify({ media_asset_id: 41, upload: { method: "PUT", url: "/storage/41", headers: {} }, complete_url: "/api/media-assets/41/complete" }), { status: 200 });
+    if (route.endsWith("/complete")) return new Response(JSON.stringify({ media_asset_id: 41, status: "processing" }), { status: 202 });
     if (route.includes("moment-media-status")) return new Response(JSON.stringify({ assets: [{ id: 41, status: "ready", media_type: "photo", variant_ready: true }] }), { status: 200 });
     return new Response("{}", { status: 200 });
   };
@@ -203,6 +258,10 @@ test("failed publication does not remove a recoverable user-scoped draft", async
       if (route === "/api/media-assets/uploads") {
         const id = ++sessions + 200;
         return new Response(JSON.stringify({ media_asset_id: id, upload: { method: "PUT", url: `/storage/${id}`, headers: {} }, complete_url: `/api/media-assets/${id}/complete` }), { status: 200 });
+      }
+      if (route.endsWith("/complete")) {
+        const id = Number(route.match(/media-assets\/(\d+)\/complete/)?.[1]);
+        return new Response(JSON.stringify({ media_asset_id: id, status: "processing" }), { status: 202 });
       }
       if (route.includes("moment-media-status")) return new Response(JSON.stringify({ assets: [201, 202].map((id) => ({ id, status: "ready", media_type: "photo", variant_ready: true })) }), { status: 200 });
       if (route === "/api/community/stories") {
