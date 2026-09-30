@@ -810,7 +810,7 @@ export function CommunityStoryRail({
     setCoverTimes({});
   };
 
-  const closeComposer = () => {
+  const closeComposer = useCallback(() => {
     publishControllerRef.current?.abort();
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     void queueDraftSaveRef.current().catch(() => {});
@@ -821,7 +821,7 @@ export function CommunityStoryRail({
       const remainingQuery = query.toString();
       navigate(`${location}${remainingQuery ? `?${remainingQuery}` : ""}`);
     }
-  };
+  }, [location, navigate]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -849,7 +849,7 @@ export function CommunityStoryRail({
     dialog?.querySelector<HTMLElement>("button")?.focus();
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); };
-  }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady]);
+  }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady, closeComposer]);
 
   const publish = async () => {
     if (trimming) {
