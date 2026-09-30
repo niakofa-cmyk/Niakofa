@@ -10,6 +10,8 @@ import {
   real,
   index,
   uniqueIndex,
+  primaryKey,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
@@ -110,6 +112,16 @@ export const communityStorySharesTable = pgTable("community_story_shares", {
   index("community_story_shares_story_idx").on(table.story_id, table.created_at),
 ]);
 
+export const communityStoryAuthorMutesTable = pgTable("community_story_author_mutes", {
+  viewer_user_id: integer("viewer_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  muted_user_id: integer("muted_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.viewer_user_id, table.muted_user_id] }),
+  check("community_story_author_mutes_distinct_users", sql`${table.viewer_user_id} <> ${table.muted_user_id}`),
+  index("community_story_author_mutes_muted_idx").on(table.muted_user_id),
+]);
+
 export const communityStoryCommentsTable = pgTable("community_story_comments", {
   id: serial("id").primaryKey(),
   story_id: integer("story_id").notNull().references(() => communityStoriesTable.id, { onDelete: "cascade" }),
@@ -128,4 +140,5 @@ export type CommunityStoryElement = typeof communityStoryElementsTable.$inferSel
 export type CommunityStoryView = typeof communityStoryViewsTable.$inferSelect;
 export type CommunityStoryReaction = typeof communityStoryReactionsTable.$inferSelect;
 export type CommunityStoryShare = typeof communityStorySharesTable.$inferSelect;
+export type CommunityStoryAuthorMute = typeof communityStoryAuthorMutesTable.$inferSelect;
 export type CommunityStoryComment = typeof communityStoryCommentsTable.$inferSelect;

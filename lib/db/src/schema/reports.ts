@@ -29,6 +29,7 @@ export const reportsTable = pgTable("reports", {
   reported_user_id: integer("reported_user_id"),
   reported_request_id: integer("reported_request_id"),
   reported_griot_story_id: integer("reported_griot_story_id"),
+  reported_community_story_id: integer("reported_community_story_id"),
   // Exchange reports use a first-class target so duplicate submissions can be
   // rejected atomically instead of parsing the human-readable description.
   reported_exchange_listing_id: integer("reported_exchange_listing_id"),

@@ -4,6 +4,7 @@ import {
   reportsTable,
   usersTable,
   griotStoriesTable,
+  communityStoriesTable,
   exchangeListingsTable,
   exchangeModerationReviewHistoryTable,
 } from "@workspace/db";
@@ -16,15 +17,17 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { createMessageNotification } from "../lib/message-notifications";
+import { viewerCanReadStory } from "./community-stories";
 
 const router = Router();
 const sellerUsersTable = alias(usersTable, "seller");
 
 const CreateReportBody = z.object({
   reporter_id: z.number().int().positive(),
-  reported_user_id: z.number().int().positive().optional(),
-  reported_request_id: z.number().int().positive().optional(),
-  reported_griot_story_id: z.number().int().positive().optional(),
+  reported_user_id: z.number().int().positive().nullable().optional(),
+  reported_request_id: z.number().int().positive().nullable().optional(),
+  reported_griot_story_id: z.number().int().positive().nullable().optional(),
+  reported_community_story_id: z.number().int().positive().nullable().optional(),
   type: z.enum([
     "suspicious_request",
     "suspicious_helper",
@@ -35,8 +38,13 @@ const CreateReportBody = z.object({
     "spam",
     "other", "sos"]),
   description: z.string().min(10).max(2000),
-}).refine(d => d.reported_user_id || d.reported_request_id || d.reported_griot_story_id, {
-  message: "Must specify one of reported_user_id, reported_request_id, or reported_griot_story_id",
+}).refine(d => [
+  d.reported_user_id,
+  d.reported_request_id,
+  d.reported_griot_story_id,
+  d.reported_community_story_id,
+].filter(value => value !== undefined && value !== null).length === 1, {
+  message: "Specify exactly one report target",
 });
 
 const AdminReviewBody = z.object({
@@ -57,7 +65,15 @@ router.post("/reports", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
   }
 
-  const { reporter_id, reported_user_id, reported_request_id, reported_griot_story_id, type, description } = parsed.data;
+  const {
+    reporter_id,
+    reported_user_id,
+    reported_request_id,
+    reported_griot_story_id,
+    reported_community_story_id,
+    type,
+    description,
+  } = parsed.data;
 
   // Ensure reporter_id matches authenticated user (prevent filing as someone else)
   if (req.authenticatedUserId !== reporter_id) {
@@ -67,6 +83,34 @@ router.post("/reports", requireAuth, async (req, res) => {
   // Prevent self-report
   if (reported_user_id && reported_user_id === reporter_id) {
     return res.status(400).json({ error: "Cannot report yourself" });
+  }
+  if (reported_community_story_id) {
+    const [story] = await db.select({
+      id: communityStoriesTable.id,
+      author_user_id: communityStoriesTable.author_user_id,
+      hub_id: communityStoriesTable.hub_id,
+      community_id: communityStoriesTable.community_id,
+      audience: communityStoriesTable.audience,
+      exchange_listing_id: communityStoriesTable.exchange_listing_id,
+      status: communityStoriesTable.status,
+      expires_at: communityStoriesTable.expires_at,
+    }).from(communityStoriesTable)
+      .where(eq(communityStoriesTable.id, reported_community_story_id))
+      .limit(1);
+    if (!story || story.status !== "published" || story.expires_at <= new Date()) {
+      return res.status(404).json({ error: "Moment not found." });
+    }
+    if (story.author_user_id === reporter_id) return res.status(400).json({ error: "Cannot report your own Moment." });
+    if (!(await viewerCanReadStory(reporter_id, story))) return res.status(404).json({ error: "Moment not found." });
+
+    const [existingReport] = await db.select({ id: reportsTable.id })
+      .from(reportsTable)
+      .where(and(
+        eq(reportsTable.reporter_id, reporter_id),
+        eq(reportsTable.reported_community_story_id, reported_community_story_id),
+      ))
+      .limit(1);
+    if (existingReport) return res.status(409).json({ error: "You have already reported this Moment." });
   }
 
   // Rate-limit: max 5 reports per user per 24 hours
@@ -85,21 +129,31 @@ router.post("/reports", requireAuth, async (req, res) => {
     });
   }
 
-  const [report] = await db
-    .insert(reportsTable)
-    .values({
-      reporter_id,
-      reported_user_id: reported_user_id ?? null,
-      reported_request_id: reported_request_id ?? null,
-      reported_griot_story_id: reported_griot_story_id ?? null,
-      type,
-      description,
-      status: "pending",
-    })
-    .returning();
+  let report: typeof reportsTable.$inferSelect | undefined;
+  try {
+    [report] = await db
+      .insert(reportsTable)
+      .values({
+        reporter_id,
+        reported_user_id: reported_user_id ?? null,
+        reported_request_id: reported_request_id ?? null,
+        reported_griot_story_id: reported_griot_story_id ?? null,
+        reported_community_story_id: reported_community_story_id ?? null,
+        type,
+        description,
+        status: "pending",
+      })
+      .returning();
+  } catch (error) {
+    if (reported_community_story_id && (error as { code?: string })?.code === "23505") {
+      return res.status(409).json({ error: "You have already reported this Moment." });
+    }
+    throw error;
+  }
+  if (!report) return res.status(500).json({ error: "Report could not be saved." });
 
   logger.info(
-    { report_id: report.id, reporter_id, type, reported_user_id, reported_request_id, reported_griot_story_id },
+    { report_id: report.id, reporter_id, type, reported_user_id, reported_request_id, reported_griot_story_id, reported_community_story_id },
     "trust-safety: new report filed"
   );
 
@@ -125,7 +179,25 @@ router.get("/reports", requireAuth, requireAdmin(), adminLimiter, async (req, re
     .orderBy(desc(reportsTable.created_at))
     .limit(200);
 
-  return res.json(rows);
+  const storyIds = [...new Set(rows.flatMap((row) => row.reported_community_story_id === null ? [] : [row.reported_community_story_id]))];
+  const stories = storyIds.length ? await db.select({
+    id: communityStoriesTable.id,
+    caption: communityStoriesTable.caption,
+    status: communityStoriesTable.status,
+    author_name: usersTable.name,
+  }).from(communityStoriesTable)
+    .innerJoin(usersTable, eq(usersTable.id, communityStoriesTable.author_user_id))
+    .where(inArray(communityStoriesTable.id, storyIds)) : [];
+  const storyById = new Map(stories.map((story) => [story.id, story]));
+  return res.json(rows.map((row) => {
+    const story = row.reported_community_story_id === null ? undefined : storyById.get(row.reported_community_story_id);
+    return {
+      ...row,
+      reported_community_story_caption: story?.caption ?? null,
+      reported_community_story_author_name: story?.author_name ?? null,
+      reported_community_story_status: story?.status ?? null,
+    };
+  }));
 });
 
 // ── GET /reports/griot-stories — admin: reports filed against Griot stories,
@@ -269,12 +341,27 @@ router.get("/reports/:id", requireAuth, requireAdmin(), adminLimiter, async (req
       .limit(1);
     reportedUserName = u?.name ?? null;
   }
+  let reportedCommunityStory: { caption: string | null; status: string; author_name: string } | null = null;
+  if (report.reported_community_story_id) {
+    const [story] = await db.select({
+      caption: communityStoriesTable.caption,
+      status: communityStoriesTable.status,
+      author_name: usersTable.name,
+    }).from(communityStoriesTable)
+      .innerJoin(usersTable, eq(usersTable.id, communityStoriesTable.author_user_id))
+      .where(eq(communityStoriesTable.id, report.reported_community_story_id))
+      .limit(1);
+    reportedCommunityStory = story ?? null;
+  }
 
   return res.json({
     ...report,
     reporter_name: reporter?.name ?? null,
     reporter_email: reporter?.email ?? null,
     reported_user_name: reportedUserName,
+    reported_community_story_caption: reportedCommunityStory?.caption ?? null,
+    reported_community_story_author_name: reportedCommunityStory?.author_name ?? null,
+    reported_community_story_status: reportedCommunityStory?.status ?? null,
   });
 });
 
@@ -485,6 +572,37 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, a
         });
       }
     }
+  }
+
+  if (updated.reported_community_story_id && status === "resolved_banned") {
+    const storyId = updated.reported_community_story_id;
+    await db.update(communityStoriesTable)
+      .set({ status: "removed" })
+      .where(eq(communityStoriesTable.id, storyId));
+    const autoClosed = await db.update(reportsTable)
+      .set({
+        status: "resolved_dismissed",
+        admin_notes: `Auto-dismissed: Moment already removed via report #${id}`,
+        reviewed_by,
+        reviewed_at: new Date(),
+        updated_at: new Date(),
+      })
+      .where(and(
+        eq(reportsTable.reported_community_story_id, storyId),
+        sql`${reportsTable.status} IN ('pending', 'under_review')`,
+        sql`${reportsTable.id} != ${id}`,
+      ))
+      .returning({ id: reportsTable.id });
+    for (const otherReport of autoClosed) {
+      broadcast({
+        type: "report_reviewed",
+        payload: { id: otherReport.id, status: "resolved_dismissed", reviewed_by },
+      });
+    }
+    logger.info(
+      { report_id: id, story_id: storyId, auto_closed_reports: autoClosed.length },
+      "trust-safety: Moment removed after upheld report"
+    );
   }
 
   logger.info(

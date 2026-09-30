@@ -15,6 +15,8 @@ export interface CreateReportInput {
   reported_request_id?: number | null;
   /** @nullable */
   reported_griot_story_id?: number | null;
+  /** @nullable */
+  reported_community_story_id?: number | null;
   type: CreateReportInputType;
   /**
      * @minLength 10

@@ -17,6 +17,14 @@ export interface Report {
   reported_request_id?: number | null;
   /** @nullable */
   reported_griot_story_id?: number | null;
+  /** @nullable */
+  reported_community_story_id?: number | null;
+  /** @nullable */
+  reported_community_story_caption?: string | null;
+  /** @nullable */
+  reported_community_story_author_name?: string | null;
+  /** @nullable */
+  reported_community_story_status?: string | null;
   type: ReportType;
   description: string;
   status: ReportStatus;

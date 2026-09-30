@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { useAppContext } from "@/lib/AppContext";
+import { authHeaders } from "@/lib/auth";
+import { useCreateReport, type CreateReportInput } from "@workspace/api-client-react";
 
 type ReportType =
   | "suspicious_request"
@@ -38,12 +40,21 @@ const REPORT_OPTIONS: ReportOption[] = [
 interface Props {
   reportedUserId?: number;
   reportedRequestId?: number;
+  reportedCommunityStoryId?: number;
   reportedName?: string;
   onClose: () => void;
 }
 
-export function ReportModal({ reportedUserId, reportedRequestId, reportedName, onClose }: Props) {
+function getErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const value = error as { status?: unknown; response?: { status?: unknown } };
+  if (typeof value.status === "number") return value.status;
+  return typeof value.response?.status === "number" ? value.response.status : undefined;
+}
+
+export function ReportModal({ reportedUserId, reportedRequestId, reportedCommunityStoryId, reportedName, onClose }: Props) {
   const { currentUser } = useAppContext();
+  const createReport = useCreateReport({ request: { headers: authHeaders() } });
   const [step, setStep] = useState<"type" | "details" | "done">("type");
   const [selectedType, setSelectedType] = useState<ReportType | null>(null);
   const [description, setDescription] = useState("");
@@ -59,37 +70,30 @@ export function ReportModal({ reportedUserId, reportedRequestId, reportedName, o
 
     setLoading(true);
     try {
-      const body: Record<string, unknown> = {
+      const body: CreateReportInput = {
         reporter_id: currentUser.id,
         type: selectedType,
         description: description.trim(),
       };
       if (reportedUserId) body.reported_user_id = reportedUserId;
       if (reportedRequestId) body.reported_request_id = reportedRequestId;
-
-      const res = await fetch("/api/reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        if (res.status === 429) {
-          toast({
-            title: "Too many reports",
-            description: "You've filed 5 reports today. Please wait 24 hours.",
-            variant: "destructive",
-          });
-        } else {
-          toast({ title: err.error ?? "Failed to submit report", variant: "destructive" });
-        }
-        return;
-      }
+      if (reportedCommunityStoryId) body.reported_community_story_id = reportedCommunityStoryId;
+      await createReport.mutateAsync({ data: body });
 
       setStep("done");
-    } catch {
-      toast({ title: "Network error — please try again", variant: "destructive" });
+    } catch (error) {
+      const status = getErrorStatus(error);
+      if (status === 429) {
+        toast({
+          title: "Too many reports",
+          description: "You've filed 5 reports today. Please wait 24 hours.",
+          variant: "destructive",
+        });
+      } else if (status === 409) {
+        toast({ title: "This Moment has already been reported", variant: "destructive" });
+      } else {
+        toast({ title: error instanceof Error ? error.message : "Could not submit report. Please try again.", variant: "destructive" });
+      }
     } finally {
       setLoading(false);
     }

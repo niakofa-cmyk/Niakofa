@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Heart, LoaderCircle, MessageCircle, Play, RefreshCw, Send, Share2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getGetCommunityStoryMutedAuthorsQueryKey,
+  useGetCommunityStoryMutedAuthors,
+  useMuteCommunityStoryAuthor,
+  useUnmuteCommunityStoryAuthor,
+} from "@workspace/api-client-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Flag, Heart, LoaderCircle, MessageCircle, MoreHorizontal, Play, RefreshCw, Send, Share2, VolumeX, X } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { deleteStoryComment, getStoryComments, getStoryMetrics, postStoryComment, reactToStory, recordStoryView, removeStoryReaction, sendStoryContextMessage, type StoryComment, type StoryMetrics } from "@/lib/community-story-client";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
+import { ReportModal } from "@/components/ReportModal";
 import { CommunityStoryRail } from "./CommunityStoryRail";
 import { StoryShareSheet } from "./StoryShareSheet";
 import { StoryElementLayer, storyEffectFilter, type StoryElement } from "./StoryElementLayer";
@@ -86,6 +94,7 @@ export function CommunityMomentsExperience({
   compact?: boolean;
 }) {
   const [sparks, setSparks] = useState<MomentSpark[]>([]);
+  const [viewerId, setViewerId] = useState<number | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -120,7 +129,22 @@ export function CommunityMomentsExperience({
     () => typeof document === "undefined" || document.visibilityState !== "hidden",
   );
   const [videoMuted, setVideoMuted] = useState(true);
+  const [reportSparkId, setReportSparkId] = useState<number | null>(null);
+  const [actionMenuSparkId, setActionMenuSparkId] = useState<number | null>(null);
+  const [moderationPendingAuthorId, setModerationPendingAuthorId] = useState<number | null>(null);
+  const [moderationNotice, setModerationNotice] = useState("");
+  const [mutedAuthorsOpen, setMutedAuthorsOpen] = useState(false);
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+  const mutedAuthorsQuery = useGetCommunityStoryMutedAuthors({
+    query: {
+      enabled: mutedAuthorsOpen,
+      queryKey: getGetCommunityStoryMutedAuthorsQueryKey(),
+    },
+    request: { headers: authHeaders() },
+  });
+  const muteAuthorMutation = useMuteCommunityStoryAuthor({ request: { headers: authHeaders() } });
+  const unmuteAuthorMutation = useUnmuteCommunityStoryAuthor({ request: { headers: authHeaders() } });
   const cardRefs = useRef(new Map<number, HTMLElement>());
   const feedRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -129,6 +153,7 @@ export function CommunityMomentsExperience({
   const moreControllerRef = useRef<AbortController | null>(null);
   const viewedIdsRef = useRef(new Set<number>());
   const activeSpark = sparks[activeIndex] ?? null;
+  const reportSpark = reportSparkId === null ? null : sparks.find((spark) => spark.id === reportSparkId) ?? null;
   const commentsSpark = commentsOpenId == null ? null : sparks.find((spark) => spark.id === commentsOpenId) ?? null;
   const activeMedia = activeSpark?.media[Math.min(activeMediaIndex, Math.max(0, activeSpark.media.length - 1))] ?? null;
   const currentMediaUrl = resolvedMediaKey === `${activeSpark?.id}-${activeMedia?.id}` ? mediaUrl : null;
@@ -173,6 +198,7 @@ export function CommunityMomentsExperience({
     void fetchMomentPage(hubId, null, controller.signal)
       .then((page) => {
         if (controller.signal.aborted || generation !== feedGenerationRef.current) return;
+        setViewerId(page.viewerId);
         setSparks(page.stories);
         setCursor(page.cursor);
       })
@@ -512,6 +538,38 @@ export function CommunityMomentsExperience({
     }
   };
 
+  const muteAuthor = async (spark: MomentSpark) => {
+    if (moderationPendingAuthorId !== null || spark.author_user_id === viewerId) return;
+    setModerationPendingAuthorId(spark.author_user_id);
+    setInteractionError("");
+    try {
+      await muteAuthorMutation.mutateAsync({ id: spark.author_user_id });
+      await queryClient.invalidateQueries({ queryKey: getGetCommunityStoryMutedAuthorsQueryKey() });
+      setActionMenuSparkId(null);
+      setModerationNotice(`Moments from ${spark.author.name || "this author"} are now hidden.`);
+      setRetry((value) => value + 1);
+    } catch (reason) {
+      setInteractionError(reason instanceof Error ? reason.message : "Could not mute this author.");
+    } finally {
+      setModerationPendingAuthorId(null);
+    }
+  };
+
+  const unmuteAuthor = async (authorId: number) => {
+    if (moderationPendingAuthorId !== null) return;
+    setModerationPendingAuthorId(authorId);
+    setInteractionError("");
+    try {
+      await unmuteAuthorMutation.mutateAsync({ id: authorId });
+      await queryClient.invalidateQueries({ queryKey: getGetCommunityStoryMutedAuthorsQueryKey() });
+      setRetry((value) => value + 1);
+    } catch (reason) {
+      setInteractionError(reason instanceof Error ? reason.message : "Could not restore this author's Moments.");
+    } finally {
+      setModerationPendingAuthorId(null);
+    }
+  };
+
   return (
     <section className="space-y-4" aria-label={hubId === null ? "Community Moments" : "Hub Moments"} data-testid="community-moments-experience">
       {!compact && (
@@ -531,17 +589,23 @@ export function CommunityMomentsExperience({
       <section className="overflow-hidden rounded-2xl border border-border bg-card" aria-label="Spark feed">
         <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-4 py-2">
           <p className="text-sm font-bold">Sparks shared with you</p>
-          {!loading && sparks.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground" aria-live="polite">Spark {activeIndex + 1} of {sparks.length}</span>
-              <button type="button" onClick={() => moveTo(Math.max(0, activeIndex - 1))} disabled={activeIndex === 0} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Previous Spark" data-testid="button-previous-spark">
-                <ArrowUp className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <button type="button" onClick={() => moveTo(Math.min(sparks.length - 1, activeIndex + 1))} disabled={activeIndex === sparks.length - 1} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Next Spark" data-testid="button-next-spark">
-                <ArrowDown className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setMutedAuthorsOpen(true)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted" aria-label="Manage hidden Moment authors" data-testid="button-manage-hidden-authors">
+              <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />
+              Hidden authors
+            </button>
+            {!loading && sparks.length > 0 && (
+              <>
+                <span className="hidden text-xs text-muted-foreground sm:inline" aria-live="polite">Spark {activeIndex + 1} of {sparks.length}</span>
+                <button type="button" onClick={() => moveTo(Math.max(0, activeIndex - 1))} disabled={activeIndex === 0} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Previous Spark" data-testid="button-previous-spark">
+                  <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button type="button" onClick={() => moveTo(Math.min(sparks.length - 1, activeIndex + 1))} disabled={activeIndex === sparks.length - 1} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-border disabled:opacity-40" aria-label="Next Spark" data-testid="button-next-spark">
+                  <ArrowDown className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -556,6 +620,12 @@ export function CommunityMomentsExperience({
           <div className="mx-4 mt-4 flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/80 px-3 py-2 text-sm text-white" role="alert">
             <span>{interactionError}</span>
             <button type="button" onClick={() => setInteractionError("")} className="rounded-lg px-2 py-1 font-bold hover:bg-white/10" aria-label="Dismiss interaction error">Dismiss</button>
+          </div>
+        )}
+        {moderationNotice && (
+          <div className="mx-4 mt-3 flex items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-sm" role="status" data-testid="status-moment-moderation">
+            <span>{moderationNotice}</span>
+            <button type="button" onClick={() => setModerationNotice("")} className="rounded-lg px-2 py-1 font-bold hover:bg-muted" aria-label="Dismiss moderation notice" data-testid="button-dismiss-moderation-notice">Dismiss</button>
           </div>
         )}
 
@@ -724,6 +794,33 @@ export function CommunityMomentsExperience({
                             <Share2 className="h-4 w-4" />
                             <span>{metricsById[spark.id]?.shares ?? 0}</span>
                           </button>
+                          {spark.author_user_id !== viewerId && (
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setActionMenuSparkId((currentId) => currentId === spark.id ? null : spark.id)}
+                                className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-full text-white hover:bg-white/10"
+                                aria-label={`More actions for Moment by ${spark.author.name || "this author"}`}
+                                aria-expanded={actionMenuSparkId === spark.id}
+                                data-testid={`button-moment-actions-${spark.id}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                              {actionMenuSparkId === spark.id && (
+                                <div className="absolute bottom-full right-0 z-30 mb-2 flex w-56 flex-col rounded-xl border border-white/15 bg-neutral-950 p-1.5 text-left shadow-2xl" onKeyDown={(event) => {
+                                  if (event.key === "Escape") setActionMenuSparkId(null);
+                                }}>
+                                  <button type="button" onClick={() => { setReportSparkId(spark.id); setActionMenuSparkId(null); }} className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold text-white hover:bg-white/10" data-testid={`button-report-moment-${spark.id}`}>
+                                    <Flag className="h-4 w-4" aria-hidden="true" /> Report Moment
+                                  </button>
+                                  <button type="button" onClick={() => void muteAuthor(spark)} disabled={moderationPendingAuthorId === spark.author_user_id} className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold text-white hover:bg-white/10 disabled:opacity-50" data-testid={`button-mute-moment-author-${spark.id}`}>
+                                    {moderationPendingAuthorId === spark.author_user_id ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <VolumeX className="h-4 w-4" aria-hidden="true" />}
+                                    Hide this author
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                           <span className="inline-flex min-h-10 items-center gap-1.5 px-2 text-xs font-bold text-white/70" aria-label={`${metricsById[spark.id]?.views ?? 0} views`}>
                             <Eye className="h-4 w-4" />
                             <span>{metricsById[spark.id]?.views ?? 0}</span>
@@ -756,6 +853,57 @@ export function CommunityMomentsExperience({
             return metrics ? { ...current, [shareSparkId]: { ...metrics, shares: metrics.shares + 1 } } : current;
           })}
         />
+      )}
+      {reportSpark && (
+        <ReportModal
+          reportedCommunityStoryId={reportSpark.id}
+          reportedName={`Moment by ${reportSpark.author.name || "a neighbor"}`}
+          onClose={() => setReportSparkId(null)}
+        />
+      )}
+      {mutedAuthorsOpen && (
+        <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="muted-authors-title" data-testid="dialog-muted-authors" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setMutedAuthorsOpen(false);
+        }} onKeyDown={(event) => {
+          if (event.key === "Escape") setMutedAuthorsOpen(false);
+        }}>
+          <section className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-card p-4 shadow-2xl sm:rounded-2xl" aria-label="Hidden Moment authors">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 id="muted-authors-title" className="text-lg font-black">Hidden authors</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Their Moments stay out of your feed until you restore them.</p>
+              </div>
+              <button type="button" onClick={() => setMutedAuthorsOpen(false)} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-border hover:bg-muted" aria-label="Close hidden authors" data-testid="button-close-hidden-authors">
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            {mutedAuthorsQuery.isLoading ? (
+              <p className="mt-5 text-sm text-muted-foreground" role="status">Loading hidden authors…</p>
+            ) : mutedAuthorsQuery.isError ? (
+              <div className="mt-5 flex items-center justify-between gap-3 text-sm" role="alert">
+                <span>Hidden authors could not be loaded.</span>
+                <button type="button" onClick={() => void mutedAuthorsQuery.refetch()} className="font-bold underline" data-testid="button-retry-hidden-authors">Retry</button>
+              </div>
+            ) : (mutedAuthorsQuery.data?.muted_authors.length ?? 0) === 0 ? (
+              <p className="mt-5 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground" data-testid="status-no-hidden-authors">You have not hidden any authors.</p>
+            ) : (
+              <ul className="mt-4 space-y-2">
+                {mutedAuthorsQuery.data?.muted_authors.map((author) => (
+                  <li key={author.user_id} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3" data-testid={`row-hidden-author-${author.user_id}`}>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold" data-testid={`text-hidden-author-${author.user_id}`}>{author.name}</p>
+                      <p className="text-xs text-muted-foreground">Moments hidden</p>
+                    </div>
+                    <button type="button" onClick={() => void unmuteAuthor(author.user_id)} disabled={moderationPendingAuthorId === author.user_id} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-bold hover:bg-muted disabled:opacity-50" data-testid={`button-unmute-author-${author.user_id}`}>
+                      {moderationPendingAuthorId === author.user_id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+                      Restore
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
       )}
       {commentsSpark && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="spark-comments-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommentsOpenId(null); }}>

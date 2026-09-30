@@ -1229,6 +1229,8 @@ export interface CreateReportInput {
   reported_request_id?: number | null;
   /** @nullable */
   reported_griot_story_id?: number | null;
+  /** @nullable */
+  reported_community_story_id?: number | null;
   type: CreateReportInputType;
   /**
      * @minLength 10
@@ -1289,6 +1291,14 @@ export interface Report {
   reported_request_id?: number | null;
   /** @nullable */
   reported_griot_story_id?: number | null;
+  /** @nullable */
+  reported_community_story_id?: number | null;
+  /** @nullable */
+  reported_community_story_caption?: string | null;
+  /** @nullable */
+  reported_community_story_author_name?: string | null;
+  /** @nullable */
+  reported_community_story_status?: string | null;
   type: ReportType;
   description: string;
   status: ReportStatus;
@@ -1300,6 +1310,22 @@ export interface Report {
   reviewed_at?: string | null;
   created_at: string;
   updated_at?: string;
+}
+
+export interface CommunityStoryMutedAuthor {
+  user_id: number;
+  name: string;
+  /** @nullable */
+  avatar_url?: string | null;
+  created_at: string;
+}
+
+export interface CommunityStoryMutedAuthors {
+  muted_authors: CommunityStoryMutedAuthor[];
+}
+
+export interface CommunityStoryMuteResponse {
+  muted: boolean;
 }
 
 export type ReportDetail = Report & ({

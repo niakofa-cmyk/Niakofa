@@ -214,6 +214,65 @@ paths:
         "404":
           description: Story not found or not visible to the caller
 
+  /community/stories/muted-authors:
+    get:
+      operationId: getCommunityStoryMutedAuthors
+      tags: [community]
+      summary: List authors muted by the authenticated viewer
+      responses:
+        "200":
+          description: Authors whose Moments are hidden from this viewer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityStoryMutedAuthors"
+        "401":
+          description: Authentication required
+
+  /community/stories/authors/{id}/mute:
+    put:
+      operationId: muteCommunityStoryAuthor
+      tags: [community]
+      summary: Hide an author's Moments from the authenticated viewer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Author muted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityStoryMuteResponse"
+        "400":
+          description: Invalid author id or self-mute
+        "404":
+          description: Author not found
+    delete:
+      operationId: unmuteCommunityStoryAuthor
+      tags: [community]
+      summary: Restore an author's Moments in the authenticated viewer's feed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Author unmuted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityStoryMuteResponse"
+        "400":
+          description: Invalid author id
+
   /users/{id}:
     get:
       operationId: getUser
@@ -3948,6 +4007,8 @@ components:
           type: ["integer", "null"]
         reported_griot_story_id:
           type: ["integer", "null"]
+        reported_community_story_id:
+          type: ["integer", "null"]
         type:
           type: string
           enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, other, sos]
@@ -3982,6 +4043,14 @@ components:
           type: ["integer", "null"]
         reported_griot_story_id:
           type: ["integer", "null"]
+        reported_community_story_id:
+          type: ["integer", "null"]
+        reported_community_story_caption:
+          type: ["string", "null"]
+        reported_community_story_author_name:
+          type: ["string", "null"]
+        reported_community_story_status:
+          type: ["string", "null"]
         type:
           type: string
           enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, other, sos]
@@ -4000,6 +4069,35 @@ components:
           type: string
         updated_at:
           type: string
+
+    CommunityStoryMutedAuthors:
+      type: object
+      required: [muted_authors]
+      properties:
+        muted_authors:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityStoryMutedAuthor"
+
+    CommunityStoryMutedAuthor:
+      type: object
+      required: [user_id, name, created_at]
+      properties:
+        user_id:
+          type: integer
+        name:
+          type: string
+        avatar_url:
+          type: ["string", "null"]
+        created_at:
+          type: string
+
+    CommunityStoryMuteResponse:
+      type: object
+      required: [muted]
+      properties:
+        muted:
+          type: boolean
 
     ReportDetail:
       allOf:

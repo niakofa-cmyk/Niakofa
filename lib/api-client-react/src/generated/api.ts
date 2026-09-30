@@ -46,6 +46,8 @@ import type {
   CommunityMediaPage,
   CommunityMediaSaveResponse,
   CommunityStoryInteractions,
+  CommunityStoryMuteResponse,
+  CommunityStoryMutedAuthors,
   CompleteInput,
   CreateCommunityInput,
   CreatePaymentIntent200,
@@ -654,6 +656,231 @@ export function useGetCommunityStoryInteractions<TData = Awaited<ReturnType<type
 
 
 
+
+export const getGetCommunityStoryMutedAuthorsUrl = () => {
+
+
+
+
+  return `/api/community/stories/muted-authors`
+}
+
+/**
+ * @summary List authors muted by the authenticated viewer
+ */
+export const getCommunityStoryMutedAuthors = async ( options?: Parameters<typeof customFetch>[1]): Promise<CommunityStoryMutedAuthors> => {
+
+  return customFetch<CommunityStoryMutedAuthors>(getGetCommunityStoryMutedAuthorsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCommunityStoryMutedAuthorsQueryKey = () => {
+    return [
+    `/api/community/stories/muted-authors`
+    ] as const;
+    }
+
+
+export const getGetCommunityStoryMutedAuthorsQueryOptions = <TData = Awaited<ReturnType<typeof getCommunityStoryMutedAuthors>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryMutedAuthors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCommunityStoryMutedAuthorsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommunityStoryMutedAuthors>>> = ({ signal }) => getCommunityStoryMutedAuthors({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryMutedAuthors>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCommunityStoryMutedAuthorsQueryResult = NonNullable<Awaited<ReturnType<typeof getCommunityStoryMutedAuthors>>>
+export type GetCommunityStoryMutedAuthorsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List authors muted by the authenticated viewer
+ */
+
+export function useGetCommunityStoryMutedAuthors<TData = Awaited<ReturnType<typeof getCommunityStoryMutedAuthors>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryMutedAuthors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCommunityStoryMutedAuthorsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getMuteCommunityStoryAuthorUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/stories/authors/${id}/mute`
+}
+
+/**
+ * @summary Hide an author's Moments from the authenticated viewer
+ */
+export const muteCommunityStoryAuthor = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<CommunityStoryMuteResponse> => {
+
+  return customFetch<CommunityStoryMuteResponse>(getMuteCommunityStoryAuthorUrl(id),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+);}
+
+
+
+
+
+export const getMuteCommunityStoryAuthorMutationKey = () => ['muteCommunityStoryAuthor'] as const;
+
+export const getMuteCommunityStoryAuthorMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof muteCommunityStoryAuthor>>, TError,MuteCommunityStoryAuthorMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof muteCommunityStoryAuthor>>, TError,MuteCommunityStoryAuthorMutationVariables, TContext> => {
+
+const mutationKey = getMuteCommunityStoryAuthorMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof muteCommunityStoryAuthor>>, MuteCommunityStoryAuthorMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  muteCommunityStoryAuthor(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MuteCommunityStoryAuthorMutationResult = NonNullable<Awaited<ReturnType<typeof muteCommunityStoryAuthor>>>
+
+    export type MuteCommunityStoryAuthorMutationError = ErrorType<void>
+    export type MuteCommunityStoryAuthorMutationVariables = {id: number}
+
+    /**
+ * @summary Hide an author's Moments from the authenticated viewer
+ */
+export const useMuteCommunityStoryAuthor = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof muteCommunityStoryAuthor>>, TError,MuteCommunityStoryAuthorMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof muteCommunityStoryAuthor>>,
+        TError,
+        MuteCommunityStoryAuthorMutationVariables,
+        TContext
+      > => {
+      return useMutation(getMuteCommunityStoryAuthorMutationOptions(options));
+    }
+
+export const getUnmuteCommunityStoryAuthorUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/stories/authors/${id}/mute`
+}
+
+/**
+ * @summary Restore an author's Moments in the authenticated viewer's feed
+ */
+export const unmuteCommunityStoryAuthor = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<CommunityStoryMuteResponse> => {
+
+  return customFetch<CommunityStoryMuteResponse>(getUnmuteCommunityStoryAuthorUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnmuteCommunityStoryAuthorMutationKey = () => ['unmuteCommunityStoryAuthor'] as const;
+
+export const getUnmuteCommunityStoryAuthorMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unmuteCommunityStoryAuthor>>, TError,UnmuteCommunityStoryAuthorMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unmuteCommunityStoryAuthor>>, TError,UnmuteCommunityStoryAuthorMutationVariables, TContext> => {
+
+const mutationKey = getUnmuteCommunityStoryAuthorMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unmuteCommunityStoryAuthor>>, UnmuteCommunityStoryAuthorMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  unmuteCommunityStoryAuthor(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnmuteCommunityStoryAuthorMutationResult = NonNullable<Awaited<ReturnType<typeof unmuteCommunityStoryAuthor>>>
+
+    export type UnmuteCommunityStoryAuthorMutationError = ErrorType<void>
+    export type UnmuteCommunityStoryAuthorMutationVariables = {id: number}
+
+    /**
+ * @summary Restore an author's Moments in the authenticated viewer's feed
+ */
+export const useUnmuteCommunityStoryAuthor = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unmuteCommunityStoryAuthor>>, TError,UnmuteCommunityStoryAuthorMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unmuteCommunityStoryAuthor>>,
+        TError,
+        UnmuteCommunityStoryAuthorMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUnmuteCommunityStoryAuthorMutationOptions(options));
+    }
 
 export const getGetUserUrl = (id: number,) => {
 

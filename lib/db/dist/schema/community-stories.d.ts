@@ -886,6 +886,64 @@ export declare const communityStorySharesTable: import("drizzle-orm/pg-core").Pg
     };
     dialect: "pg";
 }>;
+export declare const communityStoryAuthorMutesTable: import("drizzle-orm/pg-core").PgTableWithColumns<{
+    name: "community_story_author_mutes";
+    schema: undefined;
+    columns: {
+        viewer_user_id: import("drizzle-orm/pg-core").PgColumn<{
+            name: "viewer_user_id";
+            tableName: "community_story_author_mutes";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        muted_user_id: import("drizzle-orm/pg-core").PgColumn<{
+            name: "muted_user_id";
+            tableName: "community_story_author_mutes";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        created_at: import("drizzle-orm/pg-core").PgColumn<{
+            name: "created_at";
+            tableName: "community_story_author_mutes";
+            dataType: "date";
+            columnType: "PgTimestamp";
+            data: Date;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+    };
+    dialect: "pg";
+}>;
 export declare const communityStoryCommentsTable: import("drizzle-orm/pg-core").PgTableWithColumns<{
     name: "community_story_comments";
     schema: undefined;
@@ -1001,5 +1059,6 @@ export type CommunityStoryElement = typeof communityStoryElementsTable.$inferSel
 export type CommunityStoryView = typeof communityStoryViewsTable.$inferSelect;
 export type CommunityStoryReaction = typeof communityStoryReactionsTable.$inferSelect;
 export type CommunityStoryShare = typeof communityStorySharesTable.$inferSelect;
+export type CommunityStoryAuthorMute = typeof communityStoryAuthorMutesTable.$inferSelect;
 export type CommunityStoryComment = typeof communityStoryCommentsTable.$inferSelect;
 //# sourceMappingURL=community-stories.d.ts.map

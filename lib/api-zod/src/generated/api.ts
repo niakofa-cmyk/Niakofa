@@ -201,6 +201,49 @@ export const GetCommunityStoryInteractionsResponse = zod.object({
 
 
 /**
+ * @summary List authors muted by the authenticated viewer
+ */
+export const GetCommunityStoryMutedAuthorsResponse = zod.object({
+  "muted_authors": zod.array(zod.object({
+  "user_id": zod.number().int(),
+  "name": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "created_at": zod.string()
+}))
+})
+
+
+/**
+ * @summary Hide an author's Moments from the authenticated viewer
+ */
+
+
+
+export const MuteCommunityStoryAuthorParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const MuteCommunityStoryAuthorResponse = zod.object({
+  "muted": zod.boolean()
+})
+
+
+/**
+ * @summary Restore an author's Moments in the authenticated viewer's feed
+ */
+
+
+
+export const UnmuteCommunityStoryAuthorParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const UnmuteCommunityStoryAuthorResponse = zod.object({
+  "muted": zod.boolean()
+})
+
+
+/**
  * @summary Get user profile
  */
 export const GetUserParams = zod.object({
@@ -1202,6 +1245,7 @@ export const CreateReportBody = zod.object({
   "reported_user_id": zod.number().int().nullish(),
   "reported_request_id": zod.number().int().nullish(),
   "reported_griot_story_id": zod.number().int().nullish(),
+  "reported_community_story_id": zod.number().int().nullish(),
   "type": zod.enum(['suspicious_request', 'suspicious_helper', 'fraud', 'harassment', 'fake_profile', 'dangerous_behavior', 'spam', 'other', 'sos']),
   "description": zod.string().min(createReportBodyDescriptionMin).max(createReportBodyDescriptionMax)
 })
@@ -1212,6 +1256,10 @@ export const CreateReportResponse = zod.object({
   "reported_user_id": zod.number().int().nullish(),
   "reported_request_id": zod.number().int().nullish(),
   "reported_griot_story_id": zod.number().int().nullish(),
+  "reported_community_story_id": zod.number().int().nullish(),
+  "reported_community_story_caption": zod.string().nullish(),
+  "reported_community_story_author_name": zod.string().nullish(),
+  "reported_community_story_status": zod.string().nullish(),
   "type": zod.enum(['suspicious_request', 'suspicious_helper', 'fraud', 'harassment', 'fake_profile', 'dangerous_behavior', 'spam', 'other', 'sos']),
   "description": zod.string(),
   "status": zod.enum(['pending', 'under_review', 'resolved_dismissed', 'resolved_warned', 'resolved_banned']),
@@ -1236,6 +1284,10 @@ export const GetReportsResponseItem = zod.object({
   "reported_user_id": zod.number().int().nullish(),
   "reported_request_id": zod.number().int().nullish(),
   "reported_griot_story_id": zod.number().int().nullish(),
+  "reported_community_story_id": zod.number().int().nullish(),
+  "reported_community_story_caption": zod.string().nullish(),
+  "reported_community_story_author_name": zod.string().nullish(),
+  "reported_community_story_status": zod.string().nullish(),
   "type": zod.enum(['suspicious_request', 'suspicious_helper', 'fraud', 'harassment', 'fake_profile', 'dangerous_behavior', 'spam', 'other', 'sos']),
   "description": zod.string(),
   "status": zod.enum(['pending', 'under_review', 'resolved_dismissed', 'resolved_warned', 'resolved_banned']),
@@ -1261,6 +1313,10 @@ export const GetReportResponse = zod.object({
   "reported_user_id": zod.number().int().nullish(),
   "reported_request_id": zod.number().int().nullish(),
   "reported_griot_story_id": zod.number().int().nullish(),
+  "reported_community_story_id": zod.number().int().nullish(),
+  "reported_community_story_caption": zod.string().nullish(),
+  "reported_community_story_author_name": zod.string().nullish(),
+  "reported_community_story_status": zod.string().nullish(),
   "type": zod.enum(['suspicious_request', 'suspicious_helper', 'fraud', 'harassment', 'fake_profile', 'dangerous_behavior', 'spam', 'other', 'sos']),
   "description": zod.string(),
   "status": zod.enum(['pending', 'under_review', 'resolved_dismissed', 'resolved_warned', 'resolved_banned']),
@@ -1295,6 +1351,10 @@ export const ReviewReportResponse = zod.object({
   "reported_user_id": zod.number().int().nullish(),
   "reported_request_id": zod.number().int().nullish(),
   "reported_griot_story_id": zod.number().int().nullish(),
+  "reported_community_story_id": zod.number().int().nullish(),
+  "reported_community_story_caption": zod.string().nullish(),
+  "reported_community_story_author_name": zod.string().nullish(),
+  "reported_community_story_status": zod.string().nullish(),
   "type": zod.enum(['suspicious_request', 'suspicious_helper', 'fraud', 'harassment', 'fake_profile', 'dangerous_behavior', 'spam', 'other', 'sos']),
   "description": zod.string(),
   "status": zod.enum(['pending', 'under_review', 'resolved_dismissed', 'resolved_warned', 'resolved_banned']),
@@ -1319,6 +1379,10 @@ export const GetGriotStoryReportsResponseItem = zod.object({
   "reported_user_id": zod.number().int().nullish(),
   "reported_request_id": zod.number().int().nullish(),
   "reported_griot_story_id": zod.number().int().nullish(),
+  "reported_community_story_id": zod.number().int().nullish(),
+  "reported_community_story_caption": zod.string().nullish(),
+  "reported_community_story_author_name": zod.string().nullish(),
+  "reported_community_story_status": zod.string().nullish(),
   "type": zod.enum(['suspicious_request', 'suspicious_helper', 'fraud', 'harassment', 'fake_profile', 'dangerous_behavior', 'spam', 'other', 'sos']),
   "description": zod.string(),
   "status": zod.enum(['pending', 'under_review', 'resolved_dismissed', 'resolved_warned', 'resolved_banned']),
@@ -1355,6 +1419,10 @@ export const GetUserReportsResponseItem = zod.object({
   "reported_user_id": zod.number().int().nullish(),
   "reported_request_id": zod.number().int().nullish(),
   "reported_griot_story_id": zod.number().int().nullish(),
+  "reported_community_story_id": zod.number().int().nullish(),
+  "reported_community_story_caption": zod.string().nullish(),
+  "reported_community_story_author_name": zod.string().nullish(),
+  "reported_community_story_status": zod.string().nullish(),
   "type": zod.enum(['suspicious_request', 'suspicious_helper', 'fraud', 'harassment', 'fake_profile', 'dangerous_behavior', 'spam', 'other', 'sos']),
   "description": zod.string(),
   "status": zod.enum(['pending', 'under_review', 'resolved_dismissed', 'resolved_warned', 'resolved_banned']),

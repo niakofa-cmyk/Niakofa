@@ -2,6 +2,7 @@ import { Router } from "express";
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   communityStoriesTable,
+  communityStoryAuthorMutesTable,
   communityStoryElementsTable,
   communityStoryMediaTable,
   directMessageBlocksTable,
@@ -255,6 +256,25 @@ export async function viewerCanReadStory(userId: number, story: {
     || !author || author.approval_status !== "approved" || author.is_suspended) {
     return false;
   }
+  const blocks = await db.select({
+    blocker_id: directMessageBlocksTable.blocker_id,
+    blocked_id: directMessageBlocksTable.blocked_id,
+  })
+    .from(directMessageBlocksTable)
+    .where(or(
+      and(eq(directMessageBlocksTable.blocker_id, userId), eq(directMessageBlocksTable.blocked_id, story.author_user_id)),
+      and(eq(directMessageBlocksTable.blocker_id, story.author_user_id), eq(directMessageBlocksTable.blocked_id, userId)),
+    )).limit(1);
+  if (blocks.length) return false;
+  const [mute] = await db.select({ viewer_user_id: communityStoryAuthorMutesTable.viewer_user_id })
+    .from(communityStoryAuthorMutesTable)
+    .where(and(
+      eq(communityStoryAuthorMutesTable.viewer_user_id, userId),
+      eq(communityStoryAuthorMutesTable.muted_user_id, story.author_user_id),
+    ))
+    .limit(1);
+  if (mute) return false;
+
   if (story.exchange_listing_id != null) {
     const [listing] = await db.select({
       seller_id: exchangeListingsTable.seller_id,
@@ -266,15 +286,6 @@ export async function viewerCanReadStory(userId: number, story: {
       .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
       .where(eq(exchangeListingsTable.id, story.exchange_listing_id))
       .limit(1);
-    const blocks = await db.select({
-      blocker_id: directMessageBlocksTable.blocker_id,
-      blocked_id: directMessageBlocksTable.blocked_id,
-    })
-      .from(directMessageBlocksTable)
-      .where(or(
-        and(eq(directMessageBlocksTable.blocker_id, userId), eq(directMessageBlocksTable.blocked_id, story.author_user_id)),
-        and(eq(directMessageBlocksTable.blocker_id, story.author_user_id), eq(directMessageBlocksTable.blocked_id, userId)),
-      )).limit(1);
     if (!listing || !canReadExchangeLinkedStory({
       viewerUserId: userId,
       viewerCommunityId: viewer?.community_id ?? null,
@@ -380,6 +391,52 @@ async function readableStoryVideoMedia(mediaId: number, userId: number) {
   return row;
 }
 
+router.get("/community/stories/muted-authors", requireAuth, requireApproved, async (req, res) => {
+  const mutedAuthors = await db.select({
+    user_id: communityStoryAuthorMutesTable.muted_user_id,
+    name: usersTable.name,
+    avatar_url: usersTable.avatar_url,
+    created_at: communityStoryAuthorMutesTable.created_at,
+  })
+    .from(communityStoryAuthorMutesTable)
+    .innerJoin(usersTable, eq(usersTable.id, communityStoryAuthorMutesTable.muted_user_id))
+    .where(eq(communityStoryAuthorMutesTable.viewer_user_id, req.authenticatedUserId!))
+    .orderBy(desc(communityStoryAuthorMutesTable.created_at))
+    .limit(200);
+  return res.json({ muted_authors: mutedAuthors });
+});
+
+router.put("/community/stories/authors/:id/mute", requireAuth, requireApproved, async (req, res) => {
+  const viewerId = req.authenticatedUserId!;
+  const mutedUserId = positiveId(req.params.id);
+  if (!mutedUserId || mutedUserId === viewerId) return res.status(400).json({ error: "Choose another approved author to mute." });
+  const [author] = await db.select({ id: usersTable.id })
+    .from(usersTable)
+    .where(and(
+      eq(usersTable.id, mutedUserId),
+      eq(usersTable.approval_status, "approved"),
+      eq(usersTable.is_suspended, false),
+    ))
+    .limit(1);
+  if (!author) return res.status(404).json({ error: "Author not found." });
+  await db.insert(communityStoryAuthorMutesTable).values({
+    viewer_user_id: viewerId,
+    muted_user_id: mutedUserId,
+  }).onConflictDoNothing();
+  return res.json({ muted: true });
+});
+
+router.delete("/community/stories/authors/:id/mute", requireAuth, requireApproved, async (req, res) => {
+  const viewerId = req.authenticatedUserId!;
+  const mutedUserId = positiveId(req.params.id);
+  if (!mutedUserId) return res.status(400).json({ error: "Invalid author id." });
+  await db.delete(communityStoryAuthorMutesTable).where(and(
+    eq(communityStoryAuthorMutesTable.viewer_user_id, viewerId),
+    eq(communityStoryAuthorMutesTable.muted_user_id, mutedUserId),
+  ));
+  return res.json({ muted: false });
+});
+
 router.get("/community/stories", requireAuth, requireApproved, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const requestedHubId = req.query.hubId ? positiveId(req.query.hubId) : null;
@@ -452,6 +509,18 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
       sql`${communityStoriesTable.expires_at} > ${now}`,
       eq(usersTable.approval_status, "approved"),
       eq(usersTable.is_suspended, false),
+      sql`NOT EXISTS (
+        SELECT 1
+        FROM direct_message_blocks story_block
+        WHERE (story_block.blocker_id = ${userId} AND story_block.blocked_id = ${communityStoriesTable.author_user_id})
+           OR (story_block.blocker_id = ${communityStoriesTable.author_user_id} AND story_block.blocked_id = ${userId})
+      )`,
+      sql`NOT EXISTS (
+        SELECT 1
+        FROM community_story_author_mutes story_mute
+        WHERE story_mute.viewer_user_id = ${userId}
+          AND story_mute.muted_user_id = ${communityStoriesTable.author_user_id}
+      )`,
       visibility,
       or(
         isNull(communityStoriesTable.exchange_listing_id),

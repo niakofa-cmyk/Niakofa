@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import { getGetReportsQueryKey, useGetReports, type GetReportsParams, type Report as ApiReport } from "@workspace/api-client-react";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft, ChevronRight,
   Eye, Flag, User as UserIcon, RefreshCw,
@@ -25,24 +27,12 @@ import { wsSubscribe, type WsEventType } from "@/lib/wsClient";
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-interface Report {
-  id: number;
-  reporter_id: number;
-  reported_user_id: number | null;
-  reported_request_id: number | null;
-  type: string;
-  description: string;
-  status: string;
-  admin_notes: string | null;
-  reviewed_by: number | null;
-  reviewed_at: string | null;
-  created_at: string;
-  updated_at: string;
+type Report = ApiReport & {
   reporter_name?: string | null;
   reporter_email?: string | null;
   reported_user_name?: string | null;
   reported_exchange_listing_id?: number | null;
-}
+};
 
 interface ExchangeReport extends Report {
   reported_exchange_listing_id: number;
@@ -3269,30 +3259,37 @@ function GriotReportsSection() {
 }
 
 function UserReportsSection({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?: number }) {
-  const [reports, setReports] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const reportParams: GetReportsParams | undefined = statusFilter === "all"
+    ? undefined
+    : { status: statusFilter as GetReportsParams["status"] };
+  const reportsQuery = useGetReports(reportParams, {
+    query: {
+      enabled: authed,
+      queryKey: getGetReportsQueryKey(reportParams),
+    },
+    request: { headers: authHeaders() },
+  });
+  const reports = reportsQuery.data ?? [];
+  const loading = authed && reportsQuery.isLoading;
+  const queryClient = useQueryClient();
+  const refreshTickRef = useRef(refreshTick);
 
-  const hasLoadedRef = useRef(false);
-  const fetchReports = useCallback(async (status?: string) => {
-    if (!hasLoadedRef.current) setLoading(true);
-    try {
-      const url = status && status !== "all" ? `${BASE}/api/reports?status=${status}` : `${BASE}/api/reports`;
-      const tok = getToken();
-      const res = await fetch(url, {
-        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-      });
-      if (!res.ok) throw new Error("Failed");
-      setReports(await res.json() as Report[]);
-      hasLoadedRef.current = true;
-    } catch { toast({ title: "Could not load reports", variant: "destructive" }); }
-    finally { setLoading(false); }
-  }, []);
+  useEffect(() => {
+    if (refreshTickRef.current === refreshTick) return;
+    refreshTickRef.current = refreshTick;
+    if (authed) void reportsQuery.refetch();
+  }, [authed, refreshTick, reportsQuery.refetch]);
 
-  useEffect(() => { if (authed) fetchReports(statusFilter); }, [statusFilter, authed, fetchReports, refreshTick]);
+  useEffect(() => {
+    if (authed && reportsQuery.isError) toast({ title: "Could not load reports", variant: "destructive" });
+  }, [authed, reportsQuery.errorUpdatedAt, reportsQuery.isError]);
 
-  const handleReviewed = (updated: Report) => setReports(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
+  const handleReviewed = (updated: Report) => queryClient.setQueryData<Report[]>(
+    getGetReportsQueryKey(reportParams),
+    (current) => current?.map((report) => report.id === updated.id ? { ...report, ...updated } : report),
+  );
   const pendingCount = reports.filter(r => r.status === "pending").length;
   const filtered = statusFilter === "all" ? reports : reports.filter(r => r.status === statusFilter);
 
@@ -3337,8 +3334,10 @@ function UserReportsSection({ authed, refreshTick = 0 }: { authed: boolean; refr
                 <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">{report.description}</p>
                 <div className="flex items-center gap-3 mt-2 flex-wrap text-[10px] text-muted-foreground">
                   {report.reported_user_id && <span className="flex items-center gap-1"><UserIcon className="w-3 h-3" />User #{report.reported_user_id}</span>}
+                  {report.reported_community_story_id && <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />Moment #{report.reported_community_story_id}{report.reported_community_story_author_name ? ` · ${report.reported_community_story_author_name}` : ""}</span>}
                   <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{fmtDate(report.created_at)}</span>
                 </div>
+                {report.reported_community_story_caption && <p className="mt-2 line-clamp-2 rounded-lg bg-muted/50 px-2.5 py-2 text-xs text-foreground/80">Moment: {report.reported_community_story_caption}</p>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {report.status === "pending" && <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />}
