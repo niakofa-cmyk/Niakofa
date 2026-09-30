@@ -20,3 +20,9 @@ The generic GitHub CI runner may not have FFmpeg/FFprobe installed. A locally pa
 **Why:** A green CI run without the binaries is not evidence that deployed media normalization or composition can execute.
 
 **How to apply:** Keep FFmpeg-independent contract tests in CI, but require the real toolchain smoke and real-media test in an environment with the production binaries before V21 activation. Never infer production readiness from a skipped CI media test.
+
+Verify the *served* production readiness dependency's `storage.required` field after releases and configuration changes, not only its `storage.status` or overall `ready`: a configured cloud backend can report ready even while V21 is unexpectedly enabled.
+
+**Why:** A production release was healthy with cloud storage configured but had the V21 flag on despite the intended certification hold. The flag had to be explicitly turned off and the resulting deployment rechecked.
+
+**How to apply:** While certification remains incomplete, require `storage.required === false` on the canonical host; a healthy status alone is not a flag-off certificate. Recheck after any variable update or redeploy.
