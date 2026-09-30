@@ -1,0 +1,208 @@
+.nia-profile {
+  --background: 218 36% 95%;
+  --foreground: 211 37% 18%;
+  --card: 210 33% 99%;
+  --card-foreground: 211 37% 18%;
+  --border: 212 25% 86%;
+  --input: 212 25% 86%;
+  --muted: 212 29% 91%;
+  --muted-foreground: 211 16% 45%;
+  --primary: 213 70% 47%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 212 29% 91%;
+  --secondary-foreground: 211 37% 18%;
+  --accent: 212 29% 91%;
+  --accent-foreground: 211 37% 18%;
+  --profile-ink: #182c42;
+  --profile-muted: #68788a;
+  --profile-paper: #f2f5f9;
+  --profile-card: #fbfcfe;
+  --profile-line: #dce4ed;
+  --profile-blue: #2674d9;
+  --profile-green: #198b61;
+  --profile-orange: #e97432;
+  --profile-pink: #d84483;
+  color: var(--profile-ink);
+  background: var(--profile-paper);
+  min-height: 100dvh;
+  padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
+}
+
+.nia-profile--embedded {
+  min-height: auto;
+  padding-bottom: 0;
+}
+
+.dark .nia-profile {
+  --background: 216 42% 10%;
+  --foreground: 214 28% 91%;
+  --card: 214 34% 15%;
+  --card-foreground: 214 28% 91%;
+  --border: 212 26% 25%;
+  --input: 212 26% 25%;
+  --muted: 212 27% 20%;
+  --muted-foreground: 213 17% 67%;
+  --primary: 213 89% 66%;
+  --primary-foreground: 216 42% 10%;
+  --secondary: 212 27% 20%;
+  --secondary-foreground: 214 28% 91%;
+  --accent: 212 27% 20%;
+  --accent-foreground: 214 28% 91%;
+  --profile-ink: #e7edf5;
+  --profile-muted: #a0adbd;
+  --profile-paper: #121d2a;
+  --profile-card: #1a2939;
+  --profile-line: #304255;
+  --profile-blue: #6ea9ff;
+  --profile-green: #58c796;
+  --profile-orange: #ff9a5e;
+  --profile-pink: #ff78af;
+}
+
+.nia-profile * {
+  border-color: var(--profile-line);
+}
+
+.nia-profile__masthead {
+  background: var(--profile-card);
+  border-bottom: 3px solid var(--profile-blue);
+}
+
+.nia-profile__container {
+  width: min(100%, 780px);
+  margin-inline: auto;
+}
+
+.nia-profile__hero {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 95% 0%, color-mix(in srgb, var(--profile-blue) 13%, transparent), transparent 38%),
+    var(--profile-card);
+  border: 1px solid var(--profile-line);
+  border-radius: 1.35rem;
+}
+
+.nia-profile__hero::after {
+  position: absolute;
+  width: 210px;
+  height: 210px;
+  content: "";
+  border: 1px solid color-mix(in srgb, var(--profile-blue) 16%, transparent);
+  border-radius: 50%;
+  right: -82px;
+  top: -110px;
+  pointer-events: none;
+}
+
+.nia-profile__eyebrow {
+  color: var(--profile-blue);
+  font-size: .65rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.nia-profile__identity {
+  color: var(--profile-ink);
+}
+
+.nia-profile__avatar {
+  background: color-mix(in srgb, var(--profile-green) 12%, var(--profile-card));
+  border-color: color-mix(in srgb, var(--profile-green) 30%, var(--profile-card));
+  color: var(--profile-green);
+}
+
+.nia-profile__stat {
+  background: var(--profile-card);
+  border: 1px solid var(--profile-line);
+  border-radius: 1rem;
+}
+
+.nia-profile__stat-value {
+  color: var(--profile-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.nia-profile__heritage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .75rem;
+}
+
+.nia-profile__heritage-link {
+  min-height: 104px;
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  padding: 1rem;
+  text-align: left;
+  background: var(--profile-card);
+  border: 1px solid var(--profile-line);
+  border-radius: 1rem;
+  color: var(--profile-ink);
+  transition: transform .18s ease, border-color .18s ease, background-color .18s ease;
+}
+
+.nia-profile__heritage-link:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--profile-green) 52%, var(--profile-line));
+}
+
+.nia-profile__heritage-mark {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: .85rem;
+  color: var(--profile-green);
+  background: color-mix(in srgb, var(--profile-green) 11%, transparent);
+}
+
+.nia-profile__panel {
+  background: var(--profile-card);
+  border: 1px solid var(--profile-line);
+  border-radius: 1.1rem;
+}
+
+.nia-profile__tabs button {
+  min-height: 44px;
+  border-radius: .8rem;
+}
+
+.nia-profile__tabs button[aria-current="page"] {
+  color: #fff;
+  background: var(--profile-blue);
+  box-shadow: none;
+}
+
+.nia-profile :is(button, a, input, [role="switch"]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--profile-blue) 72%, transparent);
+  outline-offset: 3px;
+}
+
+.nia-profile button,
+.nia-profile a {
+  touch-action: manipulation;
+}
+
+@media (max-width: 480px) {
+  .nia-profile__heritage {
+    grid-template-columns: 1fr;
+  }
+  .nia-profile__heritage-link {
+    min-height: 82px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nia-profile *,
+  .nia-profile *::before,
+  .nia-profile *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

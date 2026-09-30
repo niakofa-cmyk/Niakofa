@@ -1,0 +1,126 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
+
+.nia-moments {
+  --background: 216 42% 97%;
+  --foreground: 222 36% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 36% 14%;
+  --card-border: 215 28% 88%;
+  --border: 215 28% 88%;
+  --input: 215 28% 86%;
+  --muted: 213 35% 93%;
+  --muted-foreground: 218 15% 45%;
+  --primary: 219 78% 48%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 38 100% 94%;
+  --accent-foreground: 222 36% 14%;
+  --ring: 219 78% 48%;
+  --app-font-sans: "DM Sans", sans-serif;
+  color: hsl(var(--foreground));
+  font-family: var(--app-font-sans);
+}
+
+.nia-moments > header {
+  border-color: hsl(215 28% 88%);
+  background:
+    radial-gradient(ellipse at 90% 0%, hsl(39 100% 66% / .24), transparent 35%),
+    linear-gradient(112deg, hsl(0 0% 100%), hsl(214 42% 95%));
+  box-shadow: 0 14px 38px hsl(220 34% 25% / .06);
+}
+
+.nia-moments > header::after {
+  content: "";
+  display: block;
+  height: 3px;
+  margin: 1.25rem -1rem -1rem;
+  background: linear-gradient(90deg, hsl(219 78% 48%) 0 71%, hsl(38 100% 58%) 71%);
+}
+
+.nia-moments > header h1 {
+  font-family: "Space Grotesk", sans-serif;
+  letter-spacing: -.055em;
+}
+
+.nia-moments > section[aria-label="Creator analytics"],
+.nia-moments > section[aria-label="Spark feed"] {
+  border-color: hsl(215 28% 88%);
+  border-radius: 1.35rem;
+  background: hsl(0 0% 100%);
+  box-shadow: 0 12px 32px hsl(220 34% 25% / .045);
+}
+
+.nia-moments > section[aria-label="Spark feed"] > div:first-child {
+  min-height: 3.75rem;
+}
+
+.nia-moments input,
+.nia-moments select {
+  color: hsl(222 36% 14%);
+}
+
+.nia-moments input:focus,
+.nia-moments select:focus {
+  outline: 2px solid hsl(219 78% 48% / .28);
+  outline-offset: 1px;
+}
+
+.nia-moments [data-testid="list-moments-feed"] {
+  border-radius: 0 0 1.35rem 1.35rem;
+  background: #17263a;
+  scrollbar-color: hsl(39 100% 66%) transparent;
+}
+
+.nia-moments [data-moment-index] {
+  min-height: min(72dvh, 720px);
+  border-bottom: 1px solid hsl(0 0% 100% / .12);
+}
+
+.nia-moments [data-testid="list-moments-feed"] button {
+  touch-action: manipulation;
+}
+
+.nia-moments [data-testid="list-moments-feed"] button:focus-visible,
+.nia-moments > section button:focus-visible {
+  outline: 3px solid hsl(39 100% 65%);
+  outline-offset: 2px;
+}
+
+.nia-moments button,
+.nia-moments a {
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.nia-moments > section[aria-label="Creator analytics"] > button:hover {
+  background: hsl(213 35% 96%);
+}
+
+.nia-moments [role="alert"] {
+  border-radius: 1rem;
+}
+
+@media (max-width: 640px) {
+  .nia-moments > section[aria-label="Spark feed"] > div:first-child {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding-block: .65rem;
+  }
+
+  .nia-moments [data-testid="list-moments-feed"] {
+    height: min(76dvh, 740px);
+    max-height: 740px;
+    border-radius: 0;
+  }
+
+  .nia-moments [data-moment-index] {
+    min-height: 68dvh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nia-moments *,
+  .nia-moments *::before,
+  .nia-moments *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}

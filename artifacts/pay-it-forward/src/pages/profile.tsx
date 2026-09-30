@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import "./profile.css";
 import { useAnimationPreference, useOsReducedMotion, useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useLocation } from "wouter";
+import { CommunitySocialShell, type CommunityNavKey } from "@/components/community/CommunitySocialShell";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
-  User as UserIcon, Shield, MapPin, Settings, Wallet, Heart, Star,
+  Shield, MapPin, Settings, Wallet, Heart, Star,
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
   ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText,
   Eye, Users, Info, Flag, Plus,
   Camera, Sliders, CreditCard, Activity, Loader2, Building2, Award,
-  LayoutDashboard,
+  LayoutDashboard, Anchor,
 } from "lucide-react";
 import { ReportModal } from "@/components/ReportModal";
 import { Button } from "@/components/ui/button";
@@ -636,16 +638,16 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
 // ── Helper Profile Dialogs ──────────────────────────────────────────────────
 
 const SPECIALTY_OPTIONS = [
-  { id: "transportation", label: "🚗 Transportation" },
-  { id: "errands", label: "🛒 Errands & Shopping" },
-  { id: "medical", label: "🏥 Medical Support" },
-  { id: "tech", label: "💻 Tech Help" },
-  { id: "repairs", label: "🔧 Home Repairs" },
-  { id: "childcare", label: "👶 Childcare" },
-  { id: "meals", label: "🍲 Meals & Food" },
-  { id: "emergency", label: "🚨 Emergency Response" },
-  { id: "translation", label: "🌐 Translation" },
-  { id: "financial", label: "💰 Financial Coaching" },
+  { id: "transportation", label: "Transportation" },
+  { id: "errands", label: "Errands & Shopping" },
+  { id: "medical", label: "Medical Support" },
+  { id: "tech", label: "Tech Help" },
+  { id: "repairs", label: "Home Repairs" },
+  { id: "childcare", label: "Childcare" },
+  { id: "meals", label: "Meals & Food" },
+  { id: "emergency", label: "Emergency Response" },
+  { id: "translation", label: "Translation" },
+  { id: "financial", label: "Financial Coaching" },
 ];
 
 function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
@@ -771,13 +773,13 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
         </div>
       ) : !isHelper ? (
         <div className="bg-muted/50 border border-border rounded-xl p-4 text-center">
-          <div className="text-2xl mb-2">💡</div>
+          <Info className="w-7 h-7 mx-auto mb-2 text-muted-foreground" />
           <div className="font-bold text-sm">Enable Helper Mode First</div>
           <div className="text-xs text-muted-foreground mt-1">Toggle Helper Mode on to start receiving jobs and set up payouts.</div>
         </div>
       ) : status?.payoutsEnabled ? (
         <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex items-center gap-3">
-          <span className="text-2xl">✅</span>
+          <CheckCircle2 className="w-6 h-6 text-green-500" />
           <div>
             <div className="font-black text-green-400">Payouts Active</div>
             <div className="text-xs text-muted-foreground mt-0.5">Earnings transfer directly to your bank account via Stripe.</div>
@@ -794,7 +796,7 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
               { label: "Payouts enabled", done: status.payoutsEnabled },
             ].map(item => (
               <div key={item.label} className="flex items-center gap-2 text-xs mt-1">
-                <span>{item.done ? "✅" : "⏳"}</span>
+                {item.done ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> : <Clock className="w-3.5 h-3.5 text-muted-foreground" />}
                 <span className={item.done ? "text-green-400" : "text-muted-foreground"}>{item.label}</span>
               </div>
             ))}
@@ -815,7 +817,7 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
             {["Takes ~5 minutes to complete", "Powered by Stripe — bank-level security",
               "Payouts directly to your bank account", "No upfront fees from Niakofa"].map(item => (
               <div key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="text-primary">✓</span><span>{item}</span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-primary" /><span>{item}</span>
               </div>
             ))}
           </div>
@@ -968,7 +970,7 @@ function RecentHelpersSection({
 
       {!loading && helpers.length === 0 && (
         <div className="bg-muted/40 border border-border/60 rounded-xl p-4 text-center">
-          <div className="text-2xl mb-2">💙</div>
+          <Heart className="w-6 h-6 mx-auto mb-2 text-primary" />
           <div className="font-bold text-sm">No completed requests yet</div>
           <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
             Helpers who complete your requests will appear here.
@@ -1019,9 +1021,10 @@ function RecentHelpersSection({
 
 export default function ProfileScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout, userPlace } = useAppContext();
+  const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
   const suppressed = useIsAnimationSuppressed();
   const [tab, setTab] = useState<ProfileTab>("overview");
+  const [communitySearch, setCommunitySearch] = useState("");
 
   // Settings dialog state
   const [openDialog, setOpenDialog] = useState<string | null>(null);
@@ -1053,7 +1056,7 @@ export default function ProfileScreen() {
     }
   }, [userId]);
 
-  const { data: transactions = [], isLoading: txLoading } = useGetUserTransactions(userId ?? 0, {
+  const { data: transactions = [], isLoading: txLoading, isError: txError, refetch: refetchTransactions } = useGetUserTransactions(userId ?? 0, {
     query: { enabled: !!userId, queryKey: getGetUserTransactionsQueryKey(userId ?? 0), staleTime: 30000 }
   });
 
@@ -1118,43 +1121,44 @@ export default function ProfileScreen() {
   const closeDialog = () => setOpenDialog(null);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col pb-[calc(10rem+env(safe-area-inset-bottom,0px))]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
-        <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
-          <UserIcon className="w-5 h-5 text-primary" /> Profile
-        </h1>
-        {/* Profile tabs — min 44px touch targets */}
-        <div className="flex gap-2 mt-3">
+    <CommunitySocialShell
+      active="profile"
+      onNavigate={(key: CommunityNavKey) => setLocation(key === "home" ? "/community" : `/community/${key}`)}
+      onRoute={setLocation}
+      onCreate={() => setLocation("/community/moments?composer=1")}
+      onSearch={setCommunitySearch}
+      searchValue={communitySearch}
+    >
+      <div className="nia-profile nia-profile--embedded flex flex-col">
+      <div className="nia-profile__container flex-1 w-full px-4 py-4 space-y-4">
+        <nav className="nia-profile__tabs flex gap-2" aria-label="Profile sections">
           {(["overview", "history", "settings"] as ProfileTab[]).map(t => (
             <button
               key={t}
+              type="button"
               onClick={() => setTab(t)}
-              style={{ touchAction: "manipulation", minHeight: "44px" }}
-              className={`flex-1 flex items-center justify-center py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-[0.98] ${
+              aria-current={tab === t ? "page" : undefined}
+              className={`flex-1 flex items-center justify-center px-3 py-2.5 text-xs font-black uppercase tracking-wider transition-all active:scale-[0.98] ${
                 tab === t
-                  ? "bg-primary text-primary-foreground shadow-[0_0_12px_rgba(0,212,255,0.3)]"
+                  ? "bg-primary text-primary-foreground"
                   : "bg-muted/80 text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted"
               }`}
             >
               {t === "overview" ? "Overview" : t === "history" ? "History" : "Settings"}
             </button>
           ))}
-        </div>
-      </div>
-
-      <div className="flex-1 max-w-lg mx-auto w-full p-4 space-y-4">
+        </nav>
 
         {/* ── OVERVIEW TAB ── */}
         {tab === "overview" && (
           <>
-            <div className="flex items-center gap-4 pt-2">
+            <div className="nia-profile__hero flex items-center gap-4 p-5">
               <div className="relative">
-                <button onClick={handleAvatarClick} className="relative group" title="Change profile photo">
-                  <div className="w-20 h-20 rounded-full border-4 border-card bg-muted flex items-center justify-center shadow-xl overflow-hidden">
+                <button onClick={handleAvatarClick} className="relative group rounded-full" title="Change profile photo" aria-label="Change profile photo">
+                  <div className="nia-profile__avatar w-20 h-20 rounded-full border-4 flex items-center justify-center overflow-hidden">
                     {avatarPreview || currentUser.avatar_url
                       ? <img src={avatarPreview ?? currentUser.avatar_url!} alt={currentUser.name} className="w-full h-full object-cover" />
-                      : <UserIcon className="w-10 h-10 text-muted-foreground" />
+                      : <span className="text-2xl font-bold" aria-hidden="true">{currentUser.name.trim().charAt(0).toUpperCase()}</span>
                     }
                   </div>
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 rounded-full transition-all flex items-center justify-center">
@@ -1178,9 +1182,11 @@ export default function ProfileScreen() {
                 />
               </div>
               <div>
-                <h2 className="text-xl font-black">{currentUser.name}</h2>
+                <div className="nia-profile__eyebrow mb-1">A member of Niakofa</div>
+                <h2 className="nia-profile__identity text-2xl font-black tracking-tight" data-testid="text-profile-name">{currentUser.name}</h2>
                 <p className="text-muted-foreground flex items-center gap-1 text-sm">
-                  <MapPin className="w-3.5 h-3.5" /> {currentUser.neighborhood || currentUser.city || userPlace?.label || "My Community"}
+                  {(currentUser.neighborhood || currentUser.city) && <MapPin className="w-3.5 h-3.5" />}
+                  {currentUser.neighborhood || currentUser.city || "Community member"}
                 </p>
                 <div className="flex items-center flex-wrap gap-1.5 mt-1">
                   <TrustTierBadge
@@ -1193,23 +1199,82 @@ export default function ProfileScreen() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
-                <Shield className="w-4 h-4 text-blue-400 mb-1.5" />
-                <div className="text-xl font-black">{currentUser.trust_score?.toFixed(0) ?? 0}%</div>
+            <div className="grid grid-cols-3 gap-3" aria-label="Your Community activity">
+              <div className="nia-profile__stat p-4 flex flex-col items-center text-center">
+                <Shield className="w-4 h-4 text-blue-500 mb-1.5" />
+                <div className="nia-profile__stat-value text-xl font-black" data-testid="text-profile-trust">{currentUser.trust_score != null ? `${currentUser.trust_score.toFixed(0)}%` : "—"}</div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Trust</div>
               </div>
-              <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
+              <div className="nia-profile__stat p-4 flex flex-col items-center text-center">
                 <Heart className="w-4 h-4 text-primary mb-1.5" />
-                <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>
+                <div className="nia-profile__stat-value text-xl font-black" data-testid="text-profile-help-count">{currentUser.help_count}</div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Helped</div>
               </div>
-              <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
-                <Star className="w-4 h-4 text-yellow-400 mb-1.5" />
-                <div className="text-xl font-black">{goodwill}</div>
+              <div className="nia-profile__stat p-4 flex flex-col items-center text-center">
+                <Star className="w-4 h-4 text-amber-500 mb-1.5" />
+                <div className="nia-profile__stat-value text-xl font-black" data-testid="text-profile-goodwill">{goodwill}</div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
               </div>
             </div>
+
+            <section aria-labelledby="profile-heritage-heading">
+              <div className="flex items-end justify-between mb-2">
+                <div>
+                  <div className="nia-profile__eyebrow">Beyond the profile</div>
+                  <h3 id="profile-heritage-heading" className="text-lg font-bold tracking-tight">Family &amp; Legacy</h3>
+                </div>
+                <span className="text-xs text-muted-foreground">Keep what matters close</span>
+              </div>
+              <div className="nia-profile__heritage">
+                <button className="nia-profile__heritage-link" onClick={() => setLocation("/diaspora/family")} data-testid="link-profile-family">
+                  <span className="nia-profile__heritage-mark"><Users className="w-5 h-5" /></span>
+                  <span className="flex-1">
+                    <span className="block font-bold">Family</span>
+                    <span className="block mt-1 text-xs text-muted-foreground">Your family spaces and connections</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+                <button className="nia-profile__heritage-link" onClick={() => setLocation("/diaspora/timeline")} data-testid="link-profile-legacy">
+                  <span className="nia-profile__heritage-mark"><BookOpen className="w-5 h-5" /></span>
+                  <span className="flex-1">
+                    <span className="block font-bold">Legacy</span>
+                    <span className="block mt-1 text-xs text-muted-foreground">Stories and moments across generations</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            </section>
+
+            <section aria-label="Explore Community" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                className="nia-profile__heritage-link"
+                onClick={() => setLocation("/community/moments")}
+                data-testid="link-profile-moments"
+              >
+                <span className="nia-profile__heritage-mark" style={{ color: "var(--profile-pink)", background: "color-mix(in srgb, var(--profile-pink) 11%, transparent)" }}>
+                  <Camera className="w-5 h-5" />
+                </span>
+                <span className="flex-1">
+                  <span className="block font-bold">Moments</span>
+                  <span className="block mt-1 text-xs text-muted-foreground">Visit community stories and Sparks</span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </button>
+              <button
+                className="nia-profile__heritage-link"
+                onClick={() => setLocation("/community/exchange")}
+                data-testid="link-profile-exchange"
+              >
+                <span className="nia-profile__heritage-mark" style={{ color: "var(--profile-orange)", background: "color-mix(in srgb, var(--profile-orange) 11%, transparent)" }}>
+                  <Gift className="w-5 h-5" />
+                </span>
+                <span className="flex-1">
+                  <span className="block font-bold">Exchange</span>
+                  <span className="block mt-1 text-xs text-muted-foreground">Offers, needs and local exchange</span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </section>
 
             {/* Achievement Badges — §3.3.1 Gamification */}
             {(() => {
@@ -1217,15 +1282,15 @@ export default function ProfileScreen() {
               const ts = currentUser.trust_score ?? 0;
               const gs = currentUser.goodwill_score ?? 0;
               const earned = [
-                hc >= 1   && { id: "first",    icon: "🌱", label: "First Help",       desc: "Completed your first request" },
-                hc >= 5   && { id: "five",     icon: "💙", label: "5 Helped",         desc: "Helped 5 neighbors" },
-                hc >= 25  && { id: "pillar",   icon: "🏛️", label: "Community Pillar", desc: "25 completed requests" },
-                hc >= 100 && { id: "legend",   icon: "🌟", label: "Legend",           desc: "100 requests fulfilled" },
-                ts >= 80  && { id: "trusted",  icon: "🛡️", label: "Trusted",          desc: "Trust score above 80%" },
-                ts >= 95  && { id: "guardian", icon: "⭐", label: "Guardian",         desc: "Trust score above 95%" },
-                gs >= 10  && { id: "goodwill", icon: "🙏", label: "Goodwill Hero",    desc: "10+ goodwill points earned" },
-                currentUser.is_helper && { id: "helper", icon: "🤝", label: "Helper",  desc: "Registered community helper" },
-              ].filter(Boolean) as { id: string; icon: string; label: string; desc: string }[];
+                hc >= 1   && { id: "first",    label: "First Help",       desc: "Completed your first request" },
+                hc >= 5   && { id: "five",     label: "5 Helped",         desc: "Helped 5 neighbors" },
+                hc >= 25  && { id: "pillar",   label: "Community Pillar", desc: "25 completed requests" },
+                hc >= 100 && { id: "legend",   label: "Legend",           desc: "100 requests fulfilled" },
+                ts >= 80  && { id: "trusted",  label: "Trusted",          desc: "Trust score above 80%" },
+                ts >= 95  && { id: "guardian", label: "Guardian",         desc: "Trust score above 95%" },
+                gs >= 10  && { id: "goodwill", label: "Goodwill Hero",    desc: "10+ goodwill points earned" },
+                currentUser.is_helper && { id: "helper", label: "Helper",  desc: "Registered community helper" },
+              ].filter(Boolean) as { id: string; label: string; desc: string }[];
               if (earned.length === 0) return null;
               return (
                 <div className="bg-card border border-border rounded-2xl p-4">
@@ -1239,7 +1304,7 @@ export default function ProfileScreen() {
                         title={b.desc}
                         className="flex items-center gap-1.5 bg-primary/10 border border-primary/20 rounded-full px-3 py-1.5 cursor-default"
                       >
-                        <span className="text-sm">{b.icon}</span>
+                        <Star className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
                         <span className="text-xs font-bold">{b.label}</span>
                       </div>
                     ))}
@@ -1324,7 +1389,7 @@ export default function ProfileScreen() {
                 {/* Anchor Helper badge — 50+ helps, 97%+ trust score */}
                 {(currentUser.help_count ?? 0) >= 50 && (currentUser.trust_score ?? 0) >= 97 && (
                   <div className="mb-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
-                    <span className="text-lg">⚓</span>
+                    <Anchor className="w-5 h-5 text-amber-500" aria-hidden="true" />
                     <div className="flex-1">
                       <div className="text-xs font-black text-amber-400">Anchor Helper</div>
                       <div className="text-[10px] text-muted-foreground">Elite community pillar · Mentor status</div>
@@ -1356,7 +1421,7 @@ export default function ProfileScreen() {
                   const milestones = [5, 25, 100, 250];
                   const next = milestones.find(m => m > hc);
                   const prev = milestones.filter(m => m <= hc).at(-1) ?? 0;
-                  if (!next) return <p className="text-[10px] text-primary font-bold mt-3 text-center">🌟 Max tier achieved!</p>;
+                  if (!next) return <p className="text-[10px] text-primary font-bold mt-3 text-center">Highest helper milestone reached</p>;
                   const pct = Math.round(((hc - prev) / (next - prev)) * 100);
                   return (
                     <div className="mt-3">
@@ -1448,7 +1513,17 @@ export default function ProfileScreen() {
               </div>
             )}
 
-            {!txLoading && transactions.length === 0 && (
+            {txError && (
+              <div role="alert" className="nia-profile__panel px-5 py-8 text-center">
+                <AlertCircle className="w-6 h-6 mx-auto mb-2 text-destructive" />
+                <p className="font-semibold text-sm">Your activity could not be loaded.</p>
+                <button onClick={() => void refetchTransactions()} className="mt-3 text-sm font-bold text-primary underline underline-offset-4">
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {!txLoading && !txError && transactions.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <Heart className="w-8 h-8 mx-auto mb-3 text-primary/30" />
                 <div className="font-bold text-sm">No activity yet</div>
@@ -1920,5 +1995,6 @@ export default function ProfileScreen() {
         />
       )}
     </div>
+    </CommunitySocialShell>
   );
 }

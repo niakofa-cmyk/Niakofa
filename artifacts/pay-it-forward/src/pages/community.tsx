@@ -110,7 +110,7 @@ export default function CommunityScreen() {
       active={normalizedSection as CommunityNavKey}
       onNavigate={(key) => setLocation(key === "home" ? "/community" : `/community/${key}`)}
       onRoute={setLocation}
-      onCreate={() => undefined}
+      onCreate={() => setLocation("/community/moments?composer=1")}
       onSearch={(value) => {
         setCommunitySearch(value);
         if (value.trim() && normalizedSection !== "home") setLocation("/community");

@@ -1,3 +1,4 @@
+import "./community-moments-experience.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -904,7 +905,7 @@ export function CommunityMomentsExperience({
   };
 
   return (
-    <section className="space-y-4" aria-label={hubId === null ? "Community Moments" : "Hub Moments"} data-testid="community-moments-experience">
+    <section className="nia-moments space-y-4" aria-label={hubId === null ? "Community Moments" : "Hub Moments"} data-testid="community-moments-experience">
       {!compact && (
         <header className="rounded-2xl border border-border bg-card p-4 sm:p-6">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">{hubId === null ? "Community" : "Hub"}</p>

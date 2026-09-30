@@ -1,0 +1,114 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap");
+
+.nia-exchange {
+  --background: 35 40% 97%;
+  --foreground: 222 31% 16%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 31% 16%;
+  --card-border: 32 23% 87%;
+  --border: 32 23% 87%;
+  --input: 32 23% 85%;
+  --muted: 35 28% 93%;
+  --muted-foreground: 219 13% 46%;
+  --primary: 21 92% 52%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 142 38% 93%;
+  --accent-foreground: 155 54% 23%;
+  --ring: 21 92% 52%;
+  --app-font-sans: "Manrope", sans-serif;
+  color: hsl(var(--foreground));
+  font-family: var(--app-font-sans);
+}
+
+.nia-exchange > header {
+  border-color: hsl(21 72% 76% / .75);
+  background:
+    radial-gradient(ellipse at 100% 0%, hsl(21 92% 52% / .15), transparent 37%),
+    linear-gradient(135deg, hsl(39 100% 97%), hsl(0 0% 100%) 68%);
+  box-shadow: 0 16px 38px hsl(30 37% 32% / .07);
+}
+
+.nia-exchange > header::after {
+  content: "";
+  display: block;
+  height: 4px;
+  margin: 1.5rem -1rem -1rem;
+  background: linear-gradient(90deg, hsl(21 92% 52%) 0 72%, hsl(149 51% 35%) 72%);
+}
+
+.nia-exchange > header h1 {
+  font-family: "Space Grotesk", sans-serif;
+  max-width: 42rem;
+  letter-spacing: -.055em;
+}
+
+.nia-exchange button,
+.nia-exchange a {
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.nia-exchange button:focus-visible,
+.nia-exchange input:focus-visible,
+.nia-exchange select:focus-visible,
+.nia-exchange textarea:focus-visible {
+  outline: 3px solid hsl(21 92% 52% / .42);
+  outline-offset: 2px;
+}
+
+.nia-exchange [data-testid^="card-listing-"] {
+  min-height: 13rem;
+  border-radius: 1.35rem;
+  border-color: hsl(32 23% 87%);
+  box-shadow: 0 8px 22px hsl(30 37% 32% / .045);
+}
+
+.nia-exchange [data-testid^="card-listing-"]:hover {
+  border-color: hsl(21 92% 52% / .65);
+  box-shadow: 0 14px 30px hsl(30 37% 32% / .09);
+}
+
+.nia-exchange [role="tablist"] {
+  border-radius: 1rem;
+  background: hsl(0 0% 100%);
+}
+
+.nia-exchange [role="tab"][aria-selected="true"] {
+  background: hsl(21 92% 52%);
+  color: white;
+}
+
+.nia-exchange [role="dialog"][aria-modal="true"] > div.relative {
+  box-shadow: 0 24px 70px hsl(222 31% 12% / .22);
+}
+
+.nia-exchange [data-testid="status-exchange-notice"] {
+  border-color: hsl(148 40% 67%);
+  background: hsl(145 45% 95%);
+}
+
+@media (max-width: 640px) {
+  .nia-exchange {
+    padding-inline: .65rem;
+  }
+
+  .nia-exchange > header {
+    border-radius: 1.5rem;
+    padding: 1.15rem;
+  }
+
+  .nia-exchange > header h1 {
+    font-size: clamp(1.8rem, 8vw, 2.5rem);
+  }
+
+  .nia-exchange [data-testid^="card-listing-"] {
+    min-height: 11rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nia-exchange *,
+  .nia-exchange *::before,
+  .nia-exchange *::after {
+    transition-duration: .01ms !important;
+  }
+}

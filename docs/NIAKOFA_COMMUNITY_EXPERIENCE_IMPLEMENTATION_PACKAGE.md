@@ -87,7 +87,13 @@ Secondary Community destinations include Hubs, Requests, Services, Spirals, Medi
 
 ### Notification routing status
 
-The canonical experience contract names `/notifications`, but the current Community shell still opens the Notifications drawer when its tab is selected, and the frontend does not yet register a first-class `/notifications` page. Preserve the drawer as quick access when adding that destination; do not claim route parity until the page and navigation behavior are implemented and tested.
+The canonical `/notifications` route now renders a full notification history destination. The Community tab navigates there, while the header bell still opens the quick-access drawer. Both surfaces use the same authenticated notification feed and read actions; notification data is isolated by signed-in account and refreshed from the server after read actions and realtime signals.
+
+### Visual experience layer
+
+The Community shell and the six destinations now use the supplied visual package as a direction, not as production imagery. The shell has labeled primary navigation and a Create a Spark action connected to the existing Moments composer. Home keeps its real Hub feed and Moment entry points; People keeps approved-user search and activity-based discovery; Moments keeps authorized media, reactions, and creation; Exchange keeps coarse location, moderation, and pickup safety flows. Profile retains existing account, helper, privacy, and payout controls while surfacing Family and Legacy links.
+
+The `/profile` destination now stays inside the same six-tab Community shell rather than showing the older global navigation. The package's illustrative portraits, scenes, connection counts, and media tiles are not rendered as fabricated member data. Real photography and creator imagery only appear when supplied through authorized app content. This visual work does not activate the production media platform or certify video upload, processing, playback, or cross-Community privacy.
 
 ## Testing Contract
 

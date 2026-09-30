@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
-import { Loader2, MessageCircle, Search, Users, X } from "lucide-react";
+import { LockKeyhole, MessageCircle, Search, X } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
 import { PeopleDiscoveryView } from "@/components/community/CommunityDiscoveryViews";
+import "@/components/community/CommunityHomeView.css";
 
 type Person = {
   id: number;
@@ -16,6 +17,7 @@ export function CommunityPeopleView({ hubId }: { hubId: number | null }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -60,72 +62,81 @@ export function CommunityPeopleView({ hubId }: { hubId: number | null }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [query, retryKey]);
 
   return (
-    <section aria-label="Community people" className="space-y-4">
-      <div className="rounded-2xl border border-border bg-card p-4 sm:p-6">
-        <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Users className="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Community directory</p>
-            <h1 className="mt-1 text-xl font-black">People</h1>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              Find approved neighbors by name and start a private conversation. Email addresses stay private.
-            </p>
-          </div>
-        </div>
-
-        <label className="relative mt-5 block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+    <section aria-label="Community people" className="nia-people">
+      <header className="nia-people__hero">
+        <p className="nia-people__eyebrow">Niakofa · Community</p>
+        <h1 className="nia-people__title">People</h1>
+        <p className="nia-people__lede">
+          Find approved neighbors and begin a private conversation. No connection status—just a way to say hello.
+        </p>
+        <label className="nia-people__search">
+          <Search className="nia-people__search-icon h-4 w-4" aria-hidden="true" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search approved neighbors"
-            aria-label="Search approved neighbors"
-            className="h-11 w-full rounded-xl border border-border bg-background pl-10 pr-10 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+            placeholder="Search people by name"
+            aria-label="Search approved neighbors by name"
+            className="nia-people__input"
+            data-testid="input-community-people-search"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery("")}
               aria-label="Clear people search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="nia-people__clear"
+              data-testid="button-clear-people-search"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
         </label>
+        <p className="nia-people__privacy"><LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" /> Only approved neighbors appear in direct-message search. Email addresses stay private.</p>
+      </header>
 
-        <div className="mt-3" aria-live="polite">
+      <div className="mt-3" aria-live="polite">
           {loading && (
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground" role="status">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
-              Searching approved neighbors…
+            <div className="nia-people__results" role="status" aria-label="Searching approved neighbors">
+              {[0, 1, 2, 3].map((item) => (
+                <div key={item} className="nia-people__person" aria-hidden="true">
+                  <div className="h-10 w-10 animate-pulse rounded-full bg-[#edf1f4]" />
+                  <div className="h-3 w-32 animate-pulse rounded bg-[#edf1f4]" />
+                </div>
+              ))}
             </div>
           )}
           {!loading && error && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive" role="alert">
-              {error}
+            <div className="nia-people__result-box" role="alert">
+              <p>{error}</p>
+              <button
+                type="button"
+                onClick={() => setRetryKey((value) => value + 1)}
+                className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-[#e8b99f] bg-white px-4 font-bold text-[#a94f25] transition hover:bg-[#fff3eb]"
+                data-testid="button-retry-people-search"
+              >
+                Try search again
+              </button>
             </div>
           )}
           {!loading && !error && query.trim().length >= 2 && people.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              No approved neighbors found. Try a different name.
+            <div className="nia-people__result-box">
+              No approved neighbors found for that search. Try another name.
             </div>
           )}
           {!loading && people.length > 0 && (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="nia-people__results">
               {people.map((person) => (
-                <article key={person.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/60 p-3">
+                <article key={person.id} className="nia-people__person" data-testid={`card-approved-neighbor-${person.id}`}>
                   <MessageAvatar name={person.name} avatarUrl={person.avatar_url} size={40} />
-                  <p className="min-w-0 flex-1 truncate text-sm font-bold">{person.name}</p>
+                  <p className="nia-people__person-name" data-testid={`text-neighbor-name-${person.id}`}>{person.name}</p>
                   <Link
                     href={`/messages?mode=direct&recipientId=${encodeURIComponent(String(person.id))}`}
-                    className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 text-xs font-black text-primary-foreground transition hover:bg-primary/90"
+                    className="nia-people__message"
                     aria-label={`Message ${person.name}`}
+                    data-testid={`link-message-neighbor-${person.id}`}
                   >
                     <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
                     Message
@@ -135,15 +146,14 @@ export function CommunityPeopleView({ hubId }: { hubId: number | null }) {
             </div>
           )}
           {!query.trim() && (
-            <p className="mt-3 text-center text-xs text-muted-foreground">
-              Search with at least two characters to find an approved neighbor.
-            </p>
+            <p className="nia-people__status">Search with at least two characters to find an approved neighbor.</p>
           )}
-        </div>
       </div>
 
       {hubId !== null && !query.trim() && (
-        <PeopleDiscoveryView hubId={hubId} />
+        <div className="nia-people__discovery">
+          <PeopleDiscoveryView hubId={hubId} />
+        </div>
       )}
     </section>
   );

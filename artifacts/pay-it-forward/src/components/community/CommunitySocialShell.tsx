@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Menu,
   MessageCircle,
+  Plus,
   Search,
   ShoppingBag,
   Users,
@@ -18,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { NotificationsDrawer } from "@/components/NotificationsDrawer";
+import { useCommunityNotifications } from "@/components/community/useCommunityNotifications";
 import "./community-social-v4.css";
 
 export type CommunityNavKey =
@@ -76,6 +78,7 @@ export function CommunitySocialShell({
   active,
   onNavigate,
   onRoute,
+  onCreate,
   onSearch,
   searchValue = "",
   children,
@@ -83,6 +86,7 @@ export function CommunitySocialShell({
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const { unreadCount } = useCommunityNotifications();
   const menuRef = useRef<HTMLElement>(null);
   const menuCloseRef = useRef<HTMLButtonElement>(null);
 
@@ -120,10 +124,7 @@ export function CommunitySocialShell({
   }, [menuOpen]);
 
   const navigate = (key: CommunityNavKey) => {
-    if (key === "notifications") {
-      setNotificationsOpen(true);
-      return;
-    }
+    if (key === "notifications") { onRoute("/notifications"); return; }
     if (key === "profile") {
       onRoute("/profile");
       return;
@@ -133,8 +134,8 @@ export function CommunitySocialShell({
   };
 
   return (
-    <div className="nk-community-v4 min-h-[100dvh] bg-muted/10 text-foreground">
-      <header className="sticky top-0 z-40 border-b border-border/80 bg-background/95 backdrop-blur-xl">
+    <div className="nk-community-v4 min-h-[100dvh]">
+      <header className="nk-community-v4-header-wrap sticky top-0 z-40">
         <div className="nk-community-v4-header mx-auto">
           <button
             type="button"
@@ -159,6 +160,9 @@ export function CommunitySocialShell({
           </div>
 
           <div className="nk-community-v4-actions">
+            <button type="button" onClick={onCreate} aria-label="Create a Spark" className="nk-create-spark">
+              <Plus className="h-4 w-4" aria-hidden="true" /><span>Create a Spark</span>
+            </button>
             <button
               type="button"
               onClick={() => setSearchOpen((value) => !value)}
@@ -170,6 +174,12 @@ export function CommunitySocialShell({
             </button>
             <button type="button" aria-label="Open Messages" onClick={() => onRoute("/messages")} className="nk-community-v4-icon-button">
               <MessageCircle className="h-5 w-5" />
+            </button>
+            <button type="button" aria-label={unreadCount > 0 ? `Quick notifications, ${unreadCount} unread` : "Quick notifications"} aria-expanded={notificationsOpen}
+              onClick={() => setNotificationsOpen(true)} className="nk-community-v4-icon-button nk-quick-bell">
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 && <span className="nk-bell-count" aria-label={`${unreadCount} unread notifications`}>
+                {unreadCount > 9 ? "9+" : unreadCount}</span>}
             </button>
             <button
               type="button"
@@ -213,14 +223,15 @@ export function CommunitySocialShell({
                 className="nk-community-v4-social-item"
               >
                 <NavIcon item={item} />
-                <span className="sr-only">{item.label}</span>
+                <span>{item.label}</span>
+                {item.key === "notifications" && unreadCount > 0 && <i className="nk-nav-unread-dot" aria-label={`${unreadCount} unread`} />}
               </button>
             );
           })}
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-[700px] min-w-0 px-0 sm:px-4 sm:py-3">
+      <main className="nk-community-main mx-auto w-full max-w-[900px] min-w-0 px-0 sm:px-4 sm:py-5">
         <div className="w-full min-w-0">{children}</div>
       </main>
 

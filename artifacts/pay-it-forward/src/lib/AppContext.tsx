@@ -154,6 +154,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
+  const notificationUserIdRef = useRef<number | null>(currentUser?.id ?? null);
 
   // ── Custom hooks ─────────────────────────────────────────────────────────
   const updateLocation = useUpdateUserLocation();
@@ -284,6 +285,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
 
   // ── All useEffect calls last ──────────────────────────────────────────────
+
+  // Notification caches contain private account data. Remove the prior
+  // account's query (which also cancels any in-flight request) whenever auth
+  // changes, including logout and direct account switches.
+  useEffect(() => {
+    const previousUserId = notificationUserIdRef.current;
+    const nextUserId = currentUser?.id ?? null;
+    if (previousUserId !== nextUserId && previousUserId != null) {
+      queryClient.removeQueries({
+        queryKey: ["niakofa-community-notifications", previousUserId],
+        exact: true,
+      });
+    }
+    notificationUserIdRef.current = nextUserId;
+  }, [currentUser?.id, queryClient]);
 
   // Redirect to login if no user.
   // Excluded paths that handle their own auth or are public:

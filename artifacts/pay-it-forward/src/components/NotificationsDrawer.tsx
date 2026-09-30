@@ -1,288 +1,154 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { motion, AnimatePresence } from "framer-motion";
-import { authHeaders } from "@/lib/auth";
-import { wsSubscribe } from "@/lib/wsClient";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  X, Bell, BellOff, ShieldAlert, CheckCircle2,
-  Heart, MapPin, DollarSign, Calendar, Users, MessageCircle, Radio, Share2, Store,
+  Bell, BellOff, BookOpen, CalendarDays, Check, CheckCircle2, CircleDollarSign,
+  Heart, MapPin, MessageCircle, Radio, RefreshCw, ShieldAlert, Share2, ShoppingBag,
+  Users, X,
 } from "lucide-react";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface LiveNotification {
-  id: string;
-  type:
-    | "emergency"
-    | "new_request"
-    | "completed"
-    | "pledge"
-    | "nearby"
-    | "helper_accepted"
-    | "pledge_scheduled"
-    | "chat"
-    | "call"
-    | "hub_message"
-    | "story"
-    | "story_reaction"
-    | "story_share"
-    | "story_mention"
-    | "community"
-    | "exchange"
-    | "system"
-    | "circle_went_live";
-  title: string;
-  body: string;
-  time: Date;
-  /** Optional navigation target — clicking this notification navigates there */
-  actionUrl?: string;
-  read_at?: string | null;
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function timeAgo(d: Date): string {
-  const secs = (Date.now() - d.getTime()) / 1000;
-  if (secs < 60) return "just now";
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-// ── Per-type visual config ─────────────────────────────────────────────────────
-
-type TypeCfg = {
-  Icon: React.ComponentType<{ className?: string }>;
-  iconColor: string;
-  ringBg: string;
-  cardBorder: string;
-};
-
-const TYPE_CFG: Record<LiveNotification["type"], TypeCfg> = {
-  emergency:        { Icon: ShieldAlert,    iconColor: "text-destructive",  ringBg: "bg-destructive/15",   cardBorder: "border-destructive/25" },
-  new_request:      { Icon: MapPin,         iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  completed:        { Icon: CheckCircle2,   iconColor: "text-green-400",    ringBg: "bg-green-500/10",     cardBorder: "border-green-500/20"   },
-  pledge:           { Icon: DollarSign,     iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  nearby:           { Icon: MapPin,         iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  helper_accepted:  { Icon: Users,          iconColor: "text-green-400",    ringBg: "bg-green-500/10",     cardBorder: "border-green-500/20"   },
-  pledge_scheduled: { Icon: Calendar,       iconColor: "text-purple-400",   ringBg: "bg-purple-500/10",    cardBorder: "border-purple-500/20"  },
-  chat:             { Icon: MessageCircle,  iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  call:             { Icon: MessageCircle,  iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  hub_message:      { Icon: Users,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  story:            { Icon: Radio,          iconColor: "text-purple-400",   ringBg: "bg-purple-500/10",    cardBorder: "border-purple-500/20"  },
-  story_reaction:   { Icon: Heart,          iconColor: "text-rose-400",     ringBg: "bg-rose-500/10",      cardBorder: "border-rose-500/20"    },
-  story_share:      { Icon: Share2,         iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  story_mention:   { Icon: Users,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  community:       { Icon: Users,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  exchange:        { Icon: Store,          iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
-  system:          { Icon: Bell,           iconColor: "text-muted-foreground", ringBg: "bg-muted",       cardBorder: "border-border"             },
-  circle_went_live: { Icon: Radio,          iconColor: "text-red-400",      ringBg: "bg-red-500/10",       cardBorder: "border-red-500/30"     },
-};
-
-const fallbackCfg: TypeCfg = {
-  Icon: Heart,
-  iconColor: "text-primary",
-  ringBg: "bg-primary/10",
-  cardBorder: "border-primary/20",
-};
-
-// ── NotificationItem ───────────────────────────────────────────────────────────
-
-function NotificationItem({ n, index, onNavigate, onRead }: { n: LiveNotification; index: number; onNavigate?: (url: string) => void; onRead?: (id: string) => void }) {
-  const cfg = TYPE_CFG[n.type] ?? fallbackCfg;
-  const isClickable = !!n.actionUrl;
-  const isUnread = !n.read_at;
-
-  return (
-    <motion.div
-      key={n.id}
-      initial={{ x: 40, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: -40, opacity: 0 }}
-      transition={{ type: "spring", damping: 24, stiffness: 260, delay: Math.min(index * 0.03, 0.25) }}
-      className={`flex items-start gap-3 p-3.5 rounded-2xl border ${cfg.ringBg} ${cfg.cardBorder} ${isUnread ? "shadow-[inset_3px_0_0_hsl(var(--primary))]" : "opacity-75"} ${isClickable ? "cursor-pointer active:scale-[0.98] transition-transform" : ""}`}
-      role={isClickable ? "button" : undefined}
-      tabIndex={isClickable ? 0 : undefined}
-      aria-label={isClickable ? `${n.title}: open notification` : undefined}
-      onClick={() => { if (onRead) void onRead(n.id); if (isClickable && onNavigate) onNavigate(n.actionUrl!); }}
-      onKeyDown={(event) => {
-        if (!isClickable || (event.key !== "Enter" && event.key !== " ")) return;
-        event.preventDefault();
-        if (onRead) void onRead(n.id);
-        if (onNavigate) onNavigate(n.actionUrl!);
-      }}
-    >
-      <div className={`w-9 h-9 rounded-full ${cfg.ringBg} border ${cfg.cardBorder} flex items-center justify-center shrink-0 mt-0.5`}>
-        <cfg.Icon className={`w-[18px] h-[18px] ${cfg.iconColor}`} />
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className={`text-sm font-black leading-tight ${cfg.iconColor}`}>{n.title}</div>
-        <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed line-clamp-2">{n.body}</div>
-        <div className="flex items-center gap-2 mt-1">
-          <div className="text-[10px] text-muted-foreground/50 tabular-nums">{timeAgo(n.time)}</div>
-          {isClickable && (
-              <div className={`text-[10px] font-bold ${cfg.iconColor}`}>Open notification →</div>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// ── NotificationsDrawer ────────────────────────────────────────────────────────
+import { useCommunityNotifications, type LiveNotification } from "@/components/community/useCommunityNotifications";
+export type { LiveNotification } from "@/components/community/useCommunityNotifications";
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-export function NotificationsDrawer({ open, onClose }: Props) {
-  const [, setLocation] = useLocation();
-  const [notifications, setNotifications] = useState<LiveNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+const notificationIcons: Record<LiveNotification["type"], typeof Bell> = {
+  emergency: ShieldAlert, new_request: MapPin, completed: CheckCircle2, pledge: CircleDollarSign,
+  nearby: MapPin, helper_accepted: Users, pledge_scheduled: CalendarDays, chat: MessageCircle,
+  call: MessageCircle, hub_message: Users, story: Radio, story_reaction: Heart, story_share: Share2,
+  story_mention: Users, community: Users, exchange: ShoppingBag, system: Bell, circle_went_live: Radio,
+};
 
-  const loadNotifications = useCallback(async () => {
-    try {
-      const response = await fetch("/api/messages/notifications", { headers: authHeaders() });
-      if (!response.ok) return;
-      const data = await response.json() as { unread_count?: number; notifications?: Array<Omit<LiveNotification, "time"> & { time?: string | null }> };
-      const mapped = (data.notifications ?? []).map((item) => ({
-        ...item,
-        time: item.time ? new Date(item.time) : new Date(),
-      }));
-      setNotifications(mapped);
-      setUnreadCount(Number(data.unread_count ?? 0));
-    } catch {
-      // Keep the drawer empty when the durable notification API is unavailable.
-    }
-  }, []);
+function timeAgo(date: Date) {
+  const seconds = Math.max(0, (Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "Just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function NotificationRow({ item, onOpen, onRead, index = 0 }: {
+  item: LiveNotification; onOpen: (item: LiveNotification) => void; onRead: (id: string) => void; index?: number;
+}) {
+  const reduceMotion = useReducedMotion();
+  const Icon = notificationIcons[item.type] ?? Bell;
+  const unread = !item.read_at;
+  return (
+    <motion.article
+      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -5 }}
+      transition={{ duration: reduceMotion ? 0 : 0.18, delay: reduceMotion ? 0 : Math.min(index * 0.025, 0.15) }}
+      className={`nk-notification-row ${unread ? "is-unread" : ""}`}
+      data-testid={`notification-${item.id}`}
+    >
+      <span className={`nk-notification-glyph nk-notification-kind-${item.type}`}>
+        <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
+      </span>
+      <button type="button" className="nk-notification-copy" onClick={() => onOpen(item)}
+        aria-label={`${item.title}. ${item.body}${item.actionUrl ? ". Open notification" : ""}`}>
+        <span className="nk-notification-title">{item.title}</span>
+        <span className="nk-notification-body">{item.body}</span>
+        <span className="nk-notification-time">{timeAgo(item.time)}</span>
+      </button>
+      {unread && <button type="button" className="nk-notification-read" aria-label={`Mark ${item.title} as read`}
+        onClick={() => onRead(item.id)}><Check size={16} aria-hidden="true" /></button>}
+    </motion.article>
+  );
+}
+
+export function NotificationsDrawer({ open, onClose }: Props) {
+  const reduceMotion = useReducedMotion();
+  const [, setLocation] = useLocation();
+  const { notifications, unreadCount, isLoading, isError, error, refetch, markRead, markAllRead,
+    isMarkingAllRead, markReadError, markAllReadError } = useCommunityNotifications();
+  const panelRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
-    void loadNotifications();
-  }, [open, loadNotifications]);
+    const restoreTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => closeRef.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onCloseRef.current(); return; }
+      if (event.key !== "Tab" || !panelRef.current) return;
+      const nodes = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (!nodes.length) return;
+      const first = nodes[0]; const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKeyDown);
+      restoreTarget?.focus();
+    };
+  }, [open]);
 
-  useEffect(() => wsSubscribe((event) => {
-    if (event.type !== "message_notification") return;
-    const payload = event.payload as Omit<LiveNotification, "time"> & { time?: string | null };
-    setNotifications((current) => [{
-      ...payload,
-      time: payload.time ? new Date(payload.time) : new Date(),
-    }, ...current].slice(0, 50));
-    setUnreadCount((count) => count + 1);
-  }), []);
-  const handleNavigate = useCallback((url: string) => {
-    onClose();
-    setLocation(url);
-  }, [onClose, setLocation]);
-
-  const markRead = useCallback(async (id: string) => {
-    const item = notifications.find((notification) => notification.id === id);
-    if (!item || item.read_at) return;
-    setNotifications((current) => current.map((notification) => notification.id === id
-      ? { ...notification, read_at: new Date().toISOString() }
-      : notification));
-    await fetch(`/api/messages/notifications/${encodeURIComponent(id)}/read`, { method: "POST", headers: authHeaders() }).catch(() => {});
-    setUnreadCount((count) => Math.max(0, count - 1));
-  }, [notifications]);
-
-  const markAllRead = useCallback(async () => {
-    await fetch("/api/messages/notifications/read-all", { method: "POST", headers: authHeaders() }).catch(() => {});
-    setNotifications((current) => current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })));
-    setUnreadCount(0);
-  }, []);
+  const openNotification = (item: LiveNotification) => {
+    if (!item.read_at) void markRead(item.id);
+    if (item.actionUrl) {
+      onClose();
+      setLocation(item.actionUrl);
+    }
+  };
 
   return (
     <AnimatePresence>
       {open && (
-        <>
-          {/* Scrim */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm"
-            onClick={onClose}
-          />
-
-          {/* Sheet */}
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 240 }}
-            className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.5)] flex flex-col"
-            style={{ maxHeight: "82dvh" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-border" />
-            </div>
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pb-3 pt-1 shrink-0 border-b border-border">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
-                  <Bell className="w-4 h-4 text-primary" />
-                </div>
-                <div>
-                  <h2 className="font-black text-base uppercase tracking-widest leading-none">Alerts</h2>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {notifications.length === 0
-                      ? "No alerts yet"
-                      : `${notifications.length} recent alert${notifications.length !== 1 ? "s" : ""}`}
-                  </p>
-                </div>
-                {notifications.length > 0 && (
-                  <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 px-2 py-0.5 rounded-full font-black ml-1">
-                    {notifications.length > 99 ? "99+" : notifications.length}
-                  </span>
-                )}
+        <div className="nk-drawer-layer">
+          <motion.button type="button" className="nk-drawer-scrim" aria-label="Close notifications"
+            initial={reduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18 }} onClick={onClose} />
+          <motion.section ref={panelRef} role="dialog" aria-modal="true" aria-labelledby="nk-drawer-title"
+            className="nk-notification-drawer" initial={reduceMotion ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            transition={reduceMotion ? { duration: 0 } : { type: "spring", damping: 27, stiffness: 260 }}>
+            <div className="nk-drawer-grip" aria-hidden="true" />
+            <header className="nk-notification-drawer-head">
+              <div className="nk-notification-heading">
+                <span className="nk-notification-heading-icon"><Bell size={17} /></span>
+                <div><p className="nk-eyebrow">Your neighborhood, in the loop</p>
+                  <h2 id="nk-drawer-title">Notifications</h2></div>
+                {unreadCount > 0 && <span className="nk-unread-pill">{unreadCount > 99 ? "99+" : unreadCount} new</span>}
               </div>
-              <div className="flex items-center gap-2">
-                {unreadCount > 0 && (
-                  <button type="button" onClick={() => void markAllRead()} className="text-[10px] font-bold text-primary">
-                    Mark all read
-                  </button>
-                )}
+              <div className="nk-drawer-tools">
+                {unreadCount > 0 && <button type="button" className="nk-text-action" disabled={isMarkingAllRead}
+                  onClick={() => void markAllRead()}>Mark all read</button>}
+                <button ref={closeRef} type="button" className="nk-close-button" aria-label="Close notifications"
+                  onClick={onClose}><X size={19} /></button>
               </div>
-              <button
-                onClick={onClose}
-                aria-label="Close alerts"
-                className="w-8 h-8 rounded-full bg-muted hover:bg-muted/70 flex items-center justify-center transition-colors"
-              >
-                <X className="w-4 h-4 text-muted-foreground" />
-              </button>
+            </header>
+            {(markReadError || markAllReadError) && <p className="nk-inline-error" role="alert">That change did not save. Your list was restored; please try again.</p>}
+            <div className="nk-notification-scroll">
+              {isLoading && <div className="nk-notification-skeleton" aria-label="Loading notifications">
+                {[0, 1, 2].map((n) => <div className="nk-skeleton-row" key={n}><i /><span><b /><b /></span></div>)}
+              </div>}
+              {isError && <div className="nk-notification-state" role="alert"><BellOff size={25} />
+                <h3>Notifications are taking a moment</h3><p>{error instanceof Error ? error.message : "We couldn't reach your notifications."}</p>
+                <button type="button" className="nk-retry-button" onClick={() => void refetch()}><RefreshCw size={15} /> Try again</button>
+              </div>}
+              {!isLoading && !isError && notifications.length === 0 && <div className="nk-notification-state">
+                <span className="nk-caught-up-mark"><BellOff size={25} /></span>
+                <h3>It's quiet for now</h3><p>Replies, shared Moments and neighborhood updates will find their way here.</p>
+              </div>}
+              {!isLoading && !isError && <AnimatePresence initial={false}>
+                {notifications.map((item, index) => <NotificationRow key={item.id} item={item} index={index}
+                  onOpen={openNotification} onRead={(id) => void markRead(id)} />)}
+              </AnimatePresence>}
             </div>
-
-            {/* Notification list */}
-            <div
-              className="overflow-y-auto flex-1 px-4 pt-3 space-y-2.5"
-              style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
-            >
-              {notifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
-                  <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-1">
-                    <BellOff className="w-7 h-7 opacity-30" />
-                  </div>
-                  <p className="text-sm font-semibold">You're all caught up</p>
-                  <p className="text-xs text-muted-foreground/60 text-center max-w-[200px] leading-relaxed">
-                    New requests, payments, and status changes will appear here
-                  </p>
-                </div>
-              ) : (
-                <AnimatePresence initial={false}>
-                  {notifications.map((n, i) => (
-                    <NotificationItem key={n.id} n={n} index={i} onNavigate={handleNavigate} onRead={markRead} />
-                  ))}
-                </AnimatePresence>
-              )}
-            </div>
-          </motion.div>
-        </>
+            <button type="button" className="nk-view-all" onClick={() => { onClose(); setLocation("/notifications"); }}>
+              Open notification history <span aria-hidden="true">→</span>
+            </button>
+          </motion.section>
+        </div>
       )}
     </AnimatePresence>
   );

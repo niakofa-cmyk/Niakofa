@@ -1,3 +1,4 @@
+import "./community-exchange-view.css";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   AlertCircle,
@@ -621,7 +622,7 @@ export function CommunityExchangeView() {
   };
 
   return (
-    <section aria-label="Niakofa Exchange" className="space-y-4 px-3 pb-8 sm:px-0">
+    <section aria-label="Niakofa Exchange" className="nia-exchange space-y-4 px-3 pb-8 sm:px-0">
       <header className="relative overflow-hidden rounded-3xl border border-primary/25 bg-[radial-gradient(circle_at_90%_0%,hsl(var(--primary)/.22),transparent_42%),linear-gradient(145deg,hsl(var(--card)),hsl(var(--background)))] p-5 sm:p-7">
         <div className="absolute -right-10 -top-14 h-44 w-44 rounded-full border border-primary/10" aria-hidden="true" />
         <div className="relative">

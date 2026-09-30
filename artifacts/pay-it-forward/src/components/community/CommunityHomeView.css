@@ -1,0 +1,342 @@
+.nia-home,
+.nia-people {
+  --nia-ink: #182b43;
+  --nia-muted: #64748b;
+  --nia-paper: #f8fafc;
+  --nia-card: #ffffff;
+  --nia-line: #e1e8ef;
+  --nia-blue: #2866a6;
+  --nia-blue-soft: #edf5fc;
+  --nia-coral: #e97943;
+  color: var(--nia-ink);
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.nia-home {
+  --nia-accent: var(--nia-blue);
+  margin-inline: auto;
+  max-width: 920px;
+  padding-bottom: 2rem;
+}
+
+.nia-home__intro {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 1rem;
+  padding: 1.45rem 1.25rem 1.25rem;
+  border: 1px solid #dce7f0;
+  border-top: 3px solid var(--nia-blue);
+  border-radius: 0 0 22px 22px;
+  background:
+    radial-gradient(ellipse at 96% 0%, rgba(206, 227, 242, .58), transparent 34%),
+    #fff;
+}
+
+.nia-home__eyebrow,
+.nia-people__eyebrow {
+  margin: 0;
+  color: var(--nia-blue);
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .17em;
+  text-transform: uppercase;
+}
+
+.nia-home__title,
+.nia-people__title {
+  margin: .38rem 0 0;
+  color: var(--nia-ink);
+  font-size: clamp(1.7rem, 5vw, 2.35rem);
+  font-weight: 800;
+  letter-spacing: -.055em;
+  line-height: 1.05;
+}
+
+.nia-home__lede {
+  max-width: 36rem;
+  margin: .55rem 0 0;
+  color: var(--nia-muted);
+  font-size: .91rem;
+  line-height: 1.6;
+}
+
+.nia-home__rule {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin: 1.15rem 0 0;
+  color: #647f9a;
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.nia-home__rule::after {
+  height: 1px;
+  flex: 1;
+  background: #dfe8ef;
+  content: "";
+}
+
+.nia-home [data-hub-community-feed] {
+  color: var(--nia-ink);
+}
+
+.nia-home [data-hub-community-feed] #hub-post-composer,
+.nia-home [data-hub-community-feed] article,
+.nia-home [data-hub-community-feed] > div > button {
+  border-color: var(--nia-line) !important;
+  background-color: var(--nia-card) !important;
+  color: var(--nia-ink);
+  box-shadow: 0 8px 28px rgba(35, 63, 89, .045);
+}
+
+.nia-home [data-hub-community-feed] #hub-post-composer {
+  margin-bottom: 1rem;
+  border-radius: 18px;
+}
+
+.nia-home [data-hub-community-feed] #hub-post-composer-trigger,
+.nia-home [data-hub-community-feed] input,
+.nia-home [data-hub-community-feed] textarea {
+  border-color: #e1e8ef;
+  background-color: #f7f9fb;
+  color: var(--nia-ink);
+}
+
+.nia-home [data-hub-community-feed] #hub-post-composer-trigger:hover,
+.nia-home [data-hub-community-feed] button:hover {
+  border-color: #b7cee0;
+}
+
+.nia-home [data-hub-community-feed] .text-muted-foreground {
+  color: var(--nia-muted);
+}
+
+.nia-home__loading {
+  display: grid;
+  gap: .8rem;
+  padding: 1rem;
+  border: 1px solid #dfe7ee;
+  border-radius: 20px;
+  background: #fff;
+}
+
+.nia-home__skeleton {
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #eaf0f5 25%, #f5f8fa 50%, #eaf0f5 75%);
+  background-size: 200% 100%;
+  animation: nia-shimmer 1.5s ease-in-out infinite;
+}
+
+.nia-home__skeleton:first-child { height: 104px; }
+.nia-home__skeleton:last-child { width: 72%; }
+
+.nia-home__empty {
+  padding: 1.3rem;
+  border: 1px solid var(--nia-line);
+  border-radius: 20px;
+  background: #fff;
+  text-align: center;
+}
+
+.nia-home__empty p {
+  margin: .4rem 0 0;
+  color: var(--nia-muted);
+  font-size: .88rem;
+  line-height: 1.55;
+}
+
+.nia-people {
+  --nia-accent: var(--nia-coral);
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+.nia-people__hero {
+  position: relative;
+  overflow: hidden;
+  padding: 1.45rem 1.25rem 1.25rem;
+  border: 1px solid #eadfd8;
+  border-top: 3px solid var(--nia-coral);
+  border-radius: 0 0 22px 22px;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(248, 226, 210, .72), transparent 38%),
+    #fff;
+}
+
+.nia-people__title { font-size: clamp(1.75rem, 5vw, 2.4rem); }
+.nia-people__lede {
+  max-width: 38rem;
+  margin: .55rem 0 0;
+  color: var(--nia-muted);
+  font-size: .9rem;
+  line-height: 1.6;
+}
+
+.nia-people__search {
+  position: relative;
+  display: block;
+  margin-top: 1.1rem;
+}
+
+.nia-people__search input {
+  height: 3rem;
+  width: 100%;
+  border: 1px solid #dce4eb;
+  border-radius: 14px;
+  background: #f8fafb;
+  padding: 0 3rem;
+  color: var(--nia-ink);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.nia-people__search input::placeholder { color: #8391a0; }
+.nia-people__search input:focus {
+  border-color: var(--nia-coral);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(233, 121, 67, .15);
+}
+
+.nia-people__search-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  color: #8a98a7;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.nia-people__clear {
+  position: absolute;
+  right: .5rem;
+  top: 50%;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+.nia-people__clear:hover { background: #f0f3f5; }
+
+.nia-people__privacy {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin: .75rem 0 0;
+  color: #778596;
+  font-size: .73rem;
+}
+
+.nia-people__status {
+  margin-top: .8rem;
+  color: var(--nia-muted);
+  font-size: .85rem;
+}
+
+.nia-people__results {
+  display: grid;
+  gap: .6rem;
+  margin-top: .8rem;
+}
+
+.nia-people__person {
+  display: flex;
+  min-height: 70px;
+  align-items: center;
+  gap: .8rem;
+  padding: .75rem .85rem;
+  border: 1px solid #e4e9ee;
+  border-radius: 16px;
+  background: #fff;
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.nia-people__person:hover {
+  border-color: #efc4ac;
+  box-shadow: 0 8px 22px rgba(104, 70, 48, .07);
+  transform: translateY(-1px);
+}
+
+.nia-people__person-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--nia-ink);
+  font-size: .9rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nia-people__message {
+  display: inline-flex;
+  min-height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: 0 .85rem;
+  border: 1px solid #f1c3a9;
+  border-radius: 12px;
+  background: #fff6f0;
+  color: #a94f25;
+  font-size: .76rem;
+  font-weight: 800;
+  text-decoration: none;
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+.nia-people__message:hover { border-color: var(--nia-coral); background: #ffede2; transform: translateY(-1px); }
+
+.nia-people__result-box {
+  padding: 1.2rem;
+  border: 1px dashed #d8e0e7;
+  border-radius: 16px;
+  background: rgba(255,255,255,.7);
+  color: var(--nia-muted);
+  font-size: .85rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.nia-people__discovery { margin-top: 1.1rem; }
+.nia-people__discovery > div {
+  border-color: #e3e8ed !important;
+  border-radius: 20px !important;
+  background: rgba(255,255,255,.86) !important;
+  box-shadow: 0 8px 28px rgba(35, 63, 89, .035);
+}
+.nia-people__discovery .text-muted-foreground { color: var(--nia-muted); }
+
+.nia-home a:focus-visible,
+.nia-home button:focus-visible,
+.nia-people a:focus-visible,
+.nia-people button:focus-visible {
+  outline: 3px solid rgba(40, 102, 166, .4);
+  outline-offset: 3px;
+}
+.nia-people a:focus-visible,
+.nia-people button:focus-visible { outline-color: rgba(233, 121, 67, .45); }
+
+@keyframes nia-shimmer {
+  to { background-position: -200% 0; }
+}
+
+@media (min-width: 640px) {
+  .nia-home__intro, .nia-people__hero { padding: 1.8rem 1.75rem 1.5rem; }
+  .nia-home__intro { margin-bottom: 1.2rem; }
+  .nia-people__results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nia-home *, .nia-people * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

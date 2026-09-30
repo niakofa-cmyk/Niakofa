@@ -27,7 +27,7 @@
 - [ESLint hook warning policy](eslint-hook-warning-policy.md) — preserve intentional effect lifecycles with narrow, explained dependency exceptions only when real dependencies are unsafe.
 - [Package manager bootstrap](package-manager-bootstrap.md) — temporary pnpm version override can be needed for constrained local validation; restore it before commits.
 - [Workspace validation](workspace-validation.md) — use the available pnpm binary and the workflow-assigned preview port for local validation.
-- [Community V4 visual evidence](community-v4-evidence-browser.md) — local authenticated captures need system Chromium and shared storage state across viewport contexts.
+- [Community V4 browser evidence](community-v4-evidence-browser.md) — use system Chromium; keep account-switch checks in one SPA instance so cache isolation is actually exercised.
 - [Mapbox Directions request format](mapbox-directions-format.md) — `depart_at` must use second precision; ISO timestamps with milliseconds are rejected.
 - [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes use GITHUB_PERSONAL_ACCESS_TOKEN in remote URL (token auth, not password).
 - [GitHub workflow sync boundary](github-workflow-sync-boundary.md) — the current OAuth grant lacks workflow scope; .github/workflows writes need a separate operator gate.
