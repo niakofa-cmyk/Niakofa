@@ -1,0 +1,188 @@
+.spark-studio-direction {
+  display: flex;
+  width: 100%;
+  min-height: 100dvh;
+  flex-direction: column;
+  overflow: auto;
+  background: var(--nk-paper);
+  color: var(--nk-ink);
+  font-family: "DM Sans", sans-serif;
+}
+.spark-direction-header {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  min-height: 76px;
+  grid-template-columns: 42px 1fr 42px;
+  align-items: center;
+  gap: 12px;
+  padding: max(12px,env(safe-area-inset-top)) 18px 12px;
+  border-bottom: 1px solid rgba(24,61,59,.09);
+  background: var(--nk-paper);
+}
+.spark-direction-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(24,61,59,.12);
+  border-radius: 50%;
+  background: #fffefa;
+  color: var(--nk-ink);
+  cursor: pointer;
+}
+.spark-direction-title { text-align: center; }
+.spark-direction-title strong,
+.spark-direction-title span { display: block; }
+.spark-direction-title strong { margin-top: 2px; font-size: 16px; font-weight: 800; letter-spacing: -.02em; }
+.spark-direction-eyebrow { color: var(--nk-muted); font-size: 9px; font-weight: 800; letter-spacing: .17em; }
+.spark-direction-header-spacer { width: 40px; }
+.spark-direction-content {
+  width: min(100%, 500px);
+  flex: 1;
+  align-self: center;
+  padding: 27px 21px 22px;
+}
+.spark-direction-intro { margin-bottom: 20px; }
+.spark-direction-kicker {
+  margin: 0;
+  color: var(--nk-teal);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.spark-direction-intro h1 {
+  margin: 10px 0 8px;
+  color: var(--nk-ink);
+  font-size: clamp(32px,8vw,45px);
+  font-weight: 800;
+  letter-spacing: -.055em;
+  line-height: .99;
+}
+.spark-direction-intro h1 em {
+  color: var(--nk-teal);
+  font-family: "Playfair Display", Georgia, serif;
+  font-weight: 500;
+}
+.spark-direction-intro > p:last-child { margin: 0; color: var(--nk-muted); font-size: 13px; line-height: 1.5; }
+.spark-direction-capture {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: clamp(190px, 31vh, 254px);
+  overflow: hidden;
+  border: 0;
+  border-radius: 23px;
+  background: linear-gradient(135deg,#2c6459,#183d3b 58%,#e7b650);
+  box-shadow: 0 12px 28px rgba(24,61,59,.16);
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+.spark-direction-capture img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.spark-direction-capture-shade { position: absolute; inset: 0; background: linear-gradient(180deg,rgba(8,28,26,.08) 15%,rgba(8,28,26,.76) 100%); }
+.spark-direction-capture-badge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,.4);
+  border-radius: 999px;
+  background: rgba(24,61,59,.54);
+  backdrop-filter: blur(12px);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .13em;
+}
+.spark-direction-capture-copy { position: absolute; right: 62px; bottom: 19px; left: 19px; }
+.spark-direction-capture-copy strong,
+.spark-direction-capture-copy small { display: block; }
+.spark-direction-capture-copy strong { font-size: 18px; letter-spacing: -.02em; }
+.spark-direction-capture-copy small { margin-top: 3px; color: rgba(255,255,255,.8); font-size: 11px; }
+.spark-direction-capture-arrow {
+  position: absolute;
+  right: 17px;
+  bottom: 20px;
+  display: grid;
+  width: 37px;
+  height: 37px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--nk-gold);
+  color: var(--nk-ink);
+}
+.spark-direction-gallery {
+  display: grid;
+  width: 100%;
+  min-height: 72px;
+  grid-template-columns: 44px 1fr 20px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 11px 14px;
+  border: 1px solid rgba(24,61,59,.13);
+  border-radius: 17px;
+  background: var(--nk-card);
+  color: var(--nk-ink);
+  cursor: pointer;
+  text-align: left;
+}
+.spark-direction-gallery-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(237,107,67,.13);
+  color: var(--nk-coral);
+}
+.spark-direction-gallery strong,
+.spark-direction-gallery small { display: block; }
+.spark-direction-gallery strong { font-size: 13px; font-weight: 800; }
+.spark-direction-gallery small { margin-top: 3px; color: var(--nk-muted); font-size: 10px; }
+.spark-direction-gallery > svg { color: var(--nk-teal); }
+.spark-direction-words {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--nk-ink);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+}
+.spark-direction-words > span:nth-child(2) { flex: 1; }
+.spark-direction-words > svg { color: var(--nk-muted); }
+.spark-direction-words-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 10px; background: rgba(231,182,80,.22); color: var(--nk-ink); }
+.spark-direction-words-panel { padding: 13px; border: 1px solid rgba(24,61,59,.13); border-radius: 15px; background: var(--nk-card); }
+.spark-direction-words-panel label { display: block; margin-bottom: 7px; font-size: 11px; font-weight: 800; }
+.spark-direction-words-panel textarea { width: 100%; min-height: 72px; resize: vertical; border: 1px solid rgba(24,61,59,.15); border-radius: 10px; background: #fff; color: var(--nk-ink); padding: 10px; font: inherit; font-size: 12px; }
+.spark-direction-footer {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px max(14px,env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(24,61,59,.09);
+  color: var(--nk-muted);
+}
+.spark-direction-footer p { margin: 0; font-size: 10px; text-align: center; }
+.spark-direction-privacy-mark { color: var(--nk-coral); font-size: 12px; }
+.spark-direction-status { position: fixed; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+@media (max-height: 720px) {
+  .spark-direction-content { padding-top: 16px; }
+  .spark-direction-intro { margin-bottom: 14px; }
+  .spark-direction-capture { height: 190px; }
+  .spark-direction-footer { min-height: 48px; }
+}

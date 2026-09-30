@@ -95,3 +95,70 @@
     transition-duration: .01ms !important;
   }
 }
+
+/* Exchange board: the same paper, deep teal, coral and marigold visual language. */
+.nia-exchange {
+  --exchange-paper: var(--nk-paper);
+  --exchange-ink: var(--nk-ink);
+  --exchange-muted: var(--nk-muted);
+  color: var(--exchange-ink);
+}
+.nia-exchange > header {
+  border-color: color-mix(in srgb, var(--nk-teal) 28%, var(--nk-paper));
+  background:
+    radial-gradient(ellipse at 93% 4%, color-mix(in srgb, var(--nk-gold) 21%, transparent), transparent 38%),
+    linear-gradient(135deg, var(--nk-paper), color-mix(in srgb, var(--nk-teal) 5%, var(--nk-paper)) 72%);
+  box-shadow: 0 16px 38px color-mix(in srgb, var(--nk-ink) 9%, transparent);
+}
+.nia-exchange > header::after {
+  background: linear-gradient(90deg, var(--nk-teal) 0 72%, var(--nk-coral) 72%);
+}
+.nia-exchange :is(h1, h2, h3, h4) { color: var(--nk-ink); }
+.nia-exchange .text-primary,
+.nia-exchange [class*="text-primary"] { color: var(--nk-teal); }
+.nia-exchange [data-testid^="card-listing-"] {
+  border-color: color-mix(in srgb, var(--nk-ink) 14%, var(--nk-paper));
+  background: color-mix(in srgb, var(--nk-paper) 55%, #fff);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--nk-ink) 6%, transparent);
+}
+.nia-exchange [data-testid^="card-listing-"]:hover {
+  border-color: color-mix(in srgb, var(--nk-coral) 66%, var(--nk-paper));
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--nk-ink) 11%, transparent);
+}
+.nia-exchange [role="tablist"] {
+  border-color: color-mix(in srgb, var(--nk-ink) 14%, var(--nk-paper));
+  background: color-mix(in srgb, var(--nk-paper) 35%, #fff);
+}
+.nia-exchange [role="tab"][aria-selected="true"],
+.nia-exchange [data-testid="button-create-listing"],
+.nia-exchange [data-testid="button-empty-listings-action"] {
+  background: var(--nk-teal);
+  color: #fffdf5;
+}
+.nia-exchange [data-testid="status-exchange-notice"] {
+  border-color: color-mix(in srgb, var(--nk-teal) 42%, var(--nk-paper));
+  background: color-mix(in srgb, var(--nk-teal) 8%, var(--nk-paper));
+}
+.nia-exchange :is(input, select, textarea) {
+  color: var(--nk-ink);
+  accent-color: var(--nk-teal);
+}
+.nia-exchange :is(input, select, textarea)::placeholder { color: var(--nk-muted); }
+.nia-exchange :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--nk-gold) 88%, transparent);
+  outline-offset: 2px;
+}
+.nia-exchange button { min-height: 44px; touch-action: manipulation; }
+.nia-exchange [role="tab"] { min-height: 44px; }
+.nia-exchange [role="dialog"][aria-modal="true"] > div.relative {
+  border-color: color-mix(in srgb, var(--nk-ink) 16%, var(--nk-paper));
+  background: var(--nk-paper);
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--nk-ink) 28%, transparent);
+}
+
+@media (max-width: 640px) {
+  .nia-exchange { padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px)); }
+  .nia-exchange > header { border-radius: 1.35rem; }
+  .nia-exchange [data-testid^="card-listing-"] { min-height: 11rem; }
+  .nia-exchange [role="tablist"] { scroll-padding-inline: .25rem; }
+}

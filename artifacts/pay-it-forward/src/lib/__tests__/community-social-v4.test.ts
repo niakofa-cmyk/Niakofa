@@ -24,6 +24,7 @@ const storyStyles = fs.readFileSync(path.join(__dirname, "../../components/commu
 const profile = fs.readFileSync(path.join(__dirname, "../../pages/profile.tsx"), "utf8");
 const people = fs.readFileSync(path.join(__dirname, "../../components/community/CommunityPeopleView.tsx"), "utf8");
 const localeUtils = fs.readFileSync(path.join(__dirname, "../locale-utils.ts"), "utf8");
+const app = fs.readFileSync(path.join(__dirname, "../../App.tsx"), "utf8");
 
 describe("Community Social V4 view boundaries", () => {
   test("canonical Community experience contract preserves the migration architecture", () => {
@@ -50,6 +51,11 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(page, /<CommunityHubsView/);
     assert.match(page, /<CommunityMomentsView/);
     assert.match(page, /<CommunityRequestsView/);
+  });
+
+  test("legacy Build URL opens the canonical Spark Studio composer in Moments", () => {
+    assert.match(app, /const \[isBuildRoute\] = useRoute\("\/build"\);/);
+    assert.match(app, /if \(isBuildRoute\) return <Redirect to="\/community\/moments\?composer=1" replace \/>;/);
   });
 
   test("Community keeps feed and Requests implementations behind their boundaries", () => {

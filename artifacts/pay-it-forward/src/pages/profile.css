@@ -206,3 +206,65 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Profile uses Community's shared brand colors with quiet, accessible surfaces. */
+.nia-profile {
+  --profile-ink: var(--nk-ink);
+  --profile-muted: var(--nk-muted);
+  --profile-paper: var(--nk-paper);
+  --profile-card: color-mix(in srgb, var(--nk-paper) 58%, #fff);
+  --profile-line: color-mix(in srgb, var(--nk-ink) 15%, var(--nk-paper));
+  --profile-blue: var(--nk-teal);
+  --profile-green: var(--nk-teal);
+  --profile-orange: var(--nk-coral);
+  --profile-pink: var(--nk-coral);
+  background:
+    radial-gradient(ellipse at 92% 0%, color-mix(in srgb, var(--nk-gold) 10%, transparent), transparent 28rem),
+    var(--profile-paper);
+}
+
+.dark .nia-profile {
+  --profile-ink: #f6f5ed;
+  --profile-muted: #bac8c1;
+  --profile-paper: #183d3b;
+  --profile-card: #204542;
+  --profile-line: #3c625c;
+}
+
+.nia-profile__masthead {
+  border-bottom-color: var(--nk-coral);
+  background: color-mix(in srgb, var(--profile-paper) 90%, transparent);
+}
+.nia-profile__hero {
+  background:
+    radial-gradient(ellipse at 95% 0%, color-mix(in srgb, var(--nk-gold) 15%, transparent), transparent 38%),
+    var(--profile-card);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--nk-ink) 6%, transparent);
+}
+.nia-profile__hero::after { border-color: color-mix(in srgb, var(--nk-teal) 23%, transparent); }
+.nia-profile__eyebrow { color: var(--nk-teal); }
+.nia-profile__avatar,
+.nia-profile__heritage-mark {
+  background: color-mix(in srgb, var(--nk-teal) 12%, var(--profile-card));
+  border-color: color-mix(in srgb, var(--nk-teal) 32%, var(--profile-card));
+  color: var(--nk-teal);
+}
+.nia-profile__heritage-link:hover {
+  border-color: color-mix(in srgb, var(--nk-teal) 50%, var(--profile-line));
+  background: color-mix(in srgb, var(--nk-teal) 4%, var(--profile-card));
+}
+.nia-profile__tabs button[aria-current="page"] {
+  background: var(--nk-teal);
+  color: #fffdf5;
+}
+.nia-profile :is(button, a, input, [role="switch"]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--nk-teal) 74%, transparent);
+  outline-offset: 3px;
+}
+.nia-profile :is(button, a) { min-height: 44px; touch-action: manipulation; }
+
+@media (max-width: 480px) {
+  .nia-profile { padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px)); }
+  .nia-profile__tabs { overflow-x: auto; padding-bottom: .15rem; }
+  .nia-profile__tabs button { flex: 1 0 auto; }
+}

@@ -1,13 +1,13 @@
 .nk-community-v4 {
-  --nia-story-viewer: #0d201e;
-  --nia-story-glass: rgba(13,32,30,.72);
-  --nia-story-glass-strong: rgba(13,32,30,.9);
+  --nia-story-viewer: #102522;
+  --nia-story-glass: rgba(16,37,34,.78);
+  --nia-story-glass-strong: rgba(16,37,34,.94);
   --nia-story-border: rgba(246,245,237,.18);
   --nia-story-text: var(--nk-paper, #f6f5ed);
   --nia-story-muted: rgba(246,245,237,.72);
   --nia-story-ring: conic-gradient(from 180deg, var(--nk-teal, #116a60), var(--nk-coral, #ed6b43), var(--nk-gold, #e7b650), var(--nk-teal, #116a60));
-  --nia-story-surface: #102522;
-  --nia-story-surface-raised: #183d3b;
+  --nia-story-surface: #183d3b;
+  --nia-story-surface-raised: #24524b;
 }
 
 .nia-story-rail { border-radius: 24px; border: 1px solid hsl(var(--border)); background: hsl(var(--card)); padding: 16px; overflow: hidden; }
@@ -281,3 +281,61 @@
 @media (prefers-reduced-motion:reduce) {
   .nia-story-source__choice,.nia-story-rail__skeleton span { animation:none; transition:none; }
 }
+
+/* Spark Studio starts in the same warm, clear visual language as Community;
+   the edit canvas stays dark so photos and videos remain the focus. */
+.nia-story-composer-shell { background:var(--nia-story-viewer); }
+.nia-story-composer { background:var(--nia-story-viewer); color:var(--nia-story-text); }
+.nia-story-composer__canvas { background:var(--nia-story-viewer); }
+.nia-story-composer__details { background:var(--nia-story-surface); }
+.nia-story-tool-dock { background:var(--nia-story-surface-raised); }
+.nia-story-tool--active { background:color-mix(in srgb,var(--nk-teal, #116a60) 32%, transparent); color:var(--nk-paper, #f6f5ed); }
+.nia-story-composer__footer { background:var(--nia-story-surface); }
+.nia-story-publish { background:var(--nk-teal, #116a60); color:var(--nk-paper, #f6f5ed); }
+
+.nia-story-composer--source {
+  background:var(--nk-paper, #f6f5ed);
+  color:var(--nk-ink, #183d3b);
+}
+.nia-story-composer--source .nia-story-composer__header {
+  border-bottom:1px solid color-mix(in srgb,var(--nk-ink, #183d3b) 12%, transparent);
+  color:var(--nk-ink, #183d3b);
+}
+.nia-story-composer--source .nia-story-composer__title span,
+.nia-story-composer--source .nia-story-source__intro > p:not(.nia-story-kicker),
+.nia-story-composer--source .nia-story-source__foot {
+  color:var(--nk-muted, #6e817c);
+}
+.nia-story-composer--source .nia-story-icon,
+.nia-story-composer--source .nia-story-icon--light {
+  border-color:color-mix(in srgb,var(--nk-ink, #183d3b) 14%, transparent);
+  background:var(--nk-paper, #f6f5ed);
+  color:var(--nk-ink, #183d3b);
+}
+.nia-story-composer--source .nia-story-source__choice {
+  border:1px solid color-mix(in srgb,var(--nk-ink, #183d3b) 12%, transparent);
+  background:var(--nk-card, #fcfbf7);
+  color:var(--nk-ink, #183d3b);
+  box-shadow:0 10px 28px color-mix(in srgb,var(--nk-ink, #183d3b) 7%, transparent);
+}
+.nia-story-composer--source .nia-story-source__choice > span {
+  background:color-mix(in srgb,var(--nk-teal, #116a60) 12%, var(--nk-paper, #f6f5ed));
+  color:var(--nk-teal, #116a60);
+}
+.nia-story-composer--source .nia-story-source__choice:nth-child(2) > span {
+  background:color-mix(in srgb,var(--nk-coral, #ed6b43) 14%, var(--nk-paper, #f6f5ed));
+  color:var(--nk-coral, #ed6b43);
+}
+.nia-story-composer--source .nia-story-source__choice:nth-child(3) > span {
+  background:color-mix(in srgb,var(--nk-gold, #e7b650) 24%, var(--nk-paper, #f6f5ed));
+  color:var(--nk-ink, #183d3b);
+}
+.nia-story-composer--source .nia-story-source__choice strong { color:var(--nk-ink, #183d3b); }
+.nia-story-composer--source .nia-story-source__choice small { color:var(--nk-muted, #6e817c); }
+.nia-story-composer--source .nia-story-source__choice > svg { color:var(--nk-teal, #116a60); }
+.nia-story-composer--source .nia-story-source__resume {
+  border:1px solid color-mix(in srgb,var(--nk-teal, #116a60) 30%, transparent);
+  background:color-mix(in srgb,var(--nk-teal, #116a60) 8%, var(--nk-paper, #f6f5ed));
+  color:var(--nk-teal, #116a60);
+}
+.nia-story-composer--source .nia-story-source__foot { color:var(--nk-muted, #6e817c); }

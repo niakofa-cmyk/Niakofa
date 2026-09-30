@@ -340,3 +340,116 @@
 @media (prefers-reduced-motion: reduce) {
   .nia-home *, .nia-people * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* Home / People share the same paper-and-ink neighborhood system as Community. */
+.nia-home,
+.nia-people {
+  --nia-ink: var(--nk-ink);
+  --nia-muted: var(--nk-muted);
+  --nia-paper: var(--nk-paper);
+  --nia-card: color-mix(in srgb, var(--nk-paper) 68%, #fff);
+  --nia-line: color-mix(in srgb, var(--nk-ink) 14%, var(--nk-paper));
+  --nia-blue: var(--nk-teal);
+  --nia-blue-soft: color-mix(in srgb, var(--nk-teal) 10%, var(--nk-paper));
+  --nia-coral: var(--nk-coral);
+  color: var(--nia-ink);
+}
+
+.nia-home {
+  padding-inline: .75rem;
+  background:
+    radial-gradient(ellipse at 90% 0%, color-mix(in srgb, var(--nk-gold) 9%, transparent), transparent 24rem);
+}
+
+.nia-home__intro,
+.nia-people__hero {
+  border-color: color-mix(in srgb, var(--nk-ink) 14%, transparent);
+  background:
+    radial-gradient(ellipse at 96% 0%, color-mix(in srgb, var(--nk-gold) 17%, transparent), transparent 36%),
+    color-mix(in srgb, var(--nk-paper) 46%, #fff);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--nk-ink) 5%, transparent);
+}
+
+.nia-home__intro { border-top-color: var(--nk-teal); }
+.nia-people__hero {
+  border-color: color-mix(in srgb, var(--nk-coral) 24%, var(--nia-line));
+  border-top-color: var(--nk-coral);
+}
+
+.nia-home__eyebrow,
+.nia-people__eyebrow { color: var(--nk-teal); }
+.nia-home__rule { color: var(--nk-muted); }
+.nia-home__rule::after { background: color-mix(in srgb, var(--nk-ink) 13%, transparent); }
+
+.nia-home [data-hub-community-feed] #hub-post-composer,
+.nia-home [data-hub-community-feed] article,
+.nia-home [data-hub-community-feed] > div > button {
+  border-color: var(--nia-line) !important;
+  background-color: var(--nia-card) !important;
+  color: var(--nia-ink);
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--nk-ink) 5%, transparent);
+}
+
+.nia-home [data-hub-community-feed] #hub-post-composer-trigger,
+.nia-home [data-hub-community-feed] input,
+.nia-home [data-hub-community-feed] textarea,
+.nia-people__search input {
+  border-color: var(--nia-line);
+  background-color: color-mix(in srgb, var(--nk-teal) 4%, var(--nk-paper));
+  color: var(--nia-ink);
+}
+
+.nia-home [data-hub-community-feed] button:hover { border-color: color-mix(in srgb, var(--nk-teal) 45%, var(--nia-line)); }
+.nia-home a[class*="bg-[#2866a6]"] {
+  background: var(--nk-teal);
+  color: var(--nk-paper);
+}
+.nia-home a[class*="bg-[#2866a6]"]:hover { background: color-mix(in srgb, var(--nk-teal) 86%, var(--nk-ink)); }
+.nia-home svg[class*="text-[#2866a6]"] { color: var(--nk-teal); }
+.nia-home__loading,
+.nia-home__empty {
+  border-color: var(--nia-line);
+  background: var(--nia-card);
+}
+.nia-home__skeleton {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--nk-teal) 10%, var(--nk-paper)) 25%,
+    color-mix(in srgb, var(--nk-paper) 42%, #fff) 50%,
+    color-mix(in srgb, var(--nk-teal) 10%, var(--nk-paper)) 75%);
+  background-size: 200% 100%;
+}
+
+.nia-people__search input:focus {
+  border-color: var(--nk-coral);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nk-coral) 17%, transparent);
+}
+.nia-people__search-icon { color: var(--nk-muted); }
+.nia-people__message {
+  min-height: 44px;
+  border-color: color-mix(in srgb, var(--nk-coral) 42%, var(--nia-line));
+  background: color-mix(in srgb, var(--nk-coral) 8%, var(--nk-paper));
+  color: #853a23;
+}
+.nia-people__person,
+.nia-people__discovery > div {
+  border-color: var(--nia-line);
+  background: var(--nia-card);
+}
+.nia-people__person:hover { border-color: color-mix(in srgb, var(--nk-coral) 45%, var(--nia-line)); }
+.nia-home a:focus-visible,
+.nia-home button:focus-visible,
+.nia-people a:focus-visible,
+.nia-people button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--nk-teal) 68%, transparent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 639px) {
+  .nia-home { padding-inline: .5rem; }
+  .nia-home__intro,
+  .nia-people__hero { border-radius: 0 0 1.25rem 1.25rem; }
+  .nia-home [data-hub-community-feed] button,
+  .nia-home [data-hub-community-feed] a,
+  .nia-people__clear,
+  .nia-people__message { min-height: 44px; }
+}

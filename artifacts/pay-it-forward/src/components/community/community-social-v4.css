@@ -1,34 +1,11 @@
 .nk-community-v4 {
   --nk-social-content-width: 900px;
-  --nk-ink: #183d3b;
-  --nk-paper: #f6f5ed;
-  --nk-muted: #6e817c;
-  --nk-teal: #116a60;
-  --nk-coral: #ed6b43;
-  --nk-gold: #e7b650;
-  --background: 48 33% 95%;
-  --foreground: 164 42% 17%;
-  --border: 155 15% 83%;
-  --input: 155 15% 83%;
-  --muted: 145 19% 91%;
-  --muted-foreground: 154 12% 43%;
-  --card: 50 42% 98%;
-  --card-foreground: 164 42% 17%;
-  --popover: 50 42% 98%;
-  --popover-foreground: 164 42% 17%;
-  --primary: 173 72% 27%;
-  --primary-foreground: 48 33% 96%;
-  --secondary: 145 19% 91%;
-  --secondary-foreground: 164 42% 17%;
-  --accent: 145 19% 91%;
-  --accent-foreground: 164 42% 17%;
-  --ring: 173 72% 27%;
   min-height: 100dvh;
   background:
     radial-gradient(ellipse at 12% 3%, rgba(231, 182, 80, .12), transparent 29rem),
     var(--nk-paper);
   color: var(--nk-ink);
-  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-family: var(--app-font-sans, Inter, sans-serif);
 }
 
 .nk-community-v4 :focus-visible {
@@ -373,4 +350,95 @@
   .nk-community-v4-header { padding: 0 .38rem; }
   .nk-community-v4-icon-button { width: 2.05rem; height: 2.05rem; }
   .nk-community-v4-social-item { font-size: .5rem; }
+}
+
+/* The global semantic tokens are shared with the rest of the app. */
+.nk-community-v4 {
+  --nk-social-content-width: 900px;
+  background:
+    radial-gradient(ellipse at 12% 3%, color-mix(in srgb, var(--nk-gold) 12%, transparent), transparent 29rem),
+    var(--nk-paper);
+  color: var(--nk-ink);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+.nk-community-v4 :focus-visible {
+  outline-color: color-mix(in srgb, var(--nk-teal) 72%, transparent);
+}
+
+.nk-community-v4-header-wrap {
+  background: color-mix(in srgb, var(--nk-paper) 95%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--nk-ink) 13%, transparent);
+}
+
+.nk-community-v4-icon-button,
+.nk-community-v4-search input,
+.nk-close-button,
+.nk-notification-read {
+  background: color-mix(in srgb, var(--nk-teal) 9%, var(--nk-paper));
+}
+
+.nk-community-v4-icon-button:hover,
+.nk-view-all {
+  background: color-mix(in srgb, var(--nk-teal) 14%, var(--nk-paper));
+}
+
+.nk-community-v4-social-item { color: var(--nk-muted); }
+.nk-community-v4-social-item[data-active="true"] { color: var(--nk-teal); }
+.nk-community-v4-social-item[data-active="true"]::after { background: var(--nk-coral); }
+.nk-nav-unread-dot,
+.nk-bell-count { background: var(--nk-coral); }
+
+.nk-notification-drawer { background: var(--nk-paper); }
+.nk-notification-heading-icon,
+.nk-notification-glyph,
+.nk-history-mark,
+.nk-caught-up-mark {
+  background: color-mix(in srgb, var(--nk-teal) 11%, var(--nk-paper));
+  color: var(--nk-teal);
+}
+.nk-notification-row,
+.nk-history-row { background: color-mix(in srgb, var(--nk-paper) 65%, #fff); }
+.nk-notification-row.is-unread,
+.nk-history-row.is-unread { background: color-mix(in srgb, var(--nk-coral) 6%, var(--nk-paper)); }
+.nk-notification-kind-emergency,
+.nk-notification-kind-story_reaction {
+  background: color-mix(in srgb, var(--nk-coral) 15%, var(--nk-paper));
+  color: #8f3c25;
+}
+.nk-notification-kind-pledge,
+.nk-notification-kind-pledge_scheduled {
+  background: color-mix(in srgb, var(--nk-gold) 24%, var(--nk-paper));
+  color: #665018;
+}
+.nk-unread-pill { background: color-mix(in srgb, var(--nk-coral) 17%, var(--nk-paper)); color: #84371f; }
+.nk-eyebrow,
+.nk-notification-body,
+.nk-history-body { color: var(--nk-muted); }
+.nk-retry-button { background: var(--nk-teal); }
+.nk-history-hero {
+  background:
+    radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--nk-gold) 28%, transparent), transparent 9rem),
+    linear-gradient(130deg, var(--nk-ink), var(--nk-teal));
+}
+
+.nk-community-v4-social-item,
+.nk-community-v4-icon-button,
+.nk-create-spark,
+.nk-text-action,
+.nk-mark-all,
+.nk-view-all,
+.nk-close-button,
+.nk-notification-read,
+.nk-history-action {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+@media (max-width: 640px) {
+  .nk-community-v4-social-nav { min-height: 3.65rem; }
+  .nk-community-v4-social-item { min-height: 44px; }
+  .nk-community-v4-icon-button { width: 2.75rem; height: 2.75rem; }
+  .nk-create-spark { min-width: 44px; min-height: 44px; }
+  .nk-notification-drawer { padding-bottom: env(safe-area-inset-bottom, 0px); }
 }

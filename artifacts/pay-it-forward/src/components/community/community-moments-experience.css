@@ -146,3 +146,108 @@
     transition-duration: .01ms !important;
   }
 }
+
+/* A darkroom-like viewing canvas lets real photo/video media lead the feed. */
+.nia-moments {
+  --nia-moment-ink: var(--nk-ink);
+  --nia-moment-paper: var(--nk-paper);
+  color: var(--nia-moment-ink);
+}
+
+.nia-moments > header {
+  border-color: color-mix(in srgb, var(--nk-teal) 19%, transparent);
+  background:
+    radial-gradient(ellipse at 92% 0%, color-mix(in srgb, var(--nk-gold) 18%, transparent), transparent 34%),
+    color-mix(in srgb, var(--nk-paper) 40%, #fff);
+}
+.nia-moments > header h1 { color: var(--nk-ink); }
+.nia-moments > header > p:nth-child(3) { color: var(--nk-muted); }
+
+.nia-moments > section[aria-label="Creator analytics"],
+.nia-moments > section[aria-label="Spark feed"] {
+  border-color: color-mix(in srgb, var(--nk-ink) 15%, var(--nk-paper));
+  background: color-mix(in srgb, var(--nk-paper) 54%, #fff);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--nk-ink) 8%, transparent);
+}
+
+.nia-moments [data-testid="list-moments-feed"] {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 50% 18%, color-mix(in srgb, var(--nk-teal) 23%, #102522), transparent 70%),
+    #10211f;
+  scrollbar-color: color-mix(in srgb, var(--nk-gold) 62%, transparent) transparent;
+}
+.nia-moments [data-moment-index] {
+  isolation: isolate;
+  background: #122724;
+}
+.nia-moments [data-moment-index] > img,
+.nia-moments [data-moment-index] > video {
+  background: #122724;
+}
+.nia-moments [data-moment-caption] {
+  padding-bottom: 1.5rem;
+  background: linear-gradient(to top, rgb(8 22 20 / .96), rgb(8 22 20 / .63) 50%, transparent);
+  text-shadow: 0 1px 8px rgb(0 0 0 / .48);
+}
+.nia-moments [data-moment-tools] {
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+}
+.nia-moments [data-moment-actions] {
+  border: 1px solid rgb(246 245 237 / .22);
+  background: rgb(18 42 38 / .84);
+  backdrop-filter: blur(16px);
+}
+.nia-moments [data-moment-actions] > button,
+.nia-moments [data-moment-actions] > span,
+.nia-moments [data-moment-actions] > div > button {
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--nk-paper);
+}
+.nia-moments [data-moment-actions] button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--nk-coral) 28%, transparent);
+  color: #fff0e9;
+}
+.nia-moments [data-moment-actions] button:hover { background: rgb(246 245 237 / .14); }
+.nia-moments [data-testid^="button-moment-sound-"] {
+  min-height: 44px;
+  border: 1px solid rgb(246 245 237 / .28);
+  background: rgb(18 42 38 / .88);
+}
+.nia-moments [data-testid^="button-moment-media-"] {
+  min-width: 44px;
+  min-height: 44px;
+  background: rgb(18 42 38 / .86);
+}
+.nia-moments [data-moment-filters] {
+  background: color-mix(in srgb, var(--nk-teal) 5%, var(--nk-paper));
+}
+.nia-moments [data-moment-filters] input,
+.nia-moments [data-moment-filters] select {
+  border-color: color-mix(in srgb, var(--nk-ink) 17%, var(--nk-paper));
+  background: color-mix(in srgb, var(--nk-paper) 35%, #fff);
+}
+.nia-moments [data-moment-filters] button {
+  background: var(--nk-teal);
+  color: var(--nk-paper);
+}
+.nia-moments :is(button, a, input, select):focus-visible {
+  outline: 3px solid var(--nk-gold);
+  outline-offset: 2px;
+}
+.nia-moments > section[aria-label="Spark feed"] > div:first-child button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .nia-moments > section[aria-label="Spark feed"] { background: #10211f; }
+  .nia-moments [data-testid="list-moments-feed"] {
+    height: max(24rem, calc(100dvh - 10.5rem - env(safe-area-inset-bottom, 0px)));
+    min-height: 24rem;
+  }
+  .nia-moments [data-moment-caption] { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px)); }
+  .nia-moments [data-moment-tools] { bottom: max(1rem, env(safe-area-inset-bottom, 0px)); }
+  .nia-moments [data-moment-actions] { gap: .35rem; }
+}

@@ -1,0 +1,153 @@
+.spark-studio-current {
+  min-height: 100dvh;
+  background: #0a0d0c;
+  color: #fff;
+  font-family: "DM Sans", sans-serif;
+}
+.spark-studio-current .nia-story-composer-overlay {
+  position: fixed;
+  z-index: 1;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  background: rgba(0,0,0,.84);
+}
+.spark-studio-current .nia-story-composer-shell {
+  width: min(100%, 520px);
+  height: 100dvh;
+  overflow: hidden;
+  background: #000;
+}
+.spark-studio-current .nia-story-composer {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 620px;
+  flex-direction: column;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+}
+.spark-studio-current .nia-story-composer__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: max(10px,env(safe-area-inset-top)) 12px 10px;
+}
+.spark-studio-current .nia-story-composer__title { min-width: 0; flex: 1; text-align: center; }
+.spark-studio-current .nia-story-composer__title strong,
+.spark-studio-current .nia-story-composer__title span { display: block; }
+.spark-studio-current .nia-story-composer__title strong { font-size: 14px; }
+.spark-studio-current .nia-story-composer__title span { margin-top: 2px; color: rgba(255,255,255,.62); font-size: 10px; }
+.spark-studio-current .nia-story-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 50%;
+  background: rgba(255,255,255,.12);
+  color: #fff;
+}
+.spark-studio-current .nia-story-header-end { width: 40px; }
+.spark-studio-current .nia-story-source {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+  padding: 38px 22px max(26px,env(safe-area-inset-bottom));
+  background: #000;
+}
+.spark-studio-current .nia-story-source__intro { margin-bottom: 32px; }
+.spark-studio-current .nia-story-kicker {
+  margin: 0;
+  color: #72c7b8;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.spark-studio-current .nia-story-source__intro h2 {
+  margin: 13px 0 12px;
+  font-size: clamp(38px,9vw,54px);
+  font-weight: 750;
+  letter-spacing: -.055em;
+  line-height: 1.02;
+}
+.spark-studio-current .nia-story-source__intro h2 em {
+  color: #e7b650;
+  font-family: "Playfair Display", Georgia, serif;
+  font-weight: 400;
+}
+.spark-studio-current .nia-story-source__intro > p:last-child {
+  margin: 0;
+  color: rgba(246,245,237,.76);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.spark-studio-current .nia-story-source__choices { display: grid; gap: 10px; }
+.spark-studio-current .nia-story-source__choice {
+  display: grid;
+  min-height: 88px;
+  grid-template-columns: 56px 1fr 22px;
+  grid-template-rows: 1fr 1fr;
+  align-items: center;
+  column-gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(246,245,237,.18);
+  border-radius: 18px;
+  background: rgba(246,245,237,.06);
+  color: #f6f5ed;
+  text-align: left;
+}
+.spark-studio-current .nia-story-source__choice > span {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  grid-row: 1 / 3;
+  place-items: center;
+  border-radius: 14px;
+  background: #116a60;
+  color: #f6f5ed;
+}
+.spark-studio-current .nia-story-source__choice:nth-child(2) > span { background: #ed6b43; color: #183d3b; }
+.spark-studio-current .nia-story-source__choice:nth-child(3) > span { background: #e7b650; color: #183d3b; }
+.spark-studio-current .nia-story-source__choice strong { align-self: end; font-size: 15px; }
+.spark-studio-current .nia-story-source__choice small { grid-column: 2; align-self: start; margin-top: 3px; color: rgba(246,245,237,.7); font-size: 11px; }
+.spark-studio-current .nia-story-source__choice > svg { grid-column: 3; grid-row: 1 / 3; color: #e7b650; }
+.spark-studio-current .nia-story-source__foot { margin: auto 0 0; padding-top: 26px; color: rgba(246,245,237,.66); text-align: center; font-size: 11px; }
+.spark-studio-current .nia-story-composer__canvas { display: grid; flex: 1; min-height: 200px; place-items: center; background: #111; }
+.current-media-preview {
+  display: grid;
+  width: min(86%, 330px);
+  aspect-ratio: 4 / 5;
+  place-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 18px;
+  background: linear-gradient(145deg,#1b3430,#0d1715 56%,#27433e);
+  color: #fff;
+  text-align: center;
+}
+.current-media-preview span { font-weight: 700; }
+.current-media-preview small { color: rgba(255,255,255,.65); font-size: 11px; }
+.spark-studio-current .nia-story-composer__details { padding: 16px; background: #0d201e; }
+.spark-studio-current .nia-story-composer__form label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; }
+.spark-studio-current .nia-story-composer__form textarea {
+  width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 12px;
+  background: rgba(255,255,255,.07);
+  color: #fff;
+  padding: 12px;
+}
+.spark-studio-current .nia-story-composer__form p { color: rgba(255,255,255,.66); font-size: 11px; }
+.spark-studio-current .nia-story-composer__footer { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px max(14px,env(safe-area-inset-bottom)); background: #102522; }
+.spark-studio-current .nia-story-publish { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; border: 0; border-radius: 12px; background: #fff; color: #000; padding: 0 16px; font-weight: 800; }
+.current-preview-status { position: fixed; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+@media (min-width: 640px) {
+  .spark-studio-current .nia-story-composer-shell { height: min(900px,calc(100dvh - 32px)); margin-block: auto; border-radius: 24px; }
+  .spark-studio-current .nia-story-composer { border-radius: 24px; }
+}

@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider, keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -142,9 +142,11 @@ function FocusRefresh() { const queryClient = useQueryClient(); useEffect(() => 
 
 function AppContent() {
   useServiceWorkerUpdate();
+  const [isBuildRoute] = useRoute("/build");
   const pathname = typeof window !== "undefined" ? window.location.pathname : "";
   const normalizedPathname = pathname;
   useEffect(() => { if (typeof window === "undefined" || true || normalizedPathname === pathname) return; const nextUrl = `${normalizedPathname}${window.location.search}${window.location.hash}`; window.history.replaceState(window.history.state, "", nextUrl); window.dispatchEvent(new PopStateEvent("popstate")); }, [normalizedPathname, pathname]);
+  if (isBuildRoute) return <Redirect to="/community/moments?composer=1" replace />;
   if (normalizedPathname === "/status" || normalizedPathname.endsWith("/status")) return <Suspense fallback={<PageFallback />}><StatusPage /></Suspense>;
   if (normalizedPathname === "/impact" || normalizedPathname.startsWith("/impact/")) return <Suspense fallback={<PageFallback />}><CountyImpactPage /></Suspense>;
   return <><FocusRefresh /><AppShell /><NiaGlobal /></>;
