@@ -15,9 +15,18 @@ if [[ "${1:-}" == "--list" ]]; then
     corepack pnpm exec playwright test e2e/media-v21-resume-compose.spec.ts --list
   exit $?
 fi
-if [[ "$#" -ne 0 ]]; then
-  echo "Usage: $0 [--list]" >&2
+if [[ "$#" -gt 1 || ( "$#" -eq 1 && "${1:-}" != "--narrow" ) ]]; then
+  echo "Usage: $0 [--list|--narrow]" >&2
   exit 2
+fi
+if [[ "${1:-}" == "--narrow" ]]; then
+  if [[ "${CONFIRM_SAME_COMMUNITY_NARROW:-}" != "1" ]]; then
+    echo "Refusing narrow certification: explicitly confirm same-Community access is NOT cross-community isolation." >&2
+    exit 2
+  fi
+  export MEDIA_V21_SAME_COMMUNITY_NARROW=1
+else
+  unset MEDIA_V21_SAME_COMMUNITY_NARROW
 fi
 
 for gate in \
@@ -106,7 +115,7 @@ if [[ -z "${PLAYWRIGHT_EXECUTABLE_PATH:-}" && -x "/repl/tools/bin/chromium" ]]; 
   export PLAYWRIGHT_EXECUTABLE_PATH="/repl/tools/bin/chromium"
 fi
 
-echo "Running gated V21 resumable-upload and camera-clip-composition certification for commit $EXPECTED_COMMIT."
-corepack pnpm exec playwright test e2e/media-v21-resume-compose.spec.ts \
+echo "Running gated V21 ${MEDIA_V21_SAME_COMMUNITY_NARROW:+same-community narrow }resumable-upload and camera-clip-composition certification for commit $EXPECTED_COMMIT."
+./node_modules/.bin/playwright test e2e/media-v21-resume-compose.spec.ts \
   --reporter=line \
   --output "$runtime_dir/playwright-output"

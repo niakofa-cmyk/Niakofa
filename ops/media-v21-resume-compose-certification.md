@@ -66,6 +66,31 @@ Playwright to enumerate the spec; it does not require production gates or
 make HTTP requests. Do not invoke the normal runner unless this production
 write is explicitly approved.
 
+### Same-Community narrow run
+
+If the only approved disposable viewer is in the **same** Community as the
+owner, the default runner must continue to refuse cross-community
+certification. An explicitly limited run is available with `--narrow` and
+`CONFIRM_SAME_COMMUNITY_NARROW=1` in addition to every production gate above.
+It requires USER_B to share USER_A's Community, verifies that the authorized
+same-Community viewer can get a composition and private playback grant, and
+still checks that anonymous access without a grant is denied. It exercises
+the same resumable upload, processing, composition, owner byte-range playback,
+and exact-ID cleanup. It **does not** establish cross-community privacy,
+Exchange Spark isolation, or Family Story media playback. The normal runner
+remains the required check when an approved outside-Community viewer is
+available.
+
+The opt-in `community-media-api-runtime.integration.test.ts` creates two
+approved *fixture* users in separate fixture Communities in a migrated,
+isolated local test database. It checks Community Story, media authorization,
+Exchange Spark visibility, and Family membership policy without real media
+bytes or production identities. Set `COMMUNITY_MEDIA_API_RUNTIME_TEST=1` and
+`NODE_ENV=test` only against a disposable database whose name includes `test`
+or `dev`; the API Jest setup also requires
+`FAMILY_STORY_RUNTIME_TEST_DATABASE_URL` to point at that database. This
+local regression is not evidence of production video processing or privacy.
+
 ## Cleanup behavior and limits
 
 The spec reloads the first upload's acknowledged offset in a new API request

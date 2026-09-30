@@ -15,6 +15,7 @@ const enabled = [
 ].every((name) => process.env[name] === "1");
 const userAState = process.env.USER_A_STATE;
 const userBState = process.env.USER_B_STATE;
+const sameCommunityNarrow = process.env.MEDIA_V21_SAME_COMMUNITY_NARROW === "1";
 const expectedCommit = process.env.EXPECTED_COMMIT?.trim().toLowerCase();
 const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5000";
 const execFileAsync = promisify(execFile);
@@ -231,16 +232,23 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
     "Requires all four explicit production gates, both approved storage states, and the full expected commit.",
   );
 
-  test("resumes acknowledged bytes, publishes an accessible Moment, composes it, enforces private playback, and cleans up", async ({ playwright }) => {
+  test(`${sameCommunityNarrow ? "narrow same-community" : "cross-community"}: resumes upload, publishes and composes a Moment, checks playback, and cleans up`, async ({ playwright }) => {
     test.setTimeout(15 * 60_000);
     const origin = safeOrigin(baseUrl);
     const owner = safeStateIdentity(userAState!, origin);
     const otherUser = safeStateIdentity(userBState!, origin);
     expect(otherUser.userId, "The isolation state must belong to a distinct approved user.").not.toBe(owner.userId);
-    expect(
-      otherUser.communityId,
-      "USER_B must be outside USER_A's Story audience so isolation checks can validly require denial.",
-    ).not.toBe(owner.communityId);
+    if (sameCommunityNarrow) {
+      expect(
+        otherUser.communityId,
+        "Narrow mode requires USER_B inside USER_A's Community; it cannot certify cross-community denial.",
+      ).toBe(owner.communityId);
+    } else {
+      expect(
+        otherUser.communityId,
+        "USER_B must be outside USER_A's Story audience so isolation checks can validly require denial.",
+      ).not.toBe(owner.communityId);
+    }
 
     const preflight = await playwright.request.newContext({ baseURL: baseUrl, timeout: 30_000 });
     try {
@@ -436,11 +444,15 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
       const userBStatus = await userBRequest.get(
         `/api/community/stories/${storyId}/moment-composition`,
       );
-      expect(userBStatus.status(), "USER_B must not read the disposable Story composition.").toBe(404);
+       expect(userBStatus.status(), sameCommunityNarrow
+         ? "A same-Community viewer may read the published Story composition."
+         : "USER_B must not read the disposable Story composition.").toBe(sameCommunityNarrow ? 200 : 404);
       const userBGrant = await userBRequest.post(
         `/api/community/stories/${storyId}/moment-composition/playback-grant`,
       );
-      expect(userBGrant.status(), "USER_B must not receive a private playback grant.").toBe(404);
+       expect(userBGrant.status(), sameCommunityNarrow
+         ? "A same-Community viewer may obtain a private playback grant."
+         : "USER_B must not receive a private playback grant.").toBe(sameCommunityNarrow ? 200 : 404);
 
       const anonymousRequest = await playwright.request.newContext({ baseURL: baseUrl, timeout: 30_000 });
       requests.push(anonymousRequest);

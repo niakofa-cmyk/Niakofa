@@ -53,3 +53,18 @@ pass.
 **How to apply:** Override the full boundary in `jest.setup.ts`; restore
 per-test overrides explicitly when a suite needs them. Mock API-to-service
 clients such as Nia in route unit tests instead of calling a running workflow.
+
+Database-backed acceptance tests need their own migrated, disposable local
+database, not the workspace's default development database. The Jest test
+boundary must point explicitly at that isolated database; a shell-level
+database override alone is insufficient.
+
+**Why:** The safe Jest defaults intentionally replace ambient database
+connections, while the workspace's default database may contain unrelated
+data. Confusing the two produces either a connection failure or fixture
+mutations in the wrong environment.
+
+**How to apply:** Provision an isolated test-named database in the local
+disposable PostgreSQL cluster, migrate it, pass its connection through the
+test-only override, and keep exact-ID fixture cleanup. Never use a production
+connection or assume a passing policy fixture certifies production media.
