@@ -113,3 +113,22 @@ It is a BullMQ registration/Redis-connectivity signal: it proves initial
 events, but it is not proof that a job was consumed or successfully processed.
 The acceptance flow separately verifies completed media status for both
 uploads and successful composition before it passes.
+
+## Diagnosing resumable chunk 503s
+
+The public response remains the generic `MEDIA_STORAGE_UNAVAILABLE` error so
+clients do not receive provider or database details. The API log records only
+two fixed values: the operation stage (`database_validate`, `database_ledger`,
+`database_lock`, `storage_put`, or `database_commit`) and a fixed
+`failure_class`. It does not log the underlying exception, SQL text, account or
+asset IDs, object keys, chunk bytes, or request payload.
+
+Use the stage first: `storage_put` isolates the object-store operation;
+database stages isolate the corresponding SQL transaction. The class then
+distinguishes bounded groups such as storage authorization, timeout,
+throttling, upstream failure, network failure, or provider-unknown; and
+database connection, constraint, authentication, schema, transaction,
+operator, query, or unknown failures. Do not retry production media writes
+until the release with this classifier is served and the observed class has
+been reviewed. A classification is diagnostic evidence, not proof that a
+later upload or playback succeeds.

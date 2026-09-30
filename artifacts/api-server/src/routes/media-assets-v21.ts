@@ -42,6 +42,7 @@ import {
   MEDIA_UPLOAD_CHUNK_SIZE,
   MEDIA_UPLOAD_MAX_BYTES,
 } from "../lib/resumable-media-upload";
+import { classifyMediaChunkFailure, type MediaChunkFailureStage } from "../lib/media-upload-failure";
 
 const router = Router();
 const CONTEXT_KINDS = new Set([
@@ -625,6 +626,7 @@ router.put(
 
     const objectKey = chunkStorageKey(assetId, offset, digest);
     let result: { kind: string; offset?: number } | undefined;
+    let failureStage: MediaChunkFailureStage = "database_validate";
     try {
       // Validate first without touching storage. Each phase rechecks under the
       // asset/session locks because another same-offset request may win.
@@ -671,6 +673,7 @@ router.put(
       result = initial;
 
       if (initial.kind === "accept") {
+        failureStage = "database_ledger";
         // Commit the cleanup ledger key BEFORE any provider write. A crash or
         // transaction rollback after PUT therefore leaves a discoverable key
         // for completion retry or tombstone cleanup.
@@ -722,6 +725,7 @@ router.put(
         result = registered;
 
         if (registered.kind === "registered") {
+          failureStage = "database_lock";
           // Keep the asset lock through the provider PUT and offset commit. A
           // concurrent DELETE waits, then sees the already-durable cleanup key.
           result = await db.transaction(async (tx) => {
@@ -759,7 +763,9 @@ router.put(
             if (decision.kind === "replay") return { kind: "stored", offset: session.next_offset };
             if (decision.kind === "conflict") return { kind: "conflict", offset: session.next_offset };
             if (decision.kind === "out-of-order") return { kind: "out-of-order", offset: session.next_offset };
+            failureStage = "storage_put";
             await putAsset(objectKey, req.body, "application/octet-stream");
+            failureStage = "database_commit";
             await tx.insert(mediaUploadChunksTable).values({
               media_asset_id: assetId,
               byte_offset: offset,
@@ -775,8 +781,14 @@ router.put(
           });
         }
       }
-    } catch {
+    } catch (error) {
       // The durable cleanup ledger was committed before the provider write.
+      // Emit only fixed classifications; never log the underlying error, key,
+      // asset/user IDs, or request payload.
+      logger.error({
+        stage: failureStage,
+        failure_class: classifyMediaChunkFailure(failureStage, error),
+      }, "media-upload: resumable chunk write failed");
       return res.status(503).json({ error: "Media chunk could not be stored. Retry the chunk.", error_code: "MEDIA_STORAGE_UNAVAILABLE" });
     }
 

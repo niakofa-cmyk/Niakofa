@@ -4,11 +4,11 @@
 
 Niakofa is evolving into a community platform centered on mutual aid, belonging, cultural continuity, and a living Global Village. The Community architecture should make it easy for members to move from seeing what is happening now, to participating, gathering, communicating, and preserving what matters.
 
-The implementation keeps the product vocabulary intentionally distinct from the mature persistence layer:
+The implementation keeps the product vocabulary intentionally distinct from the mature persistence layer. The six primary Community destinations are:
 
-**Home → Moments → Spirals → People → Notifications**
+**Home → Moments → People → Exchange → Notifications → Profile**
 
-Messages remains a persistent header action.
+Messages remains a persistent header action. Spirals, Hubs, Requests, Services, Media, Diaspora, Family, and Legacy remain available as secondary destinations.
 
 **Nia AI is separate from the core Community/social architecture.**
 
@@ -20,6 +20,7 @@ Messages remains a persistent header action.
 | Moments | Short-form destination / experience |
 | Sparks | Individual short-form expressions |
 | Spirals | Community/group spaces; replaces Circles |
+| Exchange | Goods, services, needs, and offers |
 | Stories | Durable narratives |
 | Legacy | Preserved cultural, family, and community memory |
 | Messages | Persistent communication surface |
@@ -75,13 +76,18 @@ The implementation continues to use CommunityMomentsExperience, CommunityStoryRa
 Primary Community navigation:
 1. Home
 2. Moments
-3. Spirals
-4. People
+3. People
+4. Exchange
 5. Notifications
+6. Profile
 
-Messages is available from the header.
+Messages is available from the header. Spirals remains a secondary destination and is not a primary tab.
 
-Secondary Community destinations include Hubs, Requests, Services, Spirals, Media, Diaspora, Family, Legacy, and Profile.
+Secondary Community destinations include Hubs, Requests, Services, Spirals, Media, Diaspora, Family, and Legacy.
+
+### Notification routing status
+
+The canonical experience contract names `/notifications`, but the current Community shell still opens the Notifications drawer when its tab is selected, and the frontend does not yet register a first-class `/notifications` page. Preserve the drawer as quick access when adding that destination; do not claim route parity until the page and navigation behavior are implemented and tested.
 
 ## Testing Contract
 
@@ -118,8 +124,9 @@ The Diaspora Community source contract verifies that the Stories wrapper points 
 ## Acceptance Criteria
 
 The implementation is complete when:
-- Community primary navigation consistently uses Home, Moments, Spirals, People, Notifications.
+- Community primary navigation consistently uses Home, Moments, People, Exchange, Notifications, Profile.
 - Messages remains directly accessible from the header.
+- Notifications is available as a full `/notifications` destination while the drawer remains available for quick access.
 - Legacy Stories/Circles URLs continue to resolve without losing deep-link parameters.
 - Sparks are the visible short-form content language.
 - Stories remain available as durable narratives.
