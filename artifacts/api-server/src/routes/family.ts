@@ -37,11 +37,13 @@ import { Router } from "express";
 import {
   putAsset,
   streamOrRedirectAsset,
+  streamAssetSameOrigin,
   isCloudStorageConfigured,
   getStorageBackend,
   deleteAssetStrict,
   assetExists,
 } from "../lib/storage";
+import { validateMediaBuffer } from "../lib/media-validation";
 import {
   db,
   familiesTable,
@@ -65,7 +67,7 @@ import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { requestNia } from "../lib/nia-client";
 import { stripTags } from "../lib/sanitize";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 const router = Router();
 
@@ -178,6 +180,12 @@ router.use("/family/assets", generalApiLimiter, requireAuth, async (req, res, ne
     .limit(1);
   if (!asset) return res.status(404).json({ error: "Not found" });
 
+  // Private memories must not be turned into stable CDN or storage URLs after
+  // authorization. Stream them through this authenticated response instead.
+  if (memory.visibility === "private") {
+    await streamAssetSameOrigin(rel, res);
+    return;
+  }
   await streamOrRedirectAsset(rel, res);
 });
 
@@ -1287,6 +1295,133 @@ router.post(
   },
 );
 
+// POST /family/:id/memories/:memoryId/assets/upload-spark
+// A dedicated private-copy path for media selected in Spark Studio. It validates
+// file signatures and metadata, and derives a repeatable object key so retries
+// after an uncertain response do not create a second asset row.
+router.post(
+  "/family/:id/memories/:memoryId/assets/upload-spark",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const userId = req.authenticatedUserId!;
+    const familyId = Number(req.params.id);
+    const memoryId = Number(req.params.memoryId);
+    if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
+
+    const membership = await getFamilyMembership(familyId, userId);
+    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
+      return res.status(403).json({ error: "Contributor access required" });
+    }
+    const access = await getAccessibleMemory(familyId, memoryId, userId, membership);
+    if (!access.memory) return res.status(404).json({ error: "Not found" });
+    if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
+    if (access.memory.author_id !== userId || access.memory.visibility !== "private") {
+      return res.status(403).json({ error: "Spark copies must be attached to your own private Family memory" });
+    }
+
+    const { dataUrl, filename, mimeType, assetType, clientUploadId } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof dataUrl !== "string" || typeof filename !== "string" || typeof mimeType !== "string"
+      || typeof assetType !== "string" || typeof clientUploadId !== "string") {
+      return res.status(400).json({ error: "dataUrl, filename, mimeType, assetType, and clientUploadId are required" });
+    }
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(clientUploadId)) {
+      return res.status(400).json({ error: "Invalid upload identifier" });
+    }
+    const normalizedMime = mimeType.trim().toLowerCase();
+    const allowedTypes: Record<string, string[]> = {
+      photo: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+      video: ["video/mp4", "video/webm"],
+    };
+    if (!allowedTypes[assetType]?.includes(normalizedMime)) {
+      return res.status(400).json({ error: "Spark copies support JPG, PNG, WebP, GIF, MP4, and WebM media" });
+    }
+    const dataUrlMatch = dataUrl.match(/^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/);
+    if (!dataUrlMatch || dataUrlMatch[1].trim().toLowerCase() !== normalizedMime) {
+      return res.status(400).json({ error: "Invalid media data URL" });
+    }
+    const base64 = dataUrlMatch[2];
+    const maxBytes = 20 * 1024 * 1024;
+    if (base64.length > Math.ceil(maxBytes / 3) * 4 + 4) {
+      return res.status(413).json({ error: "Family Vault copies are limited to 20 MB per item" });
+    }
+    const buffer = Buffer.from(base64, "base64");
+    if (!buffer.length || buffer.length > maxBytes) {
+      return res.status(413).json({ error: "Family Vault copies are limited to 20 MB per item" });
+    }
+
+    let metadata: Awaited<ReturnType<typeof validateMediaBuffer>>;
+    try {
+      metadata = await validateMediaBuffer(buffer, assetType, normalizedMime);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid media file";
+      return res.status(400).json({ error: `The selected media could not be validated (${message}).` });
+    }
+
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "media";
+    const digest = createHash("sha256").update(buffer).digest("hex");
+    const storageKey = `families/${familyId}/memories/${memoryId}/${clientUploadId}_${digest}_${safeFilename}`;
+
+    let [asset] = await db.select()
+      .from(familyMemoryAssetsTable)
+      .where(and(
+        eq(familyMemoryAssetsTable.memory_id, memoryId),
+        eq(familyMemoryAssetsTable.storage_key, storageKey),
+      ))
+      .limit(1);
+    if (asset && (
+      asset.mime_type !== normalizedMime
+      || asset.asset_type !== assetType
+      || asset.byte_size !== buffer.length
+    )) {
+      return res.status(409).json({ error: "This upload identifier is already associated with different media." });
+    }
+    if (asset?.processing_status === "ready") {
+      return res.status(200).json({ asset });
+    }
+
+    if (!asset) {
+      try {
+        [asset] = await db.insert(familyMemoryAssetsTable).values({
+          memory_id: memoryId,
+          asset_type: assetType as "photo" | "video",
+          storage_key: storageKey,
+          mime_type: normalizedMime,
+          byte_size: buffer.length,
+          duration_seconds: metadata.duration_ms ? Math.ceil(metadata.duration_ms / 1000) : null,
+          width: metadata.width,
+          height: metadata.height,
+          processing_status: "uploaded",
+        }).returning();
+      } catch (error) {
+        logger.error({ error, familyId, memoryId, storageKey }, "family_spark_asset_row_failed");
+        return res.status(502).json({ error: "Could not prepare the private media record. Keep this Spark draft and retry." });
+      }
+      if (!asset) {
+        return res.status(502).json({ error: "Could not prepare the private media record. Keep this Spark draft and retry." });
+      }
+    }
+
+    // Do not delete an object or row when a storage write has an uncertain
+    // outcome. Retrying the same client upload id and file safely overwrites
+    // the same content-addressed key and completes this pending record.
+    try {
+      await putAsset(storageKey, buffer, normalizedMime);
+      const [readyAsset] = await db.update(familyMemoryAssetsTable)
+        .set({ processing_status: "ready" })
+        .where(eq(familyMemoryAssetsTable.id, asset.id))
+        .returning();
+      if (!readyAsset) {
+        return res.status(502).json({ error: "Media was stored but its Family Vault record is still pending. Keep this Spark draft and retry." });
+      }
+      return res.status(201).json({ asset: readyAsset });
+    } catch (error) {
+      logger.error({ error, familyId, memoryId, storageKey }, "family_spark_asset_write_failed");
+      return res.status(502).json({ error: "Private media storage is pending. Keep this Spark draft and retry to finish the same copy." });
+    }
+  },
+);
+
 // ─── Nia Powers — Oral History Translation ─────────────────────────────────────
 // Translates family memory text (interview transcripts, story text, etc.) using
 // Claude. Follows the kill-switch pattern from design doc §7.4: if
@@ -1634,6 +1769,70 @@ router.patch("/family/:id/interviews/:interviewId", generalApiLimiter, requireAu
 // ─── Stories ──────────────────────────────────────────────────────────────────
 // Family stories are first-class Family Vault records with an explicit write
 // path, independent of any game or external runtime.
+
+// POST /family/:id/stories/spark-copy — idempotently link a private Spark archive.
+router.post("/family/:id/stories/spark-copy", generalApiLimiter, requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const familyId = Number(req.params.id);
+  if (!familyId) return res.status(400).json({ error: "Invalid family id" });
+
+  const membership = await getFamilyMembership(familyId, userId);
+  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
+    return res.status(403).json({ error: "Contributor access or higher required" });
+  }
+
+  const parsed = CreateStorySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { title, body, memory_id, tags } = parsed.data;
+  if (!memory_id || parsed.data.audience !== "private") {
+    return res.status(400).json({ error: "A private Family memory is required" });
+  }
+
+  const access = await getAccessibleMemory(familyId, memory_id, userId, membership);
+  if (!access.memory) return res.status(404).json({ error: "Not found" });
+  if (access.forbidden) return res.status(403).json({ error: "This memory is private" });
+  if (access.memory.author_id !== userId || access.memory.visibility !== "private") {
+    return res.status(403).json({ error: "Spark copies must link to your own private Family memory" });
+  }
+
+  const [existing] = await db.select()
+    .from(familyStoriesTable)
+    .where(and(
+      eq(familyStoriesTable.family_id, familyId),
+      eq(familyStoriesTable.author_id, userId),
+      eq(familyStoriesTable.memory_id, memory_id),
+      eq(familyStoriesTable.audience, "private"),
+    ))
+    .orderBy(desc(familyStoriesTable.created_at))
+    .limit(1);
+  if (existing) {
+    return res.status(200).json({ story: { ...existing, date_label: formatFamilyStoryDate(existing) } });
+  }
+
+  const [story] = await db.insert(familyStoriesTable).values({
+    family_id: familyId,
+    author_id: userId,
+    title,
+    body,
+    audience: "private",
+    category: parsed.data.category ?? null,
+    language: parsed.data.language ?? null,
+    teller_member_id: parsed.data.teller_member_id ?? null,
+    about_member_id: parsed.data.about_member_id ?? null,
+    memory_id,
+    date_year: parsed.data.date_year ?? null,
+    date_month: parsed.data.date_month ?? null,
+    date_day: parsed.data.date_day ?? null,
+    date_precision: parsed.data.date_precision ?? null,
+    tags: tags ?? [],
+  }).returning();
+
+  if (!story) return res.status(502).json({ error: "Could not create the private Family Story. Retry to continue the same archive." });
+  logger.info({ familyId, storyId: story.id, memoryId: memory_id, userId }, "family_spark_story_created");
+  return res.status(201).json({ story: { ...story, date_label: formatFamilyStoryDate(story) } });
+});
 
 // POST /family/:id/stories — record a family story
 router.post("/family/:id/stories", generalApiLimiter, requireAuth, async (req, res) => {

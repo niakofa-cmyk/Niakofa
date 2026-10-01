@@ -60,6 +60,13 @@ import {
   type StoryVisualAuthor,
   type StoryVisualTool,
 } from "./CommunityStoryVisual";
+import { SparkFamilyStoryPreservationControl } from "./SparkFamilyStoryPreservationControl";
+import {
+  canCopyStudioFilesToFamily,
+  FAMILY_STORY_CANDIDATE_DURATION_MS,
+  saveSparkAsPrivateFamilyStory,
+  totalStudioVideoDurationMs,
+} from "./community-spark-family-archive";
 import {
   CommunityStoryGalleryOverlay,
   CommunityStoryShareOverlay,
@@ -129,6 +136,10 @@ export function CommunityStoryRail({
   const [activeChallengeKey, setActiveChallengeKey] = useState<string | null>(null);
   const [archiveEnabled, setArchiveEnabled] = useState(false);
   const [remixEnabled, setRemixEnabled] = useState(false);
+  const [familyStoryDurationMs, setFamilyStoryDurationMs] = useState<number | null>(null);
+  const [familyStoryCopyEnabled, setFamilyStoryCopyEnabled] = useState(false);
+  const [familyStoryFamilyId, setFamilyStoryFamilyId] = useState<number | null>(null);
+  const [checkingStudioDuration, setCheckingStudioDuration] = useState(false);
   useEffect(() => {
     // The page-level signal starts at 0, so a positive value is always an
     // explicit Create → Story action. This also works when the rail is
@@ -262,6 +273,15 @@ export function CommunityStoryRail({
   const selectedFileUrl = previewUrls[previewFileIndex] ?? previewUrls[0] ?? null;
   const previewCaptionsTrackUrl = useWebVttObjectUrl(momentAccessibility.momentCaptionsVtt[previewFileIndex] ?? "");
   const selectedFiles = selectedStudioFiles(files, gallerySelection);
+  const selectedMediaFingerprint = selectedFiles.map(studioFileFingerprint).join("\u001f");
+  const selectedMediaFingerprintRef = useRef(selectedMediaFingerprint);
+  useEffect(() => {
+    if (selectedMediaFingerprintRef.current === selectedMediaFingerprint) return;
+    selectedMediaFingerprintRef.current = selectedMediaFingerprint;
+    setFamilyStoryDurationMs(null);
+    setFamilyStoryCopyEnabled(false);
+    setFamilyStoryFamilyId(null);
+  }, [selectedMediaFingerprint]);
   const validCameraClipReel = Boolean(cameraClipReelMarker
     && isCameraClipReelSelection(selectedFiles)
     && JSON.stringify(cameraClipReelMarker.orderedFingerprints) === JSON.stringify(selectedFiles.map(studioFileFingerprint)));
@@ -444,6 +464,10 @@ export function CommunityStoryRail({
     setActiveChallengeKey(null);
     setArchiveEnabled(false);
     setRemixEnabled(false);
+    setFamilyStoryDurationMs(null);
+    setFamilyStoryCopyEnabled(false);
+    setFamilyStoryFamilyId(null);
+    setCheckingStudioDuration(false);
     setExchangeListingId(empty.listingId);
     setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
     setTextColor("#ffffff");
@@ -459,8 +483,25 @@ export function CommunityStoryRail({
     setDraftSaved(false);
     void loadStudioDraft(userId, hubId).then((draft) => {
       if (!active) return;
-      recoveredDraftRef.current = Boolean(draft);
+      const extendedDraft = draft as ExtendedStudioDraft | null;
+      const hasRecoverableWork = Boolean(draft && (
+        draft.files?.length
+        || draft.caption?.trim()
+        || draft.elements?.length
+        || draft.musicFile
+        || draft.exchangeDraftId
+        || draft.uploadedMediaAssetIds?.some((id) => id > 0)
+        || draft.publishAssetIds?.length
+        || draft.attemptedSignature
+        || extendedDraft?.cameraClipReel
+        || extendedDraft?.cameraReelStoryId
+        || extendedDraft?.momentTagsInput?.trim()
+        || Object.values(extendedDraft?.momentAltTexts ?? {}).some((text) => text.trim())
+        || Object.values(extendedDraft?.momentCaptionsVtt ?? {}).some((text) => text.trim())
+      ));
+      recoveredDraftRef.current = hasRecoverableWork;
       if (draft) {
+        const recoveredDraft = draft as ExtendedStudioDraft;
         exchangeDraftRef.current = draft.exchangeDraftId && Number.isSafeInteger(draft.exchangeDraftId)
           ? { id: draft.exchangeDraftId, listingId: draft.destinationListingId, fingerprint: draft.exchangeFileFingerprint ?? "" }
           : null;
@@ -469,16 +510,15 @@ export function CommunityStoryRail({
         uploadedIdsRef.current = draft.uploadedMediaAssetIds ?? [];
         publishAssetIdsRef.current = draft.publishAssetIds ?? [];
         setFiles(draft.files ?? []);
-        const extendedDraft = draft as ExtendedStudioDraft;
         const recoveredFiles = draft.files ?? [];
         const recoveredSelection = draft.selection ?? [];
         const recoveredCameraFiles = selectedStudioFiles(recoveredFiles, recoveredSelection);
-        const recoveredMarker = extendedDraft.cameraClipReel;
+        const recoveredMarker = recoveredDraft.cameraClipReel;
         const markerMatches = Boolean(recoveredMarker
           && isCameraClipReelSelection(recoveredCameraFiles)
           && JSON.stringify(recoveredMarker.orderedFingerprints) === JSON.stringify(recoveredCameraFiles.map(studioFileFingerprint)));
         setCameraClipReelMarker(markerMatches ? recoveredMarker! : null);
-        setPendingCameraReelStoryId(Number.isSafeInteger(extendedDraft.cameraReelStoryId) ? extendedDraft.cameraReelStoryId! : null);
+        setPendingCameraReelStoryId(Number.isSafeInteger(recoveredDraft.cameraReelStoryId) ? recoveredDraft.cameraReelStoryId! : null);
         setMomentAccessibility(restoreMomentStudioAccessibility(draft));
         setMusicFile(draft.musicFile ?? null);
         setMusicRightsBasis(draft.musicRightsBasis ?? "original");
@@ -500,6 +540,7 @@ export function CommunityStoryRail({
         setTrimPreview(draft.trimPreview ?? {});
         setCoverTimes(draft.coverTimes ?? {});
         setUploadedIds(draft.uploadedMediaAssetIds ?? []);
+        if (hasRecoverableWork) setStudioStep(exchangeDraftRef.current ? "source" : "edit");
         setDraftSaved(true);
       }
       recoveredScopeRef.current = scopeKey;
@@ -837,12 +878,20 @@ export function CommunityStoryRail({
     setActiveChallengeKey(null);
     setArchiveEnabled(false);
     setRemixEnabled(false);
+    setFamilyStoryDurationMs(null);
+    setFamilyStoryCopyEnabled(false);
+    setFamilyStoryFamilyId(null);
+    setCheckingStudioDuration(false);
   };
 
   const closeComposer = useCallback(() => {
     publishControllerRef.current?.abort();
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     void queueDraftSaveRef.current().catch(() => {});
+    setFamilyStoryDurationMs(null);
+    setFamilyStoryCopyEnabled(false);
+    setFamilyStoryFamilyId(null);
+    setCheckingStudioDuration(false);
     setComposerOpen(false);
     const query = new URLSearchParams(window.location.search);
     if (location === "/community/moments" && query.getAll("composer").length === 1 && query.get("composer") === "1") {
@@ -899,7 +948,7 @@ export function CommunityStoryRail({
         event.preventDefault();
         if (cameraOpen) { cancelCamera(); return; }
         if (galleryOpen) { setGalleryOpen(false); return; }
-        if (studioStep !== "source") { setStudioStep(studioStep === "destination" ? "edit" : "source"); return; }
+        if (studioStep === "destination") { setStudioStep("edit"); return; }
         closeComposer();
       }
       if (event.key !== "Tab") return;
@@ -915,6 +964,39 @@ export function CommunityStoryRail({
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); };
   }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady, cancelCamera, closeComposer]);
 
+  const moveToStudioStep = async (
+    nextStep: "source" | "edit" | "destination",
+    forceCommunityCheck = false,
+  ) => {
+    setTool(null);
+    if (nextStep !== "destination") {
+      setStudioStep(nextStep);
+      return;
+    }
+    if (exchangeListingId && !forceCommunityCheck) {
+      setFamilyStoryDurationMs(null);
+      setFamilyStoryCopyEnabled(false);
+      setFamilyStoryFamilyId(null);
+      setStudioStep(nextStep);
+      return;
+    }
+
+    const selectedForCheck = selectedStudioFiles(files, gallerySelection);
+    const fingerprint = selectedForCheck.map(studioFileFingerprint).join("\u001f");
+    setCheckingStudioDuration(true);
+    setError(null);
+    try {
+      const durations = await validateStudioFiles(selectedForCheck);
+      if (selectedMediaFingerprintRef.current !== fingerprint) return;
+      setFamilyStoryDurationMs(totalStudioVideoDurationMs(selectedForCheck, durations));
+      setStudioStep(nextStep);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not inspect the selected videos.");
+    } finally {
+      setCheckingStudioDuration(false);
+    }
+  };
+
   const publish = async () => {
     if (trimming) {
       setError("Wait for video trimming to finish before publishing.");
@@ -922,6 +1004,11 @@ export function CommunityStoryRail({
     }
     if (publishing || (!caption.trim() && gallerySelection.length === 0)) {
       setError("Add a photo, video, or a few words before publishing.");
+      return;
+    }
+    if (familyStoryCopyEnabled && familyStoryDurationMs !== null
+      && familyStoryDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS && !familyStoryFamilyId) {
+      setError("Choose a Family Space for the private Family Story copy, or turn the option off.");
       return;
     }
     setPublishing(true);
@@ -1041,6 +1128,23 @@ export function CommunityStoryRail({
         }
       }
       const videoDurationsMs = await validateStudioFiles(publishFiles);
+      const selectedVideoDurationMs = totalStudioVideoDurationMs(publishFiles, videoDurationsMs);
+      let shouldSaveFamilyStory = false;
+      if (familyStoryCopyEnabled) {
+        if (exchangeListingId) {
+          throw new Error("Private Family Story copies are available for Community and Hub Moments, not Exchange Sparks.");
+        }
+        if (selectedVideoDurationMs <= FAMILY_STORY_CANDIDATE_DURATION_MS) {
+          throw new Error("This media selection no longer qualifies for the over-60-second Family Story option. Review your selection before publishing.");
+        }
+        if (!familyStoryFamilyId) {
+          throw new Error("Choose a Family Space for the private Family Story copy, or turn the option off.");
+        }
+        if (!canCopyStudioFilesToFamily(publishFiles)) {
+          throw new Error("Every item in a private Family Story copy must be a supported photo or video no larger than 20 MB.");
+        }
+        shouldSaveFamilyStory = true;
+      }
       const tags = parseMomentStudioTags(momentAccessibility.momentTagsInput);
       const mediaAltTexts = selectedIndexes.map((index) => momentAccessibility.momentAltTexts[index] ?? "");
       const mediaCaptionsVtt = selectedIndexes.map((index) => momentAccessibility.momentCaptionsVtt[index] ?? "");
@@ -1074,7 +1178,7 @@ export function CommunityStoryRail({
       elements.push(...draftElements.map(({ id: _id, ...element }) => element));
       // Preview-only effects and trim are not included in the published manifest.
       publishAttemptRef.current = attemptSignature;
-      await publishStudioMoment({
+      const publishedMomentId = await publishStudioMoment({
         userId, hubId, audience, files: publishFiles, caption, tags,
         mediaAltTexts, mediaCaptionsVtt,
         elements: elements as Array<{ type: string; payload: Record<string, unknown> }>, effect,
@@ -1130,6 +1234,26 @@ export function CommunityStoryRail({
         },
         onStatus: (status, percent) => { setPublishStatus(status); setPublishProgress(percent); },
       });
+      if (shouldSaveFamilyStory) {
+        if (!publishedMomentId) {
+          throw new Error("The Spark publish was not confirmed, so its private Family Story copy was not saved. Keep the draft and retry.");
+        }
+        try {
+          await saveSparkAsPrivateFamilyStory({
+            familyId: familyStoryFamilyId!,
+            momentId: publishedMomentId,
+            caption,
+            files: publishFiles,
+            signal: controller.signal,
+            onProgress: (status) => setPublishStatus(status),
+          });
+        } catch (archiveReason) {
+          const detail = archiveReason instanceof Error ? archiveReason.message : "The media copy could not be completed.";
+          throw new Error(archiveReason instanceof Error && archiveReason.name === "AbortError"
+            ? "Your Spark is published, but the private Family Story copy was cancelled. Retry to finish the same copy; the Spark will not be posted twice."
+            : `Your Spark is published, but the private Family Story copy did not finish: ${detail} Keep the draft and retry; the Spark will not be posted twice.`);
+        }
+      }
       trackCommunityContent("community_spark_created", hubId === null ? {} : { hub_id: hubId });
       window.dispatchEvent(new Event("community-moments-refresh"));
       draftGenerationRef.current++;
@@ -1493,7 +1617,7 @@ export function CommunityStoryRail({
             {studioStep === "source" && exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-slate-900 px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
             <SparkComposerChrome
               step={studioStep}
-              onStep={(next) => { setStudioStep(next); setTool(null); }}
+              onStep={(next) => { void moveToStudioStep(next); }}
               canContinue={Boolean(caption.trim() || gallerySelection.length)}
               preview={(
                 <StoryEditorCanvas
@@ -1520,7 +1644,11 @@ export function CommunityStoryRail({
               activeTool={tool}
               onTool={(nextTool) => setTool(tool === nextTool ? null : nextTool)}
               onClose={closeComposer}
-              onSettings={() => { setStudioStep("destination"); window.setTimeout(() => document.getElementById("story-audience")?.focus(), 0); }}
+              onSettings={() => {
+                void moveToStudioStep("destination").then(() => {
+                  window.setTimeout(() => document.getElementById("story-audience")?.focus(), 0);
+                });
+              }}
               onGallery={() => { if (!trimming) setGalleryOpen(true); }}
               onCamera={() => { if (!trimming) { setGalleryOpen(false); setCameraOpen(true); } }}
               onPublish={() => void publish()}
@@ -1534,6 +1662,7 @@ export function CommunityStoryRail({
                 </div>
                 {draftError && <p role="alert" className="mb-2 rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-xs text-amber-100">{draftError} Keep this tab open or try editing again to save.</p>}
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
+                {checkingStudioDuration && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">Checking selected video lengths…</p>}
                 {validCameraClipReel && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">These camera-recorded clips will be stitched into one Spark video after publishing. Choosing or changing media clears this camera-only marker.</p>}
                 {pendingCameraReelStoryId !== null && <button type="button" onClick={() => void retryCameraClipStitching()} disabled={publishing || !validCameraClipReel} className="mb-3 min-h-10 rounded-xl border border-amber-300/50 px-4 text-xs font-bold text-amber-100 disabled:opacity-50" data-testid="button-retry-camera-reel">Retry stitching — Spark already posted</button>}
                 {publishing && publishStatus && <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs"><p>{publishStatus}{publishProgress ? ` ${publishProgress}%` : ""}</p>{publishProgress > 0 && <progress aria-label="Spark upload progress" value={publishProgress} max={100} className="mt-2 w-full" />}<button type="button" className="mt-2 min-h-10 rounded-lg border border-white/20 px-3 font-bold" onClick={() => publishControllerRef.current?.abort()}>Cancel upload</button></div>}
@@ -1550,10 +1679,29 @@ export function CommunityStoryRail({
                     <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={archiveEnabled} onChange={(event) => setArchiveEnabled(event.target.checked)} disabled={publishing} className="h-4 w-4 accent-teal-500" data-testid="input-archive-moment-setting" /><span><strong>Keep a private archive copy</strong><small className="mt-0.5 block text-xs text-white/60">Only you can browse Moments you choose to save.</small></span></label>
                     <label className="mt-3 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={remixEnabled} onChange={(event) => setRemixEnabled(event.target.checked)} disabled={publishing} className="h-4 w-4 accent-teal-500" data-testid="input-remix-moment-setting" /><span><strong>Allow video responses</strong><small className="mt-0.5 block text-xs text-white/60">Neighbors can add a short, kind video response in your Community.</small></span></label>
                   </div>}
+                  {!exchangeListingId && familyStoryDurationMs !== null
+                    && familyStoryDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS && (
+                    <SparkFamilyStoryPreservationControl
+                      durationMs={familyStoryDurationMs}
+                      files={selectedFiles}
+                      checked={familyStoryCopyEnabled}
+                      familyId={familyStoryFamilyId}
+                      onCheckedChange={setFamilyStoryCopyEnabled}
+                      onFamilyChange={setFamilyStoryFamilyId}
+                    />
+                  )}
                   {selectedVideo && <div className="nia-story-destination-card nia-story-destination-card--listing">
                     <div className="nia-story-destination-card__full"><label htmlFor="spark-exchange-listing">Connect an Exchange listing <span>(optional)</span></label><p>Only an active listing you own can be linked. The server checks eligibility.</p>
                       {exchangeListingsError && <p role="alert">{exchangeListingsError} <button type="button" onClick={() => { setExchangeListingsLoading(true); setExchangeListingsError(""); getExchangeListings({ mine: true, limit: 50 }).then((result) => setOwnedExchangeListings((result.listings ?? []).filter((listing) => listing.status === "active"))).catch((reason: unknown) => setExchangeListingsError(reason instanceof Error ? reason.message : "Could not load listings.")).finally(() => setExchangeListingsLoading(false)); }}>Retry</button></p>}
-                      <select id="spark-exchange-listing" value={exchangeListingId} onChange={(event) => { setExchangeListingId(event.target.value); if (event.target.value && audience !== "community") { setAudience("community"); uploadedIdsRef.current = []; publishAssetIdsRef.current = []; setUploadedIds([]); } }} disabled={publishing || exchangeListingsLoading || (!ownedExchangeListings.length && !exchangeDraftRef.current)} data-testid="select-spark-exchange-listing"><option value="">{exchangeListingsLoading ? "Loading listings…" : ownedExchangeListings.length ? "No listing connected" : "No active listings available"}</option>{exchangeDraftRef.current && !ownedExchangeListings.some((listing) => String(listing.id) === exchangeDraftRef.current?.listingId) && <option value={exchangeDraftRef.current.listingId}>Saved listing (no longer active)</option>}{ownedExchangeListings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title} · {listing.neighborhood}</option>)}</select>
+                       <select id="spark-exchange-listing" value={exchangeListingId} onChange={(event) => {
+                         const nextListingId = event.target.value;
+                         setExchangeListingId(nextListingId);
+                         setFamilyStoryCopyEnabled(false);
+                         setFamilyStoryFamilyId(null);
+                         if (nextListingId) setFamilyStoryDurationMs(null);
+                         else void moveToStudioStep("destination", true);
+                         if (nextListingId && audience !== "community") { setAudience("community"); uploadedIdsRef.current = []; publishAssetIdsRef.current = []; setUploadedIds([]); }
+                       }} disabled={publishing || exchangeListingsLoading || (!ownedExchangeListings.length && !exchangeDraftRef.current)} data-testid="select-spark-exchange-listing"><option value="">{exchangeListingsLoading ? "Loading listings…" : ownedExchangeListings.length ? "No listing connected" : "No active listings available"}</option>{exchangeDraftRef.current && !ownedExchangeListings.some((listing) => String(listing.id) === exchangeDraftRef.current?.listingId) && <option value={exchangeDraftRef.current.listingId}>Saved listing (no longer active)</option>}{ownedExchangeListings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title} · {listing.neighborhood}</option>)}</select>
                     </div>
                   </div>}
                   <p className="nia-story-destination-note">{exchangeListingId
@@ -1750,7 +1898,7 @@ export function CommunityStoryRail({
                   </div>
                   <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); saveCurrentStudioTemplate(); }}>
                     <input value={templateName} onChange={(event) => { setTemplateName(event.target.value); setTemplateError(""); }} maxLength={60} className="min-h-11 min-w-0 flex-1 rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="Name this layout" aria-label="Template name" />
-                    <button type="submit" disabled={!userId || !templateName.trim()} className="min-h-11 rounded-xl bg-white px-3 text-xs font-bold text-slate-900 disabled:opacity-40" data-testid="button-save-spark-template">Save layout</button>
+                    <button type="submit" disabled={!userId || !templateName.trim()} className="min-h-11 rounded-xl bg-[#00cfff] px-3 text-xs font-bold text-[#08182b] transition-colors hover:bg-[#66e4ff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00cfff] disabled:opacity-40" data-testid="button-save-spark-template">Save layout</button>
                   </form>
                   {templateError && <p role="alert" className="text-xs text-rose-200">{templateError}</p>}
                 </div>}

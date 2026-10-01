@@ -1,0 +1,537 @@
+Yes. After checking the actual current main head, I agree with the direction you are describing. The current implementation is functionally much closer, but the creation transition is still not seamless enough, and the visual Studio is nowhere near the richness of your uploaded reference.
+
+The current main head I checked is:
+
+Niakofa main — current commit c8fc3fa
+
+Railway's status for that commit is currently successful.
+
+The key finding: Create a Spark is already partially direct
+
+I found something important in the current CommunityStoryRail.tsx.
+
+It already has an autoCameraOpenedRef flow that waits for scoped draft recovery and then does:
+
+if (!hasStudioWork) setCameraOpen(true);
+
+So the current architecture already intends:
+
+Create a Spark → automatically open camera.
+
+That means we should not build another competing camera doorway.
+
+The problem is the UI architecture surrounding it.
+
+SparkComposerChrome still contains the old:
+
+Create a Spark
+Choose how to start
+
+screen with:
+
+Take a photo or video
+Choose photos or videos
+Start with words
+
+That is the part I would remove from the canonical new-user path.
+
+What the Niakofa pathway should be
+
+Your uploaded reference makes the intended interaction much clearer.
+
+Current conceptual flow
+Create a Spark
+       ↓
+Composer
+       ↓
+Choose how to start
+       ↓
+Camera / Gallery / Text
+       ↓
+Editor
+       ↓
+Audience
+       ↓
+Publish
+New Niakofa flow
+Create a Spark
+       ↓
+FULL-SCREEN LIVE CAMERA
+       ↓
+       ├── Photo
+       ├── Video
+       ├── Flip camera
+       ├── Torch
+       ├── Timer
+       ├── Gallery
+       └── Creation tools
+                ↓
+          Capture / Record
+                ↓
+          Spark Editor
+                ↓
+       Effects / Text / Stickers
+       Music / Templates / Draw
+                ↓
+            Audience
+                ↓
+          Share Spark
+
+That is the right transition.
+
+Gallery and text don't disappear. They become secondary creation tools, rather than a landing page that interrupts the camera experience.
+
+Why the current Studio looks plain
+
+This is the biggest visual mismatch.
+
+The current StoryCameraRecorder.tsx is technically competent, but visually it is essentially:
+
+camera preview
+        ↓
+status bar
+        ↓
+clip list
+        ↓
+basic controls
+
+It has the 60-second recording logic, six-clip sequence, camera switching, torch, countdown, pause/resume and interruption handling.
+
+But your reference is a creative production environment:
+
+LIVE CAMERA
+       +
+Creator identity
+       +
+immersive media
+       +
+creative tools
+       +
+templates
+       +
+effects
+       +
+text
+       +
+stickers
+       +
+music
+       +
+timeline
+       +
+visual overlays
+
+The current code has many of the underlying capabilities elsewhere in the Studio, but they are fragmented across CommunityStoryRail, StoryEditorCanvas, StoryElementLayer, templates, music, accessibility, trimming and the camera recorder.
+
+So the issue isn't:
+
+"Niakofa doesn't have a Media Studio."
+
+It is:
+
+"Niakofa's existing Media Studio capabilities aren't presented as one coherent creative product."
+
+That's why it feels dull.
+
+The ZIP was useful — but we should use it correctly
+
+I inspected the supplied Compose-Snapchat-Clone-master.zip.
+
+It is an Android Jetpack Compose Snapchat-style UI clone, not a production media engine.
+
+Its useful donor patterns are:
+
+full-screen camera
+circular shutter
+front/back camera switching
+flash/torch
+dark immersive camera canvas
+vertical Spotlight playback
+creator/action overlay
+Stories presentation
+Memories concept
+simple camera-first navigation
+cyan/blue/yellow/purple/red creative accents
+
+For example, its ThemeColors explicitly uses cyan as a primary creative color:
+
+BLUE   #00CCFF
+YELLOW #FFFF00
+PURPLE #9D00FF
+RED    #FF0051
+
+and its camera is intentionally built around a full-screen PreviewView + large circular shutter + camera controls.
+
+Its Spotlight experience is also deliberately full-viewport video-first, rather than a dashboard.
+
+Those are exactly the patterns worth bringing into Niakofa.
+
+But I would not copy the ZIP's architecture or mock data.
+
+Niakofa's current media infrastructure is considerably more sophisticated.
+
+And yes — I agree about the global cyan-on-navy theme
+
+This is actually an interesting finding.
+
+The current Niakofa index.css already contains the global system:
+
+--nk-teal:  #00cfff
+--nk-paper: #08182b
+--nk-ink:   #edf8ff
+--nk-muted: #9bb0c3
+--nk-coral: #f17862
+--nk-gold:  #e7b650
+
+So the cyan-on-navy system is already the actual root application theme.
+
+Current Niakofa index.css
+
+The problem is that several Community surfaces subsequently introduce their own visual treatments.
+
+I would make this the canonical system:
+
+Primary
+
+Niakofa Cyan — #00CFFF
+Niakofa Navy — #08182B
+Niakofa Ink — #EDF8FF
+
+Secondary
+
+Gold — #E7B650
+Coral — #F17862
+
+Creative
+
+Purple — effects/templates only
+
+So the entire app feels like one Niakofa product.
+
+The map/Sankofa interaction language should be the visual foundation, not a separate "Map theme."
+
+The uploaded reference and the global theme can coexist
+
+This is important.
+
+I would not make the entire app look like the uploaded white reference.
+
+Instead:
+
+Application chrome
+Navy
+Cyan
+White
+Gold
+Creative/media surfaces
+Full-screen photography
+Full-screen video
+Dark navy overlays
+Cyan controls
+Gold/coral creative accents
+Content
+
+The actual photo/video becomes the dominant color source.
+
+That gives us the richness of your reference without creating a second unrelated design system.
+
+Moments should be rebuilt around this same philosophy
+
+The current Moments implementation already has:
+
+vertical feed
+snap scrolling
+full-screen mode
+right action rail
+creator identity
+reactions
+comments
+sharing
+watch analytics
+authenticated playback
+media processing states
+
+That's good infrastructure.
+
+The problem is presentation.
+
+I would make the experience:
+
+┌──────────────────────────┐
+│ For You Following Local  │
+│                          │
+│                          │
+│       REAL MEDIA         │
+│                          │
+│                          │
+│                  ♥       │
+│                  💬      │
+│                  ↗       │
+│                  ⋯       │
+│                          │
+│ @creator                 │
+│ Caption                  │
+│ Community / location     │
+│ ♪ Original audio         │
+└──────────────────────────┘
+
+instead of looking like a content-management interface containing a video.
+
+Create a Spark should become the central creative doorway
+
+The current Community shell already has:
+
+Create a Spark
+
+and that is correct.
+
+Current CommunitySocialShell.tsx
+
+I would make every creation entry point converge here:
+
+Home
+   ↓
+Create a Spark
+   ↓
+Spark Studio
+
+
+Moments
+   ↓
+Create a Spark
+   ↓
+Spark Studio
+
+
+Profile
+   ↓
+Create a Spark
+   ↓
+Spark Studio
+
+
+Creator profile
+   ↓
+Create a Spark
+   ↓
+Spark Studio
+
+No parallel "Build" product.
+
+What about /build?
+
+The current App.tsx does not have a /build route.
+
+That is significant.
+
+Current App.tsx
+
+Therefore if you are still seeing the old Build experience, it is not because the current Community router intentionally sends Create a Spark to /build.
+
+I'd handle this defensively anyway:
+
+/build
+   ↓
+/community/moments?composer=1&source=camera
+
+That protects:
+
+old bookmarks
+old UI links
+stale browser sessions
+old notifications
+old deep links
+
+from resurrecting the obsolete pathway.
+
+The >60-second Family Story idea is good — with one important architectural distinction
+
+I would implement:
+
+Spark/Moment
+
+Short-form Community content.
+
+When composed media exceeds 60 seconds
+
+The Studio recognizes:
+
+Family Story Candidate
+
+and displays:
+
+This Spark can become a Family Story.
+Your creation is longer than the 60-second Moment limit. Save a private Family Story copy.
+
+Then:
+
+Keep as Moment only
+
+or
+
+Save as Family Story
+
+The important thing is that this should be an explicit preservation decision.
+
+The current Family Vault architecture already has actual family media assets:
+
+family_memory_assets
+
+including:
+
+photo
+video
+audio
+document
+storage key
+thumbnail
+duration
+processing state
+
+So the backend has a foundation for true media preservation.
+
+But the current KeepForMyFamilyDialog explicitly says it saves caption text only.
+
+That means we should not pretend the existing keepMoment() API archives the video.
+
+The proper future flow is:
+
+Spark > 60 sec
+       ↓
+Family Story Candidate
+       ↓
+User confirms
+       ↓
+Create Family Memory
+       ↓
+Upload/copy media into Family Memory Asset
+       ↓
+Process video
+       ↓
+Family Story references Memory
+       ↓
+Private Family preservation
+
+That preserves the existing Community/Family lifecycle boundaries instead of silently extending the Moment's retention.
+
+I rebuilt the Studio direction
+
+I created a drop-in Niakofa Media Studio rebuild package based on:
+
+the current main repository,
+the current Niakofa media architecture,
+the supplied Compose/Snapchat clone,
+your uploaded visual reference,
+the existing Niakofa cyan-on-navy system.
+
+It includes:
+
+full-screen camera-first Spark Studio
+live camera
+photo capture
+video recording
+multi-clip sequence
+60-second camera recording limit
+camera switching
+torch
+timer
+gallery
+effects
+text
+stickers
+music
+templates
+visual timeline
+immersive editor
+cyan-on-navy visual system
+Family Story candidate detection for media >60 seconds
+/build compatibility routing
+direct Create-a-Spark integration guidance
+Moments visual direction
+production media boundary guidance
+Download the rebuild package
+
+Download Niakofa Media Studio Rebuild — 2026-10-01
+
+One thing I deliberately did NOT do
+
+I did not replace Niakofa's existing media backend with the Android ZIP's media implementation.
+
+That would be a mistake.
+
+The ZIP is useful as a visual/interaction donor.
+
+Niakofa's existing system already has:
+
+authorized media
+upload sessions
+processing
+authenticated playback
+camera clip composition
+draft recovery
+trimming
+cover selection
+music rights
+captions
+accessibility
+analytics
+moderation
+Exchange isolation
+Family boundaries
+
+Those should remain.
+
+The rebuild should be:
+
+new Studio experience + existing Niakofa media infrastructure.
+
+My recommended final architecture
+                    NIAKOFA
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+      Community                 Family / Legacy
+          │                         │
+     ┌────┴────┐                    │
+     │         │                    │
+  Moments    Sparks ────────────────┘
+     │         │             Family Story Candidate
+     │         │                    │
+     │     Spark Studio             │
+     │         │                    │
+     │    ┌────┴─────┐              │
+     │    │          │              │
+     │ Camera      Gallery          │
+     │    │          │              │
+     │    └────┬─────┘              │
+     │         │                    │
+     │       Editor                 │
+     │         │                    │
+     │ Effects / Text / Music       │
+     │ Templates / Stickers         │
+     │         │                    │
+     └─────────┤                    │
+               │                    │
+          Share Spark ──────────────┘
+
+And the primary navigation stays:
+
+Home · Moments · People · Exchange · Notifications · Profile
+
+while:
+
+Create a Spark is the persistent creation action.
+
+That is much closer to the product represented by your uploaded reference.
+
+Most important next implementation order
+Remove the visible "Choose how to start" source screen from the canonical Create-a-Spark path.
+Make the full-screen camera the immediate creation surface.
+Turn the existing editor capabilities into one visually unified Spark Studio.
+Apply cyan-on-navy globally, including Community, Profile and secondary surfaces.
+Make Moments genuinely immersive rather than dashboard-like.
+Add the >60-second Family Story candidate/preservation workflow.
+Add /build → canonical Spark Studio compatibility routing.
+Keep the existing authenticated media backend and production certification boundary.
+
+One particularly important point: the current repo already solved the hardest part of direct camera entry. We should not rewrite that logic. We should remove the remaining old presentation layer around it and make the camera/editor experience look and feel like the product in your reference.

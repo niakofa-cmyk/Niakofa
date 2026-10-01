@@ -42,6 +42,23 @@ function AudioRecording({ asset }: { asset: MemoryAsset }) {
   );
 }
 
+function VisualMemoryAsset({ asset }: { asset: MemoryAsset }) {
+  const { url, loading, error } = useAuthorizedFamilyAsset(asset.storage_key);
+  const isVideo = asset.asset_type === "video" || asset.mime_type?.startsWith("video/");
+  return (
+    <figure className="overflow-hidden rounded-2xl border border-[#456064] bg-[#132831]">
+      <div className="flex items-center gap-2 px-4 pb-2 pt-4 text-sm font-semibold text-[#e2b78b]">
+        {isVideo ? "Private family video" : "Private family photo"}
+      </div>
+      {loading ? <div className="aspect-video animate-pulse bg-[#31505a]" aria-label="Loading family media" />
+        : error ? <p role="alert" className="px-4 pb-4 text-sm text-[#ffc8b8]">{error}</p>
+          : url && isVideo
+            ? <video controls playsInline preload="metadata" src={url} className="max-h-[65dvh] w-full bg-black" aria-label="Private Family Story video" />
+            : url ? <img src={url} alt="Private Family Story photo" className="max-h-[65dvh] w-full object-contain" /> : null}
+    </figure>
+  );
+}
+
 function OralHistory({ familyId, memoryId }: { familyId: number; memoryId: number }) {
   const { data, error, isPending, refetch, isFetching } = useQuery({
     queryKey: ["family-story-memory", familyId, memoryId],
@@ -50,9 +67,22 @@ function OralHistory({ familyId, memoryId }: { familyId: number; memoryId: numbe
   if (isPending) return <div className="space-y-3" aria-label="Loading oral history"><div className="h-20 animate-pulse rounded-2xl bg-[#28414a]" /><div className="h-20 animate-pulse rounded-2xl bg-[#28414a]" /></div>;
   if (error) return <div className="rounded-2xl border border-[#915e57] p-4 text-sm text-[#ffc8b8]">The linked memory could not be opened. <button className="underline" onClick={() => void refetch()} disabled={isFetching}>Try again</button></div>;
   const audio = (data?.assets ?? []).filter(a => a.asset_type === "audio" || a.mime_type?.startsWith("audio/"));
-  const otherTranscripts = (data?.assets ?? []).filter(a => a.asset_type !== "audio" && !a.mime_type?.startsWith("audio/") && a.transcript?.trim());
-  if (!audio.length && !otherTranscripts.length) return <p className="rounded-2xl border border-[#456064] p-4 text-sm text-[#aebfbe]">This linked memory has no recording or transcript available yet.</p>;
-  return <div className="space-y-4">{audio.map(a => <AudioRecording key={a.id} asset={a} />)}{otherTranscripts.map(a => <div key={a.id} className="rounded-2xl border border-[#456064] bg-[#132831] p-5"><div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#e2b78b]"><FileText size={17} /> Archive transcript</div><p className="whitespace-pre-wrap text-sm leading-7 text-[#ddd9cf]">{a.transcript}</p></div>)}</div>;
+  const visual = (data?.assets ?? []).filter(a => (
+    a.asset_type === "photo" || a.asset_type === "video"
+    || a.mime_type?.startsWith("image/") || a.mime_type?.startsWith("video/")
+  ));
+  const otherTranscripts = (data?.assets ?? []).filter(a => (
+    a.asset_type !== "audio" && !a.mime_type?.startsWith("audio/")
+    && a.asset_type !== "photo" && a.asset_type !== "video"
+    && !a.mime_type?.startsWith("image/") && !a.mime_type?.startsWith("video/")
+    && a.transcript?.trim()
+  ));
+  if (!audio.length && !visual.length && !otherTranscripts.length) return <p className="rounded-2xl border border-[#456064] p-4 text-sm text-[#aebfbe]">This linked memory has no recording, photo, or video available yet.</p>;
+  return <div className="space-y-4">
+    {visual.length > 0 && <div className="grid gap-4 sm:grid-cols-2">{visual.map(asset => <VisualMemoryAsset key={asset.id} asset={asset} />)}</div>}
+    {audio.map(a => <AudioRecording key={a.id} asset={a} />)}
+    {otherTranscripts.map(a => <div key={a.id} className="rounded-2xl border border-[#456064] bg-[#132831] p-5"><div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#e2b78b]"><FileText size={17} /> Archive transcript</div><p className="whitespace-pre-wrap text-sm leading-7 text-[#ddd9cf]">{a.transcript}</p></div>)}
+  </div>;
 }
 
 function StoryEditor({ story, familyId, onClose, onSaved }: { story: FamilyStory | null; familyId: number; onClose: () => void; onSaved: (input: StoryInput) => void }) {
@@ -121,7 +151,7 @@ function StoryEditor({ story, familyId, onClose, onSaved }: { story: FamilyStory
         <label className="block text-sm font-medium">Family names, places, or themes <span className="font-normal text-[#b7c4c0]">Separate with commas</span><input className={`${field} mt-2`} value={tags} onChange={e => setTags(e.target.value)} placeholder="Grandmother, Lagos, home" /></label>
         <div className="rounded-2xl border border-[#536164] bg-[#182a32] p-4">
           <p className="text-sm font-semibold">Link a memory or recording <span className="font-normal text-[#b7c4c0]">(optional)</span></p>
-          <p className="mt-1 text-xs leading-5 text-[#b7c4c0]">An audio recording and its transcript can be heard and read alongside this account. Nothing is uploaded or copied here.</p>
+           <p className="mt-1 text-xs leading-5 text-[#b7c4c0]">Linked recordings, photos, and videos can be viewed alongside this account. Nothing is uploaded or copied here.</p>
           <div className="mt-3 flex gap-2"><input value={memorySearch} onChange={e => setMemorySearch(e.target.value)} placeholder="Search family memories" aria-label="Search family memories" className={field} /><button type="button" className={secondary} onClick={() => setMemoryQuery(memorySearch.trim())}>Search</button></div>
           {memoriesError && <p className="mt-3 text-xs text-[#ffc8b8]">Memories could not be loaded. You can still remove an existing link. <button type="button" className="underline" onClick={() => void reloadMemories()}>Try again</button></p>}
           <select aria-label="Linked memory" className={`${field} mt-3`} value={memoryId ?? ""} onChange={e => setMemoryId(e.target.value ? Number(e.target.value) : null)}>
@@ -177,7 +207,7 @@ export default function FamilyStoriesExperience({ familyId, familyName, canWrite
         <h2 data-testid="text-story-title" className="max-w-2xl font-serif text-4xl leading-tight sm:text-5xl">{selected.title}</h2>
         <div className="mt-6 flex items-center gap-3 border-b border-[#4b5d60] pb-7"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#a46f57] font-serif text-lg text-[#fff4e7]">{authorInitial(selected)}</span><div className="text-sm"><p className="font-semibold">{selected.author_id === null ? storyAuthor(selected) : `Told by ${storyAuthor(selected)}`}</p><p className="mt-0.5 flex items-center gap-1.5 text-[#b7c4c0]">{selected.audience === "private" ? <LockKeyhole size={13} /> : <UsersRound size={13} />}{selected.audience === "private" ? "Private story" : "Shared with family"}</p></div></div>
         <div className="space-y-5 py-8 font-serif text-lg leading-[1.9] text-[#e5e1d7]">{selected.body.split(/\n\s*\n/).map((paragraph, index) => <p className="whitespace-pre-wrap" key={index}>{paragraph}</p>)}</div>
-        {selected.memory_id && <div className="mb-8"><p className="mb-4 text-xs font-bold uppercase tracking-[.2em] text-[#c5ac92]">Listen & read / linked memory</p><OralHistory familyId={familyId} memoryId={selected.memory_id} /></div>}
+         {selected.memory_id && <div className="mb-8"><p className="mb-4 text-xs font-bold uppercase tracking-[.2em] text-[#c5ac92]">Story media / linked memory</p><OralHistory familyId={familyId} memoryId={selected.memory_id} /></div>}
         {selected.tags?.length > 0 && <div className="mb-8 flex flex-wrap gap-2">{selected.tags.map((tag, i) => <span key={`${tag}-${i}`} className="rounded-full border border-[#586b69] px-3 py-1 text-xs text-[#c7d1cb]">{tag}</span>)}</div>}
         <p className="border-t border-[#4b5d60] pt-5 text-xs text-[#b7c4c0]">Added to this archive {new Date(selected.created_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}{selected.language ? ` · ${selected.language}` : ""}</p>
         {selected.viewer_can_manage && <div className="mt-6 flex flex-wrap gap-3"><button data-testid="button-edit-story" className={secondary} onClick={() => setEditing(selected)}><span className="flex items-center gap-2"><PenLine size={15} /> {selected.author_id === null ? "Edit archival story" : "Edit my story"}</span></button><button data-testid="button-delete-story" className="rounded-xl border border-[#ab786d] px-4 py-2.5 text-sm text-[#ffc8b8] hover:bg-[#ab786d]/10" onClick={() => setDeleteError("confirm")}><span className="flex items-center gap-2"><Trash2 size={15} /> Delete</span></button></div>}

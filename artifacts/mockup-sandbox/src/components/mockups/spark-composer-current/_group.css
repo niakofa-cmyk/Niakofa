@@ -1,0 +1,515 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+.spark-composer-current {
+  --nk-teal: #00cfff;
+  --nk-coral: #f17862;
+  --nk-gold: #e7b650;
+  --nk-ink: #edf8ff;
+  --nk-paper: #08182b;
+  --nk-muted: #9bb0c3;
+  --nk-card: #10243a;
+  --background: 214 68% 10%;
+  --foreground: 202 100% 96%;
+  --border: 213 34% 25%;
+  --input: 213 34% 29%;
+  --primary: 191 100% 50%;
+  --primary-foreground: 214 68% 10%;
+  --card: 213 49% 14%;
+  --muted: 213 43% 18%;
+  --muted-foreground: 210 25% 72%;
+  --app-font-sans: "DM Sans", sans-serif;
+  --app-font-serif: "Manrope", sans-serif;
+  --nia-story-viewer: #08182b;
+  --nia-story-glass: rgb(8 24 43 / .82);
+  --nia-story-glass-strong: rgb(8 24 43 / .96);
+  --nia-story-border: rgb(237 248 255 / .2);
+  --nia-story-text: #edf8ff;
+  --nia-story-muted: rgb(237 248 255 / .72);
+  --nia-story-ring: conic-gradient(from 180deg, #00cfff, #66e4ff, #00a8d7, #00cfff);
+  --nia-story-surface: #0b1e34;
+  --nia-story-surface-raised: #10243a;
+  min-height: 100vh;
+  background: #08182b;
+  color: #edf8ff;
+  font-family: var(--app-font-sans);
+}
+
+.spark-composer-current *,
+.spark-composer-current *::before,
+.spark-composer-current *::after {
+  box-sizing: border-box;
+}
+
+.spark-composer-current button,
+.spark-composer-current input,
+.spark-composer-current textarea {
+  font: inherit;
+}
+
+.spark-composer-current .nia-story-composer-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: rgb(4 11 23 / .92);
+}
+
+.spark-composer-current .nia-story-composer-shell {
+  width: min(100%, 520px);
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+  background: #08182b;
+}
+
+.spark-composer-current .nia-story-composer {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: #08182b;
+  color: #edf8ff;
+  font-family: inherit;
+}
+
+.spark-composer-current .nia-story-composer__header {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 68px;
+  align-items: center;
+  gap: 10px;
+  padding: max(14px, env(safe-area-inset-top)) 18px 12px;
+  border-bottom: 1px solid rgb(255 255 255 / .09);
+  background: #10243a;
+}
+
+.spark-composer-current .nia-story-composer__title {
+  min-width: 0;
+  flex: 1;
+  text-align: center;
+}
+
+.spark-composer-current .nia-story-composer__title strong,
+.spark-composer-current .nia-story-composer__title span {
+  display: block;
+}
+
+.spark-composer-current .nia-story-composer__title strong {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.025em;
+}
+
+.spark-composer-current .nia-story-composer__title span {
+  margin-top: 3px;
+  color: #00cfff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+.spark-composer-current .nia-story-header-end { width: 40px; }
+
+.spark-composer-current .nia-story-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgb(237 248 255 / .2);
+  border-radius: 50%;
+  background: rgb(255 255 255 / .07);
+  color: #edf8ff;
+  cursor: pointer;
+}
+
+.spark-composer-current .nia-story-icon--light {
+  border-color: rgb(255 255 255 / .12);
+  background: rgb(255 255 255 / .07);
+}
+
+.spark-composer-current .nia-story-source {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+  padding: 38px 22px max(26px, env(safe-area-inset-bottom));
+  background: #10243a;
+}
+
+.spark-composer-current .nia-story-source__intro { margin-bottom: 32px; }
+
+.spark-composer-current .nia-story-kicker {
+  margin: 0;
+  color: #00cfff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.spark-composer-current .nia-story-source__intro h2 {
+  margin: 13px 0 12px;
+  font-size: clamp(38px, 9vw, 54px);
+  font-weight: 750;
+  letter-spacing: -.055em;
+  line-height: 1.02;
+}
+
+.spark-composer-current .nia-story-source__intro h2 em {
+  color: #00cfff;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 400;
+}
+
+.spark-composer-current .nia-story-source__intro > p:last-child {
+  margin: 0;
+  color: #b2c4d4;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.spark-composer-current .nia-story-source__choices { display: grid; gap: 10px; }
+
+.spark-composer-current .nia-story-source__choice {
+  display: grid;
+  min-height: 88px;
+  grid-template-columns: 56px 1fr 22px;
+  grid-template-rows: 1fr 1fr;
+  align-items: center;
+  column-gap: 14px;
+  padding: 14px;
+  border: 1px solid #29445f;
+  border-radius: 18px;
+  background: #10243a;
+  color: #edf8ff;
+  text-align: left;
+  cursor: pointer;
+  transition: transform .18s ease, background .18s ease;
+}
+
+.spark-composer-current .nia-story-source__choice:hover {
+  background: rgb(246 245 237 / .11);
+  transform: translateY(-2px);
+}
+
+.spark-composer-current .nia-story-source__choice > span {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  grid-row: 1 / 3;
+  place-items: center;
+  border-radius: 14px;
+  background: rgb(0 207 255 / .13);
+  color: #00cfff;
+}
+
+.spark-composer-current .nia-story-source__choice strong {
+  align-self: end;
+  color: #edf8ff;
+  font-size: 15px;
+}
+
+.spark-composer-current .nia-story-source__choice small {
+  grid-column: 2;
+  align-self: start;
+  margin-top: 3px;
+  color: #9bb0c3;
+  font-size: 11px;
+}
+
+.spark-composer-current .nia-story-source__choice > svg {
+  grid-row: 1 / 3;
+  grid-column: 3;
+  color: #00cfff;
+}
+
+.spark-composer-current .nia-story-source__resume {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  border: 1px solid rgb(0 207 255 / .45);
+  border-radius: 12px;
+  background: rgb(0 207 255 / .12);
+  color: #00cfff;
+  font-weight: 800;
+}
+
+.spark-composer-current .nia-story-source__foot {
+  margin: auto 0 0;
+  padding-top: 26px;
+  color: #9bb0c3;
+  text-align: center;
+  font-size: 11px;
+}
+
+.spark-composer-current .nia-story-composer__canvas {
+  position: relative;
+  display: flex;
+  min-height: 170px;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 12px 16px 0;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(0 207 255 / .09), transparent 52%),
+    #08182b;
+}
+
+.spark-composer-current .nia-story-composer__canvas > * {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.spark-composer-current .nia-story-editor-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 450px;
+  overflow: hidden;
+  border: 1px solid rgb(0 207 255 / .2);
+  border-radius: 24px 24px 0 0;
+  background: #020812;
+  box-shadow: 0 0 0 5px rgb(0 207 255 / .035), 0 24px 64px rgb(0 0 0 / .34);
+}
+
+.spark-composer-current .nia-story-composer__details {
+  position: relative;
+  z-index: 7;
+  min-height: 74px;
+  flex: 0 1 auto;
+  max-height: 29dvh;
+  overflow: auto;
+  padding: 14px 18px 10px;
+  border-top: 1px solid rgb(255 255 255 / .13);
+  background: #0b1e34;
+}
+
+.spark-composer-current .nia-story-composer__form label {
+  display: block;
+  margin-bottom: 8px;
+  color: #edf8ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.spark-composer-current .nia-story-composer__form textarea {
+  width: 100%;
+  min-height: 62px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgb(237 248 255 / .17);
+  border-radius: 12px;
+  outline: 0;
+  background: rgb(255 255 255 / .07);
+  color: #edf8ff;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.spark-composer-current .nia-story-composer__form textarea::placeholder {
+  color: rgb(237 248 255 / .68);
+}
+
+.spark-composer-current .nia-story-composer__form p {
+  color: rgb(255 255 255 / .66);
+  font-size: 11px;
+}
+
+.spark-composer-current .nia-story-composer__gallery-actions {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 18px;
+  background: #10243a;
+}
+
+.spark-composer-current .nia-story-gallery-button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / .16);
+  border-radius: 999px;
+  background: rgb(255 255 255 / .07);
+  color: #edf8ff;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.spark-composer-current .nia-story-tool-dock {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: space-around;
+  gap: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-top: 1px solid rgb(255 255 255 / .09);
+  border-radius: 0;
+  background: #10243a;
+}
+
+.spark-composer-current .nia-story-tool {
+  display: grid;
+  width: 20%;
+  min-width: 0;
+  min-height: 56px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #edf8ff;
+  cursor: pointer;
+}
+
+.spark-composer-current .nia-story-tool span,
+.spark-composer-current .nia-story-tool small { display: block; }
+
+.spark-composer-current .nia-story-tool span { margin: 0 0 3px; }
+
+.spark-composer-current .nia-story-tool small {
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.spark-composer-current .nia-story-tool--active {
+  background: rgb(0 207 255 / .2);
+  color: #edf8ff;
+}
+
+.spark-composer-current .nia-story-composer__footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 18px max(13px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgb(255 255 255 / .09);
+  background: #10243a;
+}
+
+.spark-composer-current .nia-story-composer__footer > span {
+  color: #a8bdc3;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.spark-composer-current .nia-story-publish {
+  position: static;
+  display: inline-flex;
+  min-height: 45px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 19px;
+  border: 1px solid #00cfff;
+  border-radius: 12px;
+  background: #00cfff;
+  color: #08182b;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.spark-composer-current .nia-story-publish:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.spark-composer-current .nia-story-composer button:focus-visible,
+.spark-composer-current .nia-story-composer textarea:focus-visible {
+  outline: 3px solid #00cfff;
+  outline-offset: 3px;
+}
+
+.spark-composer-current .current-media-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgb(8 24 43 / .03) 42%, rgb(8 24 43 / .66) 100%),
+    url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1000&q=85") center 48% / cover,
+    #18394b;
+}
+
+.spark-composer-current .current-media-preview::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(237 248 255 / .14);
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+}
+
+.spark-composer-current .current-media-preview__caption {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  z-index: 1;
+  color: #edf8ff;
+  text-align: center;
+  text-shadow: 0 2px 12px rgb(0 0 0 / .68);
+}
+
+.spark-composer-current .current-media-preview__caption strong {
+  display: block;
+  font-size: 18px;
+  letter-spacing: -.02em;
+}
+
+.spark-composer-current .current-media-preview__caption span {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.spark-composer-current .current-preview-status {
+  position: fixed;
+  right: 16px;
+  bottom: 12px;
+  z-index: 120;
+  color: rgb(237 248 255 / .72);
+  font-size: 11px;
+}
+
+@media (min-width: 640px) {
+  .spark-composer-current .nia-story-composer-shell {
+    width: min(520px, 100vw);
+    height: min(900px, calc(100dvh - 32px));
+    border: 1px solid rgb(255 255 255 / .14);
+    border-radius: 28px;
+    box-shadow: 0 25px 90px rgb(0 0 0 / .38);
+  }
+
+  .spark-composer-current .nia-story-composer__canvas { min-height: 220px; }
+}
+
+@media (max-height: 720px) {
+  .spark-composer-current .nia-story-composer__details { max-height: 25dvh; }
+  .spark-composer-current .nia-story-tool { min-height: 49px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spark-composer-current .nia-story-source__choice { transition: none; }
+}

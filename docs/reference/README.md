@@ -6,6 +6,9 @@ sessions can review the original material without re-creating it.
 
 ## Current review set
 
+- `niakofa-media-studio-rebuild-2026-10-01.md` — reviewed Studio rebuild
+  brief/package provenance, selected visual references, and the Android donor
+  archive boundary.
 - `niakofa-community-v5-2026-09-30/` — seven original Community/Moments
   notes, patches, and code/style snapshots, with superseded-status labels and
   the Village/Local backend boundary; no photography was included.

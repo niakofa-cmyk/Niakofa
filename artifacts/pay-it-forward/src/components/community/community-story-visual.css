@@ -465,6 +465,71 @@
 .nia-story-tool--active { background: rgb(0 207 255 / .2); }
 .nia-story-composer__canvas { background: #08182b; }
 
+.nia-story-family-copy {
+  margin: 12px 0;
+  padding: 15px;
+  border: 1px solid rgb(0 207 255 / .42);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgb(0 207 255 / .09), rgb(16 36 58 / .96) 55%);
+  color: #edf8ff;
+}
+.nia-story-family-copy__intro { display: flex; align-items: flex-start; gap: 12px; }
+.nia-story-family-copy__intro > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 13px;
+  background: rgb(0 207 255 / .14);
+  color: #00cfff;
+  font-size: 12px;
+  font-weight: 900;
+}
+.nia-story-family-copy__intro h3 { margin: 1px 0 5px; font-size: 14px; font-weight: 850; }
+.nia-story-family-copy__intro p,
+.nia-story-family-copy__notice,
+.nia-story-family-copy__family p {
+  margin: 0;
+  color: #b9cada;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.nia-story-family-copy__consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgb(237 248 255 / .13);
+  border-radius: 12px;
+  background: rgb(8 24 43 / .55);
+  cursor: pointer;
+}
+.nia-story-family-copy__consent input { width: 18px; height: 18px; flex: 0 0 18px; margin-top: 2px; accent-color: #00cfff; }
+.nia-story-family-copy__consent strong,
+.nia-story-family-copy__consent small { display: block; }
+.nia-story-family-copy__consent strong { font-size: 12px; }
+.nia-story-family-copy__consent small { margin-top: 3px; color: #b9cada; font-size: 10px; line-height: 1.45; }
+.nia-story-family-copy__notice { margin-top: 10px; color: #f0dca7; }
+.nia-story-family-copy__family { display: grid; gap: 7px; margin-top: 12px; }
+.nia-story-family-copy__family > label { font-size: 11px; font-weight: 800; }
+.nia-story-family-copy__family select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid #355571;
+  border-radius: 10px;
+  background: #08182b;
+  color: #edf8ff;
+  font-size: 12px;
+}
+.nia-story-family-copy__family a,
+.nia-story-family-copy__family button { color: #00cfff; font-weight: 800; text-decoration: underline; }
+.nia-story-family-copy input:focus-visible,
+.nia-story-family-copy select:focus-visible,
+.nia-story-family-copy button:focus-visible { outline: 3px solid #00cfff; outline-offset: 3px; }
+
 /* The camera stays edge-to-edge; only controls float above the live image. */
 .nia-spark-camera { isolation: isolate; background: #020812 !important; }
 .nia-spark-camera > div { background: transparent !important; }

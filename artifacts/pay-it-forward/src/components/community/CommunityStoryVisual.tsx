@@ -286,7 +286,7 @@ export function SparkComposerChrome({
   return (
     <div className={`nia-story-composer nia-story-composer--${step}`} role="dialog" aria-modal="true" aria-label="Create a Spark">
       <header className="nia-story-composer__header">
-        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={step === "source" ? onClose : () => onStep(step === "destination" ? "edit" : "source")} aria-label={step === "source" ? "Close Spark creator" : "Go back"}>
+        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={step === "destination" ? () => onStep("edit") : onClose} aria-label={step === "destination" ? "Go back to editing" : "Close Spark creator"}>
           {step === "source" ? <X size={22} /> : <ArrowLeft size={21} />}
         </button>
         <div className="nia-story-composer__title">
