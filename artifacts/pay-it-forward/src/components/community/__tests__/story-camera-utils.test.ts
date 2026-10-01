@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  STORY_CAMERA_CLIP_MAX_MS,
   STORY_CAMERA_MAX_ITEMS,
   STORY_CAMERA_MAX_RECORDING_MS,
   storyCameraConstraints,
@@ -24,11 +25,14 @@ test("camera constraints default to front-facing and can request the other camer
   assert.match(component, /void startCamera\(\);\s*\/\/ Camera acquisition is intentionally started as soon as the choice mounts/);
 });
 
-test("camera limits remain six items and sixty seconds", () => {
+test("camera keeps each clip within a Moment and allows a longer Spark for Family Stories", () => {
   assert.equal(STORY_CAMERA_MAX_ITEMS, 6);
-  assert.equal(STORY_CAMERA_MAX_RECORDING_MS, 60_000);
+  assert.equal(STORY_CAMERA_CLIP_MAX_MS, 60_000);
+  assert.equal(STORY_CAMERA_MAX_RECORDING_MS, 180_000);
   assert.match(component, /clips\.length >= MAX_ITEMS/);
   assert.match(component, /recordedVideoMsRef\.current >= MAX_RECORDING_MS/);
+  assert.match(component, /Math\.min\(CLIP_MAX_MS, Math\.max\(0, MAX_RECORDING_MS - recordedVideoMsRef\.current\)\)/);
+  assert.match(component, /Family Story length/);
 });
 
 test("camera permission and device errors are explained without relying on DOMException support", () => {
@@ -47,12 +51,15 @@ test("camera surface is edge-to-edge and releases tracks before recording previe
   assert.match(component, /onError=\{\(\) => setError\("The recorded clip preview could not be loaded/);
 });
 
-test("fresh Sparks open the camera only after successful draft recovery; restored drafts keep their resume path", () => {
-  assert.match(storyRail, /recoveredDraftRef\.current = Boolean\(draft\)/);
+test("fresh Sparks open the live camera immediately, and restored drafts resume in the studio", () => {
+  assert.match(storyRail, /const beginCreateSpark = \(\) => \{\s*setComposerOpen\(true\);\s*setCameraOpen\(true\);/);
+  assert.match(storyRail, /recoveredDraftRef\.current = hasRecoverableWork/);
   assert.match(storyRail, /recoveredScopeRef\.current !== scopeKey/);
   assert.match(storyRail, /if \(!draftReady\s*\|\|\s*draftError/);
   assert.match(storyRail, /if \(!hasStudioWork\) setCameraOpen\(true\)/);
+  assert.match(storyRail, /else setCameraOpen\(false\)/);
   assert.match(storyRail, /if \(cameraOpen\) \{ cancelCamera\(\); return; \}/);
+  assert.match(storyRail, /composerOpen && !cameraOpen && draftReady/);
 });
 
 test("camera offers Gallery and text alternatives and closes Gallery before camera navigation", () => {

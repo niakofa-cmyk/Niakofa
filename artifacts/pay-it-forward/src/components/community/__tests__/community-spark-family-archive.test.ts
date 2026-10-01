@@ -38,10 +38,14 @@ test("Family copy accepts only supported nonempty items at or below 20 MB", () =
   assert.equal(canCopyStudioFilesToFamily([studioFile("video/mp4", FAMILY_STORY_MAX_FILE_BYTES + 1)]), false);
 });
 
-test("recovered Studio work resumes in editing, and back navigation avoids the source chooser", () => {
-  assert.match(storyRailSource, /setStudioStep\(exchangeDraftRef\.current \? "source" : "edit"\)/);
+test("recovered Studio work resumes in editing, and Create a Spark skips the source chooser", () => {
+  assert.match(storyRailSource, /if \(hasRecoverableWork\) setStudioStep\("edit"\)/);
+  assert.doesNotMatch(storyRailSource, /What’s happening/);
+  assert.doesNotMatch(composerChromeSource, /What’s happening/);
+  assert.doesNotMatch(composerChromeSource, /Choose how to start/);
   assert.match(composerChromeSource, /step === "destination" \? \(\) => onStep\("edit"\) : onClose/);
   assert.doesNotMatch(composerChromeSource, /step === "edit" \? onStep\("source"\)/);
+  assert.match(storyRailSource, /setFamilyStoryCopyEnabled\(true\)/);
 });
 
 test("private Family Story media opens with the authenticated Family asset client", () => {

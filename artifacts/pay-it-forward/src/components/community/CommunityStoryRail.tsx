@@ -149,6 +149,7 @@ export function CommunityStoryRail({
       setActiveChallengeKey(challengeKey);
       setAudience(responseToStoryId ? "community" : (hubId ? "hub" : "community"));
       setComposerOpen(true);
+      setCameraOpen(true);
     }
   }, [additionalComposerSignal, challengeKey, hubId, openComposerSignal, responseToStoryId]);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
@@ -540,7 +541,7 @@ export function CommunityStoryRail({
         setTrimPreview(draft.trimPreview ?? {});
         setCoverTimes(draft.coverTimes ?? {});
         setUploadedIds(draft.uploadedMediaAssetIds ?? []);
-        if (hasRecoverableWork) setStudioStep(exchangeDraftRef.current ? "source" : "edit");
+        if (hasRecoverableWork) setStudioStep("edit");
         setDraftSaved(true);
       }
       recoveredScopeRef.current = scopeKey;
@@ -934,6 +935,7 @@ export function CommunityStoryRail({
       || Boolean(exchangeDraftRef.current)
       || Boolean(responseTargetId);
     if (!hasStudioWork) setCameraOpen(true);
+    else setCameraOpen(false);
   }, [caption, composerOpen, draftError, draftReady, editorElements.length, files.length, musicFile, responseTargetId, scopeKey]);
 
   useEffect(() => {
@@ -989,6 +991,9 @@ export function CommunityStoryRail({
       const durations = await validateStudioFiles(selectedForCheck);
       if (selectedMediaFingerprintRef.current !== fingerprint) return;
       setFamilyStoryDurationMs(totalStudioVideoDurationMs(selectedForCheck, durations));
+      if (totalStudioVideoDurationMs(selectedForCheck, durations) > FAMILY_STORY_CANDIDATE_DURATION_MS) {
+        setFamilyStoryCopyEnabled(true);
+      }
       setStudioStep(nextStep);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not inspect the selected videos.");
@@ -1571,6 +1576,11 @@ export function CommunityStoryRail({
     }
   }
 
+  const beginCreateSpark = () => {
+    setComposerOpen(true);
+    setCameraOpen(true);
+  };
+
   const toolButtons: Array<{ key: StoryVisualTool; label: string; icon: ReactNode }> = [
     { key: "music", label: "Audio", icon: <Volume2 size={22} /> },
     { key: "templates", label: "Templates", icon: <Layers3 size={22} /> },
@@ -1594,7 +1604,7 @@ export function CommunityStoryRail({
               <p>Share • Connect • Build Together</p>
             </div>
           </div>
-          <button className="nia-story-pill" type="button" onClick={() => setComposerOpen(true)}>
+          <button className="nia-story-pill" type="button" onClick={beginCreateSpark}>
             <span aria-hidden="true">＋</span>
             Create a Spark
           </button>
@@ -1603,18 +1613,18 @@ export function CommunityStoryRail({
         <StoryVisualRail
           authors={visualAuthors}
           loading={loading}
-          onCreate={() => setComposerOpen(true)}
+          onCreate={beginCreateSpark}
           onOpen={openStory}
           emptyLabel="No Sparks yet. Create the first Spark."
         />
       </section>
 
       {composerOpen && (!draftReady || activeScopeRef.current !== scopeKey) && <div className="nia-story-composer-overlay" role="status" aria-live="polite"><div className="nia-story-composer-shell p-8 text-center text-white">Recovering your saved Spark…</div></div>}
-      {composerOpen && draftReady && activeScopeRef.current === scopeKey && (
+      {composerOpen && !cameraOpen && draftReady && activeScopeRef.current === scopeKey && (
         <div className="nia-story-composer-overlay">
           <input ref={galleryInput} type="file" accept={responseTargetId ? "video/*" : "image/*,video/*"} multiple className="sr-only" onChange={onFileChange} aria-label={responseTargetId ? "Choose video response clips" : "Choose Spark media"} disabled={trimming} />
           <div className="nia-story-composer-shell">
-            {studioStep === "source" && exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-slate-900 px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
+            {exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-[#041819] px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
             <SparkComposerChrome
               step={studioStep}
               onStep={(next) => { void moveToStudioStep(next); }}

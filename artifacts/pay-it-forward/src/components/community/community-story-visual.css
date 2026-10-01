@@ -1,13 +1,13 @@
 .nk-community-v4 {
-  --nia-story-viewer: #102522;
-  --nia-story-glass: rgba(16,37,34,.78);
-  --nia-story-glass-strong: rgba(16,37,34,.94);
-  --nia-story-border: rgba(246,245,237,.18);
-  --nia-story-text: var(--nk-paper, #f6f5ed);
-  --nia-story-muted: rgba(246,245,237,.72);
-  --nia-story-ring: conic-gradient(from 180deg, var(--nk-teal, #116a60), var(--nk-coral, #ed6b43), var(--nk-gold, #e7b650), var(--nk-teal, #116a60));
-  --nia-story-surface: #183d3b;
-  --nia-story-surface-raised: #24524b;
+  --nia-story-viewer: #041819;
+  --nia-story-glass: rgba(4,24,25,.72);
+  --nia-story-glass-strong: rgba(4,24,25,.92);
+  --nia-story-border: rgba(0,207,255,.28);
+  --nia-story-text: #edf8ff;
+  --nia-story-muted: rgba(237,248,255,.72);
+  --nia-story-ring: conic-gradient(from 180deg, #00cfff, #0fe5d4, #7ff6ec, #00cfff);
+  --nia-story-surface: #071e22;
+  --nia-story-surface-raised: #0c2a30;
 }
 
 .nia-story-rail { border-radius: 24px; border: 1px solid hsl(var(--border)); background: hsl(var(--card)); padding: 16px; overflow: hidden; }
@@ -291,7 +291,28 @@
 .nia-story-tool-dock { background:var(--nia-story-surface-raised); }
 .nia-story-tool--active { background:color-mix(in srgb,var(--nk-teal, #116a60) 32%, transparent); color:var(--nk-paper, #f6f5ed); }
 .nia-story-composer__footer { background:var(--nia-story-surface); }
-.nia-story-publish { background:var(--nk-teal, #116a60); color:var(--nk-paper, #f6f5ed); }
+.nia-story-publish { background:#00cfff; color:#041819; font-weight:800; }
+.nia-story-tool--active { background:color-mix(in srgb,#00cfff 22%, transparent); color:#041819; }
+.nia-story-composer__title span { color:#00cfff; }
+.nia-spark-camera__glass {
+  display:grid; place-items:center; width:44px; height:44px; border-radius:999px;
+  border:1px solid rgba(0,207,255,.35); background:rgba(4,24,25,.55); color:#edf8ff;
+  backdrop-filter:blur(10px);
+}
+.nia-spark-camera__record {
+  width:78px; height:78px; border-radius:999px; border:4px solid #edf8ff;
+  background:transparent; display:grid; place-items:center;
+}
+.nia-spark-camera__record i {
+  width:58px; height:58px; border-radius:999px; background:#e4453a; display:block;
+}
+.nia-spark-camera__record--live i { width:28px; height:28px; border-radius:8px; }
+.nia-spark-camera__side { position:absolute; right:12px; top:18%; display:flex; flex-direction:column; gap:10px; z-index:2; }
+.nia-spark-camera__family {
+  position:absolute; left:50%; top:72px; transform:translateX(-50%); z-index:2;
+  border-radius:999px; background:#00cfff; color:#041819; font-size:12px; font-weight:800;
+  padding:6px 12px; white-space:nowrap;
+}
 
 .nia-story-composer--source {
   background:var(--nk-paper, #f6f5ed);

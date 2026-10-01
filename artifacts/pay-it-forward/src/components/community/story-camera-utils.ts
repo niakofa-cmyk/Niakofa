@@ -1,4 +1,5 @@
-export const STORY_CAMERA_MAX_RECORDING_MS = 60_000;
+export const STORY_CAMERA_MAX_RECORDING_MS = 180_000;
+export const STORY_CAMERA_CLIP_MAX_MS = 60_000;
 export const STORY_CAMERA_MAX_ITEMS = 6;
 
 export type StoryCameraFacingMode = "environment" | "user";
