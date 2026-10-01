@@ -295,7 +295,7 @@ export function SparkComposerChrome({
           <strong>Create a Spark</strong>
           <span>{step === "edit" ? "Edit your Spark" : "Choose audience"}</span>
         </div>
-        {step !== "source" ? <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onSettings} aria-label="Spark settings"><Settings2 size={20} /></button> : <span className="nia-story-header-end" aria-hidden="true" />}
+        <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onSettings} aria-label="Spark settings"><Settings2 size={20} /></button>
       </header>
           {step === "edit" && <main className="nia-story-composer__canvas">{preview}</main>}
           {children && <section className="nia-story-composer__details">{children}</section>}
