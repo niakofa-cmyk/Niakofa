@@ -1,13 +1,13 @@
 .nia-home,
 .nia-people {
-  --nia-ink: #182b43;
-  --nia-muted: #64748b;
-  --nia-paper: #f8fafc;
-  --nia-card: #ffffff;
-  --nia-line: #e1e8ef;
-  --nia-blue: var(--nk-teal, #116a60);
-  --nia-blue-soft: #e7f2ef;
-  --nia-coral: var(--nk-coral, #ed6b43);
+  --nia-ink: #edf8ff;
+  --nia-muted: #a9bfd1;
+  --nia-paper: #08182b;
+  --nia-card: #10243a;
+  --nia-line: #29445f;
+  --nia-blue: #00cfff;
+  --nia-blue-soft: rgb(0 207 255 / .12);
+  --nia-coral: #00cfff;
   color: var(--nia-ink);
   font-family: inherit;
 }
@@ -24,12 +24,12 @@
   overflow: hidden;
   margin: 0 0 1rem;
   padding: 1.45rem 1.25rem 1.25rem;
-  border: 1px solid rgba(24, 61, 59, .13);
+  border: 1px solid #29445f;
   border-top: 3px solid var(--nia-blue);
   border-radius: 0 0 22px 22px;
   background:
-    radial-gradient(ellipse at 96% 0%, rgba(231, 182, 80, .18), transparent 34%),
-    #fff;
+    radial-gradient(ellipse at 96% 0%, rgb(0 207 255 / .11), transparent 34%),
+    #10243a;
 }
 
 .nia-home__eyebrow,
@@ -65,7 +65,7 @@
   align-items: center;
   gap: .65rem;
   margin: 1.15rem 0 0;
-  color: #647f9a;
+  color: #a9bfd1;
   font-size: .65rem;
   font-weight: 800;
   letter-spacing: .14em;
@@ -75,7 +75,7 @@
 .nia-home__rule::after {
   height: 1px;
   flex: 1;
-  background: #dfe8ef;
+  background: #29445f;
   content: "";
 }
 
@@ -347,7 +347,7 @@
   --nia-ink: var(--nk-ink);
   --nia-muted: var(--nk-muted);
   --nia-paper: var(--nk-paper);
-  --nia-card: color-mix(in srgb, var(--nk-paper) 68%, #fff);
+  --nia-card: color-mix(in srgb, var(--nk-paper) 82%, var(--nk-ink));
   --nia-line: color-mix(in srgb, var(--nk-ink) 14%, var(--nk-paper));
   --nia-blue: var(--nk-teal);
   --nia-blue-soft: color-mix(in srgb, var(--nk-teal) 10%, var(--nk-paper));
@@ -366,7 +366,7 @@
   border-color: color-mix(in srgb, var(--nk-ink) 14%, transparent);
   background:
     radial-gradient(ellipse at 96% 0%, color-mix(in srgb, var(--nk-gold) 17%, transparent), transparent 36%),
-    color-mix(in srgb, var(--nk-paper) 46%, #fff);
+    var(--nia-card);
   box-shadow: 0 10px 30px color-mix(in srgb, var(--nk-ink) 5%, transparent);
 }
 

@@ -124,6 +124,7 @@ export function CommunityStoryRail({
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const autoCameraOpenedRef = useRef(false);
   const [responseTargetId, setResponseTargetId] = useState<number | null>(null);
   const [activeChallengeKey, setActiveChallengeKey] = useState<string | null>(null);
   const [archiveEnabled, setArchiveEnabled] = useState(false);
@@ -216,6 +217,7 @@ export function CommunityStoryRail({
   const scopeKey = userId && Number.isSafeInteger(userId) && userId > 0 ? studioDraftKey(userId, hubId) : null;
   const activeScopeRef = useRef(scopeKey);
   const recoveredScopeRef = useRef<string | null>(null);
+  const recoveredDraftRef = useRef(false);
   const scopeSnapshotsRef = useRef(new Map<string, StudioDraft>());
   const galleryInput = useRef<HTMLInputElement>(null);
   const previewVideo = useRef<HTMLVideoElement>(null);
@@ -406,6 +408,8 @@ export function CommunityStoryRail({
     draftGenerationRef.current++;
     activeScopeRef.current = scopeKey;
     recoveredScopeRef.current = null;
+    recoveredDraftRef.current = false;
+    autoCameraOpenedRef.current = false;
     exchangeDraftRef.current = null;
     clientPublishIdRef.current = newStudioPublishId();
     publishAttemptRef.current = null;
@@ -455,6 +459,7 @@ export function CommunityStoryRail({
     setDraftSaved(false);
     void loadStudioDraft(userId, hubId).then((draft) => {
       if (!active) return;
+      recoveredDraftRef.current = Boolean(draft);
       if (draft) {
         exchangeDraftRef.current = draft.exchangeDraftId && Number.isSafeInteger(draft.exchangeDraftId)
           ? { id: draft.exchangeDraftId, listingId: draft.destinationListingId, fingerprint: draft.exchangeFileFingerprint ?? "" }
@@ -789,6 +794,7 @@ export function CommunityStoryRail({
   useEffect(() => { setVideoDuration(0); }, [previewFileIndex, files]);
 
   const resetComposer = () => {
+    recoveredDraftRef.current = false;
     if (scopeKey) scopeSnapshotsRef.current.delete(scopeKey);
     setFiles([]);
     setCameraClipReelMarker(null);
@@ -846,6 +852,41 @@ export function CommunityStoryRail({
     }
   }, [location, navigate]);
 
+  const cancelCamera = useCallback(() => {
+    setCameraOpen(false);
+    const hasStudioWork = recoveredDraftRef.current
+      || files.length > 0
+      || editorElements.length > 0
+      || Boolean(caption.trim())
+      || Boolean(musicFile)
+      || Boolean(exchangeDraftRef.current)
+      || Boolean(momentAccessibility.momentTagsInput.trim())
+      || Object.values(momentAccessibility.momentAltTexts).some((text) => text.trim())
+      || Object.values(momentAccessibility.momentCaptionsVtt).some((text) => text.trim());
+    if (!hasStudioWork && !responseTargetId) closeComposer();
+  }, [caption, closeComposer, editorElements.length, files.length, momentAccessibility, musicFile, responseTargetId]);
+
+  useEffect(() => {
+    if (!composerOpen) {
+      autoCameraOpenedRef.current = false;
+      return;
+    }
+    if (!draftReady
+      || draftError
+      || activeScopeRef.current !== scopeKey
+      || recoveredScopeRef.current !== scopeKey
+      || autoCameraOpenedRef.current) return;
+    autoCameraOpenedRef.current = true;
+    const hasStudioWork = recoveredDraftRef.current
+      || files.length > 0
+      || editorElements.length > 0
+      || Boolean(caption.trim())
+      || Boolean(musicFile)
+      || Boolean(exchangeDraftRef.current)
+      || Boolean(responseTargetId);
+    if (!hasStudioWork) setCameraOpen(true);
+  }, [caption, composerOpen, draftError, draftReady, editorElements.length, files.length, musicFile, responseTargetId, scopeKey]);
+
   useEffect(() => {
     if (!composerOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -856,7 +897,7 @@ export function CommunityStoryRail({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        if (cameraOpen) { setCameraOpen(false); return; }
+        if (cameraOpen) { cancelCamera(); return; }
         if (galleryOpen) { setGalleryOpen(false); return; }
         if (studioStep !== "source") { setStudioStep(studioStep === "destination" ? "edit" : "source"); return; }
         closeComposer();
@@ -872,7 +913,7 @@ export function CommunityStoryRail({
     dialog?.querySelector<HTMLElement>("button")?.focus();
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); };
-  }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady, closeComposer]);
+  }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady, cancelCamera, closeComposer]);
 
   const publish = async () => {
     if (trimming) {
@@ -1465,7 +1506,7 @@ export function CommunityStoryRail({
                 >
                   <div className="relative flex h-full w-full items-center justify-center overflow-hidden" style={!selectedFileUrl ? { background: textBackground } : undefined}>
                     {selectedFileUrl ? (
-                      selectedPreviewFile?.type.startsWith("video/") ? <video ref={previewVideo} key={selectedFileUrl} src={selectedFileUrl} controls playsInline aria-label={momentAccessibility.momentAltTexts[previewFileIndex] || `Spark video attachment ${previewFileIndex + 1}`} className="h-full w-full object-contain" style={{ filter }} onLoadedMetadata={(event) => { setVideoDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0); event.currentTarget.currentTime = trimPreview[previewFileIndex]?.start ?? 0; }} onPlay={(event) => { if (event.currentTarget.currentTime < (trimPreview[previewFileIndex]?.start ?? 0)) event.currentTarget.currentTime = trimPreview[previewFileIndex].start; }} onTimeUpdate={(event) => {
+                      selectedPreviewFile?.type.startsWith("video/") ? <video ref={previewVideo} key={selectedFileUrl} src={selectedFileUrl} controls playsInline preload="metadata" aria-label={momentAccessibility.momentAltTexts[previewFileIndex] || `Spark video attachment ${previewFileIndex + 1}`} className="h-full w-full object-contain" style={{ filter }} onError={() => setError("This video preview could not be loaded. Try selecting the clip again or choose another video.")} onLoadedMetadata={(event) => { setVideoDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0); event.currentTarget.currentTime = trimPreview[previewFileIndex]?.start ?? 0; }} onPlay={(event) => { if (event.currentTarget.currentTime < (trimPreview[previewFileIndex]?.start ?? 0)) event.currentTarget.currentTime = trimPreview[previewFileIndex].start; }} onTimeUpdate={(event) => {
                         const bounds = trimPreview[previewFileIndex];
                         if (bounds && event.currentTarget.currentTime >= bounds.end) { event.currentTarget.pause(); event.currentTarget.currentTime = bounds.start; }
                       }} >{previewCaptionsTrackUrl && <track kind="captions" src={previewCaptionsTrackUrl} srcLang="und" label="Creator captions" default />}</video> : <img src={selectedFileUrl} alt={momentAccessibility.momentAltTexts[previewFileIndex] || `Spark photo attachment ${previewFileIndex + 1}`} className="h-full w-full object-contain" style={{ filter }} />
@@ -1481,7 +1522,7 @@ export function CommunityStoryRail({
               onClose={closeComposer}
               onSettings={() => { setStudioStep("destination"); window.setTimeout(() => document.getElementById("story-audience")?.focus(), 0); }}
               onGallery={() => { if (!trimming) setGalleryOpen(true); }}
-              onCamera={() => { if (!trimming) setCameraOpen(true); }}
+              onCamera={() => { if (!trimming) { setGalleryOpen(false); setCameraOpen(true); } }}
               onPublish={() => void publish()}
               publishing={publishing}
               galleryCount={files.length}
@@ -1756,7 +1797,13 @@ export function CommunityStoryRail({
           </div>
         </div>
       )}
-      {cameraOpen && <StoryCameraRecorder onUse={onCameraVideo} onCancel={() => setCameraOpen(false)} />}
+      {cameraOpen && <StoryCameraRecorder
+        onUse={onCameraVideo}
+        onCancel={cancelCamera}
+        onGallery={() => { setCameraOpen(false); setGalleryOpen(true); }}
+        onText={() => { setCameraOpen(false); setStudioStep("edit"); setTool(null); }}
+        allowText={!responseTargetId}
+      />}
 
       {selectedStory && selectedAuthor && (
         <CommunityStoryViewerOverlay
@@ -1820,7 +1867,7 @@ export function CommunityStoryRail({
           onSelect={(id) => toggleGallerySelection(Number(id))}
           onMultiple={() => { setCameraClipReelMarker(null); setPendingCameraReelStoryId(null); setGallerySelection(files.map((_, index) => index)); }}
           onClose={() => setGalleryOpen(false)}
-          onCamera={() => { if (!trimming) setCameraOpen(true); }}
+          onCamera={() => { if (!trimming) { setGalleryOpen(false); setCameraOpen(true); } }}
           onChooseFiles={() => galleryInput.current?.click()}
           onDone={() => setGalleryOpen(false)}
         />
