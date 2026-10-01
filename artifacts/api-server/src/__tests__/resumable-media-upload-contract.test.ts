@@ -16,6 +16,7 @@ describe("V21 resumable media upload wiring", () => {
     expect(chunkRoute).toMatch(/createHash\("sha256"\)/);
     expect(chunkRoute).toMatch(/decideMediaChunk/);
     expect(chunkRoute).toMatch(/cleanup_keys:/);
+    expect(chunkRoute.match(/jsonb_build_array\(\$\{objectKey\}::text\)/g)).toHaveLength(2);
     expect(chunkRoute).toMatch(/mediaUploadSessionsTable/);
     expect(chunkRoute.indexOf("cleanup_keys:")).toBeLessThan(chunkRoute.lastIndexOf("await putAsset"));
   });

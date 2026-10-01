@@ -4,15 +4,32 @@ This is the release gate for the universal media foundation. A healthy
 deployment or a configured bucket is not enough to enable `MEDIA_PLATFORM_V21`.
 Record evidence for every checked row from the production runtime.
 
-**Current 2026-09-30 hold:** The new admin-only one-shot probe reached its
-storage stage after the synthetic FFmpeg/FFprobe check, but failed with
+**Current 2026-09-30 hold:** The later gated, narrow same-Community portrait
+media attempt passed production health, readiness, and served-commit checks,
+but its first resumable chunk returned HTTP 503. The API classified the failure
+at `database_ledger`; the PostGIS log at 2026-10-01 00:29:50 UTC reported
+`could not determine data type of parameter $1`. The request failed before the
+provider write and before Moment publication. The owner verified that asset 7
+and its upload session return 404 and that no certification Moment remains.
+
+The workspace now casts cleanup-ledger values to `text` before
+`jsonb_build_array`; the regression test, 52 targeted API tests, API typecheck,
+and a local PostgreSQL reproduction pass. This fix has **not** been deployed
+to Railway. Do not retry production upload acceptance until the exact served
+revision contains the fix. The two approved production accounts are in the
+same Community, so this run cannot certify cross-Community isolation. The
+2026-09-28 results below remain historical evidence, not current release
+approval.
+
+**Earlier 2026-09-30 storage-probe hold:** The admin-only one-shot probe reached
+its storage stage after the synthetic FFmpeg/FFprobe check, but failed with
 `cleanup: not_started`. It did not report a PUT or an object requiring cleanup.
-The probe window was closed, production Redis readiness was independently
-`ready`, and V21 remained off. The old probe required a literal display-name
-bucket even though this provider's unique S3 API name can differ; that
-pre-write assumption is being removed. Gate 2 must be repeated against the
-served revision and intended bucket before any V21 activation. The 2026-09-28
-results below remain historical evidence, not current release approval.
+At that earlier point Redis readiness was independently `ready` and V21 was
+off. The old probe required a literal display-name bucket even though this
+provider's unique S3 API name can differ; that pre-write assumption is being
+removed. Gate 2 must still be repeated against the served revision and intended
+bucket. This storage-probe result is separate from the later chunk-upload
+failure above.
 
 **Observed 2026-09-28:** The owner ran the probes from a one-off shell in the
 production API image on the served revision. The first storage probe failed
@@ -75,7 +92,7 @@ runtime evidence, or physical-device checks.
 - [x] `/api/healthz` reports the intended S3-compatible backend
 - [x] `cloud_configured=true`, `credentials_present=true`, and `missing=[]`
 - [x] `/api/readiness` is healthy, including Redis/BullMQ
-- [x] `MEDIA_PLATFORM_V21` remains unset or false until Gates 2 and 3 pass (2026-09-30)
+- [ ] `MEDIA_PLATFORM_V21` remains unset or false until Gates 2 and 3 pass (the later production health check reported `media_platform_flag=true`; this work did not change the flag)
 - [ ] `STORAGE_CDN_URL` remains unset for the private bucket/presigned model
 
 ## Gate 2 — Real production object-storage I/O

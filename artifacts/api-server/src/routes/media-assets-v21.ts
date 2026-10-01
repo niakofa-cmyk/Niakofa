@@ -714,9 +714,9 @@ router.put(
           if (decision.kind === "out-of-order") return { kind: "out-of-order", offset: session.next_offset };
           await tx.update(mediaAssetsTable).set({
             cleanup_keys: sql`CASE
-              WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${objectKey})
+              WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${objectKey}::text)
                 THEN ${mediaAssetsTable.cleanup_keys}
-              ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${objectKey})
+              ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${objectKey}::text)
             END`,
             updated_at: new Date(),
           }).where(eq(mediaAssetsTable.id, assetId));
