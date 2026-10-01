@@ -93,7 +93,7 @@ async function generateSyntheticClip(directory: string, label: string): Promise<
   const output = path.join(directory, `${label}.mp4`);
   await execFileAsync("ffmpeg", [
     "-hide_banner", "-loglevel", "error", "-nostdin",
-    "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=4",
+    "-f", "lavfi", "-i", "testsrc2=size=360x640:rate=30:duration=4",
     "-an", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
     "-b:v", "10M", "-minrate", "10M", "-maxrate", "10M", "-bufsize", "20M",
     "-x264-params", "nal-hrd=cbr", "-movflags", "+faststart", "-y", output,
@@ -232,7 +232,7 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
     "Requires all four explicit production gates, both approved storage states, and the full expected commit.",
   );
 
-  test(`${sameCommunityNarrow ? "narrow same-community" : "cross-community"}: resumes upload, publishes and composes a Moment, checks playback, and cleans up`, async ({ playwright }) => {
+  test(`${sameCommunityNarrow ? "narrow same-community" : "cross-community"}: resumes portrait 9:16 upload, publishes and composes a Moment, checks playback, and cleans up`, async ({ playwright }) => {
     test.setTimeout(15 * 60_000);
     const origin = safeOrigin(baseUrl);
     const owner = safeStateIdentity(userAState!, origin);
@@ -395,8 +395,8 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
         reply_enabled: false,
         media_asset_ids: [firstAssetId, secondAssetId],
         media_accessibility: [
-          { media_asset_id: firstAssetId, alt_text: "A short synthetic test pattern clip." },
-          { media_asset_id: secondAssetId, alt_text: "A second short synthetic test pattern clip." },
+          { media_asset_id: firstAssetId, alt_text: "A short portrait synthetic test pattern clip." },
+          { media_asset_id: secondAssetId, alt_text: "A second short portrait synthetic test pattern clip." },
         ],
       };
       possibleUntrackedStory = true;
@@ -482,6 +482,23 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
       expect(rangeResponse.headers()["content-type"]).toContain("video/mp4");
       expect(rangeResponse.headers()["content-range"]).toMatch(/^bytes 0-31\/\d+$/);
       expect((await rangeResponse.body()).length).toBe(32);
+
+      const fullPlayback = await anonymousRequest.get(playback.playback_url!, {
+        headers: { Cookie: grantCookie },
+      });
+      expect(fullPlayback.status(), "The granted portrait composition should stream completely.").toBe(200);
+      const composedBytes = await fullPlayback.body();
+      expect(composedBytes.length).toBeGreaterThan(0);
+      expect(composedBytes.length).toBeLessThanOrEqual(64 * 1024 * 1024);
+      const composedPath = path.join(temporaryDirectory, "portrait-composition.mp4");
+      fs.writeFileSync(composedPath, composedBytes, { mode: 0o600 });
+      fs.chmodSync(composedPath, 0o600);
+      const portraitProbe = await execFileAsync("ffprobe", [
+        "-hide_banner", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", composedPath,
+      ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+      expect(portraitProbe.stdout.trim().split("x").map(Number))
+        .toEqual([1080, 1920]);
 
       const ungrantedPlayback = await anonymousRequest.get(playback.playback_url!);
       expect(ungrantedPlayback.status(), "Anonymous playback without the private grant must be denied.").toBe(404);
