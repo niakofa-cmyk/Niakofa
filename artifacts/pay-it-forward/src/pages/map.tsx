@@ -17,6 +17,7 @@ import { useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useStableCenter } from "@/hooks/useStableCenter";
 import { useResilientData } from "@/hooks/useResilientData";
 import { TopBar } from "@/components/TopBar";
+import { HomeStoryRow } from "@/components/HomeStoryRow";
 import { BottomSheet } from "@/components/BottomSheet";
 import { CommunityTopPanel } from "@/components/CommunityTopPanel";
 import { CommunityListView } from "@/components/CommunityListView";
@@ -1223,6 +1224,7 @@ export default function MapScreen() {
           onCommunityPanel={() => setCommunityPanelOpen(v => !v)}
           communityPanelOpen={communityPanelOpen}
         />
+        {!helperModeActive && <HomeStoryRow />}
       </div>
 
       {/* Community top panel — helpers + civic needs in a slide-down drawer
@@ -1344,7 +1346,7 @@ export default function MapScreen() {
           message (if any) takes the left/flex-1 side, the stats pill anchors
           the right side, both inside a single container at a single z-index —
           the same "fold into one unit" treatment BestMatchCard got. */}
-      <div className="absolute top-20 left-4 right-4 flex items-start justify-between gap-2" style={{ zIndex: Z_CHROME }}>
+      <div className={`absolute left-4 right-4 flex items-start justify-between gap-2 ${helperModeActive ? "top-20" : "top-40"}`} style={{ zIndex: Z_CHROME }}>
       <div className="flex-1 min-w-0 flex justify-start">
       {mapStatus && (
         <>

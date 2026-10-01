@@ -35,7 +35,7 @@ export default function CommunityNotificationsPage() {
   const matchingNotifications = notifications.filter((item) =>
     `${item.title} ${item.body}`.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase()));
   return (
-    <CommunitySocialShell active="notifications" onNavigate={(key) => setLocation(key === "home" ? "/community" : `/community/${key}`)}
+    <CommunitySocialShell active="notifications" onNavigate={(key) => setLocation(key === "home" ? "/" : `/community/${key}`)}
       onRoute={setLocation} onCreate={() => setLocation("/community/moments?composer=1")} onSearch={setSearchQuery} searchValue={searchQuery}>
       <section className="nk-notifications-page" aria-labelledby="nk-history-title">
         <div className="nk-history-hero">
