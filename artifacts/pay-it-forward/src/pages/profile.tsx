@@ -1123,7 +1123,7 @@ export default function ProfileScreen() {
   return (
     <CommunitySocialShell
       active="profile"
-      onNavigate={(key: CommunityNavKey) => setLocation(key === "home" ? "/" : `/community/${key}`)}
+      onNavigate={(key: CommunityNavKey) => setLocation(key === "home" ? "/community" : `/community/${key}`)}
       onRoute={setLocation}
       onCreate={() => setLocation("/community/moments?composer=1")}
       onSearch={setCommunitySearch}

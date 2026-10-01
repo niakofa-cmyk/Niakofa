@@ -236,7 +236,7 @@ export function TopBar({
   communityMapMode = false, onCivicPortalClick,
   onCommunityPanel, communityPanelOpen = false,
 }: TopBarProps = {}) {
-  const { helperModeActive, setHelperModeActive, currentUser, niaEnabled, userPlace } = useAppContext();
+  const { helperModeActive, setHelperModeActive, currentUser, niaEnabled } = useAppContext();
   const [, setLocation] = useLocation();
   const [sosOpen, setSosOpen] = useState(false);
   // Dormant tooltip — shown for 3 seconds when user taps the orb while Nia is off.
@@ -274,25 +274,15 @@ export function TopBar({
         className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-background/90 to-transparent pt-safe pointer-events-none"
         style={{ zIndex: Z_TOPBAR }}
       >
-        <div className="flex items-center justify-between gap-2 pointer-events-auto">
+        <div className="flex items-center justify-between pointer-events-auto">
           {communityMapMode && !helperModeActive ? (
             <button
-              type="button"
-              onClick={() => setLocation("/")}
-              aria-label="Niakofa home"
-              className="flex min-w-0 items-center gap-2 text-left"
+              onClick={onCivicPortalClick}
+              aria-label="Civic portal — browse county needs"
+              style={{ touchAction: "manipulation" }}
+              className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 active:scale-95 transition-all shadow-lg"
             >
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-card/90 text-primary" aria-hidden="true">
-                <svg viewBox="0 0 32 32" className="h-7 w-7">
-                  <path d="M8.2 20.4c2.2-6.4 7.4-9.8 12.6-8.2 1.6.5 2.6 1.4 3.1 2.4-2.8-1.6-6.4-1.2-9.4 1.6-2.2 2.1-3.4 5-3.6 7.8-1.1-.9-2-2.1-2.7-3.6Z" fill="currentColor" />
-                  <path d="M22.6 12.2c.9-1.8.4-3.6-.8-4.2-1.1-.6-2.6.1-3.2 1.7-.4 1.1-.2 2.2.4 3 .9-.4 2.2-.6 3.6-.5Z" fill="currentColor" />
-                  <ellipse cx="16.2" cy="22.4" rx="3.1" ry="3.6" fill="currentColor" opacity=".85" />
-                </svg>
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-lg font-black leading-none">Niakofa</span>
-                <span className="block truncate text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Family · Community · Legacy</span>
-              </span>
+              <Building2 className="w-[18px] h-[18px]" />
             </button>
           ) : (
             <button
@@ -306,7 +296,12 @@ export function TopBar({
             </button>
           )}
 
-          {!(communityMapMode && !helperModeActive) && (helperModeActive ? (
+          {/* Center slot: helper toggle (helper mode) or Nia orb everywhere
+              else. Community map mode used to show a "Search this area" pill
+              here — that was removed because the address search icon on the
+              right already covers that action, and the pill confused users
+              into thinking it was the only way to search. */}
+          {helperModeActive ? (
             <div
               className="flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-full backdrop-blur-md border bg-green-500/20 border-green-500/50 shadow-[0_0_20px_rgba(34,197,94,0.2)]"
               title="Helper Online"
@@ -350,29 +345,13 @@ export function TopBar({
                 )}
               </AnimatePresence>
             </div>
-          ))}
+          )}
 
           {/* Right-side group — profile avatar, plus map-only search/list
               toggles when the caller (map.tsx) opts in, plus the community
               hamburger menu when communityMapMode is active (opens the
               helpers + civic needs panel that was previously at the bottom). */}
           <div className="flex items-center gap-2">
-            {communityMapMode && !helperModeActive && (
-              <span className="shrink-0 rounded-full border border-primary/40 bg-card/80 px-3 py-1 text-xs font-semibold">
-                {userPlace?.city || "Fort Worth"}
-              </span>
-            )}
-            {communityMapMode && !helperModeActive && onCivicPortalClick && (
-              <button
-                type="button"
-                onClick={onCivicPortalClick}
-                aria-label="Civic portal — browse county needs"
-                style={{ touchAction: "manipulation" }}
-                className="w-9 h-9 rounded-full flex items-center justify-center bg-card/80 border border-border text-primary"
-              >
-                <Building2 className="w-4 h-4" />
-              </button>
-            )}
             {communityMapMode && !helperModeActive && onCommunityPanel && (
               <button
                 onClick={onCommunityPanel}

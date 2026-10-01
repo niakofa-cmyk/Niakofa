@@ -123,11 +123,6 @@ export function CommunitySocialShell({
   }, [menuOpen]);
 
   const navigate = (key: CommunityNavKey) => {
-    if (key === "home") {
-      setMenuOpen(false);
-      onRoute("/");
-      return;
-    }
     if (key === "notifications") { onRoute("/notifications"); return; }
     if (key === "profile") {
       onRoute("/profile");
@@ -144,7 +139,7 @@ export function CommunitySocialShell({
           <button
             type="button"
             onClick={() => navigate("home")}
-            aria-label="Go to Niakofa home"
+            aria-label="Go to Community home"
             className="nk-community-v4-wordmark text-left"
           >
             niakofa

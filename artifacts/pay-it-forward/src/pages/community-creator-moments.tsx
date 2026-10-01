@@ -153,7 +153,7 @@ export default function CommunityCreatorMomentsPage() {
   ];
 
   return (
-    <CommunitySocialShell active="moments" onNavigate={(key) => navigate(key === "home" ? "/" : `/community/${key}`)} onRoute={navigate} onCreate={() => navigate("/community/moments?composer=1")} onSearch={(value) => { setSearchValue(value); if (value.trim()) navigate("/community"); }} searchValue={searchValue}>
+    <CommunitySocialShell active="moments" onNavigate={(key) => navigate(key === "home" ? "/community" : `/community/${key}`)} onRoute={navigate} onCreate={() => navigate("/community/moments?composer=1")} onSearch={(value) => { setSearchValue(value); if (value.trim()) navigate("/community"); }} searchValue={searchValue}>
       <main className="mx-auto max-w-5xl px-4 pb-12 pt-3 sm:px-6" data-testid="page-community-creator-moments">
         <Link href="/community/moments" className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground" data-testid="link-back-to-moments">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to Moments

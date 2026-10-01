@@ -120,7 +120,7 @@ export default function CommunityScreen() {
   return (
     <CommunitySocialShell
       active={normalizedSection as CommunityNavKey}
-      onNavigate={(key) => setLocation(key === "home" ? "/" : `/community/${key}`)}
+      onNavigate={(key) => setLocation(key === "home" ? "/community" : `/community/${key}`)}
       onRoute={setLocation}
       onCreate={() => {
         if (normalizedSection === "home" || normalizedSection === "moments") {
