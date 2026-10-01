@@ -10,6 +10,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useServiceWorkerUpdate } from "@/hooks/useServiceWorkerUpdate";
+import { useBuildUpdateNotice } from "@/hooks/useBuildUpdateNotice";
 import { useAnimationPreference } from "@/hooks/useAnimationPreference";
 import { CIRCLE_ROUTE_ALIASES, SPIRAL_ROUTE_ALIASES } from "@/lib/spirals";
 
@@ -75,8 +76,8 @@ const CommunitySpiralsTab = lazy(() => import("@/components/CommunitySpiralsTab"
 
 function PageFallback() {
   return (
-    <div style={{ position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-background-primary, #0e1111)" }}>
-      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-text-tertiary, #444)", animation: "pulse 1.2s ease-in-out infinite" }} />
+    <div style={{ position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-background-primary, #08182b)", color: "#edf8ff" }}>
+      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#00cfff", animation: "pulse 1.2s ease-in-out infinite" }} />
     </div>
   );
 }
@@ -144,6 +145,7 @@ function FocusRefresh() { const queryClient = useQueryClient(); useEffect(() => 
 
 function AppContent() {
   useServiceWorkerUpdate();
+  useBuildUpdateNotice();
   const [isBuildRoute] = useRoute("/build");
   const pathname = typeof window !== "undefined" ? window.location.pathname : "";
   const normalizedPathname = pathname;

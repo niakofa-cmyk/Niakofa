@@ -5288,7 +5288,8 @@ components:
           type: ["integer", "null"]
         type:
           type: string
-          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, other, sos]
+          description: Spark/Moment targets (reported_community_story_id) require one of sexual_content, hate_or_harassment, self_harm, or copyright_or_ip. These reasons are not valid for other report targets.
+          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, sexual_content, hate_or_harassment, self_harm, copyright_or_ip, other, sos]
         description:
           type: string
           minLength: 10
@@ -5330,7 +5331,7 @@ components:
           type: ["string", "null"]
         type:
           type: string
-          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, other, sos]
+          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, sexual_content, hate_or_harassment, self_harm, copyright_or_ip, other, sos]
         description:
           type: string
         status:

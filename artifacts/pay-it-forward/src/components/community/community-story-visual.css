@@ -282,8 +282,8 @@
   .nia-story-source__choice,.nia-story-rail__skeleton span { animation:none; transition:none; }
 }
 
-/* Spark Studio starts in the same warm, clear visual language as Community;
-   the edit canvas stays dark so photos and videos remain the focus. */
+/* Keep the creator immersive and media-focused; final palette overrides below
+   apply the shared cyan-on-navy treatment. */
 .nia-story-composer-shell { background:var(--nia-story-viewer); }
 .nia-story-composer { background:var(--nia-story-viewer); color:var(--nia-story-text); }
 .nia-story-composer__canvas { background:var(--nia-story-viewer); }
@@ -339,3 +339,128 @@
   color:var(--nk-teal, #116a60);
 }
 .nia-story-composer--source .nia-story-source__foot { color:var(--nk-muted, #6e817c); }
+
+/* Spark / Moments controls use the shared cyan-on-navy identity. */
+.nk-community-v4 {
+  --nia-story-viewer: #08182b;
+  --nia-story-glass: rgb(8 24 43 / .82);
+  --nia-story-glass-strong: rgb(8 24 43 / .96);
+  --nia-story-border: rgb(237 248 255 / .2);
+  --nia-story-text: #edf8ff;
+  --nia-story-muted: rgb(237 248 255 / .72);
+  --nia-story-ring: conic-gradient(from 180deg, #00cfff, #66e4ff, #00a8d7, #00cfff);
+  --nia-story-surface: #0b1e34;
+  --nia-story-surface-raised: #10243a;
+}
+.nia-story-composer__title span,
+.nia-story-source__intro h2 em,
+.nia-story-destination-intro h2 em,
+.nia-story-destination-card > svg,
+.nia-story-destination-card button,
+.nia-story-text-preview span,
+.nia-story-music__tabs button.active { color: #00cfff; }
+.nia-story-source,
+.nia-story-composer--source,
+.nia-story-gallery,
+.nia-story-gallery-overlay > .nia-story-gallery {
+  background: #08182b;
+  color: #edf8ff;
+}
+.nia-story-source__choice,
+.nia-story-composer--source .nia-story-source__choice,
+.nia-story-gallery__header,
+.nia-story-gallery__footer {
+  border-color: #29445f;
+  background: #10243a;
+  color: #edf8ff;
+}
+.nia-story-source__choice > span,
+.nia-story-composer--source .nia-story-source__choice > span,
+.nia-story-source__choice:nth-child(2) > span,
+.nia-story-source__choice:nth-child(3) > span {
+  background: rgb(0 207 255 / .13);
+  color: #00cfff;
+}
+.nia-story-source__choice strong,
+.nia-story-gallery__header strong { color: #edf8ff; }
+.nia-story-source__choice small,
+.nia-story-gallery__header span,
+.nia-story-gallery__empty p { color: #9bb0c3; }
+.nia-story-source__resume,
+.nia-story-gallery__empty button,
+.nia-story-gallery__footer-button--primary,
+.nia-story-publish {
+  border-color: #00cfff;
+  background: #00cfff;
+  color: #08182b;
+}
+.nia-story-composer-shell,
+.nia-story-composer,
+.nia-story-composer__header,
+.nia-story-composer__footer { background-color: #08182b; }
+.nia-story-composer { color: #edf8ff; }
+.nia-story-composer__details,
+.nia-story-source,
+.nia-story-tool-dock { background-color: #10243a; }
+.nia-story-composer--source .nia-story-source__resume {
+  border-color: rgb(0 207 255 / .45);
+  background: rgb(0 207 255 / .12);
+  color: #00cfff;
+}
+.nia-story-gallery__empty svg { color: #00cfff; }
+.nia-story-source__foot,
+.nia-story-source__intro > p:last-child,
+.nia-story-destination-intro > p:last-child { color: #b2c4d4; }
+.nia-story-gallery__footer-button,
+.nia-story-multiple {
+  border-color: #29445f;
+  background: #10243a;
+  color: #edf8ff;
+}
+.nia-story-gallery__selected { background: #00cfff; color: #08182b; }
+.nia-story-composer button:focus-visible,
+.nia-story-composer select:focus-visible,
+.nia-story-composer textarea:focus-visible,
+.nia-story-gallery button:focus-visible,
+.nia-story-viewer button:focus-visible {
+  outline: 3px solid #00cfff;
+  outline-offset: 3px;
+}
+.nia-community-stories-shell {
+  --nia-story-gold: #00cfff;
+  --nia-story-green: #00cfff;
+}
+.nia-community-stories-mark {
+  color: #08182b;
+  background: radial-gradient(circle at 50% 42%, #edf8ff 0 13%, transparent 14%), conic-gradient(#00cfff 0 25%, #00a8d7 25% 50%, #00cfff 50% 75%, #66e4ff 75% 100%);
+}
+.nia-story-source__choice:nth-child(2) > span,
+.nia-story-composer--source .nia-story-source__choice:nth-child(2) > span,
+.nia-story-source__choice:nth-child(3) > span,
+.nia-story-composer--source .nia-story-source__choice:nth-child(3) > span {
+  background: rgb(0 207 255 / .13);
+  color: #00cfff;
+}
+.nia-story-composer-overlay,
+.nia-story-gallery-overlay { background: rgb(4 11 23 / .92); }
+.nia-story-composer-shell,
+.nia-story-composer,
+.nia-story-viewer { background-color: #08182b; }
+.nia-story-composer__header,
+.nia-story-composer__footer,
+.nia-story-composer__details,
+.nia-story-tool-dock,
+.nia-story-source { background-color: #10243a; }
+.nia-story-source { background: #10243a; }
+.nia-story-gallery__item { background: #10243a; }
+.nia-story-destination-card { border-color: #355571; }
+.nia-story-destination-card label,
+.nia-story-destination-card p,
+.nia-story-destination-card label span { color: #edf8ff; }
+.nia-story-destination-card select {
+  border-color: #355571;
+  background: #08182b;
+  color: #edf8ff;
+}
+.nia-story-tool--active { background: rgb(0 207 255 / .2); }
+.nia-story-composer__canvas { background: #08182b; }

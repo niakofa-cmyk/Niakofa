@@ -17,6 +17,10 @@ export const ReportType = {
   fake_profile: 'fake_profile',
   dangerous_behavior: 'dangerous_behavior',
   spam: 'spam',
+  sexual_content: 'sexual_content',
+  hate_or_harassment: 'hate_or_harassment',
+  self_harm: 'self_harm',
+  copyright_or_ip: 'copyright_or_ip',
   other: 'other',
   sos: 'sos',
 } as const;

@@ -16,6 +16,10 @@ type ReportType =
   | "fake_profile"
   | "dangerous_behavior"
   | "spam"
+  | "sexual_content"
+  | "hate_or_harassment"
+  | "self_harm"
+  | "copyright_or_ip"
   | "other";
 
 interface ReportOption {
@@ -35,6 +39,13 @@ const REPORT_OPTIONS: ReportOption[] = [
   { type: "fake_profile", label: "Fake or stolen profile", description: "Profile photo or details appear stolen or fabricated", icon: "🎭", severity: "medium" },
   { type: "spam", label: "Spam or bot", description: "Automated or repetitive fake activity", icon: "🤖", severity: "low" },
   { type: "other", label: "Other concern", description: "Something else that doesn't fit above", icon: "🏴", severity: "low" },
+];
+
+const SPARK_REPORT_OPTIONS: ReportOption[] = [
+  { type: "sexual_content", label: "Sexual content", description: "Nudity, sexual activity, or sexually explicit material", icon: "🔞", severity: "high" },
+  { type: "hate_or_harassment", label: "Hate or harassment", description: "Hateful, discriminatory, threatening, or targeted abusive content", icon: "⚠️", severity: "high" },
+  { type: "self_harm", label: "Self-harm", description: "Content that promotes, glorifies, or depicts self-harm", icon: "🫶", severity: "high" },
+  { type: "copyright_or_ip", label: "Copyright or intellectual property", description: "Content using protected work or someone else's intellectual property without permission", icon: "©️", severity: "medium" },
 ];
 
 interface Props {
@@ -60,7 +71,8 @@ export function ReportModal({ reportedUserId, reportedRequestId, reportedCommuni
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const selectedOption = REPORT_OPTIONS.find(o => o.type === selectedType);
+  const reportOptions = reportedCommunityStoryId ? SPARK_REPORT_OPTIONS : REPORT_OPTIONS;
+  const selectedOption = reportOptions.find(o => o.type === selectedType);
 
   const handleSubmit = async () => {
     if (!currentUser || !selectedType || description.trim().length < 10) {
@@ -136,7 +148,7 @@ export function ReportModal({ reportedUserId, reportedRequestId, reportedCommuni
                   Reporting: <span className="text-foreground font-semibold">{reportedName}</span>
                 </p>
               )}
-              {REPORT_OPTIONS.map(opt => (
+              {reportOptions.map(opt => (
                 <button
                   key={opt.type}
                   onClick={() => { setSelectedType(opt.type); setStep("details"); }}

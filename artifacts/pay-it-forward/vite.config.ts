@@ -115,6 +115,9 @@ export default defineConfig({
     "import.meta.env.VITE_MAPBOX_TOKEN": JSON.stringify(
       process.env.VITE_MAPBOX_TOKEN ?? process.env.MAPBOX_TOKEN ?? "",
     ),
+    "import.meta.env.VITE_BUILD_COMMIT": JSON.stringify(
+      process.env.RAILWAY_GIT_COMMIT_SHA?.trim() || "unknown",
+    ),
   },
   server: {
     port,

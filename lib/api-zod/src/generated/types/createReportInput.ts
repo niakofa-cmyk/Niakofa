@@ -17,6 +17,7 @@ export interface CreateReportInput {
   reported_griot_story_id?: number | null;
   /** @nullable */
   reported_community_story_id?: number | null;
+  /** Spark/Moment targets (reported_community_story_id) require one of sexual_content, hate_or_harassment, self_harm, or copyright_or_ip. These reasons are not valid for other report targets. */
   type: CreateReportInputType;
   /**
      * @minLength 10

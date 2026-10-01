@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Spark/Moment targets (reported_community_story_id) require one of sexual_content, hate_or_harassment, self_harm, or copyright_or_ip. These reasons are not valid for other report targets.
+ */
 export type CreateReportInputType = typeof CreateReportInputType[keyof typeof CreateReportInputType];
 
 
@@ -17,6 +20,10 @@ export const CreateReportInputType = {
   fake_profile: 'fake_profile',
   dangerous_behavior: 'dangerous_behavior',
   spam: 'spam',
+  sexual_content: 'sexual_content',
+  hate_or_harassment: 'hate_or_harassment',
+  self_harm: 'self_harm',
+  copyright_or_ip: 'copyright_or_ip',
   other: 'other',
   sos: 'sos',
 } as const;

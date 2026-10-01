@@ -17,35 +17,11 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { createMessageNotification } from "../lib/message-notifications";
+import { CreateReportBody } from "../lib/report-validation";
 import { viewerCanReadStory } from "./community-stories";
 
 const router = Router();
 const sellerUsersTable = alias(usersTable, "seller");
-
-const CreateReportBody = z.object({
-  reporter_id: z.number().int().positive(),
-  reported_user_id: z.number().int().positive().nullable().optional(),
-  reported_request_id: z.number().int().positive().nullable().optional(),
-  reported_griot_story_id: z.number().int().positive().nullable().optional(),
-  reported_community_story_id: z.number().int().positive().nullable().optional(),
-  type: z.enum([
-    "suspicious_request",
-    "suspicious_helper",
-    "fraud",
-    "harassment",
-    "fake_profile",
-    "dangerous_behavior",
-    "spam",
-    "other", "sos"]),
-  description: z.string().min(10).max(2000),
-}).refine(d => [
-  d.reported_user_id,
-  d.reported_request_id,
-  d.reported_griot_story_id,
-  d.reported_community_story_id,
-].filter(value => value !== undefined && value !== null).length === 1, {
-  message: "Specify exactly one report target",
-});
 
 const AdminReviewBody = z.object({
   status: z.enum([

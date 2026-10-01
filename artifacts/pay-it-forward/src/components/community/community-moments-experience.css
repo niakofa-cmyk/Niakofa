@@ -140,6 +140,59 @@
   .nia-moments > section[aria-label="Spark feed"] > div:first-child { flex-wrap: wrap; padding-block: .5rem; }
 }
 
+/* Moments viewing surfaces: let user media lead without carrying the old green tint. */
+.nia-moments > header,
+.nia-moments > section[aria-label="Creator analytics"],
+.nia-moments > section[aria-label="Spark feed"] {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+.nia-moments > header h1 { color: hsl(var(--foreground)); }
+.nia-moments [data-testid="list-moments-feed"],
+.nia-moments [data-moment-index],
+.nia-moments [data-moment-index] > img,
+.nia-moments [data-moment-index] > video,
+.nia-moments > section[aria-label="Spark feed"] {
+  background-color: #08182b;
+}
+.nia-moments [data-testid="list-moments-feed"] {
+  background:
+    radial-gradient(ellipse at 50% 18%, rgb(0 207 255 / .1), transparent 70%),
+    #08182b;
+}
+.nia-moments [data-moment-caption] {
+  background: linear-gradient(to top, rgb(8 24 43 / .97), rgb(8 24 43 / .62) 50%, transparent);
+}
+.nia-moments [data-moment-actions] {
+  border-color: rgb(237 248 255 / .2);
+  background: rgb(8 24 43 / .88);
+}
+.nia-moments [data-moment-actions] button[aria-pressed="true"] {
+  background: rgb(0 207 255 / .22);
+  color: #edf8ff;
+}
+.nia-moments [data-testid^="button-moment-sound-"],
+.nia-moments [data-testid^="button-moment-media-"] {
+  background: rgb(8 24 43 / .88);
+}
+.nia-moments [data-moment-filters] {
+  background: hsl(var(--muted));
+}
+.nia-moments [data-moment-filters] input,
+.nia-moments [data-moment-filters] select {
+  border-color: hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.nia-moments [data-moment-filters] button {
+  background: var(--nk-teal);
+  color: #08182b;
+}
+.nia-moments :is(button, a, input, select):focus-visible {
+  outline: 3px solid #00cfff;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .nia-moments *, .nia-moments *::before, .nia-moments *::after {
     scroll-behavior: auto !important;
@@ -314,3 +367,43 @@
     min-height: 0;
   }
 }
+
+/* Final palette pass follows the legacy compatibility rules above. */
+.nia-moments > header,
+.nia-moments > section[aria-label="Creator analytics"],
+.nia-moments > section[aria-label="Spark feed"] {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+.nia-moments > header h1 { color: hsl(var(--foreground)); }
+.nia-moments [data-testid="list-moments-feed"],
+.nia-moments [data-moment-index],
+.nia-moments [data-moment-index] > img,
+.nia-moments [data-moment-index] > video,
+.nia-moments > section[aria-label="Spark feed"] { background-color: #08182b; }
+.nia-moments [data-testid="list-moments-feed"] {
+  background: radial-gradient(ellipse at 50% 18%, rgb(0 207 255 / .1), transparent 70%), #08182b;
+}
+.nia-moments [data-moment-caption] {
+  background: linear-gradient(to top, rgb(8 24 43 / .97), rgb(8 24 43 / .62) 50%, transparent);
+}
+.nia-moments [data-moment-actions] {
+  border-color: rgb(237 248 255 / .2);
+  background: rgb(8 24 43 / .88);
+}
+.nia-moments [data-moment-actions] button[aria-pressed="true"] {
+  background: rgb(0 207 255 / .22);
+  color: #edf8ff;
+}
+.nia-moments [data-testid^="button-moment-sound-"],
+.nia-moments [data-testid^="button-moment-media-"] { background: rgb(8 24 43 / .88); }
+.nia-moments [data-moment-filters] { background: hsl(var(--muted)); }
+.nia-moments [data-moment-filters] input,
+.nia-moments [data-moment-filters] select {
+  border-color: hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.nia-moments [data-moment-filters] button { background: var(--nk-teal); color: #08182b; }
+.nia-moments :is(button, a, input, select):focus-visible { outline: 3px solid #00cfff; }

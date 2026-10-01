@@ -1,27 +1,27 @@
 .nia-profile {
-  --background: 218 36% 95%;
-  --foreground: 211 37% 18%;
-  --card: 210 33% 99%;
-  --card-foreground: 211 37% 18%;
-  --border: 212 25% 86%;
-  --input: 212 25% 86%;
-  --muted: 212 29% 91%;
-  --muted-foreground: 211 16% 45%;
-  --primary: 213 70% 47%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 212 29% 91%;
-  --secondary-foreground: 211 37% 18%;
-  --accent: 212 29% 91%;
-  --accent-foreground: 211 37% 18%;
-  --profile-ink: #182c42;
-  --profile-muted: #68788a;
-  --profile-paper: #f2f5f9;
-  --profile-card: #fbfcfe;
-  --profile-line: #dce4ed;
-  --profile-blue: #2674d9;
-  --profile-green: #198b61;
-  --profile-orange: #e97432;
-  --profile-pink: #d84483;
+  --background: 214 68% 10%;
+  --foreground: 202 100% 96%;
+  --card: 213 49% 14%;
+  --card-foreground: 202 100% 96%;
+  --border: 213 34% 25%;
+  --input: 213 34% 29%;
+  --muted: 213 43% 18%;
+  --muted-foreground: 210 25% 72%;
+  --primary: 191 100% 50%;
+  --primary-foreground: 214 68% 10%;
+  --secondary: 213 49% 19%;
+  --secondary-foreground: 202 100% 96%;
+  --accent: 213 49% 19%;
+  --accent-foreground: 202 100% 96%;
+  --profile-ink: #edf8ff;
+  --profile-muted: #9bb0c3;
+  --profile-paper: #08182b;
+  --profile-card: #10243a;
+  --profile-line: #29445f;
+  --profile-blue: #00cfff;
+  --profile-green: #00cfff;
+  --profile-orange: #f17862;
+  --profile-pink: #f17862;
   color: var(--profile-ink);
   background: var(--profile-paper);
   min-height: 100dvh;
@@ -34,29 +34,29 @@
 }
 
 .dark .nia-profile {
-  --background: 216 42% 10%;
-  --foreground: 214 28% 91%;
-  --card: 214 34% 15%;
-  --card-foreground: 214 28% 91%;
-  --border: 212 26% 25%;
-  --input: 212 26% 25%;
-  --muted: 212 27% 20%;
-  --muted-foreground: 213 17% 67%;
-  --primary: 213 89% 66%;
-  --primary-foreground: 216 42% 10%;
-  --secondary: 212 27% 20%;
-  --secondary-foreground: 214 28% 91%;
-  --accent: 212 27% 20%;
-  --accent-foreground: 214 28% 91%;
-  --profile-ink: #e7edf5;
-  --profile-muted: #a0adbd;
-  --profile-paper: #121d2a;
-  --profile-card: #1a2939;
-  --profile-line: #304255;
-  --profile-blue: #6ea9ff;
-  --profile-green: #58c796;
-  --profile-orange: #ff9a5e;
-  --profile-pink: #ff78af;
+  --background: 214 68% 10%;
+  --foreground: 202 100% 96%;
+  --card: 213 49% 14%;
+  --card-foreground: 202 100% 96%;
+  --border: 213 34% 25%;
+  --input: 213 34% 29%;
+  --muted: 213 43% 18%;
+  --muted-foreground: 210 25% 72%;
+  --primary: 191 100% 50%;
+  --primary-foreground: 214 68% 10%;
+  --secondary: 213 49% 19%;
+  --secondary-foreground: 202 100% 96%;
+  --accent: 213 49% 19%;
+  --accent-foreground: 202 100% 96%;
+  --profile-ink: #edf8ff;
+  --profile-muted: #9bb0c3;
+  --profile-paper: #08182b;
+  --profile-card: #10243a;
+  --profile-line: #29445f;
+  --profile-blue: #00cfff;
+  --profile-green: #00cfff;
+  --profile-orange: #f17862;
+  --profile-pink: #f17862;
 }
 
 .nia-profile * {
@@ -212,7 +212,7 @@
   --profile-ink: var(--nk-ink);
   --profile-muted: var(--nk-muted);
   --profile-paper: var(--nk-paper);
-  --profile-card: color-mix(in srgb, var(--nk-paper) 58%, #fff);
+  --profile-card: color-mix(in srgb, var(--nk-paper) 90%, var(--nk-teal));
   --profile-line: color-mix(in srgb, var(--nk-ink) 15%, var(--nk-paper));
   --profile-blue: var(--nk-teal);
   --profile-green: var(--nk-teal);
@@ -224,11 +224,11 @@
 }
 
 .dark .nia-profile {
-  --profile-ink: #f6f5ed;
-  --profile-muted: #bac8c1;
-  --profile-paper: #183d3b;
-  --profile-card: #204542;
-  --profile-line: #3c625c;
+  --profile-ink: #edf8ff;
+  --profile-muted: #9bb0c3;
+  --profile-paper: #08182b;
+  --profile-card: #10243a;
+  --profile-line: #29445f;
 }
 
 .nia-profile__masthead {
@@ -255,7 +255,7 @@
 }
 .nia-profile__tabs button[aria-current="page"] {
   background: var(--nk-teal);
-  color: #fffdf5;
+  color: #08182b;
 }
 .nia-profile :is(button, a, input, [role="switch"]):focus-visible {
   outline: 3px solid color-mix(in srgb, var(--nk-teal) 74%, transparent);

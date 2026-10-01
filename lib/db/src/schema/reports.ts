@@ -11,6 +11,10 @@ export const reportTypeEnum = pgEnum("report_type", [
   "commercial_pricing",
   "spam_or_solicitation",
   "unsafe_or_harmful",
+  "sexual_content",
+  "hate_or_harassment",
+  "self_harm",
+  "copyright_or_ip",
   "other",
   "sos",
 ]);

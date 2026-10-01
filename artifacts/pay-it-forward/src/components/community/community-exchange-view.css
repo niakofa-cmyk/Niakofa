@@ -162,3 +162,38 @@
   .nia-exchange [data-testid^="card-listing-"] { min-height: 11rem; }
   .nia-exchange [role="tablist"] { scroll-padding-inline: .25rem; }
 }
+
+/* Cyan-on-navy community Exchange surfaces */
+.nia-exchange > header {
+  border-color: color-mix(in srgb, var(--nk-teal) 38%, var(--nk-paper));
+  background:
+    radial-gradient(ellipse at 93% 4%, color-mix(in srgb, var(--nk-teal) 13%, transparent), transparent 38%),
+    linear-gradient(135deg, var(--nk-paper), color-mix(in srgb, var(--nk-teal) 5%, var(--nk-paper)) 72%);
+}
+.nia-exchange > header::after { background: var(--nk-teal); }
+.nia-exchange [data-testid^="card-listing-"],
+.nia-exchange [role="tablist"],
+.nia-exchange [role="dialog"][aria-modal="true"] > div.relative {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+}
+.nia-exchange [data-testid^="card-listing-"]:hover {
+  border-color: var(--nk-teal);
+}
+.nia-exchange [role="tab"][aria-selected="true"],
+.nia-exchange [data-testid="button-create-listing"],
+.nia-exchange [data-testid="button-empty-listings-action"] {
+  background: var(--nk-teal);
+  color: #08182b;
+}
+.nia-exchange [data-testid="status-exchange-notice"] {
+  border-color: color-mix(in srgb, var(--nk-teal) 45%, hsl(var(--border)));
+  background: color-mix(in srgb, var(--nk-teal) 10%, hsl(var(--card)));
+}
+.nia-exchange :is(input, select, textarea) {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+}
+.nia-exchange :is(button, a, input, select, textarea):focus-visible {
+  outline-color: #00cfff;
+}

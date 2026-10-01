@@ -284,21 +284,21 @@ export function SparkComposerChrome({
   children?: ReactNode;
 }) {
   return (
-    <div className={`nia-story-composer nia-story-composer--${step}`} role="dialog" aria-modal="true" aria-label="Spark Studio">
+    <div className={`nia-story-composer nia-story-composer--${step}`} role="dialog" aria-modal="true" aria-label="Create a Spark">
       <header className="nia-story-composer__header">
         <button className="nia-story-icon nia-story-icon--light" type="button" onClick={step === "source" ? onClose : () => onStep(step === "destination" ? "edit" : "source")} aria-label={step === "source" ? "Close Spark creator" : "Go back"}>
           {step === "source" ? <X size={22} /> : <ArrowLeft size={21} />}
         </button>
         <div className="nia-story-composer__title">
-          <strong>Spark Studio</strong>
-          <span>{step === "source" ? "01 / CHOOSE" : step === "edit" ? "02 / MAKE IT YOURS" : "03 / SHARE"}</span>
+          <strong>Create a Spark</strong>
+          <span>{step === "source" ? "Choose how to start" : step === "edit" ? "Edit your Spark" : "Choose audience"}</span>
         </div>
         {step !== "source" ? <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onSettings} aria-label="Spark settings"><Settings2 size={20} /></button> : <span className="nia-story-header-end" aria-hidden="true" />}
       </header>
 
       {step === "source" ? (
         <main className="nia-story-source">
-          <div className="nia-story-source__intro"><p className="nia-story-kicker">Spark Studio</p><h2>What’s happening<br /><em>around you?</em></h2><p>Capture a photo or video, or start with a few words.</p></div>
+          <div className="nia-story-source__intro"><p className="nia-story-kicker">Create a Spark</p><h2>What’s happening<br /><em>around you?</em></h2><p>Capture a photo or video, or start with a few words.</p></div>
           <div className="nia-story-source__choices">
             <button type="button" onClick={onCamera} className="nia-story-source__choice" data-testid="button-spark-camera"><span><Camera size={26} /></span><strong>Take a photo or video</strong><small>Capture a moment now</small><ArrowRight size={20} /></button>
             <button type="button" onClick={onGallery} className="nia-story-source__choice" data-testid="button-spark-gallery"><span><ImagePlus size={26} /></span><strong>Choose photos or videos</strong><small>Pick from your gallery</small><ArrowRight size={20} /></button>

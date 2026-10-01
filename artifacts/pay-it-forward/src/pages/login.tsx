@@ -169,7 +169,6 @@ function HelperProfileForm({
                     : "bg-card border-border text-muted-foreground hover:border-primary/40"
                 }`}
               >
-                <span>{skill.emoji}</span>
                 <span>{skill.label}</span>
               </button>
             ))}
@@ -228,7 +227,6 @@ function HelperProfileForm({
                     : "bg-card border-border text-muted-foreground hover:border-primary/40"
                 }`}
               >
-                <span>{v.emoji}</span>
                 <span>{v.label}</span>
               </button>
             ))}
@@ -1110,7 +1108,7 @@ export default function LoginScreen() {
               }}
               className="w-24 h-24 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 blur-md absolute inset-0"
             />
-            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 flex items-center justify-center shadow-[0_0_60px_rgba(0,150,255,0.4)] border border-white/20">
+            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-cyan-300 via-cyan-500 to-sky-700 flex items-center justify-center shadow-[0_0_34px_rgba(0,207,255,0.22)] border border-white/20">
               <Sparkles className="w-10 h-10 text-white drop-shadow-lg" />
             </div>
             {/* Orbiting dots */}
@@ -1126,7 +1124,7 @@ export default function LoginScreen() {
               transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
               className="absolute inset-[-8px]"
             >
-              <div className="w-1.5 h-1.5 rounded-full bg-purple-300 absolute bottom-0 left-1/4 shadow-[0_0_6px_rgba(200,100,255,0.8)]" />
+              <div className="w-1.5 h-1.5 rounded-full bg-cyan-200 absolute bottom-0 left-1/4 shadow-[0_0_6px_rgba(0,207,255,0.55)]" />
             </motion.div>
           </div>
 

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 const storyRoutes = readFileSync(new URL("../routes/community-stories.ts", import.meta.url), "utf8");
 const interactionRoutes = readFileSync(new URL("../routes/community-story-interactions.ts", import.meta.url), "utf8");
 const reportRoutes = readFileSync(new URL("../routes/reports.ts", import.meta.url), "utf8");
+const reportValidation = readFileSync(new URL("../lib/report-validation.ts", import.meta.url), "utf8");
 const storySchema = readFileSync(new URL("../../../../lib/db/src/schema/community-stories.ts", import.meta.url), "utf8");
 const reportSchema = readFileSync(new URL("../../../../lib/db/src/schema/reports.ts", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../../../../lib/db/migrations/0184_community_story_moderation.sql", import.meta.url), "utf8");
@@ -41,8 +42,10 @@ describe("Community Moment moderation contracts", () => {
 
   it("accepts reports only for visible, active Moments and prevents self/duplicate reports", () => {
     expect(reportSchema).toContain('integer("reported_community_story_id")');
-    expect(reportRoutes).toContain("reported_community_story_id: z.number().int().positive().nullable().optional()");
-    expect(reportRoutes).toContain("Specify exactly one report target");
+    expect(reportValidation).toContain("reported_community_story_id: z.number().int().positive().nullable().optional()");
+    expect(reportValidation).toContain("Specify exactly one report target");
+    expect(reportValidation).toContain("Choose a specific safety reason for a Spark or Moment report");
+    expect(reportValidation).toContain("This reason is only available for Spark or Moment reports");
     expect(reportRoutes).toContain("Cannot report your own Moment.");
     expect(reportRoutes).toContain("viewerCanReadStory(reporter_id, story)");
     expect(reportRoutes).toContain("You have already reported this Moment.");

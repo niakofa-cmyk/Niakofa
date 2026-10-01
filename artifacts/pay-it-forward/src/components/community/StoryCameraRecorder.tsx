@@ -1,8 +1,15 @@
 import { Camera, Flashlight, Pause, Play, RotateCcw, Square, SwitchCamera, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  STORY_CAMERA_MAX_ITEMS,
+  STORY_CAMERA_MAX_RECORDING_MS,
+  storyCameraConstraints,
+  storyCameraErrorMessage,
+  type StoryCameraFacingMode,
+} from "./story-camera-utils";
 
-const MAX_RECORDING_MS = 60_000;
-const MAX_ITEMS = 6;
+const MAX_RECORDING_MS = STORY_CAMERA_MAX_RECORDING_MS;
+const MAX_ITEMS = STORY_CAMERA_MAX_ITEMS;
 const recorderTypes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
 
 function recorderMimeType() {
@@ -15,15 +22,6 @@ function stopStream(stream: MediaStream | null) {
 
 function isDocumentHidden() {
   return document.visibilityState === "hidden";
-}
-
-function cameraErrorMessage(reason: unknown) {
-  const name = reason instanceof DOMException ? reason.name : "";
-  if (name === "NotAllowedError") return "Camera or microphone permission was denied. Allow access in your browser settings and try again.";
-  if (name === "NotFoundError") return "No camera or microphone was found on this device.";
-  if (name === "NotReadableError") return "The camera or microphone is in use by another app. Close it and try again.";
-  if (name === "OverconstrainedError") return "This device cannot use the requested camera. Try another camera.";
-  return reason instanceof Error ? reason.message : "Camera access could not be started. Try again.";
 }
 
 export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]) => void; onCancel: () => void }) {
@@ -56,13 +54,14 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
   const [clips, setClips] = useState<File[]>([]);
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
-  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [facingMode, setFacingMode] = useState<StoryCameraFacingMode>("user");
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [countdownEnabled, setCountdownEnabled] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [recordedVideoMs, setRecordedVideoMs] = useState(0);
   const [cameraSwitching, setCameraSwitching] = useState(false);
+  const [cameraRequesting, setCameraRequesting] = useState(false);
   phaseRef.current = phase;
   clipsRef.current = clips;
   fileRef.current = file;
@@ -192,11 +191,9 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
       return;
     }
     const requestId = ++requestIdRef.current;
+    setCameraRequesting(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facingMode }, width: { ideal: 1080 }, height: { ideal: 1920 } },
-        audio: false,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia(storyCameraConstraints(facingMode));
       if (disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current) {
         stopStream(stream);
         return;
@@ -224,10 +221,18 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
     } catch (reason) {
       if (requestId === requestIdRef.current) stopTracks();
       if (!disposedRef.current && !cancelledRef.current && requestId === requestIdRef.current) {
-        setError(cameraErrorMessage(reason));
+        setError(storyCameraErrorMessage(reason));
       }
+    } finally {
+      if (!disposedRef.current && requestId === requestIdRef.current) setCameraRequesting(false);
     }
   };
+
+  useEffect(() => {
+    void startCamera();
+    // Camera acquisition is intentionally started as soon as the choice mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const beginRecording = async () => {
     const stream = streamRef.current;
@@ -321,8 +326,8 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
         const nextClips = [...clipsRef.current, recorded];
         clipsRef.current = nextClips;
         setClips(nextClips);
+        stopTracks();
         setPhase("preview");
-        stopRecordingAudio();
       };
       elapsedRef.current = 0;
       isPausedRef.current = false;
@@ -337,7 +342,7 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
       stopRecordingAudio();
       if (!disposedRef.current && requestId === requestIdRef.current) {
         setPhase(streamRef.current ? "camera" : "idle");
-        setError(cameraErrorMessage(reason));
+        setError(storyCameraErrorMessage(reason));
       }
     } finally {
       recordingStartingRef.current = false;
@@ -446,8 +451,13 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
     setFile(fileRef.current);
     setElapsed(0);
     elapsedRef.current = 0;
-    setPhase(remaining.length ? "preview" : streamRef.current ? "camera" : "idle");
     setError("");
+    if (remaining.length) setPhase("preview");
+    else if (streamRef.current) setPhase("camera");
+    else {
+      setPhase("idle");
+      void startCamera();
+    }
   };
   const recordAnother = () => {
     fileRef.current = null;
@@ -456,7 +466,10 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
     elapsedRef.current = 0;
     setError("");
     if (streamRef.current) setPhase("camera");
-    else void startCamera();
+    else {
+      setPhase("idle");
+      void startCamera();
+    }
   };
   const flipCamera = async () => {
     if (cameraSwitching || phaseRef.current !== "camera" || !streamRef.current || !navigator.mediaDevices?.getUserMedia) return;
@@ -470,10 +483,7 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
     if (videoRef.current) videoRef.current.srcObject = null;
     setTorchSupported(false);
     setTorchOn(false);
-    const acquireCamera = (mode: "environment" | "user", exact: boolean) => navigator.mediaDevices.getUserMedia({
-      video: { facingMode: exact ? { exact: mode } : { ideal: mode }, width: { ideal: 1080 }, height: { ideal: 1920 } },
-      audio: false,
-    });
+    const acquireCamera = (mode: StoryCameraFacingMode, exact: boolean) => navigator.mediaDevices.getUserMedia(storyCameraConstraints(mode, exact));
     try {
       const nextStream = await acquireCamera(nextFacing, true);
       if (disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current) {
@@ -569,46 +579,48 @@ export function StoryCameraRecorder({ onUse, onCancel }: { onUse: (files: File[]
     ? `Preview ${clips.length} of ${MAX_ITEMS} clip${clips.length === 1 ? "" : "s"} · ${Math.ceil(recordedVideoMs / 1000)} / 60 video seconds recorded · ${Math.max(0, Math.ceil((MAX_RECORDING_MS - recordedVideoMs) / 1000))} seconds remaining`
     : recordingStatus}`;
 
-  return <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/95 p-4" role="dialog" aria-modal="true" aria-label="Spark camera" data-testid="dialog-spark-camera">
-    <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-slate-900 text-white">
-      <div className="relative aspect-[9/16] max-h-[70vh] bg-black">
+  return <div className="fixed inset-0 z-[70] h-[100dvh] w-screen overflow-hidden bg-[#08182b] text-white" role="dialog" aria-modal="true" aria-label="Spark camera" data-testid="dialog-spark-camera">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[#08182b]">
+      <div className="relative min-h-0 flex-1 bg-black">
         {phase !== "preview" && <video ref={videoRef} muted playsInline className="h-full w-full object-cover" aria-label="Live Spark camera preview" />}
         {phase === "preview" && file && (file.type.startsWith("video/")
           ? <video src={previewUrl} controls playsInline className="h-full w-full object-contain" aria-label="Recorded Spark video preview" />
           : <img src={previewUrl} alt="Captured Spark photo preview" className="h-full w-full object-contain" />)}
-        {phase === "countdown" && <span className="absolute inset-0 grid place-items-center text-7xl font-bold" aria-live="assertive">{countdown}</span>}
+        {phase === "countdown" && <span className="absolute inset-0 grid place-items-center text-7xl font-bold text-[#00cfff]" aria-live="assertive">{countdown}</span>}
       </div>
-      <div className="flex items-center justify-between gap-3 p-4">
-        <span aria-live="polite" data-testid="status-spark-camera">{statusText}</span>
-        <button type="button" onClick={cancel} aria-label="Cancel camera" data-testid="button-cancel-spark-camera"><X /></button>
+      <div className="flex shrink-0 items-center justify-between gap-3 bg-[#08182b]/95 px-4 py-3">
+        <span aria-live="polite" data-testid="status-spark-camera">{phase === "recording" ? "Recording · " : phase === "paused" ? "Recording paused · " : ""}{statusText}</span>
+        <button type="button" onClick={cancel} aria-label="Cancel camera" className="rounded-full p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-cancel-spark-camera"><X aria-hidden="true" /></button>
       </div>
       {phase === "preview" && clips.length > 0 && <ol className="flex gap-2 overflow-x-auto px-4 pb-2" aria-label="Recorded Spark clip sequence">
-        {clips.map((clip, index) => <li key={`${clip.name}-${index}`} className={`shrink-0 rounded-lg border px-3 py-1 text-xs ${clip === file ? "border-white bg-white/15" : "border-white/20"}`} aria-current={clip === file ? "step" : undefined} data-testid={`item-spark-clip-${index}`}>
+        {clips.map((clip, index) => <li key={`${clip.name}-${index}`} className={`shrink-0 rounded-lg border px-3 py-1 text-xs ${clip === file ? "border-[#00cfff] bg-[#00cfff]/15" : "border-white/20"}`} aria-current={clip === file ? "step" : undefined} data-testid={`item-spark-clip-${index}`}>
           {clip.type.startsWith("video/") ? "Video" : "Photo"} {index + 1}
         </li>)}
       </ol>}
-      {error && <p className="px-4 text-sm text-rose-300" role="alert" data-testid="error-spark-camera">{error}</p>}
-      <div className="flex justify-center gap-3 p-4">
-        {phase === "idle" && <button type="button" onClick={() => void startCamera()} className="rounded-full bg-white px-5 py-3 font-bold text-slate-900" data-testid="button-start-spark-camera">Start camera</button>}
+      {error && <p className="shrink-0 px-4 py-2 text-sm text-rose-300" role="alert" data-testid="error-spark-camera">{error}</p>}
+      <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 bg-[#08182b]/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+        {phase === "idle" && (cameraRequesting
+          ? <p role="status" aria-live="polite" className="text-sm text-white/80">Opening camera…</p>
+          : <button type="button" onClick={() => void startCamera()} className="rounded-full bg-[#00cfff] px-5 py-3 font-bold text-[#08182b] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-retry-spark-camera">Try camera again</button>)}
         {phase === "camera" && <>
-          <button type="button" onClick={capturePhoto} disabled={cameraSwitching || clips.length >= MAX_ITEMS} aria-label="Capture Spark photo" data-testid="button-capture-spark-photo"><Camera /> Photo</button>
-          <button type="button" onClick={startRecording} disabled={cameraSwitching || recordedVideoMs >= MAX_RECORDING_MS || clips.length >= MAX_ITEMS} className="rounded-full bg-white px-5 py-3 font-bold text-slate-900 disabled:opacity-50" data-testid="button-record-spark-video">Record video</button>
-          <button type="button" onClick={() => void flipCamera()} disabled={cameraSwitching} aria-label={`Switch to ${facingMode === "environment" ? "front" : "back"} camera`} data-testid="button-flip-spark-camera"><SwitchCamera /></button>
-          {torchSupported && <button type="button" onClick={() => void toggleTorch()} disabled={cameraSwitching} aria-label={torchOn ? "Turn torch off" : "Turn torch on"} aria-pressed={torchOn} data-testid="button-toggle-spark-torch"><Flashlight /></button>}
+          <button type="button" onClick={capturePhoto} disabled={cameraSwitching || clips.length >= MAX_ITEMS} aria-label="Capture Spark photo" className="rounded-full border border-white/30 px-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff] disabled:opacity-50" data-testid="button-capture-spark-photo"><Camera aria-hidden="true" /> Photo</button>
+          <button type="button" onClick={startRecording} disabled={cameraSwitching || recordedVideoMs >= MAX_RECORDING_MS || clips.length >= MAX_ITEMS} className="rounded-full bg-[#00cfff] px-5 py-3 font-bold text-[#08182b] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff] disabled:opacity-50" data-testid="button-record-spark-video">Record video</button>
+          <button type="button" onClick={() => void flipCamera()} disabled={cameraSwitching} aria-label={`Switch to ${facingMode === "environment" ? "front" : "back"} camera`} className="rounded-full border border-white/30 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff] disabled:opacity-50" data-testid="button-flip-spark-camera"><SwitchCamera aria-hidden="true" /></button>
+          {torchSupported && <button type="button" onClick={() => void toggleTorch()} disabled={cameraSwitching} aria-label={torchOn ? "Turn torch off" : "Turn torch on"} aria-pressed={torchOn} className="rounded-full border border-white/30 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff] disabled:opacity-50" data-testid="button-toggle-spark-torch"><Flashlight aria-hidden="true" /></button>}
           <label className="flex items-center gap-1 text-sm">
             <input type="checkbox" checked={countdownEnabled} disabled={cameraSwitching} onChange={(event) => setCountdownEnabled(event.target.checked)} data-testid="input-spark-countdown" />
             3-second countdown
           </label>
         </>}
         {(phase === "recording" || phase === "paused") && <>
-          <button type="button" onClick={phase === "recording" ? pause : resume} aria-label={phase === "recording" ? "Pause recording" : "Resume recording"} data-testid={phase === "recording" ? "button-pause-spark-camera" : "button-resume-spark-camera"}>{phase === "recording" ? <Pause /> : <Play />}</button>
-          <button type="button" onClick={finish} aria-label="Finish recording" data-testid="button-finish-spark-camera"><Square /></button>
+          <button type="button" onClick={phase === "recording" ? pause : resume} aria-label={phase === "recording" ? "Pause recording" : "Resume recording"} className="rounded-full border border-white/30 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid={phase === "recording" ? "button-pause-spark-camera" : "button-resume-spark-camera"}>{phase === "recording" ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}</button>
+          <button type="button" onClick={finish} aria-label="Finish recording" className="rounded-full border border-white/30 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-finish-spark-camera"><Square aria-hidden="true" /></button>
         </>}
-        {phase === "countdown" && <button type="button" onClick={() => { clearCountdown(); setPhase("camera"); }} className="rounded-xl border border-white/30 px-4 py-2 font-bold" data-testid="button-cancel-spark-countdown">Cancel countdown</button>}
+        {phase === "countdown" && <button type="button" onClick={() => { clearCountdown(); setPhase("camera"); }} className="rounded-xl border border-white/30 px-4 py-2 font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-cancel-spark-countdown">Cancel countdown</button>}
         {phase === "preview" && file && <>
-          <button type="button" onClick={retake} aria-label={`Retake Spark ${file.type.startsWith("video/") ? "video" : "photo"}`} data-testid="button-retake-spark-camera"><RotateCcw /> Retake</button>
-          {clips.length < MAX_ITEMS && <button type="button" onClick={recordAnother} className="rounded-xl border border-white/30 px-4 py-2 font-bold" data-testid="button-record-another-spark-clip">Add another clip</button>}
-          <button type="button" onClick={() => onUse(clips)} className="rounded-xl bg-white px-4 py-2 font-bold text-slate-900" data-testid="button-use-spark-camera">Add {clips.length} to Spark</button>
+          <button type="button" onClick={retake} aria-label={`Retake Spark ${file.type.startsWith("video/") ? "video" : "photo"}`} className="rounded-xl border border-white/30 px-4 py-2 font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-retake-spark-camera"><RotateCcw aria-hidden="true" /> Retake</button>
+          {clips.length < MAX_ITEMS && <button type="button" onClick={recordAnother} className="rounded-xl border border-white/30 px-4 py-2 font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-record-another-spark-clip">Add another clip</button>}
+          <button type="button" onClick={() => onUse(clips)} className="rounded-xl bg-[#00cfff] px-4 py-2 font-bold text-[#08182b] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white" data-testid="button-use-spark-camera">Add {clips.length} to Spark</button>
         </>}
       </div>
     </div>
