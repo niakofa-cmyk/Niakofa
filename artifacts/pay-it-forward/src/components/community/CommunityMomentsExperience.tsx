@@ -1,7 +1,7 @@
 import "./community-moments-experience.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getGetCommunityStoryMutedAuthorsQueryKey,
   getGetDirectMessageBlockedUsersQueryKey,
@@ -24,6 +24,7 @@ import { StoryShareSheet } from "./StoryShareSheet";
 import { validateMomentCompositionPlaybackUrl } from "./story-studio-publish";
 import { StoryElementLayer, storyEffectFilter, type StoryElement } from "./StoryElementLayer";
 import { KeepForMyFamilyDialog } from "@/components/family/KeepForMyFamilyDialog";
+import { getWeeklyMomentChallenge } from "@/lib/community-moments-collection-client";
 
 const MOMENTS_PAGE_SIZE = 12;
 
@@ -49,6 +50,15 @@ type MomentSpark = {
   audience: string;
   reply_enabled?: boolean;
   created_at: string | null;
+  expires_at?: string | null;
+  community_id?: number | null;
+  featured_at?: string | null;
+  archive_enabled?: boolean;
+  remix_enabled?: boolean;
+  response_to_story_id?: number | null;
+  response_to?: { story_id: number | null; author_user_id: number | null; author_name: string | null } | null;
+  challenge_key?: string | null;
+  challenge?: { key: string; prompt: string } | null;
   author: { id: number; name: string; avatar_url: string | null };
   media: MomentMedia[];
   moment_video?: {
@@ -182,8 +192,17 @@ export function CommunityMomentsExperience({
   const [keepMomentId, setKeepMomentId] = useState<number | null>(null);
   const [creatorInsightsOpen, setCreatorInsightsOpen] = useState(false);
   const [fullScreenOpen, setFullScreenOpen] = useState(false);
+  const [composerActionSignal, setComposerActionSignal] = useState(0);
+  const [responseToStoryId, setResponseToStoryId] = useState<number | null>(null);
+  const [challengeKey, setChallengeKey] = useState<string | null>(null);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+  const weeklyChallengeQuery = useQuery({
+    queryKey: ["community-moments-challenge", hubId],
+    queryFn: ({ signal }) => getWeeklyMomentChallenge(hubId, signal),
+    refetchOnMount: "always",
+    staleTime: 60_000,
+  });
   const mutedAuthorsQuery = useGetCommunityStoryMutedAuthors({
     query: {
       enabled: mutedAuthorsOpen,
@@ -202,6 +221,15 @@ export function CommunityMomentsExperience({
   const unmuteAuthorMutation = useUnmuteCommunityStoryAuthor({ request: { headers: authHeaders() } });
   const blockUserMutation = useBlockDirectMessageUser({ request: { headers: authHeaders() } });
   const unblockUserMutation = useUnblockDirectMessageUser({ request: { headers: authHeaders() } });
+
+  useEffect(() => {
+    const refresh = () => {
+      setRetry((value) => value + 1);
+      void queryClient.invalidateQueries({ queryKey: ["community-moments-challenge"] });
+    };
+    window.addEventListener("community-moments-refresh", refresh);
+    return () => window.removeEventListener("community-moments-refresh", refresh);
+  }, [queryClient]);
   const cardRefs = useRef(new Map<number, HTMLElement>());
   const feedRef = useRef<HTMLDivElement>(null);
   const feedPanelRef = useRef<HTMLElement | null>(null);
@@ -977,9 +1005,35 @@ export function CommunityMomentsExperience({
         </header>
       )}
 
+      <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-card p-4 sm:p-5" aria-label="Weekly community prompt" data-testid="card-weekly-moment-prompt">
+        <div className="absolute -right-8 -top-16 h-40 w-40 rounded-full bg-primary/10 blur-2xl" aria-hidden="true" />
+        {weeklyChallengeQuery.isLoading ? (
+          <div className="animate-pulse" role="status" aria-label="Loading this week’s prompt"><div className="h-3 w-28 rounded bg-muted" /><div className="mt-3 h-5 w-2/3 rounded bg-muted" /></div>
+        ) : weeklyChallengeQuery.isError ? (
+          <div className="relative flex flex-wrap items-center justify-between gap-3">
+            <div><p className="text-xs font-bold uppercase tracking-[.15em] text-primary">This week in your Community</p><p className="mt-1 text-sm text-muted-foreground">The weekly prompt could not load.</p></div>
+            <button type="button" onClick={() => void weeklyChallengeQuery.refetch()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold hover:bg-muted" data-testid="button-retry-weekly-prompt"><RefreshCw className="h-4 w-4" aria-hidden="true" /> Retry</button>
+          </div>
+        ) : weeklyChallengeQuery.data?.challenge ? (
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-xs font-bold uppercase tracking-[.15em] text-primary">A small prompt for the week</p>
+              <h2 className="mt-1 text-lg font-bold tracking-tight sm:text-xl" data-testid="text-weekly-prompt">{weeklyChallengeQuery.data.challenge.prompt}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{weeklyChallengeQuery.data.challenge.participant_count} neighbors have a live Moment for this prompt</p>
+            </div>
+            <button type="button" onClick={() => { setResponseToStoryId(null); setChallengeKey(weeklyChallengeQuery.data!.challenge.key); setComposerActionSignal((value) => value + 1); }} className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground transition hover:brightness-105" data-testid="button-join-weekly-prompt">Share your Moment</button>
+          </div>
+        ) : (
+          <p className="relative text-sm text-muted-foreground">There is no active community prompt right now.</p>
+        )}
+      </section>
+
       <CommunityStoryRail
         hubId={hubId}
         openComposerSignal={openComposerSignal}
+        additionalComposerSignal={composerActionSignal}
+        responseToStoryId={responseToStoryId}
+        challengeKey={challengeKey}
         compact
       />
 
@@ -1267,12 +1321,27 @@ export function CommunityMomentsExperience({
                       </div>
                     )}
                     <div data-moment-caption className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-5 pt-28 text-white sm:p-7 sm:pt-32">
-                      <p className="text-sm font-black">{spark.author.name || "A neighbor"}</p>
+                      <Link href={`/community/creators/${spark.author_user_id}`} className="pointer-events-auto inline-flex min-h-8 items-center rounded-md text-sm font-black underline decoration-white/45 underline-offset-4 hover:decoration-white focus:outline-none focus:ring-2 focus:ring-white" data-testid={`link-moment-creator-${spark.author_user_id}`}>{spark.author.name || "A neighbor"}<span className="sr-only">’s Moments</span></Link>
                       {spark.audience === "hub" && <p className="mt-1 text-xs font-semibold text-white/75">Hub Spark</p>}
+                      {spark.response_to && <p className="mt-1 max-w-xl text-xs font-semibold text-white/75" data-testid={`text-moment-response-attribution-${spark.id}`}>Video response to {spark.response_to.author_name || "a neighbor"}’s Moment</p>}
                       {spark.caption && media && <p className="mt-2 max-w-xl text-sm font-semibold leading-relaxed sm:text-base">{spark.caption}</p>}
                     </div>
                     {current && (
                       <div data-moment-tools className="absolute inset-x-4 bottom-4 z-20 flex flex-col items-end gap-2 text-white sm:inset-x-6">
+                        {spark.remix_enabled === true && spark.audience === "community" && spark.author_user_id !== viewerId && spark.media.some((item) => item.media_type === "video") && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResponseToStoryId(spark.id);
+                              setChallengeKey(null);
+                              setComposerActionSignal((value) => value + 1);
+                            }}
+                            className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-black/75 px-4 text-sm font-bold text-white shadow-xl backdrop-blur hover:bg-black/90"
+                            data-testid={`button-video-response-${spark.id}`}
+                          >
+                            <Play className="h-4 w-4" aria-hidden="true" /> Make a video response
+                          </button>
+                        )}
                         {replyOpenId === spark.id && (
                           <form
                             className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-2xl border border-white/15 bg-black/80 p-2 shadow-xl backdrop-blur"

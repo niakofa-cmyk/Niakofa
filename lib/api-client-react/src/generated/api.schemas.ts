@@ -138,6 +138,18 @@ export interface CommunityMomentElement {
 /**
  * @nullable
  */
+export type CommunityMomentResponseTo = {
+  /** @nullable */
+  story_id?: number | null;
+  /** @nullable */
+  author_user_id?: number | null;
+  /** @nullable */
+  author_name?: string | null;
+} | null;
+
+/**
+ * @nullable
+ */
 export type CommunityMomentCompositionManifest = { [key: string]: unknown } | null;
 
 export type CommunityMomentAuthor = {
@@ -162,6 +174,16 @@ export interface CommunityMoment {
   audience: CommunityMomentAudience;
   reply_enabled: boolean;
   /** @nullable */
+  featured_at: string | null;
+  remix_enabled: boolean;
+  /** @nullable */
+  response_to_story_id: number | null;
+  /** @nullable */
+  response_to: CommunityMomentResponseTo;
+  /** @nullable */
+  challenge_key: string | null;
+  archive_enabled?: boolean;
+  /** @nullable */
   created_at: string | null;
   /** @nullable */
   expires_at: string | null;
@@ -178,6 +200,44 @@ export interface CommunityMomentPage {
   expires_after_hours: 24;
   /** @nullable */
   next_cursor: string | null;
+}
+
+export type CommunityMomentCreatorPageCreator = {
+  id: number;
+  name: string;
+  /** @nullable */
+  avatar_url: string | null;
+};
+
+export interface CommunityMomentCreatorPage {
+  stories: CommunityMoment[];
+  creator: CommunityMomentCreatorPageCreator;
+  viewer_user_id: number;
+  /** @nullable */
+  next_cursor: string | null;
+}
+
+export type CommunityMomentChallengeResponseChallenge = {
+  key: string;
+  prompt: string;
+  starts_at: string;
+  ends_at: string;
+  /** @minimum 0 */
+  participant_count: number;
+};
+
+export interface CommunityMomentChallengeResponse {
+  challenge: CommunityMomentChallengeResponseChallenge;
+}
+
+export const CommunityMomentMutationResponseValue = {
+  ok: true,
+} as const;
+export type CommunityMomentMutationResponse = typeof CommunityMomentMutationResponseValue;
+
+export interface CommunityMomentSettingsResponse {
+  ok: true;
+  remix_enabled: boolean;
 }
 
 export type CommunityMomentCreateInputAudience = typeof CommunityMomentCreateInputAudience[keyof typeof CommunityMomentCreateInputAudience];
@@ -362,6 +422,12 @@ export interface CommunityMomentCreateInput {
   exchange_listing_id?: number;
   audience?: CommunityMomentCreateInputAudience;
   reply_enabled?: boolean;
+  archive_enabled?: boolean;
+  remix_enabled?: boolean;
+  /** @minimum 1 */
+  response_to_story_id?: number;
+  /** @pattern ^[a-z0-9][a-z0-9_-]{0,79}$ */
+  challenge_key?: string;
   /** @maxItems 6 */
   media?: CommunityMomentInlineMediaInput[];
   /**
@@ -2435,6 +2501,30 @@ limit?: number;
  * @maxLength 512
  */
 cursor?: string;
+};
+
+export type GetCommunityStoryCreatorViewParams = {
+view?: GetCommunityStoryCreatorViewView;
+};
+
+export type GetCommunityStoryCreatorViewView = typeof GetCommunityStoryCreatorViewView[keyof typeof GetCommunityStoryCreatorViewView];
+
+
+export const GetCommunityStoryCreatorViewView = {
+  published: 'published',
+  archive: 'archive',
+  featured: 'featured',
+} as const;
+
+export type GetCommunityStoryChallengeParams = {
+/**
+ * @minimum 1
+ */
+hubId?: number;
+};
+
+export type UpdateCommunityStorySettingsBody = {
+  remix_enabled: boolean;
 };
 
 export type GetCommunityCreatorWatchInsightsParams = {

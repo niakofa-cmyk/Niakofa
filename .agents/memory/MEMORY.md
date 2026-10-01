@@ -82,3 +82,4 @@
 - [PostgreSQL JSONB parameter typing](postgres-jsonb-parameter-typing.md) — cast ORM-bound values passed to polymorphic JSON builders, and verify prepared SQL against PostgreSQL.
 - [Bundled CLI entry guards](bundled-cli-entry-guards.md) — imported CLI helpers need an exact entrypoint guard; bundling can make URL-only checks run on API startup.
 - [Community composer signal scoping](community-composer-signal-scoping.md) — filter pending Create signals by the active tab during render; an effect reset happens too late for a newly mounted child.
+- [Moment retention and responses](niakofa-moment-retention.md) — private archives are opt-in and creator-deletable; featuring and attributed video responses must preserve Community boundaries.

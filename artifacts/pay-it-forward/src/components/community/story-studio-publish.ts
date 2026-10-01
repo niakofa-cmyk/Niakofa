@@ -180,6 +180,10 @@ export async function publishStudioMoment(input: {
   uploadedIds?: Array<number | null>;
   mediaEdits?: Array<{ index: number; coverTimeMs: number }>;
   cameraClipReel?: boolean;
+  archiveEnabled?: boolean;
+  remixEnabled?: boolean;
+  responseToStoryId?: number | null;
+  challengeKey?: string | null;
 }): Promise<number | null> {
   if (!validId(input.userId) || (input.hubId !== null && !validId(input.hubId))) throw new Error("Your account or Hub could not be confirmed.");
   if (input.audience === "hub" && input.hubId === null) throw new Error("Choose a Hub before sharing with Hub members.");
@@ -193,6 +197,12 @@ export async function publishStudioMoment(input: {
   }
   if (input.cameraClipReel && !isCameraClipReelSelection(input.files)) {
     throw new Error("A camera reel must contain only two to six camera-recorded videos.");
+  }
+  if (input.responseToStoryId && (!validId(input.responseToStoryId) || !input.files.length || input.files.some((file) => !file.type.startsWith("video/")))) {
+    throw new Error("A video response needs one or more video clips from the existing Studio.");
+  }
+  if (input.responseToStoryId && (input.audience !== "community" || input.hubId !== null)) {
+    throw new Error("Video responses are available for Community Moments only.");
   }
   if (musicFile) {
     const musicError = validateCommunityMomentFile(musicFile);
@@ -299,6 +309,10 @@ export async function publishStudioMoment(input: {
       ...(input.tags?.length ? { tags: input.tags } : {}),
       ...(mediaAccessibility.length ? { media_accessibility: mediaAccessibility } : {}),
       client_publish_id: input.clientPublishId,
+      archive_enabled: input.archiveEnabled ?? false,
+      remix_enabled: input.remixEnabled ?? false,
+      ...(input.responseToStoryId ? { response_to_story_id: input.responseToStoryId } : {}),
+      ...(input.challengeKey ? { challenge_key: input.challengeKey } : {}),
       composition_manifest: {
         version: 1,
         canvas: { width: 1080, height: 1920, aspect: "9:16" },

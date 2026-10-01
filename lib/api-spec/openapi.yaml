@@ -363,6 +363,150 @@ paths:
         "503":
           description: Media processing is temporarily unavailable
 
+  /community/stories/creator/{authorId}:
+    get:
+      operationId: getCommunityStoryCreatorView
+      tags: [community]
+      summary: List a creator's published Moments, private archive, or Community-featured Moments
+      parameters:
+        - name: authorId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: view
+          in: query
+          schema:
+            type: string
+            enum: [published, archive, featured]
+            default: published
+      responses:
+        "200":
+          description: Creator Moment page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentCreatorPage"
+        "404":
+          description: Creator or private archive is not available
+
+  /community/stories/challenge:
+    get:
+      operationId: getCommunityStoryChallenge
+      tags: [community]
+      summary: Get the current weekly Moment challenge and visible participation count
+      parameters:
+        - name: hubId
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Current challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentChallengeResponse"
+        "403":
+          description: Approved Hub membership required
+
+  /community/stories/{id}/archive:
+    post:
+      operationId: archiveCommunityStory
+      tags: [community]
+      summary: Retain a Moment in its creator-only archive until explicitly deleted
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Moment archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentMutationResponse"
+        "404":
+          description: Moment not found
+
+  /community/stories/{id}/featured:
+    post:
+      operationId: featureCommunityStory
+      tags: [community]
+      summary: Feature a Community Moment within its source Community and retain it in the creator archive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Moment featured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentMutationResponse"
+        "404":
+          description: Moment cannot be featured
+    delete:
+      operationId: unfeatureCommunityStory
+      tags: [community]
+      summary: Remove the Community feature while retaining the Moment in the creator archive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Moment unfeatured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentMutationResponse"
+
+  /community/stories/{id}/settings:
+    patch:
+      operationId: updateCommunityStorySettings
+      tags: [community]
+      summary: Update remix consent for an owned Moment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [remix_enabled]
+              additionalProperties: false
+              properties:
+                remix_enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Moment settings updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityMomentSettingsResponse"
+        "404":
+          description: Moment not found
+
   /community/stories/{id}/watch:
     post:
       operationId: recordCommunityStoryWatch
@@ -3242,9 +3386,72 @@ components:
         next_cursor:
           type: ["string", "null"]
 
+    CommunityMomentCreatorPage:
+      type: object
+      required: [stories, creator, viewer_user_id, next_cursor]
+      properties:
+        stories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityMoment"
+        creator:
+          type: object
+          required: [id, name, avatar_url]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            avatar_url:
+              type: ["string", "null"]
+        viewer_user_id:
+          type: integer
+        next_cursor:
+          type: ["string", "null"]
+
+    CommunityMomentChallengeResponse:
+      type: object
+      required: [challenge]
+      properties:
+        challenge:
+          type: object
+          required: [key, prompt, starts_at, ends_at, participant_count]
+          properties:
+            key:
+              type: string
+            prompt:
+              type: string
+            starts_at:
+              type: string
+              format: date-time
+            ends_at:
+              type: string
+              format: date-time
+            participant_count:
+              type: integer
+              minimum: 0
+
+    CommunityMomentMutationResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: true
+
+    CommunityMomentSettingsResponse:
+      type: object
+      required: [ok, remix_enabled]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        remix_enabled:
+          type: boolean
+
     CommunityMoment:
       type: object
-      required: [id, author_user_id, hub_id, exchange_listing_id, community_id, caption, tags, audience, reply_enabled, created_at, expires_at, composition_manifest, author, media, elements]
+      required: [id, author_user_id, hub_id, exchange_listing_id, community_id, caption, tags, audience, reply_enabled, featured_at, remix_enabled, response_to_story_id, response_to, challenge_key, created_at, expires_at, composition_manifest, author, media, elements]
       properties:
         id:
           type: integer
@@ -3266,6 +3473,26 @@ components:
           type: string
           enum: [community, hub]
         reply_enabled:
+          type: boolean
+        featured_at:
+          type: ["string", "null"]
+          format: date-time
+        remix_enabled:
+          type: boolean
+        response_to_story_id:
+          type: ["integer", "null"]
+        response_to:
+          type: ["object", "null"]
+          properties:
+            story_id:
+              type: ["integer", "null"]
+            author_user_id:
+              type: ["integer", "null"]
+            author_name:
+              type: ["string", "null"]
+        challenge_key:
+          type: ["string", "null"]
+        archive_enabled:
           type: boolean
         created_at:
           type: ["string", "null"]
@@ -3376,6 +3603,18 @@ components:
         reply_enabled:
           type: boolean
           default: true
+        archive_enabled:
+          type: boolean
+          default: false
+        remix_enabled:
+          type: boolean
+          default: false
+        response_to_story_id:
+          type: integer
+          minimum: 1
+        challenge_key:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,79}$"
         media:
           type: array
           maxItems: 6

@@ -281,6 +281,16 @@ export const GetCommunityStoriesResponse = zod.object({
   "tags": zod.array(zod.string()),
   "audience": zod.enum(['community', 'hub']),
   "reply_enabled": zod.boolean(),
+  "featured_at": zod.coerce.date().nullable(),
+  "remix_enabled": zod.boolean(),
+  "response_to_story_id": zod.number().int().nullable(),
+  "response_to": zod.object({
+  "story_id": zod.number().int().nullish(),
+  "author_user_id": zod.number().int().nullish(),
+  "author_name": zod.string().nullish()
+}).nullable(),
+  "challenge_key": zod.string().nullable(),
+  "archive_enabled": zod.boolean().optional(),
   "created_at": zod.coerce.date().nullable(),
   "expires_at": zod.coerce.date().nullable(),
   "composition_manifest": zod.record(zod.string(), zod.unknown()).nullable(),
@@ -330,6 +340,9 @@ export const createCommunityStoryBodyTagsMax = 10;
 
 export const createCommunityStoryBodyAudienceDefault = `community`;
 export const createCommunityStoryBodyReplyEnabledDefault = true;
+export const createCommunityStoryBodyArchiveEnabledDefault = false;
+export const createCommunityStoryBodyRemixEnabledDefault = false;
+export const createCommunityStoryBodyChallengeKeyRegExp = new RegExp('^[a-z0-9][a-z0-9_-]{0,79}$');
 export const createCommunityStoryBodyMediaItemDataUrlMax = 18000000;
 
 export const createCommunityStoryBodyMediaItemMimeTypeMax = 100;
@@ -438,6 +451,10 @@ export const CreateCommunityStoryBody = zod.object({
   "exchange_listing_id": zod.number().int().min(1).optional(),
   "audience": zod.enum(['community', 'hub']).default(createCommunityStoryBodyAudienceDefault),
   "reply_enabled": zod.boolean().default(createCommunityStoryBodyReplyEnabledDefault),
+  "archive_enabled": zod.boolean().default(createCommunityStoryBodyArchiveEnabledDefault),
+  "remix_enabled": zod.boolean().default(createCommunityStoryBodyRemixEnabledDefault),
+  "response_to_story_id": zod.number().int().min(1).optional(),
+  "challenge_key": zod.string().regex(createCommunityStoryBodyChallengeKeyRegExp).optional(),
   "media": zod.array(zod.object({
   "data_url": zod.string().max(createCommunityStoryBodyMediaItemDataUrlMax),
   "media_type": zod.enum(['photo', 'video']),
@@ -499,6 +516,173 @@ export const CreateCommunityStoryResponse = zod.object({
   "status": zod.enum(['pending', 'published']),
   "expires_at": zod.coerce.date()
 })
+})
+
+
+/**
+ * @summary List a creator's published Moments, private archive, or Community-featured Moments
+ */
+
+
+
+export const GetCommunityStoryCreatorViewParams = zod.object({
+  "authorId": zod.coerce.number().int().min(1)
+})
+
+export const getCommunityStoryCreatorViewQueryViewDefault = `published`;
+
+export const GetCommunityStoryCreatorViewQueryParams = zod.object({
+  "view": zod.enum(['published', 'archive', 'featured']).default(getCommunityStoryCreatorViewQueryViewDefault)
+})
+
+export const GetCommunityStoryCreatorViewResponse = zod.object({
+  "stories": zod.array(zod.object({
+  "id": zod.number().int(),
+  "author_user_id": zod.number().int(),
+  "hub_id": zod.number().int().nullable(),
+  "exchange_listing_id": zod.number().int().nullable(),
+  "community_id": zod.number().int().nullable(),
+  "caption": zod.string().nullable(),
+  "tags": zod.array(zod.string()),
+  "audience": zod.enum(['community', 'hub']),
+  "reply_enabled": zod.boolean(),
+  "featured_at": zod.coerce.date().nullable(),
+  "remix_enabled": zod.boolean(),
+  "response_to_story_id": zod.number().int().nullable(),
+  "response_to": zod.object({
+  "story_id": zod.number().int().nullish(),
+  "author_user_id": zod.number().int().nullish(),
+  "author_name": zod.string().nullish()
+}).nullable(),
+  "challenge_key": zod.string().nullable(),
+  "archive_enabled": zod.boolean().optional(),
+  "created_at": zod.coerce.date().nullable(),
+  "expires_at": zod.coerce.date().nullable(),
+  "composition_manifest": zod.record(zod.string(), zod.unknown()).nullable(),
+  "author": zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "avatar_url": zod.string().nullable()
+}),
+  "media": zod.array(zod.object({
+  "id": zod.number().int(),
+  "media_type": zod.enum(['photo', 'video', 'audio']),
+  "mime_type": zod.string(),
+  "duration_ms": zod.number().int().nullable(),
+  "width": zod.number().int().nullable(),
+  "height": zod.number().int().nullable(),
+  "alt_text": zod.string().nullable(),
+  "captions_vtt": zod.string().nullable(),
+  "media_url": zod.string()
+})),
+  "elements": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "payload": zod.record(zod.string(), zod.unknown()),
+  "position_x": zod.number(),
+  "position_y": zod.number(),
+  "scale": zod.number(),
+  "rotation": zod.number(),
+  "z_index": zod.number().int()
+}))
+})),
+  "creator": zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "avatar_url": zod.string().nullable()
+}),
+  "viewer_user_id": zod.number().int(),
+  "next_cursor": zod.string().nullable()
+})
+
+
+/**
+ * @summary Get the current weekly Moment challenge and visible participation count
+ */
+
+
+
+export const GetCommunityStoryChallengeQueryParams = zod.object({
+  "hubId": zod.coerce.number().int().min(1).optional()
+})
+
+export const getCommunityStoryChallengeResponseChallengeParticipantCountMin = 0;
+
+
+
+export const GetCommunityStoryChallengeResponse = zod.object({
+  "challenge": zod.object({
+  "key": zod.string(),
+  "prompt": zod.string(),
+  "starts_at": zod.coerce.date(),
+  "ends_at": zod.coerce.date(),
+  "participant_count": zod.number().int().min(getCommunityStoryChallengeResponseChallengeParticipantCountMin)
+})
+})
+
+
+/**
+ * @summary Retain a Moment in its creator-only archive until explicitly deleted
+ */
+
+
+
+export const ArchiveCommunityStoryParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const ArchiveCommunityStoryResponse = zod.object({
+  "ok": zod.literal(true)
+})
+
+
+/**
+ * @summary Feature a Community Moment within its source Community and retain it in the creator archive
+ */
+
+
+
+export const FeatureCommunityStoryParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const FeatureCommunityStoryResponse = zod.object({
+  "ok": zod.literal(true)
+})
+
+
+/**
+ * @summary Remove the Community feature while retaining the Moment in the creator archive
+ */
+
+
+
+export const UnfeatureCommunityStoryParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const UnfeatureCommunityStoryResponse = zod.object({
+  "ok": zod.literal(true)
+})
+
+
+/**
+ * @summary Update remix consent for an owned Moment
+ */
+
+
+
+export const UpdateCommunityStorySettingsParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const UpdateCommunityStorySettingsBody = zod.object({
+  "remix_enabled": zod.boolean()
+})
+
+export const UpdateCommunityStorySettingsResponse = zod.object({
+  "ok": zod.literal(true),
+  "remix_enabled": zod.boolean()
 })
 
 

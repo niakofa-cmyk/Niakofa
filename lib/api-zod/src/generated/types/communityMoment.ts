@@ -10,6 +10,7 @@ import type { CommunityMomentAuthor } from './communityMomentAuthor';
 import type { CommunityMomentCompositionManifest } from './communityMomentCompositionManifest';
 import type { CommunityMomentElement } from './communityMomentElement';
 import type { CommunityMomentMedia } from './communityMomentMedia';
+import type { CommunityMomentResponseTo } from './communityMomentResponseTo';
 
 export interface CommunityMoment {
   id: number;
@@ -25,6 +26,16 @@ export interface CommunityMoment {
   tags: string[];
   audience: CommunityMomentAudience;
   reply_enabled: boolean;
+  /** @nullable */
+  featured_at: Date | null;
+  remix_enabled: boolean;
+  /** @nullable */
+  response_to_story_id: number | null;
+  /** @nullable */
+  response_to: CommunityMomentResponseTo;
+  /** @nullable */
+  challenge_key: string | null;
+  archive_enabled?: boolean;
   /** @nullable */
   created_at: Date | null;
   /** @nullable */

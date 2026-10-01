@@ -103,11 +103,17 @@ export function CommunityStoryRail({
   openComposerSignal,
   openStoryId = null,
   compact = false,
+  additionalComposerSignal = 0,
+  responseToStoryId = null,
+  challengeKey = null,
 }: {
   hubId: number | null;
   openComposerSignal?: number;
   openStoryId?: number | null;
   compact?: boolean;
+  additionalComposerSignal?: number;
+  responseToStoryId?: number | null;
+  challengeKey?: string | null;
 }) {
   const [location, navigate] = useLocation();
   const { currentUser } = useAppContext();
@@ -118,12 +124,21 @@ export function CommunityStoryRail({
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [responseTargetId, setResponseTargetId] = useState<number | null>(null);
+  const [activeChallengeKey, setActiveChallengeKey] = useState<string | null>(null);
+  const [archiveEnabled, setArchiveEnabled] = useState(false);
+  const [remixEnabled, setRemixEnabled] = useState(false);
   useEffect(() => {
     // The page-level signal starts at 0, so a positive value is always an
     // explicit Create → Story action. This also works when the rail is
     // mounted after switching from another Community tab.
-    if (openComposerSignal && openComposerSignal > 0) setComposerOpen(true);
-  }, [openComposerSignal]);
+    if ((openComposerSignal ?? 0) + additionalComposerSignal > 0) {
+      setResponseTargetId(responseToStoryId);
+      setActiveChallengeKey(challengeKey);
+      setAudience(responseToStoryId ? "community" : (hubId ? "hub" : "community"));
+      setComposerOpen(true);
+    }
+  }, [additionalComposerSignal, challengeKey, hubId, openComposerSignal, responseToStoryId]);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [mediaIndex, setMediaIndex] = useState(0);
   const [previewFileIndex, setPreviewFileIndex] = useState(0);
@@ -421,6 +436,10 @@ export function CommunityStoryRail({
     setEffect("none");
     setTrimPreview({});
     setCoverTimes({});
+    setResponseTargetId(null);
+    setActiveChallengeKey(null);
+    setArchiveEnabled(false);
+    setRemixEnabled(false);
     setExchangeListingId(empty.listingId);
     setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
     setTextColor("#ffffff");
@@ -808,6 +827,10 @@ export function CommunityStoryRail({
     setUploadedIds([]);
     setTrimPreview({});
     setCoverTimes({});
+    setResponseTargetId(null);
+    setActiveChallengeKey(null);
+    setArchiveEnabled(false);
+    setRemixEnabled(false);
   };
 
   const closeComposer = useCallback(() => {
@@ -870,6 +893,12 @@ export function CommunityStoryRail({
       if (signatureRef.current !== signature) throw new Error("The Spark changed while preparing it. Review the draft and try again.");
       const selectedIndexes = [...new Set(gallerySelection)].filter((index) => Number.isInteger(index) && index >= 0 && index < files.length);
       const publishFiles = selectedStudioFiles(files, selectedIndexes);
+      if (responseTargetId && (!publishFiles.length || publishFiles.some((file) => !file.type.startsWith("video/")))) {
+        throw new Error("Choose a video clip in this Studio to make a response.");
+      }
+      if (responseTargetId && (audience !== "community" || exchangeListingId)) {
+        throw new Error("Video responses are shared with the same Community, not a Hub or Exchange listing.");
+      }
       if (musicFile && exchangeListingId) {
         throw new Error("Background music is supported for Community and Hub Moments, not Exchange listing Sparks yet.");
       }
@@ -1018,6 +1047,10 @@ export function CommunityStoryRail({
         signal: controller.signal,
         uploadedIds: selectedIndexes.map((index) => uploadedIdsRef.current[index]),
         cameraClipReel: validCameraClipReel,
+        archiveEnabled,
+        remixEnabled,
+        responseToStoryId: responseTargetId,
+        challengeKey: activeChallengeKey,
         mediaEdits: selectedIndexes.flatMap((fileIndex, publishIndex) => coverTimes[fileIndex] !== undefined
           ? [{ index: publishIndex, coverTimeMs: coverTimes[fileIndex] }]
           : []),
@@ -1057,6 +1090,7 @@ export function CommunityStoryRail({
         onStatus: (status, percent) => { setPublishStatus(status); setPublishProgress(percent); },
       });
       trackCommunityContent("community_spark_created", hubId === null ? {} : { hub_id: hubId });
+      window.dispatchEvent(new Event("community-moments-refresh"));
       draftGenerationRef.current++;
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
       await draftQueueRef.current.catch(() => {});
@@ -1413,7 +1447,7 @@ export function CommunityStoryRail({
       {composerOpen && (!draftReady || activeScopeRef.current !== scopeKey) && <div className="nia-story-composer-overlay" role="status" aria-live="polite"><div className="nia-story-composer-shell p-8 text-center text-white">Recovering your saved Spark…</div></div>}
       {composerOpen && draftReady && activeScopeRef.current === scopeKey && (
         <div className="nia-story-composer-overlay">
-          <input ref={galleryInput} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={onFileChange} aria-label="Choose Spark media" disabled={trimming} />
+          <input ref={galleryInput} type="file" accept={responseTargetId ? "video/*" : "image/*,video/*"} multiple className="sr-only" onChange={onFileChange} aria-label={responseTargetId ? "Choose video response clips" : "Choose Spark media"} disabled={trimming} />
           <div className="nia-story-composer-shell">
             {studioStep === "source" && exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-slate-900 px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
             <SparkComposerChrome
@@ -1464,11 +1498,17 @@ export function CommunityStoryRail({
                 {publishing && publishStatus && <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs"><p>{publishStatus}{publishProgress ? ` ${publishProgress}%` : ""}</p>{publishProgress > 0 && <progress aria-label="Spark upload progress" value={publishProgress} max={100} className="mt-2 w-full" />}<button type="button" className="mt-2 min-h-10 rounded-lg border border-white/20 px-3 font-bold" onClick={() => publishControllerRef.current?.abort()}>Cancel upload</button></div>}
                 {studioStep === "destination" ? <>
                   <div className="nia-story-destination-intro"><p className="nia-story-kicker">The final step</p><h2>Where should<br /><em>this Spark land?</em></h2><p>Choose who gets to see your moment before it goes live.</p></div>
+                    {responseTargetId && <p className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs text-white/85" role="status" data-testid="status-video-response-context">Video response to Moment {responseTargetId}. This will be shared with your Community using the existing Studio upload and review flow.</p>}
+                    {activeChallengeKey && <p className="mb-3 rounded-xl border border-secondary/30 bg-secondary/10 p-3 text-xs text-white/85" role="status" data-testid="status-weekly-challenge-context">Your Spark will join this week’s community prompt.</p>}
                   <div className="nia-story-destination-card">
                     <Users size={22} />
                     <div><label htmlFor="story-audience">Your audience</label><p>{audience === "hub" ? "Only members of this Hub" : "Your approved community"}</p></div>
-                    <select id="story-audience" value={audience} onChange={(event) => { setAudience(event.target.value as "community" | "hub"); uploadedIdsRef.current = []; publishAssetIdsRef.current = []; setUploadedIds([]); }} disabled={!hubId || publishing} aria-label="Spark audience"><option value="community">Community</option>{hubId && <option value="hub">This Hub</option>}</select>
+                    <select id="story-audience" value={audience} onChange={(event) => { setAudience(event.target.value as "community" | "hub"); uploadedIdsRef.current = []; publishAssetIdsRef.current = []; setUploadedIds([]); }} disabled={!hubId || publishing || Boolean(responseTargetId)} aria-label="Spark audience"><option value="community">Community</option>{hubId && <option value="hub">This Hub</option>}</select>
                   </div>
+                  {!exchangeListingId && <div className="nia-story-destination-card nia-story-destination-card__full">
+                    <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={archiveEnabled} onChange={(event) => setArchiveEnabled(event.target.checked)} disabled={publishing} className="h-4 w-4 accent-teal-500" data-testid="input-archive-moment-setting" /><span><strong>Keep a private archive copy</strong><small className="mt-0.5 block text-xs text-white/60">Only you can browse Moments you choose to save.</small></span></label>
+                    <label className="mt-3 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={remixEnabled} onChange={(event) => setRemixEnabled(event.target.checked)} disabled={publishing} className="h-4 w-4 accent-teal-500" data-testid="input-remix-moment-setting" /><span><strong>Allow video responses</strong><small className="mt-0.5 block text-xs text-white/60">Neighbors can add a short, kind video response in your Community.</small></span></label>
+                  </div>}
                   {selectedVideo && <div className="nia-story-destination-card nia-story-destination-card--listing">
                     <div className="nia-story-destination-card__full"><label htmlFor="spark-exchange-listing">Connect an Exchange listing <span>(optional)</span></label><p>Only an active listing you own can be linked. The server checks eligibility.</p>
                       {exchangeListingsError && <p role="alert">{exchangeListingsError} <button type="button" onClick={() => { setExchangeListingsLoading(true); setExchangeListingsError(""); getExchangeListings({ mine: true, limit: 50 }).then((result) => setOwnedExchangeListings((result.listings ?? []).filter((listing) => listing.status === "active"))).catch((reason: unknown) => setExchangeListingsError(reason instanceof Error ? reason.message : "Could not load listings.")).finally(() => setExchangeListingsLoading(false)); }}>Retry</button></p>}

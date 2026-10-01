@@ -33,6 +33,12 @@ export interface CommunityMomentCreateInput {
   exchange_listing_id?: number;
   audience?: CommunityMomentCreateInputAudience;
   reply_enabled?: boolean;
+  archive_enabled?: boolean;
+  remix_enabled?: boolean;
+  /** @minimum 1 */
+  response_to_story_id?: number;
+  /** @pattern ^[a-z0-9][a-z0-9_-]{0,79}$ */
+  challenge_key?: string;
   /** @maxItems 6 */
   media?: CommunityMomentInlineMediaInput[];
   /**

@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   primaryKey,
   check,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
@@ -37,6 +38,13 @@ export const communityStoriesTable = pgTable("community_stories", {
   audience: text("audience").notNull().default("community"),
   status: text("status").notNull().default("published"),
   reply_enabled: boolean("reply_enabled").notNull().default(true),
+  archive_enabled: boolean("archive_enabled").notNull().default(false),
+  remix_enabled: boolean("remix_enabled").notNull().default(false),
+  featured_at: timestamp("featured_at", { withTimezone: true }),
+  response_to_story_id: integer("response_to_story_id").references((): AnyPgColumn => communityStoriesTable.id, { onDelete: "set null" }),
+  response_to_author_user_id: integer("response_to_author_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  response_to_author_name: varchar("response_to_author_name", { length: 120 }),
+  challenge_key: varchar("challenge_key", { length: 80 }),
   composition_manifest: jsonb("composition_manifest").$type<StoryCompositionManifest | null>(),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -49,6 +57,9 @@ export const communityStoriesTable = pgTable("community_stories", {
   index("community_stories_tags_gin_idx").using("gin", table.tags),
   index("community_stories_caption_trgm_idx").using("gin", sql`coalesce(${table.caption}, '') gin_trgm_ops`),
   index("community_stories_exchange_listing_idx").on(table.exchange_listing_id, table.created_at),
+  index("community_stories_archive_idx").on(table.author_user_id, table.archive_enabled, table.created_at),
+  index("community_stories_featured_idx").on(table.community_id, table.featured_at),
+  index("community_stories_response_idx").on(table.response_to_story_id),
   uniqueIndex("community_stories_author_client_publish_uidx")
     .on(table.author_user_id, table.client_publish_id)
     .where(sql`${table.client_publish_id} IS NOT NULL`),

@@ -26,6 +26,12 @@ export type CommunityStory = {
   reply_enabled: boolean;
   created_at: string | null;
   expires_at: string | null;
+  featured_at?: string | null;
+  archive_enabled?: boolean;
+  remix_enabled?: boolean;
+  response_to_story_id?: number | null;
+  challenge_key?: string | null;
+  challenge?: { key: string; prompt: string } | null;
   author: { id: number; name: string; avatar_url: string | null };
   media: StoryMedia[];
   moment_video?: MomentVideo | null;

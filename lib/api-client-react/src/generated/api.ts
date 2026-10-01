@@ -46,9 +46,13 @@ import type {
   CommunityCreatorWatchInsights,
   CommunityMediaPage,
   CommunityMediaSaveResponse,
+  CommunityMomentChallengeResponse,
   CommunityMomentCreateInput,
+  CommunityMomentCreatorPage,
+  CommunityMomentMutationResponse,
   CommunityMomentPage,
   CommunityMomentPublishResponse,
+  CommunityMomentSettingsResponse,
   CommunityStoryInteractions,
   CommunityStoryMuteResponse,
   CommunityStoryMutedAuthors,
@@ -76,6 +80,8 @@ import type {
   GetCommunityCreatorWatchInsightsParams,
   GetCommunityHubMediaParams,
   GetCommunityStoriesParams,
+  GetCommunityStoryChallengeParams,
+  GetCommunityStoryCreatorViewParams,
   GetFamilyStoriesParams,
   GetGriotStoryReportsParams,
   GetHubSummary200,
@@ -153,6 +159,7 @@ import type {
   TriggerSosInput,
   UnsuspendUser200,
   UpdateCommunityInput,
+  UpdateCommunityStorySettingsBody,
   UpdateHelperAvailability200,
   UpdateHelperAvailabilityInput,
   UpdatePanicContacts200,
@@ -1062,6 +1069,482 @@ export const useCreateCommunityStory = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getCreateCommunityStoryMutationOptions(options));
+    }
+
+export const getGetCommunityStoryCreatorViewUrl = (authorId: number,
+    params?: GetCommunityStoryCreatorViewParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/community/stories/creator/${authorId}?${stringifiedParams}` : `/api/community/stories/creator/${authorId}`
+}
+
+/**
+ * @summary List a creator's published Moments, private archive, or Community-featured Moments
+ */
+export const getCommunityStoryCreatorView = async (authorId: number,
+    params?: GetCommunityStoryCreatorViewParams, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMomentCreatorPage> => {
+
+  return customFetch<CommunityMomentCreatorPage>(getGetCommunityStoryCreatorViewUrl(authorId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCommunityStoryCreatorViewQueryKey = (authorId: number,
+    params?: GetCommunityStoryCreatorViewParams,) => {
+    return [
+    `/api/community/stories/creator/${authorId}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCommunityStoryCreatorViewQueryOptions = <TData = Awaited<ReturnType<typeof getCommunityStoryCreatorView>>, TError = ErrorType<void>>(authorId: number,
+    params?: GetCommunityStoryCreatorViewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryCreatorView>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCommunityStoryCreatorViewQueryKey(authorId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommunityStoryCreatorView>>> = ({ signal }) => getCommunityStoryCreatorView(authorId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: authorId !== null && authorId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryCreatorView>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCommunityStoryCreatorViewQueryResult = NonNullable<Awaited<ReturnType<typeof getCommunityStoryCreatorView>>>
+export type GetCommunityStoryCreatorViewQueryError = ErrorType<void>
+
+
+/**
+ * @summary List a creator's published Moments, private archive, or Community-featured Moments
+ */
+
+export function useGetCommunityStoryCreatorView<TData = Awaited<ReturnType<typeof getCommunityStoryCreatorView>>, TError = ErrorType<void>>(
+ authorId: number,
+    params?: GetCommunityStoryCreatorViewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryCreatorView>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCommunityStoryCreatorViewQueryOptions(authorId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetCommunityStoryChallengeUrl = (params?: GetCommunityStoryChallengeParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/community/stories/challenge?${stringifiedParams}` : `/api/community/stories/challenge`
+}
+
+/**
+ * @summary Get the current weekly Moment challenge and visible participation count
+ */
+export const getCommunityStoryChallenge = async (params?: GetCommunityStoryChallengeParams, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMomentChallengeResponse> => {
+
+  return customFetch<CommunityMomentChallengeResponse>(getGetCommunityStoryChallengeUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCommunityStoryChallengeQueryKey = (params?: GetCommunityStoryChallengeParams,) => {
+    return [
+    `/api/community/stories/challenge`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCommunityStoryChallengeQueryOptions = <TData = Awaited<ReturnType<typeof getCommunityStoryChallenge>>, TError = ErrorType<void>>(params?: GetCommunityStoryChallengeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryChallenge>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCommunityStoryChallengeQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommunityStoryChallenge>>> = ({ signal }) => getCommunityStoryChallenge(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryChallenge>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCommunityStoryChallengeQueryResult = NonNullable<Awaited<ReturnType<typeof getCommunityStoryChallenge>>>
+export type GetCommunityStoryChallengeQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the current weekly Moment challenge and visible participation count
+ */
+
+export function useGetCommunityStoryChallenge<TData = Awaited<ReturnType<typeof getCommunityStoryChallenge>>, TError = ErrorType<void>>(
+ params?: GetCommunityStoryChallengeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCommunityStoryChallenge>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCommunityStoryChallengeQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getArchiveCommunityStoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/stories/${id}/archive`
+}
+
+/**
+ * @summary Retain a Moment in its creator-only archive until explicitly deleted
+ */
+export const archiveCommunityStory = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMomentMutationResponse> => {
+
+  return customFetch<CommunityMomentMutationResponse>(getArchiveCommunityStoryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getArchiveCommunityStoryMutationKey = () => ['archiveCommunityStory'] as const;
+
+export const getArchiveCommunityStoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveCommunityStory>>, TError,ArchiveCommunityStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveCommunityStory>>, TError,ArchiveCommunityStoryMutationVariables, TContext> => {
+
+const mutationKey = getArchiveCommunityStoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveCommunityStory>>, ArchiveCommunityStoryMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  archiveCommunityStory(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveCommunityStoryMutationResult = NonNullable<Awaited<ReturnType<typeof archiveCommunityStory>>>
+
+    export type ArchiveCommunityStoryMutationError = ErrorType<void>
+    export type ArchiveCommunityStoryMutationVariables = {id: number}
+
+    /**
+ * @summary Retain a Moment in its creator-only archive until explicitly deleted
+ */
+export const useArchiveCommunityStory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveCommunityStory>>, TError,ArchiveCommunityStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveCommunityStory>>,
+        TError,
+        ArchiveCommunityStoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getArchiveCommunityStoryMutationOptions(options));
+    }
+
+export const getFeatureCommunityStoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/stories/${id}/featured`
+}
+
+/**
+ * @summary Feature a Community Moment within its source Community and retain it in the creator archive
+ */
+export const featureCommunityStory = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMomentMutationResponse> => {
+
+  return customFetch<CommunityMomentMutationResponse>(getFeatureCommunityStoryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getFeatureCommunityStoryMutationKey = () => ['featureCommunityStory'] as const;
+
+export const getFeatureCommunityStoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof featureCommunityStory>>, TError,FeatureCommunityStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof featureCommunityStory>>, TError,FeatureCommunityStoryMutationVariables, TContext> => {
+
+const mutationKey = getFeatureCommunityStoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof featureCommunityStory>>, FeatureCommunityStoryMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  featureCommunityStory(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FeatureCommunityStoryMutationResult = NonNullable<Awaited<ReturnType<typeof featureCommunityStory>>>
+
+    export type FeatureCommunityStoryMutationError = ErrorType<void>
+    export type FeatureCommunityStoryMutationVariables = {id: number}
+
+    /**
+ * @summary Feature a Community Moment within its source Community and retain it in the creator archive
+ */
+export const useFeatureCommunityStory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof featureCommunityStory>>, TError,FeatureCommunityStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof featureCommunityStory>>,
+        TError,
+        FeatureCommunityStoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getFeatureCommunityStoryMutationOptions(options));
+    }
+
+export const getUnfeatureCommunityStoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/stories/${id}/featured`
+}
+
+/**
+ * @summary Remove the Community feature while retaining the Moment in the creator archive
+ */
+export const unfeatureCommunityStory = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMomentMutationResponse> => {
+
+  return customFetch<CommunityMomentMutationResponse>(getUnfeatureCommunityStoryUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnfeatureCommunityStoryMutationKey = () => ['unfeatureCommunityStory'] as const;
+
+export const getUnfeatureCommunityStoryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unfeatureCommunityStory>>, TError,UnfeatureCommunityStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unfeatureCommunityStory>>, TError,UnfeatureCommunityStoryMutationVariables, TContext> => {
+
+const mutationKey = getUnfeatureCommunityStoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unfeatureCommunityStory>>, UnfeatureCommunityStoryMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  unfeatureCommunityStory(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnfeatureCommunityStoryMutationResult = NonNullable<Awaited<ReturnType<typeof unfeatureCommunityStory>>>
+
+    export type UnfeatureCommunityStoryMutationError = ErrorType<unknown>
+    export type UnfeatureCommunityStoryMutationVariables = {id: number}
+
+    /**
+ * @summary Remove the Community feature while retaining the Moment in the creator archive
+ */
+export const useUnfeatureCommunityStory = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unfeatureCommunityStory>>, TError,UnfeatureCommunityStoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unfeatureCommunityStory>>,
+        TError,
+        UnfeatureCommunityStoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUnfeatureCommunityStoryMutationOptions(options));
+    }
+
+export const getUpdateCommunityStorySettingsUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/stories/${id}/settings`
+}
+
+/**
+ * @summary Update remix consent for an owned Moment
+ */
+export const updateCommunityStorySettings = async (id: number,
+    updateCommunityStorySettingsBody: UpdateCommunityStorySettingsBody, options?: Parameters<typeof customFetch>[1]): Promise<CommunityMomentSettingsResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<CommunityMomentSettingsResponse>(getUpdateCommunityStorySettingsUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateCommunityStorySettingsBody)
+  }
+);}
+
+
+
+
+
+export const getUpdateCommunityStorySettingsMutationKey = () => ['updateCommunityStorySettings'] as const;
+
+export const getUpdateCommunityStorySettingsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCommunityStorySettings>>, TError,UpdateCommunityStorySettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCommunityStorySettings>>, TError,UpdateCommunityStorySettingsMutationVariables, TContext> => {
+
+const mutationKey = getUpdateCommunityStorySettingsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCommunityStorySettings>>, UpdateCommunityStorySettingsMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateCommunityStorySettings(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCommunityStorySettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateCommunityStorySettings>>>
+    export type UpdateCommunityStorySettingsMutationBody = BodyType<UpdateCommunityStorySettingsBody>
+    export type UpdateCommunityStorySettingsMutationError = ErrorType<void>
+    export type UpdateCommunityStorySettingsMutationVariables = {id: number;data: BodyType<UpdateCommunityStorySettingsBody>}
+
+    /**
+ * @summary Update remix consent for an owned Moment
+ */
+export const useUpdateCommunityStorySettings = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCommunityStorySettings>>, TError,UpdateCommunityStorySettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCommunityStorySettings>>,
+        TError,
+        UpdateCommunityStorySettingsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateCommunityStorySettingsMutationOptions(options));
     }
 
 export const getRecordCommunityStoryWatchUrl = (id: number,) => {

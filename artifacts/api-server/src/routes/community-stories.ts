@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import {
   communityStoriesTable,
   communityStoryAuthorMutesTable,
@@ -114,6 +114,10 @@ const createStorySchema = z.object({
   exchange_listing_id: z.number().int().positive().optional(),
   audience: z.enum(STORY_AUDIENCES).default("community"),
   reply_enabled: z.boolean().default(true),
+  archive_enabled: z.boolean().optional().default(false),
+  remix_enabled: z.boolean().optional().default(false),
+  response_to_story_id: z.number().int().positive().optional(),
+  challenge_key: z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{0,79}$/).optional(),
   media: z.array(z.object({
     data_url: z.string().min(1).max(18_000_000),
     media_type: z.enum(["photo", "video"]),
@@ -151,6 +155,27 @@ const createStorySchema = z.object({
   }).optional(),
 });
 
+const WEEKLY_MOMENT_CHALLENGES = [
+  { key: "small-joys", prompt: "Show us a small joy from your week." },
+  { key: "local-colors", prompt: "Capture a color that feels like your community." },
+  { key: "everyday-creativity", prompt: "Share a moment of everyday creativity." },
+  { key: "neighborly-kindness", prompt: "What is one kind thing you noticed this week?" },
+] as const;
+
+function currentWeeklyMomentChallenge(now = new Date()) {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
+  const weekNumber = Math.floor(start.getTime() / (7 * 24 * 60 * 60 * 1000));
+  const challenge = WEEKLY_MOMENT_CHALLENGES[((weekNumber % WEEKLY_MOMENT_CHALLENGES.length) + WEEKLY_MOMENT_CHALLENGES.length) % WEEKLY_MOMENT_CHALLENGES.length];
+  const ends = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return {
+    key: `weekly-${challenge.key}-${start.toISOString().slice(0, 10)}`,
+    prompt: challenge.prompt,
+    starts_at: start,
+    ends_at: ends,
+  };
+}
+
 export function communityStoryPublishPayloadHash(payload: {
   caption: string | null;
   audience: string;
@@ -158,6 +183,10 @@ export function communityStoryPublishPayloadHash(payload: {
   exchangeListingId: number | null;
   communityId: number | null;
   replyEnabled: boolean;
+  archiveEnabled?: boolean;
+  remixEnabled?: boolean;
+  responseToStoryId?: number;
+  challengeKey?: string;
   elements: z.infer<typeof storyElementSchema>[];
   compositionManifest: StoryCompositionManifest;
   mediaAssetIds: number[];
@@ -172,6 +201,10 @@ export function communityStoryPublishPayloadHash(payload: {
     exchange_listing_id: payload.exchangeListingId,
     community_id: payload.communityId,
     reply_enabled: payload.replyEnabled,
+    ...(payload.archiveEnabled !== undefined ? { archive_enabled: payload.archiveEnabled } : {}),
+    ...(payload.remixEnabled !== undefined ? { remix_enabled: payload.remixEnabled } : {}),
+    ...(payload.responseToStoryId !== undefined ? { response_to_story_id: payload.responseToStoryId } : {}),
+    ...(payload.challengeKey !== undefined ? { challenge_key: payload.challengeKey } : {}),
     elements: payload.elements,
     composition_manifest: payload.compositionManifest,
     media_asset_ids: payload.mediaAssetIds,
@@ -337,6 +370,22 @@ export async function viewerCanReadStory(userId: number, story: {
   return canReadCommunityStoryAudience(story.audience, viewer?.community_id ?? null, story.community_id);
 }
 
+async function viewerCanReadRetainedStory(userId: number, story: {
+  author_user_id: number;
+  hub_id: number | null;
+  community_id: number | null;
+  audience: string;
+  exchange_listing_id?: number | null;
+  expires_at: Date;
+  archive_enabled: boolean;
+  featured_at: Date | null;
+}): Promise<boolean> {
+  if (story.expires_at > new Date()) return viewerCanReadStory(userId, story);
+  if (story.author_user_id === userId && story.archive_enabled) return true;
+  return story.featured_at !== null && story.audience === "community"
+    && await viewerCanReadStory(userId, story);
+}
+
 function publicStory(row: {
   id: number;
   author_user_id: number;
@@ -348,6 +397,13 @@ function publicStory(row: {
   reply_enabled: boolean;
   created_at: Date;
   expires_at: Date;
+  archive_enabled: boolean;
+  remix_enabled: boolean;
+  featured_at: Date | null;
+  response_to_story_id: number | null;
+  response_to_author_user_id: number | null;
+  response_author_name?: string | null;
+  challenge_key: string | null;
   author_name: string;
   avatar_url: string | null;
   composition_manifest: typeof communityStoriesTable.$inferSelect["composition_manifest"];
@@ -356,7 +412,7 @@ function publicStory(row: {
   status: string;
   duration_ms: number | null;
   playback_grant_url: string;
-} | null) {
+} | null, viewerUserId?: number) {
   return {
     id: row.id,
     author_user_id: row.author_user_id,
@@ -367,6 +423,16 @@ function publicStory(row: {
     tags: row.tags,
     audience: row.audience,
     reply_enabled: row.reply_enabled,
+    featured_at: row.featured_at ? serializeDate(row.featured_at) : null,
+    remix_enabled: row.remix_enabled,
+    response_to_story_id: row.response_to_story_id,
+    response_to: row.response_to_story_id === null && row.response_to_author_user_id === null && !row.response_author_name ? null : {
+      story_id: row.response_to_story_id,
+      author_user_id: row.response_to_author_user_id,
+      author_name: row.response_author_name ?? null,
+    },
+    challenge_key: row.challenge_key,
+    ...(viewerUserId === row.author_user_id ? { archive_enabled: row.archive_enabled } : {}),
     created_at: serializeDate(row.created_at),
     expires_at: serializeDate(row.expires_at),
     composition_manifest: row.composition_manifest
@@ -413,6 +479,8 @@ async function readableStoryVideoMedia(mediaId: number, userId: number) {
     exchange_listing_id: communityStoriesTable.exchange_listing_id,
     status: communityStoriesTable.status,
     expires_at: communityStoriesTable.expires_at,
+    archive_enabled: communityStoriesTable.archive_enabled,
+    featured_at: communityStoriesTable.featured_at,
   }).from(communityStoryMediaTable)
     .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id))
     .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
@@ -420,7 +488,7 @@ async function readableStoryVideoMedia(mediaId: number, userId: number) {
     .limit(1);
   if (!row || row.media_type !== "video" || !row.mime_type.startsWith("video/")
     || row.status !== "published"
-    || row.expires_at <= new Date() || !(await viewerCanReadStory(userId, row))) return null;
+    || !(await viewerCanReadRetainedStory(userId, row))) return null;
   if (!isLinkedStoryVideoAssetReady({
     linked: row.exchange_listing_id !== null,
     mediaType: row.media_type,
@@ -503,6 +571,230 @@ router.delete("/community/stories/authors/:id/mute", requireAuth, requireApprove
   return res.json({ muted: false });
 });
 
+router.get("/community/stories/challenge", requireAuth, requireApproved, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const hubId = req.query.hubId === undefined ? null : positiveId(req.query.hubId);
+  if (req.query.hubId !== undefined && !hubId) return res.status(400).json({ error: "hubId must be a positive integer." });
+  if (hubId && !(await approvedCanonicalHub(hubId))) return res.status(404).json({ error: "Canonical Hub not found." });
+  if (hubId && !(await approvedHubMember(userId, hubId))) return res.status(403).json({ error: "Approved Hub membership is required to view this Hub's challenge." });
+  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const challenge = currentWeeklyMomentChallenge();
+  const [count] = await db.select({ participant_count: sql<number>`count(DISTINCT ${communityStoriesTable.author_user_id})::int` })
+    .from(communityStoriesTable)
+    .innerJoin(usersTable, eq(usersTable.id, communityStoriesTable.author_user_id))
+    .where(and(
+      eq(communityStoriesTable.challenge_key, challenge.key),
+      eq(communityStoriesTable.status, "published"),
+      sql`${communityStoriesTable.expires_at} > now()`,
+      eq(usersTable.approval_status, "approved"),
+      eq(usersTable.is_suspended, false),
+      hubId ? and(eq(communityStoriesTable.audience, "hub"), eq(communityStoriesTable.hub_id, hubId))
+        : and(eq(communityStoriesTable.audience, "community"), viewer?.community_id == null
+          ? isNull(communityStoriesTable.community_id)
+          : eq(communityStoriesTable.community_id, viewer.community_id)),
+      sql`NOT EXISTS (
+        SELECT 1 FROM direct_message_blocks b
+        WHERE (b.blocker_id = ${userId} AND b.blocked_id = ${communityStoriesTable.author_user_id})
+           OR (b.blocker_id = ${communityStoriesTable.author_user_id} AND b.blocked_id = ${userId})
+      )`,
+      sql`NOT EXISTS (
+        SELECT 1 FROM community_story_author_mutes m
+        WHERE m.viewer_user_id = ${userId} AND m.muted_user_id = ${communityStoriesTable.author_user_id}
+      )`,
+    ));
+  return res.json({
+    challenge: {
+      key: challenge.key,
+      prompt: challenge.prompt,
+      starts_at: challenge.starts_at.toISOString(),
+      ends_at: challenge.ends_at.toISOString(),
+      participant_count: count?.participant_count ?? 0,
+    },
+  });
+});
+
+router.get("/community/stories/creator/:authorId", requireAuth, requireApproved, async (req, res) => {
+  const authorId = positiveId(req.params.authorId);
+  if (!authorId) return res.status(400).json({ error: "authorId must be a positive integer." });
+  const view = req.query.view === undefined ? "published" : String(req.query.view);
+  if (!["published", "archive", "featured"].includes(view)) return res.status(400).json({ error: "view must be published, archive, or featured." });
+  const userId = req.authenticatedUserId!;
+  const [viewer] = await db.select({ community_id: usersTable.community_id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [creator] = await db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    avatar_url: usersTable.avatar_url,
+    community_id: usersTable.community_id,
+    approval_status: usersTable.approval_status,
+    is_suspended: usersTable.is_suspended,
+  }).from(usersTable).where(eq(usersTable.id, authorId)).limit(1);
+  if (!creator || creator.approval_status !== "approved" || creator.is_suspended) return res.status(404).json({ error: "Creator not found." });
+  const isOwner = userId === authorId;
+  if (view === "archive" && !isOwner) return res.status(404).json({ error: "Creator archive not found." });
+  if (view === "featured" && !isOwner && (creator.community_id == null || creator.community_id !== viewer?.community_id)) {
+    return res.status(404).json({ error: "Creator not found." });
+  }
+  let cursor: { createdAt: Date; id: number } | null = null;
+  if (req.query.cursor !== undefined) {
+    try {
+      const value = String(req.query.cursor);
+      if (!/^[A-Za-z0-9_-]{1,512}$/.test(value)) throw new Error("invalid cursor");
+      const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { created_at?: unknown; id?: unknown };
+      const createdAt = typeof parsed.created_at === "string" ? new Date(parsed.created_at) : new Date(NaN);
+      if (!Number.isFinite(createdAt.getTime()) || !Number.isSafeInteger(parsed.id) || Number(parsed.id) < 1) {
+        throw new Error("invalid cursor");
+      }
+      cursor = { createdAt, id: Number(parsed.id) };
+    } catch {
+      return res.status(400).json({ error: "cursor is invalid." });
+    }
+  }
+  const now = new Date();
+  const condition = view === "archive"
+    ? and(eq(communityStoriesTable.archive_enabled, true), eq(communityStoriesTable.author_user_id, authorId))
+    : view === "featured"
+      ? and(isNotNull(communityStoriesTable.featured_at), eq(communityStoriesTable.author_user_id, authorId))
+      : and(
+        eq(communityStoriesTable.author_user_id, authorId),
+        eq(communityStoriesTable.status, "published"),
+        sql`${communityStoriesTable.expires_at} > ${now}`,
+      );
+  const rows = await db.select({
+    id: communityStoriesTable.id,
+    author_user_id: communityStoriesTable.author_user_id,
+    tags: communityStoriesTable.tags,
+    hub_id: communityStoriesTable.hub_id,
+    exchange_listing_id: communityStoriesTable.exchange_listing_id,
+    community_id: communityStoriesTable.community_id,
+    caption: communityStoriesTable.caption,
+    audience: communityStoriesTable.audience,
+    reply_enabled: communityStoriesTable.reply_enabled,
+    archive_enabled: communityStoriesTable.archive_enabled,
+    remix_enabled: communityStoriesTable.remix_enabled,
+    featured_at: communityStoriesTable.featured_at,
+    response_to_story_id: communityStoriesTable.response_to_story_id,
+    response_to_author_user_id: communityStoriesTable.response_to_author_user_id,
+    response_author_name: communityStoriesTable.response_to_author_name,
+    challenge_key: communityStoriesTable.challenge_key,
+    created_at: communityStoriesTable.created_at,
+    expires_at: communityStoriesTable.expires_at,
+    composition_manifest: communityStoriesTable.composition_manifest,
+    author_name: usersTable.name,
+    avatar_url: usersTable.avatar_url,
+  }).from(communityStoriesTable).innerJoin(usersTable, eq(usersTable.id, communityStoriesTable.author_user_id))
+    .where(and(
+      condition,
+      eq(communityStoriesTable.status, "published"),
+      view === "archive" ? undefined : eq(communityStoriesTable.audience, "community"),
+      view === "archive" || isOwner ? undefined : eq(communityStoriesTable.community_id, viewer?.community_id ?? -1),
+      sql`NOT EXISTS (
+        SELECT 1 FROM direct_message_blocks b
+        WHERE (b.blocker_id = ${userId} AND b.blocked_id = ${authorId})
+           OR (b.blocker_id = ${authorId} AND b.blocked_id = ${userId})
+      )`,
+      view === "archive" || isOwner ? undefined : sql`NOT EXISTS (
+        SELECT 1 FROM community_story_author_mutes m
+        WHERE m.viewer_user_id = ${userId} AND m.muted_user_id = ${authorId}
+      )`,
+      cursor ? or(
+        lt(communityStoriesTable.created_at, cursor.createdAt),
+        and(
+          eq(communityStoriesTable.created_at, cursor.createdAt),
+          lt(communityStoriesTable.id, cursor.id),
+        ),
+      ) : undefined,
+    ))
+    .orderBy(desc(communityStoriesTable.created_at), desc(communityStoriesTable.id))
+    .limit(51);
+  const hasMore = rows.length > 50;
+  const page = rows.slice(0, 50);
+  const ids = page.map((row) => row.id);
+  const [media, elements] = ids.length ? await Promise.all([
+    db.select().from(communityStoryMediaTable).where(inArray(communityStoryMediaTable.story_id, ids)).orderBy(asc(communityStoryMediaTable.id)),
+    db.select().from(communityStoryElementsTable).where(inArray(communityStoryElementsTable.story_id, ids)).orderBy(communityStoryElementsTable.z_index),
+  ]) : [[], []];
+  const result = page.map((row) => publicStory(
+    row,
+    media.filter((item) => item.story_id === row.id),
+    elements.filter((item) => item.story_id === row.id),
+    null,
+    userId,
+  ));
+  return res.json({
+    stories: result,
+    creator: { id: creator.id, name: creator.name, avatar_url: creator.avatar_url },
+    viewer_user_id: userId,
+    next_cursor: hasMore ? Buffer.from(JSON.stringify({
+      created_at: page[page.length - 1].created_at.toISOString(),
+      id: page[page.length - 1].id,
+    })).toString("base64url") : null,
+  });
+});
+
+router.post("/community/stories/:id/archive", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
+  const storyId = positiveId(req.params.id);
+  if (!storyId) return res.status(400).json({ error: "Invalid Story id." });
+  const [story] = await db.update(communityStoriesTable).set({ archive_enabled: true })
+    .where(and(
+      eq(communityStoriesTable.id, storyId),
+      eq(communityStoriesTable.author_user_id, req.authenticatedUserId!),
+      eq(communityStoriesTable.status, "published"),
+    )).returning({ id: communityStoriesTable.id });
+  if (!story) return res.status(404).json({ error: "Moment not found." });
+  return res.json({ ok: true });
+});
+
+router.post("/community/stories/:id/featured", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
+  const storyId = positiveId(req.params.id);
+  if (!storyId) return res.status(400).json({ error: "Invalid Story id." });
+  const [viewer] = await db.select({ community_id: usersTable.community_id })
+    .from(usersTable).where(eq(usersTable.id, req.authenticatedUserId!)).limit(1);
+  if (viewer?.community_id == null) return res.status(404).json({ error: "Only a Moment in your current Community can be featured." });
+  const [story] = await db.update(communityStoriesTable).set({
+    featured_at: new Date(),
+    archive_enabled: true,
+  }).where(and(
+    eq(communityStoriesTable.id, storyId),
+    eq(communityStoriesTable.author_user_id, req.authenticatedUserId!),
+    eq(communityStoriesTable.status, "published"),
+    or(
+      sql`${communityStoriesTable.expires_at} > now()`,
+      eq(communityStoriesTable.archive_enabled, true),
+    ),
+    eq(communityStoriesTable.audience, "community"),
+    eq(communityStoriesTable.community_id, viewer.community_id),
+    isNull(communityStoriesTable.exchange_listing_id),
+  )).returning({ id: communityStoriesTable.id });
+  if (!story) return res.status(404).json({ error: "Only a published or archived Moment in your current Community can be featured." });
+  return res.json({ ok: true });
+});
+
+router.delete("/community/stories/:id/featured", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
+  const storyId = positiveId(req.params.id);
+  if (!storyId) return res.status(400).json({ error: "Invalid Story id." });
+  await db.update(communityStoriesTable).set({ featured_at: null })
+    .where(and(
+      eq(communityStoriesTable.id, storyId),
+      eq(communityStoriesTable.author_user_id, req.authenticatedUserId!),
+    ));
+  return res.json({ ok: true });
+});
+
+router.patch("/community/stories/:id/settings", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
+  const storyId = positiveId(req.params.id);
+  if (!storyId) return res.status(400).json({ error: "Invalid Story id." });
+  const body = z.object({ remix_enabled: z.boolean() }).strict().safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Settings must contain only a boolean remix_enabled value." });
+  const [story] = await db.update(communityStoriesTable).set({ remix_enabled: body.data.remix_enabled })
+    .where(and(
+      eq(communityStoriesTable.id, storyId),
+      eq(communityStoriesTable.author_user_id, req.authenticatedUserId!),
+      eq(communityStoriesTable.status, "published"),
+    )).returning({ id: communityStoriesTable.id });
+  if (!story) return res.status(404).json({ error: "Moment not found." });
+  return res.json({ ok: true, remix_enabled: body.data.remix_enabled });
+});
+
 router.get("/community/stories", requireAuth, requireApproved, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const requestedHubId = req.query.hubId ? positiveId(req.query.hubId) : null;
@@ -576,6 +868,13 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
     caption: communityStoriesTable.caption,
     audience: communityStoriesTable.audience,
     reply_enabled: communityStoriesTable.reply_enabled,
+    archive_enabled: communityStoriesTable.archive_enabled,
+    remix_enabled: communityStoriesTable.remix_enabled,
+    featured_at: communityStoriesTable.featured_at,
+    response_to_story_id: communityStoriesTable.response_to_story_id,
+    response_to_author_user_id: communityStoriesTable.response_to_author_user_id,
+    response_author_name: communityStoriesTable.response_to_author_name,
+    challenge_key: communityStoriesTable.challenge_key,
     created_at: communityStoriesTable.created_at,
     expires_at: communityStoriesTable.expires_at,
     composition_manifest: communityStoriesTable.composition_manifest,
@@ -710,6 +1009,7 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
       mediaByStory.get(row.id) ?? [],
       elementsByStory.get(row.id) ?? [],
       isMediaPlatformV21Enabled() ? momentVideoByStory.get(row.id) ?? null : null,
+      userId,
     )),
     viewer_user_id: userId,
     expires_after_hours: 24,
@@ -940,11 +1240,75 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
   const hubId = parsed.data.hub_id ?? null;
   const exchangeListingId = parsed.data.exchange_listing_id ?? null;
   const mediaAssetIds = parsed.data.media_asset_ids ?? [];
+  if (parsed.data.response_to_story_id !== undefined
+    && (parsed.data.media.length > 0 || mediaAssetIds.length === 0)) {
+    return res.status(400).json({ error: "A video response must use one or more uploaded video assets." });
+  }
   const mediaAccessibility = parsed.data.media_accessibility;
   const accessibilityByAssetId = new Map(mediaAccessibility.map((item) => [item.media_asset_id, item]));
   const mediaEdits = parsed.data.media_edits;
   const [viewer] = await db.select({ community_id: usersTable.community_id })
     .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const challenge = currentWeeklyMomentChallenge();
+  let responseSource: { author_user_id: number; author_name: string } | null = null;
+  if (parsed.data.challenge_key && parsed.data.challenge_key !== challenge.key) {
+    return res.status(400).json({ error: "challenge_key must identify the current weekly Moment challenge." });
+  }
+  if (parsed.data.response_to_story_id !== undefined) {
+    const [source] = await db.select({
+      id: communityStoriesTable.id,
+      author_user_id: communityStoriesTable.author_user_id,
+      hub_id: communityStoriesTable.hub_id,
+      community_id: communityStoriesTable.community_id,
+      audience: communityStoriesTable.audience,
+      exchange_listing_id: communityStoriesTable.exchange_listing_id,
+      remix_enabled: communityStoriesTable.remix_enabled,
+      author_approval_status: usersTable.approval_status,
+      author_is_suspended: usersTable.is_suspended,
+      author_name: usersTable.name,
+    }).from(communityStoriesTable)
+      .innerJoin(usersTable, eq(usersTable.id, communityStoriesTable.author_user_id))
+      .where(and(
+        eq(communityStoriesTable.id, parsed.data.response_to_story_id),
+        eq(communityStoriesTable.status, "published"),
+        sql`${communityStoriesTable.expires_at} > now()`,
+      )).limit(1);
+    if (parsed.data.audience !== "community" || exchangeListingId !== null
+      || !source || source.author_user_id === userId || !source.remix_enabled
+      || source.audience !== "community" || source.exchange_listing_id !== null
+      || source.community_id === null || source.community_id !== viewer?.community_id
+      || source.author_approval_status !== "approved" || source.author_is_suspended
+      || !(await viewerCanReadStory(userId, source))) {
+      return res.status(404).json({ error: "Response source Moment is not available for remixing." });
+    }
+    responseSource = { author_user_id: source.author_user_id, author_name: source.author_name };
+    const [sourceVideo] = await db.select({ id: communityStoryMediaTable.id })
+      .from(communityStoryMediaTable)
+      .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
+      .where(and(
+        eq(communityStoryMediaTable.story_id, source.id),
+        eq(communityStoryMediaTable.media_type, "video"),
+        or(
+          isNull(communityStoryMediaTable.media_asset_id),
+          and(eq(mediaAssetsTable.status, "ready"), sql`${mediaAssetsTable.variant_key} IS NOT NULL`),
+        ),
+      )).limit(1);
+    if (!sourceVideo) return res.status(404).json({ error: "Response source Moment has no ready video." });
+  }
+  if (parsed.data.response_to_story_id !== undefined && mediaAssetIds.length) {
+    const [readyResponseVideo] = await db.select({ id: mediaAssetsTable.id })
+      .from(mediaAssetsTable)
+      .where(and(
+        inArray(mediaAssetsTable.id, mediaAssetIds),
+        eq(mediaAssetsTable.owner_user_id, userId),
+        eq(mediaAssetsTable.media_type, "video"),
+        eq(mediaAssetsTable.status, "ready"),
+        sql`${mediaAssetsTable.variant_key} IS NOT NULL`,
+      )).limit(1);
+    if (!readyResponseVideo) return res.status(400).json({ error: "A response Moment must include a ready video." });
+  } else if (parsed.data.response_to_story_id !== undefined) {
+    return res.status(400).json({ error: "A response Moment must include a ready uploaded video asset." });
+  }
   const caption = cleanText(parsed.data.caption, 1000) || null;
   const tags = parsed.data.tags;
   if (new Set(tags).size !== tags.length) return res.status(400).json({ error: "Moment tags must be unique." });
@@ -969,6 +1333,10 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       exchangeListingId,
       communityId: viewer?.community_id ?? null,
       replyEnabled: parsed.data.reply_enabled,
+      archiveEnabled: parsed.data.archive_enabled ? true : undefined,
+      remixEnabled: parsed.data.remix_enabled ? true : undefined,
+      responseToStoryId: parsed.data.response_to_story_id,
+      challengeKey: parsed.data.challenge_key,
       elements: parsed.data.elements,
       compositionManifest,
       mediaAssetIds,
@@ -1126,6 +1494,10 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     if (stagedAssets.length !== mediaAssetIds.length) {
       return res.status(404).json({ error: "One or more uploaded assets do not belong to this Moment context." });
     }
+    if (parsed.data.response_to_story_id !== undefined
+      && stagedAssets.some((asset) => asset.media_type !== "video")) {
+      return res.status(400).json({ error: "A video response may contain only video attachments." });
+    }
     if (exchangeListingId === null) {
       const altTextError = validateNewMomentVisualAltText(stagedAssets
         .filter((asset) => asset.id !== compositionManifest.music?.track_asset_id)
@@ -1186,6 +1558,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     }
   }
   const moderation = moderatePostText(caption ?? "");
+  if (parsed.data.archive_enabled && moderation.status !== "approved") {
+    return res.status(409).json({
+      error: "A Moment can be saved to your private archive after moderation approval.",
+      error_code: "MOMENT_ARCHIVE_REQUIRES_APPROVAL",
+    });
+  }
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const storedKeys: string[] = [];
   if (isMediaPlatformV21Enabled() && !mediaProcessingQueue) {
@@ -1298,6 +1676,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         audience: parsed.data.audience,
         status: moderation.status === "approved" ? "published" : "pending",
         reply_enabled: parsed.data.reply_enabled,
+        archive_enabled: parsed.data.archive_enabled,
+        remix_enabled: parsed.data.remix_enabled,
+        response_to_story_id: parsed.data.response_to_story_id ?? null,
+        response_to_author_user_id: responseSource?.author_user_id ?? null,
+        response_to_author_name: responseSource?.author_name ?? null,
+        challenge_key: parsed.data.challenge_key ?? null,
         composition_manifest: compositionManifest,
         expires_at: expiresAt,
       }).returning();
@@ -1528,15 +1912,21 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
     exchange_listing_id: communityStoriesTable.exchange_listing_id,
     status: communityStoriesTable.status,
     expires_at: communityStoriesTable.expires_at,
+    archive_enabled: communityStoriesTable.archive_enabled,
+    featured_at: communityStoriesTable.featured_at,
   }).from(communityStoryMediaTable)
     .innerJoin(communityStoriesTable, eq(communityStoriesTable.id, communityStoryMediaTable.story_id))
     .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
     .where(eq(communityStoryMediaTable.id, mediaId))
     .limit(1);
-  if (!row || row.status !== "published" || row.expires_at <= new Date()
+  if (!row || row.status !== "published"
       || row.media_asset_id !== null && row.asset_status !== "ready"
-      || !(await viewerCanReadStory(req.authenticatedUserId!, row))) {
+      || !(await viewerCanReadRetainedStory(req.authenticatedUserId!, row))) {
     return res.status(404).json({ error: "Story media not found." });
+  }
+  if (row.expires_at <= new Date()) {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Cookie");
   }
   if (!isLinkedStoryVideoAssetReady({
     linked: row.exchange_listing_id !== null,

@@ -597,7 +597,11 @@ async function processCommunityStoryCleanup(): Promise<void> {
     thumbnail_key: communityStoryMediaTable.thumbnail_storage_key,
   }).from(communityStoriesTable)
     .leftJoin(communityStoryMediaTable, eq(communityStoryMediaTable.story_id, communityStoriesTable.id))
-    .where(lte(communityStoriesTable.expires_at, new Date()));
+    .where(and(
+      lte(communityStoriesTable.expires_at, new Date()),
+      eq(communityStoriesTable.archive_enabled, false),
+      isNull(communityStoriesTable.featured_at),
+    ));
   const ids = [...new Set(expired.map((row) => row.id))];
   const deletedIds: number[] = [];
   let cleanupFailed = false;
@@ -701,9 +705,19 @@ async function processCommunityStoryCleanup(): Promise<void> {
     }, "media cleanup: durable tombstones processed");
   }
   for (const id of ids) {
-    await db.update(communityStoriesTable)
+    // Claim expiry atomically with the opt-in retention check. If an archive
+    // or feature write wins first, cleanup leaves the Moment and its objects
+    // untouched; once claimed, owner mutations can no longer race deletion.
+    const [claimed] = await db.update(communityStoriesTable)
       .set({ status: "deletion_pending" })
-      .where(eq(communityStoriesTable.id, id));
+      .where(and(
+        eq(communityStoriesTable.id, id),
+        lte(communityStoriesTable.expires_at, new Date()),
+        eq(communityStoriesTable.archive_enabled, false),
+        isNull(communityStoriesTable.featured_at),
+      ))
+      .returning({ id: communityStoriesTable.id });
+    if (!claimed) continue;
     const universalAssets = await db.select({
       id: mediaAssetsTable.id,
       original_key: mediaAssetsTable.original_key,
