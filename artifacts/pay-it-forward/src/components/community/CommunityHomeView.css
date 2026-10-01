@@ -567,3 +567,46 @@
   font-weight: 800;
 }
 .nia-home-paths a:hover { border-color: #0fe5d4; color: #0fe5d4; }
+
+.nia-home,
+.nia-people {
+  --nia-ink: #f3fffc;
+  --nia-muted: #7a9b99;
+  --nia-paper: #041819;
+  --nia-card: #0c2a30;
+  --nia-line: #1c3c40;
+  --nia-blue: #0fe5d4;
+  background-color: #041819;
+  color: #f3fffc;
+}
+.nia-home__title,
+.nia-people__title { font-family: Fraunces, ui-serif, Georgia, serif; color: #f3fffc; }
+.nia-home__intro,
+.nia-people__hero {
+  border-color: #1c3c40;
+  background: radial-gradient(ellipse at 96% 0%, rgb(15 229 212 / .12), transparent 36%), #071e22;
+}
+.nia-home__intro { border-top-color: #0fe5d4; }
+.nia-home [data-hub-community-feed] #hub-post-composer,
+.nia-home [data-hub-community-feed] article,
+.nia-home [data-hub-community-feed] > div > button,
+.nia-people__person,
+.nia-people__discovery > div {
+  border-color: #1c3c40 !important;
+  background-color: #0c2a30 !important;
+  color: #f3fffc;
+}
+.nia-home [data-hub-community-feed] #hub-post-composer-trigger,
+.nia-home [data-hub-community-feed] input,
+.nia-home [data-hub-community-feed] textarea,
+.nia-people__search input {
+  background-color: #041819;
+  color: #f3fffc;
+  border-color: #1c3c40;
+}
+.nia-home-paths a {
+  border-color: #1c3c40;
+  background: #071e22;
+  color: #f3fffc;
+}
+.nia-home a[class*="bg-[#2866a6]"] { background: #0fe5d4; color: #041819; }

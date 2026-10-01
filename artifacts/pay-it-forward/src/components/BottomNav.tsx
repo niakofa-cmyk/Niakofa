@@ -177,11 +177,11 @@ export function BottomNav() {
                 <div
                   className="w-[188px] rounded-[20px] overflow-hidden"
                   style={{
-                    background: "rgba(4,11,20,0.93)",
+                    background: "rgba(4,24,25,0.94)",
                     backdropFilter: "blur(24px)",
                     WebkitBackdropFilter: "blur(24px)",
-                    border: "1px solid rgba(0,212,255,0.18)",
-                    boxShadow: "0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,212,255,0.07), inset 0 1px 0 rgba(0,212,255,0.06)",
+                    border: "1px solid rgba(15,229,212,0.22)",
+                    boxShadow: "0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(15,229,212,0.08), inset 0 1px 0 rgba(15,229,212,0.08)",
                   }}
                 >
                   {/* Brand header */}

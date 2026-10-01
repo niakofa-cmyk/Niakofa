@@ -667,7 +667,7 @@
     #041819;
   color: #f3fffc;
 }
-.nk-community-v4-wordmark { color: #f3fffc; }
+.nk-community-v4-wordmark { color: #f3fffc; font-family: Fraunces, ui-serif, Georgia, serif; }
 .nk-community-v4-wordmark::after { color: #0fe5d4; }
 .nk-community-v4-header-wrap {
   background: rgb(4 24 25 / .94);

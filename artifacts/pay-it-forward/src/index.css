@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,560;9..144,700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -104,15 +104,22 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* Niakofa cyan-on-navy system. Root and dark mode intentionally share the
-   neighborhood's high-trust night palette; status colors remain semantic. */
+/* Niakofa visual direction. Teal navy, mint cyan, Figtree for UI, Fraunces for titles.
+   Root and dark mode share it. Status colors stay semantic. */
 :root {
-  --nk-teal: #00cfff;
-  --nk-coral: #f17862;
+  --nk-navy: #041819;
+  --nk-navy-2: #071e22;
+  --nk-navy-3: #0c2a30;
+  --nk-cyan: #0fe5d4;
+  --nk-cyan-bright: #00cfff;
+  --nk-mist: #b7d4d0;
+  --nk-line: #1c3c40;
+  --nk-teal: var(--nk-cyan);
+  --nk-coral: #e4453a;
   --nk-gold: #e7b650;
-  --nk-ink: #edf8ff;
-  --nk-paper: #08182b;
-  --nk-muted: #9bb0c3;
+  --nk-ink: #f3fffc;
+  --nk-paper: var(--nk-navy);
+  --nk-muted: #7a9b99;
 
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
@@ -122,53 +129,53 @@
   --elevate-1: rgba(255,255,255, .03);
   --elevate-2: rgba(255,255,255, .08);
 
-  --background: 214 68% 10%;
-  --foreground: 202 100% 96%;
-  
-  --border: 213 34% 25%;
-  --input: 213 34% 29%;
-  --ring: 191 100% 50%;
-  
-  --card: 213 49% 14%;
-  --card-foreground: 202 100% 96%;
-  --card-border: 213 34% 25%;
-  
-  --sidebar: 214 68% 10%;
-  --sidebar-foreground: 202 100% 96%;
-  --sidebar-border: 213 34% 25%;
-  --sidebar-primary: 191 100% 50%;
-  --sidebar-primary-foreground: 214 68% 10%;
-  --sidebar-accent: 213 49% 17%;
-  --sidebar-accent-foreground: 202 100% 96%;
-  --sidebar-ring: 191 100% 50%;
+  --background: 183 72% 6%;
+  --foreground: 164 100% 98%;
 
-  --popover: 213 49% 14%;
-  --popover-foreground: 202 100% 96%;
-  --popover-border: 213 34% 25%;
+  --border: 187 39% 18%;
+  --input: 187 34% 22%;
+  --ring: 175 88% 48%;
 
-  --primary: 191 100% 50%;
-  --primary-foreground: 214 68% 10%;
+  --card: 189 66% 8%;
+  --card-foreground: 164 100% 98%;
+  --card-border: 187 39% 18%;
 
-  --secondary: 213 49% 19%;
-  --secondary-foreground: 202 100% 96%;
+  --sidebar: 183 72% 6%;
+  --sidebar-foreground: 164 100% 98%;
+  --sidebar-border: 187 39% 18%;
+  --sidebar-primary: 175 88% 48%;
+  --sidebar-primary-foreground: 183 72% 6%;
+  --sidebar-accent: 190 60% 12%;
+  --sidebar-accent-foreground: 164 100% 98%;
+  --sidebar-ring: 175 88% 48%;
 
-  --muted: 213 43% 18%;
-  --muted-foreground: 210 25% 72%;
+  --popover: 189 66% 8%;
+  --popover-foreground: 164 100% 98%;
+  --popover-border: 187 39% 18%;
 
-  --accent: 191 100% 50%;
-  --accent-foreground: 214 68% 10%;
+  --primary: 175 88% 48%;
+  --primary-foreground: 183 72% 6%;
 
-  --destructive: 6 78% 62%;
-  --destructive-foreground: 214 68% 10%;
+  --secondary: 190 60% 12%;
+  --secondary-foreground: 164 100% 98%;
 
-  --chart-1: 191 100% 50%;
-  --chart-2: 6 78% 62%;
+  --muted: 190 60% 12%;
+  --muted-foreground: 177 14% 54%;
+
+  --accent: 175 88% 48%;
+  --accent-foreground: 183 72% 6%;
+
+  --destructive: 4 76% 56%;
+  --destructive-foreground: 164 100% 98%;
+
+  --chart-1: 175 88% 48%;
+  --chart-2: 4 76% 56%;
   --chart-3: 44 78% 60%;
-  --chart-4: 203 39% 63%;
-  --chart-5: 202 100% 96%;
+  --chart-4: 196 60% 42%;
+  --chart-5: 164 100% 98%;
 
-  --app-font-sans: 'DM Sans', sans-serif;
-  --app-font-serif: 'Manrope', sans-serif;
+  --app-font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --app-font-serif: "Fraunces", ui-serif, Georgia, serif;
   --app-font-mono: 'SFMono-Regular', Consolas, monospace;
   --radius: .5rem;
   
@@ -215,57 +222,57 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --nk-teal: #00cfff;
-  --nk-coral: #f17862;
+  --nk-teal: var(--nk-cyan);
+  --nk-coral: #e4453a;
   --nk-gold: #e7b650;
-  --nk-ink: #edf8ff;
-  --nk-paper: #08182b;
-  --nk-muted: #9bb0c3;
+  --nk-ink: #f3fffc;
+  --nk-paper: var(--nk-navy);
+  --nk-muted: #7a9b99;
 
-  --background: 214 68% 10%;
-  --foreground: 202 100% 96%;
-  
-  --border: 213 34% 25%;
-  --input: 213 34% 29%;
-  --ring: 191 100% 50%;
-  
-  --card: 213 49% 14%;
-  --card-foreground: 202 100% 96%;
-  --card-border: 213 34% 25%;
-  
-  --sidebar: 214 68% 10%;
-  --sidebar-foreground: 202 100% 96%;
-  --sidebar-border: 213 34% 25%;
-  --sidebar-primary: 191 100% 50%;
-  --sidebar-primary-foreground: 214 68% 10%;
-  --sidebar-accent: 213 49% 17%;
-  --sidebar-accent-foreground: 202 100% 96%;
-  --sidebar-ring: 191 100% 50%;
+  --background: 183 72% 6%;
+  --foreground: 164 100% 98%;
 
-  --popover: 213 49% 14%;
-  --popover-foreground: 202 100% 96%;
-  --popover-border: 213 34% 25%;
+  --border: 187 39% 18%;
+  --input: 187 34% 22%;
+  --ring: 175 88% 48%;
 
-  --primary: 191 100% 50%;
-  --primary-foreground: 214 68% 10%;
+  --card: 189 66% 8%;
+  --card-foreground: 164 100% 98%;
+  --card-border: 187 39% 18%;
 
-  --secondary: 213 49% 19%;
-  --secondary-foreground: 202 100% 96%;
+  --sidebar: 183 72% 6%;
+  --sidebar-foreground: 164 100% 98%;
+  --sidebar-border: 187 39% 18%;
+  --sidebar-primary: 175 88% 48%;
+  --sidebar-primary-foreground: 183 72% 6%;
+  --sidebar-accent: 190 60% 12%;
+  --sidebar-accent-foreground: 164 100% 98%;
+  --sidebar-ring: 175 88% 48%;
 
-  --muted: 213 43% 18%;
-  --muted-foreground: 210 25% 72%;
+  --popover: 189 66% 8%;
+  --popover-foreground: 164 100% 98%;
+  --popover-border: 187 39% 18%;
 
-  --accent: 191 100% 50%;
-  --accent-foreground: 214 68% 10%;
+  --primary: 175 88% 48%;
+  --primary-foreground: 183 72% 6%;
 
-  --destructive: 6 78% 62%;
-  --destructive-foreground: 214 68% 10%;
+  --secondary: 190 60% 12%;
+  --secondary-foreground: 164 100% 98%;
 
-  --chart-1: 191 100% 50%;
-  --chart-2: 6 78% 62%;
+  --muted: 190 60% 12%;
+  --muted-foreground: 177 14% 54%;
+
+  --accent: 175 88% 48%;
+  --accent-foreground: 183 72% 6%;
+
+  --destructive: 4 76% 56%;
+  --destructive-foreground: 164 100% 98%;
+
+  --chart-1: 175 88% 48%;
+  --chart-2: 4 76% 56%;
   --chart-3: 44 78% 60%;
-  --chart-4: 203 39% 63%;
-  --chart-5: 202 100% 96%;
+  --chart-4: 196 60% 42%;
+  --chart-5: 164 100% 98%;
 }
 
 @layer base {
@@ -277,8 +284,15 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 
+  h1,
+  h2,
+  .font-display {
+    font-family: var(--app-font-serif);
+    font-optical-sizing: auto;
+  }
+
   :focus-visible {
-    outline: 3px solid #00cfff;
+    outline: 3px solid var(--nk-cyan);
     outline-offset: 3px;
   }
 }

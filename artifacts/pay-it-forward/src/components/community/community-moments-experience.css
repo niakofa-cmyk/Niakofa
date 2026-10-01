@@ -407,3 +407,24 @@
 }
 .nia-moments [data-moment-filters] button { background: var(--nk-teal); color: #08182b; }
 .nia-moments :is(button, a, input, select):focus-visible { outline: 3px solid #00cfff; }
+
+.nia-moments > header h1 { font-family: Fraunces, ui-serif, Georgia, serif; }
+.nia-moments [data-testid="list-moments-feed"],
+.nia-moments [data-moment-index],
+.nia-moments > section[aria-label="Spark feed"] {
+  background-color: var(--nk-navy, #041819);
+}
+.nia-moments [data-testid="list-moments-feed"] {
+  background: radial-gradient(ellipse at 50% 18%, rgb(15 229 212 / .12), transparent 70%), var(--nk-navy, #041819);
+}
+.nia-moments [data-moment-caption] {
+  background: linear-gradient(to top, rgb(4 24 25 / .96), rgb(4 24 25 / .55) 52%, transparent);
+  color: #f3fffc;
+}
+.nia-moments [data-moment-actions],
+.nia-moments [data-testid^="button-moment-sound-"],
+.nia-moments [data-testid^="button-moment-media-"] {
+  background: rgb(7 30 34 / .9);
+}
+.nia-moments [data-moment-filters] button { color: var(--nk-navy, #041819); }
+.nia-moments :is(button, a, input, select):focus-visible { outline-color: var(--nk-cyan, #0fe5d4); }
