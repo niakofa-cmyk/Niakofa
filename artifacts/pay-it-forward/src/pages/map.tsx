@@ -1454,6 +1454,18 @@ export default function MapScreen() {
           it's the right-hand child of the same flex row as the status
           message, sharing one z-index and one container. */}
       <div className="flex flex-col items-end gap-1.5 shrink-0">
+        {!helperModeActive && (
+          <button
+            type="button"
+            onClick={() => setLocation("/community/moments")}
+            aria-label="Discover"
+            style={{ touchAction: "manipulation" }}
+            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg"
+          >
+            <Compass className="h-4 w-4" aria-hidden="true" />
+            Discover
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setStatsExpanded(v => !v)}
