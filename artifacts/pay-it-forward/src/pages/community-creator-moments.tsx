@@ -12,6 +12,9 @@ function AuthorizedMomentPreview({ story }: { story: CreatorMoment }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const media = story.media?.[0];
+  const mediaId = media?.id ?? null;
+  const mediaType = media?.media_type ?? null;
+  const mediaUrl = media?.media_url ?? null;
   const isReel = story.moment_video?.status === "ready";
 
   useEffect(() => {
@@ -21,7 +24,7 @@ function AuthorizedMomentPreview({ story }: { story: CreatorMoment }) {
     setLoading(true);
     setError("");
     const resolve = async () => {
-      if (!media && !isReel) return null;
+      if (mediaId === null && !isReel) return null;
       const origin = window.location.origin;
       if (isReel) {
         const grantPath = `/api/community/stories/${story.id}/moment-composition/playback-grant`;
@@ -30,12 +33,13 @@ function AuthorizedMomentPreview({ story }: { story: CreatorMoment }) {
         if (!response.ok || typeof result.playback_url !== "string") throw new Error(result.error || "Secure Moment playback could not be opened.");
         return validateMomentCompositionPlaybackUrl(result.playback_url, story.id, origin);
       }
-      const reference = new URL(media!.media_url, origin);
-      const expected = `/api/community/stories/media/${media!.id}`;
+      if (mediaId === null || mediaType === null || mediaUrl === null) return null;
+      const reference = new URL(mediaUrl, origin);
+      const expected = `/api/community/stories/media/${mediaId}`;
       if (reference.origin !== origin || reference.pathname.replace(/\/$/, "") !== expected || reference.search || reference.hash || reference.username || reference.password) {
         throw new Error("This Moment does not have a valid authenticated media reference.");
       }
-      if (media!.media_type === "video") {
+      if (mediaType === "video") {
         const response = await fetch(`${expected}/playback-grant`, { method: "POST", headers: authHeaders(), credentials: "same-origin", signal: controller.signal });
         const result = await response.json().catch(() => ({})) as { playback_url?: string; error?: string };
         if (!response.ok || typeof result.playback_url !== "string") throw new Error(result.error || "Secure video playback could not be opened.");
@@ -59,7 +63,7 @@ function AuthorizedMomentPreview({ story }: { story: CreatorMoment }) {
       }
     });
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [isReel, media?.id, media?.media_type, media?.media_url, story.id]);
+  }, [isReel, mediaId, mediaType, mediaUrl, story.id]);
 
   if (loading) return <div className="grid h-full place-items-center bg-muted" role="status" aria-label="Loading Moment media"><div className="h-8 w-8 animate-pulse rounded-full bg-primary/20" /></div>;
   if (error) return <div className="grid h-full place-items-center bg-muted p-4 text-center text-xs text-muted-foreground" role="status">{error}</div>;

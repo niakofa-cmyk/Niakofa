@@ -148,7 +148,9 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(storiesRoute).toMatch(/communityStoriesTable\.community_id\} IS NOT DISTINCT FROM \$\{viewer\?\.community_id/);
     expect(storiesRoute).toMatch(/linked_asset\.status = 'ready' AND linked_asset\.variant_key IS NOT NULL/);
     expect(storiesRoute).toMatch(/isLinkedStoryVideoAssetReady\(\{/);
-    expect(storiesRoute.match(/viewerCanReadStory\(req\.authenticatedUserId!, row\)/)?.length).toBe(1);
+    expect(storiesRoute.match(/viewerCanReadRetainedStory\(req\.authenticatedUserId!, row\)/)?.length).toBe(1);
+    expect(storiesRoute).toMatch(/if \(story\.author_user_id === userId && story\.archive_enabled\) return true;/);
+    expect(storiesRoute).toMatch(/story\.featured_at !== null && story\.audience === "community"[\s\S]*await viewerCanReadStory\(userId, story\)/);
     expect(interactionsRoute).toMatch(/viewerCanReadStory\(userId, story\)/);
     expect(exchangeRoute).toMatch(/communityVisibility/);
     expect(exchangeRoute).toMatch(/spark_block\.blocker_id = \$\{userId\}[\s\S]*spark_block\.blocked_id = \$\{userId\}/);
