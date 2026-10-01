@@ -4,6 +4,26 @@ import HubCommunityFeedPanel from "@/components/community/HubCommunityFeedPanel"
 import { CommunityMomentsExperience } from "@/components/community/CommunityMomentsExperience";
 import "@/components/community/CommunityHomeView.css";
 
+const COMMUNITY_PATHS = [
+  { href: "/community/moments", label: "Moments" },
+  { href: "/community/people", label: "People" },
+  { href: "/community/exchange", label: "Exchange" },
+  { href: "/community/hubs", label: "Hubs" },
+  { href: "/community/requests", label: "Requests" },
+  { href: "/community/spirals", label: "Spirals" },
+  { href: "/diaspora/family", label: "Family" },
+];
+
+function CommunityPaths() {
+  return (
+    <nav className="nia-home-paths" aria-label="Community paths">
+      {COMMUNITY_PATHS.map((item) => (
+        <Link key={item.href} href={item.href}>{item.label}</Link>
+      ))}
+    </nav>
+  );
+}
+
 type CommunityHomeViewProps = {
   hubId: number | null;
   hubResolved: boolean;
@@ -30,6 +50,7 @@ export function CommunityHomeView({
           <p className="nia-home__eyebrow">Niakofa · Community</p>
           <h1 className="nia-home__title">Home</h1>
           <p className="nia-home__lede">A place to notice, share, and show up for one another.</p>
+          <CommunityPaths />
         </div>
         <div className="nia-home__loading" aria-hidden="true">
           <div className="nia-home__skeleton" />
@@ -48,6 +69,7 @@ export function CommunityHomeView({
           <p className="nia-home__eyebrow">Niakofa · Community</p>
           <h1 className="nia-home__title">Home</h1>
           <p className="nia-home__lede">Your local community, at a glance.</p>
+          <CommunityPaths />
         </header>
         <CommunityMomentsExperience
           hubId={null}
@@ -76,6 +98,7 @@ export function CommunityHomeView({
         <p className="nia-home__eyebrow">Niakofa · Community</p>
         <h1 className="nia-home__title">Home</h1>
         <p className="nia-home__lede">Your local community, at a glance. Moments, updates, and small ways to show up.</p>
+        <CommunityPaths />
         <div className="nia-home__rule" aria-hidden="true">From your Hub</div>
       </header>
       <HubCommunityFeedPanel

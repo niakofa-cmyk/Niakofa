@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Bell,
   BookOpen,
+  Camera,
   Clapperboard,
   BriefcaseBusiness,
   Globe2,
@@ -9,7 +10,6 @@ import {
   Image as ImageIcon,
   Menu,
   MessageCircle,
-  Plus,
   Search,
   ShoppingBag,
   Users,
@@ -52,13 +52,13 @@ interface CommunitySocialShellProps {
 const primaryNav = [
   { key: "home" as const, label: "Home", icon: House },
   { key: "moments" as const, label: "Moments", icon: Clapperboard },
-  { key: "people" as const, label: "People", icon: Users },
-  { key: "exchange" as const, label: "Exchange", icon: ShoppingBag },
-  { key: "notifications" as const, label: "Notifications", icon: Bell },
   { key: "profile" as const, label: "Profile", icon: UserRound },
 ];
 
 const menuItems = [
+  { href: "/community/people", label: "People", description: "Neighbors you can reach", icon: Users },
+  { href: "/community/exchange", label: "Exchange", description: "Give, ask, and trade nearby", icon: ShoppingBag },
+  { href: "/notifications", label: "Notifications", description: "What needs your attention", icon: Bell },
   { href: "/community/hubs", label: "Hubs", description: "Your local and diaspora communities", icon: Globe2 },
   { href: "/community/requests", label: "Requests", description: "Give or receive help", icon: BriefcaseBusiness },
   { href: "/community/services", label: "Services", description: "Skills and offers", icon: Wrench },
@@ -160,9 +160,6 @@ export function CommunitySocialShell({
           </div>
 
           <div className="nk-community-v4-actions">
-            <button type="button" onClick={onCreate} aria-label="Create a Spark" className="nk-create-spark">
-              <Plus className="h-4 w-4" aria-hidden="true" /><span>Create a Spark</span>
-            </button>
             <button
               type="button"
               onClick={() => setSearchOpen((value) => !value)}
@@ -171,9 +168,6 @@ export function CommunitySocialShell({
               className="nk-community-v4-icon-button md:hidden"
             >
               <Search className="h-5 w-5" />
-            </button>
-            <button type="button" aria-label="Open Messages" onClick={() => onRoute("/messages")} className="nk-community-v4-icon-button">
-              <MessageCircle className="h-5 w-5" />
             </button>
             <button type="button" aria-label={unreadCount > 0 ? `Quick notifications, ${unreadCount} unread` : "Quick notifications"} aria-expanded={notificationsOpen}
               onClick={() => setNotificationsOpen(true)} className="nk-community-v4-icon-button nk-quick-bell">
@@ -208,32 +202,55 @@ export function CommunitySocialShell({
             </label>
           </div>
         )}
-
-        <nav aria-label="Community primary navigation" className="nk-community-v4-social-nav">
-          {primaryNav.map((item) => {
-            const selected = active === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => navigate(item.key)}
-                aria-label={item.label}
-                aria-current={selected ? "page" : undefined}
-                data-active={selected}
-                className="nk-community-v4-social-item"
-              >
-                <NavIcon item={item} />
-                <span>{item.label}</span>
-                {item.key === "notifications" && unreadCount > 0 && <i className="nk-nav-unread-dot" aria-label={`${unreadCount} unread`} />}
-              </button>
-            );
-          })}
-        </nav>
       </header>
 
       <main className="nk-community-main mx-auto w-full max-w-[900px] min-w-0 px-0 sm:px-4 sm:py-5">
         <div className="w-full min-w-0">{children}</div>
       </main>
+
+      <nav aria-label="Community primary navigation" className="nk-community-dock">
+        {primaryNav.slice(0, 2).map((item) => {
+          const selected = active === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => navigate(item.key)}
+              aria-label={item.label}
+              aria-current={selected ? "page" : undefined}
+              data-active={selected}
+              className="nk-community-v4-social-item"
+            >
+              <NavIcon item={item} />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+        <button type="button" onClick={onCreate} aria-label="Create a Spark" className="nk-community-dock-camera">
+          <Camera className="h-6 w-6" aria-hidden="true" />
+        </button>
+        <button type="button" aria-label="Open Messages" onClick={() => onRoute("/messages")} className="nk-community-v4-social-item">
+          <MessageCircle className="h-[22px] w-[22px]" strokeWidth={2.1} aria-hidden="true" />
+          <span>Inbox</span>
+        </button>
+        {primaryNav.slice(2).map((item) => {
+          const selected = active === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => navigate(item.key)}
+              aria-label={item.label}
+              aria-current={selected ? "page" : undefined}
+              data-active={selected}
+              className="nk-community-v4-social-item"
+            >
+              <NavIcon item={item} />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       {menuOpen && (
         <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="Community menu">
@@ -243,7 +260,7 @@ export function CommunitySocialShell({
             className="absolute inset-0 bg-black/45"
             onClick={() => setMenuOpen(false)}
           />
-          <aside ref={menuRef} className="relative h-full w-[min(88vw,360px)] overflow-y-auto bg-background p-4 shadow-2xl">
+          <aside ref={menuRef} className="nk-community-sheet relative h-full w-[min(88vw,360px)] overflow-y-auto p-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Niakofa</p>
@@ -283,9 +300,9 @@ export function CommunitySocialShell({
             </div>
 
             <div className="mt-5 rounded-2xl border border-border bg-muted/40 p-4">
-              <p className="text-xs font-bold">Niakofa systems stay connected.</p>
+              <p className="text-xs font-bold">The dock stays simple. The village stays whole.</p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Requests, Services, Spirals, Media, Diaspora, Hub membership, Moments, Sparks, Messages and realtime features remain available without becoming tabs.
+                Home, Moments, Inbox, and Profile stay on the dock. Create a Spark opens the camera. People, Exchange, Requests, Services, Spirals, Media, Diaspora, and Family stay here.
               </p>
             </div>
           </aside>

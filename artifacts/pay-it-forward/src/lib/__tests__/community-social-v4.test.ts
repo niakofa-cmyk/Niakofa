@@ -65,16 +65,19 @@ describe("Community Social V4 view boundaries", () => {
     assert.match(page, /CommunitySpiralsTab/);
   });
 
-  test("six-tab social navigation promotes Exchange and Profile, with Messages in the header", () => {
+  test("dock navigation is Home, Moments, camera, Inbox, and Profile", () => {
     const nav = shell.match(/const primaryNav = \[([\s\S]*?)\];/)?.[1] ?? "";
     assert.deepEqual(
       [...nav.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]),
-      ["Home", "Moments", "People", "Exchange", "Notifications", "Profile"],
+      ["Home", "Moments", "Profile"],
     );
+    assert.match(shell, /className="nk-community-dock"/);
+    assert.match(shell, /aria-label="Create a Spark"/);
     assert.match(shell, /<button[^>]*aria-label="Open Messages"[^>]*onClick=\{\(\) => onRoute\("\/messages"\)\}/);
     assert.doesNotMatch(shell, /key: "messages" as const/);
     assert.doesNotMatch(shell, /key: "hubs" as const, label: "Hubs"/);
-    assert.doesNotMatch(shell, /href: "\/community\/exchange", label: "Exchange"/);
+    assert.match(shell, /href: "\/community\/people", label: "People"/);
+    assert.match(shell, /href: "\/community\/exchange", label: "Exchange"/);
     for (const path of [
       "/community/hubs",
       "/community/requests",

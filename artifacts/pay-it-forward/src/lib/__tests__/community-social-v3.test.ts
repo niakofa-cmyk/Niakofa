@@ -18,9 +18,9 @@ describe("Community Social V4 architecture", () => {
   );
   const app = fs.readFileSync(path.join(__dirname, "../../App.tsx"), "utf8");
 
-  test("primary Community navigation is icon-first and uses the six canonical destinations", () => {
-    assert.match(shellCss, /grid-template-columns: repeat\(6/);
-    assert.equal((shell.match(/key: "/g) || []).length >= 5, true);
+  test("primary Community navigation is a dock, with the other destinations in the menu", () => {
+    assert.match(shellCss, /\.nk-community-dock/);
+    assert.equal((shell.match(/key: "/g) || []).length >= 3, true);
     assert.match(shell, /aria-label=\{item\.label\}/);
     assert.match(shell, /icon: BookOpen/);
     assert.match(shell, /icon: Users\b/);

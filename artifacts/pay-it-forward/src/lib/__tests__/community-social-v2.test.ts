@@ -51,11 +51,11 @@ describe("Community Social legacy behavior coverage", () => {
   test("V4 owns the Community primary navigation and secondary menu", () => {
     assert.doesNotMatch(shellFile, /contentNavItems/);
     assert.match(shellFile, /const primaryNav =/);
-    assert.match(shellCss, /grid-template-columns: repeat\(6/);
+    assert.match(shellCss, /\.nk-community-dock/);
     assert.match(shellFile, /menuItems/);
     assert.match(shellFile, /onRoute\("\/profile"\)/);
     assert.match(shellFile, /key: "profile" as const/);
-    assert.match(shellFile, /key: "exchange" as const/);
+    assert.match(shellFile, /href: "\/community\/exchange"/);
   });
 
   test("Home places compact Moments before its composer and feed", () => {

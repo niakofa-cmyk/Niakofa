@@ -546,3 +546,24 @@
   outline: 3px solid #00cfff;
   outline-offset: 3px;
 }
+
+.nia-home-paths {
+  display: flex;
+  gap: .45rem;
+  margin-top: .95rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nia-home-paths::-webkit-scrollbar { display: none; }
+.nia-home-paths a {
+  flex: 0 0 auto;
+  min-height: 36px;
+  border: 1px solid #29445f;
+  border-radius: 999px;
+  background: #08182b;
+  color: #edf8ff;
+  padding: .4rem .75rem;
+  font-size: .75rem;
+  font-weight: 800;
+}
+.nia-home-paths a:hover { border-color: #0fe5d4; color: #0fe5d4; }
