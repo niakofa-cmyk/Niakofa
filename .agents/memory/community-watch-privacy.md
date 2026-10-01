@@ -7,4 +7,4 @@ Suppress a daily completion rate when that day's cohort has fewer than five boun
 
 **Why:** A creator-level threshold alone can expose one viewer's completion on a day with one play. Permanent viewer-linked history is unnecessary for a bounded creator-insight window.
 
-**How to apply:** Enforce cohort suppression on the server before sending daily rates. When changing the insight window, update the viewer-record cleanup, aggregate queries, API wording, and privacy tests together.
+**How to apply:** Enforce cohort suppression on the server before sending daily rates. When changing the insight window, update the viewer-record cleanup, aggregate queries, API wording, and privacy tests together. For production browser checks, treat foreground video playback as a possible watch-metric write; suppress autoplay or block watch-contribution requests in strictly read-only tests.
