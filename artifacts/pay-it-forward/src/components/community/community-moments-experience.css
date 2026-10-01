@@ -251,3 +251,66 @@
   .nia-moments [data-moment-tools] { bottom: max(1rem, env(safe-area-inset-bottom, 0px)); }
   .nia-moments [data-moment-actions] { gap: .35rem; }
 }
+
+.dark .nia-moments > header,
+.dark .nia-moments > section[aria-label="Creator analytics"],
+.dark .nia-moments > section[aria-label="Spark feed"] {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+
+.dark .nia-moments > header h1 {
+  color: hsl(var(--foreground));
+}
+
+.dark .nia-moments [data-moment-filters] {
+  background: hsl(var(--muted) / .45);
+}
+
+.dark .nia-moments [data-moment-filters] input,
+.dark .nia-moments [data-moment-filters] select {
+  border-color: hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.nia-moments__feed-panel[data-fullscreen="true"] {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  flex-direction: column;
+  margin: 0 !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border: 0;
+  border-radius: 0;
+  background: hsl(var(--background));
+  overscroll-behavior: contain;
+}
+
+.nia-moments__feed-panel[data-fullscreen="true"] > div:first-child {
+  flex: 0 0 auto;
+  padding-top: max(.5rem, env(safe-area-inset-top, 0px));
+}
+
+.nia-moments__feed-panel[data-fullscreen="true"] [data-testid="list-moments-feed"] {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  height: auto;
+  flex: 1 1 auto;
+  border-radius: 0;
+}
+
+@media (max-width: 640px) {
+  .nia-moments__feed-panel[data-fullscreen="true"] [data-testid="list-moments-feed"] {
+    height: auto;
+    min-height: 0;
+  }
+}

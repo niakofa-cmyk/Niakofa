@@ -12,7 +12,7 @@ import {
   useUnblockDirectMessageUser,
   useUnmuteCommunityStoryAuthor,
 } from "@workspace/api-client-react";
-import { ArrowDown, ArrowUp, BookHeart, ChevronLeft, ChevronRight, Eye, Flag, Heart, LoaderCircle, MessageCircle, MoreHorizontal, Play, RefreshCw, Send, Share2, VolumeX, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookHeart, ChevronLeft, ChevronRight, Eye, Flag, Heart, LoaderCircle, Maximize2, MessageCircle, Minimize2, MoreHorizontal, Play, RefreshCw, Send, Share2, VolumeX, X } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { deleteStoryComment, getStoryComments, getStoryMetrics, postStoryComment, reactToStory, recordStoryView, removeStoryReaction, sendStoryContextMessage, type StoryComment, type StoryMetrics } from "@/lib/community-story-client";
 import { createCommunityStoryWatchContribution, MAX_COMMUNITY_STORY_WATCH_CONTRIBUTION_MS, postCommunityStoryWatchContribution, type CommunityStoryWatchContribution } from "@/lib/communityStoryWatchClient";
@@ -181,6 +181,7 @@ export function CommunityMomentsExperience({
   const [blockPendingAuthorId, setBlockPendingAuthorId] = useState<number | null>(null);
   const [keepMomentId, setKeepMomentId] = useState<number | null>(null);
   const [creatorInsightsOpen, setCreatorInsightsOpen] = useState(false);
+  const [fullScreenOpen, setFullScreenOpen] = useState(false);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const mutedAuthorsQuery = useGetCommunityStoryMutedAuthors({
@@ -203,6 +204,9 @@ export function CommunityMomentsExperience({
   const unblockUserMutation = useUnblockDirectMessageUser({ request: { headers: authHeaders() } });
   const cardRefs = useRef(new Map<number, HTMLElement>());
   const feedRef = useRef<HTMLDivElement>(null);
+  const feedPanelRef = useRef<HTMLElement | null>(null);
+  const fullScreenToggleRef = useRef<HTMLButtonElement | null>(null);
+  const fullScreenReturnFocusRef = useRef<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const watchPlaybackRef = useRef<WatchPlaybackState | null>(null);
   const pendingWatchContributionsRef = useRef<CommunityStoryWatchContribution[]>([]);
@@ -214,6 +218,12 @@ export function CommunityMomentsExperience({
   const activeSpark = sparks[activeIndex] ?? null;
   const reportSpark = reportSparkId === null ? null : sparks.find((spark) => spark.id === reportSparkId) ?? null;
   const commentsSpark = commentsOpenId == null ? null : sparks.find((spark) => spark.id === commentsOpenId) ?? null;
+  const fullScreenOverlayOpen = commentsOpenId !== null
+    || reportSparkId !== null
+    || shareSparkId !== null
+    || mutedAuthorsOpen
+    || blockedUsersOpen
+    || keepMomentId !== null;
   const activeMomentVideoState = useMemo(() => activeSpark?.moment_video
     ? momentVideoStates[activeSpark.id] ?? {
       status: activeSpark.moment_video.status,
@@ -250,6 +260,58 @@ export function CommunityMomentsExperience({
     : undefined;
   const visualElements = storyElements.filter((element) => element.type !== "background");
   const mediaFilter = storyEffectFilter(storyElements);
+
+  useEffect(() => {
+    if (!fullScreenOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [fullScreenOpen]);
+
+  useEffect(() => {
+    if (!fullScreenOpen) {
+      const returnTarget = fullScreenReturnFocusRef.current;
+      fullScreenReturnFocusRef.current = null;
+      if (returnTarget?.isConnected) returnTarget.focus();
+      return;
+    }
+    fullScreenToggleRef.current?.focus();
+    const focusableSelector = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (fullScreenOverlayOpen) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setFullScreenOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const panel = feedPanelRef.current;
+      const feedBounds = feedRef.current?.getBoundingClientRect();
+      const focusable = panel
+        ? Array.from(panel.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => {
+          if (!feedBounds) return true;
+          const card = element.closest<HTMLElement>("[data-moment-index]");
+          if (!card) return true;
+          const bounds = card.getBoundingClientRect();
+          return bounds.top < feedBounds.bottom && bounds.bottom > feedBounds.top;
+        })
+        : [];
+      if (!focusable.length) return;
+      const current = document.activeElement;
+      const index = focusable.indexOf(current as HTMLElement);
+      if (event.shiftKey && (index <= 0 || current === panel)) {
+        event.preventDefault();
+        focusable[focusable.length - 1]?.focus();
+      } else if (!event.shiftKey && (index === focusable.length - 1 || index === -1 || current === panel)) {
+        event.preventDefault();
+        focusable[0]?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [fullScreenOpen, fullScreenOverlayOpen]);
 
   const drainWatchContributions = useCallback(async () => {
     if (sendingWatchContributionsRef.current) return;
@@ -940,10 +1002,35 @@ export function CommunityMomentsExperience({
         {creatorInsightsOpen && <div className="border-t border-border p-3 sm:p-4"><CreatorInsightsPanel /></div>}
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-border bg-card" aria-label="Spark feed">
+      <section
+        ref={feedPanelRef}
+        className="nia-moments__feed-panel overflow-hidden rounded-2xl border border-border bg-card"
+        aria-label={fullScreenOpen ? "Full-screen Moments viewer" : "Spark feed"}
+        aria-modal={fullScreenOpen ? "true" : undefined}
+        data-fullscreen={fullScreenOpen ? "true" : "false"}
+        role={fullScreenOpen ? "dialog" : undefined}
+        tabIndex={fullScreenOpen ? -1 : undefined}
+      >
         <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-4 py-2">
           <p className="text-sm font-bold">Sparks shared with you</p>
           <div className="flex items-center gap-2">
+            <button
+              ref={fullScreenToggleRef}
+              type="button"
+              onClick={() => {
+                if (!fullScreenOpen) fullScreenReturnFocusRef.current = document.activeElement as HTMLElement | null;
+                setFullScreenOpen((open) => !open);
+              }}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted"
+              aria-label={fullScreenOpen ? "Exit full-screen Moments" : "Open full-screen Moments"}
+              aria-pressed={fullScreenOpen}
+              data-testid="button-toggle-fullscreen-moments"
+            >
+              {fullScreenOpen
+                ? <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
+              <span className="sr-only">{fullScreenOpen ? "Exit full screen" : "View full screen"}</span>
+            </button>
             <button type="button" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls="moment-filters" className="nia-moments__filters-toggle inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted active:bg-muted" data-testid="button-toggle-moment-filters">
               Filters
             </button>

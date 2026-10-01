@@ -4,22 +4,29 @@ This is the release gate for the universal media foundation. A healthy
 deployment or a configured bucket is not enough to enable `MEDIA_PLATFORM_V21`.
 Record evidence for every checked row from the production runtime.
 
-**Current 2026-09-30 hold:** The later gated, narrow same-Community portrait
-media attempt passed production health, readiness, and served-commit checks,
-but its first resumable chunk returned HTTP 503. The API classified the failure
-at `database_ledger`; the PostGIS log at 2026-10-01 00:29:50 UTC reported
-`could not determine data type of parameter $1`. The request failed before the
-provider write and before Moment publication. The owner verified that asset 7
-and its upload session return 404 and that no certification Moment remains.
+**Current 2026-09-30 America/Chicago hold (2026-10-01 UTC):** Railway now serves
+`3703e704991bab076cf3d8ad1191425c970b42ba`, which includes the JSONB cleanup-ledger
+cast fix. Production `/api/healthz` and `/api/readiness` were healthy; storage,
+Redis/BullMQ, and the registered media worker reported ready, and V21 was
+already active. A gated same-Community narrow retest passed resumable chunk
+upload/finalization and reached media processing, but both video assets
+(`8` and `9`) transitioned to `failed` instead of `ready` after the 120-second
+processing wait. The test failed before publishing a Moment.
 
-The workspace now casts cleanup-ledger values to `text` before
-`jsonb_build_array`; the regression test, 52 targeted API tests, API typecheck,
-and a local PostgreSQL reproduction pass. This fix has **not** been deployed
-to Railway. Do not retry production upload acceptance until the exact served
-revision contains the fix. The two approved production accounts are in the
-same Community, so this run cannot certify cross-Community isolation. The
+After the runner's cleanup, independent owner-authenticated reads confirmed
+assets `8` and `9` and both upload sessions return 404; an author-scoped Story
+query returned no certification Moment. This is API-level cleanup evidence
+only: production bucket objects and worker temporary files were not
+independently inspected. The Railway log snapshot contained startup checks but
+no per-job processing failure detail, so the media-worker cause remains
+unresolved. Do not retry production media writes until the failure is diagnosed
+and the storage/worker cleanup boundary is independently reconciled.
+
+This narrow run used the two approved accounts in the same Community. It does
+not certify cross-Community isolation or real-device camera behavior. The
 2026-09-28 results below remain historical evidence, not current release
-approval.
+approval; the deployed chunk fix only clears the earlier database-ledger
+failure and does not certify processing or publication.
 
 **Earlier 2026-09-30 storage-probe hold:** The admin-only one-shot probe reached
 its storage stage after the synthetic FFmpeg/FFprobe check, but failed with

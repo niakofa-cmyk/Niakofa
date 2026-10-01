@@ -442,3 +442,42 @@
   .nk-create-spark { min-width: 44px; min-height: 44px; }
   .nk-notification-drawer { padding-bottom: env(safe-area-inset-bottom, 0px); }
 }
+
+/* Reuse the brand surfaces without leaving pale cards inside the dark shell. */
+.dark .nk-community-v4-social-item[data-active="true"] {
+  color: hsl(var(--primary));
+}
+
+.dark .nk-notification-row,
+.dark .nk-history-row,
+.dark .nk-notification-state,
+.dark .nk-history-empty {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+}
+
+.dark .nk-notification-row.is-unread,
+.dark .nk-history-row.is-unread {
+  background: color-mix(in srgb, var(--nk-coral) 11%, hsl(var(--card)));
+}
+
+.dark .nk-notification-kind-emergency,
+.dark .nk-notification-kind-story_reaction,
+.dark .nk-notification-kind-pledge,
+.dark .nk-notification-kind-pledge_scheduled,
+.dark .nk-unread-pill {
+  color: hsl(var(--foreground));
+}
+
+.dark .nk-skeleton-row,
+.dark .nk-history-skeleton {
+  background: hsl(var(--muted));
+}
+
+.dark .nk-skeleton-row i,
+.dark .nk-skeleton-row b,
+.dark .nk-history-skeleton i,
+.dark .nk-history-skeleton b {
+  background: hsl(var(--border));
+}
