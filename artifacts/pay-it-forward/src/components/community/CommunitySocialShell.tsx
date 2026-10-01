@@ -8,7 +8,6 @@ import {
   Globe2,
   House,
   Image as ImageIcon,
-  Menu,
   MessageCircle,
   Search,
   ShoppingBag,
@@ -182,7 +181,11 @@ export function CommunitySocialShell({
               aria-expanded={menuOpen}
               className="nk-community-v4-icon-button"
             >
-              <Menu className="h-5 w-5" />
+              <svg viewBox="0 0 32 32" className="h-6 w-6" aria-hidden="true">
+                <path d="M8.2 20.4c2.2-6.4 7.4-9.8 12.6-8.2 1.6.5 2.6 1.4 3.1 2.4-2.8-1.6-6.4-1.2-9.4 1.6-2.2 2.1-3.4 5-3.6 7.8-1.1-.9-2-2.1-2.7-3.6Z" fill="currentColor" />
+                <path d="M22.6 12.2c.9-1.8.4-3.6-.8-4.2-1.1-.6-2.6.1-3.2 1.7-.4 1.1-.2 2.2.4 3 .9-.4 2.2-.6 3.6-.5Z" fill="currentColor" />
+                <ellipse cx="16.2" cy="22.4" rx="3.1" ry="3.6" fill="currentColor" opacity=".85" />
+              </svg>
             </button>
           </div>
         </div>
