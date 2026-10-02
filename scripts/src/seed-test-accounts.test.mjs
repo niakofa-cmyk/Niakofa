@@ -58,3 +58,54 @@ test("local seeding also refuses missing explicit passwords", () => {
     /account seeding requires explicit passwords for every test account/,
   );
 });
+
+test("single-account selection requires only its password and leaves other fixtures untouched", () => {
+  const env = { ...process.env };
+  delete env.SEED_ADMIN_PASSWORD;
+  delete env.SEED_HELPER_PASSWORD;
+  delete env.SEED_USER_PASSWORD;
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx/esm", script, "--only", "admin"],
+    {
+      encoding: "utf8",
+      env: {
+        ...env,
+        DATABASE_URL: "postgres://127.0.0.1:1/niakofa",
+        SEED_ADMIN_PASSWORD: "test-only-password",
+      },
+    },
+  );
+
+  // The invalid local port makes the script stop at its DB smoke test. Getting
+  // that far proves that only the selected role's password was required.
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /Selection: admin only; other fixtures will not be touched/);
+  assert.match(result.stderr, /ERROR connecting to database:/);
+  assert.doesNotMatch(result.stderr, /account seeding requires explicit passwords/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /test-only-password/);
+});
+
+test("single-account selection rejects unknown roles before connecting", () => {
+  const env = { ...process.env };
+  delete env.SEED_ADMIN_PASSWORD;
+  delete env.SEED_HELPER_PASSWORD;
+  delete env.SEED_USER_PASSWORD;
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx/esm", script, "--only", "all"],
+    {
+      encoding: "utf8",
+      env: {
+        ...env,
+        DATABASE_URL: "postgres://127.0.0.1:1/niakofa",
+      },
+    },
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--only expects one role: admin, helper, or user/);
+  assert.doesNotMatch(result.stderr, /ERROR connecting to database:/);
+});

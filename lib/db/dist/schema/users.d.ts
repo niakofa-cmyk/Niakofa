@@ -54,6 +54,23 @@ export declare const usersTable: import("drizzle-orm/pg-core").PgTableWithColumn
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        username: import("drizzle-orm/pg-core").PgColumn<{
+            name: "username";
+            tableName: "users";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         avatar_url: import("drizzle-orm/pg-core").PgColumn<{
             name: "avatar_url";
             tableName: "users";
@@ -1245,6 +1262,7 @@ export declare const usersTable: import("drizzle-orm/pg-core").PgTableWithColumn
 export declare const insertUserSchema: z.ZodObject<{
     name: z.ZodString;
     email: z.ZodString;
+    username: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     avatar_url: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     is_helper: z.ZodOptional<z.ZodBoolean>;
     helper_mode_active: z.ZodOptional<z.ZodBoolean>;

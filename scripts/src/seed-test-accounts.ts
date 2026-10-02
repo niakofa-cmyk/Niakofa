@@ -2,10 +2,11 @@
  * Niakofa — Seed Test Accounts (enhanced)
  *
  * Creates (or repairs) the three standing test accounts against whichever
- * database DATABASE_URL points to. Upserts by email, so it is safe to run
- * more than once — existing rows get their password, role flags, and
- * suspension state corrected rather than erroring on a duplicate-email
- * constraint.
+ * database DATABASE_URL points to. By default all three are selected; pass
+ * `--only admin|helper|user` to limit both password requirements and database
+ * writes to one selected account. Upserts by email, so a selected existing row
+ * gets its password and role fields repaired rather than erroring on a
+ * duplicate-email constraint.
  *
  * WHY THIS IS A MANUAL SCRIPT (unchanged from the original)
  * ──────────────────────────────────────────────────────────────────────────
@@ -26,6 +27,9 @@
  *    password into a live app is hard to undo if it's forgotten and
  *    someone else finds the credentials later.
  * 3. Prints a reminder to rotate the admin password after first login.
+ * 4. `--only <role>` creates or repairs just one account; all unselected
+ *    fixtures are left untouched. If the selected account already exists,
+ *    its password and configured role/status fields are still repaired.
  *
  * USAGE
  * ──────────────────────────────────────────────────────────────────────────
@@ -35,12 +39,21 @@
  *   SEED_USER_PASSWORD="<your own strong password>" \
  *   pnpm --filter @workspace/scripts run seed-test-accounts
  *
+ *   # Seed only the admin fixture locally; helper/user are not touched:
+ *   SEED_ADMIN_PASSWORD="<your own strong password>" \
+ *   pnpm --filter @workspace/scripts run seed-test-accounts -- --only admin
+ *
  *   # Railway / any production DB — supply passwords AND pass the flag:
  *   DATABASE_URL="postgres://..." \
  *   SEED_ADMIN_PASSWORD="<your own strong password>" \
  *   SEED_HELPER_PASSWORD="<your own strong password>" \
  *   SEED_USER_PASSWORD="<your own strong password>" \
  *   pnpm --filter @workspace/scripts run seed-test-accounts -- --i-know-this-is-production
+ *
+ *   # Railway / production — seed or repair just the admin fixture:
+ *   DATABASE_URL="postgres://..." \
+ *   SEED_ADMIN_PASSWORD="<your own strong password>" \
+ *   pnpm --filter @workspace/scripts run seed-test-accounts -- --only admin --i-know-this-is-production
  *
  * Get the Railway Postgres connection string from:
  *   Railway → your project → Postgres → Variables → DATABASE_PUBLIC_URL
@@ -50,6 +63,46 @@ import pg from "pg";
 import bcrypt from "bcryptjs";
 import { usersTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
+
+const ACCOUNT_ROLES = ["admin", "helper", "user"] as const;
+type AccountRole = (typeof ACCOUNT_ROLES)[number];
+
+function parseOnlyRole(args: string[]): AccountRole | undefined {
+  let selectorSeen = false;
+  let selectedRole: string | undefined;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg !== "--only" && !arg.startsWith("--only=")) continue;
+
+    if (selectorSeen) {
+      console.error("ERROR: pass --only at most once.");
+      process.exit(1);
+    }
+    selectorSeen = true;
+
+    if (arg === "--only") {
+      const value = args[i + 1];
+      if (!value || value.startsWith("--")) {
+        console.error("ERROR: --only requires one role: admin, helper, or user.");
+        process.exit(1);
+      }
+      selectedRole = value;
+      i += 1;
+    } else {
+      selectedRole = arg.slice("--only=".length);
+    }
+  }
+
+  if (!selectorSeen) return undefined;
+  if (!ACCOUNT_ROLES.includes(selectedRole as AccountRole)) {
+    console.error("ERROR: --only expects one role: admin, helper, or user.");
+    process.exit(1);
+  }
+  return selectedRole as AccountRole;
+}
+
+const onlyRole = parseOnlyRole(process.argv.slice(2));
 
 // ── Database connection ──────────────────────────────────────────────────────
 
@@ -79,7 +132,7 @@ if (!looksLocal && !hasProdFlag) {
     "repair these accounts on it, re-run with:\n\n" +
     "    ... pnpm --filter @workspace/scripts run seed-test-accounts -- --i-know-this-is-production\n\n" +
     "Before doing that: make sure all three SEED_*_PASSWORD values are set\n" +
-     "to unique passwords you chose yourself.\n"
+     "to unique passwords you chose yourself for the selected account(s).\n"
   );
   process.exit(1);
 }
@@ -94,26 +147,32 @@ const adminPasswordInput = process.env.SEED_ADMIN_PASSWORD?.trim();
 const helperPasswordInput = process.env.SEED_HELPER_PASSWORD?.trim();
 const userPasswordInput = process.env.SEED_USER_PASSWORD?.trim();
 
-const missingPasswords = [
-  ["SEED_ADMIN_PASSWORD", adminPasswordInput],
-  ["SEED_HELPER_PASSWORD", helperPasswordInput],
-  ["SEED_USER_PASSWORD", userPasswordInput],
-]
-  .filter(([, value]) => !value)
-  .map(([key]) => key);
+const passwordByRole: Record<AccountRole, string | undefined> = {
+  admin: adminPasswordInput,
+  helper: helperPasswordInput,
+  user: userPasswordInput,
+};
+const passwordEnvByRole: Record<AccountRole, string> = {
+  admin: "SEED_ADMIN_PASSWORD",
+  helper: "SEED_HELPER_PASSWORD",
+  user: "SEED_USER_PASSWORD",
+};
+const requiredRoles: readonly AccountRole[] = onlyRole ? [onlyRole] : ACCOUNT_ROLES;
+const missingPasswords = requiredRoles
+  .filter((role) => !passwordByRole[role])
+  .map((role) => passwordEnvByRole[role]);
 
 if (missingPasswords.length > 0) {
+  const requiredScope = onlyRole
+    ? `the selected ${onlyRole} test account`
+    : "every test account";
   console.error(
-    "\nERROR: account seeding requires explicit passwords for every test account.\n" +
+    `\nERROR: account seeding requires explicit passwords for ${requiredScope}.\n` +
       `Missing: ${missingPasswords.join(", ")}\n` +
       "Set unique values in the environment and rerun.\n",
   );
   process.exit(1);
 }
-
-const ADMIN_PASSWORD = adminPasswordInput!;
-const HELPER_PASSWORD = helperPasswordInput!;
-const USER_PASSWORD = userPasswordInput!;
 
 // ── Account definitions ───────────────────────────────────────────────────────
 // Each account has separate `insertFields` (first-time creation) and
@@ -122,7 +181,7 @@ const USER_PASSWORD = userPasswordInput!;
 // or force-logged-out account is fully restored to a working state.
 
 interface AccountDef {
-  role: string;
+  role: AccountRole;
   email: string;
   password: string;
   insertFields: Omit<typeof usersTable.$inferInsert, "email" | "password_hash">;
@@ -133,12 +192,12 @@ interface AccountDef {
 // so these hashed passwords authenticate through the normal login flow.
 const BCRYPT_ROUNDS = 12;
 
-const ACCOUNTS: AccountDef[] = [
+const ALL_ACCOUNTS: AccountDef[] = [
   // ── Admin ──────────────────────────────────────────────────────────────────
   {
     role: "admin",
     email: "admin@niakofa.app",
-    password: ADMIN_PASSWORD,
+    password: passwordByRole.admin ?? "",
     insertFields: {
       name: "Admin Test Account",
       account_type: "individual",
@@ -163,7 +222,7 @@ const ACCOUNTS: AccountDef[] = [
   {
     role: "helper",
     email: "helper@niakofa.app",
-    password: HELPER_PASSWORD,
+    password: passwordByRole.helper ?? "",
     insertFields: {
       name: "Helper Test Account",
       account_type: "individual",
@@ -225,7 +284,7 @@ const ACCOUNTS: AccountDef[] = [
   {
     role: "user",
     email: "user@niakofa.app",
-    password: USER_PASSWORD,
+    password: passwordByRole.user ?? "",
     insertFields: {
       name: "User Test Account",
       account_type: "individual",
@@ -248,11 +307,16 @@ const ACCOUNTS: AccountDef[] = [
   },
 ];
 
+const ACCOUNTS = ALL_ACCOUNTS.filter((account) => !onlyRole || account.role === onlyRole);
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("\n▶ seed-test-accounts — connecting to database…");
   console.log(`  Target: ${looksLocal ? "local/dev (auto-detected)" : "NON-LOCAL (confirmed via flag)"}\n`);
+  console.log(
+    `  Selection: ${onlyRole ? `${onlyRole} only; other fixtures will not be touched` : "admin, helper, and user"}\n`,
+  );
 
   // Smoke-test: make sure the users table exists before we do real work.
   // If migrations haven't been applied, fail early with a clear message.
@@ -309,18 +373,27 @@ async function main() {
     console.log(`  ✔ ${action} ${acct.role.padEnd(6)} ${acct.email}  (id ${result.id})`);
   }
 
-  console.log("\n✅ All three test accounts are ready.\n");
+  console.log(`\n✅ ${onlyRole ? `The ${onlyRole} test account is` : "All three test accounts are"} ready.\n`);
   console.log("  Role    Email                    Password source");
   console.log("  ──────  ───────────────────────  ─────────────────────────────");
-  console.log("  Admin   admin@niakofa.app         SEED_ADMIN_PASSWORD (env)");
-  console.log("  Helper  helper@niakofa.app        SEED_HELPER_PASSWORD (env)");
-  console.log("  User    user@niakofa.app          SEED_USER_PASSWORD (env)\n");
-  console.log("  ℹ  Admin account:  /admin panel, Nia kill-switch, all management tabs.");
-  console.log("  ℹ  Helper account: helper mode, dispatch, navigation, rating flows.");
-  console.log("  ℹ  User account:   standard requester flow end-to-end.");
+  for (const acct of ACCOUNTS) {
+    console.log(
+      `  ${acct.role.padEnd(6)} ${acct.email.padEnd(24)} ${passwordEnvByRole[acct.role]} (env)`,
+    );
+  }
+  console.log("");
+  if (ACCOUNTS.some((acct) => acct.role === "admin")) {
+    console.log("  ℹ  Admin account:  /admin panel, Nia kill-switch, all management tabs.");
+  }
+  if (ACCOUNTS.some((acct) => acct.role === "helper")) {
+    console.log("  ℹ  Helper account: helper mode, dispatch, navigation, rating flows.");
+  }
+  if (ACCOUNTS.some((acct) => acct.role === "user")) {
+    console.log("  ℹ  User account:   standard requester flow end-to-end.");
+  }
   if (!looksLocal) {
     console.log(
-      "\n  ⚠  This ran against a non-local database. Treat these accounts as\n" +
+      "\n  ⚠  This ran against a non-local database. Treat the selected account(s) as\n" +
       "     disposable verification identities and remove or rotate them before\n" +
       "     opening the deployment to real users.\n"
     );
