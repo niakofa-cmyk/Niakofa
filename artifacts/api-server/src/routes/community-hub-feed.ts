@@ -26,7 +26,7 @@ import {
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { communityLikeLimiter, communityPostLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
-import { deleteAsset, deleteAssetStrict, putAsset, streamOrRedirectAsset } from "../lib/storage";
+import { deleteAsset, deleteAssetStrict, putAsset, streamAssetSameOrigin } from "../lib/storage";
 import { broadcast } from "../lib/ws-hub";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -938,8 +938,8 @@ router.delete("/community/hubs/:hubId/posts/:postId", requireAuth, requireApprov
 
 // Media is attached only to an approved, moderated Hub post. The storage key
 // is UUID-based and the post-level visibility check prevents orphaned/private
-// objects from becoming a generic file browser. This route intentionally does
-// not require a bearer header so <img>, <video>, and <audio> elements work.
+// objects from becoming a generic file browser. This authenticated, member-only
+// route streams bytes through the same-origin API.
 router.get("/community/media/:mediaId", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const rawMediaId = Array.isArray(req.params.mediaId) ? req.params.mediaId[0] : req.params.mediaId;
   const mediaId = parseHubId(rawMediaId);
@@ -966,7 +966,7 @@ router.get("/community/media/:mediaId", requireAuth, requireApproved, generalApi
     ? media.thumbnail_key
     : media.variant_key ?? media.storage_key;
   if (!key) return res.status(409).json({ error: "Media variant is still processing." });
-  await streamOrRedirectAsset(key, res);
+  await streamAssetSameOrigin(key, res);
   return;
 });
 
