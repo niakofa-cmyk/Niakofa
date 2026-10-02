@@ -15,6 +15,19 @@ export function storyCameraConstraints(facingMode: StoryCameraFacingMode, exact 
   };
 }
 
+/** One capture session for a take. A second getUserMedia while the preview
+ * is open restarts the phone camera and leaves the video black. */
+export function storyCameraRecordingConstraints(facingMode: StoryCameraFacingMode): MediaStreamConstraints {
+  return {
+    video: {
+      facingMode: { ideal: facingMode },
+      width: { ideal: 1080 },
+      height: { ideal: 1920 },
+    },
+    audio: true,
+  };
+}
+
 export function storyCameraErrorMessage(reason: unknown) {
   const name = reason && typeof reason === "object" && "name" in reason && typeof reason.name === "string"
     ? reason.name

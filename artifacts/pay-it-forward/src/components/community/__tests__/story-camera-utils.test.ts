@@ -7,6 +7,7 @@ import {
   STORY_CAMERA_MAX_RECORDING_MS,
   storyCameraConstraints,
   storyCameraErrorMessage,
+  storyCameraRecordingConstraints,
 } from "../story-camera-utils";
 
 const component = readFileSync(new URL("../StoryCameraRecorder.tsx", import.meta.url), "utf8");
@@ -33,6 +34,16 @@ test("camera keeps each clip within a Moment and allows a longer Spark for Famil
   assert.match(component, /recordedVideoMsRef\.current >= MAX_RECORDING_MS/);
   assert.match(component, /Math\.min\(CLIP_MAX_MS, Math\.max\(0, MAX_RECORDING_MS - recordedVideoMsRef\.current\)\)/);
   assert.match(component, /Family Story length/);
+});
+
+test("recording keeps one camera session so the preview does not go black", () => {
+  assert.deepEqual(storyCameraRecordingConstraints("user").audio, true);
+  assert.equal((storyCameraRecordingConstraints("environment").video as MediaTrackConstraints).facingMode && true, true);
+  assert.match(component, /phase === "camera" \|\| phase === "countdown" \|\| phase === "recording" \|\| phase === "paused"/);
+  assert.doesNotMatch(component, /if \(video\.srcObject === streamRef\.current\) video\.srcObject = null/);
+  assert.doesNotMatch(component, /getUserMedia\(\{ audio: true \}\)/);
+  assert.match(component, /storyCameraRecordingConstraints\(facingMode\)/);
+  assert.match(component, /new MediaRecorder\(recordingStream, \{ mimeType \}\)/);
 });
 
 test("camera permission and device errors are explained without relying on DOMException support", () => {

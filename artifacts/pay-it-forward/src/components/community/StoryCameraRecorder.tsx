@@ -6,6 +6,7 @@ import {
   STORY_CAMERA_MAX_RECORDING_MS,
   storyCameraConstraints,
   storyCameraErrorMessage,
+  storyCameraRecordingConstraints,
   type StoryCameraFacingMode,
 } from "./story-camera-utils";
 
@@ -13,9 +14,11 @@ const MAX_RECORDING_MS = STORY_CAMERA_MAX_RECORDING_MS;
 const CLIP_MAX_MS = STORY_CAMERA_CLIP_MAX_MS;
 const MAX_ITEMS = STORY_CAMERA_MAX_ITEMS;
 const recorderTypes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
+const silentRecorderTypes = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"];
 
-function recorderMimeType() {
-  return recorderTypes.find((type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) ?? "";
+function recorderMimeType(hasAudio: boolean) {
+  const types = hasAudio ? recorderTypes : silentRecorderTypes;
+  return types.find((type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) ?? "";
 }
 
 function stopStream(stream: MediaStream | null) {
@@ -153,15 +156,16 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   }, []);
 
   useEffect(() => {
-    if (phase !== "camera" || !streamRef.current || !videoRef.current) return;
+    const live = phase === "camera" || phase === "countdown" || phase === "recording" || phase === "paused";
     const video = videoRef.current;
-    video.srcObject = streamRef.current;
+    const stream = streamRef.current;
+    if (!live || !video || !stream) return;
+    if (video.srcObject !== stream) video.srcObject = stream;
     void video.play().catch(() => {
-      if (!disposedRef.current) setError("The camera preview could not be resumed. Try reopening the camera.");
+      if (!disposedRef.current && phaseRef.current !== "preview") {
+        setError("The camera preview could not be resumed. Try reopening the camera.");
+      }
     });
-    return () => {
-      if (video.srcObject === streamRef.current) video.srcObject = null;
-    };
   }, [phase]);
 
   useEffect(() => {
@@ -244,6 +248,34 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const showRecordingPreview = async (next: MediaStream) => {
+    streamRef.current = next;
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.srcObject !== next) video.srcObject = next;
+    await video.play().catch(() => undefined);
+  };
+  const openRecordingStream = async (current: MediaStream) => {
+    if (current.getAudioTracks().some((track) => track.readyState === "live")) return current;
+    stopStream(current);
+    if (streamRef.current === current) streamRef.current = null;
+    try {
+      const combined = await navigator.mediaDevices.getUserMedia(storyCameraRecordingConstraints(facingMode));
+      if (disposedRef.current || cancelledRef.current || isDocumentHidden()) {
+        stopStream(combined);
+        return null;
+      }
+      await showRecordingPreview(combined);
+      return combined;
+    } catch (reason) {
+      const name = reason && typeof reason === "object" && "name" in reason ? String((reason as { name?: string }).name) : "";
+      if (name !== "NotAllowedError" && name !== "NotFoundError") throw reason;
+      const restored = await navigator.mediaDevices.getUserMedia(storyCameraConstraints(facingMode));
+      await showRecordingPreview(restored);
+      return restored;
+    }
+  };
+
   const beginRecording = async () => {
     const stream = streamRef.current;
     const requestId = requestIdRef.current;
@@ -260,21 +292,16 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
       return;
     }
     if (recordingStartingRef.current) return;
-    const mimeType = recorderMimeType();
-    if (!mimeType) {
-      setError("This browser cannot record a supported video format.");
-      return;
-    }
     recordingStartingRef.current = true;
     try {
-      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current || streamRef.current !== stream) {
-        stopStream(audioStream);
+      const recordingStream = await openRecordingStream(stream);
+      if (!recordingStream || disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current) return;
+      const mimeType = recorderMimeType(recordingStream.getAudioTracks().length > 0);
+      if (!mimeType) {
+        setError("This browser cannot record a supported video format.");
         return;
       }
-      recordingAudioRef.current = audioStream;
       chunksRef.current = [];
-      const recordingStream = new MediaStream([...stream.getVideoTracks(), ...audioStream.getAudioTracks()]);
       const recorder = new MediaRecorder(recordingStream, { mimeType });
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
@@ -346,6 +373,8 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
       setElapsed(0);
       startedAtRef.current = Date.now();
       recorder.start(200);
+      const preview = videoRef.current;
+      if (preview && preview.srcObject === recordingStream) void preview.play().catch(() => undefined);
       setPhase("recording");
       startClock();
     } catch (reason) {
