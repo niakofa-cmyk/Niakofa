@@ -274,7 +274,7 @@
 .nk-history-count span { margin-top: .22rem; color: #e1e8da; font-size: .57rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
 .nk-history-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.4rem; padding-top: .85rem; border-top: 1px solid rgba(255,255,255,.18); }
 .nk-history-live { display: inline-flex; align-items: center; gap: .45rem; color: #d5e4d8; font-size: .68rem; }
-.nk-history-live i { width: .42rem; height: .42rem; border-radius: 50%; background: #e7b650; box-shadow: 0 0 0 4px rgba(231,182,80,.16); }
+.nk-history-live i { width: .42rem; height: .42rem; border-radius: 50%; background: #ffb703; box-shadow: 0 0 0 4px rgba(231,182,80,.16); }
 .nk-mark-all { display: inline-flex; align-items: center; gap: .4rem; min-height: 2.2rem; padding: 0 .8rem; border: 1px solid rgba(255,255,255,.24); border-radius: 99px; color: #fff8e7; font-size: .68rem; font-weight: 800; cursor: pointer; }
 .nk-mark-all:disabled { opacity: .6; cursor: wait; }
 .nk-history-list { display: grid; gap: .55rem; padding: .25rem 0; }
@@ -571,23 +571,23 @@
 /* Final cascade guard: replace legacy paper/green overrides above. */
 .nk-community-v4 {
   background: radial-gradient(ellipse at 12% 3%, rgb(0 207 255 / .08), transparent 29rem), #08182b;
-  color: #edf8ff;
+  color: #ffffff;
 }
 .nk-community-v4 :focus-visible { outline: 3px solid #00cfff; outline-offset: 3px; }
 .nk-community-v4-header-wrap {
   background: rgb(8 24 43 / .94);
-  border-color: #29445f;
+  border-color: #1a334e;
 }
-.nk-community-v4-social-nav { border-color: #29445f; }
+.nk-community-v4-social-nav { border-color: #1a334e; }
 .nk-community-v4-icon-button,
 .nk-community-v4-search input,
 .nk-close-button,
 .nk-notification-read,
 .nk-view-all,
 .nk-history-action {
-  border-color: #29445f;
+  border-color: #1a334e;
   background: #142b43;
-  color: #edf8ff;
+  color: #ffffff;
 }
 .nk-community-v4-icon-button:hover,
 .nk-view-all:hover,
@@ -602,13 +602,13 @@
 .nk-retry-button { background: #00cfff; color: #08182b; }
 .nk-create-spark:hover { background: #43dcff; }
 .nk-notification-drawer {
-  border-color: #29445f;
-  background: #10243a;
-  color: #edf8ff;
+  border-color: #1a334e;
+  background: #0f243b;
+  color: #ffffff;
 }
 .nk-drawer-scrim { background: rgb(4 11 23 / .72); }
 .nk-notification-drawer-head,
-.nk-history-actions { border-color: #29445f; }
+.nk-history-actions { border-color: #1a334e; }
 .nk-notification-heading-icon,
 .nk-notification-glyph,
 .nk-history-mark,
@@ -619,20 +619,20 @@
 .nk-notification-row,
 .nk-history-row,
 .nk-history-empty {
-  border-color: #29445f;
+  border-color: #1a334e;
   background: #142b43;
-  color: #edf8ff;
+  color: #ffffff;
 }
 .nk-notification-row.is-unread,
 .nk-history-row.is-unread {
-  border-color: #29445f;
+  border-color: #1a334e;
   background: rgb(0 207 255 / .08);
   box-shadow: inset 3px 0 #00cfff;
 }
 .nk-notification-title,
 .nk-history-title,
 .nk-notification-state h3,
-.nk-history-empty h2 { color: #edf8ff; }
+.nk-history-empty h2 { color: #ffffff; }
 .nk-notification-body,
 .nk-history-body,
 .nk-notification-time,
@@ -641,22 +641,22 @@
 .nk-notification-state,
 .nk-history-empty { color: #a9bfd1; }
 .nk-history-hero {
-  color: #edf8ff;
-  background: radial-gradient(circle at 92% 8%, rgb(0 207 255 / .12), transparent 9rem), #10243a;
+  color: #ffffff;
+  background: radial-gradient(circle at 92% 8%, rgb(0 207 255 / .12), transparent 9rem), #0f243b;
 }
 .nk-history-overline,
 .nk-history-title-line p,
 .nk-history-live,
-.nk-mark-all { color: #edf8ff; }
+.nk-mark-all { color: #ffffff; }
 .nk-history-live i { background: #00cfff; box-shadow: 0 0 0 4px rgb(0 207 255 / .16); }
-.nk-mark-all { border-color: #355571; }
+.nk-mark-all { border-color: #1a334e; }
 .nk-unread-pill { background: rgb(0 207 255 / .14); color: #8ceaff; }
 .nk-skeleton-row,
-.nk-history-skeleton { background: #10243a; }
+.nk-history-skeleton { background: #0f243b; }
 .nk-skeleton-row i,
 .nk-skeleton-row b,
 .nk-history-skeleton i,
-.nk-history-skeleton b { background: #29445f; }
+.nk-history-skeleton b { background: #1a334e; }
 .nk-drawer-grip { background: #58738d; }
 
 /* Community dock: Home, Moments, camera, Inbox, Profile. */
@@ -664,9 +664,9 @@
   background:
     radial-gradient(900px 420px at 100% -10%, rgb(0 207 255 / .14), transparent 55%),
     #08182b;
-  color: #edf8ff;
+  color: #ffffff;
 }
-.nk-community-v4-wordmark { color: #edf8ff; font-family: Fraunces, ui-serif, Georgia, serif; }
+.nk-community-v4-wordmark { color: #ffffff; font-family: Fraunces, ui-serif, Georgia, serif; }
 .nk-community-v4-wordmark::after { content: none; }
 .nk-community-brand-name { display: block; font-size: 1.35rem; line-height: 1; }
 .nk-community-brand-line {
@@ -715,7 +715,7 @@
 .nk-community-dock .nk-community-v4-social-item {
   flex: 1;
   min-height: 48px;
-  color: #9eb4c7;
+  color: #8ea6c0;
   background: transparent;
 }
 .nk-community-dock .nk-community-v4-social-item[data-active="true"] { color: #00cfff; }
@@ -736,7 +736,7 @@
 .nk-community-dock-camera:hover { background: #66e4ff; }
 .nk-community-dock-camera:active { transform: scale(.97); }
 .nk-community-sheet {
-  background: #0c2744;
+  background: #0f243b;
   color: #f3fffc;
   border-right: 1px solid rgb(243 255 252 / .12);
 }

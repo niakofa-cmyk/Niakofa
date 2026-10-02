@@ -104,22 +104,27 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* Niakofa visual direction. Blue navy and electric cyan, Figtree for UI, Fraunces for titles.
-   Root and dark mode share it. Coral and gold stay for warnings only. */
+/* Niakofa color system.
+   Anchors: Deep Navy #08182B, Electric Cyan #00CFFF.
+   Warm accents: Coral Sunset #FF5A5F, Electric Amber #FFB703.
+   :root is light mode. html.dark uses the dark map. Cyan button text is navy. */
 :root {
   --nk-navy: #08182b;
-  --nk-navy-2: #0c2744;
-  --nk-navy-3: #123154;
+  --nk-navy-2: #0f243b;
+  --nk-navy-3: #1a334e;
   --nk-cyan: #00cfff;
   --nk-cyan-bright: #66e4ff;
-  --nk-mist: #d5e8f5;
-  --nk-line: #355571;
+  --nk-ice: #e0f7fc;
+  --nk-mist: #e0f7fc;
+  --nk-slate: #4a627a;
+  --nk-offwhite: #f8fafc;
+  --nk-line: #e2e8f0;
   --nk-teal: var(--nk-cyan);
-  --nk-coral: #e4453a;
-  --nk-gold: #e7b650;
-  --nk-ink: #edf8ff;
-  --nk-paper: var(--nk-navy);
-  --nk-muted: #9eb4c7;
+  --nk-coral: #ff5a5f;
+  --nk-gold: #ffb703;
+  --nk-ink: #08182b;
+  --nk-paper: #f8fafc;
+  --nk-muted: #4a627a;
 
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
@@ -129,50 +134,50 @@
   --elevate-1: rgba(255,255,255, .03);
   --elevate-2: rgba(255,255,255, .08);
 
-  --background: 210 69% 10%;
-  --foreground: 204 100% 96%;
+  --background: 210 40% 98%;
+  --foreground: 213 69% 10%;
 
-  --border: 210 36% 33%;
-  --input: 211 40% 22%;
-  --ring: 193 100% 50%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 191 100% 50%;
 
-  --card: 210 70% 16%;
-  --card-foreground: 204 100% 96%;
-  --card-border: 210 36% 28%;
+  --card: 0 0% 100%;
+  --card-foreground: 213 69% 10%;
+  --card-border: 214 32% 91%;
 
-  --sidebar: 210 69% 10%;
-  --sidebar-foreground: 204 100% 96%;
-  --sidebar-border: 210 36% 28%;
-  --sidebar-primary: 193 100% 50%;
-  --sidebar-primary-foreground: 210 69% 10%;
-  --sidebar-accent: 211 65% 20%;
-  --sidebar-accent-foreground: 204 100% 96%;
-  --sidebar-ring: 193 100% 50%;
+  --sidebar: 210 40% 98%;
+  --sidebar-foreground: 213 69% 10%;
+  --sidebar-border: 214 32% 91%;
+  --sidebar-primary: 191 100% 50%;
+  --sidebar-primary-foreground: 213 69% 10%;
+  --sidebar-accent: 187 86% 93%;
+  --sidebar-accent-foreground: 213 69% 10%;
+  --sidebar-ring: 191 100% 50%;
 
-  --popover: 210 70% 16%;
-  --popover-foreground: 204 100% 96%;
-  --popover-border: 210 36% 28%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 213 69% 10%;
+  --popover-border: 214 32% 91%;
 
-  --primary: 193 100% 50%;
-  --primary-foreground: 210 69% 10%;
+  --primary: 191 100% 50%;
+  --primary-foreground: 213 69% 10%;
 
-  --secondary: 211 65% 20%;
-  --secondary-foreground: 204 100% 96%;
+  --secondary: 187 86% 93%;
+  --secondary-foreground: 213 69% 10%;
 
-  --muted: 211 65% 20%;
-  --muted-foreground: 208 22% 70%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 210 25% 38%;
 
-  --accent: 193 100% 50%;
-  --accent-foreground: 210 69% 10%;
+  --accent: 358 100% 67%;
+  --accent-foreground: 0 0% 100%;
 
-  --destructive: 4 76% 56%;
-  --destructive-foreground: 164 100% 98%;
+  --destructive: 358 100% 67%;
+  --destructive-foreground: 0 0% 100%;
 
-  --chart-1: 193 100% 50%;
-  --chart-2: 4 76% 56%;
-  --chart-3: 44 78% 60%;
-  --chart-4: 210 40% 45%;
-  --chart-5: 204 100% 96%;
+  --chart-1: 191 100% 50%;
+  --chart-2: 358 100% 67%;
+  --chart-3: 43 100% 51%;
+  --chart-4: 210 25% 38%;
+  --chart-5: 213 69% 10%;
 
   --app-font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
   --app-font-serif: "Fraunces", ui-serif, Georgia, serif;
@@ -223,56 +228,57 @@
   --elevate-2: rgba(255,255,255, .09);
 
   --nk-teal: var(--nk-cyan);
-  --nk-coral: #e4453a;
-  --nk-gold: #e7b650;
-  --nk-ink: #edf8ff;
+  --nk-coral: #ff5a5f;
+  --nk-gold: #ffb703;
+  --nk-ink: #ffffff;
   --nk-paper: var(--nk-navy);
-  --nk-muted: #9eb4c7;
+  --nk-muted: #8ea6c0;
+  --nk-line: #1a334e;
 
-  --background: 210 69% 10%;
-  --foreground: 204 100% 96%;
+  --background: 213 69% 10%;
+  --foreground: 0 0% 100%;
 
-  --border: 210 36% 33%;
-  --input: 211 40% 22%;
-  --ring: 193 100% 50%;
+  --border: 211 35% 20%;
+  --input: 211 59% 15%;
+  --ring: 191 100% 50%;
 
-  --card: 210 70% 16%;
-  --card-foreground: 204 100% 96%;
-  --card-border: 210 36% 28%;
+  --card: 211 59% 15%;
+  --card-foreground: 0 0% 100%;
+  --card-border: 211 35% 20%;
 
-  --sidebar: 210 69% 10%;
-  --sidebar-foreground: 204 100% 96%;
-  --sidebar-border: 210 36% 28%;
-  --sidebar-primary: 193 100% 50%;
-  --sidebar-primary-foreground: 210 69% 10%;
-  --sidebar-accent: 211 65% 20%;
-  --sidebar-accent-foreground: 204 100% 96%;
-  --sidebar-ring: 193 100% 50%;
+  --sidebar: 213 69% 10%;
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-border: 211 35% 20%;
+  --sidebar-primary: 191 100% 50%;
+  --sidebar-primary-foreground: 213 69% 10%;
+  --sidebar-accent: 211 59% 15%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 191 100% 50%;
 
-  --popover: 210 70% 16%;
-  --popover-foreground: 204 100% 96%;
-  --popover-border: 210 36% 28%;
+  --popover: 211 59% 15%;
+  --popover-foreground: 0 0% 100%;
+  --popover-border: 211 35% 20%;
 
-  --primary: 193 100% 50%;
-  --primary-foreground: 210 69% 10%;
+  --primary: 191 100% 50%;
+  --primary-foreground: 213 69% 10%;
 
-  --secondary: 211 65% 20%;
-  --secondary-foreground: 204 100% 96%;
+  --secondary: 211 59% 15%;
+  --secondary-foreground: 0 0% 100%;
 
-  --muted: 211 65% 20%;
-  --muted-foreground: 208 22% 70%;
+  --muted: 211 59% 15%;
+  --muted-foreground: 211 28% 65%;
 
-  --accent: 193 100% 50%;
-  --accent-foreground: 210 69% 10%;
+  --accent: 358 100% 67%;
+  --accent-foreground: 0 0% 100%;
 
-  --destructive: 4 76% 56%;
-  --destructive-foreground: 164 100% 98%;
+  --destructive: 358 100% 67%;
+  --destructive-foreground: 0 0% 100%;
 
-  --chart-1: 193 100% 50%;
-  --chart-2: 4 76% 56%;
-  --chart-3: 44 78% 60%;
-  --chart-4: 210 40% 45%;
-  --chart-5: 204 100% 96%;
+  --chart-1: 191 100% 50%;
+  --chart-2: 358 100% 67%;
+  --chart-3: 43 100% 51%;
+  --chart-4: 211 28% 65%;
+  --chart-5: 0 0% 100%;
 }
 
 @layer base {

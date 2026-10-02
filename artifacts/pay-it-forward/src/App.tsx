@@ -76,7 +76,7 @@ const CommunitySpiralsTab = lazy(() => import("@/components/CommunitySpiralsTab"
 
 function PageFallback() {
   return (
-    <div style={{ position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-background-primary, #08182b)", color: "#edf8ff" }}>
+    <div style={{ position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-background-primary, #08182b)", color: "#ffffff" }}>
       <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#00cfff", animation: "pulse 1.2s ease-in-out infinite" }} />
     </div>
   );

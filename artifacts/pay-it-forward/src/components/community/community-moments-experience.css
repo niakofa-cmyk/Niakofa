@@ -109,7 +109,7 @@
 .nia-moments button:focus-visible,
 .nia-moments a:focus-visible,
 .nia-moments [data-testid="list-moments-feed"] button:focus-visible {
-  outline: 3px solid var(--nk-gold, #e7b650);
+  outline: 3px solid var(--nk-gold, #ffb703);
   outline-offset: 2px;
 }
 
@@ -170,7 +170,7 @@
 }
 .nia-moments [data-moment-actions] button[aria-pressed="true"] {
   background: rgb(0 207 255 / .22);
-  color: #edf8ff;
+  color: #ffffff;
 }
 .nia-moments [data-testid^="button-moment-sound-"],
 .nia-moments [data-testid^="button-moment-media-"] {
@@ -394,7 +394,7 @@
 }
 .nia-moments [data-moment-actions] button[aria-pressed="true"] {
   background: rgb(0 207 255 / .22);
-  color: #edf8ff;
+  color: #ffffff;
 }
 .nia-moments [data-testid^="button-moment-sound-"],
 .nia-moments [data-testid^="button-moment-media-"] { background: rgb(8 24 43 / .88); }
@@ -419,7 +419,7 @@
 }
 .nia-moments [data-moment-caption] {
   background: linear-gradient(to top, rgb(8 24 43 / .96), rgb(8 24 43 / .55) 52%, transparent);
-  color: #edf8ff;
+  color: #ffffff;
 }
 .nia-moments [data-moment-actions],
 .nia-moments [data-testid^="button-moment-sound-"],

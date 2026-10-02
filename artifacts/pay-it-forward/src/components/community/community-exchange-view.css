@@ -6,7 +6,7 @@
 .nia-exchange > header {
   border-color: color-mix(in srgb, var(--nk-coral, #ed6b43) 45%, transparent);
   background:
-    radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--nk-gold, #e7b650) 20%, transparent), transparent 37%),
+    radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--nk-gold, #ffb703) 20%, transparent), transparent 37%),
     linear-gradient(135deg, var(--nk-paper, #f6f5ed), hsl(var(--card)) 68%);
   box-shadow: 0 16px 38px color-mix(in srgb, var(--nk-ink, #183d3b) 8%, transparent);
 }
@@ -34,7 +34,7 @@
 .nia-exchange input:focus-visible,
 .nia-exchange select:focus-visible,
 .nia-exchange textarea:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--nk-gold, #e7b650) 75%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--nk-gold, #ffb703) 75%, transparent);
   outline-offset: 2px;
 }
 
