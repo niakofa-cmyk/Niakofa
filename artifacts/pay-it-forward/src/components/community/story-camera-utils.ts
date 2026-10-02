@@ -28,6 +28,20 @@ export function storyCameraRecordingConstraints(facingMode: StoryCameraFacingMod
   };
 }
 
+const AUDIO_RECORDER_TYPES = ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm", "video/mp4"];
+const SILENT_RECORDER_TYPES = ["video/webm;codecs=vp8", "video/webm;codecs=vp9", "video/webm", "video/mp4"];
+
+/** Record only a type this browser can also play. Chrome can record MP4 and
+ * then fail the preview, so WebM wins whenever playback supports it. */
+export function chooseRecorderMimeType(
+  hasAudio: boolean,
+  isTypeSupported: (type: string) => boolean,
+  canPlayType: (type: string) => string,
+): string {
+  const supported = (hasAudio ? AUDIO_RECORDER_TYPES : SILENT_RECORDER_TYPES).filter((type) => isTypeSupported(type));
+  return supported.find((type) => canPlayType(type.split(";")[0]) !== "") ?? "";
+}
+
 export function storyCameraErrorMessage(reason: unknown) {
   const name = reason && typeof reason === "object" && "name" in reason && typeof reason.name === "string"
     ? reason.name

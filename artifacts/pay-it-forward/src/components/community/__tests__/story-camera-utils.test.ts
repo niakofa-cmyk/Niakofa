@@ -8,6 +8,7 @@ import {
   storyCameraConstraints,
   storyCameraErrorMessage,
   storyCameraRecordingConstraints,
+  chooseRecorderMimeType,
 } from "../story-camera-utils";
 
 const component = readFileSync(new URL("../StoryCameraRecorder.tsx", import.meta.url), "utf8");
@@ -53,13 +54,18 @@ test("camera permission and device errors are explained without relying on DOMEx
   assert.match(storyCameraErrorMessage(null), /Camera access could not be started/);
 });
 
-test("camera surface is edge-to-edge and releases tracks before recording preview", () => {
+test("recording uses a clip format the same browser can play", () => {
+  const chrome = (type: string) => type.startsWith("video/webm") || type === "video/mp4";
+  assert.equal(chooseRecorderMimeType(true, chrome, (type) => type === "video/webm" ? "probably" : ""), "video/webm;codecs=vp8,opus");
+  assert.equal(chooseRecorderMimeType(false, (type) => type === "video/mp4", (type) => type === "video/mp4" ? "maybe" : ""), "video/mp4");
+  assert.equal(chooseRecorderMimeType(true, () => false, () => "probably"), "");
+  assert.match(component, /chooseRecorderMimeType\(/);
+  assert.match(component, /key=\{previewUrl\} src=\{previewUrl\} poster=\{clipPoster \|\| undefined\} muted playsInline controls preload="metadata"/);
+  assert.match(component, /if \(event\.currentTarget\.currentSrc === previewUrl\) setError\("The recorded clip preview could not be loaded/);
   assert.match(component, /fixed inset-0 z-\[120\] h-\[100dvh\] w-screen/);
   assert.doesNotMatch(component, />Start camera</);
   assert.match(component, /stopTracks\(\);\s+setPhase\("preview"\);/);
   assert.match(component, /if \(streamRef\.current\) setPhase\("camera"\);\s*else \{\s*setPhase\("idle"\);\s*void startCamera\(\);/);
-  assert.match(component, /key=\{previewUrl \|\| file\.name\} src=\{previewUrl \|\| undefined\} autoPlay muted playsInline controls preload="auto"/);
-  assert.match(component, /onError=\{\(\) => setError\("The recorded clip preview could not be loaded/);
 });
 
 test("fresh Sparks open the live camera immediately, and restored drafts resume in the studio", () => {

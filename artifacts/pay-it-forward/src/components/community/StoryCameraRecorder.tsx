@@ -7,18 +7,21 @@ import {
   storyCameraConstraints,
   storyCameraErrorMessage,
   storyCameraRecordingConstraints,
+  chooseRecorderMimeType,
   type StoryCameraFacingMode,
 } from "./story-camera-utils";
 
 const MAX_RECORDING_MS = STORY_CAMERA_MAX_RECORDING_MS;
 const CLIP_MAX_MS = STORY_CAMERA_CLIP_MAX_MS;
 const MAX_ITEMS = STORY_CAMERA_MAX_ITEMS;
-const recorderTypes = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
-const silentRecorderTypes = ["video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
 
 function recorderMimeType(hasAudio: boolean) {
-  const types = hasAudio ? recorderTypes : silentRecorderTypes;
-  return types.find((type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) ?? "";
+  const probe = document.createElement("video");
+  return chooseRecorderMimeType(
+    hasAudio,
+    (type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type),
+    (type) => probe.canPlayType(type),
+  );
 }
 
 function stopStream(stream: MediaStream | null) {
@@ -64,6 +67,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   const [file, setFile] = useState<File | null>(null);
   const [clips, setClips] = useState<File[]>([]);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [clipPoster, setClipPoster] = useState("");
   const [error, setError] = useState("");
   const [facingMode, setFacingMode] = useState<StoryCameraFacingMode>("user");
   const [torchSupported, setTorchSupported] = useState(false);
@@ -342,6 +346,15 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
         const nextClips = [...clipsRef.current, recorded];
         clipsRef.current = nextClips;
         setClips(nextClips);
+        const live = videoRef.current;
+        if (live && live.videoWidth > 0 && live.videoHeight > 0) {
+          const canvas = document.createElement("canvas");
+          canvas.width = live.videoWidth;
+          canvas.height = live.videoHeight;
+          canvas.getContext("2d")?.drawImage(live, 0, 0, canvas.width, canvas.height);
+          try { setClipPoster(canvas.toDataURL("image/jpeg", 0.72)); } catch { setClipPoster(""); }
+        }
+        setError("");
         stopTracks();
         setPhase("preview");
       };
@@ -603,8 +616,8 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     <div className="relative h-full w-full overflow-hidden bg-[#041819]">
       <div className="absolute inset-0 bg-black">
         {phase !== "preview" && <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" aria-label="Live Spark camera preview" />}
-        {phase === "preview" && file && (file.type.startsWith("video/")
-          ? <video key={previewUrl || file.name} src={previewUrl || undefined} autoPlay muted playsInline controls preload="auto" onLoadedData={(event) => { setError(""); void event.currentTarget.play().catch(() => undefined); }} onError={() => setError("The recorded clip preview could not be loaded. Retake it or choose another video.")} className="h-full w-full object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
+        {phase === "preview" && file && previewUrl && (file.type.startsWith("video/")
+          ? <video key={previewUrl} src={previewUrl} poster={clipPoster || undefined} muted playsInline controls preload="metadata" onLoadedData={(event) => { setError(""); void event.currentTarget.play().catch(() => undefined); }} onError={(event) => { if (event.currentTarget.currentSrc === previewUrl) setError("The recorded clip preview could not be loaded. Retake it or choose another video."); }} className="h-full w-full object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
           : <img src={previewUrl} alt="Captured Spark photo preview" className="h-full w-full object-contain" />)}
         {phase === "countdown" && <span className="absolute inset-0 z-10 grid place-items-center text-8xl font-bold text-[#00cfff]" aria-live="assertive">{countdown}</span>}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#041819]/55 via-transparent to-[#041819]/80" />
