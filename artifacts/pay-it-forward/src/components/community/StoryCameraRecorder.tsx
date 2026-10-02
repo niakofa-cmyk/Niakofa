@@ -612,35 +612,35 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     ? `Preview ${clips.length} of ${MAX_ITEMS} clip${clips.length === 1 ? "" : "s"} · ${Math.ceil(recordedVideoMs / 1000)} / ${capSeconds} video seconds recorded · ${Math.max(0, Math.ceil((MAX_RECORDING_MS - recordedVideoMs) / 1000))} seconds remaining`
     : recordingStatus}`;
 
-  return <div className="nia-spark-camera fixed inset-0 z-[120] h-[100dvh] w-screen overflow-hidden bg-[#041819] text-white" role="dialog" aria-modal="true" aria-label="Spark camera" data-testid="dialog-spark-camera">
-    <div className="relative h-full w-full overflow-hidden bg-[#041819]">
-      <div className="absolute inset-0 bg-black">
+  return <div className={`nia-spark-camera fixed inset-0 z-[120] h-[100dvh] w-screen overflow-hidden bg-[#08182b] text-white ${phase === "preview" ? "nia-spark-camera--playback flex flex-col" : ""}`} role="dialog" aria-modal="true" aria-label="Spark camera" data-testid="dialog-spark-camera">
+    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#08182b]">
+      <header className="nia-spark-camera__bar absolute inset-x-0 top-0 z-10 flex items-start justify-between px-3 pt-[max(12px,env(safe-area-inset-top))]">
+        <button type="button" onClick={cancel} aria-label="Cancel camera" className="nia-spark-camera__glass focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-cancel-spark-camera"><X aria-hidden="true" /></button>
+        <div className="rounded-full bg-[#08182b]/70 px-3 py-1 text-sm font-semibold tabular-nums text-[#00cfff]">{totalSeconds}s / {capSeconds}s</div>
+        {clips.length > 0 ? (
+          <button type="button" onClick={() => onUse(clips)} className="rounded-full bg-[#00cfff] px-4 py-2 text-sm font-extrabold text-[#08182b]" data-testid="button-use-spark-camera">Next</button>
+        ) : <span className="w-11" />}
+      </header>
+
+      <div className="nia-spark-camera__stage absolute inset-0 bg-black">
         {phase !== "preview" && <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" aria-label="Live Spark camera preview" />}
         {phase === "preview" && file && previewUrl && (file.type.startsWith("video/")
           ? <video key={previewUrl} src={previewUrl} poster={clipPoster || undefined} muted playsInline controls preload="metadata" onLoadedData={(event) => { setError(""); void event.currentTarget.play().catch(() => undefined); }} onError={(event) => { if (event.currentTarget.currentSrc === previewUrl) setError("The recorded clip preview could not be loaded. Retake it or choose another video."); }} className="h-full w-full object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
           : <img src={previewUrl} alt="Captured Spark photo preview" className="h-full w-full object-contain" />)}
         {phase === "countdown" && <span className="absolute inset-0 z-10 grid place-items-center text-8xl font-bold text-[#00cfff]" aria-live="assertive">{countdown}</span>}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#041819]/55 via-transparent to-[#041819]/80" />
+        {phase !== "preview" && <div className="nia-spark-camera__shade pointer-events-none absolute inset-0 bg-gradient-to-b from-[#08182b]/55 via-transparent to-[#08182b]/80" />}
       </div>
-
-      <header className="absolute inset-x-0 top-0 z-10 flex items-start justify-between px-3 pt-[max(12px,env(safe-area-inset-top))]">
-        <button type="button" onClick={cancel} aria-label="Cancel camera" className="nia-spark-camera__glass focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-cancel-spark-camera"><X aria-hidden="true" /></button>
-        <div className="rounded-full bg-[#041819]/70 px-3 py-1 text-sm font-semibold tabular-nums text-[#00cfff]">{totalSeconds}s / {capSeconds}s</div>
-        {clips.length > 0 ? (
-          <button type="button" onClick={() => onUse(clips)} className="rounded-full bg-[#00cfff] px-4 py-2 text-sm font-extrabold text-[#041819]" data-testid="button-use-spark-camera">Next</button>
-        ) : <span className="w-11" />}
-      </header>
 
       {overFamilyStory && <p className="nia-spark-camera__family" data-testid="status-spark-family-story-length">Family Story length — you can archive this</p>}
 
-      <div className="nia-spark-camera__side">
+      {phase !== "preview" && <div className="nia-spark-camera__side">
         <button type="button" className="nia-spark-camera__glass" aria-label={`Switch to ${facingMode === "environment" ? "front" : "back"} camera`} disabled={cameraSwitching || phase !== "camera"} onClick={() => void flipCamera()} data-testid="button-flip-spark-camera"><SwitchCamera aria-hidden="true" className="h-5 w-5" /></button>
         {torchSupported && <button type="button" onClick={() => void toggleTorch()} disabled={cameraSwitching} aria-label={torchOn ? "Turn torch off" : "Turn torch on"} aria-pressed={torchOn} className="nia-spark-camera__glass" data-testid="button-toggle-spark-torch"><Flashlight aria-hidden="true" className="h-5 w-5" /></button>}
         <button type="button" className="nia-spark-camera__glass" aria-label="Countdown" aria-pressed={countdownEnabled} onClick={() => setCountdownEnabled((value) => !value)} data-testid="input-spark-countdown"><Timer aria-hidden="true" className="h-5 w-5" /></button>
         {allowText && <button type="button" className="nia-spark-camera__glass" onClick={onText} data-testid="button-spark-camera-text" aria-label="Start with text"><Type aria-hidden="true" className="h-5 w-5" /></button>}
-      </div>
+      </div>}
 
-      <div className="absolute inset-x-0 bottom-0 z-10 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+      <div className="nia-spark-camera__dock absolute inset-x-0 bottom-0 z-10 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
         <p className="sr-only" aria-live="polite" data-testid="status-spark-camera">{phase === "recording" ? "Recording · " : phase === "paused" ? "Recording paused · " : ""}{statusText}</p>
         {phase === "preview" && clips.length > 0 && <ol className="mb-3 flex gap-2 overflow-x-auto" aria-label="Recorded Spark clip sequence">
           {clips.map((clip, index) => <li key={`${clip.name}-${index}`} className={`shrink-0 rounded-lg border px-3 py-1 text-xs ${clip === file ? "border-[#00cfff] bg-[#00cfff]/15" : "border-white/20"}`} aria-current={clip === file ? "step" : undefined} data-testid={`item-spark-clip-${index}`}>
@@ -650,7 +650,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
         {error && <p className="mb-2 text-sm text-rose-300" role="alert" data-testid="error-spark-camera">{error}</p>}
         {phase === "idle" && (cameraRequesting
           ? <p role="status" aria-live="polite" className="mb-3 text-center text-sm text-white/80">Opening camera…</p>
-          : <button type="button" onClick={() => void startCamera()} className="mb-3 rounded-full bg-[#00cfff] px-5 py-3 font-bold text-[#041819]" data-testid="button-retry-spark-camera">Try camera again</button>)}
+          : <button type="button" onClick={() => void startCamera()} className="mb-3 rounded-full bg-[#00cfff] px-5 py-3 font-bold text-[#08182b]" data-testid="button-retry-spark-camera">Try camera again</button>)}
         {(phase === "camera" || phase === "idle") && (
           <div className="mb-4 flex justify-center gap-6 text-xs font-bold uppercase tracking-[0.16em]">
             <button type="button" onClick={() => setCaptureMode("video")} className={captureMode === "video" ? "text-[#00cfff]" : "text-white/55"}>Video</button>
@@ -670,11 +670,11 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
                 <button type="button" onClick={finish} aria-label="Finish recording" className="nia-spark-camera__record nia-spark-camera__record--live" data-testid="button-finish-spark-camera"><i /></button>
               </div>
             )}
-            {phase === "countdown" && <button type="button" onClick={() => { clearCountdown(); setPhase("camera"); }} className="rounded-full bg-[#041819]/80 px-4 py-2 font-bold" data-testid="button-cancel-spark-countdown">Cancel countdown</button>}
+            {phase === "countdown" && <button type="button" onClick={() => { clearCountdown(); setPhase("camera"); }} className="rounded-full bg-[#08182b]/80 px-4 py-2 font-bold" data-testid="button-cancel-spark-countdown">Cancel countdown</button>}
             {phase === "preview" && file && (
               <div className="flex flex-wrap justify-center gap-2">
                 <button type="button" onClick={retake} aria-label={`Retake Spark ${file.type.startsWith("video/") ? "video" : "photo"}`} className="rounded-full border border-white/30 px-4 py-2 text-sm font-bold" data-testid="button-retake-spark-camera"><RotateCcw aria-hidden="true" className="mr-1 inline h-4 w-4" /> Retake</button>
-                {clips.length < MAX_ITEMS && recordedVideoMs < MAX_RECORDING_MS && <button type="button" onClick={recordAnother} className="rounded-full border border-[#00cfff] px-4 py-2 text-sm font-bold text-[#00cfff]" data-testid="button-record-another-spark-clip">Add another clip</button>}
+                {clips.length < MAX_ITEMS && recordedVideoMs < MAX_RECORDING_MS && <button type="button" onClick={recordAnother} className="rounded-full border border-[#0fe5d4] px-4 py-2 text-sm font-bold text-[#0fe5d4]" data-testid="button-record-another-spark-clip">Add another clip</button>}
               </div>
             )}
           </div>

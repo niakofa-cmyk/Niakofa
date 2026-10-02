@@ -62,6 +62,7 @@ test("recording uses a clip format the same browser can play", () => {
   assert.match(component, /chooseRecorderMimeType\(/);
   assert.match(component, /key=\{previewUrl\} src=\{previewUrl\} poster=\{clipPoster \|\| undefined\} muted playsInline controls preload="metadata"/);
   assert.match(component, /if \(event\.currentTarget\.currentSrc === previewUrl\) setError\("The recorded clip preview could not be loaded/);
+  assert.match(component, /nia-spark-camera--playback/);
   assert.match(component, /fixed inset-0 z-\[120\] h-\[100dvh\] w-screen/);
   assert.doesNotMatch(component, />Start camera</);
   assert.match(component, /stopTracks\(\);\s+setPhase\("preview"\);/);
