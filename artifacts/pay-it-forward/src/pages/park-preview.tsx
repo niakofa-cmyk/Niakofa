@@ -44,6 +44,8 @@ export default function ParkPreviewPage() {
   const [searchAttempt, setSearchAttempt] = useState(0);
   const [locationRequestState, setLocationRequestState] = useState<"idle" | "loading" | "error">("idle");
   const [locationError, setLocationError] = useState("");
+  const searchLatitude = coordinates?.lat;
+  const searchLongitude = coordinates?.lng;
 
   const orderedParks = useMemo(() => {
     if (!coordinates) return parks;
@@ -56,7 +58,7 @@ export default function ParkPreviewPage() {
   }, [coordinates, parks]);
 
   useEffect(() => {
-    if (!coordinates) {
+    if (searchLatitude === undefined || searchLongitude === undefined) {
       setSearchState("idle");
       setParks([]);
       return;
@@ -72,7 +74,7 @@ export default function ParkPreviewPage() {
       setSearchState("loading");
       setSearchError("");
       setParks([]);
-      const proximity = `${coordinates.lng},${coordinates.lat}`;
+      const proximity = `${searchLongitude},${searchLatitude}`;
       const url = new URL("https://api.mapbox.com/geocoding/v5/mapbox.places/park.json");
       url.searchParams.set("access_token", MAPBOX_TOKEN);
       url.searchParams.set("proximity", proximity);
@@ -96,7 +98,7 @@ export default function ParkPreviewPage() {
     };
     void search();
     return () => controller.abort();
-  }, [coordinates?.lat, coordinates?.lng, searchAttempt]);
+  }, [searchLatitude, searchLongitude, searchAttempt]);
 
   const requestLocation = () => {
     if (!navigator.geolocation) {
