@@ -120,6 +120,7 @@ async function uploadAndComplete(
     mediaType: "photo" | "video";
     mimeType: string;
     originalName: string;
+    onCreated?: (mediaAssetId: number) => void;
   },
 ): Promise<number> {
   const init = await request.post("/api/media-assets/uploads", {
@@ -139,6 +140,7 @@ async function uploadAndComplete(
     upload: { url: string; headers: Record<string, string> };
     complete_url: string;
   };
+  input.onCreated?.(initialized.media_asset_id);
 
   const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5000";
   const uploadUrl = new URL(initialized.upload.url, baseUrl);
@@ -256,5 +258,76 @@ test.describe("authenticated universal media smoke", () => {
     );
     expect(remaining.assets?.some((asset) => asset.id === deletionId)).toBe(false);
     process.stdout.write(`MEDIA_CERT_RETAINED_ASSETS photo=${photoId} video=${videoId} deleted=${deletionId}\n`);
+  });
+
+  test("photo-only diagnostic uploads and cleans exactly one photo", async ({ page, request }) => {
+    test.setTimeout(180_000);
+    test.skip(
+      process.env.MEDIA_CERT_PHOTO_ONLY_SMOKE !== "1",
+      "Requires the explicit photo-only production diagnostic gate.",
+    );
+    const headers = await authHeaders(page);
+    const otherHeaders = { Authorization: `Bearer ${storageStateToken(unauthorizedState!)}` };
+    const sharedPath =
+      `/api/media-assets/shared?contextKind=${encodeURIComponent(String(contextKind))}&contextId=${contextId}`;
+    const ownerBefore = await jsonResponse<{ assets?: MediaAsset[] }>(request, sharedPath, headers);
+    expect(ownerBefore.assets ?? [], "the approved test Hub must be empty before upload").toHaveLength(0);
+    const otherBefore = await request.get(sharedPath, { headers: otherHeaders });
+    expect(otherBefore.status(), "the other approved account must remain outside the test Hub").toBe(404);
+
+    let photoId: number | undefined;
+    let testFailed = false;
+    try {
+      photoId = await uploadAndComplete(request, headers, {
+        body: png,
+        mediaType: "photo",
+        mimeType: "image/png",
+        originalName: "production-photo-diagnostic.png",
+        onCreated: (createdId) => { photoId = createdId; },
+      });
+      process.stdout.write(`MEDIA_CERT_PHOTO_ONLY_CREATED asset=${photoId}\n`);
+      const photo = await waitForAsset(request, headers, photoId, false);
+      expect(photo.status).toBe("ready");
+      expect(photo.thumbnail_url).toBe(`/api/media-assets/${photoId}/thumbnail`);
+
+      const original = await request.get(photo.media_url, { headers });
+      expect(original.status()).toBe(200);
+      expect(original.headers()["content-type"]).toContain("image/png");
+      const thumbnail = await request.get(photo.thumbnail_url!, { headers });
+      expect(thumbnail.status()).toBe(200);
+      expect(thumbnail.headers()["content-type"]).toContain("image/jpeg");
+
+      const otherAfter = await request.get(sharedPath, { headers: otherHeaders });
+      expect(otherAfter.status(), "the other approved account must not see the uploaded photo").toBe(404);
+      const otherOriginal = await request.get(photo.media_url, { headers: otherHeaders });
+      expect(otherOriginal.status(), "the other approved account must not retrieve the uploaded photo").toBe(404);
+      const otherThumbnail = await request.get(photo.thumbnail_url!, { headers: otherHeaders });
+      expect(otherThumbnail.status(), "the other approved account must not retrieve the thumbnail").toBe(404);
+      process.stdout.write(`MEDIA_CERT_PHOTO_ONLY_PROCESSED asset=${photoId}\n`);
+    } catch (error) {
+      testFailed = true;
+      throw error;
+    } finally {
+      if (photoId !== undefined) {
+        try {
+          const deletion = await request.delete(`/api/media-assets/${photoId}`, { headers });
+          if (deletion.status() !== 204) {
+            throw new Error(`Photo diagnostic cleanup returned HTTP ${deletion.status()}.`);
+          }
+          const ownerAfter = await jsonResponse<{ assets?: MediaAsset[] }>(request, sharedPath, headers);
+          if (ownerAfter.assets?.some((asset) => asset.id === photoId)) {
+            throw new Error("Photo diagnostic asset remained in the approved test Hub after deletion.");
+          }
+          const otherCleanupCheck = await request.get(sharedPath, { headers: otherHeaders });
+          if (otherCleanupCheck.status() !== 404) {
+            throw new Error("The other approved account gained access to the test Hub.");
+          }
+          process.stdout.write(`MEDIA_CERT_PHOTO_ONLY_CLEANED asset=${photoId}\n`);
+        } catch {
+          process.stderr.write(`MEDIA_CERT_PHOTO_ONLY_CLEANUP_FAILED asset=${photoId}\n`);
+          if (!testFailed) throw new Error("Photo-only production diagnostic could not verify asset cleanup.");
+        }
+      }
+    }
   });
 });

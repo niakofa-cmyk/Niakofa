@@ -79,5 +79,11 @@ if [[ -z "${PLAYWRIGHT_EXECUTABLE_PATH:-}" && -x "/repl/tools/bin/chromium" ]]; 
   export PLAYWRIGHT_EXECUTABLE_PATH="/repl/tools/bin/chromium"
 fi
 
-echo "Running gated authenticated production media certification for commit $EXPECTED_COMMIT..."
-corepack pnpm exec playwright test e2e/media-platform-authenticated.spec.ts --reporter=line
+if [[ "${MEDIA_CERT_PHOTO_ONLY_SMOKE:-}" == "1" ]]; then
+  echo "Running one gated authenticated production photo-only diagnostic for commit $EXPECTED_COMMIT..."
+  ./node_modules/.bin/playwright test e2e/media-platform-authenticated.spec.ts \
+    --grep "photo-only diagnostic uploads and cleans exactly one photo" --reporter=line
+else
+  echo "Running gated authenticated production media certification for commit $EXPECTED_COMMIT..."
+  ./node_modules/.bin/playwright test e2e/media-platform-authenticated.spec.ts --reporter=line
+fi

@@ -17,6 +17,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { deleteAssetStrict, getAssetBuffer, getAssetInfo, putAsset } from "../lib/storage";
 import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
+import { mediaProcessingErrorDetails } from "../lib/media-processing-diagnostics";
 import { logger } from "../lib/logger";
 import { assertSupportedMediaJob, isMediaPlatformV21Enabled, isMomentMusicAsset, mediaJobsForType } from "../lib/media-platform";
 import { trackWorker } from "../lib/worker-lifecycle";
@@ -42,6 +43,37 @@ import {
 
 const execFileAsync = promisify(execFile);
 type MediaJobData = { mediaAssetId: number; jobType: MediaJobType };
+type MediaProcessingFailureStage =
+  | "source_size_check"
+  | "source_object_info"
+  | "source_object_read"
+  | "source_validation"
+  | "source_metadata_update"
+  | "probe_metadata_update"
+  | "scratch_directory_create"
+  | "source_scratch_write"
+  | "thumbnail_ffmpeg"
+  | "thumbnail_output_read"
+  | "thumbnail_output_validation"
+  | "thumbnail_store"
+  | "transcode_precondition"
+  | "transcode_ffmpeg"
+  | "transcode_output_read"
+  | "transcode_output_validation"
+  | "transcode_store"
+  | "audio_mix_precondition"
+  | "audio_track_lookup"
+  | "audio_track_info"
+  | "audio_track_read"
+  | "audio_track_validation"
+  | "audio_track_scratch_write"
+  | "audio_original_probe"
+  | "audio_mix_ffmpeg"
+  | "audio_mix_output_read"
+  | "audio_mix_output_validation"
+  | "audio_mix_store"
+  | "completion_asset_read"
+  | "completion_commit";
 const mediaToolPaths = getMediaToolPaths();
 
 async function storeGeneratedAsset(
@@ -782,17 +814,23 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
     : undefined;
   let tempDir: string | undefined;
   const generatedKeys: string[] = [];
+  let failureStage: MediaProcessingFailureStage = "source_size_check";
   try {
+    failureStage = "source_size_check";
     if (!isAllowedMediaSize(asset.byte_size)) throw new Error("MEDIA_SIZE_INVALID");
+    failureStage = "source_object_info";
     const originalInfo = await getAssetInfo(asset.original_key);
     if (!originalInfo || !isAllowedMediaSize(originalInfo.contentLength) || originalInfo.contentLength !== asset.byte_size) {
       throw new Error("MEDIA_SIZE_INVALID");
     }
+    failureStage = "source_object_read";
     const original = await getAssetBuffer(asset.original_key, MAX_MEDIA_BYTES);
     if (original.length !== asset.byte_size || !isAllowedMediaSize(original.length)) {
       throw new Error("MEDIA_SIZE_INVALID");
     }
+    failureStage = "source_validation";
     const metadata = await validateMediaBuffer(original, asset.media_type, asset.mime_type);
+    failureStage = "source_metadata_update";
     await db.update(mediaAssetsTable).set({
       status: preservesReadyVideo ? "ready" : "processing",
       ...(preservesReadyVideo ? {} : { failure_reason: null }),
@@ -804,6 +842,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
     }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
 
     if (jobType === "probe") {
+      failureStage = "probe_metadata_update";
       await db.update(mediaAssetsTable).set({
         width: metadata.width,
         height: metadata.height,
@@ -812,14 +851,17 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         updated_at: new Date(),
       }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     } else {
+      failureStage = "scratch_directory_create";
       tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-media-"));
       const input = path.join(tempDir, "original");
+      failureStage = "source_scratch_write";
       await writeFile(input, original);
 
       if (jobType === "thumbnail") {
         const output = path.join(tempDir, "thumbnail.jpg");
         const coverTimeMs = requestedCoverTimeMs ?? null;
         const jobSuffix = String(job.id ?? randomUUID()).replace(/[^a-zA-Z0-9_-]/g, "").slice(-48);
+        failureStage = "thumbnail_ffmpeg";
         await runFfmpeg([
           "-y",
           "-i", input,
@@ -832,9 +874,12 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           ? `media-assets/${asset.id}/thumbnail.jpg`
           : `media-assets/${asset.id}/thumbnail-${coverTimeMs}-${jobSuffix}.jpg`;
         const previousThumbnailKey = asset.thumbnail_key;
+        failureStage = "thumbnail_output_read";
         const outputBuffer = await readBoundedOutput(output);
+        failureStage = "thumbnail_output_validation";
         await validateMediaBuffer(outputBuffer, "photo", "image/jpeg");
         generatedKeys.push(key);
+        failureStage = "thumbnail_store";
         const stored = await storeGeneratedAsset(
           mediaAssetId,
           "thumbnail_key",
@@ -858,6 +903,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           }
         }
       } else if (jobType === "transcode") {
+        failureStage = "transcode_precondition";
         if (!asset.mime_type.startsWith("video/")) throw new Error("transcode is only valid for video assets");
         const output = path.join(tempDir, "variant.mp4");
         const allowedEffects = new Set(["grayscale", "sepia", "blur"]);
@@ -870,6 +916,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
             ? "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
             : "boxblur=2:1").join(",")
           : null;
+        failureStage = "transcode_ffmpeg";
         await runFfmpeg([
           "-y", "-i", input, "-c:v", "libx264", "-preset", "veryfast",
           "-crf", "23", "-pix_fmt", "yuv420p",
@@ -878,19 +925,24 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           "-movflags", "+faststart", output,
         ]);
         const key = `media-assets/${asset.id}/variant.mp4`;
+        failureStage = "transcode_output_read";
         const outputBuffer = await readBoundedOutput(output);
+        failureStage = "transcode_output_validation";
         await validateMediaBuffer(outputBuffer, "video", "video/mp4");
         generatedKeys.push(key);
+        failureStage = "transcode_store";
         if ((await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4")) !== "stored") {
           throw new Error("MEDIA_ASSET_DELETED");
         }
       } else if (jobType === "audio_mix") {
+        failureStage = "audio_mix_precondition";
         if (!asset.mime_type.startsWith("video/")) throw new Error("audio_mix is only valid for video assets");
         const music = asset.composition_manifest?.music;
         const trackAssetId = music?.track_asset_id;
         if (!Number.isSafeInteger(trackAssetId) || !trackAssetId || trackAssetId < 1) {
           throw new Error("MEDIA_MUSIC_TRACK_INVALID");
         }
+        failureStage = "audio_track_lookup";
         const [musicAsset] = await db.select({
           owner_user_id: mediaAssetsTable.owner_user_id,
           context_kind: mediaAssetsTable.context_kind,
@@ -910,20 +962,25 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           || musicAsset.status !== "ready" || !isMomentMusicAsset(musicAsset.metadata, asset.owner_user_id)) {
           throw new Error("MEDIA_MUSIC_RIGHTS_INVALID");
         }
+        failureStage = "audio_track_info";
         const musicInfo = await getAssetInfo(musicAsset.original_key);
         if (!musicInfo || !isAllowedMediaSize(musicInfo.contentLength)
           || musicInfo.contentLength !== musicAsset.byte_size) throw new Error("MEDIA_SIZE_INVALID");
+        failureStage = "audio_track_read";
         const musicBuffer = await getAssetBuffer(musicAsset.original_key, MAX_MEDIA_BYTES);
         if (musicBuffer.length === 0 || musicBuffer.length !== musicInfo.contentLength || musicBuffer.length > MAX_MEDIA_BYTES) {
           throw new Error("audio track is empty or exceeds the processing limit");
         }
+        failureStage = "audio_track_validation";
         await validateMediaBuffer(musicBuffer, "audio", musicAsset.mime_type);
         const musicInput = path.join(tempDir, "music");
         const output = path.join(tempDir, "variant-mixed.mp4");
+        failureStage = "audio_track_scratch_write";
         await writeFile(musicInput, musicBuffer);
         const volume = Math.min(Math.max(Number(music.volume ?? 1), 0), 2);
         let hasOriginalAudio = false;
         try {
+          failureStage = "audio_original_probe";
           const probe = await execFileAsync(mediaToolPaths.ffprobe, [
             "-v", "error", "-select_streams", "a:0",
             "-show_entries", "stream=index", "-of", "csv=p=0", input,
@@ -932,6 +989,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         } catch {
           hasOriginalAudio = false;
         }
+        failureStage = "audio_mix_ffmpeg";
         const mixArgs = hasOriginalAudio
           ? [
             "-filter_complex", `[0:a]volume=1[original];[1:a]volume=${volume}[music];[original][music]amix=inputs=2:duration=longest:dropout_transition=2[a]`,
@@ -944,15 +1002,19 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
           "-movflags", "+faststart", output,
         ]);
         const key = `media-assets/${asset.id}/variant-mixed.mp4`;
+        failureStage = "audio_mix_output_read";
         const outputBuffer = await readBoundedOutput(output);
+        failureStage = "audio_mix_output_validation";
         await validateMediaBuffer(outputBuffer, "video", "video/mp4");
         generatedKeys.push(key);
+        failureStage = "audio_mix_store";
         if ((await storeGeneratedAsset(mediaAssetId, "variant_key", key, outputBuffer, "video/mp4")) !== "stored") {
           throw new Error("MEDIA_ASSET_DELETED");
         }
       }
     }
 
+    failureStage = "completion_asset_read";
     const [currentAsset] = await db.select({ status: mediaAssetsTable.status })
       .from(mediaAssetsTable)
       .where(eq(mediaAssetsTable.id, mediaAssetId))
@@ -962,6 +1024,7 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       return;
     }
 
+    failureStage = "completion_commit";
     if (!(await completeClaimedJob(
       mediaAssetId,
       claimed.id,
@@ -1040,7 +1103,14 @@ async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
         updated_at: new Date(),
       }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
     }
-    logger.error({ requestId, mediaAssetId, jobType, failureCode: message }, "media-processing: job failed");
+    logger.error({
+      requestId,
+      mediaAssetId,
+      jobType,
+      failureCode: message,
+      failureStage,
+      ...mediaProcessingErrorDetails(error),
+    }, "media-processing: job failed");
     throw new Error(`${message}; request_id=${requestId}`);
   } finally {
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
