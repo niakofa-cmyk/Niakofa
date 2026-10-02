@@ -18,6 +18,8 @@ import {
   PawPrint,
   HeartHandshake,
   MapPin,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
@@ -1070,6 +1072,50 @@ function PayoutSetup({ userId }: { userId: number }) {
   );
 }
 
+const COLOR_MODE_KEY = "niakofa-color-mode";
+
+export function applyColorMode(mode: "dark" | "light") {
+  document.documentElement.classList.toggle("dark", mode === "dark");
+  document.documentElement.style.colorScheme = mode;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", mode === "dark" ? "#08182b" : "#f8fafc");
+  try { localStorage.setItem(COLOR_MODE_KEY, mode); } catch { /* private mode */ }
+}
+
+export function readColorMode(): "dark" | "light" {
+  try { return localStorage.getItem(COLOR_MODE_KEY) === "light" ? "light" : "dark"; } catch { return "dark"; }
+}
+
+function AppearanceSettings() {
+  const [mode, setMode] = useState<"dark" | "light">(readColorMode);
+  const choose = (next: "dark" | "light") => {
+    setMode(next);
+    applyColorMode(next);
+  };
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">Dark mode uses deep navy. Light mode uses the off-white surface. Electric cyan stays the action color, with navy text on those buttons.</p>
+      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Color mode">
+        <button type="button" aria-pressed={mode === "dark"} onClick={() => choose("dark")} className={`min-h-11 rounded-xl border px-3 text-sm font-bold ${mode === "dark" ? "border-[#00cfff] bg-[#00cfff] text-[#08182b]" : "border-border bg-card text-foreground"}`} data-testid="button-color-mode-dark"><Moon className="mr-1 inline h-4 w-4" /> Dark</button>
+        <button type="button" aria-pressed={mode === "light"} onClick={() => choose("light")} className={`min-h-11 rounded-xl border px-3 text-sm font-bold ${mode === "light" ? "border-[#00cfff] bg-[#00cfff] text-[#08182b]" : "border-border bg-card text-foreground"}`} data-testid="button-color-mode-light"><Sun className="mr-1 inline h-4 w-4" /> Light</button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-xl p-3" style={{ background: "#08182b", color: "#ffffff" }}>
+          <div className="font-black">Dark</div>
+          <div style={{ color: "#8ea6c0" }}>Secondary text</div>
+          <div className="mt-2 inline-block rounded-full px-2 py-1 font-black" style={{ background: "#00cfff", color: "#08182b" }}>Cyan</div>
+          <span className="ml-2 font-black" style={{ color: "#ff5a5f" }}>Alert</span>
+        </div>
+        <div className="rounded-xl border p-3" style={{ background: "#f8fafc", color: "#08182b", borderColor: "#e2e8f0" }}>
+          <div className="font-black">Light</div>
+          <div style={{ color: "#4a627a" }}>Secondary text</div>
+          <div className="mt-2 inline-block rounded-full px-2 py-1 font-black" style={{ background: "#00cfff", color: "#08182b" }}>Cyan</div>
+          <span className="ml-2 font-black" style={{ color: "#ff5a5f" }}>Alert</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Section type ──────────────────────────────────────────────────────────────
 
 type SectionComponent = React.ComponentType<{ userId: number }>;
@@ -1115,6 +1161,14 @@ export default function SettingsPage() {
       component: NiaMissionSettings,
       description: "Help Today, Pay It Forward Tomorrow — giving & pledge preferences",
       group: "mission",
+    },
+    {
+      id: "appearance",
+      title: "Appearance",
+      icon: Sun,
+      component: AppearanceSettings,
+      description: "Switch between dark navy and light mode",
+      group: "account",
     },
     {
       id: "notifications",

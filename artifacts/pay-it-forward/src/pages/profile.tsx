@@ -1939,6 +1939,16 @@ export default function ProfileScreen() {
               </div>
               <div className="divide-y divide-border">
                 <button
+                  onClick={() => setLocation("/settings?section=appearance")}
+                  className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-muted-foreground" />
+                    <span>Appearance</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+                <button
                   onClick={() => setLocation("/settings?section=notifications")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                 >

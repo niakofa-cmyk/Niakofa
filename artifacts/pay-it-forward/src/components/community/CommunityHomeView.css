@@ -610,3 +610,23 @@
   color: #ffffff;
 }
 .nia-home a[class*="bg-[#2866a6]"] { background: #00cfff; color: #08182b; }
+
+html:not(.dark) .nia-home,
+html:not(.dark) .nia-people {
+  --nia-ink: #08182b;
+  --nia-muted: #4a627a;
+  --nia-paper: #f8fafc;
+  --nia-card: #ffffff;
+  --nia-line: #e2e8f0;
+  background-color: #f8fafc;
+  color: #08182b;
+}
+html:not(.dark) .nia-home__intro,
+html:not(.dark) .nia-people__hero,
+html:not(.dark) .nia-home [data-hub-community-feed] #hub-post-composer,
+html:not(.dark) .nia-home [data-hub-community-feed] article,
+html:not(.dark) .nia-people__person {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #08182b;
+}

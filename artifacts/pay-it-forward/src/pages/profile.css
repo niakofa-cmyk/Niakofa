@@ -268,3 +268,13 @@
   .nia-profile__tabs { overflow-x: auto; padding-bottom: .15rem; }
   .nia-profile__tabs button { flex: 1 0 auto; }
 }
+
+html:not(.dark) .nia-profile {
+  --profile-ink: #08182b;
+  --profile-muted: #4a627a;
+  --profile-paper: #f8fafc;
+  --profile-card: #ffffff;
+  --profile-line: #e2e8f0;
+  background: #f8fafc;
+  color: #08182b;
+}
