@@ -19,8 +19,8 @@ import {
   HeartHandshake,
   MapPin,
   Sun,
-  Moon,
 } from "lucide-react";
+import { ColorModeSwitch } from "@/components/appearance/ColorModeSwitch";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
@@ -1072,32 +1072,11 @@ function PayoutSetup({ userId }: { userId: number }) {
   );
 }
 
-const COLOR_MODE_KEY = "niakofa-color-mode";
-
-export function applyColorMode(mode: "dark" | "light") {
-  document.documentElement.classList.toggle("dark", mode === "dark");
-  document.documentElement.style.colorScheme = mode;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", mode === "dark" ? "#08182b" : "#f8fafc");
-  try { localStorage.setItem(COLOR_MODE_KEY, mode); } catch { /* private mode */ }
-}
-
-export function readColorMode(): "dark" | "light" {
-  try { return localStorage.getItem(COLOR_MODE_KEY) === "light" ? "light" : "dark"; } catch { return "dark"; }
-}
-
 function AppearanceSettings() {
-  const [mode, setMode] = useState<"dark" | "light">(readColorMode);
-  const choose = (next: "dark" | "light") => {
-    setMode(next);
-    applyColorMode(next);
-  };
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">Dark mode uses deep navy. Light mode uses the off-white surface. Electric cyan stays the action color, with navy text on those buttons.</p>
-      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Color mode">
-        <button type="button" aria-pressed={mode === "dark"} onClick={() => choose("dark")} className={`min-h-11 rounded-xl border px-3 text-sm font-bold ${mode === "dark" ? "border-[#00cfff] bg-[#00cfff] text-[#08182b]" : "border-border bg-card text-foreground"}`} data-testid="button-color-mode-dark"><Moon className="mr-1 inline h-4 w-4" /> Dark</button>
-        <button type="button" aria-pressed={mode === "light"} onClick={() => choose("light")} className={`min-h-11 rounded-xl border px-3 text-sm font-bold ${mode === "light" ? "border-[#00cfff] bg-[#00cfff] text-[#08182b]" : "border-border bg-card text-foreground"}`} data-testid="button-color-mode-light"><Sun className="mr-1 inline h-4 w-4" /> Light</button>
-      </div>
+      <ColorModeSwitch ariaLabel="Settings color mode" />
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-xl p-3" style={{ background: "#08182b", color: "#ffffff" }}>
           <div className="font-black">Dark</div>

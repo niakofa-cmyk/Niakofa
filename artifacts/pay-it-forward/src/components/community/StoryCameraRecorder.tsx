@@ -6,7 +6,6 @@ import {
   STORY_CAMERA_MAX_RECORDING_MS,
   storyCameraConstraints,
   storyCameraErrorMessage,
-  storyCameraRecordingConstraints,
   chooseRecorderMimeType,
   type StoryCameraFacingMode,
 } from "./story-camera-utils";
@@ -79,6 +78,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   const [cameraSwitching, setCameraSwitching] = useState(false);
   const [cameraRequesting, setCameraRequesting] = useState(false);
   const [captureMode, setCaptureMode] = useState<"video" | "photo">("video");
+  const [micUnavailable, setMicUnavailable] = useState(false);
   phaseRef.current = phase;
   clipsRef.current = clips;
   fileRef.current = file;
@@ -223,18 +223,44 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
       return;
     }
     const requestId = ++requestIdRef.current;
+    const constraints = storyCameraConstraints(facingMode);
+    const hasLiveMic = recordingAudioRef.current?.getAudioTracks().some(
+      (track) => track.readyState === "live",
+    ) ?? false;
+    let stream: MediaStream;
+    let acquiredAudio: MediaStream | null = null;
+    const discardNewAudio = () => {
+      if (!acquiredAudio) return;
+      stopStream(acquiredAudio);
+      if (recordingAudioRef.current === acquiredAudio) recordingAudioRef.current = null;
+    };
     setCameraRequesting(true);
     try {
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(storyCameraRecordingConstraints(facingMode));
-      } catch (reason) {
-        const name = reason && typeof reason === "object" && "name" in reason ? String((reason as { name?: string }).name) : "";
-        if (name !== "NotAllowedError" && name !== "NotFoundError") throw reason;
-        stream = await navigator.mediaDevices.getUserMedia(storyCameraConstraints(facingMode));
+      if (hasLiveMic) {
+        setMicUnavailable(false);
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } else {
+        if (recordingAudioRef.current) stopRecordingAudio();
+        try {
+          const combined = await navigator.mediaDevices.getUserMedia({ ...constraints, audio: true });
+          stream = new MediaStream(combined.getVideoTracks());
+          const audioTracks = combined.getAudioTracks().filter((track) => track.readyState === "live");
+          if (audioTracks.length) {
+            acquiredAudio = new MediaStream(audioTracks);
+            recordingAudioRef.current = acquiredAudio;
+            setMicUnavailable(false);
+          } else {
+            setMicUnavailable(true);
+          }
+        } catch {
+          // A microphone denial must not block video-only recording.
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          setMicUnavailable(true);
+        }
       }
       if (disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current) {
         stopStream(stream);
+        discardNewAudio();
         return;
       }
       streamRef.current = stream;
@@ -249,6 +275,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
       }
       if (disposedRef.current || cancelledRef.current || requestId !== requestIdRef.current) {
         stopStream(stream);
+        discardNewAudio();
         if (streamRef.current === stream) {
           streamRef.current = null;
           setTorchSupported(false);
@@ -293,13 +320,16 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     try {
       const recordingStream = stream;
       if (disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current) return;
-      const mimeType = recorderMimeType(recordingStream.getAudioTracks().length > 0);
+      const audioTracks = recordingAudioRef.current?.getAudioTracks().filter((track) => track.readyState === "live") ?? [];
+      setMicUnavailable(audioTracks.length === 0);
+      const mimeType = recorderMimeType(audioTracks.length > 0);
       if (!mimeType) {
         setError("This browser cannot record a supported video format.");
         return;
       }
       chunksRef.current = [];
-      const recorder = new MediaRecorder(recordingStream, { mimeType });
+      const recorderInput = new MediaStream([...recordingStream.getVideoTracks(), ...audioTracks]);
+      const recorder = new MediaRecorder(recorderInput, { mimeType });
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
         if (event.data.size) chunksRef.current.push(event.data);
@@ -668,6 +698,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
           </li>)}
         </ol>}
         {error && <p className="mb-2 text-sm text-rose-300" role="alert" data-testid="error-spark-camera">{error}</p>}
+        {micUnavailable && phase !== "preview" && <p className="mb-2 text-center text-xs text-white/75" role="status" data-testid="status-spark-microphone">Microphone unavailable — video will record without sound.</p>}
         {phase === "idle" && (cameraRequesting
           ? <p role="status" aria-live="polite" className="mb-3 text-center text-sm text-white/80">Opening camera…</p>
           : <button type="button" onClick={() => void startCamera()} className="mb-3 rounded-full bg-[#00cfff] px-5 py-3 font-bold text-[#08182b]" data-testid="button-retry-spark-camera">Try camera again</button>)}

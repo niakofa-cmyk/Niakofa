@@ -755,21 +755,5 @@
   color: #ffffff;
 }
 
-html:not(.dark) .nia-story-composer,
-html:not(.dark) .nia-story-composer-shell,
-html:not(.dark) .nia-story-viewer,
-html:not(.dark) .nia-story-gallery {
-  background-color: #f8fafc;
-  color: #08182b;
-}
-html:not(.dark) .nia-story-composer__header,
-html:not(.dark) .nia-story-composer__footer,
-html:not(.dark) .nia-story-composer__details,
-html:not(.dark) .nia-story-tool-dock,
-html:not(.dark) .nia-story-destination-card,
-html:not(.dark) .nia-story-family-copy {
-  background-color: #ffffff;
-  border-color: #e2e8f0;
-  color: #08182b;
-}
+/* Spark creation, camera, and playback surfaces stay dark when the app is light. */
 html:not(.dark) .nia-story-publish { background: #00cfff; color: #08182b; }

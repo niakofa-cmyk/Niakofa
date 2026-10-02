@@ -30,6 +30,7 @@ import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { useCivicResources } from "@/hooks/useCivicResources";
 import { usePoolHistoryRefresh } from "@/lib/usePoolHistoryRefresh";
 import { CommunityPoolFinancialBreakdown } from "@/components/CommunityPoolFinancialBreakdown";
+import { ColorModeSwitch } from "@/components/appearance/ColorModeSwitch";
 
 type ProfileTab = "overview" | "history" | "settings";
 
@@ -1938,16 +1939,13 @@ export default function ProfileScreen() {
                 </div>
               </div>
               <div className="divide-y divide-border">
-                <button
-                  onClick={() => setLocation("/settings?section=appearance")}
-                  className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
+                <section className="space-y-3 p-4" aria-labelledby="profile-appearance-heading">
+                  <h3 id="profile-appearance-heading" className="flex items-center gap-2 text-sm font-semibold">
                     <Settings className="w-4 h-4 text-muted-foreground" />
-                    <span>Appearance</span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </button>
+                    Appearance
+                  </h3>
+                  <ColorModeSwitch ariaLabel="Profile color mode" />
+                </section>
                 <button
                   onClick={() => setLocation("/settings?section=notifications")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"

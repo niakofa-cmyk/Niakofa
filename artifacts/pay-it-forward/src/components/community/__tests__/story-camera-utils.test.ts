@@ -37,14 +37,23 @@ test("camera keeps each clip within a Moment and allows a longer Spark for Famil
   assert.match(component, /Family Story length/);
 });
 
-test("recording keeps one camera session so the preview does not go black", () => {
+test("recording keeps one camera session and degrades safely when microphone access fails", () => {
   assert.deepEqual(storyCameraRecordingConstraints("user").audio, true);
   assert.equal((storyCameraRecordingConstraints("environment").video as MediaTrackConstraints).facingMode && true, true);
   assert.match(component, /phase === "camera" \|\| phase === "countdown" \|\| phase === "recording" \|\| phase === "paused"/);
   assert.doesNotMatch(component, /if \(video\.srcObject === streamRef\.current\) video\.srcObject = null/);
   assert.doesNotMatch(component, /getUserMedia\(\{ audio: true \}\)/);
-  assert.match(component, /storyCameraRecordingConstraints\(facingMode\)/);
-  assert.match(component, /new MediaRecorder\(recordingStream, \{ mimeType \}\)/);
+  const startCamera = component.slice(component.indexOf("const startCamera"), component.indexOf("useEffect(() => {\n    void startCamera"));
+  const beginRecording = component.slice(component.indexOf("const beginRecording"), component.indexOf("const startRecording"));
+  assert.match(startCamera, /getUserMedia\(\{ \.\.\.constraints, audio: true \}\)/);
+  assert.match(startCamera, /A microphone denial must not block video-only recording/);
+  assert.match(startCamera, /getUserMedia\(constraints\);\s*setMicUnavailable\(true\)/);
+  assert.match(startCamera, /recordingAudioRef\.current = acquiredAudio/);
+  assert.doesNotMatch(beginRecording, /getUserMedia|ensureMicrophone/);
+  assert.match(beginRecording, /recordingAudioRef\.current\?\.getAudioTracks\(\)\.filter/);
+  assert.match(beginRecording, /new MediaStream\(\[\.\.\.recordingStream\.getVideoTracks\(\), \.\.\.audioTracks\]\)/);
+  assert.match(component, /new MediaRecorder\(recorderInput, \{ mimeType \}\)/);
+  assert.match(component, /status-spark-microphone/);
 });
 
 test("camera permission and device errors are explained without relying on DOMException support", () => {

@@ -1,0 +1,171 @@
+Have we established settings, Added and verified the active switch from Dark mode to light mode? Deep Navy (#08182B) and Electric Cyan (#00CFFF) form a cool, high-contrast, modern foundation. To build a complete UI system for a social app, you need warm accent colors to pop against the cool tones, as well as background/surface neutrals that ensure high contrast and WCAG accessibility.
+Primary Anchor Colors
+
+Deep Navy (#08182B): Structural base. Best for dark-mode backgrounds, sidebars, top headers, and primary text on light themes.
+Electric Cyan (#00CFFF): Brand identifier & interactive accent. Best for primary Call-to-Action (CTA) buttons, active tab indicators, unread badges, and verified checkmarks.
+Vibrant Warm Accents
+Cool palettes can feel distant without a warm accent to guide the user's eye toward conversion points and notifications.
+Coral Sunset (#FF5A5F):
+Role: Secondary CTA, notifications, "Like" hearts, alerts, or urgent actions.
+Why it works: Sits directly opposite cyan on the color wheel. It provides immediate contrast against both dark navy and cyan.
+Electric Amber (#FFB703):
+Role: Warnings, ratings, badges, "Add to Village" highlights, or secondary action buttons.
+Why it works: Adds warmth and optimism while remaining readable on dark backgrounds.
+Supporting Mid-Tones & Neutrals
+Soft Ice Blue (#E0F7FC):
+Role: Card backgrounds in light mode, active state tints, or subtle hover effects.
+Why it works: A 5% tint of Electric Cyan that binds the interface together without overwhelming the screen.
+Slate Muted Blue (#4A627A):
+Role: Secondary text (timestamps, subheadings, muted icons), borders, and disabled button states.
+Why it works: Bridges the gap between deep navy and bright cyan, ensuring secondary elements don't compete with main text.
+Off-White Surface (#F8FAFC):
+Role: Primary background for Light Mode.
+Why it works: Pure #FFFFFF can produce excessive harsh contrast against #08182B; off-white softens readability for long scrolling sessions.
+UI Implementation Map
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+UI ElementDark ModeLight ModeApp Background#08182B (Navy)#F8FAFC (Off-White)Cards & Containers#0F243B (Lighter Navy)#FFFFFF (Pure White)Primary Text#FFFFFF (White)#08182B (Navy)Secondary Text#8EA6C0 (Light Slate)#4A627A (Muted Slate)Primary Buttons / CTAs#00CFFF (Electric Cyan)#00CFFF (Electric Cyan)Primary Button Text#08182B (Navy)#08182B (Navy)Action Accents (Hearts, Badges)#FF5A5F (Coral)#FF5A5F (Coral)Borders & Dividers#1A334E#E2E8F0
+
+Design & Contrast Notes
+
+Button Text Accessibility: Avoid placing white text directly inside an Electric Cyan (#00CFFF) button. White on #00CFFF fails WCAG AAA contrast standards. Use your Deep Navy (#08182B) for text inside Cyan buttons for high readability.
+Gradient Usage: A smooth linear gradient from Deep Navy (#08182B) to a slightly brighter slate/indigo creates a polished backdrop for profile headers or splash screens.
+
+Verify Everything is already on main in niakofa-cmyk/Niakofa. Local and GitHub are both at ce6506f, with a clean working tree.
+Latest commits:
+
+ce6506f — dark and light appearance switch
+92dc89e — account @username and Spark preview fix
+8515e29 — navy and cyan UI system with warm accents
+The Grok preview uses that same palette and switch. It is not a separate repo, so there was nothing new to push.
+
+The Grok preview now uses the same navy and cyan system as the live app, and the dark/light switch holds up.
+Profile has an Appearance control. Dark is deep navy #08182B. Light is off-white #F8FAFC. The choice is saved on the device and is still there after a reload. Cyan buttons keep navy text in both modes. The camera, studio, and playback stay dark so the picture is not washed out.
+I checked the live colors on the profile screen:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DarkLightPage textwhite on #08182B, 17.9:1navy on #F8FAFC, 17.1:1Secondary text#8EA6C0 on cards, 6.3:1#4A627A on white, 6.3:1Cyan buttonnavy on #00CFFF, 9.7:1navy on #00CFFF, 9.7:1
+
+Electric cyan is not used as text on the light background, because that combination is too faint. Links and labels switch to a darker cyan, and the active tab uses navy with a cyan underline.GitHub is connected, and niakofa-cmyk/Niakofa main is at ce6506f — Add a working dark and light appearance switch. Settings and the switch are already on that commit.
+The preview is up with the same navy/cyan system.
+Verified on this pass
+
+Profile has a live Appearance control. Dark is deep navy #08182B. Light is off-white #F8FAFC.
+Settings → Appearance uses the same Dark / Light buttons, with cyan selected state and navy button text.
+The choice is stored as niakofa-color-mode and is still there after a reload.
+Spark studio stays dark (#08182B) even when the rest of the app is in light mode.
+Cyan CTAs keep navy text in both modes. Hearts stay coral.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SurfaceDarkLightApp background#08182B#F8FAFCPrimary textwhitenavyCyan buttonnavy on #00CFFFnavy on #00CFFFCamera / studioalways navyalways navy
+What to try
+
+Village feed, Map, Inbox, and Profile
+Switch Dark ↔ Light on Profile, then open Settings
+Edit name / @username / place and save
+Open Spark — the studio stays dark so the picture does not wash out
+
+Added the share card — publish again if you already did.Verity Spark studio stays dark, Fix the Dark mode preview issue, Add Park preview to main navigation. Evaluate the live app code, then push all improvements and enhancements to repo
