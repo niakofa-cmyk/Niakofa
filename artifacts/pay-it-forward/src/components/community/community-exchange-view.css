@@ -184,7 +184,7 @@
 .nia-exchange [data-testid="button-create-listing"],
 .nia-exchange [data-testid="button-empty-listings-action"] {
   background: var(--nk-teal);
-  color: var(--nk-navy, #041819);
+  color: var(--nk-navy, #08182b);
 }
 .nia-exchange [data-testid="status-exchange-notice"] {
   border-color: color-mix(in srgb, var(--nk-teal) 45%, hsl(var(--border)));
@@ -195,5 +195,5 @@
   background-color: hsl(var(--background));
 }
 .nia-exchange :is(button, a, input, select, textarea):focus-visible {
-  outline-color: var(--nk-cyan, #0fe5d4);
+  outline-color: var(--nk-cyan, #00cfff);
 }

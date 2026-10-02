@@ -412,19 +412,19 @@
 .nia-moments [data-testid="list-moments-feed"],
 .nia-moments [data-moment-index],
 .nia-moments > section[aria-label="Spark feed"] {
-  background-color: var(--nk-navy, #041819);
+  background-color: var(--nk-navy, #08182b);
 }
 .nia-moments [data-testid="list-moments-feed"] {
-  background: radial-gradient(ellipse at 50% 18%, rgb(15 229 212 / .12), transparent 70%), var(--nk-navy, #041819);
+  background: radial-gradient(ellipse at 50% 18%, rgb(0 207 255 / .12), transparent 70%), var(--nk-navy, #08182b);
 }
 .nia-moments [data-moment-caption] {
-  background: linear-gradient(to top, rgb(4 24 25 / .96), rgb(4 24 25 / .55) 52%, transparent);
-  color: #f3fffc;
+  background: linear-gradient(to top, rgb(8 24 43 / .96), rgb(8 24 43 / .55) 52%, transparent);
+  color: #edf8ff;
 }
 .nia-moments [data-moment-actions],
 .nia-moments [data-testid^="button-moment-sound-"],
 .nia-moments [data-testid^="button-moment-media-"] {
-  background: rgb(7 30 34 / .9);
+  background: rgb(12 39 68 / .9);
 }
-.nia-moments [data-moment-filters] button { color: var(--nk-navy, #041819); }
-.nia-moments :is(button, a, input, select):focus-visible { outline-color: var(--nk-cyan, #0fe5d4); }
+.nia-moments [data-moment-filters] button { color: var(--nk-navy, #08182b); }
+.nia-moments :is(button, a, input, select):focus-visible { outline-color: var(--nk-cyan, #00cfff); }

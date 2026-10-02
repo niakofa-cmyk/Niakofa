@@ -40,6 +40,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   allowText: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordingAudioRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -67,7 +68,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   const [file, setFile] = useState<File | null>(null);
   const [clips, setClips] = useState<File[]>([]);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [clipPoster, setClipPoster] = useState("");
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   const [error, setError] = useState("");
   const [facingMode, setFacingMode] = useState<StoryCameraFacingMode>("user");
   const [torchSupported, setTorchSupported] = useState(false);
@@ -346,14 +347,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
         const nextClips = [...clipsRef.current, recorded];
         clipsRef.current = nextClips;
         setClips(nextClips);
-        const live = videoRef.current;
-        if (live && live.videoWidth > 0 && live.videoHeight > 0) {
-          const canvas = document.createElement("canvas");
-          canvas.width = live.videoWidth;
-          canvas.height = live.videoHeight;
-          canvas.getContext("2d")?.drawImage(live, 0, 0, canvas.width, canvas.height);
-          try { setClipPoster(canvas.toDataURL("image/jpeg", 0.72)); } catch { setClipPoster(""); }
-        }
+        setPreviewPlaying(false);
         setError("");
         stopTracks();
         setPhase("preview");
@@ -603,6 +597,17 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     onCancel();
   };
 
+  const togglePreviewPlayback = () => {
+    const video = previewVideoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      video.muted = false;
+      void video.play().catch(() => setError("The recorded clip preview could not be loaded. Retake it or choose another video."));
+      return;
+    }
+    video.pause();
+  };
+
   const totalSeconds = Math.ceil((recordedVideoMs + elapsed) / 1000);
   const capSeconds = Math.ceil(MAX_RECORDING_MS / 1000);
   const remainingSeconds = Math.max(0, Math.ceil((MAX_RECORDING_MS - recordedVideoMs - elapsed) / 1000));
@@ -625,10 +630,12 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
       <div className="nia-spark-camera__stage absolute inset-0 bg-black">
         {phase !== "preview" && <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" aria-label="Live Spark camera preview" />}
         {phase === "preview" && file && previewUrl && (file.type.startsWith("video/")
-          ? <video key={previewUrl} src={previewUrl} poster={clipPoster || undefined} muted playsInline controls preload="metadata" onLoadedData={(event) => { setError(""); void event.currentTarget.play().catch(() => undefined); }} onError={(event) => { if (event.currentTarget.currentSrc === previewUrl) setError("The recorded clip preview could not be loaded. Retake it or choose another video."); }} className="h-full w-full object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
+          ? <>
+            <video ref={previewVideoRef} key={previewUrl} src={previewUrl} playsInline controls preload="auto" onPlay={() => { setError(""); setPreviewPlaying(true); }} onPause={() => setPreviewPlaying(false)} onEnded={() => setPreviewPlaying(false)} onError={(event) => { if (event.currentTarget.currentSrc === previewUrl) setError("The recorded clip preview could not be loaded. Retake it or choose another video."); }} className="h-full w-full bg-black object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
+            {!previewPlaying && <button type="button" onClick={togglePreviewPlayback} aria-label="Play recording" className="absolute left-1/2 top-1/2 z-10 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[#00cfff] text-[#08182b]" data-testid="button-play-spark-preview"><Play aria-hidden="true" className="h-7 w-7" /></button>}
+          </>
           : <img src={previewUrl} alt="Captured Spark photo preview" className="h-full w-full object-contain" />)}
         {phase === "countdown" && <span className="absolute inset-0 z-10 grid place-items-center text-8xl font-bold text-[#00cfff]" aria-live="assertive">{countdown}</span>}
-        {phase !== "preview" && <div className="nia-spark-camera__shade pointer-events-none absolute inset-0 bg-gradient-to-b from-[#08182b]/55 via-transparent to-[#08182b]/80" />}
       </div>
 
       {overFamilyStory && <p className="nia-spark-camera__family" data-testid="status-spark-family-story-length">Family Story length — you can archive this</p>}
@@ -673,8 +680,9 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
             {phase === "countdown" && <button type="button" onClick={() => { clearCountdown(); setPhase("camera"); }} className="rounded-full bg-[#08182b]/80 px-4 py-2 font-bold" data-testid="button-cancel-spark-countdown">Cancel countdown</button>}
             {phase === "preview" && file && (
               <div className="flex flex-wrap justify-center gap-2">
+                {file.type.startsWith("video/") && <button type="button" onClick={togglePreviewPlayback} aria-label={previewPlaying ? "Pause recording" : "Play recording"} className="rounded-full bg-[#00cfff] px-4 py-2 text-sm font-extrabold text-[#08182b]" data-testid="button-play-spark-preview-dock">{previewPlaying ? <Pause aria-hidden="true" className="mr-1 inline h-4 w-4" /> : <Play aria-hidden="true" className="mr-1 inline h-4 w-4" />}{previewPlaying ? "Pause" : "Play"}</button>}
                 <button type="button" onClick={retake} aria-label={`Retake Spark ${file.type.startsWith("video/") ? "video" : "photo"}`} className="rounded-full border border-white/30 px-4 py-2 text-sm font-bold" data-testid="button-retake-spark-camera"><RotateCcw aria-hidden="true" className="mr-1 inline h-4 w-4" /> Retake</button>
-                {clips.length < MAX_ITEMS && recordedVideoMs < MAX_RECORDING_MS && <button type="button" onClick={recordAnother} className="rounded-full border border-[#0fe5d4] px-4 py-2 text-sm font-bold text-[#0fe5d4]" data-testid="button-record-another-spark-clip">Add another clip</button>}
+                {clips.length < MAX_ITEMS && recordedVideoMs < MAX_RECORDING_MS && <button type="button" onClick={recordAnother} className="rounded-full border border-[#00cfff] px-4 py-2 text-sm font-bold text-[#00cfff]" data-testid="button-record-another-spark-clip">Add another clip</button>}
               </div>
             )}
           </div>

@@ -1624,7 +1624,7 @@ export function CommunityStoryRail({
         <div className="nia-story-composer-overlay">
           <input ref={galleryInput} type="file" accept={responseTargetId ? "video/*" : "image/*,video/*"} multiple className="sr-only" onChange={onFileChange} aria-label={responseTargetId ? "Choose video response clips" : "Choose Spark media"} disabled={trimming} />
           <div className="nia-story-composer-shell">
-            {exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-[#041819] px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
+            {exchangeDraftRef.current && <div className="flex items-center justify-between gap-3 border-b border-white/20 bg-[#08182b] px-4 py-3 text-xs text-white" role="status"><span>A listing-owned Exchange video draft is saved. Resume with its original listing and video, or discard it.</span><button type="button" onClick={() => void discardDraft()} className="min-h-10 shrink-0 rounded-lg border border-white/40 px-3 font-bold" data-testid="button-discard-exchange-draft">Discard</button></div>}
             <SparkComposerChrome
               step={studioStep}
               onStep={(next) => { void moveToStudioStep(next); }}

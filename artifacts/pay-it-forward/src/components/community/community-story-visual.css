@@ -1,13 +1,13 @@
 .nk-community-v4 {
-  --nia-story-viewer: #041819;
-  --nia-story-glass: rgba(4,24,25,.72);
-  --nia-story-glass-strong: rgba(4,24,25,.92);
+  --nia-story-viewer: #08182b;
+  --nia-story-glass: rgba(8,24,43,.72);
+  --nia-story-glass-strong: rgba(8,24,43,.92);
   --nia-story-border: rgba(0,207,255,.28);
   --nia-story-text: #edf8ff;
   --nia-story-muted: rgba(237,248,255,.72);
-  --nia-story-ring: conic-gradient(from 180deg, #00cfff, #0fe5d4, #7ff6ec, #00cfff);
-  --nia-story-surface: #071e22;
-  --nia-story-surface-raised: #0c2a30;
+  --nia-story-ring: conic-gradient(from 180deg, #00cfff, #66e4ff, #00cfff);
+  --nia-story-surface: #0c2744;
+  --nia-story-surface-raised: #123154;
 }
 
 .nia-story-rail { border-radius: 24px; border: 1px solid hsl(var(--border)); background: hsl(var(--card)); padding: 16px; overflow: hidden; }
@@ -310,7 +310,7 @@
 .nia-spark-camera__side { position:absolute; right:12px; top:18%; display:flex; flex-direction:column; gap:10px; z-index:2; }
 .nia-spark-camera__family {
   position:absolute; left:50%; top:72px; transform:translateX(-50%); z-index:2;
-  border-radius:999px; background:#0fe5d4; color:#041819; font-size:12px; font-weight:800;
+  border-radius:999px; background:#00cfff; color:#08182b; font-size:12px; font-weight:800;
   padding:6px 12px; white-space:nowrap;
 }
 
@@ -554,7 +554,7 @@
 /* The live camera stays edge-to-edge. Playback keeps the clip above the buttons. */
 .nia-spark-camera { isolation: isolate; background: #08182b !important; }
 .nia-spark-camera > div { background: transparent !important; }
-.nia-spark-camera__stage { position: absolute; inset: 0; min-height: 100%; background: #020812; }
+.nia-spark-camera__stage { position: absolute; inset: 0; min-height: 100%; background: #000; }
 .nia-spark-camera--playback > div { background: #08182b !important; }
 .nia-spark-camera--playback .nia-spark-camera__stage {
   position: relative;
@@ -700,14 +700,12 @@
 .nia-spark-camera {
   --nk-navy: #08182b;
   --nk-cyan: #00cfff;
-  --nk-teal-navy: #041819;
-  --nk-mint: #0fe5d4;
   --nia-story-viewer: #08182b;
   --nia-story-surface: #0c2744;
   --nia-story-surface-raised: #123154;
   --nia-story-text: #edf8ff;
-  --nia-story-gold: #00cfff;
-  --nia-story-green: #0fe5d4;
+  --nia-story-gold: #e7b650;
+  --nia-story-green: #00cfff;
 }
 .nia-story-composer,
 .nia-story-composer-shell,
@@ -750,10 +748,6 @@
 .nia-story-family-copy__family a,
 .nia-story-family-copy__family button,
 .nia-story-family-copy__intro > span { color: #00cfff; }
-.nia-spark-camera__family,
-.nia-spark-camera [data-testid="button-record-another-spark-clip"] {
-  border-color: #0fe5d4;
-}
 .nia-story-destination-card select,
 .nia-story-family-copy__family select {
   background: #08182b;
