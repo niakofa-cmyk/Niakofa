@@ -19,6 +19,7 @@ import type {
   MediaConnectionState,
   MediaTransportCallbacks,
 } from "./circleMediaTransport";
+import { audioTracksOnly, chooseSpiralRecordingMimeType } from "./spiralRecording";
 import {
   installCircleRtcHardening,
   type CircleRtcRuntime,
@@ -65,6 +66,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   private mediaRecorder: MediaRecorder | null = null;
   private recordingStopPromise: Promise<Blob | null> | null = null;
   private recordedChunks: Blob[] = [];
+  private recordingCameraClone: MediaStreamTrack | null = null;
   private mixSources = new Map<string, MediaStreamAudioSourceNode>();
   private rtcRuntime: CircleRtcRuntime | null = null;
   private cameraRecoveryEnabled = true;
@@ -84,18 +86,6 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       ((trackOptions) => createLocalTracks(trackOptions));
     this.createMediaStream =
       options.createMediaStream ?? ((tracks) => new MediaStream(tracks));
-  }
-
-  private static recordingMimeType(): string | undefined {
-    const candidates = [
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/mp4",
-      "audio/ogg;codecs=opus",
-    ];
-    if (typeof MediaRecorder.isTypeSupported !== "function")
-      return candidates[0];
-    return candidates.find((type) => MediaRecorder.isTypeSupported(type));
   }
 
   private setState(state: MediaConnectionState) {
@@ -522,7 +512,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     });
   }
 
-  startRecording(): void {
+  async startRecording(): Promise<void> {
     if (this.mediaRecorder || this.recordingStopPromise) return;
     if (
       typeof AudioContext === "undefined" ||
@@ -532,6 +522,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     }
     const audioContext = new AudioContext();
     try {
+      await audioContext.resume();
       this.audioContext = audioContext;
       this.mixDestination = audioContext.createMediaStreamDestination();
       this.recordedChunks = [];
@@ -540,10 +531,18 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       for (const [userId, stream] of this.remoteStreams) {
         this.addStreamToMix(stream, `remote:${userId}`);
       }
-      const mimeType = LiveKitCircleTransport.recordingMimeType();
+      const cameraTrack = this.camTrack?.mediaStreamTrack;
+      const hasVideo = !!cameraTrack && cameraTrack.readyState === "live";
+      const cameraClone = hasVideo ? cameraTrack.clone() : null;
+      this.recordingCameraClone = cameraClone;
+      const mixedAudio = this.mixDestination.stream.getAudioTracks()[0];
+      const recordingStream = new MediaStream(
+        [cameraClone ?? undefined, mixedAudio].filter((track): track is MediaStreamTrack => !!track),
+      );
+      const mimeType = chooseSpiralRecordingMimeType(hasVideo);
       const recorder = mimeType
-        ? new MediaRecorder(this.mixDestination.stream, { mimeType })
-        : new MediaRecorder(this.mixDestination.stream);
+        ? new MediaRecorder(recordingStream, { mimeType })
+        : new MediaRecorder(recordingStream);
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) this.recordedChunks.push(event.data);
       };
@@ -555,6 +554,8 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       this.mixDestination = null;
       this.mixSources.clear();
       this.recordedChunks = [];
+      this.recordingCameraClone?.stop();
+      this.recordingCameraClone = null;
       throw error;
     }
   }
@@ -574,6 +575,8 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     const finish = (blob: Blob | null) => {
       if (settled) return;
       settled = true;
+      this.recordingCameraClone?.stop();
+      this.recordingCameraClone = null;
       this.audioContext?.close().catch(() => {});
       this.audioContext = null;
       this.mixDestination = null;
@@ -654,8 +657,10 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
 
   private addStreamToMix(stream: MediaStream, sourceId: string): void {
     if (!this.audioContext || !this.mixDestination) return;
+    const audible = audioTracksOnly(stream);
+    if (audible.getAudioTracks().length === 0) return;
     this.removeStreamFromMix(sourceId);
-    const source = this.audioContext.createMediaStreamSource(stream);
+    const source = this.audioContext.createMediaStreamSource(audible);
     source.connect(this.mixDestination);
     this.mixSources.set(sourceId, source);
   }

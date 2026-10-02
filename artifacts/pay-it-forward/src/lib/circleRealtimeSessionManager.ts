@@ -334,10 +334,10 @@ export class CircleRealtimeSessionManager {
     }
   }
 
-  startRecording(): void {
+  startRecording(): Promise<void> {
     if (!this.transport?.startRecording)
-      throw new Error("Recording is unavailable on this media connection");
-    this.transport.startRecording();
+      return Promise.reject(new Error("Recording is unavailable on this media connection"));
+    return Promise.resolve(this.transport.startRecording());
   }
 
   stopRecording(): Promise<Blob | null> {

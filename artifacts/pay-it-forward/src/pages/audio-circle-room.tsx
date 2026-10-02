@@ -871,7 +871,7 @@ export default function AudioCircleRoomScreen() {
     useState<RecordingArchiveEntry | null>(null);
   const [audioPlayerTime, setAudioPlayerTime] = useState(0);
   const [audioPlayerPlaying, setAudioPlayerPlaying] = useState(false);
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioPlayerRef = useRef<HTMLVideoElement | null>(null);
 
   // ── Host transfer modal ────────────────────────────────────────────────────
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1774,9 +1774,7 @@ export default function AudioCircleRoomScreen() {
     if (isHost) {
       if (p.is_recording && !wasRecording) {
         recordingElapsedSecondsRef.current = 0;
-        try {
-          sessionManagerRef.current?.startRecording();
-        } catch {
+        void Promise.resolve(sessionManagerRef.current?.startRecording()).catch(() => {
           isRecordingRef.current = false;
           setSession((prev) =>
             prev ? { ...prev, is_recording: false } : prev,
@@ -1787,7 +1785,7 @@ export default function AudioCircleRoomScreen() {
             variant: "destructive",
           });
           void post("/recording", { is_recording: false });
-        }
+        });
       } else if (!p.is_recording && wasRecording) {
         const elapsed = recordingElapsedSecondsRef.current;
         const stopPromise = sessionManagerRef.current?.stopRecording();
@@ -1840,14 +1838,12 @@ export default function AudioCircleRoomScreen() {
     )
       return;
     isRecordingRef.current = true;
-    try {
-      sessionManagerRef.current?.startRecording();
-    } catch {
+    void Promise.resolve(sessionManagerRef.current?.startRecording()).catch(() => {
       isRecordingRef.current = false;
       setSession((prev) => (prev ? { ...prev, is_recording: false } : prev));
       setMediaError("Recording is unavailable on this media connection.");
       void post("/recording", { is_recording: false });
-    }
+    });
     // `post` is declared in the actions section below; this effect is keyed to
     // the room/media lifecycle so it must not rerun on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3530,11 +3526,13 @@ export default function AudioCircleRoomScreen() {
               </div>
 
               {/* Hidden audio element for in-app playback */}
-              <audio
+              <video
                 ref={audioPlayerRef}
                 src={selectedRecording?.recording_url ?? undefined}
+                playsInline
+                className="mx-4 mt-3 max-h-56 w-[calc(100%-2rem)] rounded-xl bg-black object-contain"
                 onTimeUpdate={(e) =>
-                  setAudioPlayerTime((e.target as HTMLAudioElement).currentTime)
+                  setAudioPlayerTime((e.target as HTMLVideoElement).currentTime)
                 }
                 onPlay={() => setAudioPlayerPlaying(true)}
                 onPause={() => setAudioPlayerPlaying(false)}
@@ -4203,6 +4201,16 @@ export default function AudioCircleRoomScreen() {
                                 isLoudest={
                                   loudestSpeakerId === s.user_id &&
                                   loudestSpeakerId !== activeSpeakerId
+                                }
+                                videoStream={
+                                  s.user_id === myUserId
+                                    ? localStream
+                                    : (remoteStreams.get(s.user_id) ?? null)
+                                }
+                                videoOn={
+                                  s.user_id === myUserId
+                                    ? videoOn
+                                    : (remoteStreams.get(s.user_id)?.getVideoTracks().length ?? 0) > 0
                                 }
                                 canMod={canMod && s.user_id !== myUserId}
                                 modMenuOpen={modMenuOpen === s.user_id}
@@ -6111,6 +6119,8 @@ interface SpeakerTileProps {
   isActiveSpeaker?: boolean;
   /** Locally-detected loudest speaker — gives instant visual feedback */
   isLoudest?: boolean;
+  videoStream?: MediaStream | null;
+  videoOn?: boolean;
   canMod: boolean;
   modMenuOpen: boolean;
   onOpenMod: () => void;
@@ -6128,6 +6138,8 @@ function SpeakerTile({
   level,
   isActiveSpeaker,
   isLoudest,
+  videoStream,
+  videoOn,
   canMod,
   modMenuOpen,
   onOpenMod,
@@ -6139,6 +6151,7 @@ function SpeakerTile({
   onAssignCohost,
 }: SpeakerTileProps) {
   const isSpeaking = level > 0.12 || isActiveSpeaker;
+  const showVideo = Boolean(videoStream && videoOn && videoStream.getVideoTracks().length > 0);
   return (
     <div className="flex flex-col items-center gap-1 relative">
       <div className="relative">
@@ -6175,7 +6188,20 @@ function SpeakerTile({
           } ${canMod ? "cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all" : ""}`}
           onClick={canMod ? onOpenMod : undefined}
         >
-          {s.avatar_url ? (
+          {showVideo && videoStream ? (
+            <video
+              autoPlay
+              playsInline
+              muted={isMe}
+              ref={(el) => {
+                if (el && el.srcObject !== videoStream) {
+                  el.srcObject = videoStream;
+                  void el.play().catch(() => undefined);
+                }
+              }}
+              className="h-full w-full object-cover"
+            />
+          ) : s.avatar_url ? (
             <img
               src={s.avatar_url}
               className="w-full h-full object-cover"

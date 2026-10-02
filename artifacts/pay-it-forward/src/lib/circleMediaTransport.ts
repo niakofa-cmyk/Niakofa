@@ -34,7 +34,7 @@ export interface CircleMediaTransport {
   stopVideoTracks?(): void;
   switchAudioDevice?(deviceId: string): Promise<MediaStream>;
   switchVideoDevice?(deviceId: string): Promise<MediaStream>;
-  startRecording?(): void;
+  startRecording?(): void | Promise<void>;
   stopRecording?(): Promise<Blob | null>;
   /** Browser-local, credential-free diagnostics for the current media session. */
   getRtcDiagnostics?(): string | null;
