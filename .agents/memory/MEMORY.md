@@ -18,7 +18,7 @@
 - [Circle media hardening](circle-media-hardening.md) — preserve LiveKit-only media, independent mic/camera lifecycles, bounded recovery, and real-device certification as the release gate.
 - [Fresh development database readiness](fresh-development-db-readiness.md) — connectivity and migrations do not prove ORM/schema parity; exercise changed read/write paths.
 - [Civic Census coverage](civic-census-coverage.md) — Census may return non-JSON missing-key HTML; keep verified offline county fallback explicit and use an optional key for full refresh.
-- [Civic seed sequence repair](civic-seed-sequence-repair.md) — idempotent civic imports must realign serial IDs before inserting rows.
+- [Civic seed sequence repair](civic-seed-sequence-repair.md) — realign civic serial IDs and serialize seed writers across API bootstraps.
 - [Census ACS geography endpoint](census-acs-endpoint.md) — use available ACS5 geography data; normalize ACS state suffixes and do not assume PEP paths exist.
 - [Provider release gates](provider-release-gates.md) — secret presence is not certification; require readiness, authenticated smoke, and served-commit parity.
 - [Production host verification](production-host-verification.md) — verify the canonical domain and served commit; stale Railway service domains can return fallback 404s.

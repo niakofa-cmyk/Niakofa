@@ -15,6 +15,19 @@ sequence can turn a harmless repair into a fatal duplicate-primary-key error.
 **How to apply:** Keep the repair scoped to the affected table and run it
 before both national coverage inserts and downstream city/resource seeds.
 
+Sequence repair alone does not protect against concurrent seed executions:
+another process can reset the sequence after a sibling begins inserting, and
+check-then-insert upserts can race. Serialize all civic-resource seed writers
+with the same database-wide advisory lock for the full repair-and-write pass.
+
+**Why:** API bootstraps rerun the idempotent seed, and overlapping starts can
+produce a duplicate-key failure even when each process repairs the sequence.
+
+**How to apply:** Hold a session-level advisory lock on a dedicated database
+connection from before sequence repair through each seed entrypoint's final
+write. Use the same lock for coverage and Fort Worth seeds, release it on every
+exit, and retain a concurrent-seed regression test.
+
 The canonical migration CI job must use a PostGIS-enabled PostgreSQL service;
 the full migration chain is the release gate and a plain PostgreSQL image is
 not an equivalent substitute.

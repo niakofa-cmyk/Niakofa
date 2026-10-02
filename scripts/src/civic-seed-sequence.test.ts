@@ -16,7 +16,7 @@ function databaseUrlWithSearchPath(url: string, schema: string): string {
 }
 
 test(
-  "repairs a stale civic resource sequence and remains idempotent",
+  "repairs a stale sequence, serializes concurrent seeds, and remains idempotent",
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl, "CIVIC_SEED_TEST_DATABASE_URL is required");
@@ -85,8 +85,18 @@ test(
       delete process.env.CENSUS_API_KEY;
 
       try {
-        const { default: runSeed } = await import("./seed-civic-coverage.js");
-        await runSeed();
+        const firstSeedModule = new URL("./seed-civic-coverage.js", import.meta.url);
+        firstSeedModule.search = "parallel-first";
+        const concurrentSeedModule = new URL("./seed-civic-coverage.js", import.meta.url);
+        concurrentSeedModule.search = "parallel-second";
+        const [firstSeed, concurrentSeed] = await Promise.all([
+          import(firstSeedModule.href),
+          import(concurrentSeedModule.href),
+        ]);
+        await Promise.all([
+          firstSeed.default(),
+          concurrentSeed.default(),
+        ]);
       } finally {
         if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
         else process.env.DATABASE_URL = previousDatabaseUrl;

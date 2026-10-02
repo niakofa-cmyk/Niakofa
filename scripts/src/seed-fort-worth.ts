@@ -17,6 +17,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { civicResourcesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { acquireCivicResourceSeedLock } from "./civic-seed-lock.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -517,10 +518,16 @@ async function seed() {
 // awaited by the conditional bootstrap script. This prevents the importer
 // from reporting completion while the side-effect seed is still running.
 async function runAndClose() {
+  let releaseSeedLock: (() => Promise<void>) | undefined;
   try {
+    releaseSeedLock = await acquireCivicResourceSeedLock(pool);
     await seed();
   } finally {
-    await pool.end();
+    try {
+      await releaseSeedLock?.();
+    } finally {
+      await pool.end();
+    }
   }
 }
 

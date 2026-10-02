@@ -23,6 +23,7 @@ import {
   parsePlaceRows,
   type CountyRecord,
 } from "./census-coverage.js";
+import { acquireCivicResourceSeedLock } from "./civic-seed-lock.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -170,7 +171,9 @@ async function repairResourceSequence(): Promise<void> {
 }
 
 export default async function runSeed(): Promise<void> {
+  let releaseSeedLock: (() => Promise<void>) | undefined;
   try {
+    releaseSeedLock = await acquireCivicResourceSeedLock(pool);
     let inserted = 0;
     let updated = 0;
     await repairResourceSequence();
@@ -261,6 +264,10 @@ export default async function runSeed(): Promise<void> {
       "verified TX city resources.",
     );
   } finally {
-    await pool.end();
+    try {
+      await releaseSeedLock?.();
+    } finally {
+      await pool.end();
+    }
   }
 }
