@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { recordingArchiveType } from "./recordingArchive.ts";
+import { recordingArchiveType } from "../src/lib/recordingArchive.ts";
 
 test("spiral recordings keep audio and camera video types for storage", () => {
   assert.deepEqual(recordingArchiveType("video/webm;codecs=vp8,opus"), { mimeType: "video/webm", extension: "webm" });
