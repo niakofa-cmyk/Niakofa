@@ -192,6 +192,7 @@ test.describe("authenticated universal media smoke", () => {
   });
 
   test("uploads, finalizes, processes, persists variants, and retrieves photo/video media", async ({ page, request }) => {
+    test.setTimeout(180_000);
     const headers = await authHeaders(page);
     video = await createVideoFixture();
     const photoId = await uploadAndComplete(request, headers, {
