@@ -131,8 +131,8 @@ if (!looksLocal && !hasProdFlag) {
     "If this really is your production database and you mean to seed or\n" +
     "repair these accounts on it, re-run with:\n\n" +
     "    ... pnpm --filter @workspace/scripts run seed-test-accounts -- --i-know-this-is-production\n\n" +
-    "Before doing that: make sure all three SEED_*_PASSWORD values are set\n" +
-     "to unique passwords you chose yourself for the selected account(s).\n"
+    "Before doing that: set a unique SEED_*_PASSWORD for each selected\n" +
+      "account. With --only, only that role's password is required.\n"
   );
   process.exit(1);
 }

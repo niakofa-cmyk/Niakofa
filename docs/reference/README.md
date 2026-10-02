@@ -15,6 +15,9 @@ sessions can review the original material without re-creating it.
 - `niakofa-2026-09-27-inputs/` — verbatim location-marker, integration/privacy, and network-fault notes; pointers to the retained community architecture image and two Niakofa ZIP references; explicit unapproved-subsidy boundary.
 - `niakofa-exchange-six-tab-community-2026-09-25/` — original Exchange/navigation review notes, improvement ZIP, and six mobile interaction-reference screenshots; references only, not copied product assets.
 - `attached_assets/` — pasted checkpoint notes supplied for the current review.
+- `uploads/2026-10-02/niakofa-production-readiness-work-order.txt` — retained
+  copy of the uploaded work order for review provenance, not a feature
+  specification or certification result.
 - `attached_assets/fb-clone-main_1790031621743.zip`,
   `attached_assets/sociobook-main_1790031632562.zip`, and
   `attached_assets/WigsStar-main_1790031636794.zip` — unlicensed reference
