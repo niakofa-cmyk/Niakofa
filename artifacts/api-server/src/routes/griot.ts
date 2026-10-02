@@ -28,6 +28,7 @@ import { logger } from "../lib/logger";
 import { getStripeSecretKey } from "../lib/stripe-config";
 import { recordPoolContribution, processPendingMinimums, getHubReservedBalance } from "../lib/community-pool";
 import { buildPresenceSnapshot, LIVE_PRESENCE_WINDOW_MS } from "../lib/diasporaPresence";
+import { ProposeHubSchema } from "../lib/diasporaHubProposalSchema";
 
 // Same graceful-degradation pattern as pool.ts / wallet.ts / stripe.ts —
 // pledges work in dev mode without a Stripe key, but real charges require it.
@@ -516,15 +517,6 @@ router.patch(
 // Replaces the hardcoded 10-city array that used to live in globe.tsx.
 // Seed hubs (the original 10) ship via migration 0053 with is_seed=true.
 
-const ProposeHubSchema = z.object({
-  name:         z.string().min(2).max(120),
-  region_label: z.string().min(2).max(200),
-  lat:          z.number().min(-90).max(90),
-  lng:          z.number().min(-180).max(180),
-  tag:          z.string().max(20).default("us"),
-  note:         z.string().max(500).optional(),
-});
-
 const ClaimHubSchema = z.object({
   community_id: z.number(),
 });
@@ -686,7 +678,13 @@ router.post("/griot/hubs", requireAuth, generalApiLimiter, async (req, res) => {
   // review queue unnoticed among routine proposals.
   let flagged = false;
   let flagReason: string | null = null;
-  for (const field of [parsed.data.name, parsed.data.region_label, parsed.data.note]) {
+  for (const field of [
+    parsed.data.name,
+    parsed.data.display_name,
+    parsed.data.region_label,
+    parsed.data.anchor_city,
+    parsed.data.note,
+  ]) {
     if (!field) continue;
     const moderation = moderatePostText(field);
     if (moderation.status === "pending") {
@@ -699,7 +697,13 @@ router.post("/griot/hubs", requireAuth, generalApiLimiter, async (req, res) => {
   try {
     const [hub] = await db
       .insert(diasporaHubsTable)
-      .values({ ...parsed.data, created_by: userId, status: "pending_review", is_seed: false })
+      .values({
+        ...parsed.data,
+        tag: parsed.data.hub_scope === "us_state" ? "us-state" : "country",
+        created_by: userId,
+        status: "pending_review",
+        is_seed: false,
+      })
       .returning();
     if (flagged) {
       logger.warn({ hub_id: hub!.id, created_by: userId, reason: flagReason }, "griot: hub proposal flagged by content moderation");
@@ -1340,11 +1344,60 @@ router.post("/admin/griot/hubs/:id/review", requireAuth, requireAdmin(), general
     return;
   }
 
-  const [hub] = await db
-    .update(diasporaHubsTable)
-    .set({ status: parsed.data.decision, updated_at: new Date() })
-    .where(eq(diasporaHubsTable.id, id))
-    .returning();
+  if (parsed.data.decision === "approved") {
+    const [candidate] = await db
+      .select({
+        hub_scope: diasporaHubsTable.hub_scope,
+        country_code: diasporaHubsTable.country_code,
+        subdivision_code: diasporaHubsTable.subdivision_code,
+        primary_hub_id: diasporaHubsTable.primary_hub_id,
+      })
+      .from(diasporaHubsTable)
+      .where(eq(diasporaHubsTable.id, id))
+      .limit(1);
+
+    if (!candidate) { res.status(404).json({ error: "Hub not found" }); return; }
+
+    const countryCode = candidate.country_code?.trim().toUpperCase() ?? "";
+    const geographyIsComplete =
+      candidate.primary_hub_id !== null ||
+      (candidate.hub_scope === "country" &&
+        countryCode.length > 0 &&
+        countryCode !== "US" &&
+        candidate.subdivision_code === null) ||
+      (candidate.hub_scope === "us_state" &&
+        countryCode === "US" &&
+        Boolean(candidate.subdivision_code?.trim()));
+
+    if (!geographyIsComplete) {
+      res.status(400).json({
+        error: "Complete canonical country or U.S. state geography before approving this Hub",
+      });
+      return;
+    }
+  }
+
+  let hub: typeof diasporaHubsTable.$inferSelect | undefined;
+  try {
+    [hub] = await db
+      .update(diasporaHubsTable)
+      .set({ status: parsed.data.decision, updated_at: new Date() })
+      .where(eq(diasporaHubsTable.id, id))
+      .returning();
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code === "23514") {
+      res.status(400).json({
+        error: "Complete canonical country or U.S. state geography before approving this Hub",
+      });
+      return;
+    }
+    if (code === "23505") {
+      res.status(409).json({ error: "An approved Hub already exists for this geography" });
+      return;
+    }
+    throw err;
+  }
 
   if (!hub) { res.status(404).json({ error: "Hub not found" }); return; }
   res.json({ hub });

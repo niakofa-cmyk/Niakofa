@@ -9,6 +9,7 @@ node --import tsx --test scripts/diaspora-finalization-contract.test.mjs
 node --import tsx --test scripts/diaspora-final-polish-contract.test.mjs
 node --import tsx --test scripts/diaspora-final-wiring-contract.test.mjs
 node --import tsx --test scripts/diaspora-globe-geometry-contract.test.mjs
+node --test scripts/diaspora-hub-geography-reconcile-contract.test.mjs
 node --import tsx --test scripts/diaspora-preserve-idempotency-contract.test.mjs
 node --import tsx --test scripts/diaspora-triple-enhancement-contract.test.mjs
 node --import tsx --test scripts/dna-matching-contract.test.mjs
