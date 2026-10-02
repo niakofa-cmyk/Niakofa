@@ -58,7 +58,7 @@ test("camera surface is edge-to-edge and releases tracks before recording previe
   assert.doesNotMatch(component, />Start camera</);
   assert.match(component, /stopTracks\(\);\s+setPhase\("preview"\);/);
   assert.match(component, /if \(streamRef\.current\) setPhase\("camera"\);\s*else \{\s*setPhase\("idle"\);\s*void startCamera\(\);/);
-  assert.match(component, /key=\{previewUrl\} src=\{previewUrl\} controls playsInline preload="auto"/);
+  assert.match(component, /key=\{previewUrl \|\| file\.name\} src=\{previewUrl \|\| undefined\} autoPlay muted playsInline controls preload="auto"/);
   assert.match(component, /onError=\{\(\) => setError\("The recorded clip preview could not be loaded/);
 });
 

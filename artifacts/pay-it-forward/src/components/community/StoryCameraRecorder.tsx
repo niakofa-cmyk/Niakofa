@@ -13,8 +13,8 @@ import {
 const MAX_RECORDING_MS = STORY_CAMERA_MAX_RECORDING_MS;
 const CLIP_MAX_MS = STORY_CAMERA_CLIP_MAX_MS;
 const MAX_ITEMS = STORY_CAMERA_MAX_ITEMS;
-const recorderTypes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
-const silentRecorderTypes = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"];
+const recorderTypes = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+const silentRecorderTypes = ["video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
 
 function recorderMimeType(hasAudio: boolean) {
   const types = hasAudio ? recorderTypes : silentRecorderTypes;
@@ -207,7 +207,14 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     const requestId = ++requestIdRef.current;
     setCameraRequesting(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(storyCameraConstraints(facingMode));
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(storyCameraRecordingConstraints(facingMode));
+      } catch (reason) {
+        const name = reason && typeof reason === "object" && "name" in reason ? String((reason as { name?: string }).name) : "";
+        if (name !== "NotAllowedError" && name !== "NotFoundError") throw reason;
+        stream = await navigator.mediaDevices.getUserMedia(storyCameraConstraints(facingMode));
+      }
       if (disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current) {
         stopStream(stream);
         return;
@@ -248,34 +255,6 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const showRecordingPreview = async (next: MediaStream) => {
-    streamRef.current = next;
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.srcObject !== next) video.srcObject = next;
-    await video.play().catch(() => undefined);
-  };
-  const openRecordingStream = async (current: MediaStream) => {
-    if (current.getAudioTracks().some((track) => track.readyState === "live")) return current;
-    stopStream(current);
-    if (streamRef.current === current) streamRef.current = null;
-    try {
-      const combined = await navigator.mediaDevices.getUserMedia(storyCameraRecordingConstraints(facingMode));
-      if (disposedRef.current || cancelledRef.current || isDocumentHidden()) {
-        stopStream(combined);
-        return null;
-      }
-      await showRecordingPreview(combined);
-      return combined;
-    } catch (reason) {
-      const name = reason && typeof reason === "object" && "name" in reason ? String((reason as { name?: string }).name) : "";
-      if (name !== "NotAllowedError" && name !== "NotFoundError") throw reason;
-      const restored = await navigator.mediaDevices.getUserMedia(storyCameraConstraints(facingMode));
-      await showRecordingPreview(restored);
-      return restored;
-    }
-  };
-
   const beginRecording = async () => {
     const stream = streamRef.current;
     const requestId = requestIdRef.current;
@@ -294,8 +273,8 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     if (recordingStartingRef.current) return;
     recordingStartingRef.current = true;
     try {
-      const recordingStream = await openRecordingStream(stream);
-      if (!recordingStream || disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current) return;
+      const recordingStream = stream;
+      if (disposedRef.current || cancelledRef.current || isDocumentHidden() || requestId !== requestIdRef.current) return;
       const mimeType = recorderMimeType(recordingStream.getAudioTracks().length > 0);
       if (!mimeType) {
         setError("This browser cannot record a supported video format.");
@@ -372,7 +351,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
       recordingFailedRef.current = false;
       setElapsed(0);
       startedAtRef.current = Date.now();
-      recorder.start(200);
+      recorder.start();
       const preview = videoRef.current;
       if (preview && preview.srcObject === recordingStream) void preview.play().catch(() => undefined);
       setPhase("recording");
@@ -625,7 +604,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
       <div className="absolute inset-0 bg-black">
         {phase !== "preview" && <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" aria-label="Live Spark camera preview" />}
         {phase === "preview" && file && (file.type.startsWith("video/")
-          ? <video key={previewUrl} src={previewUrl} controls playsInline preload="auto" onLoadedData={() => setError("")} onError={() => setError("The recorded clip preview could not be loaded. Retake it or choose another video.")} className="h-full w-full object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
+          ? <video key={previewUrl || file.name} src={previewUrl || undefined} autoPlay muted playsInline controls preload="auto" onLoadedData={(event) => { setError(""); void event.currentTarget.play().catch(() => undefined); }} onError={() => setError("The recorded clip preview could not be loaded. Retake it or choose another video.")} className="h-full w-full object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
           : <img src={previewUrl} alt="Captured Spark photo preview" className="h-full w-full object-contain" />)}
         {phase === "countdown" && <span className="absolute inset-0 z-10 grid place-items-center text-8xl font-bold text-[#00cfff]" aria-live="assertive">{countdown}</span>}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#041819]/55 via-transparent to-[#041819]/80" />

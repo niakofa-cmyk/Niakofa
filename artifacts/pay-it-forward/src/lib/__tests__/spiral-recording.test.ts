@@ -11,6 +11,8 @@ test("spiral recording keeps camera video out of the audio mix and records it se
   assert.equal(chooseSpiralRecordingMimeType(true, (type) => type === "video/webm"), "video/webm");
   assert.equal(chooseSpiralRecordingMimeType(false, () => false), undefined);
   assert.match(transport, /audioTracksOnly\(stream\)/);
+  assert.match(transport, /addStreamToMix\(this\.currentLocalStream\(\), "local"\)/);
+  assert.doesNotMatch(transport, /addStreamToMix\(this\.emitLocalStream\(\), "local"\)/);
   assert.match(transport, /chooseSpiralRecordingMimeType\(hasVideo\)/);
   assert.match(transport, /await audioContext\.resume\(\)/);
   assert.match(transport, /cameraTrack\.clone\(\)/);

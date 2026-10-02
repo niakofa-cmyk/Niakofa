@@ -399,7 +399,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
     void this.unpublishAndStop(room, camTrack);
     this.removeStreamFromMix("local");
     this.emitLocalStream();
-    if (this.micTrack) this.addStreamToMix(this.emitLocalStream(), "local");
+    if (this.micTrack) this.addStreamToMix(this.currentLocalStream(), "local");
   }
 
   setMicEnabled(enabled: boolean): void {
@@ -527,7 +527,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       this.mixDestination = audioContext.createMediaStreamDestination();
       this.recordedChunks = [];
       if (this.micTrack || this.camTrack)
-        this.addStreamToMix(this.emitLocalStream(), "local");
+        this.addStreamToMix(this.currentLocalStream(), "local");
       for (const [userId, stream] of this.remoteStreams) {
         this.addStreamToMix(stream, `remote:${userId}`);
       }

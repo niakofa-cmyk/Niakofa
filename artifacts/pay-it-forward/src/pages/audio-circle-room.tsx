@@ -417,6 +417,20 @@ interface HostHeroTileProps {
   onRemoveCohost?: () => void;
 }
 
+function attachLivePreview(el: HTMLVideoElement | null, stream: MediaStream | null | undefined) {
+  if (!el || !stream) return;
+  const nextTrack = stream.getVideoTracks()[0];
+  const current = el.srcObject instanceof MediaStream ? el.srcObject.getVideoTracks()[0] : undefined;
+  if (current && nextTrack && current.id === nextTrack.id) {
+    if (el.paused) void el.play().catch(() => undefined);
+    return;
+  }
+  if (el.srcObject !== stream) {
+    el.srcObject = stream;
+    void el.play().catch(() => undefined);
+  }
+}
+
 function HostHeroTile({
   participant: p,
   isMe,
@@ -482,12 +496,7 @@ function HostHeroTile({
             autoPlay
             playsInline
             muted={isMe}
-            ref={(el) => {
-              if (el && el.srcObject !== videoStream) {
-                el.srcObject = videoStream!;
-                el.play().catch(() => {});
-              }
-            }}
+            ref={(el) => attachLivePreview(el, videoStream)}
             className="w-full h-full object-cover"
           />
         ) : (
@@ -5846,12 +5855,7 @@ function DesktopSpeakerVideoTile({
             autoPlay
             playsInline
             muted={isMe}
-            ref={(el) => {
-              if (el && el.srcObject !== videoStream) {
-                el.srcObject = videoStream!;
-                el.play().catch(() => {});
-              }
-            }}
+            ref={(el) => attachLivePreview(el, videoStream)}
             className="w-full h-full object-cover"
           />
         ) : (
@@ -6193,12 +6197,7 @@ function SpeakerTile({
               autoPlay
               playsInline
               muted={isMe}
-              ref={(el) => {
-                if (el && el.srcObject !== videoStream) {
-                  el.srcObject = videoStream;
-                  void el.play().catch(() => undefined);
-                }
-              }}
+              ref={(el) => attachLivePreview(el, videoStream)}
               className="h-full w-full object-cover"
             />
           ) : s.avatar_url ? (
