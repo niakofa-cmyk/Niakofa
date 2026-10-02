@@ -19,18 +19,20 @@ import {
   gratitudePostsTable,
   hubMembershipsTable,
   mediaAssetsTable,
+  mediaProcessingJobsTable,
   requestsTable,
   usersTable,
 } from "@workspace/db";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { communityLikeLimiter, communityPostLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
-import { deleteAsset, putAsset, streamOrRedirectAsset } from "../lib/storage";
+import { deleteAsset, deleteAssetStrict, putAsset, streamOrRedirectAsset } from "../lib/storage";
 import { broadcast } from "../lib/ws-hub";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isMediaPlatformV21Enabled } from "../lib/media-platform";
 import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
+import { mediaStorageKeys } from "../lib/media-cleanup";
 import { mediaProcessingQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 
@@ -695,13 +697,23 @@ router.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, community
     return res.status(403).json({ error: "Approved Hub membership is required to upload media." });
   }
 
-  const [post] = await db.select({ id: hubCommunityPostsTable.id, author_id: hubCommunityPostsTable.author_id })
+  const [post] = await db.select({
+    id: hubCommunityPostsTable.id,
+    author_id: hubCommunityPostsTable.author_id,
+    moderation_status: hubCommunityPostsTable.moderation_status,
+  })
     .from(hubCommunityPostsTable)
     .where(and(eq(hubCommunityPostsTable.id, postId), eq(hubCommunityPostsTable.hub_id, hubId)))
     .limit(1);
   if (!post) return res.status(404).json({ error: "Community post not found." });
   if (post.author_id !== req.authenticatedUserId!) {
     return res.status(403).json({ error: "Only the post author can add media." });
+  }
+  if (post.moderation_status !== "approved") {
+    return res.status(409).json({
+      error: "This Hub post is no longer accepting media.",
+      error_code: "HUB_POST_UNAVAILABLE",
+    });
   }
 
   const decoded = decodeMediaDataUrl(parsed.data.data_url);
@@ -720,6 +732,22 @@ router.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, community
   try {
     await putAsset(storageKey, decoded.buffer, decoded.mimeType);
     const result = await db.transaction(async (tx) => {
+      // Serialize the final attachment commit with post deletion. The upload
+      // may have started before deletion marked the post as unavailable.
+      const [lockedPost] = await tx.select({
+        id: hubCommunityPostsTable.id,
+        moderation_status: hubCommunityPostsTable.moderation_status,
+      }).from(hubCommunityPostsTable)
+        .where(and(
+          eq(hubCommunityPostsTable.id, postId),
+          eq(hubCommunityPostsTable.hub_id, hubId),
+          eq(hubCommunityPostsTable.author_id, req.authenticatedUserId!),
+        ))
+        .limit(1)
+        .for("share");
+      if (!lockedPost || lockedPost.moderation_status !== "approved") {
+        return { kind: "unavailable" as const };
+      }
       let mediaAssetId: number | null = null;
       let processingJob: { id: number; mediaType: string } | null = null;
       const mediaType = decoded.mimeType.startsWith("image/")
@@ -752,8 +780,23 @@ router.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, community
         alt_text: parsed.data.alt_text ?? null,
       }).returning();
       if (!media) throw new Error("Media could not be saved.");
-      return { media, mediaAssetId, processingJob };
+      return { kind: "saved" as const, media, mediaAssetId, processingJob };
     });
+    if (result.kind === "unavailable") {
+      try {
+        await deleteAssetStrict(storageKey);
+      } catch (error) {
+        logger.error({ err: error, hubId, postId }, "community-hub: unattached media cleanup failed");
+        return res.status(503).json({
+          error: "The post no longer accepts media, and storage cleanup is incomplete.",
+          error_code: "HUB_MEDIA_STORAGE_CLEANUP_INCOMPLETE",
+        });
+      }
+      return res.status(409).json({
+        error: "This Hub post is no longer accepting media.",
+        error_code: "HUB_POST_UNAVAILABLE",
+      });
+    }
     committed = true;
     if (result.processingJob) {
       try {
@@ -785,6 +828,112 @@ router.post("/community/hubs/:hubId/posts/:postId/media", requireAuth, community
     if (!committed) await deleteAsset(storageKey);
     throw error;
   }
+});
+
+router.delete("/community/hubs/:hubId/posts/:postId", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
+  const hubId = parseHubId(Array.isArray(req.params.hubId) ? req.params.hubId[0] : req.params.hubId);
+  const postId = parseHubId(Array.isArray(req.params.postId) ? req.params.postId[0] : req.params.postId);
+  if (!hubId || !postId) return res.status(400).json({ error: "Invalid Hub or post id." });
+
+  const deletion = await db.transaction(async (tx) => {
+    const [post] = await tx.select({ id: hubCommunityPostsTable.id })
+      .from(hubCommunityPostsTable)
+      .where(and(
+        eq(hubCommunityPostsTable.id, postId),
+        eq(hubCommunityPostsTable.hub_id, hubId),
+        eq(hubCommunityPostsTable.author_id, req.authenticatedUserId!),
+      ))
+      .limit(1)
+      .for("update");
+    if (!post) return null;
+
+    // Hide first and retain this tombstone if provider cleanup needs a retry.
+    await tx.update(hubCommunityPostsTable).set({
+      moderation_status: "deletion_pending",
+      updated_at: new Date(),
+    }).where(eq(hubCommunityPostsTable.id, postId));
+
+    const mediaRows = await tx.select({
+      storage_key: hubCommunityPostMediaTable.storage_key,
+      media_asset_id: hubCommunityPostMediaTable.media_asset_id,
+    }).from(hubCommunityPostMediaTable)
+      .where(eq(hubCommunityPostMediaTable.post_id, postId));
+    const assetIds = [...new Set(mediaRows.flatMap((media) => media.media_asset_id === null ? [] : [media.media_asset_id]))];
+    const assets = assetIds.length
+      ? await tx.select({
+        id: mediaAssetsTable.id,
+        original_key: mediaAssetsTable.original_key,
+        thumbnail_key: mediaAssetsTable.thumbnail_key,
+        variant_key: mediaAssetsTable.variant_key,
+        cleanup_keys: mediaAssetsTable.cleanup_keys,
+        metadata: mediaAssetsTable.metadata,
+      }).from(mediaAssetsTable)
+        .where(inArray(mediaAssetsTable.id, assetIds))
+        .for("update")
+      : [];
+
+    if (assetIds.length) {
+      await tx.update(mediaAssetsTable).set({
+        status: "deleted",
+        metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true)`,
+        updated_at: new Date(),
+      }).where(inArray(mediaAssetsTable.id, assetIds));
+      await tx.update(mediaProcessingJobsTable).set({
+        status: "cancelled",
+        error: "MEDIA_ASSET_DELETED",
+        completed_at: new Date(),
+        updated_at: new Date(),
+      }).where(and(
+        inArray(mediaProcessingJobsTable.media_asset_id, assetIds),
+        inArray(mediaProcessingJobsTable.status, ["queued", "failed", "processing"]),
+      ));
+    }
+
+    return { mediaRows, assets, assetIds };
+  });
+  if (!deletion) return res.status(404).json({ error: "Community post not found." });
+
+  const storageKeys = [...new Set([
+    ...deletion.mediaRows.map((media) => media.storage_key),
+    ...deletion.assets.flatMap((asset) => mediaStorageKeys(asset)),
+  ])];
+  const cleanup = await Promise.allSettled(storageKeys.map((key) => deleteAssetStrict(key)));
+  const cleanupFailure = cleanup.find((result) => result.status === "rejected");
+  if (cleanupFailure?.status === "rejected") {
+    logger.error({ err: cleanupFailure.reason, hubId, postId }, "community-hub: post media cleanup failed; post retained for retry");
+    return res.status(503).json({
+      deleted: false,
+      error: "The post is hidden, but its media cleanup is incomplete. Retry deletion shortly.",
+      error_code: "HUB_POST_MEDIA_CLEANUP_INCOMPLETE",
+    });
+  }
+
+  try {
+    if (deletion.assetIds.length) {
+      await db.update(mediaAssetsTable).set({
+        metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+        updated_at: new Date(),
+      }).where(inArray(mediaAssetsTable.id, deletion.assetIds));
+    }
+    await db.delete(hubCommunityPostsTable).where(and(
+      eq(hubCommunityPostsTable.id, postId),
+      eq(hubCommunityPostsTable.hub_id, hubId),
+      eq(hubCommunityPostsTable.author_id, req.authenticatedUserId!),
+    ));
+  } catch (error) {
+    logger.error({ err: error, hubId, postId }, "community-hub: post row cleanup failed; post retained for retry");
+    return res.status(503).json({
+      deleted: false,
+      error: "The post cleanup could not be completed. Retry deletion shortly.",
+      error_code: "HUB_POST_CLEANUP_INCOMPLETE",
+    });
+  }
+
+  broadcast({
+    type: "hub_community_post_updated",
+    payload: { hub_id: hubId, post_id: postId, change: "deleted" },
+  });
+  return res.json({ deleted: true });
 });
 
 // Media is attached only to an approved, moderated Hub post. The storage key
