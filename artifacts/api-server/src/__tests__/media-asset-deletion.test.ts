@@ -157,6 +157,14 @@ describe("V21 media asset deletion safety", () => {
     expect(worker).toMatch(/generatedCleanupSucceeded/);
   });
 
+  it("types generated cleanup keys before passing them to PostgreSQL JSONB builders", async () => {
+    const worker = await fs.readFile(workerPath, "utf8");
+    const store = worker.slice(worker.indexOf("async function storeGeneratedAsset"), worker.indexOf("async function stageMomentCompositionOutput"));
+    const composition = worker.slice(worker.indexOf("async function stageMomentCompositionOutput"), worker.indexOf("async function runFfmpeg"));
+    expect(store.match(/jsonb_build_array\(\$\{key\}::text\)/g)).toHaveLength(2);
+    expect(composition.match(/jsonb_build_array\(\$\{ledgerKey\}::text\)/g)).toHaveLength(2);
+  });
+
   it("cancels a claimed job when its asset is tombstoned", async () => {
     const worker = await fs.readFile(workerPath, "utf8");
     expect(worker).toMatch(/async function cancelClaimedJob\(jobId: number, attempt\?: number\)/);

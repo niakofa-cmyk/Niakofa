@@ -104,9 +104,9 @@ async function storeGeneratedAsset(
     // worker is interrupted before the generated column is committed.
     await tx.update(mediaAssetsTable).set({
       cleanup_keys: sql`CASE
-        WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${key})
+        WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${key}::text)
           THEN ${mediaAssetsTable.cleanup_keys}
-        ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${key})
+        ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${key}::text)
       END`,
       updated_at: new Date(),
     }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
@@ -161,9 +161,9 @@ async function stageMomentCompositionOutput(
       if (!job || !momentCompositionAttemptOwnsJob(job.status, job.attempts, attempt)) return false;
       await tx.update(mediaAssetsTable).set({
         cleanup_keys: sql`CASE
-          WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${ledgerKey})
+          WHEN ${mediaAssetsTable.cleanup_keys} @> jsonb_build_array(${ledgerKey}::text)
             THEN ${mediaAssetsTable.cleanup_keys}
-          ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${ledgerKey})
+          ELSE ${mediaAssetsTable.cleanup_keys} || jsonb_build_array(${ledgerKey}::text)
         END`,
         updated_at: new Date(),
       }).where(and(eq(mediaAssetsTable.id, mediaAssetId), ne(mediaAssetsTable.status, "deleted")));
