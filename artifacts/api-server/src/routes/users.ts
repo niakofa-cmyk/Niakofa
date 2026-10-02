@@ -30,6 +30,8 @@ import {
 } from "../lib/community-pool";
 import { isValidSpiritAnimal } from "../lib/spirit-animal";
 
+const RESERVED_USERNAMES = new Set(["admin", "niakofa", "support", "help", "root", "system"]);
+
 const VALID_LOCATION_MARKER_STYLES = ["puck", "spirit"] as const;
 function isValidLocationMarkerStyle(value: unknown): value is typeof VALID_LOCATION_MARKER_STYLES[number] {
   return typeof value === "string" &&
@@ -93,6 +95,11 @@ setInterval(() => {
 
 const router = Router();
 
+function normalizeUsername(value: unknown) {
+  const handle = String(value ?? "").trim().replace(/^@/, "").toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(handle) || RESERVED_USERNAMES.has(handle)) return "";
+  return handle;
+}
 
 router.get("/users/register", (_req, res) => {
   res.json({ message: "Use POST /api/users/register" });
@@ -602,6 +609,21 @@ router.post("/users/:id/scheduled-payments/:spId/pay-from-wallet", requireAuth, 
   });
 });
 
+router.get("/users/handle/:username", requireAuth, async (req, res) => {
+  const username = normalizeUsername(req.params.username);
+  if (!username) return res.status(400).json({ error: "Enter a username with 3 to 20 letters, numbers, or underscores." });
+  const [user] = await db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    username: usersTable.username,
+    avatar_url: usersTable.avatar_url,
+    city: usersTable.city,
+    neighborhood: usersTable.neighborhood,
+  }).from(usersTable).where(sql`lower(${usersTable.username}) = ${username}`).limit(1);
+  if (!user) return res.status(404).json({ error: "No Niakofa account uses that username." });
+  return res.json(user);
+});
+
 router.get("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const parsed = GetUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
@@ -615,7 +637,7 @@ router.patch("/users/:id", requireAuth, resolveMeParam, requireOwnership(), asyn
   const pParsed = UpdateUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateUserBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
-  const { name, avatar_url, neighborhood, is_helper, city, specialties, phone_masked, quick_replies } = bParsed.data;
+  const { name, avatar_url, neighborhood, is_helper, city, specialties, phone_masked, quick_replies, username } = bParsed.data;
 
   // BUG-5-H02: Build the update object from an explicit allowlist of safe
   // fields only. Never allow is_admin, role, trust_score, token_version, or
@@ -634,6 +656,13 @@ router.patch("/users/:id", requireAuth, resolveMeParam, requireOwnership(), asyn
   if (specialties !== undefined) updates.specialties = specialties;
   if (phone_masked !== undefined) updates.phone_masked = phone_masked;
   if (quick_replies !== undefined) updates.quick_replies = quick_replies;
+  if (username !== undefined) {
+    const handle = normalizeUsername(username);
+    if (!handle) return res.status(400).json({ error: "Enter a username with 3 to 20 letters, numbers, or underscores." });
+    const [taken] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${handle}`).limit(1);
+    if (taken && taken.id !== pParsed.data.id) return res.status(409).json({ error: "That username belongs to another Niakofa account." });
+    updates.username = handle;
+  }
 
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();

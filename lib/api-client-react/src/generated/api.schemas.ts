@@ -1013,6 +1013,8 @@ export const UserHelperStatus = {
 export interface User {
   id: number;
   name: string;
+  /** @nullable */
+  username?: string | null;
   email: string;
   /** @nullable */
   avatar_url?: string | null;
@@ -1056,6 +1058,7 @@ export interface User {
 
 export interface UserUpdate {
   name?: string;
+  username?: string;
   avatar_url?: string;
   neighborhood?: string;
   is_helper?: boolean;

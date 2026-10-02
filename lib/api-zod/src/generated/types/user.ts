@@ -11,6 +11,8 @@ import type { UserHelperStatus } from './userHelperStatus';
 export interface User {
   id: number;
   name: string;
+  /** @nullable */
+  username?: string | null;
   email: string;
   /** @nullable */
   avatar_url?: string | null;

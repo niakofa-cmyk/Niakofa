@@ -1063,6 +1063,7 @@ export const getUserResponseNoShowCountDefault = 0;
 export const GetUserResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish(),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -1094,6 +1095,7 @@ export const UpdateUserParams = zod.object({
 
 export const UpdateUserBody = zod.object({
   "name": zod.string().optional(),
+  "username": zod.string().optional(),
   "avatar_url": zod.string().optional(),
   "neighborhood": zod.string().optional(),
   "is_helper": zod.boolean().optional(),

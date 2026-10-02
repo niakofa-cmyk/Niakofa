@@ -8,6 +8,7 @@
 
 export interface UserUpdate {
   name?: string;
+  username?: string;
   avatar_url?: string;
   neighborhood?: string;
   is_helper?: boolean;

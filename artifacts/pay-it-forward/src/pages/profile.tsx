@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type FormEvent } from "react";
 import "./profile.css";
 import { useAnimationPreference, useOsReducedMotion, useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useLocation } from "wouter";
@@ -24,7 +24,7 @@ import {
   useGetUserOutstandingPledges,
   getGetUserOutstandingPledgesQueryKey,
 } from "@workspace/api-client-react";
-import type { Transaction } from "@workspace/api-client-react";
+import type { Transaction, User } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { useCivicResources } from "@/hooks/useCivicResources";
@@ -1019,9 +1019,85 @@ function RecentHelpersSection({
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
+function AccountDetailsCard({ user, onSaved }: { user: User; onSaved: (user: User) => void }) {
+  const [name, setName] = useState(user.name);
+  const [username, setUsername] = useState(user.username ?? "");
+  const [city, setCity] = useState(user.city ?? "");
+  const [neighborhood, setNeighborhood] = useState(user.neighborhood ?? "");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    setName(user.name);
+    setUsername(user.username ?? "");
+    setCity(user.city ?? "");
+    setNeighborhood(user.neighborhood ?? "");
+  }, [user]);
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setNotice("");
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          name: name.trim(),
+          username: username.trim().replace(/^@/, ""),
+          city: city.trim(),
+          neighborhood: neighborhood.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice(data.error ?? "Could not save your account details.");
+        return;
+      }
+      const check = await fetch(`${base}/api/users/handle/${encodeURIComponent(data.username)}`, { headers: authHeaders() });
+      const linked = check.ok ? await check.json() : null;
+      setNotice(linked?.id === user.id
+        ? `@${data.username} is linked to this Niakofa account.`
+        : "Saved, but that username does not resolve to this account.");
+      onSaved(data);
+      toast({ title: "Account details saved" });
+    } catch {
+      setNotice("Could not save your account details.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} className="nia-profile__heritage space-y-3 p-4" data-testid="form-account-details">
+      <div>
+        <h3 className="text-sm font-black">Account details</h3>
+        <p className="mt-1 text-xs text-muted-foreground">Name, @username, and place are saved on your account. Cards and payouts stay in Billing.</p>
+      </div>
+      <label className="block text-xs font-bold">Name
+        <input value={name} onChange={(event) => setName(event.target.value)} required className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" data-testid="input-account-name" />
+      </label>
+      <label className="block text-xs font-bold">Username
+        <input value={username} onChange={(event) => setUsername(event.target.value)} required minLength={3} maxLength={20} pattern="[A-Za-z0-9_]{3,20}" className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" placeholder="yourname" data-testid="input-account-username" />
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block text-xs font-bold">City
+          <input value={city} onChange={(event) => setCity(event.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+        </label>
+        <label className="block text-xs font-bold">Neighborhood
+          <input value={neighborhood} onChange={(event) => setNeighborhood(event.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+        </label>
+      </div>
+      {notice && <p className="text-xs text-muted-foreground" role="status">{notice}</p>}
+      <Button type="submit" disabled={saving} className="w-full">{saving ? "Saving…" : "Save account details"}</Button>
+    </form>
+  );
+}
+
 export default function ProfileScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
+  const { currentUser, setCurrentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
   const suppressed = useIsAnimationSuppressed();
   const [tab, setTab] = useState<ProfileTab>("overview");
   const [communitySearch, setCommunitySearch] = useState("");
@@ -1184,6 +1260,7 @@ export default function ProfileScreen() {
               <div>
                 <div className="nia-profile__eyebrow mb-1">A member of Niakofa</div>
                 <h2 className="nia-profile__identity text-2xl font-black tracking-tight" data-testid="text-profile-name">{currentUser.name}</h2>
+                <p className="text-sm font-bold text-primary" data-testid="text-profile-username">{currentUser.username ? `@${currentUser.username}` : "Set your @username"}</p>
                 <p className="text-muted-foreground flex items-center gap-1 text-sm">
                   {(currentUser.neighborhood || currentUser.city) && <MapPin className="w-3.5 h-3.5" />}
                   {currentUser.neighborhood || currentUser.city || "Community member"}
@@ -1216,6 +1293,21 @@ export default function ProfileScreen() {
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
               </div>
             </div>
+
+            <AccountDetailsCard user={currentUser} onSaved={setCurrentUser} />
+
+            <button
+              onClick={() => setLocation("/wallet")}
+              className="w-full bg-card border border-border rounded-2xl p-4 flex items-center justify-between"
+              data-testid="link-profile-billing"
+            >
+              <div className="text-left">
+                <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Billing</div>
+                <div className="font-black">Wallet ${wallet.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground">Payouts and repayment stay on the wallet. Card numbers are not stored here.</div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
 
             <section aria-labelledby="profile-heritage-heading">
               <div className="flex items-end justify-between mb-2">
