@@ -84,3 +84,4 @@
 - [Community composer signal scoping](community-composer-signal-scoping.md) — filter pending Create signals by the active tab during render; an effect reset happens too late for a newly mounted child.
 - [Moment retention and responses](niakofa-moment-retention.md) — private archives are opt-in and creator-deletable; featuring and attributed video responses must preserve Community boundaries.
 - [Spark camera draft gating](spark-camera-draft-gating.md) — auto-open only after successful scoped recovery; distinguish restored drafts from later autosaves.
+- [Railway log attribute decoding](railway-log-attribute-decoding.md) — decode JSON-quoted log values in memory, then validate allowlisted fields before surfacing diagnostics.
