@@ -134,18 +134,18 @@ hash mismatch.
 **How to apply:** require `/^[0-9a-f]{40}$/` before upload, then compare the
 connector's returned SHA and the complete tree SHA.
 
-After any connector-backed write attempt, re-read the remote ref before retrying.
-A transport or intermediate validation report may be incomplete even when the
-branch has advanced, so the remote ref and complete tree verification are
-authoritative.
+For GitHub refs, use `GET /git/ref/{ref}` to read a ref and `PATCH /git/refs/{ref}`
+to update it. After every connector-backed write attempt, re-read the remote ref
+before retrying: an intermediate error can coexist with a successful update, and
+a 404 from PATCH on the singular read path is an endpoint mismatch, not proof
+that credentials or the repository are unavailable.
 
-**Why:** An exact-sync attempt returned an intermediate blob-stage report while
-the subsequent read showed the expected commit already on `main`; retrying
-blindly could create an unnecessary duplicate commit.
+**Why:** A publication attempt created and verified a commit but got a 404 when
+the read-only `git/ref` route was mistakenly used for the update; the ref had
+not moved, and the plural `git/refs` route was required.
 
-**How to apply:** Treat every write attempt as potentially committed, compare the
-remote ref to the intended local HEAD, and only resume from the first missing
-gate.
+**How to apply:** Verify the remote ref and intended commit after every write,
+use the plural endpoint for PATCH, and only resume from the first missing gate.
 
 The workspace GitHub sync can advance the remote branch to the locally created
 commit while a separate Git Data API commit candidate is still being prepared.
