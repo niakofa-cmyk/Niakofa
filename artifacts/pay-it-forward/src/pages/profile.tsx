@@ -1071,7 +1071,7 @@ function AccountDetailsCard({ user, onSaved }: { user: User; onSaved: (user: Use
   };
 
   return (
-    <form onSubmit={save} className="nia-profile__heritage space-y-3 p-4" data-testid="form-account-details">
+    <form onSubmit={save} className="nia-profile__account-details space-y-3 p-4" data-testid="form-account-details">
       <div>
         <h3 className="text-sm font-black">Account details</h3>
         <p className="mt-1 text-xs text-muted-foreground">Name, @username, and place are saved on your account. Cards and payouts stay in Billing.</p>
@@ -1294,6 +1294,18 @@ export default function ProfileScreen() {
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
               </div>
             </div>
+
+            <section
+              className="nia-profile__appearance space-y-3 rounded-2xl border border-border bg-card p-4"
+              aria-labelledby="profile-overview-appearance-heading"
+              data-testid="profile-appearance"
+            >
+              <h3 id="profile-overview-appearance-heading" className="flex items-center gap-2 text-sm font-black">
+                <Settings className="w-4 h-4 text-muted-foreground" />
+                Appearance
+              </h3>
+              <ColorModeSwitch ariaLabel="Profile color mode" />
+            </section>
 
             <AccountDetailsCard user={currentUser} onSaved={setCurrentUser} />
 

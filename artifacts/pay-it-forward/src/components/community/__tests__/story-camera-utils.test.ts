@@ -71,6 +71,11 @@ test("recording uses a clip format the same browser can play", () => {
   assert.match(component, /chooseRecorderMimeType\(/);
   assert.match(component, /playsInline controls preload="auto"/);
   assert.match(component, /data-testid="button-play-spark-preview"/);
+  assert.match(component, /const baseType = mimeType\.split\(";"\)\[0\]/);
+  assert.match(component, /new File\(\[blob\]/);
+  assert.match(component, /type: baseType/);
+  assert.match(storyRail, /const onCameraVideo = \(recorded: File\[\]\) => \{[\s\S]*?selectStudioFiles\(recorded\)/);
+  assert.match(storyRail, /selectedPreviewFile\?\.type\.startsWith\("video\/"\) \? <video ref=\{previewVideo\} key=\{selectedFileUrl\} src=\{selectedFileUrl\} controls playsInline preload="metadata"/);
   assert.doesNotMatch(component, /toDataURL/);
   assert.doesNotMatch(component, /nia-spark-camera__shade/);
   assert.match(component, /previewUrlRef.current !== url/);

@@ -214,6 +214,7 @@
   --profile-paper: var(--nk-paper);
   --profile-card: color-mix(in srgb, var(--nk-paper) 90%, var(--nk-teal));
   --profile-line: color-mix(in srgb, var(--nk-ink) 15%, var(--nk-paper));
+  --profile-link: #006b7f;
   --profile-blue: var(--nk-teal);
   --profile-green: var(--nk-teal);
   --profile-orange: var(--nk-coral);
@@ -229,6 +230,7 @@
   --profile-paper: #08182b;
   --profile-card: #0f243b;
   --profile-line: #1a334e;
+  --profile-link: #00cfff;
 }
 
 .nia-profile__masthead {
@@ -278,3 +280,35 @@ html:not(.dark) .nia-profile {
   background: #f8fafc;
   color: #08182b;
 }
+
+.nia-profile__account-details {
+  width: 100%;
+  border: 1px solid var(--profile-line);
+  border-radius: 1rem;
+  background: var(--profile-card);
+  color: var(--profile-ink);
+}
+
+.nia-profile .text-primary,
+.nia-profile__eyebrow {
+  color: var(--profile-link);
+}
+
+.nia-profile__hero {
+  color: #ffffff;
+  background:
+    radial-gradient(ellipse at 95% 0%, rgba(255, 183, 3, .14), transparent 38%),
+    linear-gradient(120deg, #08182b 0%, #0f243b 100%);
+}
+.nia-profile__hero .nia-profile__identity { color: #ffffff; }
+.nia-profile__hero .nia-profile__eyebrow,
+.nia-profile__hero .text-primary { color: #00cfff; }
+.nia-profile__hero .text-muted-foreground { color: #8ea6c0; }
+.nia-profile__hero .nia-profile__avatar {
+  background: #0f243b;
+  border-color: #00cfff;
+  color: #00cfff;
+}
+
+html:not(.dark) .nia-profile .text-destructive { color: #b4232f; }
+.dark .nia-profile .text-destructive { color: #ff7b80; }

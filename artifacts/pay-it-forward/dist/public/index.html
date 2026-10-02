@@ -17,13 +17,13 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#08182B" />
+    <meta name="theme-color" content="#08182b" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Niakofa" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,560;9..144,700&display=swap" rel="stylesheet">
     <!--
       Zero-flash animation-preference init.
       Runs synchronously before the React bundle loads so that
@@ -34,19 +34,27 @@
     -->
     <script>
       try {
+        var colorMode = localStorage.getItem('niakofa-color-mode');
+        var lightMode = colorMode === 'light';
+        document.documentElement.classList.toggle('dark', !lightMode);
+        document.documentElement.style.colorScheme = lightMode ? 'light' : 'dark';
+        document.documentElement.style.background = lightMode ? '#f8fafc' : '#08182b';
+        document.documentElement.style.color = lightMode ? '#08182b' : '#ffffff';
+        var themeMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeMeta) themeMeta.setAttribute('content', lightMode ? '#f8fafc' : '#08182b');
         if (localStorage.getItem('niakofa_bird_anim') === 'enabled') {
           document.documentElement.setAttribute('data-bird-anim', 'enabled');
         }
       } catch (e) { /* localStorage blocked in private mode — safe to ignore */ }
     </script>
-    <script type="module" crossorigin src="/assets/index-_toBuxbJ.js"></script>
+    <script type="module" crossorigin src="/assets/index-BC1y_Vkz.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/vendor-react-DewztnyP.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-query-Cpg9Eeck.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-radix-qP6hMa2T.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-framer-CC735qMp.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-mapbox-C-B8CZ1k.js">
     <link rel="stylesheet" crossorigin href="/assets/vendor-mapbox-FRL3ppyy.css">
-    <link rel="stylesheet" crossorigin href="/assets/index-CGgWp46V.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-Dpnu5Skw.css">
     <script type="module">"use strict";(()=>{var B="0.5.21";var y={HIGHLIGHT_COLOR:"#0079F2",HIGHLIGHT_BG:"#0079F210",ALLOWED_PARENT_DOMAINS:[".replit.dev",".replit.com",".replit-staging.com",".rp-humain.com",".repl.co"],THEME_PREVIEW_STYLE_ID:"replit-theme-preview",MAX_SIBLING_HIGHLIGHTERS:1e3,MAX_DESCENDANTS_FOR_SCREENSHOT:1500},oe=`
   [contenteditable] {
     outline: none !important;
@@ -179,11 +187,11 @@
         id="app-loading"
         role="status"
         aria-live="polite"
-        style="min-height:100vh;display:grid;place-items:center;background:#08182B;color:#EDF8FF;font-family:'DM Sans',system-ui,sans-serif;padding:24px;text-align:center"
+        style="min-height:100vh;display:grid;place-items:center;background:transparent;color:inherit;font-family:Figtree,system-ui,sans-serif;padding:24px;text-align:center"
       >
         <div>
           <div style="font-size:12px;font-weight:800;letter-spacing:.24em;text-transform:uppercase">Niakofa</div>
-          <div style="margin-top:10px;font-size:14px;color:#9BB0C3">Connecting neighbors who help one another…</div>
+          <div style="margin-top:10px;font-size:14px;opacity:.75">Connecting neighbors who help one another…</div>
         </div>
       </div>
     </div>
