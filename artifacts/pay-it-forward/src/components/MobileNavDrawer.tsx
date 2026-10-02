@@ -105,6 +105,7 @@ export function MobileNavDrawer({ open, onClose }: { open: boolean; onClose: () 
                         active ? "bg-primary/15 text-primary" : "text-foreground/80"
                       }`}
                       style={{ touchAction: "manipulation" }}
+                      data-testid={item.testId}
                     >
                       <item.icon className="w-4 h-4 shrink-0" />
                       <span className="truncate">{item.label}</span>

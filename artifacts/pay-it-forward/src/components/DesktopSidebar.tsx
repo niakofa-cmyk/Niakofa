@@ -85,6 +85,7 @@ export function DesktopSidebar() {
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors cursor-pointer ${
                   active ? "bg-primary/15 text-primary" : "text-foreground/80 hover:bg-muted/50"
                 }`}
+                data-testid={item.testId}
               >
                 <item.icon className="w-4 h-4 shrink-0" />
                 <span className="truncate">{item.label}</span>

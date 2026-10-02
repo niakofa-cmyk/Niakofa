@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, DollarSign, Radio, Navigation2, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu, MessageCircle } from "lucide-react";
+import { Map, Trees, Users, DollarSign, Radio, Navigation2, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu, MessageCircle } from "lucide-react";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -175,7 +175,7 @@ export function BottomNav() {
                     Niakofa dark-teal brand rather than individual loose pills.
                     Width is fixed so items don't reflow as the panel opens. */}
                 <div
-                  className="w-[188px] rounded-[20px] overflow-hidden"
+                  className="w-[188px] max-h-[calc(100dvh-11rem)] rounded-[20px] overflow-y-auto overscroll-contain"
                   style={{
                     background: "rgba(4,24,25,0.94)",
                     backdropFilter: "blur(24px)",
@@ -194,6 +194,19 @@ export function BottomNav() {
                       <span className="text-[9px] font-black uppercase tracking-[0.22em] text-teal-400/75">Niakofa</span>
                     </div>
                   </div>
+
+                  {/* Map Settings */}
+                  <Link href="/parks" onClick={() => setMapNavOpen(false)} aria-label="Open Park Preview" data-testid="link-park-preview-map-menu">
+                    <div
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 active:bg-teal-500/10 transition-colors cursor-pointer"
+                      style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", touchAction: "manipulation" }}
+                    >
+                      <span className="w-6 h-6 rounded-lg bg-teal-500/15 flex items-center justify-center shrink-0">
+                        <Trees className="w-3.5 h-3.5 text-teal-400" aria-hidden="true" />
+                      </span>
+                      <span className="text-xs font-bold text-white/85">Park Preview</span>
+                    </div>
+                  </Link>
 
                   {/* Map Settings */}
                   <button
