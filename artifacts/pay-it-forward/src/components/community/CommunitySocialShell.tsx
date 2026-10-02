@@ -142,8 +142,10 @@ export function CommunitySocialShell({
             aria-label="Go to Community home"
             className="nk-community-v4-wordmark text-left"
           >
-            niakofa
+            <span className="nk-community-brand-name">Niakofa</span>
+            <span className="nk-community-brand-line">Family · Community · Legacy</span>
           </button>
+          <span className="nk-community-place">Fort Worth</span>
 
           <div className="nk-community-v4-search">
             <label className="relative mx-auto block max-w-[360px]">

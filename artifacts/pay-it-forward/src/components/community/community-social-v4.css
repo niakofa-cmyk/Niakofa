@@ -668,7 +668,31 @@
   color: #f3fffc;
 }
 .nk-community-v4-wordmark { color: #f3fffc; font-family: Fraunces, ui-serif, Georgia, serif; }
-.nk-community-v4-wordmark::after { color: #0fe5d4; }
+.nk-community-v4-wordmark::after { content: none; }
+.nk-community-brand-name { display: block; font-size: 1.35rem; line-height: 1; }
+.nk-community-brand-line {
+  display: block;
+  margin-top: .18rem;
+  color: #0fe5d4;
+  font-family: Figtree, Inter, sans-serif;
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.nk-community-place {
+  flex: 0 0 auto;
+  border: 1px solid rgb(15 229 212 / .45);
+  border-radius: 999px;
+  padding: .28rem .65rem;
+  color: #f3fffc;
+  font-size: .72rem;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+.nk-community-v4-header { height: auto; min-height: 4.35rem; padding-top: .4rem; padding-bottom: .4rem; }
 .nk-community-v4-header-wrap {
   background: rgb(4 24 25 / .94);
   border-bottom-color: rgb(243 255 252 / .12);
