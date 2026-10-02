@@ -11,6 +11,7 @@ import {
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { getPrivateAssetUrl, streamOrRedirectPrivateAsset } from "../lib/storage";
+import { recordingArchiveType } from "../lib/recordingArchive";
 import {
   authorizeRecording,
   finalizeRecording,
@@ -237,12 +238,14 @@ router.post(
       ? req.body
       : Buffer.from(typeof req.body?.base64 === "string" ? req.body.base64 : "", "base64");
     const mimeType = String(req.headers["content-type"] ?? "audio/webm").split(";")[0].toLowerCase();
+    const archivedType = recordingArchiveType(mimeType);
+    if (!archivedType) return res.status(415).json({ error: "Recording format is not supported" });
     const duration = Number(req.query.duration);
     try {
       const archived = await finalizeRecording({
         recordingId,
         buffer: body,
-        mimeType: mimeType.startsWith("audio/") ? mimeType : "audio/webm",
+        mimeType: archivedType.mimeType,
         durationSeconds: Number.isFinite(duration) ? duration : undefined,
       });
       await db.update(audioCircleSessionsTable).set({

@@ -170,15 +170,15 @@ app.use("/api/background-checks/webhook", express.raw({ type: "application/json"
 app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
 
 // Circle recording upload — raw audio body parsed before the json() middleware
-app.use("/api/audio-circle-sessions/:id/recording-upload", express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
-app.use("/api/audio-spiral-sessions/:id/recording-upload", express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
+app.use("/api/audio-circle-sessions/:id/recording-upload", express.raw({ type: ["audio/*", "video/*", "application/octet-stream"], limit: "500mb" }));
+app.use("/api/audio-spiral-sessions/:id/recording-upload", express.raw({ type: ["audio/*", "video/*", "application/octet-stream"], limit: "500mb" }));
 app.use(
   "/api/audio-circle-sessions/:sessionId/recording/:recordingId/finalize",
-  express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }),
+  express.raw({ type: ["audio/*", "video/*", "application/octet-stream"], limit: "500mb" }),
 );
 app.use(
   "/api/audio-spiral-sessions/:sessionId/recording/:recordingId/finalize",
-  express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }),
+  express.raw({ type: ["audio/*", "video/*", "application/octet-stream"], limit: "500mb" }),
 );
 app.use(
   "/api/media-assets/:id/upload",

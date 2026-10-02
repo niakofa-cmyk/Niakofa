@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { deleteAssetStrict, getPrivateAssetUrl, putAsset } from "./storage";
 import { logger } from "./logger";
+import { recordingArchiveType } from "./recordingArchive";
 
 export const RECORDING_RETENTION_DAYS = 90;
 export const ACTIVE_RECORDING_STATUSES = [
@@ -118,22 +119,23 @@ export async function finalizeRecording(input: {
     .limit(1);
   if (!recording) throw new Error("Recording is not active");
 
-  const extension = input.mimeType === "audio/mp4" ? "m4a" : input.mimeType === "audio/ogg" ? "ogg" : "webm";
-  const storageKey = `circles/recordings/${recording.id}/${randomUUID()}.${extension}`;
+  const archivedType = recordingArchiveType(input.mimeType);
+  if (!archivedType) throw new Error("Recording format is not supported");
+  const storageKey = `circles/recordings/${recording.id}/${randomUUID()}.${archivedType.extension}`;
   const checksumSha256 = createHash("sha256").update(input.buffer).digest("hex");
   await db
     .update(circleRecordingsTable)
     .set({ status: "RECORDING_FINALIZING", updated_at: new Date() })
     .where(eq(circleRecordingsTable.id, recording.id));
   try {
-    await putAsset(storageKey, input.buffer, input.mimeType || "audio/webm");
+    await putAsset(storageKey, input.buffer, archivedType.mimeType);
     const [archived] = await db
       .update(circleRecordingsTable)
       .set({
         status: "RECORDING_ARCHIVED",
         ended_at: new Date(),
         duration_seconds: input.durationSeconds && input.durationSeconds > 0 ? Math.floor(input.durationSeconds) : null,
-        mime_type: input.mimeType || "audio/webm",
+        mime_type: archivedType.mimeType,
         byte_size: input.buffer.length,
         storage_key: storageKey,
         checksum_sha256: checksumSha256,

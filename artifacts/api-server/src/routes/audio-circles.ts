@@ -17,6 +17,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { getPrivateAssetUrl } from "../lib/storage";
 import { finalizeRecording } from "../lib/circleRecordingPolicy";
+import { recordingArchiveType } from "../lib/recordingArchive";
 import {
   db,
   audioCirclesTable,
@@ -1278,7 +1279,7 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
 
   const body = req.body as Buffer;
   if (!Buffer.isBuffer(body) || body.length === 0) {
-    return res.status(400).json({ error: "Empty or non-audio body" });
+    return res.status(400).json({ error: "Empty recording body" });
   }
   const MAX_RECORDING_BYTES = 500 * 1024 * 1024;
   if (body.length > MAX_RECORDING_BYTES) {
@@ -1286,6 +1287,8 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
   }
 
   const contentType = String(req.headers["content-type"] ?? "").split(";")[0].toLowerCase();
+  const archivedType = recordingArchiveType(contentType);
+  if (!archivedType) return res.status(415).json({ error: "Recording format is not supported" });
   const durationSeconds = parseInt(String(req.query.duration ?? ""), 10);
   const [recording] = await db
     .select()
@@ -1306,7 +1309,7 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
     const archived = await finalizeRecording({
       recordingId: recording.id,
       buffer: body,
-      mimeType: contentType || "audio/webm",
+      mimeType: archivedType.mimeType,
       durationSeconds: !isNaN(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined,
     });
     if (!archived?.storage_key) throw new Error("Recording metadata was not archived");
