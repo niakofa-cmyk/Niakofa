@@ -24,3 +24,9 @@ Delayed background shell tasks may remove their associated `/tmp` state tree and
 **Why:** The delayed Story cleanup completed, but the temporary production-acceptance recovery file was no longer available for the final exact-ID reconciliation.
 
 **How to apply:** Before scheduling delayed production cleanup, copy a minimal token-free recovery note to persistent private storage outside task-local `/tmp`; verify that note still exists after the background task exits. Never persist credentials or bearer tokens.
+
+The shell certification wrapper must accept a private recovery directory outside the checkout; `path.relative(repo, externalDir)` is `..` or begins with `../`, while in-repository paths must be rejected.
+
+**Why:** A reversed outside-checkout predicate refused the valid persistent recovery directory before the production acceptance could start.
+
+**How to apply:** Keep shell and E2E recovery-path checks aligned, and test a private external directory before invoking the production runner.

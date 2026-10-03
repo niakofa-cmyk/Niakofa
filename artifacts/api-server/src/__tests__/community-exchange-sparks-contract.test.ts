@@ -42,6 +42,10 @@ const authenticatedSparksAcceptancePath = new URL(
   "../../../../e2e/community-exchange-sparks-authenticated.spec.ts",
   import.meta.url,
 );
+const sparkCertificationRunnerPath = new URL(
+  "../../../../ops/run-community-exchange-sparks-certification.sh",
+  import.meta.url,
+);
 
 describe("Exchange Sparks authorization and discovery contract", () => {
   const visibleStory = {
@@ -275,5 +279,10 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(acceptanceSpec).toMatch(/ownerHasAssignedCommunity[\s\S]*?USER_A must belong to an assigned community/);
     expect(acceptanceSpec).toMatch(/viewerHasAssignedCommunity[\s\S]*?USER_B must belong to an assigned community/);
     expect(acceptanceSpec).toMatch(/owner\.communityId,[\s\S]*?USER_A and USER_B must belong to different communities\.[\s\S]*?not\.toBe\(viewer\.communityId\)/);
+  });
+
+  it("accepts private Spark recovery directories outside the checkout", async () => {
+    const runner = await fs.readFile(sparkCertificationRunnerPath, "utf8");
+    expect(runner).toMatch(/const isOutsideCheckout =[\s\S]*?relative === "\.\."\s*\|\|\s*relative\.startsWith\(`\.\.\$\{path\.sep\}`\)\s*\|\|\s*path\.isAbsolute\(relative\);[\s\S]*?if \(!isOutsideCheckout\) process\.exit\(1\);/);
   });
 });

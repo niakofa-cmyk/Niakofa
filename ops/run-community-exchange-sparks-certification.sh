@@ -42,7 +42,9 @@ recovery_directory="$(node --input-type=module -e '
     const real = fs.realpathSync(input);
     if (real !== input) process.exit(1);
     const relative = path.relative(process.argv[2], real);
-    if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) process.exit(1);
+    const isOutsideCheckout =
+      relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+    if (!isOutsideCheckout) process.exit(1);
     process.stdout.write(real);
   } catch {
     process.exit(1);
