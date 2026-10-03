@@ -63,7 +63,10 @@ if (process.env.ALLOW_MEDIA_CERT_STATE_CREATION !== "1") {
         throw new Error(`account ${label} does not expose a community identity.`);
       }
       const communityId = user.community_id === null ? null : Number(user.community_id);
-      if (communityId !== null && (!Number.isSafeInteger(communityId) || communityId < 1)) {
+      if (communityId === null) {
+        throw new Error(`account ${label} must have an assigned community identity.`);
+      }
+      if (!Number.isSafeInteger(communityId) || communityId < 1) {
         throw new Error(`account ${label} has an invalid community identity.`);
       }
       const userId = Number(user.id);

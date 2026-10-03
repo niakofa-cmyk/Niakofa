@@ -5,11 +5,11 @@ description: Requirements for safe authenticated Niakofa production acceptance a
 
 Production acceptance must use a genuinely approved disposable account, an exact served-commit check, and explicit mutation gates. Public signup is not enough because new accounts begin in `pending` status.
 
-Cross-community production acceptance must also verify that both authenticated states contain approved active users and distinct community identities before any mutating request. A second user ID or operator confirmation alone does not prove cross-community separation.
+Cross-community production acceptance must also verify that both authenticated states contain approved active users with positive, assigned community IDs that differ before any mutating request. A null community is not a separate community; a second user ID or operator confirmation alone does not prove cross-community separation.
 
-**Why:** Two different approved users can belong to the same community, producing a false privacy pass.
+**Why:** Two different approved users can belong to the same community, or one can have no community assigned, producing a false privacy pass.
 
-**How to apply:** Validate `community_id` from each login-backed state in both the state builder and the E2E preflight; fail closed when either identity is missing or both identities are equal.
+**How to apply:** Validate `community_id` from each login-backed state in both the state builder and the E2E preflight; fail closed when either identity is missing, null, invalid, or equal.
 
 Playwright `storageState` restores browser `localStorage`, but it does not automatically turn the stored Niakofa token into an `Authorization` header for `page.request` API calls. Authenticated API assertions must derive the token from the state fixture and send the Bearer header explicitly.
 

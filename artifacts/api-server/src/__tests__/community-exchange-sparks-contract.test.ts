@@ -34,6 +34,14 @@ const durableSparksMigrationPath = new URL(
   import.meta.url,
 );
 const durableSparksSchemaPath = new URL("../../../../lib/db/src/schema/exchange-sparks.ts", import.meta.url);
+const mediaCertificationStatesPath = new URL(
+  "../../../../ops/build-media-certification-states.mjs",
+  import.meta.url,
+);
+const authenticatedSparksAcceptancePath = new URL(
+  "../../../../e2e/community-exchange-sparks-authenticated.spec.ts",
+  import.meta.url,
+);
 
 describe("Exchange Sparks authorization and discovery contract", () => {
   const visibleStory = {
@@ -255,5 +263,17 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(scheduler).toMatch(/exchange_sparks WHERE exchange_sparks\.id/);
     expect(scheduler).toMatch(/Exchange Spark cleanup: storage\/database cleanup will retry/);
     expect(usersRoute).toMatch(/update\(exchangeSparksTable\)\.set\(\{[\s\S]*status: "deletion_pending"/);
+  });
+
+  it("requires both production Spark test accounts to have distinct assigned communities", async () => {
+    const [stateBuilder, acceptanceSpec] = await Promise.all([
+      fs.readFile(mediaCertificationStatesPath, "utf8"),
+      fs.readFile(authenticatedSparksAcceptancePath, "utf8"),
+    ]);
+
+    expect(stateBuilder).toMatch(/if \(communityId === null\) \{\s*throw new Error\(`account \$\{label\} must have an assigned community identity\.`\);/);
+    expect(acceptanceSpec).toMatch(/ownerHasAssignedCommunity[\s\S]*?USER_A must belong to an assigned community/);
+    expect(acceptanceSpec).toMatch(/viewerHasAssignedCommunity[\s\S]*?USER_B must belong to an assigned community/);
+    expect(acceptanceSpec).toMatch(/owner\.communityId,[\s\S]*?USER_A and USER_B must belong to different communities\.[\s\S]*?not\.toBe\(viewer\.communityId\)/);
   });
 });

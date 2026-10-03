@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 /*
  * Production acceptance prerequisites:
  * - separate, approved, active disposable USER_A_STATE/USER_B_STATE accounts;
- * - the accounts have distinct user IDs and different community identities;
+ * - the accounts have distinct user IDs and different assigned community identities;
  * - SPARK_SMOKE_LISTING_ID is an active, approved listing owned by A;
  * - operator confirmation that B is outside A's community;
  * - exact deployed EXPECTED_COMMIT and the explicit gates enforced by the runner.
@@ -481,10 +481,18 @@ test.describe("authenticated Community/Exchange Sparks lifecycle regression", ()
     expect(owner.origin).toBe(target.origin);
     expect(viewer.origin).toBe(target.origin);
     expect(viewer.userId).not.toBe(owner.userId);
-    expect(
-      viewer.communityId === owner.communityId,
-      "USER_A and USER_B must be approved users from different communities.",
-    ).toBe(false);
+    const ownerHasAssignedCommunity =
+      typeof owner.communityId === "number" &&
+      Number.isSafeInteger(owner.communityId) &&
+      owner.communityId > 0;
+    const viewerHasAssignedCommunity =
+      typeof viewer.communityId === "number" &&
+      Number.isSafeInteger(viewer.communityId) &&
+      viewer.communityId > 0;
+    expect(ownerHasAssignedCommunity, "USER_A must belong to an assigned community.").toBe(true);
+    expect(viewerHasAssignedCommunity, "USER_B must belong to an assigned community.").toBe(true);
+    expect(owner.communityId, "USER_A and USER_B must belong to different communities.")
+      .not.toBe(viewer.communityId);
 
     const health = await apiGet(request, "/api/healthz");
     expect(new URL(health.url()).origin, "The actual preflight request must reach the confirmed HTTPS target.")
