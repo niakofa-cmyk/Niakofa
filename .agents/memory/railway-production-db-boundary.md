@@ -17,6 +17,14 @@ The connected Railway MCP is not itself a SQL connection: its available tools ex
 
 **How to apply:** Check for an existing read-only proxy without creating one. If none exists and the Railway agent is unavailable, report the audit as unavailable rather than reading variables or substituting development data.
 
+## Row-level audit access
+
+An existing TCP proxy only proves network forwarding; it does not establish a read-only database role or a supported SQL query tool. The connected `railwayAgent` is action-capable and must not be assumed to provide SQL; it may only search documentation.
+
+**Why:** A proxy was present, but neither it nor the Railway agent provided an approved row-level query path. Reading Railway variables to recover credentials or creating another proxy would cross the read-only boundary.
+
+**How to apply:** For account or content audits, require an operator-provided read-only snapshot, replica, or query output. If none is available, report the filtered request-log evidence as inconclusive and do not infer row state.
+
 ## PostGIS maintenance
 
 When Niakofa is backed by separate Railway PostgreSQL services, `DATABASE_URL` must target the dedicated PostGIS service rather than the plain PostgreSQL service. For an explicitly authorized schema repair, use the repository's idempotent migration runner with the operator-provided secret transiently, then verify the `postgis` extension and required `geography` columns with read-only queries. Never print, persist, or commit the connection string.
