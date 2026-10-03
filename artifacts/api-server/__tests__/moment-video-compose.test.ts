@@ -98,11 +98,13 @@ describe("opt-in Moment camera-clip composition contract", () => {
     expect(deleted).toEqual([key]);
   });
 
-  it("accepts only two to six ordered, unique positive media asset ids", () => {
+  it("accepts one to six ordered, unique positive media asset ids", () => {
     expect(validMomentComposeIds([8, 3])).toBe(true);
     expect(validMomentComposeIds([8, 8])).toBe(false);
     expect(validMomentComposeIds([0, 3])).toBe(false);
-    expect(validMomentComposeIds([8])).toBe(false);
+    expect(validMomentComposeIds([8])).toBe(true);
+    expect(validMomentComposeIds([])).toBe(false);
+    expect(validMomentComposeIds([1, 2, 3, 4, 5, 6])).toBe(true);
     expect(validMomentComposeIds([1, 2, 3, 4, 5, 6, 7])).toBe(false);
   });
 
@@ -115,7 +117,10 @@ describe("opt-in Moment camera-clip composition contract", () => {
   it("enforces the aggregate 180-second duration bound", () => {
     expect(withinMomentDurationLimit([90_000, 90_000])).toBe(true);
     expect(withinMomentDurationLimit([90_001, 90_000])).toBe(false);
-    expect(withinMomentDurationLimit([30_000])).toBe(false);
+    expect(withinMomentDurationLimit([30_000])).toBe(true);
+    expect(withinMomentDurationLimit([180_000])).toBe(true);
+    expect(withinMomentDurationLimit([180_001])).toBe(false);
+    expect(withinMomentDurationLimit([])).toBe(false);
     expect(withinMomentDurationLimit([20_000, 0])).toBe(false);
   });
 
@@ -134,6 +139,8 @@ describe("opt-in Moment camera-clip composition contract", () => {
     expect(args).toContain("libx264");
     expect(args).toContain("aac");
     expect(args.at(-1)).toBe("moment.mp4");
-    expect(() => momentConcatArgs("clips.txt", "bad.mp4", 1)).toThrow("MOMENT_COMPOSITION_INVALID");
+    expect(() => momentConcatArgs("clips.txt", "single.mp4", 1)).not.toThrow();
+    expect(() => momentConcatArgs("clips.txt", "bad.mp4", 0)).toThrow("MOMENT_COMPOSITION_INVALID");
+    expect(() => momentConcatArgs("clips.txt", "bad.mp4", 7)).toThrow("MOMENT_COMPOSITION_INVALID");
   });
 });
