@@ -12,3 +12,9 @@ Credential-bearing state must be materialized only outside the repository with r
 **Why:** A green browser navigation can coexist with an unauthenticated API request, and a production test that silently uses a pending account or leaves session state in the checkout is not trustworthy evidence.
 
 **How to apply:** Before claiming production acceptance, verify the approved user, served commit, readiness, API contract, and user-visible Diaspora/Globe route; keep credentials and storage state out of logs, tracked files, and final evidence.
+
+Delayed background shell tasks may remove their associated `/tmp` state tree and task log when they exit, including a recovery record created by an earlier shell call.
+
+**Why:** The delayed Story cleanup completed, but the temporary production-acceptance recovery file was no longer available for the final exact-ID reconciliation.
+
+**How to apply:** Before scheduling delayed production cleanup, copy a minimal token-free recovery note to persistent private storage outside task-local `/tmp`; verify that note still exists after the background task exits. Never persist credentials or bearer tokens.
