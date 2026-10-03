@@ -53,6 +53,8 @@ app.use(
           "https://lh3.googleusercontent.com",
           "https://avatars.githubusercontent.com",
         ],
+        // Camera recordings are previewed from same-page object URLs.
+        mediaSrc: ["'self'", "blob:"],
         // Mapbox GL JS spawns web workers from blob: URLs — required for map rendering
         workerSrc: ["'self'", "blob:"],
         childSrc: ["'self'", "blob:"],

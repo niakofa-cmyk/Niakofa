@@ -1,9 +1,29 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5000";
 const configuredHost = new URL(baseUrl).hostname;
 const isWorkspacePreview = configuredHost === process.env.REPLIT_DEV_DOMAIN;
 const isLocal = ["127.0.0.1", "localhost", "::1"].includes(configuredHost) || isWorkspacePreview;
+
+async function applyApiSecurityHeaders(page: Page) {
+  const apiResponse = await page.request.get(new URL("/api/healthz", baseUrl).toString());
+  expect(apiResponse.ok(), "the local API must serve its security headers").toBe(true);
+  const apiHeaders = apiResponse.headers();
+  const contentSecurityPolicy = apiHeaders["content-security-policy"];
+  expect(contentSecurityPolicy).toContain("media-src 'self' blob:");
+
+  await page.route("**/e2e-test/spark-camera.html", async (route) => {
+    const response = await route.fetch();
+    const headers = {
+      ...response.headers(),
+      "content-security-policy": contentSecurityPolicy,
+      ...(apiHeaders["permissions-policy"]
+        ? { "permissions-policy": apiHeaders["permissions-policy"] }
+        : {}),
+    };
+    await route.fulfill({ response, headers });
+  });
+}
 
 test.describe("Spark camera browser capture", () => {
   test.skip(
@@ -12,6 +32,7 @@ test.describe("Spark camera browser capture", () => {
   );
 
   test("records a playable video and hands a non-empty browser file to the Spark composer", async ({ page }) => {
+    await applyApiSecurityHeaders(page);
     await page.addInitScript(() => {
       const originalPlay = HTMLMediaElement.prototype.play;
       let interruptedPreviewOnce = false;
@@ -56,6 +77,7 @@ test.describe("Spark camera browser capture", () => {
   });
 
   test("captures a camera photo and hands a non-empty image to the Spark composer", async ({ page }) => {
+    await applyApiSecurityHeaders(page);
     await page.goto(new URL("/e2e-test/spark-camera.html", baseUrl).toString());
     await expect(page.getByTestId("dialog-spark-camera")).toBeVisible();
     await page.getByRole("button", { name: "Photo", exact: true }).click();
