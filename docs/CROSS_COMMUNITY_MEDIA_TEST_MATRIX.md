@@ -35,9 +35,19 @@ for media authorization checks; the app and workflow feature flag remain
 unchanged.
 
 This local matrix verifies API policy and test-database behavior. It is not
-production account, worker, storage, or physical-device certification. The
-separately gated Spark production runner requires two verified approved
-disposable account states from different communities, an already-approved
-active disposable listing owned by the Spark owner, the exact served commit,
-private recovery storage, and explicit operator confirmations. Keep credentials
-and browser state outside the repository.
+production account, worker, storage, or physical-device certification.
+
+## Production Spark acceptance prerequisites
+
+Production cross-community Spark privacy has not yet been verified. The
+separately gated run still needs:
+
+- a verified, approved disposable owner account and its already-approved active
+  Spark listing;
+- a distinct verified, approved disposable viewer account from another
+  community;
+- validated private browser states, the exact served commit, private recovery
+  storage, and explicit operator confirmations.
+
+Keep credentials and browser state outside the repository. The synthetic local
+users created by the regression test are not production credentials.
