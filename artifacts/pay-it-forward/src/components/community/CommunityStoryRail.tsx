@@ -16,6 +16,7 @@ import { authHeaders } from "@/lib/auth";
 import { validateCommunityMomentFile } from "@/lib/community-moments-upload";
 import { useAppContext } from "@/lib/AppContext";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
+import { buildMomentsSparkHref } from "./CommunityExperienceContract";
 import { useObjectUrls, useWebVttObjectUrl } from "./StoryComposerMedia";
 import {
   buildMomentMediaAccessibility,
@@ -1303,7 +1304,7 @@ export function CommunityStoryRail({
       elements.push(...draftElements.map(({ id: _id, ...element }) => element));
       // Preview-only effects and trim are not included in the published manifest.
       publishAttemptRef.current = attemptSignature;
-      await publishStudioMoment({
+      const publishedSparkId = await publishStudioMoment({
         userId, hubId, audience, files: momentFiles, caption, tags,
         mediaAltTexts, mediaCaptionsVtt,
         elements: elements as Array<{ type: string; payload: Record<string, unknown> }>, effect,
@@ -1367,11 +1368,7 @@ export function CommunityStoryRail({
       await discardStudioDraft(userId, hubId);
       resetComposer();
       setComposerOpen(false);
-      const refresh = await fetch(`/api/community/stories${hubId ? `?hubId=${hubId}` : ""}`, { headers: authHeaders() });
-      if (refresh.ok) {
-        const next = await refresh.json() as { stories?: CommunityStory[] };
-        setStories(Array.isArray(next.stories) ? next.stories : []);
-      }
+      navigate(buildMomentsSparkHref(publishedSparkId, audience, hubId));
     } catch (reason: unknown) {
       if (reason instanceof CameraClipReelPendingError) {
         setPendingCameraReelStoryId(reason.storyId);
@@ -1384,9 +1381,13 @@ export function CommunityStoryRail({
         };
         if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, pendingSnapshot);
         draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => saveStudioDraft(pendingSnapshot));
-        void draftQueueRef.current.catch((saveReason: unknown) => {
+        try {
+          await draftQueueRef.current;
+        } catch (saveReason: unknown) {
           setDraftError(saveReason instanceof Error ? saveReason.message : "The posted Spark's stitching retry could not be saved on this device.");
-        });
+        }
+        window.dispatchEvent(new Event("community-moments-refresh"));
+        navigate(buildMomentsSparkHref(reason.storyId, audience, hubId));
       } else {
         setError(reason instanceof Error && reason.name === "AbortError"
           ? "Upload cancelled. Your Spark was not published."

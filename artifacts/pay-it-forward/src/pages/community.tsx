@@ -16,6 +16,7 @@ import {
   canonicalCommunitySectionRoute,
   normalizeCommunitySection,
 } from "@/components/community/CommunityMomentsMigration";
+import { hasExplicitCommunityMomentsAudience } from "@/components/community/CommunityExperienceContract";
 
 const COMMUNITY_SECTIONS = new Set<CommunityNavKey>([
   "home",
@@ -88,6 +89,10 @@ export default function CommunityScreen() {
     const composerValues = new URLSearchParams(search).getAll("composer");
     return composerValues.length === 1 && composerValues[0] === "1" ? 1 : 0;
   }, [search]);
+  const communityMomentsAudience = useMemo(
+    () => normalizedSection === "moments" && hasExplicitCommunityMomentsAudience(search),
+    [normalizedSection, search],
+  );
 
   const [defaultHubId, setDefaultHubId] = useState<number | null>(null);
   const [defaultHubResolved, setDefaultHubResolved] = useState(hubContextId !== null);
@@ -115,7 +120,7 @@ export default function CommunityScreen() {
     };
   }, [base, hubContextId]);
 
-  const effectiveHubId = hubContextId ?? defaultHubId;
+  const effectiveHubId = communityMomentsAudience ? null : hubContextId ?? defaultHubId;
 
   return (
     <CommunitySocialShell

@@ -38,6 +38,32 @@ export const COMMUNITY_EXPERIENCE = {
   },
 } as const;
 
+export function buildMomentsSparkHref(
+  sparkId: number,
+  audience: "community" | "hub",
+  hubId: number | null,
+): string {
+  if (!Number.isSafeInteger(sparkId) || sparkId < 1) {
+    throw new Error("A published Spark needs a valid ID before it can be opened.");
+  }
+
+  const query = new URLSearchParams({ sparkId: String(sparkId) });
+  if (audience === "hub") {
+    if (hubId === null || !Number.isSafeInteger(hubId) || hubId < 1) {
+      throw new Error("A Hub Spark link needs a valid Hub ID.");
+    }
+    query.set("hubId", String(hubId));
+  } else {
+    query.set("audience", "community");
+  }
+  return `${COMMUNITY_EXPERIENCE.routes.moments}?${query.toString()}`;
+}
+
+export function hasExplicitCommunityMomentsAudience(search: string): boolean {
+  const values = new URLSearchParams(search).getAll("audience");
+  return values.length === 1 && values[0] === "community";
+}
+
 export type CommunityPrimaryNavKey =
   (typeof COMMUNITY_EXPERIENCE.primaryNavigation)[number];
 

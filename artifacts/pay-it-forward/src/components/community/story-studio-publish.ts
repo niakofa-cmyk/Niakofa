@@ -184,7 +184,7 @@ export async function publishStudioMoment(input: {
   remixEnabled?: boolean;
   responseToStoryId?: number | null;
   challengeKey?: string | null;
-}): Promise<number | null> {
+}): Promise<number> {
   if (!validId(input.userId) || (input.hubId !== null && !validId(input.hubId))) throw new Error("Your account or Hub could not be confirmed.");
   if (input.audience === "hub" && input.hubId === null) throw new Error("Choose a Hub before sharing with Hub members.");
   if (!input.files.length && !input.caption.trim()) throw new Error("Add a photo, video, or a few words.");
@@ -329,7 +329,7 @@ export async function publishStudioMoment(input: {
   const result = await response.json().catch(() => ({})) as { error?: string; story?: { id?: number } };
   if (!response.ok) throw new Error(result.error || "Could not publish your Spark. Your draft is saved.");
   const storyId = result.story?.id;
-  if (input.cameraClipReel && !validId(storyId ?? 0)) {
+  if (!validId(storyId ?? 0)) {
     throw new Error("Spark may have been published, but its ID could not be confirmed. Retry with the saved publish identity.");
   }
   if (input.cameraClipReel) {
@@ -340,5 +340,5 @@ export async function publishStudioMoment(input: {
       throw new CameraClipReelPendingError(storyId!, reason instanceof Error ? reason.message : "Retry stitching from the saved Studio draft.");
     }
   }
-  return validId(storyId ?? 0) ? storyId! : null;
+  return storyId!;
 }
