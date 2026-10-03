@@ -31,6 +31,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { getMediaToolPaths } from "../lib/mediaCapabilities";
 import {
+  MOMENT_COMPOSE_MAX_CLIPS,
   MOMENT_COMPOSE_MAX_DURATION_MS,
   isPublishedStoryMediaContext,
   momentCompositionAttemptOwnsJob,
@@ -574,8 +575,8 @@ async function processMomentComposition(mediaAssetId: number, jobId: number, att
     if (!(await beginMomentCompositionAttempt(composition.story_id, mediaAssetId, jobId, attempt))) return;
     if (composition.story_status !== "published" || composition.expires_at <= new Date()
       || composition.exchange_listing_id !== null || composition.owner_user_id !== composition.author_user_id
-      || !Array.isArray(composition.source_ids) || composition.source_ids.length < 2
-      || composition.source_ids.length > 6
+      || !Array.isArray(composition.source_ids) || composition.source_ids.length < 1
+      || composition.source_ids.length > MOMENT_COMPOSE_MAX_CLIPS
       || composition.source_ids.some((id) => !Number.isSafeInteger(id) || id < 1)) {
       throw new Error("MEDIA_COMPOSITION_INVALID");
     }
@@ -656,7 +657,7 @@ async function processMomentComposition(mediaAssetId: number, jobId: number, att
     const outputBuffer = await readBoundedOutput(outputPath);
     await validateMediaBuffer(outputBuffer, "video", "video/mp4");
     const outputProbe = await probeCompositionFile(outputPath);
-    if (outputProbe.durationMs > 61_000
+    if (outputProbe.durationMs > MOMENT_COMPOSE_MAX_DURATION_MS
       || !outputProbe.streams.some((stream) => stream.codec_type === "video")
       || !outputProbe.streams.some((stream) => stream.codec_type === "audio")) {
       throw new Error("MEDIA_COMPOSITION_OUTPUT_INVALID");

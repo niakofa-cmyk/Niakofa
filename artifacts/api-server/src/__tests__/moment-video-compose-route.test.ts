@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "@jest/globals";
+import { validMomentComposeIds } from "../lib/moment-video-compose";
 
 const routeFile = new URL("../routes/community-stories.ts", import.meta.url);
 const workerFile = new URL("../workers/media-process-worker.ts", import.meta.url);
 const queueFile = new URL("../lib/mediaProcessingQueue.ts", import.meta.url);
 const migrationFile = new URL("../../../../lib/db/migrations/0190_moment_video_compositions.sql", import.meta.url);
+const singleClipMigrationFile = new URL("../../../../lib/db/migrations/0196_moment_video_single_clip.sql", import.meta.url);
 
 describe("Moment camera-reel server contract", () => {
   it("requires explicit intent and strictly ordered source asset IDs on a dedicated endpoint", async () => {
@@ -14,6 +16,23 @@ describe("Moment camera-reel server contract", () => {
     expect(route).toMatch(/if \(!isMediaPlatformV21Enabled\(\)\)/);
     expect(route).toMatch(/momentCompositionFingerprint\(sourceIds\)/);
     expect(route).toMatch(/source_fingerprint !== fingerprint/);
+  });
+
+  it("accepts one source video and updates the database constraint for existing installs", async () => {
+    const [route, worker, baselineMigration, forwardMigration] = await Promise.all([
+      readFile(routeFile, "utf8"),
+      readFile(workerFile, "utf8"),
+      readFile(migrationFile, "utf8"),
+      readFile(singleClipMigrationFile, "utf8"),
+    ]);
+    expect(validMomentComposeIds([71])).toBe(true);
+    expect(validMomentComposeIds([])).toBe(false);
+    expect(validMomentComposeIds([71, 71])).toBe(false);
+    expect(route).toMatch(/media_asset_ids: z\.array\(z\.number\(\)\.int\(\)\.positive\(\)\)\.min\(1\)\.max\(6\)/);
+    expect(worker).toMatch(/composition\.source_ids\.length < 1/);
+    expect(baselineMigration).toMatch(/jsonb_array_length\(source_media_asset_ids\) BETWEEN 1 AND 6/);
+    expect(forwardMigration).toMatch(/DROP CONSTRAINT IF EXISTS community_story_moment_compositions_sources_check/);
+    expect(forwardMigration).toMatch(/jsonb_array_length\(source_media_asset_ids\) BETWEEN 1 AND 6/);
   });
 
   it("keeps original Story attachment rows and rejects Exchange-linked Stories", async () => {

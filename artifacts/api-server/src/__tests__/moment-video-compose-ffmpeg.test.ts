@@ -94,6 +94,16 @@ describe("real FFmpeg Moment camera-clip composition", () => {
         normalizedFiles.push(output);
       }
 
+      expect(withinMomentDurationLimit([durations[0]!])).toBe(true);
+      const singleConcatList = path.join(tempDir, "single-clip.txt");
+      await writeFile(singleConcatList, `file ${normalizedFiles[0]}\n`);
+      const singleOutput = path.join(tempDir, "single-composed.mp4");
+      await runTool(ffmpeg, momentConcatArgs(singleConcatList, singleOutput, 1));
+      const singleInfo = await probe(singleOutput);
+      expect(singleInfo.streams.filter((stream) => stream.codec_type === "video")).toHaveLength(1);
+      expect(singleInfo.streams.filter((stream) => stream.codec_type === "audio")).toHaveLength(1);
+      expect(Math.abs(singleInfo.durationMs - durations[0]!)).toBeLessThanOrEqual(200);
+
       const concatList = path.join(tempDir, "clips.txt");
       await writeFile(concatList, normalizedFiles.map((file) => `file ${file}`).join("\n") + "\n");
       const output = path.join(tempDir, "composed.mp4");

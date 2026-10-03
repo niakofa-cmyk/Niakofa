@@ -61,7 +61,7 @@ export async function validateStudioFiles(files: File[]): Promise<Array<number |
 const validId = (id: number) => Number.isSafeInteger(id) && id > 0;
 
 export function isCameraClipReelSelection(files: File[]): boolean {
-  return files.length >= 2 && files.length <= 6 && files.every((file) => file.type.startsWith("video/"));
+  return files.length >= 1 && files.length <= 6 && files.every((file) => file.type.startsWith("video/"));
 }
 
 export function validateMomentCompositionPlaybackUrl(playbackUrl: string, storyId: number, origin: string): string {
@@ -86,9 +86,9 @@ export class CameraClipReelPendingError extends Error {
 }
 
 export async function requestCameraClipReel(storyId: number, mediaAssetIds: number[], signal?: AbortSignal): Promise<string> {
-  if (!validId(storyId) || mediaAssetIds.length < 2 || mediaAssetIds.length > 6
+  if (!validId(storyId) || mediaAssetIds.length < 1 || mediaAssetIds.length > 6
     || mediaAssetIds.some((id) => !validId(id)) || new Set(mediaAssetIds).size !== mediaAssetIds.length) {
-    throw new Error("Camera stitching needs two to six unique video assets in camera order.");
+    throw new Error("Camera stitching needs one to six unique video assets in camera order.");
   }
   const response = await fetch(`/api/community/stories/${storyId}/moment-composition`, {
     method: "POST",
@@ -196,7 +196,7 @@ export async function publishStudioMoment(input: {
     throw new Error("Choose up to five photos or videos when adding a music track.");
   }
   if (input.cameraClipReel && !isCameraClipReelSelection(input.files)) {
-    throw new Error("A camera reel must contain only two to six camera-recorded videos.");
+    throw new Error("A camera reel must contain only one to six camera-recorded videos.");
   }
   if (input.responseToStoryId && (!validId(input.responseToStoryId) || !input.files.length || input.files.some((file) => !file.type.startsWith("video/")))) {
     throw new Error("A video response needs one or more video clips from the existing Studio.");

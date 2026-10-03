@@ -269,7 +269,7 @@ export function CommunityMomentsExperience({
       mime_type: "video/mp4",
       media_url: activeMomentVideoState?.playbackGrantUrl ?? activeSpark.moment_video.playback_grant_url,
       duration_ms: activeSpark.moment_video.duration_ms ?? null,
-      alt_text: `Stitched camera reel with ${activeSpark.media.length} original clips. ${activeSpark.media.map((item, index) => `Clip ${index + 1}: ${item.alt_text?.trim() || "No alternative text supplied."}`).join(" ")}`,
+      alt_text: `${activeSpark.media.length === 1 ? "Camera video" : `Stitched camera reel with ${activeSpark.media.length} original clips`}. ${activeSpark.media.map((item, index) => `Clip ${index + 1}: ${item.alt_text?.trim() || "No alternative text supplied."}`).join(" ")}`,
       isMomentReel: true,
     }
     : activeSpark?.media[Math.min(activeMediaIndex, Math.max(0, activeSpark.media.length - 1))] ?? null,
@@ -1275,7 +1275,7 @@ export function CommunityMomentsExperience({
                     mime_type: "video/mp4",
                     media_url: momentVideoStates[spark.id]?.playbackGrantUrl ?? spark.moment_video.playback_grant_url,
                     duration_ms: spark.moment_video.duration_ms ?? null,
-                    alt_text: `Stitched camera reel with ${spark.media.length} original clips. ${spark.media.map((item, sourceIndex) => `Clip ${sourceIndex + 1}: ${item.alt_text?.trim() || "No alternative text supplied."}`).join(" ")}`,
+                    alt_text: `${spark.media.length === 1 ? "Camera video" : `Stitched camera reel with ${spark.media.length} original clips`}. ${spark.media.map((item, sourceIndex) => `Clip ${sourceIndex + 1}: ${item.alt_text?.trim() || "No alternative text supplied."}`).join(" ")}`,
                     isMomentReel: true,
                   }
                   : spark.media[itemIndex];

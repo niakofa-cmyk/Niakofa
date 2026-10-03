@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS community_story_moment_compositions (
     CHECK (status IN ('queued', 'processing', 'ready', 'failed')),
   CONSTRAINT community_story_moment_compositions_sources_check
     CHECK (jsonb_typeof(source_media_asset_ids) = 'array'
-      AND jsonb_array_length(source_media_asset_ids) BETWEEN 2 AND 6),
+      AND jsonb_array_length(source_media_asset_ids) BETWEEN 1 AND 6),
   CONSTRAINT community_story_moment_compositions_fingerprint_check
     CHECK (source_fingerprint ~ '^[0-9a-f]{64}$')
 );

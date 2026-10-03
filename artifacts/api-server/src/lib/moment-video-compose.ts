@@ -6,7 +6,7 @@ export const MOMENT_COMPOSE_MAX_DURATION_MS = 180_000;
 
 export function validMomentComposeIds(value: unknown): value is number[] {
   return Array.isArray(value)
-    && value.length >= 2
+    && value.length >= 1
     && value.length <= MOMENT_COMPOSE_MAX_CLIPS
     && value.every((id) => Number.isSafeInteger(id) && id > 0)
     && new Set(value).size === value.length;
@@ -125,7 +125,7 @@ export function momentClipNormalizeArgs(
 }
 
 export function momentConcatArgs(inputListPath: string, outputPath: string, clipCount: number): string[] {
-  if (clipCount < 2 || clipCount > MOMENT_COMPOSE_MAX_CLIPS) throw new Error("MOMENT_COMPOSITION_INVALID");
+  if (clipCount < 1 || clipCount > MOMENT_COMPOSE_MAX_CLIPS) throw new Error("MOMENT_COMPOSITION_INVALID");
   return [
     "-y",
     "-f", "concat", "-safe", "0", "-i", inputListPath,
@@ -144,7 +144,7 @@ export function withinMomentTotalVideoDurationLimit(durationsMs: number[]): bool
 }
 
 export function withinMomentDurationLimit(durationsMs: number[]): boolean {
-  return durationsMs.length >= 2
+  return durationsMs.length >= 1
     && durationsMs.length <= MOMENT_COMPOSE_MAX_CLIPS
     && withinMomentTotalVideoDurationLimit(durationsMs);
 }

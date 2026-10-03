@@ -66,7 +66,7 @@ const ALLOWED_MEDIA = new Set(["image/jpeg", "image/png", "image/webp", "image/g
 const STORY_AUDIENCES = ["community", "hub"] as const;
 const momentCompositionRequestSchema = z.object({
   intent: z.literal(MOMENT_COMPOSE_INTENT),
-  media_asset_ids: z.array(z.number().int().positive()).min(2).max(6),
+  media_asset_ids: z.array(z.number().int().positive()).min(1).max(6),
 }).strict();
 
 const storyElementSchema = z.object({
@@ -1077,7 +1077,7 @@ router.post("/community/stories/:id/moment-composition", requireAuth, requireApp
   const parsed = momentCompositionRequestSchema.safeParse(req.body);
   if (!storyId || !parsed.success || !validMomentComposeIds(parsed.data.media_asset_ids)) {
     return res.status(400).json({
-      error: "Provide intent camera_clip_reel and an ordered list of two to six unique video media asset ids.",
+      error: "Provide intent camera_clip_reel and an ordered list of one to six unique video media asset ids.",
     });
   }
   const sourceIds = parsed.data.media_asset_ids;
@@ -1192,7 +1192,7 @@ router.post("/community/stories/:id/moment-composition", requireAuth, requireApp
     }
     if (result.error === "invalid") {
       return res.status(400).json({
-        error: "Camera-clip reels require two to six attached, ready videos owned by you in this Moment, with no more than 180 seconds total.",
+        error: "Camera-clip reels require one to six attached, ready videos owned by you in this Moment, with no more than 180 seconds total.",
       });
     }
     return res.status(404).json({ error: "Story not found." });

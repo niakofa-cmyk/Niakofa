@@ -17,6 +17,10 @@ describe("shared video duration policy", () => {
   });
 
   it("applies the same three-minute total to stitched camera reels", () => {
+    expect(withinMomentDurationLimit([1])).toBe(true);
+    expect(withinMomentDurationLimit([])).toBe(false);
+    expect(withinMomentDurationLimit([180_000])).toBe(true);
+    expect(withinMomentDurationLimit([180_001])).toBe(false);
     expect(withinMomentDurationLimit([90_000, 90_000])).toBe(true);
     expect(withinMomentDurationLimit([90_001, 90_000])).toBe(false);
   });
@@ -32,5 +36,10 @@ describe("shared video duration policy", () => {
     expect(momentRoute.match(/withinMomentTotalVideoDurationLimit\(/g)).toHaveLength(2);
     expect(momentRoute).toMatch(/videoDurationsMs\.reduce\(/);
     expect(momentRoute).toMatch(/duration_ms: z\.number\(\)\.int\(\)\.positive\(\)\.max\(MOMENT_COMPOSE_MAX_DURATION_MS\)/);
+  });
+
+  it("keeps the worker's composed-output duration bound aligned with the three-minute policy", async () => {
+    const worker = await readFile(new URL("../workers/media-process-worker.ts", import.meta.url), "utf8");
+    expect(worker).toMatch(/outputProbe\.durationMs > MOMENT_COMPOSE_MAX_DURATION_MS/);
   });
 });

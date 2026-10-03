@@ -1013,3 +1013,24 @@ authorization or privacy boundaries:
   detection and schema parity. A fallback migration must still satisfy the
   application schema, and spatial indexes must have names that cannot collide
   with legacy fallback indexes.
+
+---
+
+### Session: October 3, 2026 — Single-source Moment video composition
+
+Camera-only Sparks with one video now enter the same derived Moment video
+pipeline as multi-clip camera reels. The original Story attachment remains
+intact as the playback fallback while composition is queued or unavailable.
+
+- Studio selection, API validation, worker validation, FFmpeg concat, and the
+  database source-count constraint now accept one through six videos.
+- Migration `0196` updates existing databases; migration `0190` keeps fresh
+  installs aligned. Composed output now uses the same 180-second limit enforced
+  for source videos.
+- Local verification passed: 18 focused API tests including real FFmpeg
+  composition from one input, 11 Studio tests, web and API typechecks, and API
+  startup with the local migration applied.
+
+**Release lesson:** accepting an input at the UI is not enough; the persisted
+constraint and the asynchronous worker must accept the same boundary for the
+derived Moment to become playable.

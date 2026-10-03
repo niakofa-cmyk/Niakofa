@@ -8,8 +8,8 @@ import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioD
 const file = (name: string) => Object.assign(new Blob(["bytes"], { type: "image/jpeg" }), { name, lastModified: 1 }) as File;
 const videoFile = (name: string) => Object.assign(new Blob(["video"], { type: "video/webm" }), { name, lastModified: 1 }) as File;
 
-test("camera reel marker applies only to two through six all-video camera groups", () => {
-  assert.equal(isCameraClipReelSelection([videoFile("one.webm")]), false);
+test("camera reel marker applies to one through six all-video camera groups", () => {
+  assert.equal(isCameraClipReelSelection([videoFile("one.webm")]), true);
   assert.equal(isCameraClipReelSelection([videoFile("one.webm"), videoFile("two.webm")]), true);
   assert.equal(isCameraClipReelSelection([videoFile("one.webm"), file("photo.jpg")]), false);
   assert.equal(isCameraClipReelSelection(Array.from({ length: 7 }, (_, index) => videoFile(`${index}.webm`))), false);
@@ -45,9 +45,12 @@ test("camera composition client sends the ordered id contract and consumes priva
     } }), { status: 200 });
   };
   try {
+    assert.equal(await requestCameraClipReel(52, [71]), "queued");
+    assert.deepEqual(JSON.parse(calls[0].body!), { intent: "camera_clip_reel", media_asset_ids: [71] });
     assert.equal(await requestCameraClipReel(52, [71, 70]), "queued");
-    assert.deepEqual(JSON.parse(calls[0].body!), { intent: "camera_clip_reel", media_asset_ids: [71, 70] });
+    assert.deepEqual(JSON.parse(calls[1].body!), { intent: "camera_clip_reel", media_asset_ids: [71, 70] });
     assert.equal(calls[0].method, "POST");
+    assert.equal(calls[1].method, "POST");
     const status = await getCameraClipReelStatus(52);
     assert.deepEqual(status, {
       status: "ready",
