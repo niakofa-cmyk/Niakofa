@@ -128,7 +128,7 @@ export declare const reportsTable: import("drizzle-orm/pg-core").PgTableWithColu
             tableName: "reports";
             dataType: "string";
             columnType: "PgEnumColumn";
-            data: "suspicious_request" | "suspicious_helper" | "fraud" | "harassment" | "fake_profile" | "dangerous_behavior" | "spam" | "commercial_pricing" | "spam_or_solicitation" | "unsafe_or_harmful" | "sexual_content" | "hate_or_harassment" | "self_harm" | "copyright_or_ip" | "other" | "sos";
+            data: "other" | "suspicious_request" | "suspicious_helper" | "fraud" | "harassment" | "fake_profile" | "dangerous_behavior" | "spam" | "commercial_pricing" | "spam_or_solicitation" | "unsafe_or_harmful" | "sexual_content" | "hate_or_harassment" | "self_harm" | "copyright_or_ip" | "sos";
             driverParam: string;
             notNull: true;
             hasDefault: false;

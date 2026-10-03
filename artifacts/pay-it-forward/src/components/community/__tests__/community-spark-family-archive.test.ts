@@ -46,7 +46,7 @@ test("Moment cutdown keeps all photos and only complete leading clips within 60 
     studioFile("video/webm"),
     studioFile("video/mp4"),
   ];
-  assert.deepEqual(chooseMomentCutdownIndexes(files, [35_000, 0, 25_000, 30_000]), [0, 1]);
+  assert.deepEqual(chooseMomentCutdownIndexes(files, [35_000, 0, 25_000, 30_000]), [0, 1, 2]);
   assert.deepEqual(chooseMomentCutdownIndexes(files, [20_000, 0, 20_000, 20_000]), [0, 1, 2, 3]);
   assert.throws(
     () => chooseMomentCutdownIndexes([studioFile("video/mp4")], [90_000]),

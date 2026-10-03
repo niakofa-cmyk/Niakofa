@@ -21,7 +21,12 @@ export function CommunityMomentsView({
 
   return (
     <div className="space-y-3" data-testid="community-moments-view">
-      <CommunityMomentsExperience hubId={hubId} openSparkId={openSparkId} openComposerSignal={openComposerSignal} />
+      <CommunityMomentsExperience
+        hubId={hubId}
+        openSparkId={openSparkId}
+        openComposerSignal={openComposerSignal}
+        fullBleed
+      />
     </div>
   );
 }

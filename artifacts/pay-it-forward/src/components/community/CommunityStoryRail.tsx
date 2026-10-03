@@ -141,7 +141,7 @@ export function CommunityStoryRail({
   const [familyStoryDestination, setFamilyStoryDestination] = useState<"family-only" | "moment" | null>(null);
   const [familyStoryCopyEnabled, setFamilyStoryCopyEnabled] = useState(false);
   const [familyStoryFamilyId, setFamilyStoryFamilyId] = useState<number | null>(null);
-  const [familyStoryArchiveId, setFamilyStoryArchiveId] = useState(() => newStudioPublishId());
+  const [familyStoryArchiveId, setFamilyStoryArchiveId] = useState<string>(() => newStudioPublishId());
   const [checkingStudioDuration, setCheckingStudioDuration] = useState(false);
   useEffect(() => {
     // The page-level signal starts at 0, so a positive value is always an
@@ -1228,7 +1228,6 @@ export function CommunityStoryRail({
           signal: controller.signal,
           onProgress: (status) => setPublishStatus(status),
         });
-        privateFamilyCopySaved = true;
       }
       if (familyStoryOnly) {
         draftGenerationRef.current++;
@@ -1259,7 +1258,7 @@ export function CommunityStoryRail({
       elements.push(...draftElements.map(({ id: _id, ...element }) => element));
       // Preview-only effects and trim are not included in the published manifest.
       publishAttemptRef.current = attemptSignature;
-      const publishedMomentId = await publishStudioMoment({
+      await publishStudioMoment({
         userId, hubId, audience, files: momentFiles, caption, tags,
         mediaAltTexts, mediaCaptionsVtt,
         elements: elements as Array<{ type: string; payload: Record<string, unknown> }>, effect,
@@ -1753,8 +1752,10 @@ export function CommunityStoryRail({
                     <SparkFamilyStoryPreservationControl
                       durationMs={familyStoryDurationMs}
                       files={selectedFiles}
+                      destination={familyStoryDestination}
                       checked={familyStoryCopyEnabled}
                       familyId={familyStoryFamilyId}
+                      onDestinationChange={setFamilyStoryDestination}
                       onCheckedChange={setFamilyStoryCopyEnabled}
                       onFamilyChange={setFamilyStoryFamilyId}
                     />

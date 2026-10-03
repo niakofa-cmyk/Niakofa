@@ -12,7 +12,7 @@ import {
   useUnblockDirectMessageUser,
   useUnmuteCommunityStoryAuthor,
 } from "@workspace/api-client-react";
-import { ArrowDown, ArrowUp, BookHeart, ChevronLeft, ChevronRight, Eye, Flag, Heart, LoaderCircle, Maximize2, MessageCircle, Minimize2, MoreHorizontal, Play, RefreshCw, Send, Share2, VolumeX, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookHeart, ChevronLeft, ChevronRight, Eye, Flag, Heart, LoaderCircle, Maximize2, MessageCircle, Minimize2, MoreHorizontal, Play, Plus, RefreshCw, Send, Share2, VolumeX, X } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 import { deleteStoryComment, getStoryComments, getStoryMetrics, postStoryComment, reactToStory, recordStoryView, removeStoryReaction, sendStoryContextMessage, type StoryComment, type StoryMetrics } from "@/lib/community-story-client";
 import { createCommunityStoryWatchContribution, MAX_COMMUNITY_STORY_WATCH_CONTRIBUTION_MS, postCommunityStoryWatchContribution, type CommunityStoryWatchContribution } from "@/lib/communityStoryWatchClient";
@@ -133,11 +133,13 @@ export function CommunityMomentsExperience({
   openComposerSignal,
   openSparkId,
   compact = false,
+  fullBleed = false,
 }: {
   hubId: number | null;
   openComposerSignal?: number;
   openSparkId?: number | null;
   compact?: boolean;
+  fullBleed?: boolean;
 }) {
   const [sparks, setSparks] = useState<MomentSpark[]>([]);
   const [viewerId, setViewerId] = useState<number | null>(null);
@@ -192,6 +194,7 @@ export function CommunityMomentsExperience({
   const [keepMomentId, setKeepMomentId] = useState<number | null>(null);
   const [creatorInsightsOpen, setCreatorInsightsOpen] = useState(false);
   const [fullScreenOpen, setFullScreenOpen] = useState(false);
+  const [contextPanelOpen, setContextPanelOpen] = useState(() => fullBleed && (openComposerSignal ?? 0) > 0);
   const [composerActionSignal, setComposerActionSignal] = useState(0);
   const [responseToStoryId, setResponseToStoryId] = useState<number | null>(null);
   const [challengeKey, setChallengeKey] = useState<string | null>(null);
@@ -290,13 +293,17 @@ export function CommunityMomentsExperience({
   const mediaFilter = storyEffectFilter(storyElements);
 
   useEffect(() => {
-    if (!fullScreenOpen) return;
+    if (!fullScreenOpen && !fullBleed) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [fullScreenOpen]);
+  }, [fullBleed, fullScreenOpen]);
+
+  useEffect(() => {
+    if (fullBleed && (openComposerSignal ?? 0) > 0) setContextPanelOpen(true);
+  }, [fullBleed, openComposerSignal]);
 
   useEffect(() => {
     if (!fullScreenOpen) {
@@ -996,16 +1003,48 @@ export function CommunityMomentsExperience({
   };
 
   return (
-    <section className="nia-moments space-y-4" aria-label={hubId === null ? "Community Moments" : "Hub Moments"} data-testid="community-moments-experience">
-      {!compact && (
-        <header className="rounded-2xl border border-border bg-card p-4 sm:p-6">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">{hubId === null ? "Community" : "Hub"}</p>
-          <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">Moments</h1>
-          <p className="mt-1 text-sm text-muted-foreground">A vertical feed of Sparks shared with you.</p>
-        </header>
+    <section
+      className={`nia-moments ${fullBleed ? "nia-moments--fullbleed" : "space-y-4"}`}
+      aria-label={hubId === null ? "Community Moments" : "Hub Moments"}
+      data-testid="community-moments-experience"
+      data-fullbleed={fullBleed ? "true" : "false"}
+    >
+      {fullBleed && contextPanelOpen && (
+        <button
+          type="button"
+          className="nia-moments__context-backdrop"
+          aria-label="Close community tools"
+          onClick={() => setContextPanelOpen(false)}
+        />
       )}
+      <aside
+        id="moment-context-panel"
+        className="nia-moments__context"
+        data-open={contextPanelOpen ? "true" : "false"}
+        aria-label="Community Moments tools"
+      >
+        {!compact && (
+          <header className="rounded-2xl border border-border bg-card p-4 sm:p-6">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">{hubId === null ? "Community" : "Hub"}</p>
+              <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">Moments</h1>
+              <p className="mt-1 text-sm text-muted-foreground">A vertical feed of Sparks shared with you.</p>
+            </div>
+            {fullBleed && (
+              <button
+                type="button"
+                className="nia-moments__context-close"
+                onClick={() => setContextPanelOpen(false)}
+                aria-label="Close community tools"
+                data-testid="button-close-moment-context"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+          </header>
+        )}
 
-      <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-card p-4 sm:p-5" aria-label="Weekly community prompt" data-testid="card-weekly-moment-prompt">
+        <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-card p-4 sm:p-5" aria-label="Weekly community prompt" data-testid="card-weekly-moment-prompt">
         <div className="absolute -right-8 -top-16 h-40 w-40 rounded-full bg-primary/10 blur-2xl" aria-hidden="true" />
         {weeklyChallengeQuery.isLoading ? (
           <div className="animate-pulse" role="status" aria-label="Loading this week’s prompt"><div className="h-3 w-28 rounded bg-muted" /><div className="mt-3 h-5 w-2/3 rounded bg-muted" /></div>
@@ -1026,36 +1065,38 @@ export function CommunityMomentsExperience({
         ) : (
           <p className="relative text-sm text-muted-foreground">There is no active community prompt right now.</p>
         )}
-      </section>
+        </section>
 
-      <CommunityStoryRail
-        hubId={hubId}
-        openComposerSignal={openComposerSignal}
-        additionalComposerSignal={composerActionSignal}
-        responseToStoryId={responseToStoryId}
-        challengeKey={challengeKey}
-        compact
-      />
+        <CommunityStoryRail
+          hubId={hubId}
+          openComposerSignal={openComposerSignal}
+          additionalComposerSignal={composerActionSignal}
+          responseToStoryId={responseToStoryId}
+          challengeKey={challengeKey}
+          compact
+        />
 
-      <section className="overflow-hidden rounded-2xl border border-border bg-card" aria-label="Creator analytics">
-        <button
-          type="button"
-          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40"
-          aria-expanded={creatorInsightsOpen}
-          onClick={() => setCreatorInsightsOpen((open) => !open)}
-          data-testid="button-toggle-creator-insights"
-        >
-          <span>
-            <span className="block text-sm font-bold">Creator insights</span>
-            <span className="mt-0.5 block text-xs text-muted-foreground">Daily Moment watch time and completion retention</span>
-          </span>
-          {creatorInsightsOpen
-            ? <ArrowUp className="h-4 w-4 shrink-0" aria-hidden="true" />
-            : <ArrowDown className="h-4 w-4 shrink-0" aria-hidden="true" />}
-        </button>
-        {creatorInsightsOpen && <div className="border-t border-border p-3 sm:p-4"><CreatorInsightsPanel /></div>}
-      </section>
+        <section className="overflow-hidden rounded-2xl border border-border bg-card" aria-label="Creator analytics">
+          <button
+            type="button"
+            className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40"
+            aria-expanded={creatorInsightsOpen}
+            onClick={() => setCreatorInsightsOpen((open) => !open)}
+            data-testid="button-toggle-creator-insights"
+          >
+            <span>
+              <span className="block text-sm font-bold">Creator insights</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">Daily Moment watch time and completion retention</span>
+            </span>
+            {creatorInsightsOpen
+              ? <ArrowUp className="h-4 w-4 shrink-0" aria-hidden="true" />
+              : <ArrowDown className="h-4 w-4 shrink-0" aria-hidden="true" />}
+          </button>
+          {creatorInsightsOpen && <div className="border-t border-border p-3 sm:p-4"><CreatorInsightsPanel /></div>}
+        </section>
+      </aside>
 
+      <div className="nia-moments__stage">
       <section
         ref={feedPanelRef}
         className="nia-moments__feed-panel overflow-hidden rounded-2xl border border-border bg-card"
@@ -1065,9 +1106,48 @@ export function CommunityMomentsExperience({
         role={fullScreenOpen ? "dialog" : undefined}
         tabIndex={fullScreenOpen ? -1 : undefined}
       >
-        <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-4 py-2">
-          <p className="text-sm font-bold">Sparks shared with you</p>
-          <div className="flex items-center gap-2">
+        <div className="nia-moments__feed-header flex min-h-12 items-center justify-between gap-3 border-b border-border px-4 py-2">
+          <div className="nia-moments__feed-heading">
+            {fullBleed && (
+              <Link href="/community" className="nia-moments__back-link" aria-label="Back to Community" data-testid="link-back-from-moments">
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                <span>Community</span>
+              </Link>
+            )}
+            <p className="text-sm font-bold">Sparks shared with you</p>
+          </div>
+          <div className="nia-moments__feed-controls flex items-center gap-2">
+            {fullBleed && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContextPanelOpen(true);
+                    setResponseToStoryId(null);
+                    setChallengeKey(null);
+                    setComposerActionSignal((value) => value + 1);
+                  }}
+                  className="nia-moments__create-button inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-bold"
+                  aria-label="Create a Spark"
+                  data-testid="button-create-moment-fullbleed"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  <span>Create</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContextPanelOpen((open) => !open)}
+                  className="nia-moments__tools-button inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted"
+                  aria-expanded={contextPanelOpen}
+                  aria-controls="moment-context-panel"
+                  aria-label={contextPanelOpen ? "Close community tools" : "Open community tools"}
+                  data-testid="button-toggle-moment-context"
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                  <span>Tools</span>
+                </button>
+              </>
+            )}
             <button
               ref={fullScreenToggleRef}
               type="button"
@@ -1473,6 +1553,7 @@ export function CommunityMomentsExperience({
         )}
       </section>
       <p className="text-xs leading-relaxed text-muted-foreground">Only media for the Spark in view is opened. Videos start muted, and secure playback is authorized for your account.</p>
+      </div>
       {shareSparkId !== null && (
         <StoryShareSheet
           storyId={shareSparkId}
