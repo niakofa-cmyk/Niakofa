@@ -31,6 +31,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { getMediaToolPaths } from "../lib/mediaCapabilities";
 import {
+  MOMENT_COMPOSE_MAX_DURATION_MS,
   isPublishedStoryMediaContext,
   momentCompositionAttemptOwnsJob,
   momentClipNormalizeArgs,
@@ -624,8 +625,8 @@ async function processMomentComposition(mediaAssetId: number, jobId: number, att
         throw new Error("MEDIA_COMPOSITION_SOURCE_INVALID");
       }
       probedDurations.push(probed.durationMs);
-      if (probed.durationMs > 180_000
-        || probedDurations.reduce((total, duration) => total + duration, 0) > 180_000) {
+      if (probed.durationMs > MOMENT_COMPOSE_MAX_DURATION_MS
+        || probedDurations.reduce((total, duration) => total + duration, 0) > MOMENT_COMPOSE_MAX_DURATION_MS) {
         throw new Error("MEDIA_COMPOSITION_DURATION_INVALID");
       }
       probedInputs.push({

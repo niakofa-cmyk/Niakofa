@@ -56,6 +56,9 @@ test("Moment cutdown keeps all photos and only complete leading clips within 180
 });
 
 test("recovered Studio work resumes in editing, and Create a Spark skips the source chooser", () => {
+  const trimStart = storyRailSource.indexOf('data-testid="button-trim-spark-video"');
+  const trimEnd = storyRailSource.indexOf('data-testid="input-spark-cover-time"', trimStart);
+  const trimAction = storyRailSource.slice(trimStart, trimEnd);
   assert.match(storyRailSource, /if \(hasRecoverableWork\) setStudioStep\("edit"\)/);
   assert.doesNotMatch(storyRailSource, /What’s happening/);
   assert.doesNotMatch(composerChromeSource, /What’s happening/);
@@ -66,6 +69,8 @@ test("recovered Studio work resumes in editing, and Create a Spark skips the sou
   assert.match(storyRailSource, /familyStoryDestination === "family-only"/);
   assert.match(storyRailSource, /saveSparkAsPrivateFamilyStory\(\{/);
   assert.match(storyRailSource, /familyStoryDestination === "moment" && !familyStoryCopyEnabled/);
+  assert.match(trimAction, /familyStoryOriginalArchivedRef\.current/);
+  assert.ok(trimAction.indexOf("saveSparkAsPrivateFamilyStory") < trimAction.indexOf("trimVideoFile"));
   assert.match(familyPreservationSource, /Create a Moment from up to 180 seconds/);
   assert.match(storyRailSource, /clientPublishId: attemptId/);
 });

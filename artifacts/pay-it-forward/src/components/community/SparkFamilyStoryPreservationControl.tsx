@@ -64,7 +64,7 @@ export function SparkFamilyStoryPreservationControl({
   return (
     <section className="nia-story-family-copy" aria-labelledby="spark-family-copy-title" data-testid="spark-family-copy">
       <div className="nia-story-family-copy__intro">
-          <span aria-hidden="true">3m+</span>
+        <span aria-hidden="true">3m+</span>
         <div>
           <h3 id="spark-family-copy-title">Choose where this recording goes</h3>
           <p>Your selected videos add up to {Math.ceil(durationMs / 1000)} seconds. Shared videos are limited to 180 seconds. Save the full original privately before publishing any shorter Moment.</p>

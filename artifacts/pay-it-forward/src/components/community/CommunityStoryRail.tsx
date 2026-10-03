@@ -142,6 +142,8 @@ export function CommunityStoryRail({
   const [familyStoryCopyEnabled, setFamilyStoryCopyEnabled] = useState(false);
   const [familyStoryFamilyId, setFamilyStoryFamilyId] = useState<number | null>(null);
   const [familyStoryArchiveId, setFamilyStoryArchiveId] = useState<string>(() => newStudioPublishId());
+  const familyStoryOriginalArchivedRef = useRef(false);
+  const preserveFamilyStoryArchiveOnTrimRef = useRef(false);
   const [checkingStudioDuration, setCheckingStudioDuration] = useState(false);
   useEffect(() => {
     // The page-level signal starts at 0, so a positive value is always an
@@ -282,6 +284,8 @@ export function CommunityStoryRail({
   useEffect(() => {
     if (selectedMediaFingerprintRef.current === selectedMediaFingerprint) return;
     selectedMediaFingerprintRef.current = selectedMediaFingerprint;
+    if (!preserveFamilyStoryArchiveOnTrimRef.current) familyStoryOriginalArchivedRef.current = false;
+    preserveFamilyStoryArchiveOnTrimRef.current = false;
     setFamilyStoryDurationMs(null);
     setFamilyStoryDestination(null);
     setFamilyStoryCopyEnabled(false);
@@ -475,6 +479,8 @@ export function CommunityStoryRail({
     setFamilyStoryCopyEnabled(false);
     setFamilyStoryFamilyId(null);
     setFamilyStoryArchiveId(newStudioPublishId());
+    familyStoryOriginalArchivedRef.current = false;
+    preserveFamilyStoryArchiveOnTrimRef.current = false;
     setCheckingStudioDuration(false);
     setExchangeListingId(empty.listingId);
     setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
@@ -912,6 +918,8 @@ export function CommunityStoryRail({
     setFamilyStoryCopyEnabled(false);
     setFamilyStoryFamilyId(null);
     setFamilyStoryArchiveId(newStudioPublishId());
+    familyStoryOriginalArchivedRef.current = false;
+    preserveFamilyStoryArchiveOnTrimRef.current = false;
     setCheckingStudioDuration(false);
   };
 
@@ -1044,17 +1052,19 @@ export function CommunityStoryRail({
     }
     if (familyStoryDurationMs !== null
       && familyStoryDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS
-      && familyStoryDestination === null) {
+      && familyStoryDestination === null
+      && !familyStoryOriginalArchivedRef.current) {
       setError("For videos over 180 seconds, save the full original privately or save it privately before publishing a shorter Moment.");
       return;
     }
-    if (familyStoryDestination === "moment" && !familyStoryCopyEnabled) {
+    if (familyStoryDestination === "moment" && !familyStoryCopyEnabled && !familyStoryOriginalArchivedRef.current) {
       setError("Save the full original as a private Family Story before publishing a shorter Moment.");
       return;
     }
     if ((familyStoryDestination === "family-only"
       || (familyStoryDestination === "moment" && familyStoryCopyEnabled))
-      && !familyStoryFamilyId) {
+      && !familyStoryFamilyId
+      && !familyStoryOriginalArchivedRef.current) {
       setError("Choose a Family Space for the private Family Story copy, or turn the option off.");
       return;
     }
@@ -1077,19 +1087,20 @@ export function CommunityStoryRail({
       const videoDurationsMs = await validateStudioFiles(publishFiles);
       const selectedVideoDurationMs = totalStudioVideoDurationMs(publishFiles, videoDurationsMs);
       const overMomentLimit = selectedVideoDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS;
-      if (overMomentLimit && familyStoryDestination === null) {
+      if (overMomentLimit && familyStoryDestination === null && !familyStoryOriginalArchivedRef.current) {
         throw new Error("Videos over 180 seconds must be archived to a private Family Story before any shorter Moment is published.");
       }
-      if (familyStoryDestination !== null && !overMomentLimit) {
+      if (familyStoryDestination !== null && !overMomentLimit && !familyStoryOriginalArchivedRef.current) {
         throw new Error("This selection no longer exceeds 180 seconds. Review it before choosing a destination.");
       }
       if (overMomentLimit && familyStoryDestination === "moment" && exchangeListingId) {
         throw new Error("An Exchange Spark longer than 180 seconds must be saved to a private Family Story or trimmed in a separate video editor.");
       }
       const familyStoryOnly = overMomentLimit && familyStoryDestination === "family-only";
-      const shouldSaveFamilyStory = familyStoryOnly
-        || (overMomentLimit && familyStoryDestination === "moment" && familyStoryCopyEnabled);
-      if (overMomentLimit && familyStoryDestination === "moment" && !familyStoryCopyEnabled) {
+      const shouldSaveFamilyStory = !familyStoryOriginalArchivedRef.current && (familyStoryOnly
+        || (overMomentLimit && familyStoryDestination === "moment" && familyStoryCopyEnabled));
+      if (overMomentLimit && familyStoryDestination === "moment" && !familyStoryCopyEnabled
+        && !familyStoryOriginalArchivedRef.current) {
         throw new Error("Save the full original as a private Family Story before publishing a shorter Moment.");
       }
       if (shouldSaveFamilyStory) {
@@ -1104,15 +1115,18 @@ export function CommunityStoryRail({
         if (exchangeDraftRef.current) {
           throw new Error("This Exchange Spark already has a saved draft. Finish or explicitly discard that draft before archiving the video as a Family Story.");
         }
-        setPublishStatus("Saving the full original in Family Stories…");
-        await saveSparkAsPrivateFamilyStory({
-          familyId: familyStoryFamilyId!,
-          archiveId: familyStoryArchiveId,
-          caption,
-          files: publishFiles,
-          signal: controller.signal,
-          onProgress: (status) => setPublishStatus(status),
-        });
+        if (!familyStoryOriginalArchivedRef.current) {
+          setPublishStatus("Saving the full original in Family Stories…");
+          await saveSparkAsPrivateFamilyStory({
+            familyId: familyStoryFamilyId!,
+            archiveId: familyStoryArchiveId,
+            caption,
+            files: publishFiles,
+            signal: controller.signal,
+            onProgress: (status) => setPublishStatus(status),
+          });
+          familyStoryOriginalArchivedRef.current = true;
+        }
         draftGenerationRef.current++;
         if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
         await draftQueueRef.current.catch(() => {});
@@ -1258,6 +1272,7 @@ export function CommunityStoryRail({
           signal: controller.signal,
           onProgress: (status) => setPublishStatus(status),
         });
+        familyStoryOriginalArchivedRef.current = true;
       }
       if (familyStoryOnly) {
         draftGenerationRef.current++;
@@ -1843,33 +1858,80 @@ export function CommunityStoryRail({
                     }} className="w-full" data-testid="input-spark-preview-end" /></label>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button type="button" className="rounded-lg border border-white/20 px-3 py-2 font-bold" data-testid="button-trim-spark-video" disabled={trimming || (trimStart <= 0 && trimEnd >= videoDuration)} onClick={async () => {
-                      const bounds = { start: trimStart, end: trimEnd };
-                      setTrimming(true);
-                      try {
-                        setError(null);
-                        const trimmed = await trimVideoFile(selectedPreviewFile!, bounds.start, bounds.end);
-                        const nextFiles = files.slice(); nextFiles[previewFileIndex] = trimmed;
-                        setFiles(nextFiles);
-                        setCameraClipReelMarker(null);
-                        setPendingCameraReelStoryId(null);
-                        const nextIds = [...uploadedIdsRef.current]; nextIds[previewFileIndex] = null;
-                        uploadedIdsRef.current = nextIds;
-                        publishAssetIdsRef.current = [];
-                        setUploadedIds(nextIds);
-                        setCoverTimes((current) => {
-                          if (current[previewFileIndex] === undefined) return current;
-                          const next = { ...current };
-                          next[previewFileIndex] = Math.max(0, Math.min(
-                            Math.round(current[previewFileIndex] - bounds.start * 1000),
-                            Math.max(0, Math.floor((bounds.end - bounds.start) * 1000) - 1),
-                          ));
-                          return next;
-                        });
-                        setTrimPreview((current) => { const next = { ...current }; delete next[previewFileIndex]; return next; });
-                      } catch (reason) { setError(reason instanceof Error ? reason.message : "Video trimming is not supported."); }
-                      finally { setTrimming(false); }
-                    }}>{trimming ? "Trimming…" : "Apply trim"}</button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-white/20 px-3 py-2 font-bold"
+                      data-testid="button-trim-spark-video"
+                      disabled={trimming || (trimStart <= 0 && trimEnd >= videoDuration)}
+                      onClick={async () => {
+                        const bounds = { start: trimStart, end: trimEnd };
+                        setTrimming(true);
+                        try {
+                          setError(null);
+                          const selectedForTrim = selectedStudioFiles(files, gallerySelection);
+                          const trimDurations = await validateStudioFiles(selectedForTrim);
+                          const previewDurationMs = Number.isFinite(videoDuration) && videoDuration > 0
+                            ? Math.ceil(videoDuration * 1000)
+                            : 0;
+                          const originalDurationMs = Math.max(
+                            totalStudioVideoDurationMs(selectedForTrim, trimDurations),
+                            previewDurationMs,
+                          );
+                          if (originalDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS
+                            && !familyStoryOriginalArchivedRef.current) {
+                            const archiveWasSelected = familyStoryDestination === "family-only"
+                              || (familyStoryDestination === "moment" && familyStoryCopyEnabled);
+                            if (!archiveWasSelected || !familyStoryFamilyId) {
+                              throw new Error("Before trimming a video selection over 180 seconds, choose a private Family Story copy in Destinations, then return here. The full original must be saved first.");
+                            }
+                            const archiveFiles = selectedForTrim.includes(selectedPreviewFile!)
+                              ? selectedForTrim
+                              : [...selectedForTrim, selectedPreviewFile!];
+                            if (!canCopyStudioFilesToFamily(archiveFiles)) {
+                              throw new Error("Every original in this Family Story copy must be a supported photo or video no larger than 20 MB.");
+                            }
+                            setPublishStatus("Saving the full original in Family Stories…");
+                            await saveSparkAsPrivateFamilyStory({
+                              familyId: familyStoryFamilyId,
+                              archiveId: familyStoryArchiveId,
+                              caption,
+                              files: archiveFiles,
+                              signal: new AbortController().signal,
+                              onProgress: (status) => setPublishStatus(status),
+                            });
+                            familyStoryOriginalArchivedRef.current = true;
+                          }
+                          const trimmed = await trimVideoFile(selectedPreviewFile!, bounds.start, bounds.end);
+                          const nextFiles = files.slice(); nextFiles[previewFileIndex] = trimmed;
+                          preserveFamilyStoryArchiveOnTrimRef.current = familyStoryOriginalArchivedRef.current;
+                          setFiles(nextFiles);
+                          setCameraClipReelMarker(null);
+                          setPendingCameraReelStoryId(null);
+                          const nextIds = [...uploadedIdsRef.current]; nextIds[previewFileIndex] = null;
+                          uploadedIdsRef.current = nextIds;
+                          publishAssetIdsRef.current = [];
+                          setUploadedIds(nextIds);
+                          setCoverTimes((current) => {
+                            if (current[previewFileIndex] === undefined) return current;
+                            const next = { ...current };
+                            next[previewFileIndex] = Math.max(0, Math.min(
+                              Math.round(current[previewFileIndex] - bounds.start * 1000),
+                              Math.max(0, Math.floor((bounds.end - bounds.start) * 1000) - 1),
+                            ));
+                            return next;
+                          });
+                          setTrimPreview((current) => { const next = { ...current }; delete next[previewFileIndex]; return next; });
+                          setPublishStatus(familyStoryOriginalArchivedRef.current
+                            ? "The full original is safely saved in Family Stories."
+                            : "");
+                        } catch (reason) {
+                          setPublishStatus("");
+                          setError(reason instanceof Error ? reason.message : "Video trimming is not supported.");
+                        } finally {
+                          setTrimming(false);
+                        }
+                      }}
+                    >{trimming ? "Trimming…" : "Apply trim"}</button>
                     <label className="flex items-center gap-2">Cover frame
                       <input type="range" min={coverMinMs} max={coverMaxMs} step={100} value={coverValueMs} disabled={trimming} onChange={(event) => {
                         const time = Math.max(coverMinMs, Math.min(Number(event.target.value), coverMaxMs));
