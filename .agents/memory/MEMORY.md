@@ -83,5 +83,6 @@
 - [Bundled CLI entry guards](bundled-cli-entry-guards.md) — imported CLI helpers need an exact entrypoint guard; bundling can make URL-only checks run on API startup.
 - [Community composer signal scoping](community-composer-signal-scoping.md) — filter pending Create signals by the active tab during render; an effect reset happens too late for a newly mounted child.
 - [Moment retention and responses](niakofa-moment-retention.md) — private archives are opt-in and creator-deletable; featuring and attributed video responses must preserve Community boundaries.
+- [Spark deletion audit boundary](exchange-spark-audit-boundary.md) — distinguish a user’s pending delete request from worker-confirmed row removal; audit only identifiers, outcomes, and safe reasons.
 - [Spark camera draft gating](spark-camera-draft-gating.md) — auto-open only after successful scoped recovery; distinguish restored drafts from later autosaves.
 - [Railway log attribute decoding](railway-log-attribute-decoding.md) — decode JSON-quoted log values in memory, then validate allowlisted fields before surfacing diagnostics.

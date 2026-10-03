@@ -39,6 +39,7 @@ import { deleteAssetStrict } from "./storage";
 import { broadcast } from "./ws-hub";
 import { createMessageNotification } from "./message-notifications";
 import { mediaStorageKeys } from "./media-cleanup";
+import { buildExchangeSparkAuditEvent } from "./exchange-spark-audit";
 import { deleteMomentAfterStrictMediaCleanup } from "./moment-media-cleanup";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
@@ -773,9 +774,9 @@ async function processCommunityStoryCleanup(): Promise<void> {
         },
       );
       deletedIds.push(id);
-    } catch (err) {
+    } catch {
       cleanupFailed = true;
-      logger.error({ err, storyId: id }, "community-story cleanup: storage/database cleanup will retry");
+      logger.error({ storyId: id }, "community-story cleanup: storage/database cleanup will retry");
     }
   }
   const orphanedAssets = await db.select({
@@ -795,9 +796,9 @@ async function processCommunityStoryCleanup(): Promise<void> {
       const keys = mediaStorageKeys(asset);
       for (const key of keys) await deleteAssetStrict(key);
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
-    } catch (err) {
+    } catch {
       cleanupFailed = true;
-      logger.error({ err, mediaAssetId: asset.id }, "community-story cleanup: orphan media cleanup will retry");
+      logger.error({ mediaAssetId: asset.id }, "community-story cleanup: orphan media cleanup will retry");
     }
   }
   // Recover a Spark claimed by a scheduler instance that exited mid-cleanup.
@@ -820,6 +821,7 @@ async function processCommunityStoryCleanup(): Promise<void> {
   const deletingSparks = await db.transaction(async (tx) => {
     const due = await tx.select({
       id: exchangeSparksTable.id,
+      author_user_id: exchangeSparksTable.author_user_id,
     }).from(exchangeSparksTable)
       .where(eq(exchangeSparksTable.status, "deletion_pending"))
       .limit(MEDIA_CLEANUP_BATCH_SIZE)
@@ -864,6 +866,13 @@ async function processCommunityStoryCleanup(): Promise<void> {
         .limit(1);
       if (processingJob) {
         cleanupFailed = true;
+        logger.info(buildExchangeSparkAuditEvent({
+          action: "cleanup_result",
+          actorUserId: spark.author_user_id,
+          sparkId: spark.id,
+          deleted: false,
+          reason: "media_processing",
+        }));
         await db.update(exchangeSparksTable).set({
           status: "deletion_pending",
           updated_at: new Date(),
@@ -881,11 +890,15 @@ async function processCommunityStoryCleanup(): Promise<void> {
     const keys = [...new Set(assets.flatMap((asset) => mediaStorageKeys(asset)))];
     try {
       for (const key of keys) await deleteAssetStrict(key);
-      // Keep media rows as tombstones. The orphan pass repeats deletion after
-      // the upload-session retention window to catch late in-flight PUTs.
-      await db.delete(exchangeSparksTable).where(eq(exchangeSparksTable.id, spark.id));
-    } catch (err) {
+    } catch {
       cleanupFailed = true;
+      logger.info(buildExchangeSparkAuditEvent({
+        action: "cleanup_result",
+        actorUserId: spark.author_user_id,
+        sparkId: spark.id,
+        deleted: false,
+        reason: "storage_cleanup_failed",
+      }));
       await db.update(exchangeSparksTable).set({
         status: "deletion_pending",
         updated_at: new Date(),
@@ -893,7 +906,50 @@ async function processCommunityStoryCleanup(): Promise<void> {
         eq(exchangeSparksTable.id, spark.id),
         eq(exchangeSparksTable.status, "deleting"),
       ));
-      logger.error({ err, sparkId: spark.id }, "Exchange Spark cleanup: storage/database cleanup will retry");
+      logger.error({ sparkId: spark.id }, "Exchange Spark cleanup: storage cleanup will retry");
+      continue;
+    }
+
+    try {
+      // Keep media rows as tombstones. The orphan pass repeats deletion after
+      // the upload-session retention window to catch late in-flight PUTs.
+      const deletedSpark = await db.delete(exchangeSparksTable)
+        .where(eq(exchangeSparksTable.id, spark.id))
+        .returning({ id: exchangeSparksTable.id });
+      if (deletedSpark.length > 0) {
+        logger.info(buildExchangeSparkAuditEvent({
+          action: "cleanup_result",
+          actorUserId: spark.author_user_id,
+          sparkId: spark.id,
+          deleted: true,
+        }));
+      } else {
+        cleanupFailed = true;
+        logger.info(buildExchangeSparkAuditEvent({
+          action: "cleanup_result",
+          actorUserId: spark.author_user_id,
+          sparkId: spark.id,
+          deleted: false,
+          reason: "row_missing_after_cleanup",
+        }));
+      }
+    } catch {
+      cleanupFailed = true;
+      logger.info(buildExchangeSparkAuditEvent({
+        action: "cleanup_result",
+        actorUserId: spark.author_user_id,
+        sparkId: spark.id,
+        deleted: false,
+        reason: "row_cleanup_failed",
+      }));
+      await db.update(exchangeSparksTable).set({
+        status: "deletion_pending",
+        updated_at: new Date(),
+      }).where(and(
+        eq(exchangeSparksTable.id, spark.id),
+        eq(exchangeSparksTable.status, "deleting"),
+      ));
+      logger.error({ sparkId: spark.id }, "Exchange Spark cleanup: database row cleanup will retry");
     }
   }
   const orphanedSparkAssets = await db.select({
@@ -913,9 +969,9 @@ async function processCommunityStoryCleanup(): Promise<void> {
       const keys = mediaStorageKeys(asset);
       for (const key of keys) await deleteAssetStrict(key);
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, asset.id));
-    } catch (err) {
+    } catch {
       cleanupFailed = true;
-      logger.error({ err, mediaAssetId: asset.id }, "Exchange Spark cleanup: orphan media cleanup will retry");
+      logger.error({ mediaAssetId: asset.id }, "Exchange Spark cleanup: orphan media cleanup will retry");
     }
   }
   if (deletedIds.length) {

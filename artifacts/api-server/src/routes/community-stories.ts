@@ -29,6 +29,7 @@ import { enqueueMediaAssetProcessing, enqueueMomentVideoComposition, enqueuePend
 import { mediaStorageKeys } from "../lib/media-cleanup";
 import { mediaProcessingQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
+import { buildCommunityStoryAuditEvent } from "../lib/community-story-audit";
 import {
   canReadCommunityStoryAudience,
   canReadExchangeLinkedStory,
@@ -1370,6 +1371,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           });
         }
       }
+      logger.info(buildCommunityStoryAuditEvent({
+        action: "publish_replayed",
+        actorUserId: userId,
+        storyId: existing.id,
+        storyStatus: existing.status,
+      }), "community-story audit event");
       return res.status(200).json({
         story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() },
       });
@@ -1426,6 +1433,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       if (!isSameCompletedCreate || !first) {
         return res.status(409).json({ error: "One or more uploaded assets have already been attached to a Moment." });
       }
+      logger.info(buildCommunityStoryAuditEvent({
+        action: "publish_replayed",
+        actorUserId: userId,
+        storyId: first.story_id,
+        storyStatus: first.status,
+      }), "community-story audit event");
       return res.status(200).json({
         story: {
           id: first.story_id,
@@ -1806,6 +1819,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
           if (existing.publish_payload_hash !== publishPayloadHash) {
             return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
           }
+          logger.info(buildCommunityStoryAuditEvent({
+            action: "publish_replayed",
+            actorUserId: userId,
+            storyId: existing.id,
+            storyStatus: existing.status,
+          }), "community-story audit event");
           return res.status(200).json({
             story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() },
           });
@@ -1819,6 +1838,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     if (result.kind === "media_too_long") return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
     if (result.kind === "invalid_cover_time") return res.status(400).json({ error: "Each video cover time must be within the probed video duration." });
     if (result.kind === "media_not_ready") return res.status(409).json({ error: "Moment media is still processing. Retry after every file is ready.", error_code: "MOMENT_MEDIA_NOT_READY" });
+    logger.info(buildCommunityStoryAuditEvent({
+      action: "created",
+      actorUserId: userId,
+      storyId: result.story.id,
+      storyStatus: result.story.status,
+    }), "community-story audit event");
     if (result.mediaAssetJobs.length) {
       try {
         await Promise.all(result.mediaAssetJobs.map((job) => enqueueMediaAssetProcessing(job.id, job.mediaType, job.manifest)));
@@ -1889,6 +1914,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         if (existing.publish_payload_hash !== publishPayloadHash) {
           return res.status(409).json({ error: "client_publish_id was already used with different Story content or context." });
         }
+        logger.info(buildCommunityStoryAuditEvent({
+          action: "publish_replayed",
+          actorUserId: userId,
+          storyId: existing.id,
+          storyStatus: existing.status,
+        }), "community-story audit event");
         return res.status(200).json({
           story: { id: existing.id, status: existing.status, expires_at: existing.expires_at.toISOString() },
         });
@@ -2126,11 +2157,21 @@ router.get("/community/stories/:id/moment-composition/play", async (req, res) =>
 router.delete("/community/stories/:id", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
   const storyId = positiveId(req.params.id);
   if (!storyId) return res.status(400).json({ error: "Invalid Story id." });
+  const actorUserId = req.authenticatedUserId!;
   const [ownedStory] = await db.update(communityStoriesTable).set({ status: "deletion_pending" }).where(and(
     eq(communityStoriesTable.id, storyId),
-    eq(communityStoriesTable.author_user_id, req.authenticatedUserId!),
+    eq(communityStoriesTable.author_user_id, actorUserId),
   )).returning({ id: communityStoriesTable.id });
-  if (!ownedStory) return res.json({ deleted: false });
+  if (!ownedStory) {
+    logger.info(buildCommunityStoryAuditEvent({
+      action: "delete_result",
+      actorUserId,
+      storyId,
+      deleted: false,
+      reason: "not_found_or_not_owned",
+    }), "community-story audit event");
+    return res.json({ deleted: false });
+  }
   const universalAssets = await db.select({
     id: mediaAssetsTable.id,
     original_key: mediaAssetsTable.original_key,
@@ -2158,6 +2199,13 @@ router.delete("/community/stories/:id", requireAuth, requireApproved, communityP
       ))
       .limit(1);
     if (processingJob) {
+      logger.info(buildCommunityStoryAuditEvent({
+        action: "delete_result",
+        actorUserId,
+        storyId,
+        deleted: false,
+        reason: "media_processing",
+      }), "community-story audit event");
       return res.status(409).json({
         deleted: false,
         status: "deletion_pending",
@@ -2192,7 +2240,14 @@ router.delete("/community/stories/:id", requireAuth, requireApproved, communityP
   const cleanup = await Promise.allSettled(storageKeys.map((key) => deleteAssetStrict(key)));
   const cleanupFailure = cleanup.find((result) => result.status === "rejected");
   if (cleanupFailure?.status === "rejected") {
-    logger.error({ err: cleanupFailure.reason, storyId }, "community-story: storage cleanup failed; Story kept for retry");
+    logger.error({ storyId }, "community-story: storage cleanup failed; Story kept for retry");
+    logger.info(buildCommunityStoryAuditEvent({
+      action: "delete_result",
+      actorUserId,
+      storyId,
+      deleted: false,
+      reason: "storage_cleanup_failed",
+    }), "community-story audit event");
     return res.status(503).json({
       deleted: false,
       error: "Story media could not be fully removed. The Story was kept so cleanup can be retried.",
@@ -2205,11 +2260,34 @@ router.delete("/community/stories/:id", requireAuth, requireApproved, communityP
     // these rows, catching binary uploads that were already in flight.
     const deleted = await db.delete(communityStoriesTable).where(and(
       eq(communityStoriesTable.id, storyId),
-      eq(communityStoriesTable.author_user_id, req.authenticatedUserId!),
+      eq(communityStoriesTable.author_user_id, actorUserId),
     )).returning({ id: communityStoriesTable.id });
-    return res.json({ deleted: deleted.length > 0 });
-  } catch (error) {
-    logger.error({ err: error, storyId }, "community-story: row cleanup failed; Story kept for retry");
+    if (deleted.length > 0) {
+      logger.info(buildCommunityStoryAuditEvent({
+        action: "delete_result",
+        actorUserId,
+        storyId,
+        deleted: true,
+      }), "community-story audit event");
+      return res.json({ deleted: true });
+    }
+    logger.info(buildCommunityStoryAuditEvent({
+      action: "delete_result",
+      actorUserId,
+      storyId,
+      deleted: false,
+      reason: "row_missing_after_cleanup",
+    }), "community-story audit event");
+    return res.json({ deleted: false });
+  } catch {
+    logger.error({ storyId }, "community-story: row cleanup failed; Story kept for retry");
+    logger.info(buildCommunityStoryAuditEvent({
+      action: "delete_result",
+      actorUserId,
+      storyId,
+      deleted: false,
+      reason: "row_cleanup_failed",
+    }), "community-story audit event");
     return res.status(503).json({
       deleted: false,
       error: "Story cleanup could not be completed. The Story was kept so cleanup can be retried.",

@@ -265,7 +265,8 @@ describe("Exchange Sparks authorization and discovery contract", () => {
     expect(schema).not.toMatch(/^\s*expires_at:/m);
     expect(mediaRoute).toMatch(/contextKind === "exchange_spark"/);
     expect(scheduler).toMatch(/exchange_sparks WHERE exchange_sparks\.id/);
-    expect(scheduler).toMatch(/Exchange Spark cleanup: storage\/database cleanup will retry/);
+    expect(scheduler).toMatch(/Exchange Spark cleanup: storage cleanup will retry/);
+    expect(scheduler).toMatch(/Exchange Spark cleanup: database row cleanup will retry/);
     expect(usersRoute).toMatch(/update\(exchangeSparksTable\)\.set\(\{[\s\S]*status: "deletion_pending"/);
   });
 

@@ -12,6 +12,10 @@ sessions can review the original material without re-creating it.
 - `niakofa-community-v5-2026-09-30/` — seven original Community/Moments
   notes, patches, and code/style snapshots, with superseded-status labels and
   the Village/Local backend boundary; no photography was included.
+- `../../artifacts/mockup-sandbox/src/components/mockups/niakofa-moments/`
+  and `../../artifacts/mockup-sandbox/public/images/niakofa-neighbor-garden.jpg`
+  — retained Current and VerticalFeed visual references and their sample image;
+  production Moments components remain in `artifacts/pay-it-forward/`.
 - `niakofa-2026-09-27-inputs/` — verbatim location-marker, integration/privacy, and network-fault notes; pointers to the retained community architecture image and two Niakofa ZIP references; explicit unapproved-subsidy boundary.
 - `niakofa-exchange-six-tab-community-2026-09-25/` — original Exchange/navigation review notes, improvement ZIP, and six mobile interaction-reference screenshots; references only, not copied product assets.
 - `attached_assets/` — pasted checkpoint notes supplied for the current review.

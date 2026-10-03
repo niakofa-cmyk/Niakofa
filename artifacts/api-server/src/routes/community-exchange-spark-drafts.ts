@@ -13,6 +13,8 @@ import { moderatePostText } from "../lib/post-moderation";
 import { isMediaPlatformV21Enabled } from "../lib/media-platform";
 import { mediaProcessingQueue } from "../lib/queue";
 import { getStorageReadiness } from "../lib/storageReadiness";
+import { buildExchangeSparkAuditEvent } from "../lib/exchange-spark-audit";
+import { logger } from "../lib/logger";
 import {
   exchangeSparkFeatureUnavailableCode,
   safeExchangeSparkFailureCode,
@@ -108,6 +110,12 @@ router.post(
     }).returning({ id: exchangeSparksTable.id });
     if (!spark) return res.status(500).json({ error: "Spark draft could not be created." });
 
+    logger.info(buildExchangeSparkAuditEvent({
+      action: "created",
+      actorUserId: userId,
+      sparkId: spark.id,
+      status: "draft",
+    }));
     return res.status(201).json({
       spark_id: spark.id,
       status: "draft",
@@ -335,7 +343,8 @@ router.post(
           .limit(1);
         return {
           kind: "published" as const,
-          status: spark.status,
+          status: spark.status === "published" ? "published" as const : "pending" as const,
+          replayed: true as const,
           mediaAssetId: asset?.id ?? null,
         };
       }
@@ -381,7 +390,8 @@ router.post(
       }).where(eq(exchangeSparksTable.id, sparkId));
       return {
         kind: "published" as const,
-        status: moderation.status === "approved" ? "published" : "pending",
+        status: moderation.status === "approved" ? "published" as const : "pending" as const,
+        replayed: false as const,
         mediaAssetId: asset.id,
       };
     });
@@ -389,6 +399,12 @@ router.post(
     if (result.kind === "not-found") return res.status(404).json({ error: "Spark draft not found." });
     if (result.kind === "conflict") return res.status(409).json({ error: result.error });
     if (result.kind === "unavailable") return featureUnavailableResponse(res, result.code);
+    logger.info(buildExchangeSparkAuditEvent({
+      action: result.replayed ? "publish_replayed" : "publish_result",
+      actorUserId: userId,
+      sparkId,
+      status: result.status,
+    }));
     return res.status(201).json({
       spark_id: sparkId,
       status: result.status,
@@ -405,14 +421,30 @@ router.delete(
   async (req, res) => {
     const sparkId = positiveId(req.params.sparkId);
     if (!sparkId) return res.status(404).json({ error: "Spark not found." });
+    const actorUserId = req.authenticatedUserId!;
     const [spark] = await db.update(exchangeSparksTable)
       .set({ status: "deletion_pending", updated_at: new Date() })
       .where(and(
         eq(exchangeSparksTable.id, sparkId),
-        eq(exchangeSparksTable.author_user_id, req.authenticatedUserId!),
+        eq(exchangeSparksTable.author_user_id, actorUserId),
       ))
       .returning({ id: exchangeSparksTable.id });
-    if (!spark) return res.status(404).json({ error: "Spark not found." });
+    if (!spark) {
+      logger.info(buildExchangeSparkAuditEvent({
+        action: "delete_result",
+        actorUserId,
+        sparkId,
+        deleted: false,
+        reason: "not_found_or_not_owned",
+      }));
+      return res.status(404).json({ error: "Spark not found." });
+    }
+    logger.info(buildExchangeSparkAuditEvent({
+      action: "delete_requested",
+      actorUserId,
+      sparkId,
+      status: "deletion_pending",
+    }));
     return res.status(202).json({ spark_id: sparkId, status: "deletion_pending" });
   },
 );
