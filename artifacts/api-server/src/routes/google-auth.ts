@@ -289,6 +289,7 @@ router.post("/auth/google", authLimiter, async (req: Request, res: Response) => 
     password_hash: _ph,
     password_reset_code: _prc,
     password_reset_expires_at: _pre,
+    is_disposable_test_account: _disposableTestAccount,
     google_id: _gid, // internal — never expose to clients
     ...safeUser
   } = user;

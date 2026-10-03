@@ -1,9 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 const script = resolve("src/seed-test-accounts.ts");
+const seedSource = readFileSync(script, "utf8");
+
+function accountRoleSection(role) {
+  const start = seedSource.indexOf(`role: "${role}"`);
+  assert.notEqual(start, -1, `missing ${role} account fixture`);
+  const remaining = seedSource.slice(start);
+  const nextRole = remaining.slice(1).search(/\n\s*role:\s*"(?:admin|helper|user)"/);
+  return nextRole === -1 ? remaining : remaining.slice(0, nextRole + 1);
+}
+
+test("only the Admin Test Account seed is designated disposable", () => {
+  const admin = accountRoleSection("admin");
+  assert.match(admin, /name:\s*"Admin Test Account"/);
+  assert.equal((admin.match(/is_disposable_test_account:\s*true/g) ?? []).length, 2);
+
+  for (const role of ["helper", "user"]) {
+    assert.doesNotMatch(accountRoleSection(role), /is_disposable_test_account:\s*true/);
+  }
+});
 
 test("non-local seeding refuses missing explicit passwords", () => {
   const env = { ...process.env };

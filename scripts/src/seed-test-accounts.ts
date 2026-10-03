@@ -202,12 +202,14 @@ const ALL_ACCOUNTS: AccountDef[] = [
       name: "Admin Test Account",
       account_type: "individual",
       is_admin: true,
+      is_disposable_test_account: true,
       is_suspended: false,
       approval_status: "approved",
     },
     repairFields: {
       account_type: "individual",
       is_admin: true,
+      is_disposable_test_account: true,
       is_suspended: false,
       approval_status: "approved",
       // Reset token_version so any force-logout is cleared and the

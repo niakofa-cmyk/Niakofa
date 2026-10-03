@@ -279,6 +279,7 @@ router.get("/admin/accounts", requireAuth, requireAdmin(), adminLimiter, async (
       is_helper: usersTable.is_helper,
       helper_status: usersTable.helper_status,
       is_admin: usersTable.is_admin,
+      is_disposable_test_account: usersTable.is_disposable_test_account,
       is_suspended: usersTable.is_suspended,
       suspended_at: usersTable.suspended_at,
       suspended_reason: usersTable.suspended_reason,
@@ -684,7 +685,7 @@ router.patch("/admin/accounts/:id/approval", requireAuth, requireAdmin(), adminL
     });
   }
 
-  const { password_hash: _ph, ...safe } = updated;
+  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safe } = updated;
   return res.json(safe);
 });
 
@@ -723,7 +724,7 @@ router.patch("/admin/accounts/:id/diaspora-home-hub", requireAuth, requireAdmin(
     .returning();
   if (!updated) return res.status(404).json({ error: "User not found" });
 
-  const { password_hash: _ph, ...safe } = updated;
+  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safe } = updated;
   return res.json(safe);
 });
 

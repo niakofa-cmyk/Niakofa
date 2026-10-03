@@ -180,7 +180,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
   const token = signTokenById(user.id, user.token_version);
   // Strip all sensitive fields — including password_reset_* which were previously
   // leaked in the login response (zip-file fix BUG-SEC-01).
-  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, ...safeUser } = user;
+  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
   return res.json({ user: safeUser, token });
 });
 
@@ -281,7 +281,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
   }).returning();
   const token = signTokenById(user.id, user.token_version);
   // Strip all sensitive fields (zip-file fix BUG-SEC-01 extended to register).
-  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, ...safeUser } = user;
+  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
 
   // ── Post-registration side-effects (non-blocking) ─────────────────────────
   // ALL new registrations now require admin approval, so always notify the
@@ -436,7 +436,7 @@ router.post(["/users/set-initial-password", "/users/reset-password"], authLimite
     .returning();
 
   const token = signTokenById(updated.id, updated.token_version);
-  const { password_hash: _ph2, password_reset_code: _prc, ...safeUser } = updated;
+  const { password_hash: _ph2, password_reset_code: _prc, is_disposable_test_account: _disposableTestAccount, ...safeUser } = updated;
   return res.json({ user: safeUser, token });
 });
 
@@ -481,7 +481,7 @@ router.post("/users/:id/change-password", requireAuth, resolveMeParam, requireOw
     .returning();
 
   const pwToken = signTokenById(updatedPw.id, updatedPw.token_version);
-  const { password_hash: _ph3, ...safePwUser } = updatedPw;
+  const { password_hash: _ph3, is_disposable_test_account: _disposableTestAccount, ...safePwUser } = updatedPw;
   return res.json({ user: safePwUser, token: pwToken });
 });
 
@@ -629,7 +629,7 @@ router.get("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async 
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, ...safeUser } = user;
+  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -667,7 +667,7 @@ router.patch("/users/:id", requireAuth, resolveMeParam, requireOwnership(), asyn
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, ...safeUser } = user;
+  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -718,7 +718,7 @@ router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnershi
       payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
     });
   }
-  const { password_hash: _ph, ...safeUser } = user;
+  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -758,7 +758,7 @@ router.patch("/users/:id/helper-mode", requireAuth, resolveMeParam, requireAppro
     type: bParsed.data.active ? "helper_online" : "helper_offline",
     payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng },
   });
-  const { password_hash: _ph, ...safeUser } = user;
+  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -952,7 +952,7 @@ router.post("/users/:id/avatar", requireAuth, resolveMeParam, requireApproved, r
     .where(eq(usersTable.id, id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, ...safeUser } = user;
+  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
   return res.json(safeUser);
 });
 
@@ -1506,7 +1506,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
       // matching comment on PATCH /users/:id/moderation.
       broadcast({ type: "helper_offline", payload: { id } });
     }
-    const { password_hash: _ph, ...safe } = updated;
+    const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safe } = updated;
     return res.json(safe);
   }
 
@@ -1545,7 +1545,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
     .returning();
 
   if (!updated) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, ...safe } = updated;
+  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safe } = updated;
 
   // Notify admin in real time that a new helper application needs review.
   // (The register-time is_helper=true path also broadcasts this, but most

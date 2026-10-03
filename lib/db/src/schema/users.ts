@@ -33,6 +33,9 @@ export const usersTable = pgTable("users", {
   panic_contacts: text("panic_contacts").array(),
   passive_check_interval_min: integer("passive_check_interval_min").default(30),
   is_admin: boolean("is_admin").notNull().default(false),
+  // Explicit designation for operator-managed disposable test accounts.
+  // This is not user-editable and does not authorize automatic deletion.
+  is_disposable_test_account: boolean("is_disposable_test_account").notNull().default(false),
   password_hash: text("password_hash"),
   // Suspension (migration 0015)
   is_suspended: boolean("is_suspended").notNull().default(false),
@@ -100,6 +103,11 @@ export const usersTable = pgTable("users", {
   index("users_diaspora_hub_id_idx").on(t.diaspora_hub_id),
 ]);
 
-export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, created_at: true, updated_at: true });
+export const insertUserSchema = createInsertSchema(usersTable).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  is_disposable_test_account: true,
+});
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof usersTable.$inferSelect;

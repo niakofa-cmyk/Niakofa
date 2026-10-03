@@ -314,7 +314,7 @@ router.patch("/admin/users/:id/community", requireAuth, requireAdmin(), adminLim
 
   if (!updated) return res.status(404).json({ error: "User not found" });
 
-  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, ...safeUser } = updated;
+  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, is_disposable_test_account: _disposableTestAccount, ...safeUser } = updated;
   logger.info({ user_id: userId, community_id: updated.community_id }, "admin-communities: reassigned user's community");
   return res.json(safeUser);
 });
