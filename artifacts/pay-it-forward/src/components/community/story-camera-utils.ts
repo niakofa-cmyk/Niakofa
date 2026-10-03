@@ -42,6 +42,25 @@ export function chooseRecorderMimeType(
   return supported.find((type) => canPlayType(type.split(";")[0]) !== "") ?? "";
 }
 
+export function recordedVideoMimeType(
+  chunks: readonly Blob[],
+  recorderMimeType: string,
+  requestedMimeType: string,
+): string {
+  return chunks.find((chunk) => chunk.type.startsWith("video/"))?.type
+    || recorderMimeType
+    || requestedMimeType;
+}
+
+export function storyCameraPlaybackErrorMessage(reason: unknown): string | null {
+  const name = reason && typeof reason === "object" && "name" in reason && typeof reason.name === "string"
+    ? reason.name
+    : "";
+  if (name === "AbortError") return null;
+  if (name === "NotAllowedError") return "Playback was blocked by your browser. Use the video controls to try again.";
+  return "The recorded clip preview could not be loaded. Retake it or choose another video.";
+}
+
 export function storyCameraErrorMessage(reason: unknown) {
   const name = reason && typeof reason === "object" && "name" in reason && typeof reason.name === "string"
     ? reason.name

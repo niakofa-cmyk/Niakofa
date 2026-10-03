@@ -384,11 +384,11 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
         {publishNotice && <p role="status" className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm">{publishNotice}</p>}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-4">
           <div>
-            <p className="text-sm font-black">Create an Exchange Spark</p>
+            <p className="text-sm font-black text-foreground">Create an Exchange Spark</p>
             <p className="mt-1 text-xs text-muted-foreground">Use the unified Sparks Studio to create a Moment or connect a video to an active Exchange post you own.</p>
           </div>
-          <Link href="/community/moments?composer=1" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground transition hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background" data-testid="button-create-exchange-spark-studio">
-            Create in Studio
+          <Link href="/community/moments?composer=1" className="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap gap-2 rounded-xl bg-[#00cfff] px-4 py-2 text-sm font-black leading-none text-[#08182b] transition hover:bg-[#66e4ff] focus:outline-none focus:ring-2 focus:ring-[#00cfff] focus:ring-offset-2 focus:ring-offset-background" aria-label="Create an Exchange Spark in Studio" data-testid="button-create-exchange-spark-studio">
+            Create Exchange Spark
           </Link>
         </div>
         <CommunityExchangeSparkComposer onPublished={(status) => {

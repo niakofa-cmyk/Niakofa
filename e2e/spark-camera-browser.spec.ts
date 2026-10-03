@@ -12,6 +12,18 @@ test.describe("Spark camera browser capture", () => {
   );
 
   test("records a playable video and hands a non-empty browser file to the Spark composer", async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalPlay = HTMLMediaElement.prototype.play;
+      let interruptedPreviewOnce = false;
+      HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+        if (!interruptedPreviewOnce && this.matches('[data-testid="video-spark-recorded-preview"]')) {
+          interruptedPreviewOnce = true;
+          HTMLMediaElement.prototype.play = originalPlay;
+          return Promise.reject(new DOMException("Playback was interrupted by a source change.", "AbortError"));
+        }
+        return originalPlay.call(this);
+      };
+    });
     await page.goto(new URL("/e2e-test/spark-camera.html", baseUrl).toString());
     await expect(page.getByTestId("dialog-spark-camera")).toBeVisible();
     const record = page.getByTestId("button-record-spark-video");
@@ -27,6 +39,8 @@ test.describe("Spark camera browser capture", () => {
     await expect.poll(() => preview.evaluate((video: HTMLVideoElement) => video.readyState >= 1), {
       timeout: 10_000,
     }).toBe(true);
+    await page.getByTestId("button-play-spark-preview").click();
+    await expect(page.getByText(/recorded clip preview could not be loaded/i)).toHaveCount(0);
     const playbackStarted = await preview.evaluate(async (video: HTMLVideoElement) => {
       video.muted = true;
       const start = video.currentTime;

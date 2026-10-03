@@ -20,6 +20,11 @@ export function canReadCommunityStoryAudience(
   return audience === "community" && viewerCommunityId === storyCommunityId;
 }
 
+export function normalizeCommunityStoryMentionQuery(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/^@/, "").replace(/[\\%_]/g, "\\$&");
+}
+
 export async function filterStoryMentionRecipientsByVisibility<T extends { id: number }>(
   candidates: readonly T[],
   authorUserId: number,

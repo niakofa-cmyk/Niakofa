@@ -5,6 +5,7 @@ import {
   canWriteStoryMediaContext,
   filterStoryMentionRecipientsByVisibility,
   isDuplicateExchangeStoryVideoSession,
+  normalizeCommunityStoryMentionQuery,
   type ExchangeStoryVisibilityPolicyInput,
 } from "../lib/community-story-policy";
 
@@ -102,6 +103,14 @@ describe("Story mention notification visibility", () => {
     );
 
     expect(recipients).toEqual([{ id: 33 }]);
+  });
+});
+
+describe("Story mention username search", () => {
+  it("accepts @handles, trims whitespace, and escapes SQL LIKE wildcards", () => {
+    expect(normalizeCommunityStoryMentionQuery("  @Neighbor_1  ")).toBe("Neighbor\\_1");
+    expect(normalizeCommunityStoryMentionQuery("%_")).toBe("\\%\\_");
+    expect(normalizeCommunityStoryMentionQuery(null)).toBe("");
   });
 });
 

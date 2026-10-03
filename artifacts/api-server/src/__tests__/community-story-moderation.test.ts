@@ -31,6 +31,19 @@ describe("Community Moment moderation contracts", () => {
     expect(storyRoutes).not.toContain("broadcast(");
   });
 
+  it("searches Studio mentions by handle while excluding inactive and self accounts", () => {
+    const mentionRoute = interactionRoutes.slice(interactionRoutes.indexOf('router.get("/community/stories/mention-candidates"'));
+    expect(mentionRoute).toContain("normalizeCommunityStoryMentionQuery(rawQuery)");
+    expect(mentionRoute).toContain('const usernameOnly = rawQuery.startsWith("@")');
+    expect(mentionRoute).toContain("username: usersTable.username");
+    expect(mentionRoute).toContain("${usersTable.username} ILIKE ${pattern}");
+    expect(mentionRoute).toContain('eq(usersTable.approval_status, "approved")');
+    expect(mentionRoute).toContain("eq(usersTable.is_suspended, false)");
+    expect(mentionRoute).toContain('eq(usersTable.deletion_status, "active")');
+    expect(mentionRoute).toContain("${usersTable.id} <> ${userId}");
+    expect(storyRoutes).toContain('eq(usersTable.deletion_status, "active")');
+  });
+
   it("keeps mute preferences private and reversible", () => {
     expect(storyRoutes).toContain('router.get("/community/stories/muted-authors", requireAuth, requireApproved');
     expect(storyRoutes).toContain('router.put("/community/stories/authors/:id/mute", requireAuth, requireApproved');

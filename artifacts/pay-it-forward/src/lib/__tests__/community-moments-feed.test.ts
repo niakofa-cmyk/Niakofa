@@ -130,7 +130,10 @@ describe("authorized Community Moments browsing feed", () => {
 
   test("Exchange creation defaults to the unified Studio and keeps legacy draft recovery available", () => {
     assert.match(exchange, /href="\/community\/moments\?composer=1"/);
-    assert.match(exchange, /Create in Studio/);
+    assert.match(exchange, /Create Exchange Spark/);
+    assert.match(exchange, /bg-\[#00cfff\]/);
+    assert.match(exchange, /text-\[#08182b\]/);
+    assert.match(exchange, /whitespace-nowrap/);
     assert.match(communityPage, /composerValues\.length === 1 && composerValues\[0\] === "1"/);
     assert.match(communityPage, /openComposerSignal=\{openMomentsComposerSignal \+ scopedSparkComposerSignal\}/);
     assert.match(momentsView, /openComposerSignal=\{openComposerSignal\}/);
@@ -139,6 +142,13 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(exchangeComposer, /if \(!draftEntryVisible\) return null/);
     assert.match(exchangeComposer, /Resume saved video draft/);
     assert.match(exchangeView, /Post to Exchange/);
+  });
+
+  test("Studio mention suggestions display selected @usernames and avoid reopening after selection", () => {
+    assert.match(studio, /Search by name or @username/);
+    assert.match(studio, /candidate\.username \? `@\$\{candidate\.username\}` : candidate\.name/);
+    assert.match(studio, /display_name: displayName, mention_user_id: candidate\.id/);
+    assert.match(studio, /tool !== "mention" \|\| mentionUserId !== null/);
   });
 
   test("Create a Spark uses a tab-scoped signal and clears one-shot composer links on close", () => {

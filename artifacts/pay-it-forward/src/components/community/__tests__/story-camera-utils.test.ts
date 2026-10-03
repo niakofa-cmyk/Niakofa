@@ -9,6 +9,8 @@ import {
   storyCameraErrorMessage,
   storyCameraRecordingConstraints,
   chooseRecorderMimeType,
+  recordedVideoMimeType,
+  storyCameraPlaybackErrorMessage,
 } from "../story-camera-utils";
 
 const component = readFileSync(new URL("../StoryCameraRecorder.tsx", import.meta.url), "utf8");
@@ -71,7 +73,8 @@ test("recording uses a clip format the same browser can play", () => {
   assert.match(component, /chooseRecorderMimeType\(/);
   assert.match(component, /playsInline controls preload="auto"/);
   assert.match(component, /data-testid="button-play-spark-preview"/);
-  assert.match(component, /const baseType = mimeType\.split\(";"\)\[0\]/);
+  assert.match(component, /const actualMimeType = recordedVideoMimeType\(chunksRef\.current, recorder\.mimeType, mimeType\)/);
+  assert.match(component, /const baseType = actualMimeType\.split\(";"\)\[0\]/);
   assert.match(component, /new File\(\[blob\]/);
   assert.match(component, /type: baseType/);
   assert.match(storyRail, /const onCameraVideo = \(recorded: File\[\]\) => \{[\s\S]*?selectStudioFiles\(recorded\)/);
@@ -85,6 +88,15 @@ test("recording uses a clip format the same browser can play", () => {
   assert.doesNotMatch(component, />Start camera</);
   assert.match(component, /stopTracks\(\);\s+setPhase\("preview"\);/);
   assert.match(component, /if \(streamRef\.current\) setPhase\("camera"\);\s*else \{\s*setPhase\("idle"\);\s*void startCamera\(\);/);
+});
+
+test("recorded files use the emitted MIME type and transient playback aborts do not look like corrupt clips", () => {
+  const emitted = new Blob(["clip"], { type: "video/mp4;codecs=avc1" });
+  assert.equal(recordedVideoMimeType([emitted], "video/webm", "video/webm;codecs=vp8"), "video/mp4;codecs=avc1");
+  assert.equal(recordedVideoMimeType([], "", "video/webm;codecs=vp8"), "video/webm;codecs=vp8");
+  assert.equal(storyCameraPlaybackErrorMessage({ name: "AbortError" }), null);
+  assert.match(storyCameraPlaybackErrorMessage({ name: "NotAllowedError" }) ?? "", /blocked.*video controls/i);
+  assert.match(storyCameraPlaybackErrorMessage(new Error("decode failed")) ?? "", /preview could not be loaded/i);
 });
 
 test("fresh Sparks open the live camera immediately, and restored drafts resume in the studio", () => {

@@ -1619,7 +1619,12 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     }
     const mentionUsers = mentionIds.length ? await db.select({ id: usersTable.id, name: usersTable.name })
       .from(usersTable)
-      .where(and(inArray(usersTable.id, mentionIds), eq(usersTable.approval_status, "approved"), eq(usersTable.is_suspended, false))) : [];
+      .where(and(
+        inArray(usersTable.id, mentionIds),
+        eq(usersTable.approval_status, "approved"),
+        eq(usersTable.is_suspended, false),
+        eq(usersTable.deletion_status, "active"),
+      )) : [];
     if (mentionUsers.length !== mentionIds.length) return res.status(400).json({ error: "One or more Story mentions are no longer available." });
     const result = await db.transaction(async (tx) => {
       const stagedAssets = mediaAssetIds.length

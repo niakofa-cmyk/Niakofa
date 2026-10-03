@@ -191,7 +191,7 @@ export function CommunityStoryRail({
   const [sticker, setSticker] = useState("💙");
   const [mention, setMention] = useState("");
   const [mentionUserId, setMentionUserId] = useState<number | null>(null);
-  const [mentionCandidates, setMentionCandidates] = useState<Array<{ id: number; name: string; avatar_url: string | null }>>([]);
+  const [mentionCandidates, setMentionCandidates] = useState<Array<{ id: number; name: string; username: string | null; avatar_url: string | null }>>([]);
   const [textColor, setTextColor] = useState("#ffffff");
   const [textSize, setTextSize] = useState("18");
   const [textAlign, setTextAlign] = useState<"left" | "center" | "right">("center");
@@ -1448,20 +1448,23 @@ export function CommunityStoryRail({
   };
 
   useEffect(() => {
-    if (tool !== "mention") return;
+    if (tool !== "mention" || mentionUserId !== null) {
+      setMentionCandidates([]);
+      return;
+    }
     let active = true;
     const timer = window.setTimeout(async () => {
       try {
         const response = await fetch(`/api/community/stories/mention-candidates?q=${encodeURIComponent(mention)}`, { headers: authHeaders() });
         if (!response.ok) throw new Error("Could not find members. Try again.");
-        const data = await response.json() as { users?: Array<{ id: number; name: string; avatar_url: string | null }> };
+        const data = await response.json() as { users?: Array<{ id: number; name: string; username: string | null; avatar_url: string | null }> };
         if (active) setMentionCandidates(Array.isArray(data.users) ? data.users : []);
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : "Could not find members.");
       }
     }, 180);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [mention, tool]);
+  }, [mention, mentionUserId, tool]);
 
   useEffect(() => {
     if (selectedStoryId === null) return;
@@ -1922,7 +1925,7 @@ export function CommunityStoryRail({
                 </div>}
                 {tool === "stickers" && <div className="flex gap-2 overflow-x-auto pb-1">{["💙", "🙏", "🤝", "🌍", "🙌", "✨", "📍"].map((item) => <button key={item} type="button" onClick={() => { setSticker(item); upsertEditorElement({ id: "sticker", type: "sticker", payload: { sticker: item }, position_x: 50, position_y: 50, scale: 1, rotation: 0, z_index: 15 }); }} className={`h-11 w-11 shrink-0 rounded-xl border text-xl ${sticker === item ? "border-primary bg-primary/10" : "border-white/20"}`} aria-label={`Add ${item} sticker`}>{item}</button>)}</div>}
                 {tool === "effects" && <div className="flex gap-2 overflow-x-auto pb-1">{(["none", "warmth", "contrast", "grayscale", "vignette"] as Effect[]).map((item) => <button key={item} type="button" onClick={() => setEffect(item)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold capitalize ${effect === item ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}>{item}</button>)}</div>}
-                {tool === "mention" && <div className="space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); setEditorElements((current) => current.filter((element) => element.id !== "mention")); }} className="min-h-11 w-full rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="@ Mention a community member" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { setMention(candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); upsertEditorElement({ id: "mention", type: "mention", payload: { display_name: candidate.name, mention_user_id: candidate.id }, position_x: 50, position_y: 65, scale: 1, rotation: 0, z_index: 18 }); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} />{candidate.name}</button>)}</div>}
+                {tool === "mention" && <div className="space-y-2"><input value={mention} onChange={(event) => { setMention(event.target.value); setMentionUserId(null); setMentionCandidates([]); setEditorElements((current) => current.filter((element) => element.id !== "mention")); }} className="min-h-11 w-full rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white outline-none focus:border-primary" placeholder="Search by name or @username" />{mentionCandidates.slice(0, 5).map((candidate) => <button key={candidate.id} type="button" onClick={() => { const displayName = candidate.username ?? candidate.name; setMention(candidate.username ? `@${candidate.username}` : candidate.name); setMentionUserId(candidate.id); setMentionCandidates([]); upsertEditorElement({ id: "mention", type: "mention", payload: { display_name: displayName, mention_user_id: candidate.id }, position_x: 50, position_y: 65, scale: 1, rotation: 0, z_index: 18 }); }} className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold ${mentionUserId === candidate.id ? "border-primary bg-primary/10 text-primary" : "border-white/20"}`}><MessageAvatar name={candidate.name} avatarUrl={candidate.avatar_url} size={28} /><span className="min-w-0"><span className="block truncate">{candidate.username ? `@${candidate.username}` : candidate.name}</span>{candidate.username && candidate.name.toLocaleLowerCase() !== candidate.username.toLocaleLowerCase() && <span className="block truncate text-[10px] font-medium text-white/60">{candidate.name}</span>}</span></button>)}</div>}
                 {tool === "text" && <div className="grid grid-cols-3 gap-2"><label className="text-[10px] font-bold text-white/65">Color<input type="color" value={textColor} onChange={(event) => { const value = event.target.value; setTextColor(value); updateEditorElement("caption", { payload: { color: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-white/10" /></label><label className="text-[10px] font-bold text-white/65">Size<select value={textSize} onChange={(event) => { const value = event.target.value; setTextSize(value); updateEditorElement("caption", { payload: { font_size: Number(value) } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="14">Small</option><option value="18">Medium</option><option value="26">Large</option></select></label><label className="text-[10px] font-bold text-white/65">Align<select value={textAlign} onChange={(event) => { const value = event.target.value as "left" | "center" | "right"; setTextAlign(value); updateEditorElement("caption", { payload: { align: value } }); }} className="mt-1 h-9 w-full rounded-lg border border-white/20 bg-black px-1 text-xs"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><div className="col-span-3"><p className="mb-1 text-[10px] font-bold text-white/65">Text background</p><div className="flex gap-2">{TEXT_STORY_BACKGROUNDS.map((color) => <button key={color} type="button" onClick={() => setTextBackground(color)} className={`h-8 w-8 rounded-full border-2 ${textBackground === color ? "border-white ring-2 ring-primary" : "border-white/20"}`} style={{ background: color }} aria-label={`Choose background ${color}`} />)}</div></div></div>}
                 <textarea value={caption} onChange={(event) => updateCaption(event.target.value)} maxLength={1000} rows={2} className="mt-3 w-full resize-none rounded-2xl border border-white/20 bg-white/10 p-3 text-sm text-white outline-none focus:border-primary" placeholder="Add text to your Spark…" />
                  <div className="mt-4 space-y-4 rounded-2xl border border-white/15 bg-black/15 p-3" data-testid="panel-moment-accessibility">

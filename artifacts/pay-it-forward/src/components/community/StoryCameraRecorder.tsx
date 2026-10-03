@@ -7,6 +7,8 @@ import {
   storyCameraConstraints,
   storyCameraErrorMessage,
   chooseRecorderMimeType,
+  recordedVideoMimeType,
+  storyCameraPlaybackErrorMessage,
   type StoryCameraFacingMode,
 } from "./story-camera-utils";
 
@@ -365,7 +367,8 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
           stopRecordingAudio();
           return;
         }
-        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const actualMimeType = recordedVideoMimeType(chunksRef.current, recorder.mimeType, mimeType);
+        const blob = new Blob(chunksRef.current, { type: actualMimeType });
         if (!blob.size) {
           const savedClips = clipsRef.current;
           if (savedClips.length && !streamRef.current) {
@@ -379,7 +382,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
           return;
         }
         updateRecordedVideoMs(spent);
-        const baseType = mimeType.split(";")[0];
+        const baseType = actualMimeType.split(";")[0];
         const recorded = new File([blob], `spark-${Date.now()}.${baseType === "video/mp4" ? "mp4" : "webm"}`, {
           type: baseType,
           lastModified: Date.now(),
@@ -645,7 +648,10 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     if (!video) return;
     if (video.paused) {
       video.muted = false;
-      void video.play().catch(() => setError("The recorded clip preview could not be loaded. Retake it or choose another video."));
+      void video.play().catch((reason) => {
+        const message = storyCameraPlaybackErrorMessage(reason);
+        if (message && !disposedRef.current && video === previewVideoRef.current && previewUrlRef.current) setError(message);
+      });
       return;
     }
     video.pause();
@@ -674,7 +680,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
         {phase !== "preview" && <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" aria-label="Live Spark camera preview" />}
         {phase === "preview" && file && previewUrl && (file.type.startsWith("video/")
           ? <>
-            <video ref={previewVideoRef} key={previewUrl} src={previewUrl} playsInline controls preload="auto" onPlay={() => { setError(""); setPreviewPlaying(true); }} onPause={() => setPreviewPlaying(false)} onEnded={() => setPreviewPlaying(false)} onError={(event) => { const video = event.currentTarget; if (video.error?.code === 1 || video.currentSrc !== previewUrlRef.current) return; setError("The recorded clip preview could not be loaded. Retake it or choose another video."); }} className="h-full w-full bg-black object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
+            <video ref={previewVideoRef} key={previewUrl} src={previewUrl} playsInline controls preload="auto" onPlay={() => { setError(""); setPreviewPlaying(true); }} onPause={() => setPreviewPlaying(false)} onEnded={() => setPreviewPlaying(false)} onError={(event) => { const video = event.currentTarget; if (video.error?.code === 1 || !previewUrlRef.current || (video.currentSrc && video.currentSrc !== previewUrlRef.current)) return; setError("The recorded clip preview could not be loaded. Retake it or choose another video."); }} className="h-full w-full bg-black object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
             {!previewPlaying && <button type="button" onClick={togglePreviewPlayback} aria-label="Play recording" className="absolute left-1/2 top-1/2 z-10 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[#00cfff] text-[#08182b]" data-testid="button-play-spark-preview"><Play aria-hidden="true" className="h-7 w-7" /></button>}
           </>
           : <img src={previewUrl} alt="Captured Spark photo preview" className="h-full w-full object-contain" />)}

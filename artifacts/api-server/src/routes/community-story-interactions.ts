@@ -13,6 +13,7 @@ import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { communityPostLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
+import { normalizeCommunityStoryMentionQuery } from "../lib/community-story-policy";
 import { createMessageNotification } from "../lib/message-notifications";
 import { sendToUser } from "../lib/ws-hub";
 import { viewerCanReadStory } from "./community-stories";
@@ -205,11 +206,29 @@ router.post("/community/stories/:id/share", requireAuth, requireApproved, genera
 
 router.get("/community/stories/mention-candidates", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
-  const query = typeof req.query.q === "string" ? req.query.q.trim().replace(/[%_]/g, "\\$&") : "";
-  const rows = await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
+  const rawQuery = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const usernameOnly = rawQuery.startsWith("@");
+  const query = normalizeCommunityStoryMentionQuery(rawQuery);
+  const pattern = query ? `%${query}%` : "";
+  const rows = await db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    username: usersTable.username,
+    avatar_url: usersTable.avatar_url,
+  })
     .from(usersTable)
-    .where(and(eq(usersTable.approval_status, "approved"), eq(usersTable.is_suspended, false), sql`${usersTable.id} <> ${userId}`, query ? sql`${usersTable.name} ILIKE ${`%${query}%`}` : sql`true`))
-    .orderBy(usersTable.name)
+    .where(and(
+      eq(usersTable.approval_status, "approved"),
+      eq(usersTable.is_suspended, false),
+      eq(usersTable.deletion_status, "active"),
+      sql`${usersTable.id} <> ${userId}`,
+      query
+        ? usernameOnly
+          ? sql`${usersTable.username} ILIKE ${pattern}`
+          : sql`(${usersTable.username} ILIKE ${pattern} OR ${usersTable.name} ILIKE ${pattern})`
+        : sql`true`,
+    ))
+    .orderBy(sql`lower(coalesce(${usersTable.username}, ${usersTable.name}))`)
     .limit(20);
   return res.json({ users: rows });
 });
