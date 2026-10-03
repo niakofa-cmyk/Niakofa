@@ -5,6 +5,11 @@ import type { StudioElement } from "./story-studio-publish";
 export type StudioDraft = CommunityMomentDraft & {
   exchangeDraftId?: number | null;
   exchangeFileFingerprint?: string;
+  familyStoryDestination?: "family-only" | "moment" | null;
+  familyStoryCopyEnabled?: boolean;
+  familyStoryFamilyId?: number | null;
+  familyStoryArchiveId?: string;
+  familyStoryDurationMs?: number | null;
   clientPublishId?: string;
   attemptedSignature?: string;
   publishAssetIds?: number[];

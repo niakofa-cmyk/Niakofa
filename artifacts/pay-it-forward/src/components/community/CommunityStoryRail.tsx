@@ -62,6 +62,7 @@ import {
 } from "./CommunityStoryVisual";
 import { SparkFamilyStoryPreservationControl } from "./SparkFamilyStoryPreservationControl";
 import {
+  chooseMomentCutdownIndexes,
   canCopyStudioFilesToFamily,
   FAMILY_STORY_CANDIDATE_DURATION_MS,
   saveSparkAsPrivateFamilyStory,
@@ -137,8 +138,10 @@ export function CommunityStoryRail({
   const [archiveEnabled, setArchiveEnabled] = useState(false);
   const [remixEnabled, setRemixEnabled] = useState(false);
   const [familyStoryDurationMs, setFamilyStoryDurationMs] = useState<number | null>(null);
+  const [familyStoryDestination, setFamilyStoryDestination] = useState<"family-only" | "moment" | null>(null);
   const [familyStoryCopyEnabled, setFamilyStoryCopyEnabled] = useState(false);
   const [familyStoryFamilyId, setFamilyStoryFamilyId] = useState<number | null>(null);
+  const [familyStoryArchiveId, setFamilyStoryArchiveId] = useState(() => newStudioPublishId());
   const [checkingStudioDuration, setCheckingStudioDuration] = useState(false);
   useEffect(() => {
     // The page-level signal starts at 0, so a positive value is always an
@@ -280,8 +283,10 @@ export function CommunityStoryRail({
     if (selectedMediaFingerprintRef.current === selectedMediaFingerprint) return;
     selectedMediaFingerprintRef.current = selectedMediaFingerprint;
     setFamilyStoryDurationMs(null);
+    setFamilyStoryDestination(null);
     setFamilyStoryCopyEnabled(false);
     setFamilyStoryFamilyId(null);
+    setFamilyStoryArchiveId(newStudioPublishId());
   }, [selectedMediaFingerprint]);
   const validCameraClipReel = Boolean(cameraClipReelMarker
     && isCameraClipReelSelection(selectedFiles)
@@ -466,8 +471,10 @@ export function CommunityStoryRail({
     setArchiveEnabled(false);
     setRemixEnabled(false);
     setFamilyStoryDurationMs(null);
+    setFamilyStoryDestination(null);
     setFamilyStoryCopyEnabled(false);
     setFamilyStoryFamilyId(null);
+    setFamilyStoryArchiveId(newStudioPublishId());
     setCheckingStudioDuration(false);
     setExchangeListingId(empty.listingId);
     setTextBackground(TEXT_STORY_BACKGROUNDS[0]);
@@ -513,6 +520,8 @@ export function CommunityStoryRail({
         setFiles(draft.files ?? []);
         const recoveredFiles = draft.files ?? [];
         const recoveredSelection = draft.selection ?? [];
+        selectedMediaFingerprintRef.current = selectedStudioFiles(recoveredFiles, recoveredSelection)
+          .map(studioFileFingerprint).join("\u001f");
         const recoveredCameraFiles = selectedStudioFiles(recoveredFiles, recoveredSelection);
         const recoveredMarker = recoveredDraft.cameraClipReel;
         const markerMatches = Boolean(recoveredMarker
@@ -541,6 +550,20 @@ export function CommunityStoryRail({
         setTrimPreview(draft.trimPreview ?? {});
         setCoverTimes(draft.coverTimes ?? {});
         setUploadedIds(draft.uploadedMediaAssetIds ?? []);
+        const recoveredFamilyDestination = recoveredDraft.familyStoryDestination === "family-only"
+          || recoveredDraft.familyStoryDestination === "moment"
+          ? recoveredDraft.familyStoryDestination
+          : null;
+        setFamilyStoryDurationMs(Number.isFinite(recoveredDraft.familyStoryDurationMs)
+          ? recoveredDraft.familyStoryDurationMs ?? null
+          : null);
+        setFamilyStoryDestination(recoveredFamilyDestination);
+        setFamilyStoryCopyEnabled(recoveredFamilyDestination === "moment" && recoveredDraft.familyStoryCopyEnabled === true);
+        setFamilyStoryFamilyId(recoveredFamilyDestination ? recoveredDraft.familyStoryFamilyId ?? null : null);
+        setFamilyStoryArchiveId(typeof recoveredDraft.familyStoryArchiveId === "string"
+          && /^[a-zA-Z0-9_-]{1,64}$/.test(recoveredDraft.familyStoryArchiveId)
+          ? recoveredDraft.familyStoryArchiveId
+          : newStudioPublishId());
         if (hasRecoverableWork) setStudioStep("edit");
         setDraftSaved(true);
       }
@@ -579,6 +602,11 @@ export function CommunityStoryRail({
     uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
     cameraClipReel: cameraClipReelMarker,
     cameraReelStoryId: pendingCameraReelStoryId,
+    familyStoryDestination,
+    familyStoryCopyEnabled,
+    familyStoryFamilyId,
+    familyStoryArchiveId,
+    familyStoryDurationMs,
     ...momentAccessibility,
     updatedAt: Date.now(),
   });
@@ -880,8 +908,10 @@ export function CommunityStoryRail({
     setArchiveEnabled(false);
     setRemixEnabled(false);
     setFamilyStoryDurationMs(null);
+    setFamilyStoryDestination(null);
     setFamilyStoryCopyEnabled(false);
     setFamilyStoryFamilyId(null);
+    setFamilyStoryArchiveId(newStudioPublishId());
     setCheckingStudioDuration(false);
   };
 
@@ -889,9 +919,6 @@ export function CommunityStoryRail({
     publishControllerRef.current?.abort();
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     void queueDraftSaveRef.current().catch(() => {});
-    setFamilyStoryDurationMs(null);
-    setFamilyStoryCopyEnabled(false);
-    setFamilyStoryFamilyId(null);
     setCheckingStudioDuration(false);
     setComposerOpen(false);
     const query = new URLSearchParams(window.location.search);
@@ -977,6 +1004,7 @@ export function CommunityStoryRail({
     }
     if (exchangeListingId && !forceCommunityCheck) {
       setFamilyStoryDurationMs(null);
+      setFamilyStoryDestination(null);
       setFamilyStoryCopyEnabled(false);
       setFamilyStoryFamilyId(null);
       setStudioStep(nextStep);
@@ -990,9 +1018,12 @@ export function CommunityStoryRail({
     try {
       const durations = await validateStudioFiles(selectedForCheck);
       if (selectedMediaFingerprintRef.current !== fingerprint) return;
-      setFamilyStoryDurationMs(totalStudioVideoDurationMs(selectedForCheck, durations));
-      if (totalStudioVideoDurationMs(selectedForCheck, durations) > FAMILY_STORY_CANDIDATE_DURATION_MS) {
-        setFamilyStoryCopyEnabled(true);
+      const durationMs = totalStudioVideoDurationMs(selectedForCheck, durations);
+      setFamilyStoryDurationMs(durationMs);
+      if (durationMs <= FAMILY_STORY_CANDIDATE_DURATION_MS) {
+        setFamilyStoryDestination(null);
+        setFamilyStoryCopyEnabled(false);
+        setFamilyStoryFamilyId(null);
       }
       setStudioStep(nextStep);
     } catch (reason) {
@@ -1011,8 +1042,15 @@ export function CommunityStoryRail({
       setError("Add a photo, video, or a few words before publishing.");
       return;
     }
-    if (familyStoryCopyEnabled && familyStoryDurationMs !== null
-      && familyStoryDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS && !familyStoryFamilyId) {
+    if (familyStoryDurationMs !== null
+      && familyStoryDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS
+      && familyStoryDestination === null) {
+      setError("Choose whether to save the full recording privately or create a Moment capped at 60 seconds.");
+      return;
+    }
+    if ((familyStoryDestination === "family-only"
+      || (familyStoryDestination === "moment" && familyStoryCopyEnabled))
+      && !familyStoryFamilyId) {
       setError("Choose a Family Space for the private Family Story copy, or turn the option off.");
       return;
     }
@@ -1026,10 +1064,11 @@ export function CommunityStoryRail({
       if (signatureRef.current !== signature) throw new Error("The Spark changed while preparing it. Review the draft and try again.");
       const selectedIndexes = [...new Set(gallerySelection)].filter((index) => Number.isInteger(index) && index >= 0 && index < files.length);
       const publishFiles = selectedStudioFiles(files, selectedIndexes);
-      if (responseTargetId && (!publishFiles.length || publishFiles.some((file) => !file.type.startsWith("video/")))) {
+      const familyOnlyRequested = familyStoryDestination === "family-only";
+      if (!familyOnlyRequested && responseTargetId && (!publishFiles.length || publishFiles.some((file) => !file.type.startsWith("video/")))) {
         throw new Error("Choose a video clip in this Studio to make a response.");
       }
-      if (responseTargetId && (audience !== "community" || exchangeListingId)) {
+      if (!familyOnlyRequested && responseTargetId && (audience !== "community" || exchangeListingId)) {
         throw new Error("Video responses are shared with the same Community, not a Hub or Exchange listing.");
       }
       if (musicFile && exchangeListingId) {
@@ -1134,39 +1173,76 @@ export function CommunityStoryRail({
       }
       const videoDurationsMs = await validateStudioFiles(publishFiles);
       const selectedVideoDurationMs = totalStudioVideoDurationMs(publishFiles, videoDurationsMs);
-      let shouldSaveFamilyStory = false;
-      if (familyStoryCopyEnabled) {
-        if (exchangeListingId) {
-          throw new Error("Private Family Story copies are available for Community and Hub Moments, not Exchange Sparks.");
-        }
-        if (selectedVideoDurationMs <= FAMILY_STORY_CANDIDATE_DURATION_MS) {
-          throw new Error("This media selection no longer qualifies for the over-60-second Family Story option. Review your selection before publishing.");
-        }
+      const overMomentLimit = selectedVideoDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS;
+      const familyStoryOnly = overMomentLimit && familyStoryDestination === "family-only";
+      if (overMomentLimit && familyStoryDestination === null) {
+        throw new Error("Choose whether to save the full recording privately or create a Moment capped at 60 seconds.");
+      }
+      if (familyStoryDestination !== null && !overMomentLimit) {
+        throw new Error("This selection no longer exceeds 60 seconds. Review it before choosing a destination.");
+      }
+
+      const shouldSaveFamilyStory = familyStoryOnly
+        || (overMomentLimit && familyStoryDestination === "moment" && familyStoryCopyEnabled);
+      if (shouldSaveFamilyStory) {
         if (!familyStoryFamilyId) {
-          throw new Error("Choose a Family Space for the private Family Story copy, or turn the option off.");
+          throw new Error("Choose a Family Space for the private Family Story copy.");
         }
         if (!canCopyStudioFilesToFamily(publishFiles)) {
           throw new Error("Every item in a private Family Story copy must be a supported photo or video no larger than 20 MB.");
         }
-        shouldSaveFamilyStory = true;
       }
-      const tags = parseMomentStudioTags(momentAccessibility.momentTagsInput);
-      const mediaAltTexts = selectedIndexes.map((index) => momentAccessibility.momentAltTexts[index] ?? "");
-      const mediaCaptionsVtt = selectedIndexes.map((index) => momentAccessibility.momentCaptionsVtt[index] ?? "");
-      mediaCaptionsVtt.forEach((captionsVtt, index) => {
-        if (!captionsVtt.trim() || !publishFiles[index].type.startsWith("video/")) return;
-        const captionError = validateMomentStudioWebVtt(captionsVtt, videoDurationsMs[index]);
-        if (captionError) throw new Error(`${publishFiles[index].name}: ${captionError}`);
-      });
-      buildMomentMediaAccessibility(
-        publishFiles,
-        publishFiles.map((_, index) => index),
-        publishFiles.map((_, index) => index + 1),
-        Object.fromEntries(mediaAltTexts.map((text, index) => [index, text])),
-        Object.fromEntries(mediaCaptionsVtt.map((text, index) => [index, text])),
-      );
+
+      const momentSelectionIndexes = overMomentLimit && !familyStoryOnly
+        ? chooseMomentCutdownIndexes(publishFiles, videoDurationsMs)
+        : publishFiles.map((_, index) => index);
+      const momentFiles = momentSelectionIndexes.map((index) => publishFiles[index]);
+      const momentDurationsMs = momentSelectionIndexes.map((index) => videoDurationsMs[index]);
+      const momentSourceIndexes = momentSelectionIndexes.map((index) => selectedIndexes[index]);
+
+      const tags = familyStoryOnly ? [] : parseMomentStudioTags(momentAccessibility.momentTagsInput);
+      const mediaAltTexts = momentSourceIndexes.map((index) => momentAccessibility.momentAltTexts[index] ?? "");
+      const mediaCaptionsVtt = momentSourceIndexes.map((index) => momentAccessibility.momentCaptionsVtt[index] ?? "");
+      if (!familyStoryOnly) {
+        mediaCaptionsVtt.forEach((captionsVtt, index) => {
+          if (!captionsVtt.trim() || !momentFiles[index].type.startsWith("video/")) return;
+          const captionError = validateMomentStudioWebVtt(captionsVtt, momentDurationsMs[index]);
+          if (captionError) throw new Error(`${momentFiles[index].name}: ${captionError}`);
+        });
+        buildMomentMediaAccessibility(
+          momentFiles,
+          momentFiles.map((_, index) => index),
+          momentFiles.map((_, index) => index + 1),
+          Object.fromEntries(mediaAltTexts.map((text, index) => [index, text])),
+          Object.fromEntries(mediaCaptionsVtt.map((text, index) => [index, text])),
+        );
+      }
+
+      if (shouldSaveFamilyStory) {
+        setPublishStatus("Saving the full original in Family Stories…");
+        await saveSparkAsPrivateFamilyStory({
+          familyId: familyStoryFamilyId!,
+          archiveId: familyStoryArchiveId,
+          caption,
+          files: publishFiles,
+          signal: controller.signal,
+          onProgress: (status) => setPublishStatus(status),
+        });
+        privateFamilyCopySaved = true;
+      }
+      if (familyStoryOnly) {
+        draftGenerationRef.current++;
+        if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+        await draftQueueRef.current.catch(() => {});
+        await discardStudioDraft(userId, hubId);
+        resetComposer();
+        setComposerOpen(false);
+        navigate(`/family/${familyStoryFamilyId}`);
+        return;
+      }
+
       const elements: Array<Record<string, unknown>> = [];
-      if (!publishFiles.length) elements.push({ type: "background", payload: { color: textBackground }, position_x: 50, position_y: 50, z_index: 0 });
+      if (!momentFiles.length) elements.push({ type: "background", payload: { color: textBackground }, position_x: 50, position_y: 50, z_index: 0 });
       const draftElements = editorElements.slice();
       if (caption.trim() && !draftElements.some((element) => element.id === "caption")) {
         draftElements.push({
@@ -1184,7 +1260,7 @@ export function CommunityStoryRail({
       // Preview-only effects and trim are not included in the published manifest.
       publishAttemptRef.current = attemptSignature;
       const publishedMomentId = await publishStudioMoment({
-        userId, hubId, audience, files: publishFiles, caption, tags,
+        userId, hubId, audience, files: momentFiles, caption, tags,
         mediaAltTexts, mediaCaptionsVtt,
         elements: elements as Array<{ type: string; payload: Record<string, unknown> }>, effect,
         musicFile,
@@ -1195,18 +1271,18 @@ export function CommunityStoryRail({
         uploadedMusicAssetId,
         clientPublishId: attemptId,
         signal: controller.signal,
-        uploadedIds: selectedIndexes.map((index) => uploadedIdsRef.current[index]),
-        cameraClipReel: validCameraClipReel,
+        uploadedIds: momentSourceIndexes.map((index) => uploadedIdsRef.current[index]),
+        cameraClipReel: !overMomentLimit && validCameraClipReel,
         archiveEnabled,
         remixEnabled,
         responseToStoryId: responseTargetId,
         challengeKey: activeChallengeKey,
-        mediaEdits: selectedIndexes.flatMap((fileIndex, publishIndex) => coverTimes[fileIndex] !== undefined
+        mediaEdits: momentSourceIndexes.flatMap((fileIndex, publishIndex) => coverTimes[fileIndex] !== undefined
           ? [{ index: publishIndex, coverTimeMs: coverTimes[fileIndex] }]
           : []),
         onAssetUploaded: (index, id) => {
           const next = [...uploadedIdsRef.current];
-          next[selectedIndexes[index]] = id;
+          next[momentSourceIndexes[index]] = id;
           uploadedIdsRef.current = next;
           setUploadedIds(next);
         },
@@ -1224,7 +1300,7 @@ export function CommunityStoryRail({
             uploadedMusicAssetId: musicAssetId,
             publishAssetIds: [...orderedAssetIds] };
           draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(async () => {
-            const durable = await persistStudioPublishAttempt(frozen, selectedIndexes, orderedAssetIds, musicAssetId);
+          const durable = await persistStudioPublishAttempt(frozen, momentSourceIndexes, orderedAssetIds, musicAssetId);
             if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, durable);
           });
           try {
@@ -1239,26 +1315,6 @@ export function CommunityStoryRail({
         },
         onStatus: (status, percent) => { setPublishStatus(status); setPublishProgress(percent); },
       });
-      if (shouldSaveFamilyStory) {
-        if (!publishedMomentId) {
-          throw new Error("The Spark publish was not confirmed, so its private Family Story copy was not saved. Keep the draft and retry.");
-        }
-        try {
-          await saveSparkAsPrivateFamilyStory({
-            familyId: familyStoryFamilyId!,
-            momentId: publishedMomentId,
-            caption,
-            files: publishFiles,
-            signal: controller.signal,
-            onProgress: (status) => setPublishStatus(status),
-          });
-        } catch (archiveReason) {
-          const detail = archiveReason instanceof Error ? archiveReason.message : "The media copy could not be completed.";
-          throw new Error(archiveReason instanceof Error && archiveReason.name === "AbortError"
-            ? "Your Spark is published, but the private Family Story copy was cancelled. Retry to finish the same copy; the Spark will not be posted twice."
-            : `Your Spark is published, but the private Family Story copy did not finish: ${detail} Keep the draft and retry; the Spark will not be posted twice.`);
-        }
-      }
       trackCommunityContent("community_spark_created", hubId === null ? {} : { hub_id: hubId });
       window.dispatchEvent(new Event("community-moments-refresh"));
       draftGenerationRef.current++;
