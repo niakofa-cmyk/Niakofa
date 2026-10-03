@@ -4,9 +4,11 @@ import express from "express";
 import request from "supertest";
 import { pool } from "@workspace/db";
 import { parseAuth, signTokenById } from "../middlewares/auth";
+import audioCirclesRouter from "../routes/audio-circles";
 import communityExchangeRouter from "../routes/community-exchange";
 import communityHubFeedRouter from "../routes/community-hub-feed";
 import communityStoriesRouter from "../routes/community-stories";
+import circleMediaTokenRouter from "../routes/circle-media-token";
 import familyRouter from "../routes/family";
 import gratitudeRouter from "../routes/gratitude";
 import griotRouter from "../routes/griot";
@@ -19,11 +21,21 @@ suite("isolated cross-community content and media access matrix", () => {
   const app = express();
   app.use(express.json());
   app.use(parseAuth);
+  // Match the application-wide compatibility middleware so canonical Spiral
+  // paths reach the existing Circle lifecycle and LiveKit token handlers.
+  app.use((req, _res, next) => {
+    req.url = req.url
+      .replace(/^\/audio-spiral-sessions(?=\/|$)/, "/audio-circle-sessions")
+      .replace(/^\/audio-spirals(?=\/|$)/, "/audio-circles");
+    next();
+  });
   app.use(communityStoriesRouter);
   app.use(communityExchangeRouter);
   app.use(communityHubFeedRouter);
   app.use(gratitudeRouter);
   app.use(griotRouter);
+  app.use(audioCirclesRouter);
+  app.use(circleMediaTokenRouter);
   app.use(mediaAssetsRouter);
   app.use(familyRouter);
 
@@ -31,6 +43,8 @@ suite("isolated cross-community content and media access matrix", () => {
   let readerId: number | undefined;
   let authorCommunityId: number | undefined;
   let readerCommunityId: number | undefined;
+  let spiralId: number | undefined;
+  let spiralSessionId: number | undefined;
   let authorHubId: number | undefined;
   let readerHubId: number | undefined;
   let authorHubName = "";
@@ -56,6 +70,27 @@ suite("isolated cross-community content and media access matrix", () => {
     } finally {
       if (previous === undefined) delete process.env.MEDIA_PLATFORM_V21;
       else process.env.MEDIA_PLATFORM_V21 = previous;
+    }
+  }
+
+  async function withFakeLiveKitConfig<T>(work: () => Promise<T>): Promise<T> {
+    const previous = {
+      key: process.env.LIVEKIT_API_KEY,
+      secret: process.env.LIVEKIT_API_SECRET,
+      url: process.env.LIVEKIT_URL,
+    };
+    process.env.LIVEKIT_API_KEY = "local-test-livekit-key";
+    process.env.LIVEKIT_API_SECRET = "local-test-livekit-secret-only";
+    process.env.LIVEKIT_URL = "wss://livekit.invalid";
+    try {
+      return await work();
+    } finally {
+      if (previous.key === undefined) delete process.env.LIVEKIT_API_KEY;
+      else process.env.LIVEKIT_API_KEY = previous.key;
+      if (previous.secret === undefined) delete process.env.LIVEKIT_API_SECRET;
+      else process.env.LIVEKIT_API_SECRET = previous.secret;
+      if (previous.url === undefined) delete process.env.LIVEKIT_URL;
+      else process.env.LIVEKIT_URL = previous.url;
     }
   }
 
@@ -98,6 +133,9 @@ suite("isolated cross-community content and media access matrix", () => {
     if (communityStoryId) {
       await attempt("DELETE FROM community_stories WHERE id = $1", [communityStoryId]);
     }
+    if (spiralId) {
+      await attempt("DELETE FROM audio_circles WHERE id = $1", [spiralId]);
+    }
     const userIds = [authorId, readerId].filter((id): id is number => id !== undefined);
     if (userIds.length) {
       await attempt("DELETE FROM users WHERE id = ANY($1::integer[])", [userIds]);
@@ -124,6 +162,13 @@ suite("isolated cross-community content and media access matrix", () => {
     const requiredMigrations = [
       "0052_griot_stories.sql",
       "0053_griot_gratitude_diaspora.sql",
+      "0064_audio_circles.sql",
+      "0074_audio_circle_host_grace_period.sql",
+      "0084_audio_circle_follows_blocks_reports.sql",
+      "0085_audio_circle_sessions_topic_description.sql",
+      "0087_circle_hand_raised_at.sql",
+      "0090_circle_session_settings_enrichment.sql",
+      "0109_circle_media_publish_policy.sql",
       "0139_diaspora_hub_geography_invariants.sql",
       "0141_hub_memberships.sql",
       "0145_hub_community_and_completion_retries.sql",
@@ -145,6 +190,25 @@ suite("isolated cross-community content and media access matrix", () => {
        WHERE table_schema = current_schema()
          AND (table_name, column_name) IN (
            ('users', 'community_id'),
+            ('audio_circles', 'city_key'),
+            ('audio_circles', 'city_display'),
+            ('audio_circles', 'community_id'),
+            ('audio_circles', 'name'),
+            ('audio_circle_sessions', 'circle_id'),
+            ('audio_circle_sessions', 'host_id'),
+            ('audio_circle_sessions', 'status'),
+            ('audio_circle_sessions', 'started_at'),
+            ('audio_circle_sessions', 'host_disconnected_at'),
+            ('audio_circle_sessions', 'media_publish_policy'),
+            ('audio_circle_sessions', 'chat_enabled'),
+            ('audio_circle_sessions', 'recording_allowed'),
+            ('audio_circle_participants', 'session_id'),
+            ('audio_circle_participants', 'user_id'),
+            ('audio_circle_participants', 'role'),
+            ('audio_circle_participants', 'left_at'),
+            ('audio_circle_participants', 'hand_raised_at'),
+            ('circle_blocks', 'host_id'),
+            ('circle_blocks', 'blocked_user_id'),
             ('users', 'diaspora_hub_id'),
             ('diaspora_hubs', 'status'),
             ('diaspora_hubs', 'primary_hub_id'),
@@ -172,6 +236,25 @@ suite("isolated cross-community content and media access matrix", () => {
     expect(new Set(requiredColumns.map((row) => `${row.table_name}.${row.column_name}`))).toEqual(
       new Set([
         "users.community_id",
+        "audio_circles.city_key",
+        "audio_circles.city_display",
+        "audio_circles.community_id",
+        "audio_circles.name",
+        "audio_circle_sessions.circle_id",
+        "audio_circle_sessions.host_id",
+        "audio_circle_sessions.status",
+        "audio_circle_sessions.started_at",
+        "audio_circle_sessions.host_disconnected_at",
+        "audio_circle_sessions.media_publish_policy",
+        "audio_circle_sessions.chat_enabled",
+        "audio_circle_sessions.recording_allowed",
+        "audio_circle_participants.session_id",
+        "audio_circle_participants.user_id",
+        "audio_circle_participants.role",
+        "audio_circle_participants.left_at",
+        "audio_circle_participants.hand_raised_at",
+        "circle_blocks.host_id",
+        "circle_blocks.blocked_user_id",
         "users.diaspora_hub_id",
         "diaspora_hubs.status",
         "diaspora_hubs.primary_hub_id",
@@ -268,6 +351,13 @@ suite("isolated cross-community content and media access matrix", () => {
        SET status = 'approved', role = 'member', approved_at = NOW(), updated_at = NOW()`,
       [authorHubId, authorId],
     );
+    const { rows: spiralRows } = await pool.query<{ id: number }>(
+      `INSERT INTO audio_circles (city_key, city_display, name, community_id)
+       VALUES ($1, 'Runtime Fixture City', 'Runtime Cross-community Spiral', NULL)
+       RETURNING id`,
+      [`runtime_cross_community_${unique.replaceAll("-", "")}`],
+    );
+    spiralId = spiralRows[0].id;
   });
 
   afterAll(async () => {
@@ -624,5 +714,72 @@ suite("isolated cross-community content and media access matrix", () => {
     expect(privateFamilyReader.body.stories.some(
       (story: { id: number }) => story.id === privateFamilyStory.body.story.id,
     )).toBe(false);
+  });
+
+  it("allows a different-community member into a public Spiral but gates media tokens on active participation", async () => {
+    expect(readerCommunityId).not.toBe(authorCommunityId);
+    const started = await request(app)
+      .post(`/audio-spirals/${spiralId}/start`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({
+        title: "Synthetic cross-community Spiral",
+        video_enabled: true,
+        media_publish_policy: "open",
+      });
+    expect(started.status).toBe(201);
+    spiralSessionId = started.body.session.id;
+    expect(Number.isSafeInteger(spiralSessionId)).toBe(true);
+
+    const visibleSpiral = await request(app)
+      .get(`/audio-spirals/${spiralId}`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(visibleSpiral.status).toBe(200);
+    expect(visibleSpiral.body.circle.community_id).toBeNull();
+    expect(visibleSpiral.body.live_session.id).toBe(spiralSessionId);
+
+    const tokenBeforeJoin = await withFakeLiveKitConfig(() => request(app)
+      .post(`/audio-spiral-sessions/${spiralSessionId}/media-token`)
+      .set("Authorization", `Bearer ${readerToken}`));
+    expect(tokenBeforeJoin.status).toBe(403);
+    expect(tokenBeforeJoin.body.error).toBe("Join the circle before requesting a media token");
+
+    const joined = await request(app)
+      .post(`/audio-spiral-sessions/${spiralSessionId}/join`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(joined.status).toBe(200);
+    expect(joined.body.participant).toMatchObject({ user_id: readerId, role: "listener" });
+
+    const readerSession = await request(app)
+      .get(`/audio-spiral-sessions/${spiralSessionId}`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(readerSession.status).toBe(200);
+    expect(readerSession.body.participants).toEqual(
+      expect.arrayContaining([expect.objectContaining({ user_id: readerId, role: "listener" })]),
+    );
+
+    const tokenAfterJoin = await withFakeLiveKitConfig(() => request(app)
+      .post(`/audio-spiral-sessions/${spiralSessionId}/media-token`)
+      .set("Authorization", `Bearer ${readerToken}`));
+    expect(tokenAfterJoin.status).toBe(200);
+    expect(tokenAfterJoin.body).toMatchObject({
+      room_name: `niakofa-circle-${spiralSessionId}`,
+      can_publish: true,
+      refresh_required: false,
+    });
+    const jwtParts = tokenAfterJoin.body.media_token.split(".");
+    expect(jwtParts).toHaveLength(3);
+    const claims = JSON.parse(Buffer.from(jwtParts[1], "base64url").toString("utf8"));
+    expect(claims.video).toMatchObject({
+      room: `niakofa-circle-${spiralSessionId}`,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+    });
+    expect(claims.video.canPublishSources).toEqual(["camera", "microphone", "screen_share"]);
+
+    const ended = await request(app)
+      .post(`/audio-spiral-sessions/${spiralSessionId}/end`)
+      .set("Authorization", `Bearer ${authorToken}`);
+    expect(ended.status).toBe(200);
   });
 });

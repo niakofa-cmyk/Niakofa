@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   audioCircleParticipantsTable,
@@ -101,10 +101,14 @@ router.post(
         canSubscribe: true,
         ...(canPublish
           ? {
-              canPublishSources: ["camera", "microphone", "screen_share"] as string[],
+              canPublishSources: [
+                TrackSource.CAMERA,
+                TrackSource.MICROPHONE,
+                TrackSource.SCREEN_SHARE,
+              ],
             }
           : {}),
-      } as Parameters<AccessToken["addGrant"]>[0]);
+      });
       const token = await accessToken.toJwt();
       return res.json({
         media_url: livekitUrl,
