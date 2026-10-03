@@ -72,6 +72,8 @@ test("recovered Studio work resumes in editing, and Create a Spark skips the sou
   assert.match(trimAction, /familyStoryOriginalArchivedRef\.current/);
   assert.ok(trimAction.indexOf("saveSparkAsPrivateFamilyStory") < trimAction.indexOf("trimVideoFile"));
   assert.match(familyPreservationSource, /Create a Moment from up to 180 seconds/);
+  assert.doesNotMatch(familyPreservationSource, /Publish without the private copy/);
+  assert.match(familyPreservationSource, /A private Family Story copy is required before publishing a shorter Moment/);
   assert.match(storyRailSource, /clientPublishId: attemptId/);
 });
 

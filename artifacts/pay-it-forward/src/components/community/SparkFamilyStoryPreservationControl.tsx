@@ -118,8 +118,8 @@ export function SparkFamilyStoryPreservationControl({
       {!supported && (
         <p className="nia-story-family-copy__notice" role="note">
           {oversized
-            ? `${oversized.name} is over Family Vault’s 20 MB per-item limit. Publish without the private copy or choose smaller media.`
-            : "The private copy supports JPG, PNG, WebP, GIF, MP4, and WebM files up to 20 MB each."}
+            ? `${oversized.name} exceeds Family Vault’s 20 MB per-item limit. A private Family Story copy is required before publishing a shorter Moment, so replace or remove this item, or first save an eligible full original privately.`
+            : "A private Family Story copy is required before publishing a shorter Moment. Copies support JPG, PNG, WebP, GIF, MP4, and WebM files up to 20 MB each; choose supported media or save an eligible full original privately first."}
         </p>
       )}
       {needsFamily && (
