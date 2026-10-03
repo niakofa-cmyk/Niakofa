@@ -9,6 +9,12 @@ The universal media platform must remain opt-in until production cloud object st
 
 **How to apply:** Keep the feature flag disabled by default. Before enabling it, run a real upload through probe, thumbnail, transcode, and authorization checks. Keep audio mixing disabled until licensing and a real mixer are approved.
 
+In isolated API policy tests, scope a temporary `MEDIA_PLATFORM_V21=1` override to the individual media-route request and restore it immediately. Do not enable it in suite setup: unrelated story creation can enter queue-dependent media paths when the test queue is intentionally disabled.
+
+**Why:** A suite-wide test override caused ordinary Community Story creation to return 503 before the media access assertions ran.
+
+**How to apply:** Keep the universal flag off in app and workflow configuration; use a request-scoped override only for read/denial policy branches that do not upload or stream bytes.
+
 Presigned PUT upload sessions do not constrain bytes at the object-storage provider. Bounded API/worker reads prevent a subsequent oversized object from exhausting application memory, but do not prevent an oversized write into the bucket while the URL remains valid.
 
 **Why:** A storage HEAD check and a later bounded read cannot enforce an upload-size limit at the bucket; the object can also be replaced between those operations.

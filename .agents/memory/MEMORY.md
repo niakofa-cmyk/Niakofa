@@ -5,7 +5,7 @@
 - [Workspace package manager](toolchain-install.md) — use the repository-pinned pnpm through npm exec when the system pnpm shim self-manages and stalls.
 - [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
 - [GitHub connector exact sync](github-connector-exact-sync.md) — Git Database API commits may omit the final message newline; reproduce the raw object before exact SHA reconciliation.
-- [Media activation gate](media-platform-activation.md) — keep the universal media flag off until durable storage, Redis, toolchain, and live variant checks pass.
+- [Media activation gate](media-platform-activation.md) — keep the universal flag off until infrastructure and live checks pass; scope test overrides to individual media requests.
 - [GitHub OAuth publishing](github-oauth-publishing.md) — connector-created commits omit the final message newline; compare GitHub main directly after publishing.
 - [Workspace hydration and preview limits](workspace-hydration-preview.md) — a healthy web preview does not certify missing API helpers, production parity, or physical devices.
 - [Workspace package-manager bootstrap](pnpm-bootstrap.md) — disable self-bootstrap when the declared pnpm version is unavailable; restore dependencies from the frozen lockfile.
@@ -54,7 +54,7 @@
 - [App-to-Nia HTTP boundary](niakofa-app-nia-http-boundary.md) — provider access and feature-service calls stay behind the authenticated Nia client.
 - [Stripe Accounts v2 recipient capability](stripe-v2-recipient-capability.md) — V1 transfers-active is insufficient; treat missing v2 recipient transfer capability as definitive.
 - [Release evidence commit boundary](release-evidence-commit-boundary.md) — keep deployed app SHAs separate from later documentation-only GitHub commits; avoid circular self-hashes.
-- [Deployed acceptance boundary](deployed-acceptance-boundary.md) — authenticated production E2E needs an approved disposable state, explicit API Bearer headers, and private temporary-file cleanup.
+- [Deployed acceptance boundary](deployed-acceptance-boundary.md) — cross-community production E2E must compare approved users’ stored community identities before any mutation.
 - [GitHub exact-commit sync](github-exact-commit-sync.md) — verify Git object bytes, use plural refs for updates, and re-read main after every write attempt.
 - [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
 - [Authenticated Admin browser checks](admin-live-acceptance.md) — storage state authenticates navigation, but page.evaluate fetches still need explicit Bearer headers and exact role selectors.

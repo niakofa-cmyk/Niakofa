@@ -55,11 +55,25 @@ if (process.env.ALLOW_MEDIA_CERT_STATE_CREATION !== "1") {
       if (!response.ok) throw new Error(`account ${label} sign-in was refused (HTTP ${response.status}).`);
       const { token, user } = await response.json();
       if (!user || !Number.isSafeInteger(Number(user.id)) || user.approval_status !== "approved" ||
+          user.is_suspended === true ||
           typeof token !== "string" || token.split(".").length !== 4) {
         throw new Error(`account ${label} is not an approved account with a valid session shape.`);
       }
-      if (users.includes(Number(user.id))) throw new Error("both accounts resolve to the same user.");
-      users.push(Number(user.id));
+      if (!Object.hasOwn(user, "community_id")) {
+        throw new Error(`account ${label} does not expose a community identity.`);
+      }
+      const communityId = user.community_id === null ? null : Number(user.community_id);
+      if (communityId !== null && (!Number.isSafeInteger(communityId) || communityId < 1)) {
+        throw new Error(`account ${label} has an invalid community identity.`);
+      }
+      const userId = Number(user.id);
+      if (users.some((identity) => identity.id === userId)) {
+        throw new Error("both accounts resolve to the same user.");
+      }
+      if (users.length && users[0].communityId === communityId) {
+        throw new Error("the approved accounts must belong to different communities.");
+      }
+      users.push({ id: userId, communityId });
       const state = {
         cookies: [],
         origins: [{
@@ -78,7 +92,7 @@ if (process.env.ALLOW_MEDIA_CERT_STATE_CREATION !== "1") {
       });
       if (check.status !== 0) throw new Error(`account ${label} state failed the storage-state validator.`);
     }
-    process.stdout.write("PASS: two distinct, approved storage states were created and validated in the private output directory.\n");
+    process.stdout.write("PASS: approved storage states from different communities were created and validated in the private output directory.\n");
   } catch (error) {
     for (const filename of written) fs.rmSync(filename, { force: true });
     refuse(error instanceof Error ? error.message : "state creation failed.");

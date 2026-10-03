@@ -9,7 +9,8 @@ import { promisify } from "node:util";
 
 /*
  * Production acceptance prerequisites:
- * - separate approved disposable USER_A_STATE/USER_B_STATE accounts;
+ * - separate, approved, active disposable USER_A_STATE/USER_B_STATE accounts;
+ * - the accounts have distinct user IDs and different community identities;
  * - SPARK_SMOKE_LISTING_ID is an active, approved listing owned by A;
  * - operator confirmation that B is outside A's community;
  * - exact deployed EXPECTED_COMMIT and the explicit gates enforced by the runner.
@@ -47,7 +48,12 @@ const MAX_RECONCILIATION_PAGES = 4;
 const MAX_RECOVERY_SPARKS = 1;
 const MAX_RECOVERY_ASSETS = 2;
 
-type AuthenticatedState = { token: string; userId: number; origin: string };
+type AuthenticatedState = {
+  token: string;
+  userId: number;
+  communityId: number | null;
+  origin: string;
+};
 type DraftSnapshot = {
   spark_id: number;
   status: string;
@@ -69,6 +75,10 @@ type RecoveryRecord = {
 };
 
 const runCaption = `Disposable Spark lifecycle ${runId}`;
+
+// This suite uses explicit Bearer headers; never persist credentials in traces,
+// screenshots, or videos.
+test.use({ trace: "off", screenshot: "off", video: "off" });
 
 function recoveryFilePath(): string {
   const resolvedDirectory = path.resolve(recoveryDirectory);
@@ -145,10 +155,25 @@ function readAuthenticatedState(filePath: string): AuthenticatedState {
   const token = entries.find((entry) => entry.name === "niakofa_token")?.value;
   const userJson = entries.find((entry) => entry.name === "niakofa_user")?.value;
   if (!origin || !token || !userJson) throw new Error("Authenticated storage state is incomplete.");
-  const user = JSON.parse(userJson) as { id?: number | string };
+  const user = JSON.parse(userJson) as {
+    id?: number | string;
+    community_id?: number | string | null;
+    approval_status?: string;
+    is_suspended?: boolean;
+  };
   const userId = Number(user.id);
   if (!Number.isSafeInteger(userId) || userId < 1) throw new Error("Storage state has an invalid user id.");
-  return { token, userId, origin: new URL(origin).origin };
+  if (user.approval_status !== "approved" || user.is_suspended === true) {
+    throw new Error("Storage state must belong to an approved, active user.");
+  }
+  if (!Object.hasOwn(user, "community_id")) {
+    throw new Error("Storage state does not include the user's community identity.");
+  }
+  const communityId = user.community_id === null ? null : Number(user.community_id);
+  if (communityId !== null && (!Number.isSafeInteger(communityId) || communityId < 1)) {
+    throw new Error("Storage state has an invalid community identity.");
+  }
+  return { token, userId, communityId, origin: new URL(origin).origin };
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -420,9 +445,6 @@ function beginNewAttempt(record: RecoveryRecord): void {
 }
 
 test.describe("authenticated Community/Exchange Sparks lifecycle regression", () => {
-  // API requests carry bearer credentials; do not persist them in traces or videos.
-  test.use({ storageState: ownerState, trace: "off", screenshot: "off", video: "off" });
-
   test.skip(
     !enabled ||
       !ownerState ||
@@ -459,6 +481,10 @@ test.describe("authenticated Community/Exchange Sparks lifecycle regression", ()
     expect(owner.origin).toBe(target.origin);
     expect(viewer.origin).toBe(target.origin);
     expect(viewer.userId).not.toBe(owner.userId);
+    expect(
+      viewer.communityId === owner.communityId,
+      "USER_A and USER_B must be approved users from different communities.",
+    ).toBe(false);
 
     const health = await apiGet(request, "/api/healthz");
     expect(new URL(health.url()).origin, "The actual preflight request must reach the confirmed HTTPS target.")

@@ -5,19 +5,25 @@ import request from "supertest";
 import { pool } from "@workspace/db";
 import { parseAuth, signTokenById } from "../middlewares/auth";
 import communityExchangeRouter from "../routes/community-exchange";
+import communityHubFeedRouter from "../routes/community-hub-feed";
 import communityStoriesRouter from "../routes/community-stories";
 import familyRouter from "../routes/family";
+import gratitudeRouter from "../routes/gratitude";
+import griotRouter from "../routes/griot";
 import mediaAssetsRouter from "../routes/media-assets-v21";
 
 const integrationEnabled = process.env.COMMUNITY_MEDIA_API_RUNTIME_TEST === "1";
 const suite = integrationEnabled ? describe : describe.skip;
 
-suite("isolated Community, Media Studio, Exchange Spark, and Family Story API regression", () => {
+suite("isolated cross-community content and media access matrix", () => {
   const app = express();
   app.use(express.json());
   app.use(parseAuth);
   app.use(communityStoriesRouter);
   app.use(communityExchangeRouter);
+  app.use(communityHubFeedRouter);
+  app.use(gratitudeRouter);
+  app.use(griotRouter);
   app.use(mediaAssetsRouter);
   app.use(familyRouter);
 
@@ -25,13 +31,33 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
   let readerId: number | undefined;
   let authorCommunityId: number | undefined;
   let readerCommunityId: number | undefined;
+  let authorHubId: number | undefined;
+  let readerHubId: number | undefined;
+  let authorHubName = "";
+  let readerHubName = "";
   let communityStoryId: number | undefined;
   let familyId: number | undefined;
   let exchangeListingId: number | undefined;
   let sparkId: number | undefined;
+  let hubPostId: number | undefined;
+  let hubCommunityMediaId: number | undefined;
+  let gratitudePostId: number | undefined;
+  const griotStoryIds: number[] = [];
   const mediaAssetIds: number[] = [];
   let authorToken = "";
   let readerToken = "";
+  const originalMediaPlatformFlag = process.env.MEDIA_PLATFORM_V21;
+
+  async function withMediaPlatformEnabled<T>(work: () => Promise<T>): Promise<T> {
+    const previous = process.env.MEDIA_PLATFORM_V21;
+    process.env.MEDIA_PLATFORM_V21 = "1";
+    try {
+      return await work();
+    } finally {
+      if (previous === undefined) delete process.env.MEDIA_PLATFORM_V21;
+      else process.env.MEDIA_PLATFORM_V21 = previous;
+    }
+  }
 
   async function cleanup(): Promise<void> {
     const errors: unknown[] = [];
@@ -45,6 +71,20 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
 
     for (const mediaAssetId of mediaAssetIds) {
       await attempt("DELETE FROM media_assets WHERE id = $1", [mediaAssetId]);
+    }
+    if (griotStoryIds.length) {
+      await attempt("DELETE FROM griot_stories WHERE id = ANY($1::integer[])", [griotStoryIds]);
+    }
+    if (gratitudePostId) {
+      await attempt("DELETE FROM gratitude_posts WHERE id = $1", [gratitudePostId]);
+    }
+    if (hubPostId) {
+      await attempt("DELETE FROM hub_community_posts WHERE id = $1", [hubPostId]);
+    }
+    const hubIds = [authorHubId, readerHubId].filter((id): id is number => id !== undefined);
+    if (hubIds.length) {
+      await attempt("DELETE FROM hub_memberships WHERE hub_id = ANY($1::integer[])", [hubIds]);
+      await attempt("DELETE FROM diaspora_hubs WHERE id = ANY($1::integer[])", [hubIds]);
     }
     if (sparkId) {
       await attempt("DELETE FROM exchange_sparks WHERE id = $1", [sparkId]);
@@ -82,7 +122,14 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
     expect(databaseRows[0]?.database_name).toMatch(/(^|[-_])(dev|test)([-_]|$)/i);
 
     const requiredMigrations = [
+      "0052_griot_stories.sql",
+      "0053_griot_gratitude_diaspora.sql",
+      "0139_diaspora_hub_geography_invariants.sql",
+      "0141_hub_memberships.sql",
+      "0145_hub_community_and_completion_retries.sql",
       "0150_community_stories.sql",
+      "0155_media_assets.sql",
+      "0158_community_media_saves.sql",
       "0176_durable_exchange_sparks.sql",
       "0186_family_story_experience.sql",
     ];
@@ -98,10 +145,25 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
        WHERE table_schema = current_schema()
          AND (table_name, column_name) IN (
            ('users', 'community_id'),
+            ('users', 'diaspora_hub_id'),
+            ('diaspora_hubs', 'status'),
+            ('diaspora_hubs', 'primary_hub_id'),
+            ('diaspora_hubs', 'country_code'),
+            ('diaspora_hubs', 'hub_scope'),
+            ('diaspora_hubs', 'community_id'),
+            ('hub_memberships', 'status'),
+            ('hub_memberships', 'approved_at'),
+            ('hub_community_posts', 'moderation_status'),
+            ('hub_community_post_media', 'media_asset_id'),
+            ('gratitude_posts', 'moderation_status'),
+            ('griot_stories', 'visibility'),
+            ('griot_stories', 'hub_id'),
+            ('griot_stories', 'community_id'),
            ('community_stories', 'audience'),
            ('community_stories', 'community_id'),
            ('exchange_sparks', 'community_id'),
            ('media_assets', 'context_kind'),
+            ('media_assets', 'status'),
            ('family_stories', 'author_id'),
            ('family_stories', 'audience'),
            ('family_members', 'status')
@@ -110,10 +172,25 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
     expect(new Set(requiredColumns.map((row) => `${row.table_name}.${row.column_name}`))).toEqual(
       new Set([
         "users.community_id",
+        "users.diaspora_hub_id",
+        "diaspora_hubs.status",
+        "diaspora_hubs.primary_hub_id",
+        "diaspora_hubs.country_code",
+        "diaspora_hubs.hub_scope",
+        "diaspora_hubs.community_id",
+        "hub_memberships.status",
+        "hub_memberships.approved_at",
+        "hub_community_posts.moderation_status",
+        "hub_community_post_media.media_asset_id",
+        "gratitude_posts.moderation_status",
+        "griot_stories.visibility",
+        "griot_stories.hub_id",
+        "griot_stories.community_id",
         "community_stories.audience",
         "community_stories.community_id",
         "exchange_sparks.community_id",
         "media_assets.context_kind",
+        "media_assets.status",
         "family_stories.author_id",
         "family_stories.audience",
         "family_members.status",
@@ -147,17 +224,63 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
     readerId = readerRows[0].id;
     authorToken = signTokenById(authorId, 0);
     readerToken = signTokenById(readerId, 0);
+
+    const candidateCountryCodes = ["XQ", "XR", "XS", "XT", "XU", "XV", "XW", "XX", "XY", "XZ"];
+    const { rows: occupiedCodes } = await pool.query<{ country_code: string }>(
+      `SELECT country_code FROM diaspora_hubs
+       WHERE status = 'approved' AND primary_hub_id IS NULL AND hub_scope = 'country'
+         AND country_code = ANY($1::text[])`,
+      [candidateCountryCodes],
+    );
+    const occupied = new Set(occupiedCodes.map((row) => row.country_code));
+    const availableCodes = candidateCountryCodes.filter((code) => !occupied.has(code));
+    expect(availableCodes.length).toBeGreaterThanOrEqual(2);
+
+    authorHubName = `Runtime fixture author Hub ${unique}`;
+    const { rows: authorHubs } = await pool.query<{ id: number }>(
+      `INSERT INTO diaspora_hubs
+         (name, display_name, region_label, lat, lng, tag, hub_scope, country_code, community_id, status)
+       VALUES ($1, $1, $2, 0, 0, 'country', 'country', $3, $4, 'approved')
+       RETURNING id`,
+      [authorHubName, `Runtime fixture region ${unique}`, availableCodes[0], authorCommunityId],
+    );
+    authorHubId = authorHubs[0].id;
+    readerHubName = `Runtime fixture reader Hub ${unique}`;
+    const { rows: readerHubs } = await pool.query<{ id: number }>(
+      `INSERT INTO diaspora_hubs
+         (name, display_name, region_label, lat, lng, tag, hub_scope, country_code, community_id, status)
+       VALUES ($1, $1, $2, 0, 0, 'country', 'country', $3, $4, 'approved')
+       RETURNING id`,
+      [
+        readerHubName,
+        `Runtime fixture reader region ${unique}`,
+        availableCodes[1],
+        readerCommunityId,
+      ],
+    );
+    readerHubId = readerHubs[0].id;
+    await pool.query("UPDATE users SET diaspora_hub_id = $1 WHERE id = $2", [authorHubId, authorId]);
+    await pool.query("UPDATE users SET diaspora_hub_id = $1 WHERE id = $2", [readerHubId, readerId]);
+    await pool.query(
+      `INSERT INTO hub_memberships (hub_id, user_id, status, role, requested_at, approved_at)
+       VALUES ($1, $2, 'approved', 'member', NOW(), NOW())
+       ON CONFLICT (user_id, hub_id) DO UPDATE
+       SET status = 'approved', role = 'member', approved_at = NOW(), updated_at = NOW()`,
+      [authorHubId, authorId],
+    );
   });
 
   afterAll(async () => {
     try {
       await cleanup();
     } finally {
+      if (originalMediaPlatformFlag === undefined) delete process.env.MEDIA_PLATFORM_V21;
+      else process.env.MEDIA_PLATFORM_V21 = originalMediaPlatformFlag;
       await pool.end();
     }
   });
 
-  it("enforces separate community, media-read, Exchange Spark, and family-membership policies", async () => {
+  it("preserves community, Hub, Diaspora, staging, Spark, and family visibility boundaries", async () => {
     const createdStory = await request(app)
       .post("/community/stories")
       .set("Authorization", `Bearer ${authorToken}`)
@@ -189,11 +312,19 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
       [authorId, communityStoryId, `runtime-fixture/no-object/${randomUUID()}.jpg`],
     );
     mediaAssetIds.push(assets[0].id);
-    const forbiddenMediaRead = await request(app)
+    const forbiddenMediaRead = await withMediaPlatformEnabled(() => request(app)
       .get(`/media-assets/${assets[0].id}`)
-      .set("Authorization", `Bearer ${readerToken}`);
+      .set("Authorization", `Bearer ${readerToken}`));
     expect(forbiddenMediaRead.status).toBe(404);
-    const forbiddenMediaUpload = await request(app)
+    const ownerStoryMedia = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/shared?contextKind=story&contextId=${communityStoryId}`)
+      .set("Authorization", `Bearer ${authorToken}`));
+    expect(ownerStoryMedia.status).toBe(200);
+    const readerStoryMedia = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/shared?contextKind=story&contextId=${communityStoryId}`)
+      .set("Authorization", `Bearer ${readerToken}`));
+    expect(readerStoryMedia.status).toBe(404);
+    const forbiddenMediaUpload = await withMediaPlatformEnabled(() => request(app)
       .post("/media-assets/uploads")
       .set("Authorization", `Bearer ${readerToken}`)
       .send({
@@ -202,15 +333,9 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
         mediaType: "photo",
         mimeType: "image/jpeg",
         byteSize: 1,
-      });
+      }));
     expect(forbiddenMediaUpload.status).toBe(404);
-    if (forbiddenMediaUpload.body.error_code === "MEDIA_PLATFORM_DISABLED") {
-      // The read authorization above still ran; an environment with V21
-      // enabled additionally exercises the write-context denial below.
-      expect(forbiddenMediaUpload.body.error_code).toBe("MEDIA_PLATFORM_DISABLED");
-    } else {
-      expect(forbiddenMediaUpload.body.error).toBe("Media context not found.");
-    }
+    expect(forbiddenMediaUpload.body.error).toBe("Media context not found.");
 
     const { rows: listings } = await pool.query<{ id: number }>(
       `INSERT INTO exchange_listings (seller_id, title, description, neighborhood)
@@ -244,6 +369,15 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
     mediaAssetIds.push(sparkMediaAssetId);
     await pool.query("UPDATE exchange_sparks SET status = 'published' WHERE id = $1", [sparkId]);
 
+    const ownerSparkMedia = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/shared?contextKind=exchange_spark&contextId=${sparkId}`)
+      .set("Authorization", `Bearer ${authorToken}`));
+    expect(ownerSparkMedia.status).toBe(200);
+    const readerSparkMedia = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/shared?contextKind=exchange_spark&contextId=${sparkId}`)
+      .set("Authorization", `Bearer ${readerToken}`));
+    expect(readerSparkMedia.status).toBe(404);
+
     const authorSparks = await request(app)
       .get("/community/exchange/sparks")
       .set("Authorization", `Bearer ${authorToken}`);
@@ -255,6 +389,183 @@ suite("isolated Community, Media Studio, Exchange Spark, and Family Story API re
       .set("Authorization", `Bearer ${readerToken}`);
     expect(readerSparks.status).toBe(200);
     expect(readerSparks.body.sparks.some((spark: { spark_id: number }) => spark.spark_id === sparkId)).toBe(false);
+
+    const hubPost = await request(app)
+      .post(`/community/hubs/${authorHubId}/posts`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ body: `Cross-community Hub post ${randomUUID()}` });
+    expect(hubPost.status).toBe(201);
+    hubPostId = hubPost.body.post.id;
+
+    const hubAssetKey = `runtime-fixture/no-object/${randomUUID()}.jpg`;
+    const { rows: hubAssets } = await pool.query<{ id: number }>(
+      `INSERT INTO media_assets
+         (owner_user_id, context_kind, context_id, media_type, mime_type, original_key,
+          variant_key, byte_size, status)
+       VALUES ($1, 'hub', $2, 'photo', 'image/jpeg', $3, $4, 1, 'ready')
+       RETURNING id`,
+      [authorId, authorHubId, hubAssetKey, `runtime-fixture/no-object/${randomUUID()}.variant.jpg`],
+    );
+    const hubMediaAssetId = hubAssets[0].id;
+    mediaAssetIds.push(hubMediaAssetId);
+    const { rows: stagingAssets } = await pool.query<{ id: number }>(
+      `INSERT INTO media_assets
+         (owner_user_id, context_kind, context_id, media_type, mime_type, original_key,
+          variant_key, byte_size, status)
+       VALUES ($1, 'community_moment', $2, 'photo', 'image/jpeg', $3, $4, 1, 'ready')
+       RETURNING id`,
+      [authorId, authorId, `runtime-fixture/no-object/${randomUUID()}.jpg`, `runtime-fixture/no-object/${randomUUID()}.variant.jpg`],
+    );
+    const communityMomentAssetId = stagingAssets[0].id;
+    mediaAssetIds.push(communityMomentAssetId);
+    const { rows: hubMomentAssets } = await pool.query<{ id: number }>(
+      `INSERT INTO media_assets
+         (owner_user_id, context_kind, context_id, media_type, mime_type, original_key,
+          variant_key, byte_size, status)
+       VALUES ($1, 'hub_moment', $2, 'photo', 'image/jpeg', $3, $4, 1, 'ready')
+       RETURNING id`,
+      [authorId, authorHubId, `runtime-fixture/no-object/${randomUUID()}.jpg`, `runtime-fixture/no-object/${randomUUID()}.variant.jpg`],
+    );
+    const hubMomentAssetId = hubMomentAssets[0].id;
+    mediaAssetIds.push(hubMomentAssetId);
+
+    const { rows: hubMediaRows } = await pool.query<{ id: number }>(
+      `INSERT INTO hub_community_post_media
+         (post_id, media_asset_id, storage_key, mime_type, byte_size, alt_text)
+       VALUES ($1, $2, $3, 'image/jpeg', 1, 'Isolated cross-community fixture')
+       RETURNING id`,
+      [hubPostId, hubMediaAssetId, hubAssetKey],
+    );
+    hubCommunityMediaId = hubMediaRows[0].id;
+
+    const { rows: gratitudeRows } = await pool.query<{ id: number }>(
+      `INSERT INTO gratitude_posts (author_id, author_name, message, moderation_status)
+       VALUES ($1, 'Isolated API Author', $2, 'approved')
+       RETURNING id`,
+      [authorId, `Public cross-community gratitude ${randomUUID()}`],
+    );
+    gratitudePostId = gratitudeRows[0].id;
+
+    const { rows: publicGriotRows } = await pool.query<{ id: number }>(
+      `INSERT INTO griot_stories
+         (author_id, title, text_content, original_language, hub_location, hub_id,
+          status, visibility, published_at)
+       VALUES ($1, $2, 'Public Diaspora story fixture.', 'en', $3, $4, 'published', 'public', NOW())
+       RETURNING id`,
+      [authorId, `Public Griot fixture ${randomUUID()}`, authorHubName, authorHubId],
+    );
+    const publicGriotStoryId = publicGriotRows[0].id;
+    griotStoryIds.push(publicGriotStoryId);
+    const { rows: privateGriotRows } = await pool.query<{ id: number }>(
+      `INSERT INTO griot_stories
+         (author_id, title, text_content, original_language, hub_location, hub_id,
+          status, visibility, published_at)
+       VALUES ($1, $2, 'Private Diaspora story fixture.', 'en', $3, $4, 'published', 'private', NOW())
+       RETURNING id`,
+      [authorId, `Private Griot fixture ${randomUUID()}`, authorHubName, authorHubId],
+    );
+    const privateGriotStoryId = privateGriotRows[0].id;
+    griotStoryIds.push(privateGriotStoryId);
+
+    const communityMomentUpload = await withMediaPlatformEnabled(() => request(app)
+      .post("/media-assets/uploads")
+      .set("Authorization", `Bearer ${readerToken}`)
+      .send({
+        contextKind: "community_moment",
+        contextId: authorId,
+        mediaType: "photo",
+        mimeType: "image/jpeg",
+        byteSize: 1,
+      }));
+    expect(communityMomentUpload.status).toBe(404);
+
+    const authorCommunityMomentRead = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/shared?contextKind=community_moment&contextId=${authorId}`)
+      .set("Authorization", `Bearer ${authorToken}`));
+    expect(authorCommunityMomentRead.status).toBe(404);
+    const readerCommunityMomentRead = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/${communityMomentAssetId}`)
+      .set("Authorization", `Bearer ${readerToken}`));
+    expect(readerCommunityMomentRead.status).toBe(404);
+    const readerHubMomentRead = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/${hubMomentAssetId}`)
+      .set("Authorization", `Bearer ${readerToken}`));
+    expect(readerHubMomentRead.status).toBe(404);
+
+    const hubMediaBeforeMembership = await request(app)
+      .get(`/community/hubs/${authorHubId}/media`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(hubMediaBeforeMembership.status).toBe(403);
+    const hubFeedBeforeMembership = await request(app)
+      .get(`/community/hubs/${authorHubId}/feed`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(hubFeedBeforeMembership.status).toBe(200);
+    expect(hubFeedBeforeMembership.body.permissions.can_post).toBe(false);
+    expect(hubFeedBeforeMembership.body.posts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: hubPostId })]),
+    );
+    expect(hubFeedBeforeMembership.body.gratitude).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: gratitudePostId })]),
+    );
+    const hubContextBeforeMembership = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/shared?contextKind=hub&contextId=${authorHubId}`)
+      .set("Authorization", `Bearer ${readerToken}`));
+    expect(hubContextBeforeMembership.status).toBe(404);
+
+    const diasporaGratitude = await request(app).get("/gratitude");
+    expect(diasporaGratitude.status).toBe(200);
+    expect(diasporaGratitude.body).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: gratitudePostId })]),
+    );
+    const otherHubGratitude = await request(app).get(`/gratitude?hub_id=${readerHubId}`);
+    expect(otherHubGratitude.status).toBe(200);
+    expect(otherHubGratitude.body.some((post: { id: number }) => post.id === gratitudePostId)).toBe(false);
+    const authorHubGratitude = await request(app).get(`/gratitude?hub_id=${authorHubId}`);
+    expect(authorHubGratitude.status).toBe(200);
+    expect(authorHubGratitude.body).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: gratitudePostId })]),
+    );
+
+    const publicDiasporaFeed = await request(app).get("/griot/stories");
+    expect(publicDiasporaFeed.status).toBe(200);
+    expect(publicDiasporaFeed.body.stories.some((story: { id: number }) => story.id === publicGriotStoryId)).toBe(true);
+    expect(publicDiasporaFeed.body.stories.some((story: { id: number }) => story.id === privateGriotStoryId)).toBe(false);
+    const authorHubDiasporaFeed = await request(app).get(`/griot/stories?hub=${encodeURIComponent(authorHubName)}`);
+    expect(authorHubDiasporaFeed.body.stories.some((story: { id: number }) => story.id === publicGriotStoryId)).toBe(true);
+    const readerHubDiasporaFeed = await request(app).get(`/griot/stories?hub=${encodeURIComponent(readerHubName)}`);
+    expect(readerHubDiasporaFeed.body.stories.some((story: { id: number }) => story.id === publicGriotStoryId)).toBe(false);
+    const publicDiasporaDetail = await request(app)
+      .get(`/griot/stories/${publicGriotStoryId}`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(publicDiasporaDetail.status).toBe(200);
+    const privateDiasporaDetail = await request(app)
+      .get(`/griot/stories/${privateGriotStoryId}`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(privateDiasporaDetail.status).toBe(403);
+
+    await pool.query(
+      `INSERT INTO hub_memberships (hub_id, user_id, status, role, requested_at, approved_at)
+       VALUES ($1, $2, 'approved', 'member', NOW(), NOW())
+       ON CONFLICT (user_id, hub_id) DO UPDATE
+       SET status = 'approved', role = 'member', approved_at = NOW(), updated_at = NOW()`,
+      [authorHubId, readerId],
+    );
+    const readerHubMediaAssetRead = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/shared?contextKind=hub&contextId=${authorHubId}`)
+      .set("Authorization", `Bearer ${readerToken}`));
+    expect(readerHubMediaAssetRead.status).toBe(200);
+    const readerHubMedia = await request(app)
+      .get(`/community/hubs/${authorHubId}/media`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(readerHubMedia.status).toBe(200);
+    expect(readerHubMedia.body.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: hubCommunityMediaId })]),
+    );
+    const readerHubFeedAfterMembership = await request(app)
+      .get(`/community/hubs/${authorHubId}/feed`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(readerHubFeedAfterMembership.status).toBe(200);
+    expect(readerHubFeedAfterMembership.body.permissions.can_post).toBe(true);
 
     const { rows: families } = await pool.query<{ id: number }>(
       "INSERT INTO families (name, created_by) VALUES ($1, $2) RETURNING id",
