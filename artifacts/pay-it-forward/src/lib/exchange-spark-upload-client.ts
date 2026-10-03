@@ -308,7 +308,7 @@ export function readExchangeSparkVideoDuration(
       if (!Number.isFinite(duration) || duration <= 0 || duration > EXCHANGE_SPARK_MAX_DURATION_SECONDS) {
         finish(() => reject(new ExchangeSparkUploadError(
           duration > EXCHANGE_SPARK_MAX_DURATION_SECONDS
-            ? "Exchange Spark videos must be 60 seconds or shorter."
+            ? "Exchange Spark videos must be 180 seconds or shorter."
             : "The video duration could not be read. Choose another MP4 or WebM video.",
         )));
       } else {

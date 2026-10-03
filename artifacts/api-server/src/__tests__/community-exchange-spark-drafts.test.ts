@@ -16,7 +16,7 @@ const readyAsset = {
   media_type: "video",
   mime_type: "video/mp4",
   byte_size: 8_000_000,
-  duration_ms: 59_999,
+  duration_ms: 180_000,
   status: "ready",
   variant_key: "media-assets/51/variant.mp4",
   metadata: { signature_validated: true },
@@ -46,13 +46,13 @@ describe("direct-binary Exchange Spark draft contract", () => {
     })).toBeNull();
   });
 
-  it("allows only one owned, validated, ready video variant no longer than 60 seconds", () => {
+  it("allows one owned, validated, ready video variant up to and including 180 seconds", () => {
     expect(singlePublishableExchangeSparkAsset([readyAsset], 7, 51)).toEqual(readyAsset);
     expect(singlePublishableExchangeSparkAsset([readyAsset], 8, 51)).toBeNull();
     expect(singlePublishableExchangeSparkAsset([readyAsset], 7, 52)).toBeNull();
     expect(singlePublishableExchangeSparkAsset([{ ...readyAsset, status: "processing" }], 7, 51)).toBeNull();
     expect(singlePublishableExchangeSparkAsset([{ ...readyAsset, status: "failed" }], 7, 51)).toBeNull();
-    expect(singlePublishableExchangeSparkAsset([{ ...readyAsset, duration_ms: 60_001 }], 7, 51)).toBeNull();
+    expect(singlePublishableExchangeSparkAsset([{ ...readyAsset, duration_ms: 180_001 }], 7, 51)).toBeNull();
     expect(singlePublishableExchangeSparkAsset([{ ...readyAsset, duration_ms: null }], 7, 51)).toBeNull();
     expect(singlePublishableExchangeSparkAsset([{ ...readyAsset, variant_key: null }], 7, 51)).toBeNull();
     expect(singlePublishableExchangeSparkAsset([

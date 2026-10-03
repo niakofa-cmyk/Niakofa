@@ -424,7 +424,7 @@ export function CommunityExchangeSparkComposer({ onPublished }: { onPublished: (
       </div>
       {open && (
         <div className="space-y-4 border-t border-border p-4">
-          <p className="text-xs leading-relaxed text-muted-foreground">Videos must be MP4 or WebM, 64 MiB or smaller, and 60 seconds or shorter. Your video is checked before upload and won’t be shown while processing.</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">Videos must be MP4 or WebM, 64 MiB or smaller, and 180 seconds or shorter. Your video is checked before upload and won’t be shown while processing.</p>
           {unavailable && <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm" role="alert"><p className="font-bold">{unavailable}</p><p className="mt-1 text-xs text-muted-foreground">Direct-binary publishing is currently gated for this environment.</p><Link href="/community/moments" className="mt-2 inline-flex min-h-10 items-center rounded-lg border border-border px-3 text-xs font-black text-primary hover:bg-primary/10">Continue in the legacy Moments composer</Link></div>}
           {listingsError && <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm">{listingsError}</p>}
           <div className="grid gap-3 sm:grid-cols-2">

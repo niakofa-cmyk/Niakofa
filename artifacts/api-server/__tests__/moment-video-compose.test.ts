@@ -112,9 +112,9 @@ describe("opt-in Moment camera-clip composition contract", () => {
     expect(momentCompositionFingerprint([3, 8])).toBe(momentCompositionFingerprint([3, 8]));
   });
 
-  it("enforces the aggregate 60-second duration bound", () => {
-    expect(withinMomentDurationLimit([30_000, 30_000])).toBe(true);
-    expect(withinMomentDurationLimit([30_001, 30_000])).toBe(false);
+  it("enforces the aggregate 180-second duration bound", () => {
+    expect(withinMomentDurationLimit([90_000, 90_000])).toBe(true);
+    expect(withinMomentDurationLimit([90_001, 90_000])).toBe(false);
     expect(withinMomentDurationLimit([30_000])).toBe(false);
     expect(withinMomentDurationLimit([20_000, 0])).toBe(false);
   });

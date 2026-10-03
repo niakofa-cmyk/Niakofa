@@ -660,7 +660,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   const totalSeconds = Math.ceil((recordedVideoMs + elapsed) / 1000);
   const capSeconds = Math.ceil(MAX_RECORDING_MS / 1000);
   const remainingSeconds = Math.max(0, Math.ceil((MAX_RECORDING_MS - recordedVideoMs - elapsed) / 1000));
-  const overFamilyStory = recordedVideoMs + elapsed > 60_000;
+  const overFamilyStory = recordedVideoMs + elapsed > 180_000;
   const recordingStatus = `${totalSeconds} / ${capSeconds} video seconds recorded · ${remainingSeconds} seconds remaining`;
   const statusText = `${cameraSwitching ? "Switching cameras… " : ""}${error ? `${error} · ` : ""}${phase === "preview"
     ? `Preview ${clips.length} of ${MAX_ITEMS} clip${clips.length === 1 ? "" : "s"} · ${Math.ceil(recordedVideoMs / 1000)} / ${capSeconds} video seconds recorded · ${Math.max(0, Math.ceil((MAX_RECORDING_MS - recordedVideoMs) / 1000))} seconds remaining`

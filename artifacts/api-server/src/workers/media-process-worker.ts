@@ -624,8 +624,8 @@ async function processMomentComposition(mediaAssetId: number, jobId: number, att
         throw new Error("MEDIA_COMPOSITION_SOURCE_INVALID");
       }
       probedDurations.push(probed.durationMs);
-      if (probed.durationMs > 60_000
-        || probedDurations.reduce((total, duration) => total + duration, 0) > 60_000) {
+      if (probed.durationMs > 180_000
+        || probedDurations.reduce((total, duration) => total + duration, 0) > 180_000) {
         throw new Error("MEDIA_COMPOSITION_DURATION_INVALID");
       }
       probedInputs.push({

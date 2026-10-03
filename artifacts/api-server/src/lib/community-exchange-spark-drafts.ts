@@ -40,7 +40,7 @@ export function isPublishableExchangeSparkAsset(
     && asset.duration_ms !== null
     && Number.isSafeInteger(asset.duration_ms)
     && asset.duration_ms > 0
-    && asset.duration_ms <= 60_000
+    && asset.duration_ms <= 180_000
     && asset.metadata.signature_validated === true;
 }
 

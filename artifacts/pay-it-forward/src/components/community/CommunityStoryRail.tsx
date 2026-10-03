@@ -1045,7 +1045,11 @@ export function CommunityStoryRail({
     if (familyStoryDurationMs !== null
       && familyStoryDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS
       && familyStoryDestination === null) {
-      setError("Choose whether to save the full recording privately or create a Moment capped at 60 seconds.");
+      setError("For videos over 180 seconds, save the full original privately or save it privately before publishing a shorter Moment.");
+      return;
+    }
+    if (familyStoryDestination === "moment" && !familyStoryCopyEnabled) {
+      setError("Save the full original as a private Family Story before publishing a shorter Moment.");
       return;
     }
     if ((familyStoryDestination === "family-only"
@@ -1065,6 +1069,59 @@ export function CommunityStoryRail({
       const selectedIndexes = [...new Set(gallerySelection)].filter((index) => Number.isInteger(index) && index >= 0 && index < files.length);
       const publishFiles = selectedStudioFiles(files, selectedIndexes);
       const familyOnlyRequested = familyStoryDestination === "family-only";
+      const controller = new AbortController();
+      publishControllerRef.current = controller;
+      const attemptId = clientPublishIdRef.current;
+      const attemptSignature = signature;
+      const attemptSnapshot = snapshotRef.current();
+      const videoDurationsMs = await validateStudioFiles(publishFiles);
+      const selectedVideoDurationMs = totalStudioVideoDurationMs(publishFiles, videoDurationsMs);
+      const overMomentLimit = selectedVideoDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS;
+      if (overMomentLimit && familyStoryDestination === null) {
+        throw new Error("Videos over 180 seconds must be archived to a private Family Story before any shorter Moment is published.");
+      }
+      if (familyStoryDestination !== null && !overMomentLimit) {
+        throw new Error("This selection no longer exceeds 180 seconds. Review it before choosing a destination.");
+      }
+      if (overMomentLimit && familyStoryDestination === "moment" && exchangeListingId) {
+        throw new Error("An Exchange Spark longer than 180 seconds must be saved to a private Family Story or trimmed in a separate video editor.");
+      }
+      const familyStoryOnly = overMomentLimit && familyStoryDestination === "family-only";
+      const shouldSaveFamilyStory = familyStoryOnly
+        || (overMomentLimit && familyStoryDestination === "moment" && familyStoryCopyEnabled);
+      if (overMomentLimit && familyStoryDestination === "moment" && !familyStoryCopyEnabled) {
+        throw new Error("Save the full original as a private Family Story before publishing a shorter Moment.");
+      }
+      if (shouldSaveFamilyStory) {
+        if (!familyStoryFamilyId) {
+          throw new Error("Choose a Family Space for the private Family Story copy.");
+        }
+        if (!canCopyStudioFilesToFamily(publishFiles)) {
+          throw new Error("Every item in a private Family Story copy must be a supported photo or video no larger than 20 MB.");
+        }
+      }
+      if (familyStoryOnly) {
+        if (exchangeDraftRef.current) {
+          throw new Error("This Exchange Spark already has a saved draft. Finish or explicitly discard that draft before archiving the video as a Family Story.");
+        }
+        setPublishStatus("Saving the full original in Family Stories…");
+        await saveSparkAsPrivateFamilyStory({
+          familyId: familyStoryFamilyId!,
+          archiveId: familyStoryArchiveId,
+          caption,
+          files: publishFiles,
+          signal: controller.signal,
+          onProgress: (status) => setPublishStatus(status),
+        });
+        draftGenerationRef.current++;
+        if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+        await draftQueueRef.current.catch(() => {});
+        await discardStudioDraft(userId, hubId);
+        resetComposer();
+        setComposerOpen(false);
+        navigate(`/family/${familyStoryFamilyId}`);
+        return;
+      }
       if (!familyOnlyRequested && responseTargetId && (!publishFiles.length || publishFiles.some((file) => !file.type.startsWith("video/")))) {
         throw new Error("Choose a video clip in this Studio to make a response.");
       }
@@ -1082,11 +1139,6 @@ export function CommunityStoryRail({
         || Object.values(momentAccessibility.momentCaptionsVtt).some((text) => text.trim()))) {
         throw new Error("Moment tags and accessibility descriptions are not published to Exchange Sparks. Unlink the listing to publish these as a 24-hour Moment, or clear the Moment-only fields.");
       }
-      const controller = new AbortController();
-      publishControllerRef.current = controller;
-      const attemptId = clientPublishIdRef.current;
-      const attemptSignature = signature;
-      const attemptSnapshot = snapshotRef.current();
       if (exchangeListingId) {
         if (audience !== "community" || publishFiles.length !== 1 || !publishFiles[0].type.startsWith("video/")) {
           throw new Error("An Exchange Spark needs one video shared with your Community. Remove other selected items or change the audience.");
@@ -1171,28 +1223,6 @@ export function CommunityStoryRail({
           publishControllerRef.current = null;
         }
       }
-      const videoDurationsMs = await validateStudioFiles(publishFiles);
-      const selectedVideoDurationMs = totalStudioVideoDurationMs(publishFiles, videoDurationsMs);
-      const overMomentLimit = selectedVideoDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS;
-      const familyStoryOnly = overMomentLimit && familyStoryDestination === "family-only";
-      if (overMomentLimit && familyStoryDestination === null) {
-        throw new Error("Choose whether to save the full recording privately or create a Moment capped at 60 seconds.");
-      }
-      if (familyStoryDestination !== null && !overMomentLimit) {
-        throw new Error("This selection no longer exceeds 60 seconds. Review it before choosing a destination.");
-      }
-
-      const shouldSaveFamilyStory = familyStoryOnly
-        || (overMomentLimit && familyStoryDestination === "moment" && familyStoryCopyEnabled);
-      if (shouldSaveFamilyStory) {
-        if (!familyStoryFamilyId) {
-          throw new Error("Choose a Family Space for the private Family Story copy.");
-        }
-        if (!canCopyStudioFilesToFamily(publishFiles)) {
-          throw new Error("Every item in a private Family Story copy must be a supported photo or video no larger than 20 MB.");
-        }
-      }
-
       const momentSelectionIndexes = overMomentLimit && !familyStoryOnly
         ? chooseMomentCutdownIndexes(publishFiles, videoDurationsMs)
         : publishFiles.map((_, index) => index);
@@ -1747,7 +1777,7 @@ export function CommunityStoryRail({
                     <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={archiveEnabled} onChange={(event) => setArchiveEnabled(event.target.checked)} disabled={publishing} className="h-4 w-4 accent-teal-500" data-testid="input-archive-moment-setting" /><span><strong>Keep a private archive copy</strong><small className="mt-0.5 block text-xs text-white/60">Only you can browse Moments you choose to save.</small></span></label>
                     <label className="mt-3 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={remixEnabled} onChange={(event) => setRemixEnabled(event.target.checked)} disabled={publishing} className="h-4 w-4 accent-teal-500" data-testid="input-remix-moment-setting" /><span><strong>Allow video responses</strong><small className="mt-0.5 block text-xs text-white/60">Neighbors can add a short, kind video response in your Community.</small></span></label>
                   </div>}
-                  {!exchangeListingId && familyStoryDurationMs !== null
+                  {familyStoryDurationMs !== null
                     && familyStoryDurationMs > FAMILY_STORY_CANDIDATE_DURATION_MS && (
                     <SparkFamilyStoryPreservationControl
                       durationMs={familyStoryDurationMs}
@@ -1755,6 +1785,7 @@ export function CommunityStoryRail({
                       destination={familyStoryDestination}
                       checked={familyStoryCopyEnabled}
                       familyId={familyStoryFamilyId}
+                      allowMomentCutdown={!exchangeListingId}
                       onDestinationChange={setFamilyStoryDestination}
                       onCheckedChange={setFamilyStoryCopyEnabled}
                       onFamilyChange={setFamilyStoryFamilyId}
@@ -1999,7 +2030,7 @@ export function CommunityStoryRail({
                        </label>
                        {selectedPreviewFile.type.startsWith("video/") && <label htmlFor="spark-moment-captions" className="block text-xs font-bold text-white/85">Creator video captions <span className="font-normal text-white/55">(optional plain-text WebVTT)</span>
                          <textarea id="spark-moment-captions" value={momentAccessibility.momentCaptionsVtt[previewFileIndex] ?? ""} onChange={(event) => setMomentAccessibility((current) => ({ ...current, momentCaptionsVtt: { ...current.momentCaptionsVtt, [previewFileIndex]: event.target.value } }))} maxLength={64 * 1024} rows={4} className="mt-2 w-full rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 font-mono text-xs text-white placeholder:text-white/35" placeholder={"WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nSpoken words"} aria-describedby="spark-moment-captions-help" data-testid="input-spark-moment-captions" />
-                         <span id="spark-moment-captions-help" className="mt-1 block font-normal text-white/55">Plain-text cues only, ending within this video and the 60-second Moment limit.</span>
+                         <span id="spark-moment-captions-help" className="mt-1 block font-normal text-white/55">Plain-text cues only, ending within this video and the 180-second Moment limit.</span>
                        </label>}
                      </div>
                    )}

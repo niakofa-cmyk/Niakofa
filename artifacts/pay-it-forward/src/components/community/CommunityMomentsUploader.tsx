@@ -282,7 +282,7 @@ export function CommunityMomentsUploader({
                     onChange={(event) => setCaptionsVtt((current) => current.map((value, item) => item === index ? event.target.value : value))}
                     placeholder={"WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nSpoken words"}
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs" data-testid={`input-community-moment-captions-${index}`} />
-                  <p className="text-muted-foreground">Use plain text, with cues ending within this video and the 60-second Moment limit.</p>
+                  <p className="text-muted-foreground">Use plain text, with cues ending within this video and the 180-second Moment limit.</p>
                 </div>
               )}
             </li>

@@ -50,9 +50,11 @@ import {
 } from "../lib/moment-accessibility";
 import {
   MOMENT_COMPOSE_INTENT,
+  MOMENT_COMPOSE_MAX_DURATION_MS,
   isPublishedStoryMediaContext,
   momentCompositionFingerprint,
   withinMomentDurationLimit,
+  withinMomentTotalVideoDurationLimit,
   validMomentComposeIds,
 } from "../lib/moment-video-compose";
 
@@ -123,7 +125,7 @@ const createStorySchema = z.object({
     data_url: z.string().min(1).max(18_000_000),
     media_type: z.enum(["photo", "video"]),
     mime_type: z.string().max(100),
-    duration_ms: z.number().int().positive().max(60_000).nullable().optional(),
+    duration_ms: z.number().int().positive().max(MOMENT_COMPOSE_MAX_DURATION_MS).nullable().optional(),
     width: z.number().int().positive().max(10_000).nullable().optional(),
     height: z.number().int().positive().max(10_000).nullable().optional(),
     alt_text: z.string().trim().max(250).optional(),
@@ -1190,7 +1192,7 @@ router.post("/community/stories/:id/moment-composition", requireAuth, requireApp
     }
     if (result.error === "invalid") {
       return res.status(400).json({
-        error: "Camera-clip reels require two to six attached, ready videos owned by you in this Moment, with no more than 60 seconds total.",
+        error: "Camera-clip reels require two to six attached, ready videos owned by you in this Moment, with no more than 180 seconds total.",
       });
     }
     return res.status(404).json({ error: "Story not found." });
@@ -1523,9 +1525,6 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     if (stagedAssets.some((asset) => asset.status === "failed")) {
       return res.status(409).json({ error: "One or more uploaded assets failed processing. Retry processing or choose another file.", error_code: "MOMENT_MEDIA_FAILED" });
     }
-    if (stagedAssets.some((asset) => asset.media_type === "video" && (asset.duration_ms ?? 0) > 60_000)) {
-      return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
-    }
     for (const asset of stagedAssets) {
       const accessibility = accessibilityByAssetId.get(asset.id);
       if (!accessibility) continue;
@@ -1533,7 +1532,7 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         return res.status(400).json({ error: "Alt text is for image/video attachments and caption cues are for videos." });
       }
       if (accessibility.captions_vtt) {
-        const captionError = validateMomentCaptionsVtt(accessibility.captions_vtt, (asset.duration_ms ?? 60_000) / 1000);
+        const captionError = validateMomentCaptionsVtt(accessibility.captions_vtt, (asset.duration_ms ?? MOMENT_COMPOSE_MAX_DURATION_MS) / 1000);
         if (captionError) return res.status(400).json({ error: captionError });
       }
     }
@@ -1550,6 +1549,13 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
       || asset.media_type === "video" && (!asset.variant_key || !asset.duration_ms)
       || !["photo", "video", "audio"].includes(asset.media_type))) {
       return res.status(409).json({ error: "Moment media is still processing. Wait until every file is ready, then retry.", error_code: "MOMENT_MEDIA_NOT_READY" });
+    }
+    if (!withinMomentTotalVideoDurationLimit(stagedAssets
+      .filter((asset) => asset.media_type === "video")
+      .map((asset) => asset.duration_ms ?? 0))) {
+      return res.status(400).json({
+        error: "Moment videos must be 180 seconds or shorter individually and in total. Save longer originals to a private Family Story.",
+      });
     }
     if (stagedAssets.some((asset) => asset.media_type === "photo" && !asset.mime_type.startsWith("image/")
       || asset.media_type === "video" && !asset.mime_type.startsWith("video/")
@@ -1616,12 +1622,16 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         return res.status(400).json({ error: "Caption cues can only be added to video attachments." });
       }
       if (item.captions_vtt) {
-        const captionError = validateMomentCaptionsVtt(item.captions_vtt, (item.metadata?.duration_ms ?? 60_000) / 1000);
+        const captionError = validateMomentCaptionsVtt(item.captions_vtt, (item.metadata?.duration_ms ?? MOMENT_COMPOSE_MAX_DURATION_MS) / 1000);
         if (captionError) return res.status(400).json({ error: captionError });
       }
     }
-    if (decodedMedia.some((item) => (item.metadata?.duration_ms ?? 0) > 60_000)) {
-      return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    if (!withinMomentTotalVideoDurationLimit(decodedMedia
+      .filter((item) => item.media_type === "video")
+      .map((item) => item.metadata?.duration_ms ?? 0))) {
+      return res.status(400).json({
+        error: "Moment videos must be 180 seconds or shorter individually and in total. Save longer originals to a private Family Story.",
+      });
     }
     const mentionIds = parsed.data.elements
       .filter((element) => element.type === "mention")
@@ -1652,7 +1662,11 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         : [];
       if (stagedAssets.length !== mediaAssetIds.length) return { kind: "media_not_found" as const };
       if (stagedAssets.some((asset) => asset.status === "failed")) return { kind: "media_failed" as const };
-      if (stagedAssets.some((asset) => asset.media_type === "video" && (asset.duration_ms ?? 0) > 60_000)) {
+      const videoDurationsMs = stagedAssets
+        .filter((asset) => asset.media_type === "video")
+        .map((asset) => asset.duration_ms ?? 0);
+      if (videoDurationsMs.some((duration) => duration > MOMENT_COMPOSE_MAX_DURATION_MS)
+        || videoDurationsMs.reduce((total, duration) => total + duration, 0) > MOMENT_COMPOSE_MAX_DURATION_MS) {
         return { kind: "media_too_long" as const };
       }
       if (stagedAssets.some((asset) => asset.status !== "ready"
@@ -1835,7 +1849,9 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
     if (result.kind === "media_failed") return res.status(409).json({ error: "One or more uploaded assets failed processing.", error_code: "MOMENT_MEDIA_FAILED" });
     if (result.kind === "music_invalid") return res.status(400).json({ error: "The selected soundtrack is not an attested audio asset owned by this account." });
     if (result.kind === "music_context_invalid") return res.status(400).json({ error: "Background music is available for video Community and Hub Moments, not Exchange Sparks or photo-only Moments." });
-    if (result.kind === "media_too_long") return res.status(400).json({ error: "Story videos must be 60 seconds or shorter." });
+    if (result.kind === "media_too_long") return res.status(400).json({
+      error: "Moment videos must be 180 seconds or shorter individually and in total. Save longer originals to a private Family Story.",
+    });
     if (result.kind === "invalid_cover_time") return res.status(400).json({ error: "Each video cover time must be within the probed video duration." });
     if (result.kind === "media_not_ready") return res.status(409).json({ error: "Moment media is still processing. Retry after every file is ready.", error_code: "MOMENT_MEDIA_NOT_READY" });
     logger.info(buildCommunityStoryAuditEvent({

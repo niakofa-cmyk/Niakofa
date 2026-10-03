@@ -15,6 +15,7 @@ export function SparkFamilyStoryPreservationControl({
   checked,
   familyId,
   disabled = false,
+  allowMomentCutdown = true,
   onDestinationChange,
   onCheckedChange,
   onFamilyChange,
@@ -25,6 +26,7 @@ export function SparkFamilyStoryPreservationControl({
   checked: boolean;
   familyId: number | null;
   disabled?: boolean;
+  allowMomentCutdown?: boolean;
   onDestinationChange: (destination: "family-only" | "moment") => void;
   onCheckedChange: (checked: boolean) => void;
   onFamilyChange: (familyId: number | null) => void;
@@ -62,10 +64,10 @@ export function SparkFamilyStoryPreservationControl({
   return (
     <section className="nia-story-family-copy" aria-labelledby="spark-family-copy-title" data-testid="spark-family-copy">
       <div className="nia-story-family-copy__intro">
-        <span aria-hidden="true">60+</span>
+          <span aria-hidden="true">3m+</span>
         <div>
           <h3 id="spark-family-copy-title">Choose where this recording goes</h3>
-          <p>Your selected videos add up to {Math.ceil(durationMs / 1000)} seconds. Moments remain limited to 60 seconds; a private Family Story can keep the full original selection.</p>
+          <p>Your selected videos add up to {Math.ceil(durationMs / 1000)} seconds. Shared videos are limited to 180 seconds. Save the full original privately before publishing any shorter Moment.</p>
         </div>
       </div>
       <fieldset className="nia-story-family-copy__choices" disabled={disabled}>
@@ -80,25 +82,28 @@ export function SparkFamilyStoryPreservationControl({
             onChange={() => onDestinationChange("family-only")}
             data-testid="input-family-story-only"
           />
-          <span><strong>Save the full original as a Family Story only</strong><small>No Moment is published. Only the original media and caption are saved privately.</small></span>
+          <span><strong>Save the full original as a Family Story only</strong><small>No Moment is published. The original media and caption are saved privately.</small></span>
         </label>
-        <label className="nia-story-family-copy__consent">
-          <input
-            type="radio"
-            name="spark-family-story-destination"
-            value="moment"
-            checked={destination === "moment"}
-            disabled={disabled}
-            onChange={() => onDestinationChange("moment")}
-            data-testid="input-family-story-moment"
-          />
-          <span><strong>Create a Moment from up to 60 seconds</strong><small>Uses the first complete video clips that fit; clips are not shortened. Later clips stay out of the Moment.</small></span>
-        </label>
+        {allowMomentCutdown && (
+          <label className="nia-story-family-copy__consent">
+            <input
+              type="radio"
+              name="spark-family-story-destination"
+              value="moment"
+              checked={destination === "moment"}
+              disabled={disabled}
+              onChange={() => onDestinationChange("moment")}
+              data-testid="input-family-story-moment"
+            />
+            <span><strong>Create a Moment from up to 180 seconds</strong><small>Uses the first complete video clips that fit; clips are not shortened. The full original must also be saved privately.</small></span>
+          </label>
+        )}
       </fieldset>
       {destination === "moment" && (
         <label className="nia-story-family-copy__consent nia-story-family-copy__optional">
           <input
             type="checkbox"
+            required
             checked={checked}
             disabled={!supported || disabled}
             onChange={(event) => {
@@ -107,7 +112,7 @@ export function SparkFamilyStoryPreservationControl({
             }}
             data-testid="input-save-private-family-story"
           />
-          <span><strong>Also save the full original privately</strong><small>The Family Story is saved before the Moment is published.</small></span>
+          <span><strong>Save the full original privately (required)</strong><small>The Family Story is saved before the Moment is published.</small></span>
         </label>
       )}
       {!supported && (

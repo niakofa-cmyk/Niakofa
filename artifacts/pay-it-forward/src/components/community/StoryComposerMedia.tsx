@@ -75,7 +75,7 @@ export async function validateStoryFiles(files: File[]): Promise<string[]> {
     if (duration === null) {
       errors.push(`${file.name}: The video could not be inspected. Please choose another clip.`);
     } else if (duration > STORY_MEDIA_LIMITS.videoMaxSeconds) {
-      errors.push(`${file.name}: Story videos must be 60 seconds or shorter.`);
+      errors.push(`${file.name}: Story videos must be 180 seconds or shorter.`);
     }
   }
   return errors;

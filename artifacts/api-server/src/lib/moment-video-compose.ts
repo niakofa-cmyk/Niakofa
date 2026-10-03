@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export const MOMENT_COMPOSE_INTENT = "camera_clip_reel" as const;
 export const MOMENT_COMPOSE_MAX_CLIPS = 6;
-export const MOMENT_COMPOSE_MAX_DURATION_MS = 60_000;
+export const MOMENT_COMPOSE_MAX_DURATION_MS = 180_000;
 
 export function validMomentComposeIds(value: unknown): value is number[] {
   return Array.isArray(value)
@@ -136,9 +136,15 @@ export function momentConcatArgs(inputListPath: string, outputPath: string, clip
   ];
 }
 
+export function withinMomentTotalVideoDurationLimit(durationsMs: number[]): boolean {
+  return durationsMs.every((duration) => Number.isFinite(duration)
+      && duration > 0
+      && duration <= MOMENT_COMPOSE_MAX_DURATION_MS)
+    && durationsMs.reduce((total, duration) => total + duration, 0) <= MOMENT_COMPOSE_MAX_DURATION_MS;
+}
+
 export function withinMomentDurationLimit(durationsMs: number[]): boolean {
   return durationsMs.length >= 2
     && durationsMs.length <= MOMENT_COMPOSE_MAX_CLIPS
-    && durationsMs.every((duration) => Number.isFinite(duration) && duration > 0)
-    && durationsMs.reduce((total, duration) => total + duration, 0) <= MOMENT_COMPOSE_MAX_DURATION_MS;
+    && withinMomentTotalVideoDurationLimit(durationsMs);
 }

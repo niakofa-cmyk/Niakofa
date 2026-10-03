@@ -11,7 +11,7 @@ export type StoryMediaValidation = {
 export const STORY_MEDIA_LIMITS = {
   maxFiles: 6,
   maxBytes: 12 * 1024 * 1024,
-  videoMaxSeconds: 60,
+  videoMaxSeconds: 180,
   maxWidth: 10_000,
   maxHeight: 10_000,
 } as const;
@@ -41,12 +41,13 @@ export function validateStoryMedia(
   if (file.size > STORY_MEDIA_LIMITS.maxBytes) {
     return { ok: false as const, error: "That file is too large. Maximum is 12 MB." };
   }
-  if (
-    kind === "video" &&
-    metadata.durationSeconds !== undefined &&
-    metadata.durationSeconds > STORY_MEDIA_LIMITS.videoMaxSeconds
-  ) {
-    return { ok: false as const, error: "Story videos must be 60 seconds or shorter." };
+  if (kind === "video" && metadata.durationSeconds !== undefined) {
+    if (!Number.isFinite(metadata.durationSeconds) || metadata.durationSeconds <= 0) {
+      return { ok: false as const, error: "The video duration could not be read." };
+    }
+    if (metadata.durationSeconds > STORY_MEDIA_LIMITS.videoMaxSeconds) {
+      return { ok: false as const, error: "Story videos must be 180 seconds or shorter." };
+    }
   }
   if (
     metadata.width !== undefined &&

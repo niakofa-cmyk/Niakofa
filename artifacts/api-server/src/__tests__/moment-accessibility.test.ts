@@ -9,8 +9,8 @@ describe("Moment creator accessibility metadata", () => {
     expect(validateMomentCaptionsVtt("WEBVTT\n\n00:00:01.000 --> 00:00:02.500\nA neighbor waves hello.")).toBeNull();
     expect(validateMomentCaptionsVtt("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<b>Hello</b>"))
       .toMatch(/plain text/);
-    expect(validateMomentCaptionsVtt("WEBVTT\n\n00:00:59.000 --> 00:01:01.000\nHello"))
-      .toMatch(/60 seconds/);
+    expect(validateMomentCaptionsVtt("WEBVTT\n\n00:02:59.000 --> 00:03:01.000\nHello"))
+      .toMatch(/180 seconds/);
     expect(validateMomentCaptionsVtt("WEBVTT\n\nnot a cue\nHello")).toMatch(/valid start\/end time/);
   });
 
@@ -46,7 +46,7 @@ describe("Moment creator accessibility metadata", () => {
     expect(route).toMatch(/accessibilityByAssetId\.get\(asset\.id\)\?\.alt_text/);
     expect(route).toMatch(/if \(exchangeListingId === null\) \{\s+const altTextError = validateNewMomentVisualAltText\(stagedAssets/);
     expect(route.match(/if \(altTextError\) return res\.status\(400\)\.json\(\{ error: altTextError \}\);/g)).toHaveLength(2);
-    expect(route).toMatch(/validateMomentCaptionsVtt\(accessibility\.captions_vtt, \(asset\.duration_ms \?\? 60_000\) \/ 1000\)/);
-    expect(route).toMatch(/validateMomentCaptionsVtt\(item\.captions_vtt, \(item\.metadata\?\.duration_ms \?\? 60_000\) \/ 1000\)/);
+    expect(route).toMatch(/validateMomentCaptionsVtt\(accessibility\.captions_vtt, \(asset\.duration_ms \?\? MOMENT_COMPOSE_MAX_DURATION_MS\) \/ 1000\)/);
+    expect(route).toMatch(/validateMomentCaptionsVtt\(item\.captions_vtt, \(item\.metadata\?\.duration_ms \?\? MOMENT_COMPOSE_MAX_DURATION_MS\) \/ 1000\)/);
   });
 });

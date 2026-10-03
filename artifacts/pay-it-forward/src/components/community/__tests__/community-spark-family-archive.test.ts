@@ -12,6 +12,7 @@ import {
 const storyRailSource = readFileSync(new URL("../CommunityStoryRail.tsx", import.meta.url), "utf8");
 const composerChromeSource = readFileSync(new URL("../CommunityStoryVisual.tsx", import.meta.url), "utf8");
 const familyStoriesSource = readFileSync(new URL("../../family/FamilyStoriesExperience.tsx", import.meta.url), "utf8");
+const familyPreservationSource = readFileSync(new URL("../SparkFamilyStoryPreservationControl.tsx", import.meta.url), "utf8");
 
 function studioFile(type: string, size = 1024): File {
   return { type, size } as unknown as File;
@@ -23,9 +24,9 @@ test("Family Story candidate duration sums selected videos, not photos", () => {
     studioFile("image/jpeg"),
     studioFile("video/webm"),
   ];
-  const duration = totalStudioVideoDurationMs(files, [35_000, 0, 25_000]);
+  const duration = totalStudioVideoDurationMs(files, [110_000, 0, 70_000]);
   assert.equal(duration, FAMILY_STORY_CANDIDATE_DURATION_MS);
-  assert.equal(totalStudioVideoDurationMs(files, [35_001, 0, 25_000]) > FAMILY_STORY_CANDIDATE_DURATION_MS, true);
+  assert.equal(totalStudioVideoDurationMs(files, [110_001, 0, 70_000]) > FAMILY_STORY_CANDIDATE_DURATION_MS, true);
 });
 
 test("Family copy accepts only supported nonempty items at or below 20 MB", () => {
@@ -39,18 +40,18 @@ test("Family copy accepts only supported nonempty items at or below 20 MB", () =
   assert.equal(canCopyStudioFilesToFamily([studioFile("video/mp4", FAMILY_STORY_MAX_FILE_BYTES + 1)]), false);
 });
 
-test("Moment cutdown keeps all photos and only complete leading clips within 60 seconds", () => {
+test("Moment cutdown keeps all photos and only complete leading clips within 180 seconds", () => {
   const files = [
     studioFile("video/mp4"),
     studioFile("image/jpeg"),
     studioFile("video/webm"),
     studioFile("video/mp4"),
   ];
-  assert.deepEqual(chooseMomentCutdownIndexes(files, [35_000, 0, 25_000, 30_000]), [0, 1, 2]);
-  assert.deepEqual(chooseMomentCutdownIndexes(files, [20_000, 0, 20_000, 20_000]), [0, 1, 2, 3]);
+  assert.deepEqual(chooseMomentCutdownIndexes(files, [95_000, 0, 85_000, 30_000]), [0, 1, 2]);
+  assert.deepEqual(chooseMomentCutdownIndexes(files, [60_000, 0, 60_000, 60_000]), [0, 1, 2, 3]);
   assert.throws(
-    () => chooseMomentCutdownIndexes([studioFile("video/mp4")], [90_000]),
-    /No complete video clip fits within 60 seconds/,
+    () => chooseMomentCutdownIndexes([studioFile("video/mp4")], [180_001]),
+    /No complete video clip fits within 180 seconds/,
   );
 });
 
@@ -64,6 +65,8 @@ test("recovered Studio work resumes in editing, and Create a Spark skips the sou
   assert.doesNotMatch(storyRailSource, /setFamilyStoryCopyEnabled\(true\)/);
   assert.match(storyRailSource, /familyStoryDestination === "family-only"/);
   assert.match(storyRailSource, /saveSparkAsPrivateFamilyStory\(\{/);
+  assert.match(storyRailSource, /familyStoryDestination === "moment" && !familyStoryCopyEnabled/);
+  assert.match(familyPreservationSource, /Create a Moment from up to 180 seconds/);
   assert.match(storyRailSource, /clientPublishId: attemptId/);
 });
 

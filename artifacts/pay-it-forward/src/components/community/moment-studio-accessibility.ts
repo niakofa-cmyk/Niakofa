@@ -73,7 +73,7 @@ export function validateMomentStudioWebVtt(value: string, videoDurationMs?: numb
   if (!/^WEBVTT(?:\n\n|\n(?=\d{2}:)|$)/.test(normalized)) return "Caption cues need a WEBVTT header.";
   const cues = normalized.replace(/^WEBVTT(?:[^\n]*)\n?/, "").trim().split(/\n{2,}/).filter(Boolean);
   if (!cues.length || cues.length > 100) return "Add between 1 and 100 caption cues.";
-  const durationLimit = Math.min(60, videoDurationMs == null ? 60 : videoDurationMs / 1000);
+  const durationLimit = Math.min(180, videoDurationMs == null ? 180 : videoDurationMs / 1000);
   for (const cue of cues) {
     const lines = cue.split("\n");
     const timing = /^((?:\d{2,}:)?[0-5]\d:[0-5]\d\.\d{3}) --> ((?:\d{2,}:)?[0-5]\d:[0-5]\d\.\d{3})$/.exec(lines.shift() ?? "");
@@ -81,7 +81,7 @@ export function validateMomentStudioWebVtt(value: string, videoDurationMs?: numb
     const start = timestampSeconds(timing[1]);
     const end = timestampSeconds(timing[2]);
     if (start === null || end === null || end <= start || end > durationLimit) {
-      return "Caption cue times must be increasing and within this video (up to 60 seconds).";
+      return "Caption cue times must be increasing and within this video (up to 180 seconds).";
     }
     const text = lines.join("\n").trim();
     if (!text || text.length > 500 || /[<>]|-->|[\u0000-\u001f\u007f]/.test(text)) {

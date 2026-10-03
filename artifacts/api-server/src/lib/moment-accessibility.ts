@@ -1,4 +1,4 @@
-const MAX_MOMENT_VIDEO_SECONDS = 60;
+const MAX_MOMENT_VIDEO_SECONDS = 180;
 const MAX_VTT_BYTES = 64 * 1024;
 const MAX_VTT_CUES = 100;
 const MAX_CUE_TEXT_LENGTH = 500;
@@ -35,7 +35,7 @@ export function validateMomentCaptionsVtt(value: string, maxDurationSeconds = MA
     const start = vttTimestampSeconds(match[1]);
     const end = vttTimestampSeconds(match[2]);
     if (start === null || end === null || end <= start || end > Math.min(MAX_MOMENT_VIDEO_SECONDS, maxDurationSeconds)) {
-      return "Caption cue times must be increasing and within the video duration (up to 60 seconds).";
+      return "Caption cue times must be increasing and within the video duration (up to 180 seconds).";
     }
     const text = lines.join("\n").trim();
     if (!text || text.length > MAX_CUE_TEXT_LENGTH || /[<>]|-->|[\u0000-\u001f\u007f]/.test(text)) {

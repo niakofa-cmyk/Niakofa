@@ -12,7 +12,7 @@ test("Exchange Sparks accept validated MP4/WebM within byte and duration limits"
   assert.equal(validateExchangeSparkVideo({
     mimeType: "video/mp4",
     byteSize: 1,
-    durationSeconds: 60,
+    durationSeconds: 180,
   }), null);
   assert.equal(validateExchangeSparkVideo({
     mimeType: "video/webm",
@@ -25,7 +25,8 @@ test("Exchange Sparks reject non-video MIME types, empty/oversize files, and lon
   assert.match(validateExchangeSparkVideo({ mimeType: "video/quicktime", byteSize: 1, durationSeconds: 4 }) ?? "", /MP4 or WebM/);
   assert.match(validateExchangeSparkVideo({ mimeType: "video/mp4", byteSize: 0, durationSeconds: 4 }) ?? "", /64 MiB/);
   assert.match(validateExchangeSparkVideo({ mimeType: "video/mp4", byteSize: EXCHANGE_SPARK_MAX_BYTES + 1, durationSeconds: 4 }) ?? "", /64 MiB/);
-  assert.match(validateExchangeSparkVideo({ mimeType: "video/mp4", byteSize: 1, durationSeconds: 60.01 }) ?? "", /60 seconds/);
+  assert.equal(validateExchangeSparkVideo({ mimeType: "video/mp4", byteSize: 1, durationSeconds: 0.001 }), null);
+  assert.match(validateExchangeSparkVideo({ mimeType: "video/mp4", byteSize: 1, durationSeconds: 180.01 }) ?? "", /180 seconds/);
   assert.match(validateExchangeSparkVideo({ mimeType: "video/mp4", byteSize: 1, durationSeconds: Number.NaN }) ?? "", /duration/);
 });
 

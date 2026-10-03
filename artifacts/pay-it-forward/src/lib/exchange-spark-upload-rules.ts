@@ -1,5 +1,5 @@
 export const EXCHANGE_SPARK_MAX_BYTES = 64 * 1024 * 1024;
-export const EXCHANGE_SPARK_MAX_DURATION_SECONDS = 60;
+export const EXCHANGE_SPARK_MAX_DURATION_SECONDS = 180;
 export const EXCHANGE_SPARK_UPLOAD_ATTEMPTS = 3;
 export const EXCHANGE_SPARK_METADATA_TIMEOUT_MS = 10_000;
 export const EXCHANGE_SPARK_PROCESSING_TIMEOUT_MS = 120_000;
@@ -23,7 +23,7 @@ export function validateExchangeSparkVideo(input: {
     return "The video duration could not be read. Choose another MP4 or WebM video.";
   }
   if (input.durationSeconds > EXCHANGE_SPARK_MAX_DURATION_SECONDS) {
-    return "Exchange Spark videos must be 60 seconds or shorter.";
+    return "Exchange Spark videos must be 180 seconds or shorter.";
   }
   return null;
 }

@@ -1,9 +1,9 @@
 import { authHeaders } from "@/lib/auth";
 import { storiesClient } from "../family/stories-client";
 
-export const FAMILY_STORY_CANDIDATE_DURATION_MS = 60_000;
+export const FAMILY_STORY_CANDIDATE_DURATION_MS = 180_000;
 export const FAMILY_STORY_MAX_FILE_BYTES = 20 * 1024 * 1024;
-export const MOMENT_VIDEO_CUTDOWN_MAX_DURATION_MS = 60_000;
+export const MOMENT_VIDEO_CUTDOWN_MAX_DURATION_MS = 180_000;
 
 const FAMILY_STORY_MEDIA_TYPES = new Set([
   "image/jpeg",
@@ -43,7 +43,7 @@ export function chooseMomentCutdownIndexes(
 
     const durationMs = durationsMs[index];
     if (!Number.isFinite(durationMs) || !durationMs || durationMs < 0) {
-      throw new Error(`${file.name}: Could not verify this clip’s duration for the 60-second Moment limit.`);
+      throw new Error(`${file.name}: Could not verify this clip’s duration for the 180-second Moment limit.`);
     }
     if (videoDurationMs + durationMs > maxDurationMs) {
       videoLimitReached = true;
@@ -54,7 +54,7 @@ export function chooseMomentCutdownIndexes(
   });
 
   if (!indexes.some((index) => files[index].type.startsWith("video/"))) {
-    throw new Error("No complete video clip fits within 60 seconds. Trim it in Studio or save the full recording as a private Family Story.");
+    throw new Error("No complete video clip fits within 180 seconds. Trim it in Studio or save the full recording as a private Family Story.");
   }
   return indexes;
 }

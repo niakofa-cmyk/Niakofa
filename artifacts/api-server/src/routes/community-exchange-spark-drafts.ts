@@ -377,7 +377,7 @@ router.post(
         .for("update");
       const asset = singlePublishableExchangeSparkAsset(assets, userId, sparkId);
       if (!asset) {
-        return { kind: "conflict" as const, error: "Exactly one ready, validated video asset under 60 seconds is required." };
+        return { kind: "conflict" as const, error: "Exactly one ready, validated video asset no longer than 180 seconds is required." };
       }
       const caption = cleanCaption(parsed.data.caption ?? spark.caption) || null;
       const moderation = moderatePostText(caption ?? "");

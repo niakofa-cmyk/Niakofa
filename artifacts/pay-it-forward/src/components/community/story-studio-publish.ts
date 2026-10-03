@@ -47,8 +47,8 @@ export async function validateStudioFiles(files: File[]): Promise<Array<number |
         video.onloadedmetadata = () => resolve();
         video.onerror = () => reject(new Error(`${file.name}: Video could not be inspected.`));
       });
-      if (!Number.isFinite(video.duration) || video.duration <= 0 || video.duration > 60) throw new Error(`${file.name}: Moment videos must be 60 seconds or shorter.`);
-      videoDurationsMs.push(Math.round(video.duration * 1000));
+      if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error(`${file.name}: The video duration could not be read.`);
+      videoDurationsMs.push(Math.ceil(video.duration * 1000));
     } finally {
       video.removeAttribute("src");
       video.load();
