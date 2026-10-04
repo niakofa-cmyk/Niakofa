@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "license": "MIT",
   "packageManager": "pnpm@11.22.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "preinstall": "echo ok",
     "postinstall": "node node_modules/esbuild/install.js 2>/dev/null || true && (test -e artifacts/api-server/node_modules/esbuild || ln -sf \"$PWD/node_modules/esbuild\" artifacts/api-server/node_modules/esbuild) 2>/dev/null || true",
@@ -50,7 +52,8 @@
     "test:v17-1-contract": "node --test tests/v17-1-package-contract.test.mjs",
     "test:v17-2-1-contract": "node --test tests/v17-2-1-package-contract.test.mjs",
     "test:diaspora": "bash scripts/run-repo-diaspora-contracts.sh",
-    "production-gate": "node scripts/production-gate.mjs"
+    "production-gate": "node scripts/production-gate.mjs",
+    "test:media-production:railway": "railway run bash ops/run-media-production-certification.sh"
   },
   "private": true,
   "devDependencies": {
