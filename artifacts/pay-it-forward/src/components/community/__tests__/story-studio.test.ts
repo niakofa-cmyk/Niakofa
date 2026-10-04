@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
+import { CameraClipReelPendingError, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
 import { buildMomentMediaAccessibility, parseMomentStudioTags, restoreMomentStudioAccessibility, validateMomentStudioWebVtt, type MomentStudioAccessibilityDraft } from "../moment-studio-accessibility";
 import { trimVideoFile } from "../story-media-tools";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
@@ -59,6 +59,162 @@ test("camera composition client sends the ordered id contract and consumes priva
       playbackGrantUrl: "/api/community/stories/52/moment-composition/playback-grant",
     });
     await assert.rejects(requestCameraClipReel(52, [71, 71]), /unique video assets/);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test("publishing one camera video returns its Spark ID and queues that exact media as a reel", async () => {
+  const oldFetch = globalThis.fetch;
+  const calls: Array<{ path: string; method?: string; body?: string }> = [];
+  globalThis.fetch = async (path, init) => {
+    const route = String(path);
+    calls.push({ path: route, method: init?.method, body: init?.body as string | undefined });
+    if (route.includes("moment-media-status")) {
+      return new Response(JSON.stringify({
+        assets: [{ id: 71, status: "ready", media_type: "video", variant_ready: true }],
+      }), { status: 200 });
+    }
+    if (route === "/api/community/stories" && init?.method === "POST") {
+      return new Response(JSON.stringify({ story: { id: 915 } }), { status: 201 });
+    }
+    if (route === "/api/community/stories/915/moment-composition" && init?.method === "POST") {
+      return new Response(JSON.stringify({ composition: {
+        status: "queued",
+        playback_grant_url: "/api/community/stories/915/moment-composition/playback-grant",
+        status_url: "/api/community/stories/915/moment-composition",
+      } }), { status: 202 });
+    }
+    throw new Error(`Unexpected request: ${route}`);
+  };
+  try {
+    const sparkId = await publishStudioMoment({
+      userId: 73,
+      hubId: null,
+      audience: "community",
+      clientPublishId: "00000000-0000-4000-8000-000000000915",
+      files: [videoFile("camera-clip.webm")],
+      caption: "A moment from today",
+      mediaAltTexts: ["A video recorded in the camera"],
+      elements: [],
+      effect: "none",
+      signal: new AbortController().signal,
+      onStatus: () => {},
+      uploadedIds: [71],
+      cameraClipReel: true,
+      beforePublish: async (ids) => assert.deepEqual(ids, [71]),
+    });
+    assert.equal(sparkId, 915);
+    assert.deepEqual(calls.map(({ path, method }) => [path, method]), [
+      ["/api/community/stories/moment-media-status?contextKind=community_moment&contextId=73&ids=71", undefined],
+      ["/api/community/stories", "POST"],
+      ["/api/community/stories/915/moment-composition", "POST"],
+    ]);
+    assert.deepEqual(JSON.parse(calls[2].body!), {
+      intent: "camera_clip_reel",
+      media_asset_ids: [71],
+    });
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test("camera composition network failures retain the published Spark ID for retry", async () => {
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) => {
+    const route = String(path);
+    if (route.includes("moment-media-status")) {
+      return new Response(JSON.stringify({
+        assets: [{ id: 71, status: "ready", media_type: "video", variant_ready: true }],
+      }), { status: 200 });
+    }
+    if (route === "/api/community/stories" && init?.method === "POST") {
+      return new Response(JSON.stringify({ story: { id: 917 } }), { status: 201 });
+    }
+    if (route === "/api/community/stories/917/moment-composition" && init?.method === "POST") {
+      throw new TypeError("Network disconnected");
+    }
+    throw new Error(`Unexpected request: ${route}`);
+  };
+  try {
+    await assert.rejects(
+      publishStudioMoment({
+        userId: 73,
+        hubId: null,
+        audience: "community",
+        clientPublishId: "00000000-0000-4000-8000-000000000917",
+        files: [videoFile("camera-clip.webm")],
+        caption: "A moment from today",
+        mediaAltTexts: ["A video recorded in the camera"],
+        elements: [],
+        effect: "none",
+        signal: new AbortController().signal,
+        onStatus: () => {},
+        uploadedIds: [71],
+        cameraClipReel: true,
+        beforePublish: async () => {},
+      }),
+      (reason: unknown) => reason instanceof CameraClipReelPendingError
+        && reason.storyId === 917
+        && /Network disconnected/.test(reason.message),
+    );
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test("an imported video returns its Spark ID without being routed through camera composition", async () => {
+  const oldFetch = globalThis.fetch;
+  const calls: Array<{ path: string; body?: string }> = [];
+  globalThis.fetch = async (path, init) => {
+    const route = String(path);
+    calls.push({ path: route, body: init?.body as string | undefined });
+    if (route.includes("moment-media-status")) {
+      return new Response(JSON.stringify({
+        assets: [{ id: 72, status: "ready", media_type: "video", variant_ready: true }],
+      }), { status: 200 });
+    }
+    if (route === "/api/community/stories" && init?.method === "POST") {
+      return new Response(JSON.stringify({ story: { id: 916 } }), { status: 201 });
+    }
+    throw new Error(`Unexpected request: ${route}`);
+  };
+  try {
+    const sparkId = await publishStudioMoment({
+      userId: 73,
+      hubId: null,
+      audience: "community",
+      clientPublishId: "00000000-0000-4000-8000-000000000916",
+      files: [videoFile("edited-import.mp4")],
+      caption: "Edited video",
+      mediaAltTexts: ["A video edited outside the camera"],
+      elements: [],
+      effect: "none",
+      signal: new AbortController().signal,
+      onStatus: () => {},
+      uploadedIds: [72],
+      beforePublish: async (ids) => assert.deepEqual(ids, [72]),
+    });
+    assert.equal(sparkId, 916);
+    assert.equal(calls.some(({ path }) => path.includes("/moment-composition")), false);
+    assert.deepEqual(JSON.parse(calls.at(-1)!.body!), {
+      caption: "Edited video",
+      hub_id: null,
+      audience: "community",
+      media_asset_ids: [72],
+      elements: [],
+      media_accessibility: [{ media_asset_id: 72, alt_text: "A video edited outside the camera" }],
+      client_publish_id: "00000000-0000-4000-8000-000000000916",
+      archive_enabled: false,
+      remix_enabled: false,
+      composition_manifest: {
+        version: 1,
+        canvas: { width: 1080, height: 1920, aspect: "9:16" },
+        elements: [],
+        effects: [],
+        music: null,
+      },
+    });
   } finally {
     globalThis.fetch = oldFetch;
   }
@@ -150,6 +306,9 @@ test("studio uploads raw bytes and publishes asset IDs, elements and manifest wi
     if (route.endsWith("/uploads")) return new Response(JSON.stringify({ media_asset_id: 41, upload: { method: "PUT", url: "/storage/41", headers: {} }, complete_url: "/api/media-assets/41/complete" }), { status: 200 });
     if (route.endsWith("/complete")) return new Response(JSON.stringify({ media_asset_id: 41, status: "processing" }), { status: 202 });
     if (route.includes("moment-media-status")) return new Response(JSON.stringify({ assets: [{ id: 41, status: "ready", media_type: "photo", variant_ready: true }] }), { status: 200 });
+    if (route === "/api/community/stories" && init?.method === "POST") {
+      return new Response(JSON.stringify({ story: { id: 915 } }), { status: 201 });
+    }
     return new Response("{}", { status: 200 });
   };
   try {
@@ -273,6 +432,7 @@ test("failed publication does not remove a recoverable user-scoped draft", async
         assert.equal(records.get(binary.id)?.clientPublishId, body.client_publish_id);
         posts.push(body);
         if (loseResponse) throw new Error("Connection lost after commit");
+        return new Response(JSON.stringify({ story: { id: 917 } }), { status: 201 });
       }
       return new Response("{}", { status: 200 });
     };

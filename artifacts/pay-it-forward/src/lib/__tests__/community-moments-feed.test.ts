@@ -3,12 +3,17 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  buildMomentsSparkHref,
+  hasExplicitCommunityMomentsAudience,
+} from "../../components/community/CommunityExperienceContract";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "../..");
 const apiRoot = path.resolve(appRoot, "../../api-server/src/routes");
 const momentsMigration = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsMigration.ts"), "utf8");
 const moments = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsExperience.tsx"), "utf8");
+const momentsStyles = fs.readFileSync(path.join(appRoot, "components/community/community-moments-experience.css"), "utf8");
 const studio = fs.readFileSync(path.join(appRoot, "components/community/CommunityStoryRail.tsx"), "utf8");
 const studioPublish = fs.readFileSync(path.join(appRoot, "components/community/story-studio-publish.ts"), "utf8");
 const uploader = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsUploader.tsx"), "utf8");
@@ -21,6 +26,27 @@ const storiesRoute = fs.readFileSync(path.join(apiRoot, "community-stories.ts"),
 const mediaRoute = fs.readFileSync(path.join(apiRoot, "media-assets-v21.ts"), "utf8");
 
 describe("authorized Community Moments browsing feed", () => {
+  test("published Sparks deep-link to their exact Moments item and preserve audience scope", () => {
+    assert.equal(buildMomentsSparkHref(915, "community", null), "/community/moments?sparkId=915&audience=community");
+    assert.equal(buildMomentsSparkHref(915, "hub", 41), "/community/moments?sparkId=915&hubId=41");
+    assert.throws(() => buildMomentsSparkHref(0, "community", null), /valid ID/);
+    assert.throws(() => buildMomentsSparkHref(915, "hub", null), /Hub ID/);
+    assert.equal(hasExplicitCommunityMomentsAudience("?audience=community"), true);
+    assert.equal(hasExplicitCommunityMomentsAudience("?audience=community&audience=hub"), false);
+    assert.match(studio, /const publishedSparkId = await publishStudioMoment/);
+    assert.match(studio, /navigate\(buildMomentsSparkHref\(publishedSparkId, audience, hubId\)\)/);
+    assert.match(studio, /navigate\(buildMomentsSparkHref\(reason\.storyId, audience, hubId\)\)/);
+    const pendingCatch = studio.match(/if \(reason instanceof CameraClipReelPendingError\) \{([\s\S]*?)\n      \} else \{/);
+    assert.ok(pendingCatch, "camera-reel pending publishes should use the dedicated recovery path");
+    assert.match(pendingCatch[1], /setComposerOpen\(false\)/);
+    assert.match(communityPage, /communityMomentsAudience \? null : hubContextId \?\? defaultHubId/);
+    assert.match(moments, /sparks\.findIndex\(\(spark\) => spark\.id === openSparkId\)/);
+    assert.match(moments, /cardRefs\.current\.get\(index\)\?\.scrollIntoView/);
+    assert.match(moments, /autoPlay muted=\{videoMuted\} playsInline controls/);
+    assert.match(momentsView, /fullBleed/);
+    assert.match(momentsStyles, /\.nia-moments--fullbleed\s*\{[^}]*height:\s*100dvh/s);
+  });
+
   test("Community and Hub contexts use the authenticated Sparks endpoint and cursor pagination", () => {
     assert.match(moments, /hubId !== null\) query\.set\("hubId", String\(hubId\)\)/);
     assert.match(moments, /new URLSearchParams\(\{ limit: String\(MOMENTS_PAGE_SIZE\) \}\)/);

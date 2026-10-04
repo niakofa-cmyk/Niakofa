@@ -46,7 +46,8 @@ assert.match(community, /normalizedSection === "exchange" && <CommunityExchangeV
 assert.match(communityStoryRail, /const query = hubId \? `\?hubId=\$\{encodeURIComponent\(String\(hubId\)\)\}` : ""/);
 assert.match(communityStoryRail, /fetch\(`\/api\/community\/stories\$\{query\}/);
 assert.match(community, /\.finally\(\(\) => \{\s+if \(!cancelled\) setDefaultHubResolved\(true\);/);
-assert.match(community, /const effectiveHubId = hubContextId \?\? defaultHubId;/);
+assert.match(community, /normalizedSection === "moments" && hasExplicitCommunityMomentsAudience\(search\)/);
+assert.match(community, /const effectiveHubId = communityMomentsAudience \? null : hubContextId \?\? defaultHubId;/);
 assert.match(communityHome, /hubId === null/);
 assert.match(messageTabs, /label: "Direct"/);
 assert.match(messageTabs, /label: "Hubs"/);

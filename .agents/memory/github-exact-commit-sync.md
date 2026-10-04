@@ -77,6 +77,15 @@ successful-looking upload is not evidence that the remote blob is complete.
 **How to apply:** Upload text blobs sequentially with `encoding: "utf-8"`,
 compare each SHA, and stop before tree/ref creation on any mismatch.
 
+The connector's approximate 100 KB text-body risk boundary is not a hard size
+limit: some larger UTF-8 blobs arrive intact, while truncation remains possible.
+
+**Why:** A larger UTF-8 upload matched its local blob SHA even though earlier
+large requests had been truncated.
+
+**How to apply:** Keep exact SHA checks on every blob; do not infer integrity
+from size or a successful HTTP status.
+
 Normalize CRLF output from shell-backed Git reads before parsing commit headers
 or comparing refs, and use base64 blob uploads when the connector's UTF-8 path
 changes line endings.
