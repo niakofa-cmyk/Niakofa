@@ -28,6 +28,7 @@ describe("Family Vault privacy and storage policy", () => {
   it("wires every memory-sensitive route through the shared access guard", async () => {
     const source = await fs.readFile(routePath, "utf8");
     for (const declaration of [
+      'router.use("/family/assets"',
       'router.get("/family/:id/memories/:memoryId"',
       'router.post(\n  "/family/:id/memories/:memoryId/assets/upload-url"',
       'router.post(\n  "/family/:id/memories/:memoryId/assets"',
@@ -42,6 +43,18 @@ describe("Family Vault privacy and storage policy", () => {
       const end = source.indexOf("\n// ", start + declaration.length);
       expect(source.slice(start, end < 0 ? undefined : end)).toContain("getAccessibleMemory");
     }
+  });
+
+  it("streams authorized Family assets through the same origin without storage redirects", async () => {
+    const source = await fs.readFile(routePath, "utf8");
+    const start = source.indexOf('router.use("/family/assets"');
+    const end = source.indexOf("\n// ─── Validation schemas", start);
+    const assetRoute = source.slice(start, end);
+
+    expect(assetRoute).toContain("getAccessibleMemory(familyId, memoryId");
+    expect(assetRoute).toContain("if (!access.memory || access.forbidden)");
+    expect(assetRoute).toContain("await streamAssetSameOrigin(rel, res)");
+    expect(assetRoute).not.toContain("streamOrRedirectAsset");
   });
 
   it("strictly removes objects before deleting memory or asset rows", async () => {

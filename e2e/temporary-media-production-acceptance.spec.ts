@@ -186,6 +186,7 @@ async function createMoment(
   await expect(page.getByTestId("input-spark-moment-alt")).toBeVisible({ timeout: 30_000 });
   setStage(`${label}: accessibility description field visible`);
   await page.getByTestId("input-spark-moment-alt").fill("A short video clip.");
+  await page.getByPlaceholder("Add text to your Spark…").fill("A short video clip for the production acceptance.");
   await expect(page.getByTestId("button-spark-continue")).toBeEnabled({ timeout: 30_000 });
   setStage(`${label}: video editor ready`);
   await clickSparkContinue(page, "Next");
@@ -216,8 +217,8 @@ async function createMoment(
   await clickSparkContinue(page, "Publish Spark");
   const publishResponse = await publishResponsePromise;
   setStage(`${label}: publish response received`);
-  expect(publishResponse.status()).toBe(201);
-  const payload = await publishResponse.json() as { story?: { id?: unknown } };
+  const payload = await publishResponse.json().catch(() => ({})) as { error?: string; story?: { id?: unknown } };
+  expect(publishResponse.status(), payload.error ?? "Moment publish failed").toBe(201);
   const id = Number(payload.story?.id);
   expect(Number.isSafeInteger(id) && id > 0).toBe(true);
   const result = { id, owner, audience, hubId };

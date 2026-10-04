@@ -36,7 +36,6 @@
 import { Router } from "express";
 import {
   putAsset,
-  streamOrRedirectAsset,
   streamAssetSameOrigin,
   isCloudStorageConfigured,
   getStorageBackend,
@@ -122,13 +121,11 @@ function parseGedcom(text: string): Array<{ name: string; birthYear?: string }> 
 }
 
 // ─── Asset serving ─────────────────────────────────────────────────────────────
-// Routes GET /family/assets/:key to the active storage backend:
-//   • Cloud (STORAGE_BUCKET set): 307 redirect to a presigned S3/R2 URL
-//   • Local disk (dev/Replit):    sendFile() from uploads/ directory
-//
 // Registered BEFORE the /:id param route so "assets" isn't matched as a family ID.
-// Family assets are authenticated and membership-scoped. Storage keys include
-// family and memory ids, so they are not a substitute for authorization.
+// Family media is fetched by bearer-authenticated browser code, so it must stay
+// same-origin after authorization instead of redirecting to object storage.
+// Storage keys include family and memory ids, but are not a substitute for the
+// family membership and memory visibility checks below.
 router.use("/family/assets", generalApiLimiter, requireAuth, async (req, res, next) => {
   if (req.method !== "GET") return next();
 
@@ -150,23 +147,8 @@ router.use("/family/assets", generalApiLimiter, requireAuth, async (req, res, ne
   const membership = await getFamilyMembership(familyId, req.authenticatedUserId!);
   if (!membership) return res.status(404).json({ error: "Not found" });
 
-  const [memory] = await db
-    .select({
-      id: familyMemoriesTable.id,
-      author_id: familyMemoriesTable.author_id,
-      visibility: familyMemoriesTable.visibility,
-    })
-    .from(familyMemoriesTable)
-    .where(and(
-      eq(familyMemoriesTable.id, memoryId),
-      eq(familyMemoriesTable.family_id, familyId),
-    ))
-    .limit(1);
-  if (!memory || (
-    memory.visibility === "private"
-    && memory.author_id !== req.authenticatedUserId
-    && !CAN_MANAGE_ROLES.includes(membership.role as string)
-  )) {
+  const access = await getAccessibleMemory(familyId, memoryId, req.authenticatedUserId!, membership);
+  if (!access.memory || access.forbidden) {
     return res.status(404).json({ error: "Not found" });
   }
 
@@ -180,13 +162,7 @@ router.use("/family/assets", generalApiLimiter, requireAuth, async (req, res, ne
     .limit(1);
   if (!asset) return res.status(404).json({ error: "Not found" });
 
-  // Private memories must not be turned into stable CDN or storage URLs after
-  // authorization. Stream them through this authenticated response instead.
-  if (memory.visibility === "private") {
-    await streamAssetSameOrigin(rel, res);
-    return;
-  }
-  await streamOrRedirectAsset(rel, res);
+  await streamAssetSameOrigin(rel, res);
 });
 
 // ─── Validation schemas ───────────────────────────────────────────────────────
