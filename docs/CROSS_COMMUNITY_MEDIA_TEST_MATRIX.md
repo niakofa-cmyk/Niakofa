@@ -47,16 +47,27 @@ sharing; it does not click the link in a signed-in browser.
 
 The separately gated `ops/media-v21-resume-compose-certification.md` run covers
 resumable clip uploads, a temporarily published Story, camera-clip composition,
-private byte-range playback, cross-community denial, and cleanup. It is
-mutating production acceptance, not a substitute for verifying the Studio
-publish-to-feed and per-item share-link journey.
+private byte-range playback, cross-community denial, and cleanup. The 2026-10-04
+production browser run also opened the owner’s Moments feed, copied and checked
+the exact item-specific Community link, opened that link as an approved viewer
+from another Community, and confirmed the Moment was absent from that viewer’s
+feed and authenticated feed response.
 
-For that journey, the production browser acceptance still needs two approved
-disposable users from different Communities: publish a video Moment as the
-owner, confirm it appears in the owner’s feed, use that item’s share link, check
-the other Community’s feed and direct-media denial, verify authorized playback,
-and reconcile deletion of the temporary Story and media. Do not treat the
-synthetic local users below as those accounts.
+That run passed 1/1 against canonical `https://niakofa.com`, served commit
+`251293f592cf84828bcb555272efcfc14668063c`. Both synthetic uploads reached
+`ready`, composition completed, the owner received byte-range and full
+composition playback, and the other Community and anonymous viewer were denied
+composition/playback access. Cleanup deleted the temporary Story and source
+assets, verified their API endpoints were inaccessible, and removed private
+browser states, generated clips, and test output. The Story was briefly visible
+to its normal Community audience and could emit the normal Story-created event.
+The UI link check suppressed view/share-counter requests and opted out of
+analytics; playback authorization was separately checked against production.
+
+This evidence does not certify a physical camera, Studio’s browser upload/draft
+flow, independent object-store or worker-temporary-file cleanup, Exchange
+listing Sparks, or Family Story playback. Do not treat the synthetic local
+users below as production accounts.
 
 ## Production Spark acceptance prerequisites
 

@@ -2,11 +2,19 @@
 
 This is a deliberately gated, mutating acceptance run. It uploads two short,
 locally generated synthetic MP4 clips, briefly publishes a Story, requests a
-camera-clip composition, checks private byte-range playback, and deletes the
-Story and source assets. The Story has no mentions or audience tags; while it
-exists, it is visible to its normal Community audience and may produce the
+camera-clip composition, checks private byte-range playback, verifies the
+owner's Moments feed and item-specific share link in Chromium, checks that a
+viewer from another Community cannot see that Moment in the feed, and deletes
+the Story and source assets. The Story has no mentions or audience tags; while
+it exists, it is visible to its normal Community audience and may produce the
 platform's normal realtime Story-created event. Do not use accounts or a
 Community where even that temporary visibility is inappropriate.
+
+The share-sheet browser check validates the exact copied link and its audience
+scope. It intercepts the test Story's view/share-counter and playback-grant
+requests and opts out of analytics, avoiding persistent view/share counts,
+notifications, or analytics events. Actual owner playback and cross-Community
+playback denial are verified separately through production API requests.
 
 ## Prerequisites
 

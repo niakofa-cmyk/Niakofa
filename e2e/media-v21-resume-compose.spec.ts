@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Playwright } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Playwright } from "@playwright/test";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -226,13 +226,102 @@ async function locateStoriesByCaption(
     .map((story) => story.id!);
 }
 
+async function guardMomentShareUiSideEffects(context: BrowserContext, storyId: number): Promise<void> {
+  await context.addInitScript(() => {
+    window.localStorage.setItem("niakofa_analytics_opt_out", "true");
+  });
+  const origin = safeOrigin(baseUrl);
+  const acknowledged = {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ ok: true }),
+  };
+  await context.route(
+    new URL(`/api/community/stories/${storyId}/view`, origin).toString(),
+    (route) => route.fulfill(acknowledged),
+  );
+  await context.route(
+    new URL(`/api/community/stories/${storyId}/share`, origin).toString(),
+    (route) => route.fulfill({ ...acknowledged, status: 201 }),
+  );
+  await context.route(
+    new URL(`/api/community/stories/${storyId}/moment-composition/playback-grant`, origin).toString(),
+    (route) => route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Not found." }),
+    }),
+  );
+}
+
+async function verifyMomentShareLink(
+  browser: Browser,
+  storyId: number,
+  caption: string,
+  viewerToken: string,
+): Promise<void> {
+  const origin = safeOrigin(baseUrl);
+  const ownerContext = await browser.newContext({ storageState: userAState! });
+  let shareUrl = "";
+  try {
+    await guardMomentShareUiSideEffects(ownerContext, storyId);
+    await ownerContext.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+    const ownerPage = await ownerContext.newPage();
+    const storyDeepLink = new URL("/community/moments", origin);
+    storyDeepLink.searchParams.set("sparkId", String(storyId));
+    storyDeepLink.searchParams.set("audience", "community");
+    await ownerPage.goto(storyDeepLink.toString(), { waitUntil: "domcontentloaded" });
+
+    const storyCard = ownerPage.getByTestId(`card-moment-${storyId}`);
+    await expect(storyCard, "The owner should see the published Moment in the feed.").toBeVisible();
+    await expect(storyCard).toContainText(caption);
+    await storyCard.getByRole("button", { name: "Share Spark", exact: true }).click();
+
+    const shareDialog = ownerPage.getByRole("dialog", { name: "Share Spark" });
+    const shareInput = shareDialog.getByRole("textbox", { name: "Shareable Spark link" });
+    shareUrl = await shareInput.inputValue();
+    const parsedShareUrl = new URL(shareUrl);
+    expect(parsedShareUrl.origin).toBe(origin);
+    expect(parsedShareUrl.pathname).toBe("/community/moments");
+    expect(parsedShareUrl.searchParams.getAll("sparkId")).toEqual([String(storyId)]);
+    expect(parsedShareUrl.searchParams.getAll("audience")).toEqual(["community"]);
+    expect(parsedShareUrl.searchParams.has("hubId")).toBe(false);
+
+    await shareDialog.getByTestId("button-copy-spark-link").click();
+    await expect(shareDialog.getByRole("status")).toHaveText("Spark link copied.");
+    expect(await ownerPage.evaluate(() => navigator.clipboard.readText())).toBe(shareUrl);
+  } finally {
+    await ownerContext.close();
+  }
+
+  const viewerContext = await browser.newContext({ storageState: userBState! });
+  try {
+    await guardMomentShareUiSideEffects(viewerContext, storyId);
+    const viewerPage = await viewerContext.newPage();
+    await viewerPage.goto(shareUrl, { waitUntil: "domcontentloaded" });
+    await expect(viewerPage.getByTestId("community-moments-experience")).toBeVisible();
+    await expect(viewerPage.getByTestId("status-loading-moments")).toHaveCount(0, { timeout: 30_000 });
+    await expect(viewerPage.getByTestId(`card-moment-${storyId}`)).toHaveCount(0);
+
+    const feedResponse = await viewerPage.request.get(
+      new URL("/api/community/stories?limit=100", origin).toString(),
+      { headers: authorization(viewerToken) },
+    );
+    expect(feedResponse.status(), "The other Community's authenticated Moments feed should load.").toBe(200);
+    const feed = await feedResponse.json() as { stories?: Array<{ id?: number }> };
+    expect((feed.stories ?? []).some((story) => Number(story.id) === storyId)).toBe(false);
+  } finally {
+    await viewerContext.close();
+  }
+}
+
 test.describe("V21 resumable upload and camera-clip composition acceptance", () => {
   test.skip(
     !enabled || !userAState || !userBState || !/^[0-9a-f]{40}$/.test(expectedCommit ?? ""),
     "Requires all four explicit production gates, both approved storage states, and the full expected commit.",
   );
 
-  test(`${sameCommunityNarrow ? "narrow same-community" : "cross-community"}: resumes portrait 9:16 upload, publishes and composes a Moment, checks playback, and cleans up`, async ({ playwright }) => {
+  test(`${sameCommunityNarrow ? "narrow same-community" : "cross-community"}: resumes portrait 9:16 upload, publishes and composes a Moment, checks playback and item sharing, and cleans up`, async ({ playwright, browser }) => {
     test.setTimeout(15 * 60_000);
     const origin = safeOrigin(baseUrl);
     const owner = safeStateIdentity(userAState!, origin);
@@ -502,6 +591,10 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
 
       const ungrantedPlayback = await anonymousRequest.get(playback.playback_url!);
       expect(ungrantedPlayback.status(), "Anonymous playback without the private grant must be denied.").toBe(404);
+
+      if (!sameCommunityNarrow) {
+        await verifyMomentShareLink(browser, storyId!, caption, otherUser.token);
+      }
     } finally {
       // A lost publish response is reconciled using the unique caption, then
       // every known staging asset is explicitly tombstoned after Story cleanup.

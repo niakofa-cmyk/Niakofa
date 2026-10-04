@@ -4,7 +4,42 @@ This is the release gate for the universal media foundation. A healthy
 deployment or a configured bucket is not enough to enable `MEDIA_PLATFORM_V21`.
 Record evidence for every checked row from the production runtime.
 
-**Current 2026-09-30 America/Chicago hold (2026-10-01 UTC):** Railway now serves
+**Verified 2026-10-04 America/Chicago — synthetic Community Moment acceptance:**
+The canonical host `https://niakofa.com` served commit
+`251293f592cf84828bcb555272efcfc14668063c`. With two approved disposable
+accounts verified in different Communities, the gated V21 production run passed
+1/1: both synthetic clips reached `ready`, the published Moment composed
+successfully, and the owner received private byte-range and full-video playback.
+The other Community and anonymous viewer were denied composition/playback
+access. Chromium confirmed the Moment in the owner's feed, copied its
+item-specific Community link, and confirmed the linked item was absent from the
+other Community's browser and authenticated feed response. The runner deleted
+the Story and source assets and verified their API resources were inaccessible;
+private account states, generated clips, and test output were removed. The
+Story was briefly visible to its normal Community audience and could emit the
+normal Story-created realtime event. The browser link check suppressed view and
+share-counter requests and analytics; playback was independently exercised
+through production API requests. No payment or feature-flag change was made.
+
+Read-only infrastructure checks during the same session found Railway's
+production API, Postgres, PostGIS, and Redis online, with no failed deployments
+in the preceding 24 hours or pending staged work. Production
+`/api/healthz`, `/api/readiness`, `/api/readiness?scope=payments`,
+`/api/readiness?scope=circles`, and `/api/health` all returned healthy; the
+Nia `/health` probe succeeded. These are bounded readiness checks, not full
+provider acceptance: Stripe readiness means its server credentials are
+configured, Mapbox readiness means a token is present, and LiveKit readiness
+means its URL and credentials are configured. No payment/webhook, map-provider
+request, or LiveKit media session was run.
+
+This clears the prior synthetic processing/publication failure for this
+specific acceptance path only. It does not independently inspect provider-side
+object deletion or worker temporary files, certify physical cameras, or verify
+Studio's browser upload/draft workflow. The production object-storage probe and
+actual media-worker toolchain gates below remain incomplete, so this result is
+not approval for wider media rollout.
+
+**Historical 2026-09-30 America/Chicago hold (2026-10-01 UTC):** Railway served
 `3703e704991bab076cf3d8ad1191425c970b42ba`, which includes the JSONB cleanup-ledger
 cast fix. Production `/api/healthz` and `/api/readiness` were healthy; storage,
 Redis/BullMQ, and the registered media worker reported ready, and V21 was
@@ -13,20 +48,23 @@ upload/finalization and reached media processing, but both video assets
 (`8` and `9`) transitioned to `failed` instead of `ready` after the 120-second
 processing wait. The test failed before publishing a Moment.
 
-After the runner's cleanup, independent owner-authenticated reads confirmed
+After that runner's cleanup, independent owner-authenticated reads confirmed
 assets `8` and `9` and both upload sessions return 404; an author-scoped Story
 query returned no certification Moment. This is API-level cleanup evidence
 only: production bucket objects and worker temporary files were not
 independently inspected. The Railway log snapshot contained startup checks but
-no per-job processing failure detail, so the media-worker cause remains
-unresolved. Do not retry production media writes until the failure is diagnosed
-and the storage/worker cleanup boundary is independently reconciled.
+no per-job processing failure detail, so the cause of that failed worker attempt
+remains undetermined. The 2026-10-04 success supersedes the failure for its
+bounded synthetic acceptance path, but does not inspect provider-side objects or
+worker temporary files; broader failure-path reruns remain gated on reconciling
+those cleanup boundaries.
 
-This narrow run used the two approved accounts in the same Community. It does
+That narrow run used the two approved accounts in the same Community. It does
 not certify cross-Community isolation or real-device camera behavior. The
 2026-09-28 results below remain historical evidence, not current release
-approval; the deployed chunk fix only clears the earlier database-ledger
-failure and does not certify processing or publication.
+approval. The deployed chunk fix cleared the earlier database-ledger failure;
+the later 2026-10-04 synthetic acceptance verifies processing and publication
+only for its own bounded path.
 
 **Earlier 2026-09-30 storage-probe hold:** The admin-only one-shot probe reached
 its storage stage after the synthetic FFmpeg/FFprobe check, but failed with
