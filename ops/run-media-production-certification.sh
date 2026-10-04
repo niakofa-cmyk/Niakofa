@@ -41,7 +41,17 @@ if [[ -n "${USER_B_STATE_JSON:-}" ]]; then
   export USER_B_STATE
 fi
 
-: "${USER_A_STATE:?USER_A_STATE or USER_A_STATE_JSON is required}"
+if [[ -z "${USER_A_STATE:-}" && -z "${USER_A_STATE_JSON:-}" ]]; then
+  : "${CERTIFICATION_STATE_KEY:=certification/user-a-state.json}"
+  runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/niakofa-media.XXXXXX")"
+  chmod 700 "$runtime_dir"
+  USER_A_STATE="$runtime_dir/user-a-state.json"
+  node ops/railway-bucket-object.mjs get "$CERTIFICATION_STATE_KEY" "$USER_A_STATE"
+  chmod 600 "$USER_A_STATE"
+  export USER_A_STATE
+fi
+
+: "${USER_A_STATE:?USER_A_STATE, USER_A_STATE_JSON, or Railway bucket certification state is required}"
 : "${USER_B_STATE:?USER_B_STATE or USER_B_STATE_JSON is required for isolation certification}"
 : "${MEDIA_SMOKE_CONTEXT_KIND:?MEDIA_SMOKE_CONTEXT_KIND is required}"
 : "${MEDIA_SMOKE_CONTEXT_ID:?MEDIA_SMOKE_CONTEXT_ID is required}"
