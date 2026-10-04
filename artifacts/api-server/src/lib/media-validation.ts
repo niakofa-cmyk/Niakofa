@@ -1,4 +1,7 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 import { getMediaToolPaths } from "./mediaCapabilities";
 
 export const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
@@ -60,56 +63,67 @@ function imageDimensions(buffer: Buffer, mimeType: string): { width: number; hei
   return null;
 }
 
-function probeMedia(buffer: Buffer): Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null> {
-  return new Promise((resolve) => {
-    const child = spawn(getMediaToolPaths().ffprobe, [
-      "-v", "error", "-i", "pipe:0",
-      "-show_entries", "stream=codec_type,width,height,duration:format=duration", "-of", "json",
-    ]);
-    const chunks: Buffer[] = [];
-    let outputBytes = 0;
-    let hasStderr = false;
-    const timeout = setTimeout(() => child.kill("SIGKILL"), 15_000);
-    child.stdout.on("data", (chunk: Buffer) => {
-      outputBytes += chunk.length;
-      if (outputBytes > 64 * 1024) child.kill("SIGKILL");
-      else chunks.push(chunk);
+async function probeMedia(buffer: Buffer): Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null> {
+  let temporaryDirectory: string | null = null;
+  try {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "niakofa-media-probe-"));
+    const inputPath = path.join(temporaryDirectory, "upload");
+    await writeFile(inputPath, buffer, { flag: "wx", mode: 0o600 });
+
+    return await new Promise((resolve) => {
+      const child = spawn(getMediaToolPaths().ffprobe, [
+        "-v", "error", "-i", inputPath,
+        "-show_entries", "stream=codec_type,width,height,duration:format=duration", "-of", "json",
+      ], { stdio: ["ignore", "pipe", "pipe"] });
+      const chunks: Buffer[] = [];
+      let outputBytes = 0;
+      const timeout = setTimeout(() => child.kill("SIGKILL"), 15_000);
+      child.stdout.on("data", (chunk: Buffer) => {
+        outputBytes += chunk.length;
+        if (outputBytes > 64 * 1024) child.kill("SIGKILL");
+        else chunks.push(chunk);
+      });
+      // FFprobe may emit recoverable diagnostics alongside usable metadata.
+      // Drain stderr, but rely on its exit status and parsed output for validity.
+      child.stderr.on("data", () => {});
+      child.on("error", () => {
+        clearTimeout(timeout);
+        resolve(null);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code !== 0 || !chunks.length) return resolve(null);
+        try {
+          const parsed = JSON.parse(Buffer.concat(chunks).toString()) as {
+            streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string }>;
+            format?: { duration?: string };
+          };
+          const video = parsed.streams?.find((item) => item.codec_type === "video" && (
+            Number.isFinite(item.width) &&
+            Number.isFinite(item.height) &&
+            Number(item.width) > 0 &&
+            Number(item.height) > 0
+          ));
+          const stream = video ?? parsed.streams?.find((item) => item.codec_type === "audio");
+          if (!stream) return resolve(null);
+          const streamSeconds = Number(stream.duration);
+          const seconds = Number.isFinite(streamSeconds) && streamSeconds > 0
+            ? streamSeconds
+            : Number(parsed.format?.duration);
+          const duration = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1000) : null;
+          resolve({
+            width: video ? Number(video.width) : null,
+            height: video ? Number(video.height) : null,
+            duration_ms: duration,
+          });
+        } catch { resolve(null); }
+      });
     });
-    child.stderr.on("data", () => { hasStderr = true; });
-    child.on("error", () => {
-      clearTimeout(timeout);
-      resolve(null);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      if (code !== 0 || hasStderr || !chunks.length) return resolve(null);
-      try {
-        const parsed = JSON.parse(Buffer.concat(chunks).toString()) as {
-          streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string }>;
-          format?: { duration?: string };
-        };
-        const video = parsed.streams?.find((item) => item.codec_type === "video" && (
-          Number.isFinite(item.width) &&
-          Number.isFinite(item.height) &&
-          Number(item.width) > 0 &&
-          Number(item.height) > 0
-        ));
-        const stream = video ?? parsed.streams?.find((item) => item.codec_type === "audio");
-        if (!stream) return resolve(null);
-        const streamSeconds = Number(stream.duration);
-        const seconds = Number.isFinite(streamSeconds) && streamSeconds > 0
-          ? streamSeconds
-          : Number(parsed.format?.duration);
-        const duration = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1000) : null;
-        resolve({
-          width: video ? Number(video.width) : null,
-          height: video ? Number(video.height) : null,
-          duration_ms: duration,
-        });
-      } catch { resolve(null); }
-    });
-    child.stdin.end(buffer);
-  });
+  } catch {
+    return null;
+  } finally {
+    if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 }
 
 export async function inspectMedia(buffer: Buffer, mimeType: string): Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null> {

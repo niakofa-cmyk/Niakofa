@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "@jest/globals";
 import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
 
@@ -22,6 +26,57 @@ describe("universal media validation", () => {
       height: 480,
       duration_ms: null,
     });
+  });
+
+  it("probes video from a private seekable file, tolerates stderr, and cleans it up", async () => {
+    const fixtureDirectory = await mkdtemp(path.join(os.tmpdir(), "niakofa-media-validation-test-"));
+    const fakeFfprobePath = path.join(fixtureDirectory, "ffprobe.cjs");
+    const capturedInputPath = path.join(fixtureDirectory, "probe-input.txt");
+    const previousFfprobePath = process.env["FFPROBE_PATH"];
+
+    try {
+      await writeFile(fakeFfprobePath, `#!${process.execPath}
+const fs = require("node:fs");
+const capturePath = ${JSON.stringify(capturedInputPath)};
+const inputIndex = process.argv.indexOf("-i");
+const inputPath = inputIndex < 0 ? "" : process.argv[inputIndex + 1];
+if (!inputPath || inputPath === "pipe:0") process.exit(21);
+const inputStat = fs.statSync(inputPath);
+if (!inputStat.isFile()) process.exit(22);
+const directoryStat = fs.statSync(require("node:path").dirname(inputPath));
+fs.writeFileSync(capturePath, [
+  inputPath,
+  (inputStat.mode & 0o777).toString(8),
+  (directoryStat.mode & 0o777).toString(8),
+].join("\\n"));
+process.stdout.write(JSON.stringify({
+  streams: [{ codec_type: "video", width: 1280, height: 720, duration: "1.25" }],
+  format: { duration: "1.25" },
+}));
+process.stderr.write("partial file\\n");
+`, { flag: "wx", mode: 0o700 });
+      process.env["FFPROBE_PATH"] = fakeFfprobePath;
+
+      const mp4 = Buffer.alloc(16);
+      Buffer.from("ftyp").copy(mp4, 4);
+      await expect(validateMediaBuffer(mp4, "video", "video/mp4")).resolves.toEqual({
+        width: 1280,
+        height: 720,
+        duration_ms: 1250,
+      });
+
+      const [probeInputPath, fileMode, directoryMode] = (await readFile(capturedInputPath, "utf8")).trim().split("\n");
+      expect(probeInputPath).toContain("niakofa-media-probe-");
+      expect(probeInputPath).not.toBe("pipe:0");
+      expect(Number.parseInt(fileMode, 8) & 0o077).toBe(0);
+      expect(Number.parseInt(directoryMode, 8) & 0o077).toBe(0);
+      expect(existsSync(probeInputPath)).toBe(false);
+      expect(existsSync(path.dirname(probeInputPath))).toBe(false);
+    } finally {
+      if (previousFfprobePath === undefined) delete process.env["FFPROBE_PATH"];
+      else process.env["FFPROBE_PATH"] = previousFfprobePath;
+      await rm(fixtureDirectory, { recursive: true, force: true });
+    }
   });
 
   it("accepts valid WebP VP8L and VP8 dimension headers", async () => {

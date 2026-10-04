@@ -129,14 +129,17 @@ test("deployed Moment composer accepts the original video through destination wi
   const chooserPromise = page.waitForEvent("filechooser", { timeout: 15_000 });
   await page.getByRole("button", { name: "Choose from device" }).click();
   const chooser = await chooserPromise;
+  // eslint-disable-next-line no-console -- Keep visible progress for the manually gated acceptance run.
   console.log("No-publish smoke: device file chooser opened");
   await chooser.setFiles(videoPath, { timeout: 30_000 });
+  // eslint-disable-next-line no-console -- Keep visible progress for the manually gated acceptance run.
   console.log("No-publish smoke: original video selected");
   await expect(cameraDialog).toBeHidden();
   await expect(composer).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("input-spark-moment-alt")).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("input-spark-moment-alt").fill("A short video clip.");
   await clickSparkContinue(page, "Next");
+  // eslint-disable-next-line no-console -- Keep visible progress for the manually gated acceptance run.
   console.log("No-publish smoke: destination settings opened");
   const audienceSelect = page.getByLabel("Spark audience");
   await expect(audienceSelect).toBeVisible({ timeout: 30_000 });
@@ -352,6 +355,7 @@ test("preserves the uploaded video in authorized Moments and A's private Family 
     if (patch) Object.assign(evidence, patch);
     evidence.stage = stage;
     recordEvidence(evidence);
+    // eslint-disable-next-line no-console -- Keep visible progress for the manually gated acceptance run.
     console.log(`Acceptance stage: ${stage}`);
   };
 

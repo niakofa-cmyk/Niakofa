@@ -85,4 +85,4 @@
 - [Moment retention and responses](niakofa-moment-retention.md) — private archives are opt-in and creator-deletable; featuring and attributed video responses must preserve Community boundaries.
 - [Spark deletion audit boundary](exchange-spark-audit-boundary.md) — distinguish a user’s pending delete request from worker-confirmed row removal; audit only identifiers, outcomes, and safe reasons.
 - [Spark camera draft gating](spark-camera-draft-gating.md) — auto-open only after successful scoped recovery; distinguish restored drafts from later autosaves.
-- [Railway log attribute decoding](railway-log-attribute-decoding.md) — decode JSON-quoted log values in memory, then validate allowlisted fields before surfacing diagnostics.
+- [Railway log attribute decoding](railway-log-attribute-decoding.md) — scope below the 1 MB response cap, decode JSON-quoted values, and validate allowlisted diagnostics.
