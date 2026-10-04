@@ -4,7 +4,7 @@
 - [Deployed browser runner boundary](deployed-browser-runner-boundary.md) — use the repository Playwright runner with canonical USER_A_STATE and system Chromium; direct root imports can bypass workspace wiring.
 - [Workspace package manager](toolchain-install.md) — use the repository-pinned pnpm through npm exec when the system pnpm shim self-manages and stalls.
 - [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
-- [GitHub connector exact sync](github-connector-exact-sync.md) — Git Database API commits may omit the final message newline; reproduce the raw object before exact SHA reconciliation.
+- [GitHub connector exact sync](github-connector-exact-sync.md) — compare commit SHAs before interpreting REST message text; it may omit a newline even when the Git object matches.
 - [Media activation gate](media-platform-activation.md) — keep the universal flag off until infrastructure and live checks pass; scope test overrides to individual media requests.
 - [GitHub OAuth publishing](github-oauth-publishing.md) — connector-created commits omit the final message newline; compare GitHub main directly after publishing.
 - [Workspace hydration and preview limits](workspace-hydration-preview.md) — a healthy web preview does not certify missing API helpers, production parity, or physical devices.
