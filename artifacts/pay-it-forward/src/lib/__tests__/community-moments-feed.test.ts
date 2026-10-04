@@ -36,6 +36,9 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(studio, /const publishedSparkId = await publishStudioMoment/);
     assert.match(studio, /navigate\(buildMomentsSparkHref\(publishedSparkId, audience, hubId\)\)/);
     assert.match(studio, /navigate\(buildMomentsSparkHref\(reason\.storyId, audience, hubId\)\)/);
+    const pendingCatch = studio.match(/if \(reason instanceof CameraClipReelPendingError\) \{([\s\S]*?)\n      \} else \{/);
+    assert.ok(pendingCatch, "camera-reel pending publishes should use the dedicated recovery path");
+    assert.match(pendingCatch[1], /setComposerOpen\(false\)/);
     assert.match(communityPage, /communityMomentsAudience \? null : hubContextId \?\? defaultHubId/);
     assert.match(moments, /sparks\.findIndex\(\(spark\) => spark\.id === openSparkId\)/);
     assert.match(moments, /cardRefs\.current\.get\(index\)\?\.scrollIntoView/);

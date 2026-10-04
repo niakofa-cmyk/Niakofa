@@ -1387,6 +1387,7 @@ export function CommunityStoryRail({
           setDraftError(saveReason instanceof Error ? saveReason.message : "The posted Spark's stitching retry could not be saved on this device.");
         }
         window.dispatchEvent(new Event("community-moments-refresh"));
+        setComposerOpen(false);
         navigate(buildMomentsSparkHref(reason.storyId, audience, hubId));
       } else {
         setError(reason instanceof Error && reason.name === "AbortError"

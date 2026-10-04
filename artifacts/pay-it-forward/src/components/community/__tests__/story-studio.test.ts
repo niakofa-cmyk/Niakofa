@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
+import { CameraClipReelPendingError, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
 import { buildMomentMediaAccessibility, parseMomentStudioTags, restoreMomentStudioAccessibility, validateMomentStudioWebVtt, type MomentStudioAccessibilityDraft } from "../moment-studio-accessibility";
 import { trimVideoFile } from "../story-media-tools";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
@@ -114,6 +114,50 @@ test("publishing one camera video returns its Spark ID and queues that exact med
       intent: "camera_clip_reel",
       media_asset_ids: [71],
     });
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test("camera composition network failures retain the published Spark ID for retry", async () => {
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) => {
+    const route = String(path);
+    if (route.includes("moment-media-status")) {
+      return new Response(JSON.stringify({
+        assets: [{ id: 71, status: "ready", media_type: "video", variant_ready: true }],
+      }), { status: 200 });
+    }
+    if (route === "/api/community/stories" && init?.method === "POST") {
+      return new Response(JSON.stringify({ story: { id: 917 } }), { status: 201 });
+    }
+    if (route === "/api/community/stories/917/moment-composition" && init?.method === "POST") {
+      throw new TypeError("Network disconnected");
+    }
+    throw new Error(`Unexpected request: ${route}`);
+  };
+  try {
+    await assert.rejects(
+      publishStudioMoment({
+        userId: 73,
+        hubId: null,
+        audience: "community",
+        clientPublishId: "00000000-0000-4000-8000-000000000917",
+        files: [videoFile("camera-clip.webm")],
+        caption: "A moment from today",
+        mediaAltTexts: ["A video recorded in the camera"],
+        elements: [],
+        effect: "none",
+        signal: new AbortController().signal,
+        onStatus: () => {},
+        uploadedIds: [71],
+        cameraClipReel: true,
+        beforePublish: async () => {},
+      }),
+      (reason: unknown) => reason instanceof CameraClipReelPendingError
+        && reason.storyId === 917
+        && /Network disconnected/.test(reason.message),
+    );
   } finally {
     globalThis.fetch = oldFetch;
   }
