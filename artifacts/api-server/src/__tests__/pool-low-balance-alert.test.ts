@@ -43,7 +43,7 @@ function queryRows(table: unknown, condition?: { value?: unknown }): Array<Recor
 function makeQuery() {
   let table: unknown;
   let condition: { value?: unknown } | undefined;
-  const query: Record<string, any> = {};
+  const query: Record<string, unknown> = {};
   query.from = (value: unknown) => {
     table = value;
     return query;
