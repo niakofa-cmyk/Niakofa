@@ -184,6 +184,9 @@ when the pool approaches depletion.
 ### What exists today
 - Pool balance is tracked in real-time via `communityPoolLedgerTable`
 - `GET /admin/pool-settings` returns current pool configuration
+- Successful Community Pool helper payouts trigger a low-balance push to admins.
+  The configured `pool_low_balance_threshold` defaults to $25, and a shared
+  six-hour cooldown prevents duplicate alerts across API workers and restarts.
 - Admin UI (PledgesTab) already shows pool balance, runway days, and pending minimums count
   - Lines 439–451 in admin.tsx: `runwayColor` calculation visible to admins
 - Public `/status` now shows the pool balance, 30-day inflow/outflow, and estimated runway
@@ -193,11 +196,9 @@ when the pool approaches depletion.
 ### What remains (not yet built)
 | Capability | Notes |
 |---|---|
-| Automated low-pool alert | Push to admins when `pool_balance < threshold` (trigger: after every payout) |
 | Gov-sponsor backfill prompt | When pool is low, prompt eligible gov sponsors in admin dashboard |
 
 ### Notes
-- The pool alert push is partially implemented in `routes/pool.ts` (warns when `balance < 25`)
 - Public runway on `/status` uses the existing stats response; no schema or migration was needed.
 
 ---

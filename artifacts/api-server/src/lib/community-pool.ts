@@ -528,7 +528,7 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPa
   }
 
   try {
-    return await db.transaction(async (tx): Promise<PoolPayOutcome> => {
+    const outcome = await db.transaction(async (tx): Promise<PoolPayOutcome> => {
       // Serialize pool debits — balance check + debit must be atomic.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${POOL_LOCK_KEY})`);
 
@@ -630,6 +630,10 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPa
 
       return "paid";
     });
+    if (outcome === "paid") {
+      void maybeAlertLowBalance();
+    }
+    return outcome;
   } catch (err: unknown) {
     // Unique-violation = already paid for this request — safe skip, no retry needed
     const code = (err as { code?: string })?.code;
@@ -688,7 +692,7 @@ export async function payHelpersFromPool(params: {
   const primaryHelperId = shares[0].helperId;
 
   try {
-    return await db.transaction(async (tx): Promise<PoolPayOutcome> => {
+    const outcome = await db.transaction(async (tx): Promise<PoolPayOutcome> => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${POOL_LOCK_KEY})`);
 
       if (hubId != null && communityId != null) {
@@ -774,6 +778,10 @@ export async function payHelpersFromPool(params: {
 
       return "paid";
     });
+    if (outcome === "paid") {
+      void maybeAlertLowBalance();
+    }
+    return outcome;
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
     if (code === "23505") {
@@ -937,7 +945,9 @@ export async function processPendingMinimums(): Promise<number> {
 // ── Low-balance admin alert ──────────────────────────────────────────────────
 
 const LOW_BALANCE_ALERT_INTERVAL_MS = 6 * 60 * 60 * 1000; // at most once per 6h
-let _lastLowBalanceAlertAt = 0;
+const LOW_BALANCE_ALERT_SETTING_KEY = "pool_low_balance_last_alerted_at";
+// Distinct from the pool-debit lock and the Griot per-user lock.
+const LOW_BALANCE_ALERT_LOCK_KEY = 727504;
 
 /**
  * Tunable reserve policy used by both global and community-scoped pool
@@ -987,16 +997,48 @@ export async function getLowBalanceThreshold(): Promise<number> {
 }
 
 /**
+ * Claim the shared cooldown atomically so multiple API workers or a restarted
+ * process cannot each send the same low-balance warning.
+ */
+async function claimLowBalanceAlertWindow(now: number): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOW_BALANCE_ALERT_LOCK_KEY})`);
+    const [row] = await tx
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, LOW_BALANCE_ALERT_SETTING_KEY))
+      .limit(1);
+    const lastAlertAt = Number(row?.value);
+    if (
+      Number.isFinite(lastAlertAt) &&
+      lastAlertAt > 0 &&
+      now - lastAlertAt < LOW_BALANCE_ALERT_INTERVAL_MS
+    ) {
+      return false;
+    }
+
+    await tx
+      .insert(systemSettingsTable)
+      .values({ key: LOW_BALANCE_ALERT_SETTING_KEY, value: String(now) })
+      .onConflictDoUpdate({
+        target: systemSettingsTable.key,
+        set: { value: String(now), updated_at: new Date(now) },
+      });
+    return true;
+  });
+}
+
+/**
  * If the pool balance is below the alert threshold, warn admins: warn-level
  * log, `pool_low_balance` WS broadcast, and a push to every is_admin user.
- * Deduped to once per 6 hours per process.
+ * The six-hour cooldown is stored in system_settings and claimed under a
+ * PostgreSQL advisory lock, so it is shared across workers and restarts.
  */
 export async function maybeAlertLowBalance(): Promise<void> {
   try {
     const [balance, threshold] = await Promise.all([getPoolBalance(), getLowBalanceThreshold()]);
     if (toCents(balance) >= toCents(threshold)) return;
-    if (Date.now() - _lastLowBalanceAlertAt < LOW_BALANCE_ALERT_INTERVAL_MS) return;
-    _lastLowBalanceAlertAt = Date.now();
+    if (!(await claimLowBalanceAlertWindow(Date.now()))) return;
 
     logger.warn({ balance, threshold }, "COMMUNITY POOL LOW BALANCE — guaranteed minimums at risk");
     broadcast({ type: "pool_low_balance", payload: { balance, threshold } });

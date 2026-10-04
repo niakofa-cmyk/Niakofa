@@ -1618,7 +1618,8 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
         }
       }
 
-      // Warn admins (deduped) whenever completions run against a low pool
+      // Also check completions where a pool payment was queued or declined;
+      // the worker remains a periodic safety net.
       maybeAlertLowBalance().catch(err => logger.warn({ err }, "maybeAlertLowBalance: non-critical side effect failed — continuing"));
     }
   } catch (err) {
