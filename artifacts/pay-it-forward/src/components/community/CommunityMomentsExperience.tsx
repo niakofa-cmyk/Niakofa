@@ -247,6 +247,9 @@ export function CommunityMomentsExperience({
   const moreControllerRef = useRef<AbortController | null>(null);
   const viewedIdsRef = useRef(new Set<number>());
   const activeSpark = sparks[activeIndex] ?? null;
+  const shareSpark = shareSparkId === null
+    ? null
+    : sparks.find((spark) => spark.id === shareSparkId) ?? null;
   const reportSpark = reportSparkId === null ? null : sparks.find((spark) => spark.id === reportSparkId) ?? null;
   const commentsSpark = commentsOpenId == null ? null : sparks.find((spark) => spark.id === commentsOpenId) ?? null;
   const fullScreenOverlayOpen = commentsOpenId !== null
@@ -1554,13 +1557,15 @@ export function CommunityMomentsExperience({
       </section>
       <p className="text-xs leading-relaxed text-muted-foreground">Only media for the Spark in view is opened. Videos start muted, and secure playback is authorized for your account.</p>
       </div>
-      {shareSparkId !== null && (
+      {shareSpark && (
         <StoryShareSheet
-          storyId={shareSparkId}
+          storyId={shareSpark.id}
+          audience={shareSpark.audience === "hub" ? "hub" : "community"}
+          hubId={shareSpark.hub_id}
           onClose={() => setShareSparkId(null)}
           onShared={() => setMetricsById((current) => {
-            const metrics = current[shareSparkId];
-            return metrics ? { ...current, [shareSparkId]: { ...metrics, shares: metrics.shares + 1 } } : current;
+            const metrics = current[shareSpark.id];
+            return metrics ? { ...current, [shareSpark.id]: { ...metrics, shares: metrics.shares + 1 } } : current;
           })}
         />
       )}

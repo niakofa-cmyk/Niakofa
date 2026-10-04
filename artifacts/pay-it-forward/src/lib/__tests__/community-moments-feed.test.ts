@@ -22,6 +22,9 @@ const exchange = fs.readFileSync(path.join(appRoot, "components/community/Commun
 const communityPage = fs.readFileSync(path.join(appRoot, "pages/community.tsx"), "utf8");
 const exchangeView = fs.readFileSync(path.join(appRoot, "components/community/CommunityExchangeView.tsx"), "utf8");
 const exchangeComposer = fs.readFileSync(path.join(appRoot, "components/community/CommunityExchangeSparkComposer.tsx"), "utf8");
+const storyShareSheet = fs.readFileSync(path.join(appRoot, "components/community/StoryShareSheet.tsx"), "utf8");
+const storyRail = fs.readFileSync(path.join(appRoot, "components/community/CommunityStoryRail.tsx"), "utf8");
+const hubFeed = fs.readFileSync(path.join(appRoot, "components/community/HubCommunityFeedPanel.tsx"), "utf8");
 const storiesRoute = fs.readFileSync(path.join(apiRoot, "community-stories.ts"), "utf8");
 const mediaRoute = fs.readFileSync(path.join(apiRoot, "media-assets-v21.ts"), "utf8");
 
@@ -45,6 +48,20 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /autoPlay muted=\{videoMuted\} playsInline controls/);
     assert.match(momentsView, /fullBleed/);
     assert.match(momentsStyles, /\.nia-moments--fullbleed\s*\{[^}]*height:\s*100dvh/s);
+  });
+
+  test("each Moment and Hub post exposes its own shareable link", () => {
+    assert.match(storyShareSheet, /buildMomentsSparkHref\(storyId, audience, hubId\)/);
+    assert.match(storyShareSheet, /navigator\.clipboard\.writeText\(sparkUrl\)/);
+    assert.match(storyShareSheet, /navigator\.share\(\{ title: "Niakofa · Community Spark", url: sparkUrl \}\)/);
+    assert.match(storyShareSheet, /data-testid="button-copy-spark-link"/);
+    assert.match(moments, /storyId=\{shareSpark\.id\}/);
+    assert.match(moments, /audience=\{shareSpark\.audience === "hub" \? "hub" : "community"\}/);
+    assert.match(moments, /hubId=\{shareSpark\.hub_id\}/);
+    assert.match(storyRail, /audience=\{selectedStory\.audience === "hub" \? "hub" : "community"\}/);
+    assert.match(hubFeed, /shareUrl\.searchParams\.set\("postId", String\(postId\)\)/);
+    assert.match(hubFeed, /navigator\.share/);
+    assert.match(hubFeed, /navigator\.clipboard\.writeText\(url\)/);
   });
 
   test("Community and Hub contexts use the authenticated Sparks endpoint and cursor pagination", () => {

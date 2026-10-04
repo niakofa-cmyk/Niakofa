@@ -1,18 +1,23 @@
-import { useEffect, useRef, useState } from "react";
-import { Loader2, Search, Send, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Copy, Loader2, Search, Send, Share2, X } from "lucide-react";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
 import { authHeaders } from "@/lib/auth";
 import { sendStoryContextMessage, shareStory } from "@/lib/community-story-client";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
+import { buildMomentsSparkHref } from "./CommunityExperienceContract";
 
 type Person = { id: number; name: string; avatar_url: string | null };
 
 export function StoryShareSheet({
   storyId,
+  audience,
+  hubId,
   onClose,
   onShared,
 }: {
   storyId: number;
+  audience: "community" | "hub";
+  hubId: number | null;
   onClose: () => void;
   onShared?: () => void;
 }) {
@@ -21,7 +26,50 @@ export function StoryShareSheet({
   const [message, setMessage] = useState("");
   const [sendingTo, setSendingTo] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [linkStatus, setLinkStatus] = useState("");
   const searchRequest = useRef<AbortController | null>(null);
+  const sparkUrl = useMemo(
+    () => new URL(buildMomentsSparkHref(storyId, audience, hubId), window.location.origin).toString(),
+    [audience, hubId, storyId],
+  );
+
+  async function recordLinkShare(successMessage: string) {
+    try {
+      await shareStory(storyId);
+      onShared?.();
+      trackCommunityContent("community_spark_shared", { spark_id: storyId });
+    } catch {
+      setLinkStatus(`${successMessage} The share count could not be updated.`);
+    }
+  }
+
+  async function copySparkLink() {
+    setLinkStatus("");
+    try {
+      await navigator.clipboard.writeText(sparkUrl);
+      setLinkStatus("Spark link copied.");
+      await recordLinkShare("Spark link copied.");
+    } catch {
+      setLinkStatus("Could not copy the link. Select the link above and copy it.");
+    }
+  }
+
+  async function shareSparkLink() {
+    if (!navigator.share) {
+      await copySparkLink();
+      return;
+    }
+
+    setLinkStatus("");
+    try {
+      await navigator.share({ title: "Niakofa · Community Spark", url: sparkUrl });
+      await recordLinkShare("Spark link shared.");
+    } catch (reason) {
+      if (!(reason instanceof Error && reason.name === "AbortError")) {
+        setLinkStatus("Could not open the sharing menu. Copy the link above instead.");
+      }
+    }
+  }
 
   useEffect(() => {
     const value = query.trim();
@@ -71,7 +119,7 @@ export function StoryShareSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Send Spark">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Share Spark">
       <div className="w-full max-w-md rounded-3xl border border-border bg-background p-4 shadow-2xl">
         <div className="flex items-center justify-between">
           <div>
@@ -81,6 +129,46 @@ export function StoryShareSheet({
           <button type="button" onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Close Spark share sheet">
             <X className="h-5 w-5" />
           </button>
+        </div>
+        <div className="mt-4 rounded-2xl border border-border bg-card p-3">
+          <label htmlFor={`spark-share-link-${storyId}`} className="text-xs font-bold text-muted-foreground">
+            Link to this Spark
+          </label>
+          <div className="mt-2 flex gap-2">
+            <input
+              id={`spark-share-link-${storyId}`}
+              type="url"
+              value={sparkUrl}
+              readOnly
+              onFocus={(event) => event.currentTarget.select()}
+              aria-label="Shareable Spark link"
+              className="min-h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 text-xs"
+            />
+            <button
+              type="button"
+              onClick={() => void copySparkLink()}
+              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-bold text-primary-foreground"
+              data-testid="button-copy-spark-link"
+            >
+              <Copy className="h-4 w-4" aria-hidden="true" />
+              Copy link
+            </button>
+          </div>
+          {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
+            <button
+              type="button"
+              onClick={() => void shareSparkLink()}
+              className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg border border-border px-3 text-xs font-bold"
+              data-testid="button-share-spark-link"
+            >
+              <Share2 className="h-4 w-4" aria-hidden="true" />
+              Share with another app
+            </button>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Only people allowed to view this Community or Hub Spark can open its link.
+          </p>
+          {linkStatus && <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">{linkStatus}</p>}
         </div>
         <div className="relative mt-3">
           <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />

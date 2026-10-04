@@ -2185,7 +2185,14 @@ export function CommunityStoryRail({
           onDone={() => setGalleryOpen(false)}
         />
       )}
-      {shareStoryId !== null && <CommunityStoryShareOverlay storyId={shareStoryId} onClose={() => setShareStoryId(null)} />}
+      {shareStoryId !== null && selectedStory?.id === shareStoryId && (
+        <CommunityStoryShareOverlay
+          storyId={shareStoryId}
+          audience={selectedStory.audience === "hub" ? "hub" : "community"}
+          hubId={selectedStory.hub_id}
+          onClose={() => setShareStoryId(null)}
+        />
+      )}
     </>
   );
 }

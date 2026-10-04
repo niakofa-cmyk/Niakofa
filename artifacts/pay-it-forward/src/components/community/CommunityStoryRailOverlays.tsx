@@ -153,10 +153,14 @@ export function CommunityStoryGalleryOverlay({
 
 export function CommunityStoryShareOverlay({
   storyId,
+  audience,
+  hubId,
   onClose,
 }: {
   storyId: number;
+  audience: "community" | "hub";
+  hubId: number | null;
   onClose: () => void;
 }) {
-  return <StoryShareSheet storyId={storyId} onClose={onClose} />;
+  return <StoryShareSheet storyId={storyId} audience={audience} hubId={hubId} onClose={onClose} />;
 }
