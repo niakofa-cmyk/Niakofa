@@ -4162,7 +4162,7 @@ components:
         runway_days:
           type: integer
           nullable: true
-          description: Estimated days of runway left at the current 30-day burn rate. Null = no burn in the last 30 days (effectively infinite).
+          description: Estimated runway days based on average outflow over the preceding 30 days. Null means no outflow was recorded in that period, so a recent payout pace cannot be estimated; it is not a guarantee of future runway.
         outstanding_pif_total:
           type: number
           description: Total outstanding pay-it-forward pledges owed back to the pool
@@ -4359,6 +4359,9 @@ components:
           type: integer
         name:
           type: string
+        username:
+          type: ["string", "null"]
+          description: Public account username. Null when the user has not set one.
         email:
           type: string
         avatar_url:
@@ -4414,6 +4417,9 @@ components:
       properties:
         name:
           type: string
+        username:
+          type: string
+          description: Public username; 3–20 letters, numbers, or underscores.
         avatar_url:
           type: string
         neighborhood:

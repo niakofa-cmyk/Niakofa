@@ -569,7 +569,7 @@ Three privacy / sustainability features shipped and confirmed running clean.
 - The existing `pledge-worker.ts` handles requesters who *did* set a scheduled payment (deadline-based reminders). This worker covers the gap: requesters who chose pay-it-forward with no deadline and zero follow-up path.
 
 **Pool runway dashboard (`artifacts/api-server/src/routes/pool.ts`, `artifacts/pay-it-forward/src/pages/community.tsx`):**
-- `GET /pool/stats` extended with four new fields computed in the same query: `inflow_30d` (contributions + repayments in last 30 days), `outflow_30d` (fronts + minimums, ABS of negative ledger entries in last 30 days), `runway_days` (balance / daily burn, `null` when no spending recorded = infinite runway), `outstanding_pif_total` (SUM of pledge_amount − pledge_paid for completed PIF requests with outstanding balance — expected future inflow).
+- `GET /pool/stats` extended with four new fields computed in the same query: `inflow_30d` (contributions + repayments in last 30 days), `outflow_30d` (fronts + minimums, ABS of negative ledger entries in last 30 days), `runway_days` (balance / daily burn; `null` when no spending was recorded in the 30-day window, so there is no recent pace to estimate), `outstanding_pif_total` (SUM of pledge_amount − pledge_paid for completed PIF requests with outstanding balance — expected future inflow).
 - **RunwayCard** injected in the Community Pool tab between "Where the Money Goes" and "Helpers Waiting on the Pool": shows runway as a large headline number (green > 30 days, yellow 7–30, red ≤ 7), 30-day inflow vs outflow grid, an inflow-coverage progress bar, and the outstanding PIF repayment figure.
 - The card uses an IIFE pattern with a local type extension (`typeof poolStats & { runway_days?: ... }`) to access the new fields without a full OpenAPI codegen cycle.
 
@@ -1034,3 +1034,13 @@ intact as the playback fallback while composition is queued or unavailable.
 **Release lesson:** accepting an input at the UI is not enough; the persisted
 constraint and the asynchronous worker must accept the same boundary for the
 derived Moment to become playable.
+
+---
+
+### Session: October 3, 2026 — Public Community Pool runway transparency
+
+The public `/status` page now displays the Community Pool's current balance,
+30-day inflow/outflow, and estimated runway using the existing public
+`/api/pool/stats` contract. It gives a warning when the estimate is under seven
+days and explicitly avoids treating a month with no payouts as infinite runway.
+No schema or payment behavior changed.

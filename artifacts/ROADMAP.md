@@ -186,18 +186,19 @@ when the pool approaches depletion.
 - `GET /admin/pool-settings` returns current pool configuration
 - Admin UI (PledgesTab) already shows pool balance, runway days, and pending minimums count
   - Lines 439–451 in admin.tsx: `runwayColor` calculation visible to admins
+- Public `/status` now shows the pool balance, 30-day inflow/outflow, and estimated runway
+  from the existing public `/api/pool/stats` response. Estimates are labeled as projections,
+  and the page warns when fewer than 7 days remain at the recent payout pace.
 
 ### What remains (not yet built)
 | Capability | Notes |
 |---|---|
-| Public runway indicator | Show a soft warning to users when pool runway < 7 days |
 | Automated low-pool alert | Push to admins when `pool_balance < threshold` (trigger: after every payout) |
 | Gov-sponsor backfill prompt | When pool is low, prompt eligible gov sponsors in admin dashboard |
-| Pool health in status page | `/status` page already exists — add pool runway as a public metric |
 
 ### Notes
 - The pool alert push is partially implemented in `routes/pool.ts` (warns when `balance < 25`)
-- Adding the runway to the `/status` page requires no schema changes — just compute from ledger
+- Public runway on `/status` uses the existing stats response; no schema or migration was needed.
 
 ---
 

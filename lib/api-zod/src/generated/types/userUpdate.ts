@@ -8,6 +8,7 @@
 
 export interface UserUpdate {
   name?: string;
+  /** Public username; 3–20 letters, numbers, or underscores. */
   username?: string;
   avatar_url?: string;
   neighborhood?: string;

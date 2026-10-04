@@ -1063,7 +1063,7 @@ export const getUserResponseNoShowCountDefault = 0;
 export const GetUserResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
-  "username": zod.string().nullish(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -1095,7 +1095,7 @@ export const UpdateUserParams = zod.object({
 
 export const UpdateUserBody = zod.object({
   "name": zod.string().optional(),
-  "username": zod.string().optional(),
+  "username": zod.string().optional().describe('Public username; 3–20 letters, numbers, or underscores.'),
   "avatar_url": zod.string().optional(),
   "neighborhood": zod.string().optional(),
   "is_helper": zod.boolean().optional(),
@@ -1110,6 +1110,7 @@ export const updateUserResponseNoShowCountDefault = 0;
 export const UpdateUserResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -1164,6 +1165,7 @@ export const updateUserLocationResponseNoShowCountDefault = 0;
 export const UpdateUserLocationResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -1202,6 +1204,7 @@ export const updateHelperModeResponseNoShowCountDefault = 0;
 export const UpdateHelperModeResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -1293,6 +1296,7 @@ export const ChangePasswordResponse = zod.object({
   "user": zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -1352,6 +1356,7 @@ export const registerUserResponseNoShowCountDefault = 0;
 export const RegisterUserResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -2259,6 +2264,7 @@ export const LoginUserResponse = zod.object({
   "user": zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -2316,6 +2322,7 @@ export const SetInitialPasswordResponse = zod.object({
   "user": zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -2370,6 +2377,7 @@ export const updateUserAvatarResponseNoShowCountDefault = 0;
 export const UpdateUserAvatarResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -2635,6 +2643,7 @@ export const updateHelperApplicationResponseNoShowCountDefault = 0;
 export const UpdateHelperApplicationResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -2683,7 +2692,7 @@ export const GetPoolStatsResponse = zod.object({
   "pending_minimums_total": zod.number().describe('Total dollars owed to helpers awaiting pool backfill'),
   "inflow_30d": zod.number().optional().describe('Total pool inflow (contributions + repayments) in the last 30 days'),
   "outflow_30d": zod.number().optional().describe('Total pool outflow (fronts + guaranteed minimums) in the last 30 days'),
-  "runway_days": zod.number().int().nullish().describe('Estimated days of runway left at the current 30-day burn rate. Null = no burn in the last 30 days (effectively infinite).'),
+  "runway_days": zod.number().int().nullish().describe('Estimated runway days based on average outflow over the preceding 30 days. Null means no outflow was recorded in that period, so a recent payout pace cannot be estimated; it is not a guarantee of future runway.'),
   "outstanding_pif_total": zod.number().optional().describe('Total outstanding pay-it-forward pledges owed back to the pool'),
   "helpers_earned_7d": zod.number().optional().describe('Total dollars paid out to helpers in the last 7 days'),
   "helpers_paid_7d": zod.number().int().optional().describe('Count of unique helpers paid in the last 7 days'),
@@ -3396,6 +3405,7 @@ export const SuspendUserResponse = zod.object({
   "user": zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -3433,6 +3443,7 @@ export const UnsuspendUserResponse = zod.object({
   "user": zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
@@ -3560,6 +3571,7 @@ export const setAccountApprovalResponseNoShowCountDefault = 0;
 export const SetAccountApprovalResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish().describe('Public account username. Null when the user has not set one.'),
   "email": zod.string(),
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),

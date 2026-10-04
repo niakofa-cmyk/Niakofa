@@ -110,8 +110,8 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
 
     const balance = totals?.balance ?? 0;
     const outflow_30d = totals?.outflow_30d ?? 0;
-    // Runway = how many days the pool sustains at current 30-day burn rate.
-    // null = infinite runway (nothing spent in the last 30 days).
+    // Runway estimates days at the average 30-day outflow pace.
+    // null means there was no recent outflow to base an estimate on; it is not a guarantee.
     const daily_burn = outflow_30d / 30;
     const runway_days = daily_burn > 0 ? Math.round(balance / daily_burn) : null;
     const required_reserve = roundMoney(

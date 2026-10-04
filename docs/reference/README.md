@@ -44,8 +44,8 @@ sessions can review the original material without re-creating it.
   production-gate, and certification references, including the retained images.
 - `docs/reference/uploads/2026-09-05/` — acceptance, deployment, and status
   material for the latest production-readiness pass.
-- `docs/reference/uploads/2026-09-05/` — Diaspora and Spiral acceptance
-  snapshots.
+- `reference/uploads/2026-09-05/` — Spiral GPS host-signal source package and
+  operator notes, retained as references rather than copied into production.
 - `docs/reference/uploads/2026-09-05/spirals/` — the Spiral GPS and host-signal
   bundle, including the root-cause and wiring notes.
 - `docs/reference/community-pool-fix_1788104483429.zip` — Community Pool UX

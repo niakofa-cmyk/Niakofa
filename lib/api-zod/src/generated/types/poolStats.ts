@@ -35,7 +35,7 @@ export interface PoolStats {
   inflow_30d?: number;
   /** Total pool outflow (fronts + guaranteed minimums) in the last 30 days */
   outflow_30d?: number;
-  /** Estimated days of runway left at the current 30-day burn rate. Null = no burn in the last 30 days (effectively infinite). */
+  /** Estimated runway days based on average outflow over the preceding 30 days. Null means no outflow was recorded in that period, so a recent payout pace cannot be estimated; it is not a guarantee of future runway. */
   runway_days?: number | null;
   /** Total outstanding pay-it-forward pledges owed back to the pool */
   outstanding_pif_total?: number;

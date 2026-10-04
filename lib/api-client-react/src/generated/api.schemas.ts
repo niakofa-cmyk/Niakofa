@@ -842,7 +842,7 @@ export interface PoolStats {
   inflow_30d?: number;
   /** Total pool outflow (fronts + guaranteed minimums) in the last 30 days */
   outflow_30d?: number;
-  /** Estimated days of runway left at the current 30-day burn rate. Null = no burn in the last 30 days (effectively infinite). */
+  /** Estimated runway days based on average outflow over the preceding 30 days. Null means no outflow was recorded in that period, so a recent payout pace cannot be estimated; it is not a guarantee of future runway. */
   runway_days?: number | null;
   /** Total outstanding pay-it-forward pledges owed back to the pool */
   outstanding_pif_total?: number;
@@ -1013,7 +1013,10 @@ export const UserHelperStatus = {
 export interface User {
   id: number;
   name: string;
-  /** @nullable */
+  /**
+     * Public account username. Null when the user has not set one.
+     * @nullable
+     */
   username?: string | null;
   email: string;
   /** @nullable */
@@ -1058,6 +1061,7 @@ export interface User {
 
 export interface UserUpdate {
   name?: string;
+  /** Public username; 3–20 letters, numbers, or underscores. */
   username?: string;
   avatar_url?: string;
   neighborhood?: string;

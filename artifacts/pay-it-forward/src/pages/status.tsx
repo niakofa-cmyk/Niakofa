@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { CheckCircle2, AlertCircle, Loader2, RefreshCw, MessageCircle, Map, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PoolRunwayStatusCard } from "@/components/PoolRunwayStatusCard";
 
 interface Check {
   name: string;
@@ -169,6 +170,10 @@ export default function StatusPage() {
         ) : data ? (
           data.checks.map(check => <ServiceRow key={check.name} check={check} />)
         ) : null}
+      </div>
+
+      <div className="mx-4 mt-4">
+        <PoolRunwayStatusCard />
       </div>
 
       {/* Refresh + meta */}

@@ -11,7 +11,10 @@ import type { UserHelperStatus } from './userHelperStatus';
 export interface User {
   id: number;
   name: string;
-  /** @nullable */
+  /**
+     * Public account username. Null when the user has not set one.
+     * @nullable
+     */
   username?: string | null;
   email: string;
   /** @nullable */
