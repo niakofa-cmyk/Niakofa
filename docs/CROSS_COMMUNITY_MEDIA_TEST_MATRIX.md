@@ -6,7 +6,7 @@ visibility rules for Community Stories, Exchange Sparks, Hub posts and media,
 gratitude, Griot stories, Family Stories, Media Studio staging contexts, and
 public Spirals.
 
-**Latest local verification (2026-10-03):** 1 suite, 2 tests passed against the
+**Latest local verification (2026-10-04):** 1 suite, 2 tests passed against the
 local development database. This result does not certify production Spark
 privacy.
 
@@ -36,6 +36,27 @@ unchanged.
 
 This local matrix verifies API policy and test-database behavior. It is not
 production account, worker, storage, or physical-device certification.
+
+## Moments links and video coverage boundary
+
+The API matrix does not exercise normal browser feed rendering, per-item link
+copy/open, real upload bytes, video processing, or playback. The frontend
+`community-moments-feed.test.ts` contract suite verifies that each Moment
+builds its own share URL with the correct audience context and wires copy/native
+sharing; it does not click the link in a signed-in browser.
+
+The separately gated `ops/media-v21-resume-compose-certification.md` run covers
+resumable clip uploads, a temporarily published Story, camera-clip composition,
+private byte-range playback, cross-community denial, and cleanup. It is
+mutating production acceptance, not a substitute for verifying the Studio
+publish-to-feed and per-item share-link journey.
+
+For that journey, the production browser acceptance still needs two approved
+disposable users from different Communities: publish a video Moment as the
+owner, confirm it appears in the owner’s feed, use that item’s share link, check
+the other Community’s feed and direct-media denial, verify authorized playback,
+and reconcile deletion of the temporary Story and media. Do not treat the
+synthetic local users below as those accounts.
 
 ## Production Spark acceptance prerequisites
 
