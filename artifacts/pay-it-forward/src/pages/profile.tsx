@@ -5,7 +5,7 @@ import { useLocation } from "wouter";
 import { CommunitySocialShell, type CommunityNavKey } from "@/components/community/CommunitySocialShell";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
-  Shield, MapPin, Settings, Wallet, Heart, Star,
+  Shield, MapPin, Settings, Wallet, Heart, Star, Archive,
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
   ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText,
   Eye, Users, Info, Flag, Plus,
@@ -1362,6 +1362,20 @@ export default function ProfileScreen() {
                 <span className="flex-1">
                   <span className="block font-bold">Moments</span>
                   <span className="block mt-1 text-xs text-muted-foreground">Visit community stories and Sparks</span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </button>
+              <button
+                className="nia-profile__heritage-link"
+                onClick={() => setLocation(`/community/creators/${currentUser.id}?view=archive`)}
+                data-testid="link-profile-moment-archive"
+              >
+                <span className="nia-profile__heritage-mark" style={{ color: "var(--profile-pink)", background: "color-mix(in srgb, var(--profile-pink) 11%, transparent)" }}>
+                  <Archive className="w-5 h-5" />
+                </span>
+                <span className="flex-1">
+                  <span className="block font-bold">My Moments Archive</span>
+                  <span className="block mt-1 text-xs text-muted-foreground">Private copies only you can browse</span>
                 </span>
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
               </button>

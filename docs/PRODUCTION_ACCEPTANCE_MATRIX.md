@@ -4,6 +4,30 @@ This is the release gate for the universal media foundation. A healthy
 deployment or a configured bucket is not enough to enable `MEDIA_PLATFORM_V21`.
 Record evidence for every checked row from the production runtime.
 
+**2026-10-04 America/Chicago — unchanged-original Studio/Family acceptance hold
+(served commit `12d7db49f7162fa1e824c2c6ba116878090a6539`):**
+The canonical host passed the approved-account and readiness preflight: A and C
+were in distinct Communities with Hubs 1 and 18 respectively, and C could not
+read A's existing Family 3. The authorized browser selected the unchanged
+9,501,888-byte, 9.493-second, 1280×720 H.264/AAC MP4. Production media
+validation rejected the completed upload with `MEDIA_METADATA_INVALID`; the
+editor showed “Uploaded file does not match supported media content,” and no
+`POST /api/community/stories` response arrived within four minutes. The source
+file is readable by local FFprobe, but the production probe failure's cause is
+undetermined.
+
+After the failure, owner-authenticated reads found no Moment created by this run
+for A or C and no Story or Memory created in A's Family 3. The run was not
+retried, and no manual deletion, cleanup, or local-code deployment was performed.
+The normal upload flow may have removed finalized staging chunks, but the
+rejected upload may have left a pending media asset/object; its provider-side
+state was not inspected.
+Content publication, Moment privacy and playback, archive playback, and
+reload-based Studio draft recovery remain unverified. The Profile archive
+shortcut is absent from the served commit; direct archive-route navigation was
+not tested. Physical iOS/Android checks and 24-hour expiry also remain
+unverified. This is a hold, not a passing Studio or Family acceptance result.
+
 **Verified 2026-10-04 America/Chicago — synthetic Community Moment acceptance:**
 The canonical host `https://niakofa.com` served commit
 `251293f592cf84828bcb555272efcfc14668063c`. With two approved disposable

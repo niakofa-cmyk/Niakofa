@@ -1787,7 +1787,7 @@ export function CommunityStoryRail({
                     {activeChallengeKey && <p className="mb-3 rounded-xl border border-secondary/30 bg-secondary/10 p-3 text-xs text-white/85" role="status" data-testid="status-weekly-challenge-context">Your Spark will join this week’s community prompt.</p>}
                   <div className="nia-story-destination-card">
                     <Users size={22} />
-                    <div><label htmlFor="story-audience">Your audience</label><p>{audience === "hub" ? "Only members of this Hub" : "Your approved community"}</p></div>
+                    <div><label htmlFor="story-audience">Your audience</label><p data-testid="status-community-posting-scope" role="status">{audience === "hub" ? "Posting to: This Hub — only its members" : "Posting to: Your Community — approved community members"}</p></div>
                     <select id="story-audience" value={audience} onChange={(event) => { setAudience(event.target.value as "community" | "hub"); uploadedIdsRef.current = []; publishAssetIdsRef.current = []; setUploadedIds([]); }} disabled={!hubId || publishing || Boolean(responseTargetId)} aria-label="Spark audience"><option value="community">Community</option>{hubId && <option value="hub">This Hub</option>}</select>
                   </div>
                   {!exchangeListingId && <div className="nia-story-destination-card nia-story-destination-card__full">

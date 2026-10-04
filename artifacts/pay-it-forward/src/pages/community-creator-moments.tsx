@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useRoute } from "wouter";
+import { Link, useLocation, useRoute, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Archive, BookmarkCheck, CircleAlert, LoaderCircle, Play, RefreshCw, Star, Users } from "lucide-react";
 import { CommunitySocialShell } from "@/components/community/CommunitySocialShell";
@@ -77,10 +77,14 @@ type View = "published" | "archive" | "featured";
 export default function CommunityCreatorMomentsPage() {
   const [, params] = useRoute("/community/creators/:authorId");
   const [, navigate] = useLocation();
+  const search = useSearch();
   const queryClient = useQueryClient();
   const authorId = Number(params?.authorId);
   const validAuthor = Number.isSafeInteger(authorId) && authorId > 0;
-  const [view, setView] = useState<View>("published");
+  const requestedView = new URLSearchParams(search).get("view");
+  const [view, setView] = useState<View>(
+    requestedView === "archive" || requestedView === "featured" ? requestedView : "published",
+  );
   const [extraStories, setExtraStories] = useState<CreatorMoment[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [moreLoading, setMoreLoading] = useState(false);
@@ -111,6 +115,8 @@ export default function CommunityCreatorMomentsPage() {
     setView(next);
     setDeleteConfirmId(null);
     setActionError("");
+    const query = next === "published" ? "" : `?view=${encodeURIComponent(next)}`;
+    navigate(`/community/creators/${authorId}${query}`);
   };
 
   const loadMore = useCallback(async () => {
