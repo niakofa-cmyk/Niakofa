@@ -265,6 +265,8 @@ export function SparkComposerChrome({
   step,
   onStep,
   canContinue,
+  allowText = true,
+  sourceContext,
   children,
 }: {
   preview: ReactNode;
@@ -281,11 +283,44 @@ export function SparkComposerChrome({
   step: "source" | "edit" | "destination";
   onStep: (step: "source" | "edit" | "destination") => void;
   canContinue: boolean;
+  allowText?: boolean;
+  sourceContext?: string;
   children?: ReactNode;
 }) {
   return (
     <div className={`nia-story-composer nia-story-composer--${step}`} role="dialog" aria-modal="true" aria-label="Create a Spark">
-      {step === "source" ? null : (
+      {step === "source" ? (
+        <>
+          <header className="nia-story-composer__header">
+            <button className="nia-story-icon nia-story-icon--light" type="button" onClick={onClose} aria-label="Close Spark creator"><X size={22} /></button>
+            <div className="nia-story-composer__title">
+              <strong>Create a Spark</strong>
+              <span>Choose how to start</span>
+            </div>
+            <span className="nia-story-header-end" aria-hidden="true" />
+          </header>
+          <main className="nia-story-source">
+            <div className="nia-story-source__intro">
+              <p className="nia-story-kicker">{sourceContext ? "A moment for your neighbors" : "Create a Spark"}</p>
+              <h2>{sourceContext ? <>Add a video<br /><em>response.</em></> : <>What’s happening<br /><em>around you?</em></>}</h2>
+              <p>{sourceContext ?? "Capture a photo or video, or start with a few words."}</p>
+            </div>
+            <div className="nia-story-source__choices">
+              <button type="button" onClick={onCamera} className="nia-story-source__choice" data-testid="button-spark-camera">
+                <span><Camera size={26} /></span><strong>Take a photo or video</strong><small>Capture a moment now</small><ArrowRight size={20} />
+              </button>
+              <button type="button" onClick={onGallery} className="nia-story-source__choice" data-testid="button-spark-gallery">
+                <span><ImagePlus size={26} /></span><strong>{sourceContext ? "Choose a video" : "Choose photos or videos"}</strong><small>Pick from your gallery</small><ArrowRight size={20} />
+              </button>
+              {allowText && <button type="button" onClick={() => onStep("edit")} className="nia-story-source__choice" data-testid="button-spark-text">
+                <span><Type size={26} /></span><strong>Start with words</strong><small>A note for your neighbors</small><ArrowRight size={20} />
+              </button>}
+            </div>
+            {galleryCount ? <button type="button" className="nia-story-source__resume" onClick={() => onStep("edit")} data-testid="button-spark-resume-selection">Continue with {galleryCount} selected item{galleryCount === 1 ? "" : "s"} <ArrowRight size={17} /></button> : null}
+            <p className="nia-story-source__foot">Your Spark is shared only with the audience you choose.</p>
+          </main>
+        </>
+      ) : (
       <>
       <header className="nia-story-composer__header">
         <button className="nia-story-icon nia-story-icon--light" type="button" onClick={step === "destination" ? () => onStep("edit") : onClose} aria-label={step === "destination" ? "Go back to editing" : "Close Spark creator"}>

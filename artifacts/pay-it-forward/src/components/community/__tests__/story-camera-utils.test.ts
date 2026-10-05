@@ -99,13 +99,14 @@ test("recorded files use the emitted MIME type and transient playback aborts do 
   assert.match(storyCameraPlaybackErrorMessage(new Error("decode failed")) ?? "", /preview could not be loaded/i);
 });
 
-test("fresh Sparks open the live camera immediately, and restored drafts resume in the studio", () => {
-  assert.match(storyRail, /const beginCreateSpark = \(\) => \{\s*setComposerOpen\(true\);\s*setCameraOpen\(true\);/);
+test("fresh Sparks open source selection without requesting the camera, and restored drafts resume in the studio", () => {
+  assert.match(storyRail, /const beginCreateSpark = \(\) => \{\s*setComposerOpen\(true\);\s*setCameraOpen\(false\);\s*setStudioStep\("source"\);/);
   assert.match(storyRail, /recoveredDraftRef\.current = hasRecoverableWork/);
   assert.match(storyRail, /recoveredScopeRef\.current !== scopeKey/);
   assert.match(storyRail, /if \(!draftReady\s*\|\|\s*draftError/);
-  assert.match(storyRail, /if \(!hasStudioWork\) setCameraOpen\(true\)/);
-  assert.match(storyRail, /else setCameraOpen\(false\)/);
+  assert.match(storyRail, /setStudioStep\(hasStudioWork \? "edit" : "source"\)/);
+  assert.match(storyRail, /setCameraOpen\(false\)/);
+  assert.doesNotMatch(storyRail, /if \(!hasStudioWork\) setCameraOpen\(true\)/);
   assert.match(storyRail, /if \(cameraOpen\) \{ cancelCamera\(\); return; \}/);
   assert.match(storyRail, /composerOpen && !cameraOpen && draftReady/);
 });

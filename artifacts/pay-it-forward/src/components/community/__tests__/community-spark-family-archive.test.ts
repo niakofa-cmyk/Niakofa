@@ -55,16 +55,18 @@ test("Moment cutdown keeps all photos and only complete leading clips within 180
   );
 });
 
-test("recovered Studio work resumes in editing, and Create a Spark skips the source chooser", () => {
+test("recovered Studio work resumes in editing, while new Sparks start with source choices", () => {
   const trimStart = storyRailSource.indexOf('data-testid="button-trim-spark-video"');
   const trimEnd = storyRailSource.indexOf('data-testid="input-spark-cover-time"', trimStart);
   const trimAction = storyRailSource.slice(trimStart, trimEnd);
   assert.match(storyRailSource, /if \(hasRecoverableWork\) setStudioStep\("edit"\)/);
-  assert.doesNotMatch(storyRailSource, /What’s happening/);
-  assert.doesNotMatch(composerChromeSource, /What’s happening/);
-  assert.doesNotMatch(composerChromeSource, /Choose how to start/);
+  assert.match(composerChromeSource, /What’s happening/);
+  assert.match(composerChromeSource, /Choose how to start/);
+  assert.match(composerChromeSource, /data-testid="button-spark-camera"/);
+  assert.match(composerChromeSource, /data-testid="button-spark-gallery"/);
+  assert.match(composerChromeSource, /data-testid="button-spark-text"/);
+  assert.match(composerChromeSource, /allowText &&/);
   assert.match(composerChromeSource, /step === "destination" \? \(\) => onStep\("edit"\) : onClose/);
-  assert.doesNotMatch(composerChromeSource, /step === "edit" \? onStep\("source"\)/);
   assert.doesNotMatch(storyRailSource, /setFamilyStoryCopyEnabled\(true\)/);
   assert.match(storyRailSource, /familyStoryDestination === "family-only"/);
   assert.match(storyRailSource, /saveSparkAsPrivateFamilyStory\(\{/);

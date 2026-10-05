@@ -6,6 +6,7 @@
 - [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
 - [GitHub connector exact sync](github-connector-exact-sync.md) — compare commit SHAs before interpreting REST message text; it may omit a newline even when the Git object matches.
 - [Media activation gate](media-platform-activation.md) — keep V21 opt-in; require operator confirmation before production state reads and separate gates for media writes.
+- [Media Studio scope](media-studio-scope.md) — keep Studio UX work within Niakofa and leave production settings and existing media untouched.
 - [GitHub OAuth publishing](github-oauth-publishing.md) — connector-created commits omit the final message newline; compare GitHub main directly after publishing.
 - [Workspace hydration and preview limits](workspace-hydration-preview.md) — a healthy web preview does not certify missing API helpers, production parity, or physical devices.
 - [Workspace package-manager bootstrap](pnpm-bootstrap.md) — disable self-bootstrap when the declared pnpm version is unavailable; restore dependencies from the frozen lockfile.

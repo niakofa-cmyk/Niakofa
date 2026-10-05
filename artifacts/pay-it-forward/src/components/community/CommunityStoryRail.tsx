@@ -135,7 +135,7 @@ export function CommunityStoryRail({
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const autoCameraOpenedRef = useRef(false);
+  const studioEntryInitializedRef = useRef(false);
   const [responseTargetId, setResponseTargetId] = useState<number | null>(null);
   const [activeChallengeKey, setActiveChallengeKey] = useState<string | null>(null);
   const [archiveEnabled, setArchiveEnabled] = useState(false);
@@ -157,7 +157,8 @@ export function CommunityStoryRail({
       setActiveChallengeKey(challengeKey);
       setAudience(responseToStoryId ? "community" : (hubId ? "hub" : "community"));
       setComposerOpen(true);
-      setCameraOpen(true);
+      setCameraOpen(false);
+      setStudioStep("source");
     }
   }, [additionalComposerSignal, challengeKey, hubId, openComposerSignal, responseToStoryId]);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
@@ -442,7 +443,7 @@ export function CommunityStoryRail({
     activeScopeRef.current = scopeKey;
     recoveredScopeRef.current = null;
     recoveredDraftRef.current = false;
-    autoCameraOpenedRef.current = false;
+    studioEntryInitializedRef.current = false;
     exchangeDraftRef.current = null;
     clientPublishIdRef.current = newStudioPublishId();
     publishAttemptRef.current = null;
@@ -951,29 +952,28 @@ export function CommunityStoryRail({
       || Boolean(momentAccessibility.momentTagsInput.trim())
       || Object.values(momentAccessibility.momentAltTexts).some((text) => text.trim())
       || Object.values(momentAccessibility.momentCaptionsVtt).some((text) => text.trim());
-    if (!hasStudioWork && !responseTargetId) closeComposer();
-  }, [caption, closeComposer, editorElements.length, files.length, momentAccessibility, musicFile, responseTargetId]);
+    if (!hasStudioWork) setStudioStep("source");
+  }, [caption, editorElements.length, files.length, momentAccessibility, musicFile]);
 
   useEffect(() => {
     if (!composerOpen) {
-      autoCameraOpenedRef.current = false;
+      studioEntryInitializedRef.current = false;
       return;
     }
     if (!draftReady
       || draftError
       || activeScopeRef.current !== scopeKey
       || recoveredScopeRef.current !== scopeKey
-      || autoCameraOpenedRef.current) return;
-    autoCameraOpenedRef.current = true;
+      || studioEntryInitializedRef.current) return;
+    studioEntryInitializedRef.current = true;
     const hasStudioWork = recoveredDraftRef.current
       || files.length > 0
       || editorElements.length > 0
       || Boolean(caption.trim())
       || Boolean(musicFile)
-      || Boolean(exchangeDraftRef.current)
-      || Boolean(responseTargetId);
-    if (!hasStudioWork) setCameraOpen(true);
-    else setCameraOpen(false);
+      || Boolean(exchangeDraftRef.current);
+    setCameraOpen(false);
+    setStudioStep(hasStudioWork ? "edit" : "source");
   }, [caption, composerOpen, draftError, draftReady, editorElements.length, files.length, musicFile, responseTargetId, scopeKey]);
 
   useEffect(() => {
@@ -1685,7 +1685,8 @@ export function CommunityStoryRail({
 
   const beginCreateSpark = () => {
     setComposerOpen(true);
-    setCameraOpen(true);
+    setCameraOpen(false);
+    setStudioStep("source");
   };
 
   const toolButtons: Array<{ key: StoryVisualTool; label: string; icon: ReactNode }> = [
@@ -1736,6 +1737,8 @@ export function CommunityStoryRail({
               step={studioStep}
               onStep={(next) => { void moveToStudioStep(next); }}
               canContinue={Boolean(caption.trim() || gallerySelection.length)}
+              allowText={!responseTargetId}
+              sourceContext={responseTargetId ? `This is a video response to Moment ${responseTargetId}.` : undefined}
               preview={(
                 <StoryEditorCanvas
                   elements={editorElements}
