@@ -8,8 +8,9 @@ import { promisify } from "node:util";
 
 const enabled = process.env.MEDIA_PLATFORM_V21_BROWSER_SMOKE === "1";
 const productionGateConfirmed = process.env.CONFIRM_MEDIA_PLATFORM_V21_PRODUCTION_GATE === "1";
+const retainTestMediaRequested = process.env.MEDIA_CERT_RETAIN_TEST_MEDIA === "1";
 const retainProductionMedia =
-  process.env.MEDIA_CERT_RETAIN_TEST_MEDIA === "1" &&
+  retainTestMediaRequested &&
   process.env.CONFIRM_RETAIN_PRODUCTION_MEDIA === "1";
 const contextKind = process.env.MEDIA_SMOKE_CONTEXT_KIND;
 const contextId = Number(process.env.MEDIA_SMOKE_CONTEXT_ID);
@@ -198,6 +199,10 @@ test.describe("authenticated universal media smoke", () => {
 
   test("uploads, finalizes, processes, persists variants, and retrieves photo/video media", async ({ page, request }) => {
     test.setTimeout(180_000);
+    test.skip(
+      retainTestMediaRequested,
+      "This universal smoke includes a deletion fixture and cannot run in retained-media mode.",
+    );
     const headers = await authHeaders(page);
     video = await createVideoFixture();
     const photoId = await uploadAndComplete(request, headers, {
@@ -269,6 +274,10 @@ test.describe("authenticated universal media smoke", () => {
       process.env.MEDIA_CERT_PHOTO_ONLY_SMOKE !== "1",
       "Requires the explicit photo-only production diagnostic gate.",
     );
+    expect(
+      !retainTestMediaRequested || retainProductionMedia,
+      "Retaining production test media requires explicit operator confirmation.",
+    ).toBeTruthy();
     expect(contextKind, "The photo-only diagnostic must use an approved Hub context.").toBe("hub");
     const headers = await authHeaders(page);
     const otherHeaders = { Authorization: `Bearer ${storageStateToken(unauthorizedState!)}` };

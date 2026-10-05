@@ -62,3 +62,13 @@ test("certification contract covers resume, accessibility, composition, privacy,
   assert.match(operatorGuide, /normal realtime Story-created event/);
   assert.match(operatorGuide, /lost response/);
 });
+
+test("approved retention preserves the composed Story and source assets without issuing deletes", () => {
+  assert.match(runner, /MEDIA_CERT_RETAIN_TEST_MEDIA/);
+  assert.match(runner, /CONFIRM_RETAIN_PRODUCTION_MEDIA/);
+  assert.match(spec, /MEDIA_CERT_RETAINED story_id=/);
+  assert.match(spec, /MEDIA_CERT_PRESERVED_AFTER_FAILURE/);
+  const retentionBranch = spec.split("if (retainProductionMedia) {")[1]?.split("} else {")[0];
+  assert.ok(retentionBranch, "the retention branch must be separate from default cleanup");
+  assert.doesNotMatch(retentionBranch, /\.delete\(/);
+});

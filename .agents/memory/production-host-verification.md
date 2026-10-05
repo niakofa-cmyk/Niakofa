@@ -12,3 +12,9 @@ Always verify the canonical public domain and its served commit before treating 
 **Why:** In this project, Railway has auto-deployed documentation-only commits even when the GitHub deployment-verification workflow excluded those paths.
 
 **How to apply:** Keep workflow path filters aligned with Railway's observed watch behavior. If a filter skips a push that Railway deploys, still verify the canonical host and served commit.
+
+A live Railway service-variable update can redeploy the currently configured source revision rather than the revision that was serving immediately before the change. Treat a variable change that triggers deployment as a code-release boundary: verify the resulting source SHA and readiness before production writes.
+
+**Why:** During media certification, changing the V21 variable deployed a newer `main` revision, so the served SHA changed even though the requested change was only a flag.
+
+**How to apply:** After a production variable update, wait for the deployment to settle, compare the canonical host's `/api/version` with the intended source revision, recheck readiness, and regenerate revision-bound browser states before writing.

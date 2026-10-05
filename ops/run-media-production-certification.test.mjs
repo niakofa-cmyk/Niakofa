@@ -69,3 +69,18 @@ test("rejects unapproved state object keys before bucket access", async () => {
   assert.match(result.stderr, /CERTIFICATION_STATE_KEY must be an approved fixed User A state key/);
   assert.doesNotMatch(result.stderr, /Railway certification state|fetch failed/);
 });
+
+test("retention mode is restricted to explicitly confirmed photo-only certification", async () => {
+  const result = await runRunner({
+    ...confirmedMediaGates,
+    CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE: "1",
+    CONFIRM_RAILWAY_MEDIA_BUCKET_REFERENCE: "1",
+    MEDIA_CERT_RETAIN_TEST_MEDIA: "1",
+    CONFIRM_RETAIN_PRODUCTION_MEDIA: "1",
+    MEDIA_CERT_PHOTO_ONLY_SMOKE: "",
+  });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /retention is allowed only for the isolated photo-only diagnostic/);
+  assert.doesNotMatch(result.stderr, /Railway certification state|fetch failed/);
+});
