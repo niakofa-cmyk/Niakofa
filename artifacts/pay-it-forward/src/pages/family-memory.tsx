@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * Family Memory Detail
  * Route: /family/:id/memory/:memoryId
@@ -574,7 +576,7 @@ export default function FamilyMemoryPage() {
             onClick={() => {
               const shareData = { title: memory?.title ?? "Memory", text: memory?.description ?? "" };
               if (navigator.share) {
-                navigator.share(shareData).catch(() => {});
+                navigator.share(shareData).catch(reportClientSideEffectFailure("pages.family-memory.share"));
               } else if (navigator.clipboard) {
                 navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}`).then(
                   () => toast.success("Share link copied"),

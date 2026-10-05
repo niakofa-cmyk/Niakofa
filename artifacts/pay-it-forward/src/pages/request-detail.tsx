@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useRef, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { ChevronLeft, MapPin, Clock, DollarSign, Heart, Gift, AlertTriangle, Share2, Users, CheckCircle2, Navigation2, ShieldCheck } from "lucide-react";
@@ -51,9 +53,9 @@ export default function RequestDetailScreen() {
   const handleShare = async () => {
     const url = window.location.href;
     if (navigator.share) {
-      await navigator.share({ title: request?.title ?? "Help Request", url }).catch(() => {});
+      await navigator.share({ title: request?.title ?? "Help Request", url }).catch(reportClientSideEffectFailure("pages.request-detail.share"));
     } else {
-      await navigator.clipboard.writeText(url).catch(() => {});
+      await navigator.clipboard.writeText(url).catch(reportClientSideEffectFailure("pages.request-detail.clipboard"));
       toast({ title: "Link copied!" });
     }
   };

@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
@@ -91,7 +93,7 @@ export default function LiveLeaderboard() {
       .then((data: LeaderboardEntry[] | null) => {
         if (data) setEntries(data);
       })
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("components.live-leaderboard.entries"))
       .finally(() => setLoading(false));
   }, [selectedCity]);
 
@@ -101,7 +103,7 @@ export default function LiveLeaderboard() {
     fetch(`${base}/api/leaderboard/cities`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : [])
       .then((data: string[]) => setCities(data))
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("components.live-leaderboard.cities"));
   }, []);
 
   // Live WebSocket updates

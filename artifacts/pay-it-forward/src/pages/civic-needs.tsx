@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * Civic Needs Marketplace
  *
@@ -144,7 +146,7 @@ export default function CivicNeedsPage() {
     fetch(`${BASE}/api/gov-sponsors/mine`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() as Promise<GovSponsorApp[]> : [])
       .then((apps) => setSponsor(apps.find(a => a.approval_status === "approved") ?? null))
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("pages.civic-needs.sponsor"))
       .finally(() => setLoadingSponsor(false));
   }, [currentUser]);
 

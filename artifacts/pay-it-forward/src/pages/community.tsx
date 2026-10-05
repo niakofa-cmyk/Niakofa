@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useMemo } from "react";
 import { useLocation, useSearch, useRoute } from "wouter";
 import { authHeaders } from "@/lib/auth";
@@ -111,7 +113,7 @@ export default function CommunityScreen() {
           setDefaultHubId(data.hub_id);
         }
       })
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("pages.community.default-hub"))
       .finally(() => {
         if (!cancelled) setDefaultHubResolved(true);
       });

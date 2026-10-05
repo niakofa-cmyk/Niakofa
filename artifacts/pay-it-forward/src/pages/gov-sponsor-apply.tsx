@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * Government / County Sponsor Application Page
  *
@@ -63,7 +65,7 @@ export default function GovSponsorApplyPage() {
     })
       .then(r => r.ok ? r.json() as Promise<GovSponsorApp[]> : [])
       .then(setMyApps)
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("pages.gov-sponsor-apply.load"))
       .finally(() => setLoadingApps(false));
   }, [currentUser]);
 

@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
@@ -145,9 +147,9 @@ export default function RequesterTrackingScreen() {
   const handleShare = async () => {
     const url = window.location.href;
     if (navigator.share) {
-      await navigator.share({ title: "Track my helper", url }).catch(() => {});
+      await navigator.share({ title: "Track my helper", url }).catch(reportClientSideEffectFailure("pages.request-track.share"));
     } else {
-      await navigator.clipboard.writeText(url).catch(() => {});
+      await navigator.clipboard.writeText(url).catch(reportClientSideEffectFailure("pages.request-track.clipboard"));
       toast({ title: "Link copied!" });
     }
   };

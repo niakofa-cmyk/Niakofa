@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -429,7 +431,7 @@ export default function AudioCirclesScreen() {
     fetch(`${base}/api/audio-circles/followed`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : { followed: [] })
       .then(data => { if (!cancelled) setFollowedCircles(data.followed ?? []); })
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("pages.audio-circles.followed"))
       .finally(() => { if (!cancelled) setFollowedLoading(false); });
     return () => { cancelled = true; };
   }, [base]);
@@ -474,7 +476,7 @@ export default function AudioCirclesScreen() {
   const shareCircle = (circle: CircleSummary, live: LiveSessionSummary) => {
     const url = `${window.location.origin}${SPIRALS_PATHS.room(live.id)}`;
     if (navigator.share) {
-      navigator.share({ title: circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`, url }).catch(() => {});
+      navigator.share({ title: circle.neighborhood_name ? `${circle.neighborhood_name} Spiral` : `${circle.city_display} Spiral`, url }).catch(reportClientSideEffectFailure("pages.audio-circles.share"));
     } else {
       navigator.clipboard.writeText(url).then(() => {
         toast({ title: "Link copied!", description: "Share it with your neighbors." });

@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
@@ -292,7 +294,7 @@ export default function MapScreen() {
     fetch(`${base}/api/communities`)
       .then(r => r.ok ? r.json() : { communities: [] })
       .then((j: { communities: CommunityOption[] }) => { if (Array.isArray(j.communities)) setCoverageCommunities(j.communities); })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("pages.map.coverage"));
   }, []);
   // mapZoom drives the cluster / individual-marker toggle
   const [mapZoom, setMapZoom] = useState(() => myLocation ? 13.5 : 2);

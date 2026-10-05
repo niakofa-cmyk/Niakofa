@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * County-Branded Public Impact Dashboard
  *
@@ -310,7 +312,7 @@ function CountyPicker() {
     fetch("/api/impact")
       .then(r => r.json() as Promise<{ communities: CommunityListItem[] }>)
       .then(d => setCommunities(d.communities ?? []))
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("pages.county-impact.communities"))
       .finally(() => setLoading(false));
   }, []);
 

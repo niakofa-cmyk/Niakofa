@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * Family Vault — memories, interviews, and members for a single Family Space
  * Route: /family/:id
@@ -1100,7 +1102,7 @@ function TranslateMemoryModal({ familyId, memory, onClose }: { familyId: number;
 
   async function copyToClipboard() {
     if (!result) return;
-    await navigator.clipboard.writeText(result.translated).catch(() => {});
+    await navigator.clipboard.writeText(result.translated).catch(reportClientSideEffectFailure("pages.family-vault.clipboard"));
     toast.success("Copied to clipboard!");
   }
 
@@ -1198,7 +1200,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (rafRef.current)   cancelAnimationFrame(rafRef.current);
-      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current?.close().catch(reportClientSideEffectFailure("pages.family-vault.audio-cleanup"));
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, []);
@@ -1257,7 +1259,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
     if (!mr || phase !== "recording") return;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (rafRef.current)   { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current?.close().catch(reportClientSideEffectFailure("pages.family-vault.audio-cleanup"));
     analyserRef.current = null;
     setPhase("uploading");
 
@@ -1334,7 +1336,7 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
               method:  "PATCH",
               headers: { ...authHeaders(), "Content-Type": "application/json" },
               body: JSON.stringify({ description: txData.text.slice(0, 500) }),
-            }).catch(() => {});
+            }).catch(reportClientSideEffectFailure("pages.family-vault.analytics"));
           }
         }
       } catch { /* Transcription is best-effort — audio already saved */ }

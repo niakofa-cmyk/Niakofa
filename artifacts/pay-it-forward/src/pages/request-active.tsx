@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
@@ -644,9 +646,9 @@ export default function ActiveRequestScreen() {
         title: `Help request: ${request?.title ?? ""}`,
         text: `I'm on my way to help. Track my trip here.`,
         url: shareUrl,
-      }).catch(() => {});
+      }).catch(reportClientSideEffectFailure("pages.request-active.share"));
     } else {
-      await navigator.clipboard.writeText(shareUrl).catch(() => {});
+      await navigator.clipboard.writeText(shareUrl).catch(reportClientSideEffectFailure("pages.request-active.clipboard"));
       toast({ title: "Trip link copied!", description: "Share this link so others can track your progress." });
     }
     setShareVisible(false);

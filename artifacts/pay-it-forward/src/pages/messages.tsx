@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, ShieldAlert, UsersRound, X } from "lucide-react";
 import { useLocation } from "wouter";
@@ -137,7 +139,7 @@ function RequestThread({
     ? request.helper_name || "Your helper"
     : request.requester_name || "Request owner";
   useEffect(() => {
-    void fetch("/api/messages/requests/" + request.id + "/read", { method: "POST", headers: authHeaders() }).catch(() => {});
+    void fetch("/api/messages/requests/" + request.id + "/read", { method: "POST", headers: authHeaders() }).catch(reportClientSideEffectFailure("pages.messages.mark-request-read"));
   }, [request.id]);
   return (
     <section className="flex h-full min-h-0 flex-col">
@@ -341,7 +343,7 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!selectedDirectId || activeMode !== "direct" || realtimeState === "connected") return;
-    const interval = window.setInterval(() => { void loadDirectMessages(selectedDirectId).catch(() => {}); }, 30_000);
+    const interval = window.setInterval(() => { void loadDirectMessages(selectedDirectId).catch(reportClientSideEffectFailure("pages.messages.poll-direct")); }, 30_000);
     return () => window.clearInterval(interval);
   }, [activeMode, loadDirectMessages, realtimeState, selectedDirectId]);
 
@@ -375,7 +377,7 @@ export default function MessagesPage() {
           if (unified.conversation_id && (unified.conversation_kind === "direct" || unified.conversation_kind === "request" || unified.conversation_kind === "hub")) {
             markLiveConversationRead(unified.conversation_kind, unified.conversation_id);
           }
-          void loadUnreadSummary().catch(() => {});
+          void loadUnreadSummary().catch(reportClientSideEffectFailure("pages.messages.refresh-unread"));
           return;
         }
         if (unified.event_type === "message.created") {
@@ -386,10 +388,10 @@ export default function MessagesPage() {
             : null;
           if (conversationId && unified.conversation_kind === "direct" && message) {
             setDirectMessages((current) => conversationId === selectedDirectId ? mergeDirectMessage(current, message) : current);
-            void Promise.all([loadDirectConversations(), loadUnreadSummary()]).catch(() => {});
+            void Promise.all([loadDirectConversations(), loadUnreadSummary()]).catch(reportClientSideEffectFailure("pages.messages.refresh-direct"));
             if (message.sender_id !== currentUser?.id && conversationId === selectedDirectId) {
               markLiveConversationRead("direct", conversationId);
-              void fetch(`/api/messages/direct/conversations/${conversationId}/read`, { method: "POST", headers: authHeaders() }).catch(() => {});
+              void fetch(`/api/messages/direct/conversations/${conversationId}/read`, { method: "POST", headers: authHeaders() }).catch(reportClientSideEffectFailure("pages.messages.mark-direct-read"));
             } else if (shouldNotifyConversation({
               activeKey: selectedDirectId ? `direct:${selectedDirectId}` : null,
               conversationKey: `direct:${conversationId}`,
@@ -401,7 +403,7 @@ export default function MessagesPage() {
               browserNotify(`${message.sender_name} sent you a message`, message.body, `direct:${conversationId}`);
             }
           } else {
-            void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(() => {});
+            void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(reportClientSideEffectFailure("pages.messages.refresh-inbox"));
           }
           return;
         }
@@ -414,13 +416,13 @@ export default function MessagesPage() {
           || unified.event_type === "hub.membership_changed"
           || unified.event_type === "notification.created"
         ) {
-          void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(() => {});
+          void Promise.all([loadRequestConversations(), loadHubConversations(), loadUnreadSummary()]).catch(reportClientSideEffectFailure("pages.messages.refresh-inbox"));
         }
         return;
       }
       if (event.type === "ws_reconnected") {
         void loadInbox();
-        if (activeMode === "direct" && selectedDirectId) void loadDirectMessages(selectedDirectId).catch(() => {});
+        if (activeMode === "direct" && selectedDirectId) void loadDirectMessages(selectedDirectId).catch(reportClientSideEffectFailure("pages.messages.reconnect-direct"));
         return;
       }
       if (event.type !== "direct_message") return;

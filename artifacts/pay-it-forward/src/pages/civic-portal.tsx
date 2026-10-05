@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * Civic Portal — County / Government Sponsor Request Board
  *
@@ -127,7 +129,7 @@ export default function CivicPortalPage() {
         const approved = apps.find(a => a.approval_status === "approved");
         setSponsor(approved ?? (apps[0] ?? null));
       })
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("pages.civic-portal.sponsor"))
       .finally(() => setLoadingSponsor(false));
   }, [currentUser]);
 
@@ -163,7 +165,7 @@ export default function CivicPortalPage() {
           completions_30d: d.activity?.completions_30d ?? 0,
         });
       })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("pages.civic-portal.save"));
   }, [sponsor]);
 
   const handleChange = (

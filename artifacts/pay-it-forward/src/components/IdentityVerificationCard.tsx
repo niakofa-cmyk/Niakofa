@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Shield, CheckCircle2, Clock, ChevronRight, Camera, FileText, Loader2, AlertTriangle } from "lucide-react";
@@ -28,7 +30,7 @@ export function IdentityVerificationCard() {
         identity_verification_status: u.identity_verification_status ?? "unverified",
         background_check_status: u.background_check_status ?? "not_started",
       }))
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("components.identity-verification.load"));
   }, [currentUser?.id]);
 
   const startVerification = async () => {

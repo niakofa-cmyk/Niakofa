@@ -53,7 +53,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["artifacts/api-server/src/**/*.{ts,tsx}", "artifacts/nia-service/src/**/*.{ts,tsx}"],
+    files: ["artifacts/api-server/src/**/*.{ts,tsx}", "artifacts/nia-service/src/**/*.{ts,tsx}", "artifacts/pay-it-forward/src/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-syntax": [
         "error",

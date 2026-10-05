@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic, MicOff } from "lucide-react";
@@ -813,7 +815,7 @@ export function NiaDrawer({
     fetch(`${API_BASE}/api/nia/context?lat=${lat}&lng=${lng}`, { headers: authHeaders() })
       .then((r) => r.ok ? r.json() : null)
       .then((data: NiaContext | null) => { if (data) setLiveContext(data); })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("components.nia-drawer.context"));
   }, [niaEnabled, userCoords, userLocation]);
 
   useEffect(() => { contextFetchedRef.current = false; }, [userCoords]);
@@ -1162,7 +1164,7 @@ export function NiaDrawer({
           fetch(`${API_BASE}/api/nia/context?lat=${lat}&lng=${lng}`, { headers: authHeaders() })
             .then((r) => r.ok ? r.json() : null)
             .then((data: NiaContext | null) => { if (data) setLiveContext(data); })
-            .catch(() => {});
+            .catch(reportClientSideEffectFailure("components.nia-drawer.context-refresh"));
         }
       }
     }

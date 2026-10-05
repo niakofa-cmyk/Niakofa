@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useRef, type ReactElement } from "react";
 import { getIpLocation } from "@/lib/locale-utils";
 import { useLocation } from "wouter";
@@ -246,7 +248,7 @@ export default function NewRequestScreen() {
       .then((j: { communities: CommunityOption[] }) => {
         if (Array.isArray(j.communities)) setCommunities(j.communities);
       })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("pages.request-new.communities"));
   }, []);
 
   // Whenever the pin moves, reverse-geocode → match county → auto-assign
@@ -292,10 +294,10 @@ export default function NewRequestScreen() {
             method: "PUT",
             headers: { "Content-Type": "application/json", ...authHeaders() },
             body: JSON.stringify({ community_id: match.id }),
-          }).catch(() => {});
+          }).catch(reportClientSideEffectFailure("pages.request-new.community-match"));
         }
       })
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("pages.request-new.geolocation"))
       .finally(() => setGeoDetecting(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinLocation, communities]);
@@ -323,7 +325,7 @@ export default function NewRequestScreen() {
           setMyBusinesses(data.filter(b => !b.approval_status || b.approval_status === "approved"));
         }
       })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("pages.request-new.current-user"));
   }, [currentUser]);
 
   // When switching TO a business, always default to immediate payment (pay now).
@@ -1314,7 +1316,7 @@ export default function NewRequestScreen() {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeaders() },
                 body: JSON.stringify({ version: CURRENT_TOS_VERSION }),
-              }).catch(() => {});
+              }).catch(reportClientSideEffectFailure("pages.request-new.terms-acceptance"));
               setWaiverAccepted(true);
               setShowWaiverModal(false);
               pendingMutateRef.current?.();

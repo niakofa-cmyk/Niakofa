@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useRef, useCallback, type FormEvent } from "react";
 import "./profile.css";
 import { useAnimationPreference, useOsReducedMotion, useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
@@ -1905,7 +1907,7 @@ export default function ProfileScreen() {
                             });
                           } catch {}
                         } else {
-                          await navigator.clipboard.writeText(url).catch(() => {});
+                          await navigator.clipboard.writeText(url).catch(reportClientSideEffectFailure("pages.profile.clipboard"));
                           toast({ title: "Invite link copied!", description: "Share it with a neighbor." });
                         }
                       }}
@@ -1918,7 +1920,7 @@ export default function ProfileScreen() {
                       aria-label="Copy invite link to clipboard"
                       onClick={async () => {
                         const url = `${window.location.origin}/login?ref=${currentUser.id}`;
-                        await navigator.clipboard.writeText(url).catch(() => {});
+                        await navigator.clipboard.writeText(url).catch(reportClientSideEffectFailure("pages.profile.clipboard"));
                         toast({ title: "Link copied!" });
                       }}
                       className="flex items-center gap-1.5 bg-muted text-muted-foreground text-xs font-bold px-3 py-2.5 rounded-xl border border-border active:scale-95 transition-all"
