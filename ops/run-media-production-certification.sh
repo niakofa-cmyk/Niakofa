@@ -121,6 +121,9 @@ env -i PATH="$PATH" HOME="${HOME:-/tmp}" \
 env -i PATH="$PATH" HOME="${HOME:-/tmp}" \
   node "$script_dir/validate-user-a-state.mjs" "$USER_B_STATE" USER_B_STATE
 
+create_runtime_dir
+mkdir -m 700 "$runtime_dir/playwright-output"
+
 playwright_env=(
   env -i
   "PATH=$PATH"
@@ -148,9 +151,11 @@ if [[ "${MEDIA_CERT_PHOTO_ONLY_SMOKE:-}" == "1" ]]; then
   echo "Running one gated authenticated production photo-only diagnostic for commit $EXPECTED_COMMIT..."
   "${playwright_env[@]}" "$repository_root/node_modules/.bin/playwright" test \
     "$repository_root/e2e/media-platform-authenticated.spec.ts" \
-    --grep "photo-only diagnostic uploads and cleans exactly one photo" --reporter=line
+    --grep "photo-only diagnostic uploads and cleans exactly one photo" \
+    --reporter=line --output "$runtime_dir/playwright-output"
 else
   echo "Running gated authenticated production media certification for commit $EXPECTED_COMMIT..."
   "${playwright_env[@]}" "$repository_root/node_modules/.bin/playwright" test \
-    "$repository_root/e2e/media-platform-authenticated.spec.ts" --reporter=line
+    "$repository_root/e2e/media-platform-authenticated.spec.ts" \
+    --reporter=line --output "$runtime_dir/playwright-output"
 fi
