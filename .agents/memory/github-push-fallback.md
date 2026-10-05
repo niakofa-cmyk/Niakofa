@@ -21,3 +21,18 @@ parent, use a transient helper without printing or persisting the credential,
 push without force, then run a separate pull and compare local HEAD, tracking
 ref, remote ref, and clean working tree. Retain the connector-backed exact-SHA
 gates as the fallback.
+
+An active Git source-control connection does not guarantee that HTTPS Git
+operations can authenticate. For small text-only changes, a separate connected
+GitHub App API connector can publish through the Git Database API without
+handling token values. Resolve its exact connector slug from the integration
+view; verify every blob, tree, and commit SHA before advancing the ref with
+`force: false`.
+
+**Why:** The source-control connection was active while `git push` was rejected;
+the separate GitHub App connection successfully published the exact local
+commit.
+
+**How to apply:** If Git transport fails, inspect the connected GitHub App
+integration rather than retrying the same authentication path. Keep binary
+uploads on authenticated Git transport when API body limits could truncate them.
