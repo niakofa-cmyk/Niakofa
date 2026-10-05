@@ -6,6 +6,7 @@ import {
 
 const route = readFileSync(new URL("../routes/community-exchange-spark-drafts.ts", import.meta.url), "utf8");
 const scheduler = readFileSync(new URL("../lib/scheduler.ts", import.meta.url), "utf8");
+const storage = readFileSync(new URL("../lib/storage.ts", import.meta.url), "utf8");
 const createStart = route.indexOf('"/community/exchange/listings/:listingId/sparks/drafts"');
 const createEnd = route.indexOf('"/community/exchange/sparks/drafts"', createStart + 1);
 const publishStart = route.indexOf('"/community/exchange/sparks/drafts/:sparkId/publish"');
@@ -104,6 +105,13 @@ describe("Exchange Spark lifecycle audit events", () => {
     expect(cleanupRoute).toMatch(/db\.delete\(exchangeSparksTable\)[\s\S]*?\.returning\(\{ id: exchangeSparksTable\.id \}\)/);
     expect(cleanupRoute).toContain("deleted: true");
     expect(cleanupRoute).toContain("deleted: false");
+    const strictStorageDelete = cleanupRoute.indexOf("await deleteAssetStrict(key)");
+    const databaseDelete = cleanupRoute.indexOf("db.delete(exchangeSparksTable)");
+    const successAudit = cleanupRoute.indexOf('action: "cleanup_result"', databaseDelete);
+    expect(strictStorageDelete).toBeGreaterThanOrEqual(0);
+    expect(strictStorageDelete).toBeLessThan(databaseDelete);
+    expect(databaseDelete).toBeLessThan(successAudit);
+    expect(storage).toMatch(/export async function deleteAssetStrict\(key: string\): Promise<void> \{[\s\S]*?await verifyAssetAbsent\(key\)/);
     expect(cleanupRoute).not.toMatch(/logger\.error\(\{ err, sparkId:/);
   });
 });

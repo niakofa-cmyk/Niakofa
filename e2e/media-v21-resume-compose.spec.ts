@@ -273,10 +273,28 @@ async function verifyMomentShareLink(
     const storyDeepLink = new URL("/community/moments", origin);
     storyDeepLink.searchParams.set("sparkId", String(storyId));
     storyDeepLink.searchParams.set("audience", "community");
+    const momentsFeedResponse = ownerPage.waitForResponse((response) => {
+      const requestedUrl = new URL(response.url());
+      return requestedUrl.origin === origin
+        && requestedUrl.pathname === "/api/community/stories"
+        && requestedUrl.searchParams.get("limit") === "12";
+    }, { timeout: 30_000 });
     await ownerPage.goto(storyDeepLink.toString(), { waitUntil: "domcontentloaded" });
 
+    const feedResponse = await momentsFeedResponse;
+    expect(feedResponse.status(), "The owner's authenticated Moments feed should load.").toBe(200);
+    const feedPayload = await feedResponse.json() as {
+      stories?: Array<{ id?: number; caption?: string | null }>;
+    };
+    const feedStory = (feedPayload.stories ?? []).find((story) => Number(story.id) === storyId);
+    expect(feedStory, "The published Moment should be present in the owner's authenticated feed response.")
+      .toBeDefined();
+    expect(feedStory?.caption).toBe(caption);
+
     const storyCard = ownerPage.getByTestId(`card-moment-${storyId}`);
-    await expect(storyCard, "The owner should see the published Moment in the feed.").toBeVisible();
+    await expect(ownerPage.getByTestId("status-loading-moments")).toHaveCount(0, { timeout: 30_000 });
+    await expect(storyCard, "The owner should see the published Moment in the feed.")
+      .toBeVisible({ timeout: 30_000 });
     await expect(storyCard).toContainText(caption);
     await storyCard.getByRole("button", { name: "Share Spark", exact: true }).click();
 
@@ -393,6 +411,8 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
     const clientPublishId = randomUUID();
     let cleanupError: string | undefined;
     let certificationSucceeded = false;
+    let primaryError: unknown;
+    let primaryTestFailed = false;
 
     const newOwnerRequest = async () => {
       const context = await createAuthenticatedRequest(playwright, owner.token);
@@ -605,6 +625,9 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
         await verifyMomentShareLink(browser, storyId!, caption, otherUser.token);
       }
       certificationSucceeded = true;
+    } catch (error) {
+      primaryError = error;
+      primaryTestFailed = true;
     } finally {
       const ownerRequest = cleanupOwnerRequest;
       if (retainProductionMedia) {
@@ -660,37 +683,36 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
 
             let storyDeleted = !storyId && !possibleUntrackedStory;
             if (storyId) {
-              const deadline = Date.now() + 5 * 60_000;
-              while (Date.now() < deadline) {
+              try {
+                const deletion = await ownerRequest.delete(`/api/community/stories/${storyId}`, {
+                  headers: authorization(owner.token),
+                  timeout: 30_000,
+                });
+                let body: { deleted?: boolean; error_code?: string } = {};
                 try {
-                  const deletion = await ownerRequest.delete(`/api/community/stories/${storyId}`, {
-                    headers: authorization(owner.token),
-                    timeout: 30_000,
-                  });
-                  if (deletion.status() === 404) {
-                    storyDeleted = true;
-                    break;
-                  }
-                  if (deletion.ok()) {
-                    const body = await deletion.json() as { deleted?: boolean };
-                    if (body.deleted === true) {
-                      storyDeleted = true;
-                      break;
-                    }
-                    const absent = await ownerRequest.get(`/api/community/stories/${storyId}/moment-composition`, {
-                      headers: authorization(owner.token),
-                    });
-                    if (absent.status() === 404) {
-                      storyDeleted = true;
-                      break;
-                    }
-                  }
+                  body = await deletion.json() as { deleted?: boolean; error_code?: string };
                 } catch {
-                  // Retry through the owner endpoint; the result is verified below.
+                  // Keep the exact HTTP status as the cleanup result.
                 }
-                await new Promise((resolve) => setTimeout(resolve, 1_000));
+                if (deletion.status() === 200 && body.deleted === true) {
+                  storyDeleted = true;
+                } else if (deletion.status() === 429) {
+                  const retryAfter = deletion.headers()["retry-after"];
+                  const rateLimit = deletion.headers()["ratelimit"];
+                  const retryHint = retryAfter
+                    ? `; retry-after=${retryAfter}`
+                    : rateLimit
+                      ? `; rate-limit=${rateLimit}`
+                      : "";
+                  cleanupError = `Story cleanup was rate limited (HTTP 429${retryHint}); no automatic retry was sent`;
+                } else if (deletion.status() === 409 && body.error_code === "STORY_MEDIA_PROCESSING") {
+                  cleanupError = "Story cleanup is blocked by active media processing; no automatic retry was sent";
+                } else {
+                  cleanupError = `Story cleanup returned HTTP ${deletion.status()}${body.error_code ? ` (${body.error_code})` : ""}; no automatic retry was sent`;
+                }
+              } catch {
+                cleanupError = "Story cleanup result is unknown; no automatic retry was sent";
               }
-              if (!storyDeleted) cleanupError = "Story deletion did not complete within five minutes";
               if (storyDeleted) {
                 try {
                   const afterDelete = await ownerRequest.get(`/api/community/stories/${storyId}/moment-composition`, {
@@ -699,6 +721,14 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
                   if (afterDelete.status() !== 404) cleanupError = "deleted Story composition did not return 404";
                 } catch {
                   cleanupError = "deleted Story composition could not be verified";
+                }
+                try {
+                  const remainingStories = await locateStoriesByCaption(ownerRequest, owner.token, caption);
+                  if (remainingStories.includes(storyId)) {
+                    cleanupError = "the certification Story remains visible after deletion";
+                  }
+                } catch {
+                  cleanupError = "the certification Story feed could not be verified after deletion";
                 }
               }
             }
@@ -749,8 +779,12 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
       if (cleanupError) {
         const fixtureReferences = `caption=${caption}; story_id=${storyId ?? "unknown"}; source_asset_ids=${sourceAssetIds.join(",") || "unknown"}`;
         const errorPrefix = retainProductionMedia ? "RETAINED MEDIA VERIFICATION FAILED" : "CLEANUP INCOMPLETE";
-        throw new Error(`${errorPrefix}: ${cleanupError}. ${fixtureReferences}. Stop certification and arrange operator follow-up before retrying.`);
+        const primaryFailure = primaryTestFailed
+          ? ` Original acceptance failure: ${primaryError instanceof Error ? primaryError.message : String(primaryError)}.`
+          : "";
+        throw new Error(`${errorPrefix}: ${cleanupError}. ${fixtureReferences}.${primaryFailure} Stop certification and arrange operator follow-up before retrying.`);
       }
     }
+    if (primaryTestFailed) throw primaryError;
   });
 });
