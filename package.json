@@ -3,12 +3,14 @@
   "version": "0.0.0",
   "license": "MIT",
   "packageManager": "pnpm@11.22.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "preinstall": "echo ok",
     "postinstall": "node node_modules/esbuild/install.js 2>/dev/null || true && (test -e artifacts/api-server/node_modules/esbuild || ln -sf \"$PWD/node_modules/esbuild\" artifacts/api-server/node_modules/esbuild) 2>/dev/null || true",
     "build": "pnpm run typecheck && pnpm -r --workspace-concurrency=1 --filter \"@workspace/pay-it-forward\" --if-present run build && pnpm -r --workspace-concurrency=1 --filter \"!@workspace/mockup-sandbox\" --filter \"!@workspace/circles-visual-reference\" --filter \"!@workspace/pay-it-forward\" --if-present run build",
-    "lint": "npx eslint .",
+    "lint": "node --test tests/eslint-console-scope.contract.test.mjs && npx eslint .",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --workspace-concurrency=1 --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "boundary-check": "node scripts/src/check-app-ai-boundary.js",
@@ -24,6 +26,7 @@
     "verify:platform": "node scripts/src/audit-routes.mjs && node scripts/src/check-app-ai-boundary.js && node scripts/admin-surface-audit.mjs",
     "test:browser": "playwright test",
     "test:media-production": "bash ops/run-media-production-certification.sh",
+    "test:media-production:contract": "node --test ops/railway-bucket-object.test.mjs ops/run-media-production-certification.test.mjs",
     "test:community-exchange-sparks-production": "bash ops/run-community-exchange-sparks-certification.sh",
     "test:community-moments-bucket-certification": "node --test ops/railway-bucket-object.test.mjs ops/community-moments-bucket-certification.test.mjs",
     "test:family-story-playback:contract": "node --test ops/railway-bucket-object.test.mjs ops/family-story-bucket-playback.test.mjs",
@@ -53,7 +56,8 @@
     "test:v17-1-contract": "node --test tests/v17-1-package-contract.test.mjs",
     "test:v17-2-1-contract": "node --test tests/v17-2-1-package-contract.test.mjs",
     "test:diaspora": "bash scripts/run-repo-diaspora-contracts.sh",
-    "production-gate": "node scripts/production-gate.mjs"
+    "production-gate": "node scripts/production-gate.mjs",
+    "test:media-production:railway": "railway run bash ops/run-media-production-certification.sh"
   },
   "private": true,
   "devDependencies": {

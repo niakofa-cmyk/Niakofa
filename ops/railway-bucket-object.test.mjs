@@ -39,9 +39,9 @@ async function startServer() {
   };
 }
 
-function runHelper(server, operation, filePath, extraEnv = {}) {
+function runHelper(server, operation, filePath, extraEnv = {}, targetKey = objectKey) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [helper, operation, objectKey, filePath], {
+    const child = spawn(process.execPath, [helper, operation, targetKey, filePath], {
       env: {
         PATH: process.env.PATH,
         HOME: os.tmpdir(),
@@ -88,6 +88,31 @@ test("downloads the fixed state key into a private file without printing its con
   assert.doesNotMatch(result.stdout + result.stderr, /fixture-secret-value|not-a-real-session/);
 });
 
+test("reads the fixed production certification key using its dedicated S3 environment", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  const directory = makePrivateTempDirectory();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const destination = path.join(directory, "state.json");
+  const env = {
+    CERTIFICATION_S3_ENDPOINT: server.endpoint,
+    CERTIFICATION_S3_ACCESS_KEY_ID: "cert-access",
+    CERTIFICATION_S3_SECRET_ACCESS_KEY: "cert-secret-value",
+    CERTIFICATION_S3_BUCKET: bucket,
+    CERTIFICATION_S3_URL_STYLE: "path",
+  };
+
+  const result = await runHelper(server, "get", destination, env, "certification/user-a-state.json");
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(destination, "utf8"), fakeState);
+  assert.equal(fs.statSync(destination).mode & 0o777, 0o600);
+  assert.equal(server.requests[0].method, "GET");
+  assert.equal(server.requests[0].url, `/${bucket}/certification/user-a-state.json`);
+  assert.match(server.requests[0].headers.authorization, /Credential=cert-access\//);
+  assert.doesNotMatch(result.stdout + result.stderr, /cert-secret-value|not-a-real-session/);
+});
+
 test("uploads only a private local state file to the fixed key without a public ACL", async (t) => {
   const server = await startServer();
   t.after(() => server.close());
@@ -105,6 +130,54 @@ test("uploads only a private local state file to the fixed key without a public 
   assert.equal(server.requests[0].body.toString("utf8"), fakeState);
   assert.equal(server.requests[0].headers["x-amz-acl"], undefined);
   assert.doesNotMatch(result.stdout + result.stderr, /fixture-secret-value|not-a-real-session/);
+});
+
+test("rejects arbitrary bucket keys before making a request", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  const directory = makePrivateTempDirectory();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  const result = await runHelper(server, "get", path.join(directory, "state.json"), {}, "other/user/state.json");
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /operation is not allowed for this fixed User A/);
+  assert.equal(server.requests.length, 0);
+});
+
+test("keeps the production certification state read-only", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  const directory = makePrivateTempDirectory();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const source = path.join(directory, "state.json");
+  fs.writeFileSync(source, fakeState, { mode: 0o600 });
+  fs.chmodSync(source, 0o600);
+
+  const result = await runHelper(server, "put", source, {}, "certification/user-a-state.json");
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /operation is not allowed for this fixed User A/);
+  assert.equal(server.requests.length, 0);
+});
+
+test("rejects different API and dedicated bucket targets", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  const directory = makePrivateTempDirectory();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  const result = await runHelper(server, "get", path.join(directory, "state.json"), {
+    CERTIFICATION_S3_ENDPOINT: server.endpoint,
+    CERTIFICATION_S3_ACCESS_KEY_ID: "cert-access",
+    CERTIFICATION_S3_SECRET_ACCESS_KEY: "cert-secret",
+    CERTIFICATION_S3_BUCKET: `${bucket}-other`,
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /must reference the same existing API bucket and endpoint/);
+  assert.equal(server.requests.length, 0);
+  assert.doesNotMatch(result.stderr, /cert-secret|fixture-secret-value/);
 });
 
 test("refuses bucket state access when a CDN URL is configured", async (t) => {

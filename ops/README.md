@@ -141,3 +141,46 @@ private media GET stays on `https://niakofa.com` with a video response, and
 plays the video. It does not upload, edit, or delete production media or
 records. Browser traces, screenshots, and video are disabled, and the
 temporary state file is removed on exit.
+
+## Gated production media certification
+
+Unlike the Family Story playback check above, this browser suite can upload and
+clean up media. Run it only with approved disposable accounts and the exact
+served commit. It requires both User A and User B states, the explicit
+`ALLOW_MEDIA_PRODUCTION_E2E`, `CONFIRM_DISPOSABLE_ACCOUNT`,
+`CONFIRM_MEDIA_PLATFORM_V21_PRODUCTION_GATE`, and
+`MEDIA_PLATFORM_V21_BROWSER_SMOKE` gates, plus a positive
+`MEDIA_SMOKE_CONTEXT_ID` and `MEDIA_SMOKE_CONTEXT_KIND`.
+
+Provide User A as a private `USER_A_STATE` file or `USER_A_STATE_JSON` secret.
+If neither is provided, the runner downloads one of two fixed objects from the
+existing bucket: `certification/user-a-state.json` (default, read-only) or
+`test-auth/user-a/niakofa-state.json` (also read-only in this runner). Bucket
+reads require the same privacy and existing-bucket confirmations as the other
+Railway workflows. The helper refuses access when `STORAGE_CDN_URL` is set,
+rejects other object keys, and rejects certification settings that identify a
+different bucket or endpoint from the API settings. It never creates a bucket,
+changes object access, or passes bucket credentials to Playwright.
+
+Run it only after the operator has verified the private bucket and approved
+disposable states:
+
+```sh
+railway run --service "<production API service name>" --environment production \
+  env BASE_URL="https://niakofa.com" EXPECTED_COMMIT="<40-character deployed commit>" \
+    MEDIA_SMOKE_CONTEXT_KIND="community" MEDIA_SMOKE_CONTEXT_ID="<approved context id>" \
+    ALLOW_MEDIA_PRODUCTION_E2E=1 CONFIRM_DISPOSABLE_ACCOUNT=1 \
+    CONFIRM_MEDIA_PLATFORM_V21_PRODUCTION_GATE=1 MEDIA_PLATFORM_V21_BROWSER_SMOKE=1 \
+    CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE=1 \
+    CONFIRM_RAILWAY_MEDIA_BUCKET_REFERENCE=1 \
+    USER_B_STATE="/absolute/path/to/approved-user-b-state.json" \
+  bash ops/run-media-production-certification.sh
+```
+
+This command executes locally with the selected Railway service's variables; it
+does not deploy. The runner validates both states before Playwright, keeps any
+JSON-materialized state in a private temporary directory, removes it on exit,
+and gives the browser process only the required test settings and state-file
+paths. `MEDIA_CERT_PHOTO_ONLY_SMOKE=1` selects the separately gated photo-only
+diagnostic. Do not use this suite as evidence that V21 is ready unless its
+production prerequisites have been separately verified.
