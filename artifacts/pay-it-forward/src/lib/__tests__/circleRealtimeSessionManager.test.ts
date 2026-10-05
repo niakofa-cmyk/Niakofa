@@ -273,13 +273,14 @@ test("token refresh uses the server expiry and shares concurrent starts", async 
     createTransport: () => transports.shift() ?? new FakeTransport(),
     fetchImpl: async () => {
       tokenRequests += 1;
+      const expiresIn = tokenRequests === 1 ? 0.01 : 14_400;
       return {
         ok: true,
         headers: { get: () => null },
         json: async () => ({
           media_url: "wss://livekit.example.test",
           media_token: `token-${tokenRequests}`,
-          expires_in: 0.01,
+          expires_in: expiresIn,
         }),
       } as unknown as Response;
     },
@@ -292,10 +293,13 @@ test("token refresh uses the server expiry and shares concurrent starts", async 
     await Promise.all([manager.start(), manager.start()]);
     assert.equal(tokenRequests, 1);
     const refreshDeadline = Date.now() + 1_000;
-    while (tokenRequests < 2 && Date.now() < refreshDeadline) {
+    while (
+      (tokenRequests < 2 || manager.getState() !== "live") &&
+      Date.now() < refreshDeadline
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.ok(tokenRequests >= 2);
+    assert.equal(tokenRequests, 2);
     assert.equal(manager.getState(), "live");
   } finally {
     manager.destroy();
