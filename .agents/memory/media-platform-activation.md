@@ -38,3 +38,9 @@ Do not equate a bucket's display label with its S3 API name when gating producti
 **Why:** A previous provider configuration required the unique S3 API bucket name rather than the displayed label. A literal display-name assertion can stop an otherwise valid probe before it writes and give misleading evidence of storage failure.
 
 **How to apply:** Keep the storage I/O check bounded and independent of a hardcoded display name. Require separate operator confirmation of bucket identity before enabling V21; never silently swap a bucket used by existing media.
+
+For production acceptance that requires private account state or media, credential presence alone is not authorization to probe live data. An authorized operator must confirm that the existing API storage bucket is private, is the intended bucket, and holds the approved account's fixed state object. Keep read-only Family Story playback separate from write-capable media certification.
+
+**Why:** A working credential or private media URL does not establish bucket privacy, object ownership, or that the state belongs to an approved test account.
+
+**How to apply:** Obtain operator verification before bucket reads, validate state structure before browser requests, keep Family Story playback GET-only, and require separate disposable-account and activation gates for media mutations.

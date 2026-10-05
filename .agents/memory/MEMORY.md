@@ -5,7 +5,7 @@
 - [Workspace package manager](toolchain-install.md) — use the repository-pinned pnpm through npm exec when the system pnpm shim self-manages and stalls.
 - [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
 - [GitHub connector exact sync](github-connector-exact-sync.md) — compare commit SHAs before interpreting REST message text; it may omit a newline even when the Git object matches.
-- [Media activation gate](media-platform-activation.md) — keep the universal flag off until infrastructure and live checks pass; scope test overrides to individual media requests.
+- [Media activation gate](media-platform-activation.md) — keep V21 opt-in; require operator confirmation before production state reads and separate gates for media writes.
 - [GitHub OAuth publishing](github-oauth-publishing.md) — connector-created commits omit the final message newline; compare GitHub main directly after publishing.
 - [Workspace hydration and preview limits](workspace-hydration-preview.md) — a healthy web preview does not certify missing API helpers, production parity, or physical devices.
 - [Workspace package-manager bootstrap](pnpm-bootstrap.md) — disable self-bootstrap when the declared pnpm version is unavailable; restore dependencies from the frozen lockfile.
