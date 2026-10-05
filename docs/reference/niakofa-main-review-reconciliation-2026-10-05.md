@@ -54,8 +54,16 @@ remain unchanged.
 - Before the authorized GitHub push, Railway reported `SUCCESS` for
   `427bc111adcf665f6036319a582b7c03464b49eb`, matching the then-current
   `origin/main`. The push may trigger an automatic Railway deployment; no
-  manual deploy is being requested. Verify the canonical host and served
-  revision after publication.
+  manual deploy was requested or run.
+- The non-forced push advanced GitHub `main` to
+  `032ac9ba325bf1fa33a7d1642930ef8205c634ac`. Local `main`, `origin/main`, and
+  GitHub `main` matched at that SHA, with a clean worktree.
+- Railway automatically deployed that commit as deployment
+  `cc0f32b3-f452-43c8-b2bb-d69eec5da952`; it completed with `SUCCESS`, and the
+  production service returned online with zero recent failures.
+- At verification time, the canonical `https://niakofa.com/api/version`
+  endpoint reported `032ac9ba325bf1fa33a7d1642930ef8205c634ac` (`chat-v2`,
+  started at `2026-10-05T16:07:50.540Z`). No manual Railway deploy was run.
 
 Run the storage probe only from the confirmed production API service shell using
 the existing verification script and its temporary-object cleanup path. Do not
