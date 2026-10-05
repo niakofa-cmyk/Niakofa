@@ -8,6 +8,9 @@ import { promisify } from "node:util";
 
 const enabled = process.env.MEDIA_PLATFORM_V21_BROWSER_SMOKE === "1";
 const productionGateConfirmed = process.env.CONFIRM_MEDIA_PLATFORM_V21_PRODUCTION_GATE === "1";
+const retainProductionMedia =
+  process.env.MEDIA_CERT_RETAIN_TEST_MEDIA === "1" &&
+  process.env.CONFIRM_RETAIN_PRODUCTION_MEDIA === "1";
 const contextKind = process.env.MEDIA_SMOKE_CONTEXT_KIND;
 const contextId = Number(process.env.MEDIA_SMOKE_CONTEXT_ID);
 const expectedCommit = process.env.EXPECTED_COMMIT?.trim().toLowerCase();
@@ -260,12 +263,13 @@ test.describe("authenticated universal media smoke", () => {
     process.stdout.write(`MEDIA_CERT_RETAINED_ASSETS photo=${photoId} video=${videoId} deleted=${deletionId}\n`);
   });
 
-  test("photo-only diagnostic uploads and cleans exactly one photo", async ({ page, request }) => {
+  test("photo-only diagnostic uploads and verifies exactly one photo", async ({ page, request }) => {
     test.setTimeout(180_000);
     test.skip(
       process.env.MEDIA_CERT_PHOTO_ONLY_SMOKE !== "1",
       "Requires the explicit photo-only production diagnostic gate.",
     );
+    expect(contextKind, "The photo-only diagnostic must use an approved Hub context.").toBe("hub");
     const headers = await authHeaders(page);
     const otherHeaders = { Authorization: `Bearer ${storageStateToken(unauthorizedState!)}` };
     const sharedPath =
@@ -310,22 +314,40 @@ test.describe("authenticated universal media smoke", () => {
     } finally {
       if (photoId !== undefined) {
         try {
-          const deletion = await request.delete(`/api/media-assets/${photoId}`, { headers });
-          if (deletion.status() !== 204) {
-            throw new Error(`Photo diagnostic cleanup returned HTTP ${deletion.status()}.`);
+          if (retainProductionMedia) {
+            const ownerAfter = await jsonResponse<{ assets?: MediaAsset[] }>(request, sharedPath, headers);
+            if (!ownerAfter.assets?.some((asset) => asset.id === photoId)) {
+              throw new Error("The retained photo is missing from the approved test Hub.");
+            }
+            const otherAfter = await request.get(sharedPath, { headers: otherHeaders });
+            if (otherAfter.status() !== 404) {
+              throw new Error("The other approved account gained access to the test Hub.");
+            }
+            process.stdout.write(`MEDIA_CERT_PHOTO_ONLY_RETAINED asset=${photoId} hub=${contextId}\n`);
+          } else {
+            const deletion = await request.delete(`/api/media-assets/${photoId}`, { headers });
+            if (deletion.status() !== 204) {
+              throw new Error(`Photo diagnostic cleanup returned HTTP ${deletion.status()}.`);
+            }
+            const ownerAfter = await jsonResponse<{ assets?: MediaAsset[] }>(request, sharedPath, headers);
+            if (ownerAfter.assets?.some((asset) => asset.id === photoId)) {
+              throw new Error("Photo diagnostic asset remained in the approved test Hub after deletion.");
+            }
+            const otherCleanupCheck = await request.get(sharedPath, { headers: otherHeaders });
+            if (otherCleanupCheck.status() !== 404) {
+              throw new Error("The other approved account gained access to the test Hub.");
+            }
+            process.stdout.write(`MEDIA_CERT_PHOTO_ONLY_CLEANED asset=${photoId}\n`);
           }
-          const ownerAfter = await jsonResponse<{ assets?: MediaAsset[] }>(request, sharedPath, headers);
-          if (ownerAfter.assets?.some((asset) => asset.id === photoId)) {
-            throw new Error("Photo diagnostic asset remained in the approved test Hub after deletion.");
-          }
-          const otherCleanupCheck = await request.get(sharedPath, { headers: otherHeaders });
-          if (otherCleanupCheck.status() !== 404) {
-            throw new Error("The other approved account gained access to the test Hub.");
-          }
-          process.stdout.write(`MEDIA_CERT_PHOTO_ONLY_CLEANED asset=${photoId}\n`);
         } catch {
-          process.stderr.write(`MEDIA_CERT_PHOTO_ONLY_CLEANUP_FAILED asset=${photoId}\n`);
-          if (!testFailed) throw new Error("Photo-only production diagnostic could not verify asset cleanup.");
+          const outcome = retainProductionMedia ? "RETAIN_VERIFY_FAILED" : "CLEANUP_FAILED";
+          process.stderr.write(`MEDIA_CERT_PHOTO_ONLY_${outcome} asset=${photoId}\n`);
+          if (!testFailed) {
+            const message = retainProductionMedia
+              ? "Photo-only production diagnostic could not verify the retained asset."
+              : "Photo-only production diagnostic could not verify asset cleanup.";
+            throw new Error(message);
+          }
         }
       }
     }

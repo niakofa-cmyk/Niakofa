@@ -16,6 +16,9 @@ const enabled = [
 const userAState = process.env.USER_A_STATE;
 const userBState = process.env.USER_B_STATE;
 const sameCommunityNarrow = process.env.MEDIA_V21_SAME_COMMUNITY_NARROW === "1";
+const retainProductionMedia =
+  process.env.MEDIA_CERT_RETAIN_TEST_MEDIA === "1" &&
+  process.env.CONFIRM_RETAIN_PRODUCTION_MEDIA === "1";
 const expectedCommit = process.env.EXPECTED_COMMIT?.trim().toLowerCase();
 const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5000";
 const execFileAsync = promisify(execFile);
@@ -321,8 +324,13 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
     "Requires all four explicit production gates, both approved storage states, and the full expected commit.",
   );
 
-  test(`${sameCommunityNarrow ? "narrow same-community" : "cross-community"}: resumes portrait 9:16 upload, publishes and composes a Moment, checks playback and item sharing, and cleans up`, async ({ playwright, browser }) => {
+  test(`${sameCommunityNarrow ? "narrow same-community" : "cross-community"}: resumes portrait 9:16 upload, publishes and composes a Moment, checks playback and item sharing, and ${retainProductionMedia ? "retains verified media" : "cleans up"}`, async ({ playwright, browser }) => {
     test.setTimeout(15 * 60_000);
+    expect(
+      process.env.MEDIA_CERT_RETAIN_TEST_MEDIA !== "1" ||
+        process.env.CONFIRM_RETAIN_PRODUCTION_MEDIA === "1",
+      "Retaining production test media requires explicit operator confirmation.",
+    ).toBeTruthy();
     const origin = safeOrigin(baseUrl);
     const owner = safeStateIdentity(userAState!, origin);
     const otherUser = safeStateIdentity(userBState!, origin);
@@ -384,6 +392,7 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
     const caption = `V21 camera-clips certification ${randomUUID()}`;
     const clientPublishId = randomUUID();
     let cleanupError: string | undefined;
+    let certificationSucceeded = false;
 
     const newOwnerRequest = async () => {
       const context = await createAuthenticatedRequest(playwright, owner.token);
@@ -595,103 +604,140 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
       if (!sameCommunityNarrow) {
         await verifyMomentShareLink(browser, storyId!, caption, otherUser.token);
       }
+      certificationSucceeded = true;
     } finally {
-      // A lost publish response is reconciled using the unique caption, then
-      // every known staging asset is explicitly tombstoned after Story cleanup.
       const ownerRequest = cleanupOwnerRequest;
-      try {
-        if (ownerRequest) {
-          if (!storyId) {
+      if (retainProductionMedia) {
+        try {
+          if (ownerRequest && !storyId) {
             const discovered = await locateStoriesByCaption(ownerRequest, owner.token, caption);
-            if (discovered.length > 1) cleanupError = "multiple Stories matched the unique certification caption";
+            if (discovered.length > 1) throw new Error("multiple Stories matched the unique certification caption");
             if (discovered.length === 1) storyId = discovered[0];
           }
-          if (possibleUntrackedStory && !storyId) {
-            cleanupError = "a Story publish may have committed but its id could not be reconciled";
+          if (certificationSucceeded) {
+            if (!ownerRequest || !storyId || sourceAssetIds.length !== 2) {
+              throw new Error("the completed Story and both source assets could not be identified");
+            }
+            const retainedStories = await locateStoriesByCaption(ownerRequest, owner.token, caption);
+            if (!retainedStories.includes(storyId)) throw new Error("the retained Story is not visible to its owner");
+            for (const assetId of new Set(sourceAssetIds)) {
+              const retainedAsset = await ownerRequest.get(`/api/media-assets/${assetId}`, {
+                headers: authorization(owner.token),
+                timeout: 30_000,
+              });
+              if (!retainedAsset.ok()) throw new Error(`retained asset ${assetId} returned HTTP ${retainedAsset.status()}`);
+            }
+            process.stdout.write(
+              `MEDIA_CERT_RETAINED story_id=${storyId} source_asset_ids=${sourceAssetIds.join(",")} caption=${caption}\n`,
+            );
+          } else {
+            process.stderr.write(
+              `MEDIA_CERT_PRESERVED_AFTER_FAILURE story_id=${storyId ?? "unknown"} source_asset_ids=${sourceAssetIds.join(",") || "unknown"} caption=${caption}\n`,
+            );
           }
-          if (possibleUntrackedUpload) {
-            cleanupError = "an upload initialization may have committed without returning a cleanable asset id";
-          }
+        } catch {
+          process.stderr.write(
+            `MEDIA_CERT_RETAIN_VERIFY_FAILED story_id=${storyId ?? "unknown"} source_asset_ids=${sourceAssetIds.join(",") || "unknown"} caption=${caption}\n`,
+          );
+          if (certificationSucceeded) cleanupError = "retained Story or media could not be verified";
+        }
+      } else {
+        // A lost publish response is reconciled using the unique caption, then
+        // every known staging asset is explicitly tombstoned after Story cleanup.
+        try {
+          if (ownerRequest) {
+            if (!storyId) {
+              const discovered = await locateStoriesByCaption(ownerRequest, owner.token, caption);
+              if (discovered.length > 1) cleanupError = "multiple Stories matched the unique certification caption";
+              if (discovered.length === 1) storyId = discovered[0];
+            }
+            if (possibleUntrackedStory && !storyId) {
+              cleanupError = "a Story publish may have committed but its id could not be reconciled";
+            }
+            if (possibleUntrackedUpload) {
+              cleanupError = "an upload initialization may have committed without returning a cleanable asset id";
+            }
 
-          let storyDeleted = !storyId && !possibleUntrackedStory;
-          if (storyId) {
-            const deadline = Date.now() + 5 * 60_000;
-            while (Date.now() < deadline) {
-              try {
-                const deletion = await ownerRequest.delete(`/api/community/stories/${storyId}`, {
-                  headers: authorization(owner.token),
-                  timeout: 30_000,
-                });
-                if (deletion.status() === 404) {
-                  storyDeleted = true;
-                  break;
-                }
-                if (deletion.ok()) {
-                  const body = await deletion.json() as { deleted?: boolean };
-                  if (body.deleted === true) {
+            let storyDeleted = !storyId && !possibleUntrackedStory;
+            if (storyId) {
+              const deadline = Date.now() + 5 * 60_000;
+              while (Date.now() < deadline) {
+                try {
+                  const deletion = await ownerRequest.delete(`/api/community/stories/${storyId}`, {
+                    headers: authorization(owner.token),
+                    timeout: 30_000,
+                  });
+                  if (deletion.status() === 404) {
                     storyDeleted = true;
                     break;
                   }
-                  const absent = await ownerRequest.get(`/api/community/stories/${storyId}/moment-composition`, {
+                  if (deletion.ok()) {
+                    const body = await deletion.json() as { deleted?: boolean };
+                    if (body.deleted === true) {
+                      storyDeleted = true;
+                      break;
+                    }
+                    const absent = await ownerRequest.get(`/api/community/stories/${storyId}/moment-composition`, {
+                      headers: authorization(owner.token),
+                    });
+                    if (absent.status() === 404) {
+                      storyDeleted = true;
+                      break;
+                    }
+                  }
+                } catch {
+                  // Retry through the owner endpoint; the result is verified below.
+                }
+                await new Promise((resolve) => setTimeout(resolve, 1_000));
+              }
+              if (!storyDeleted) cleanupError = "Story deletion did not complete within five minutes";
+              if (storyDeleted) {
+                try {
+                  const afterDelete = await ownerRequest.get(`/api/community/stories/${storyId}/moment-composition`, {
                     headers: authorization(owner.token),
                   });
-                  if (absent.status() === 404) {
-                    storyDeleted = true;
-                    break;
-                  }
+                  if (afterDelete.status() !== 404) cleanupError = "deleted Story composition did not return 404";
+                } catch {
+                  cleanupError = "deleted Story composition could not be verified";
                 }
-              } catch {
-                // Retry through the owner endpoint; the result is verified below.
-              }
-              await new Promise((resolve) => setTimeout(resolve, 1_000));
-            }
-            if (!storyDeleted) cleanupError = "Story deletion did not complete within five minutes";
-            if (storyDeleted) {
-              try {
-                const afterDelete = await ownerRequest.get(`/api/community/stories/${storyId}/moment-composition`, {
-                  headers: authorization(owner.token),
-                });
-                if (afterDelete.status() !== 404) cleanupError = "deleted Story composition did not return 404";
-              } catch {
-                cleanupError = "deleted Story composition could not be verified";
               }
             }
-          }
 
-          if (storyDeleted) {
-            for (const assetId of new Set(sourceAssetIds)) {
-              try {
-                const deletion = await ownerRequest.delete(`/api/media-assets/${assetId}`, {
-                  headers: authorization(owner.token),
-                  timeout: 30_000,
-                });
-                if (![204, 404].includes(deletion.status())) {
-                  cleanupError = `asset ${assetId} deletion returned HTTP ${deletion.status()}`;
-                  continue;
+            if (storyDeleted) {
+              for (const assetId of new Set(sourceAssetIds)) {
+                try {
+                  const deletion = await ownerRequest.delete(`/api/media-assets/${assetId}`, {
+                    headers: authorization(owner.token),
+                    timeout: 30_000,
+                  });
+                  if (![204, 404].includes(deletion.status())) {
+                    cleanupError = `asset ${assetId} deletion returned HTTP ${deletion.status()}`;
+                    continue;
+                  }
+                  const absent = await ownerRequest.get(`/api/media-assets/${assetId}`, {
+                    headers: authorization(owner.token),
+                    timeout: 30_000,
+                  });
+                  if (absent.status() !== 404) cleanupError = `asset ${assetId} remained accessible after deletion`;
+                  const session = await ownerRequest.get(`/api/media-assets/${assetId}/upload-session`, {
+                    headers: authorization(owner.token),
+                  });
+                  if (session.status() !== 404) cleanupError = `asset ${assetId} upload session remained available after deletion`;
+                } catch {
+                  cleanupError = `asset ${assetId} cleanup could not be verified`;
                 }
-                const absent = await ownerRequest.get(`/api/media-assets/${assetId}`, {
-                  headers: authorization(owner.token),
-                  timeout: 30_000,
-                });
-                if (absent.status() !== 404) cleanupError = `asset ${assetId} remained accessible after deletion`;
-                const session = await ownerRequest.get(`/api/media-assets/${assetId}/upload-session`, {
-                  headers: authorization(owner.token),
-                });
-                if (session.status() !== 404) cleanupError = `asset ${assetId} upload session remained available after deletion`;
-              } catch {
-                cleanupError = `asset ${assetId} cleanup could not be verified`;
+              }
+              if (storyId) {
+                const remainingStories = await locateStoriesByCaption(ownerRequest, owner.token, caption);
+                if (remainingStories.length) cleanupError = "the certification Story remains visible after deletion";
               }
             }
-            if (storyId) {
-              const remainingStories = await locateStoriesByCaption(ownerRequest, owner.token, caption);
-              if (remainingStories.length) cleanupError = "the certification Story remains visible after deletion";
-            }
+          } else if (sourceAssetIds.length || storyId || possibleUntrackedUpload || possibleUntrackedStory) {
+            cleanupError = "no authenticated request context remained available for fixture cleanup";
           }
-        } else if (sourceAssetIds.length || storyId || possibleUntrackedUpload || possibleUntrackedStory) {
-          cleanupError = "no authenticated request context remained available for fixture cleanup";
+        } catch {
+          cleanupError = "fixture cleanup reconciliation failed";
         }
-      } catch {
-        cleanupError = "fixture cleanup reconciliation failed";
       }
 
       await Promise.allSettled(requests.map((request) => request.dispose()));
@@ -702,7 +748,8 @@ test.describe("V21 resumable upload and camera-clip composition acceptance", () 
       }
       if (cleanupError) {
         const fixtureReferences = `caption=${caption}; story_id=${storyId ?? "unknown"}; source_asset_ids=${sourceAssetIds.join(",") || "unknown"}`;
-        throw new Error(`CLEANUP INCOMPLETE: ${cleanupError}. ${fixtureReferences}. Stop certification and arrange operator cleanup before retrying.`);
+        const errorPrefix = retainProductionMedia ? "RETAINED MEDIA VERIFICATION FAILED" : "CLEANUP INCOMPLETE";
+        throw new Error(`${errorPrefix}: ${cleanupError}. ${fixtureReferences}. Stop certification and arrange operator follow-up before retrying.`);
       }
     }
   });

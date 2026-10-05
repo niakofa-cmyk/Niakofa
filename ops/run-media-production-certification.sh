@@ -33,6 +33,21 @@ if [[ ! "$MEDIA_SMOKE_CONTEXT_ID" =~ ^[1-9][0-9]*$ ]]; then
   echo "Refusing production media E2E: MEDIA_SMOKE_CONTEXT_ID must be a positive integer." >&2
   exit 2
 fi
+retain_test_media="${MEDIA_CERT_RETAIN_TEST_MEDIA:-0}"
+if [[ "$retain_test_media" != "0" && "$retain_test_media" != "1" ]]; then
+  echo "Refusing production media E2E: MEDIA_CERT_RETAIN_TEST_MEDIA must be 0 or 1." >&2
+  exit 2
+fi
+if [[ "$retain_test_media" == "1" ]]; then
+  if [[ "${CONFIRM_RETAIN_PRODUCTION_MEDIA:-}" != "1" ]]; then
+    echo "Refusing retained-media E2E: set CONFIRM_RETAIN_PRODUCTION_MEDIA=1 only after explicit approval." >&2
+    exit 2
+  fi
+  if [[ "${MEDIA_CERT_PHOTO_ONLY_SMOKE:-}" != "1" ]]; then
+    echo "Refusing retained-media E2E: retention is allowed only for the isolated photo-only diagnostic." >&2
+    exit 2
+  fi
+fi
 if [[ -z "${USER_B_STATE:-}" && -z "${USER_B_STATE_JSON:-}" ]]; then
   echo "Refusing production media E2E: USER_B_STATE or USER_B_STATE_JSON is required for isolation certification." >&2
   exit 2
@@ -140,6 +155,8 @@ playwright_env=(
   "CONFIRM_MEDIA_PLATFORM_V21_PRODUCTION_GATE=1"
   "MEDIA_PLATFORM_V21_BROWSER_SMOKE=1"
   "MEDIA_CERT_PHOTO_ONLY_SMOKE=${MEDIA_CERT_PHOTO_ONLY_SMOKE:-}"
+  "MEDIA_CERT_RETAIN_TEST_MEDIA=$retain_test_media"
+  "CONFIRM_RETAIN_PRODUCTION_MEDIA=${CONFIRM_RETAIN_PRODUCTION_MEDIA:-}"
 )
 if [[ -n "${PLAYWRIGHT_EXECUTABLE_PATH:-}" ]]; then
   playwright_env+=("PLAYWRIGHT_EXECUTABLE_PATH=$PLAYWRIGHT_EXECUTABLE_PATH")
@@ -148,10 +165,14 @@ elif [[ -x "/repl/tools/bin/chromium" ]]; then
 fi
 
 if [[ "${MEDIA_CERT_PHOTO_ONLY_SMOKE:-}" == "1" ]]; then
-  echo "Running one gated authenticated production photo-only diagnostic for commit $EXPECTED_COMMIT..."
+  if [[ "$retain_test_media" == "1" ]]; then
+    echo "Running the gated photo-only diagnostic and retaining its verified Hub photo as explicitly approved."
+  else
+    echo "Running one gated authenticated production photo-only diagnostic for commit $EXPECTED_COMMIT..."
+  fi
   "${playwright_env[@]}" "$repository_root/node_modules/.bin/playwright" test \
     "$repository_root/e2e/media-platform-authenticated.spec.ts" \
-    --grep "photo-only diagnostic uploads and cleans exactly one photo" \
+    --grep "photo-only diagnostic" \
     --reporter=line --output "$runtime_dir/playwright-output"
 else
   echo "Running gated authenticated production media certification for commit $EXPECTED_COMMIT..."

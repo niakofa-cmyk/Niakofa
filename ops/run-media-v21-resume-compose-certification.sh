@@ -41,6 +41,16 @@ do
   fi
 done
 
+retain_test_media="${MEDIA_CERT_RETAIN_TEST_MEDIA:-0}"
+if [[ "$retain_test_media" != "0" && "$retain_test_media" != "1" ]]; then
+  echo "Refusing V21 resume/compose certification: MEDIA_CERT_RETAIN_TEST_MEDIA must be 0 or 1." >&2
+  exit 2
+fi
+if [[ "$retain_test_media" == "1" && "${CONFIRM_RETAIN_PRODUCTION_MEDIA:-}" != "1" ]]; then
+  echo "Refusing retained-media certification: set CONFIRM_RETAIN_PRODUCTION_MEDIA=1 only after explicit approval." >&2
+  exit 2
+fi
+
 : "${BASE_URL:?BASE_URL is required}"
 : "${EXPECTED_COMMIT:?EXPECTED_COMMIT is required}"
 : "${USER_A_STATE:?USER_A_STATE must name the approved disposable owner state file}"
@@ -110,12 +120,18 @@ mkdir -m 700 "$runtime_dir/playwright-output"
 export PLAYWRIGHT_BASE_URL="$BASE_URL"
 export PLAYWRIGHT_OUTPUT_DIR="$runtime_dir/playwright-output"
 export TMPDIR="$runtime_dir"
+export MEDIA_CERT_RETAIN_TEST_MEDIA="$retain_test_media"
+export CONFIRM_RETAIN_PRODUCTION_MEDIA="${CONFIRM_RETAIN_PRODUCTION_MEDIA:-}"
 unset MEDIA_SMOKE_CONTEXT_KIND MEDIA_SMOKE_CONTEXT_ID
 if [[ -z "${PLAYWRIGHT_EXECUTABLE_PATH:-}" && -x "/repl/tools/bin/chromium" ]]; then
   export PLAYWRIGHT_EXECUTABLE_PATH="/repl/tools/bin/chromium"
 fi
 
-echo "Running gated V21 ${MEDIA_V21_SAME_COMMUNITY_NARROW:+same-community narrow }resumable-upload and camera-clip-composition certification for commit $EXPECTED_COMMIT."
+if [[ "$retain_test_media" == "1" ]]; then
+  echo "Running gated V21 resumable-upload and camera-clip-composition certification; verified Story and media will be retained as explicitly approved."
+else
+  echo "Running gated V21 ${MEDIA_V21_SAME_COMMUNITY_NARROW:+same-community narrow }resumable-upload and camera-clip-composition certification for commit $EXPECTED_COMMIT."
+fi
 ./node_modules/.bin/playwright test e2e/media-v21-resume-compose.spec.ts \
   --reporter=line \
   --output "$runtime_dir/playwright-output"
