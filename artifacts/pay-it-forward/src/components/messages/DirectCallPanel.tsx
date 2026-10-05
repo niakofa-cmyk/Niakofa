@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, Mic, MicOff, Phone, PhoneCall, PhoneOff } from "lucide-react";
 import { Room, RoomEvent, Track, createLocalTracks, type LocalTrack, type RemoteTrack, type RemoteTrackPublication, type RemoteParticipant } from "livekit-client";
@@ -75,7 +77,7 @@ export function DirectCallPanel({
     localTracksRef.current = [];
     if (room) {
       room.remoteParticipants.forEach((participant) => participant.trackPublications.forEach((publication) => publication.track?.detach()));
-      await room.disconnect().catch(() => {});
+      await room.disconnect().catch(reportClientSideEffectFailure("components.direct-call.disconnect"));
     }
   }, []);
 
@@ -240,7 +242,7 @@ export function DirectCallPanel({
               </div>
             )}
             {audioNeedsStart && (
-              <button type="button" onClick={() => void roomRef.current?.startAudio().then(() => setAudioNeedsStart(false)).catch(() => {})} className="mx-auto mb-3 block min-h-10 rounded-xl bg-primary px-4 text-xs font-black text-primary-foreground">
+              <button type="button" onClick={() => void roomRef.current?.startAudio().then(() => setAudioNeedsStart(false)).catch(reportClientSideEffectFailure("components.direct-call.start-audio"))} className="mx-auto mb-3 block min-h-10 rounded-xl bg-primary px-4 text-xs font-black text-primary-foreground">
                 Start audio
               </button>
             )}

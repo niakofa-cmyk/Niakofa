@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useEffect, useMemo, useState } from "react";
 import { FileText, Image as ImageIcon, Link2, Loader2, MapPinned, Music2, Video, X } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
@@ -84,7 +86,7 @@ export function SharedMediaPanel({
           created[item.id] = url;
           setObjectUrls((current) => ({ ...current, [item.id]: url }));
         })
-        .catch(() => {});
+        .catch(reportClientSideEffectFailure("components.shared-media.load"));
     }
 
     return () => {

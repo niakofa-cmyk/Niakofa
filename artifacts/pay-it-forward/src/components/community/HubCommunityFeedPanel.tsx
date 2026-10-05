@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, CircleDot, FileImage, Globe2, Heart, Loader2, MessageCircle, Send, Share2, Users, Sparkles, BriefcaseBusiness, Image as ImageIcon } from "lucide-react";
 import { useLocation } from "wouter";
@@ -524,9 +526,7 @@ function HubMedia({
       ([entry]) => {
         if (entry.isIntersecting && entry.intersectionRatio >= 0.65) {
           video.muted = true;
-          void video.play().catch(() => {
-            // Browsers may still reject autoplay; controls remain available.
-          });
+          void video.play().catch(reportClientSideEffectFailure("components.hub-community-feed.autoplay"));
         } else {
           video.pause();
         }

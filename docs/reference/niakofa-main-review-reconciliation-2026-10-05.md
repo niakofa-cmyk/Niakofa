@@ -24,7 +24,7 @@ remain unchanged.
 | Nia check-in secret and user-authored prompt text | Secret comparison is constant-time; user-authored text is bounded, delimited, and identified as untrusted. |
 | Push notification classification and preference enforcement | `notifType` is required by the payload type and omitted classifications fail closed at runtime. The all-helper path respects notification preferences. |
 | Duplicate migration prefixes | CI permits only the exact known legacy collisions and rejects new duplicates; the runner tracks full migration filenames. |
-| Empty promise catches in API/Nia code | Remaining comment-only handlers log safe context; the lint contract rejects empty promise catches. Error text and user-authored content are not added to these new logs. The broader frontend catch inventory mentioned in the review was not audited in this pass. |
+| Empty promise catches across API, Nia, and frontend | The frontend audit found 88 empty handlers and 17 comment-only handlers. They now use a shared reporter that logs only a static operation label and sanitized error type, while expected `AbortError` cancellations stay quiet. Clipboard fallback failures now show an error instead of a false success. The lint contract covers all three code areas. |
 | Production Redis fallback for sensitive actions | Production authentication and payment limiters fail closed when shared Redis is unavailable; the policy is documented in `docs/security/rate-limit-policy.md`. |
 | Stale action-plan checklist | BUG-15b/15c tests and FK migration creation are marked complete, duplicate checklist rows were removed, and staging verification remains open. |
 | Root one-off scripts | The review’s cleanup suggestion was not applied; it was a repository-hygiene recommendation, not required to resolve the confirmed runtime findings. |
@@ -32,7 +32,9 @@ remain unchanged.
 ## Validation
 
 - Full workspace build, including typecheck: **passed**.
-- Repository lint and empty-catch contract: **passed**.
+- Repository lint and expanded API/Nia/frontend empty-catch contract: **passed**.
+- Frontend suite: **627 passed**; the token-refresh test now waits with a bounded deadline and always destroys its manager.
+- Client-side failure reporter tests: **3 passed**; logs exclude error messages and user-authored content.
 - Focused lifecycle/push tests: **28 passed**.
 - API new-endpoints suite: **19 passed**.
 - API standalone archive/build-metadata/repayment tests: **20 passed**.
@@ -42,13 +44,18 @@ remain unchanged.
 
 ## Production-only gates not run
 
-- The requested isolated object-storage probe was not executed: no confirmed
-  production API service shell was available in the workspace. The uploaded
-  note names `niakofa-production-media`, but the target service and safe
-  operator path still need confirmation. No V21 setting or existing media was
-  changed, and no temporary object was created.
+- The requested isolated object-storage probe remains unrun. Railway's
+  production API service, `zesty-ambition`, was checked read-only and reported
+  online with no recent failures. No production shell or storage operation was
+  used; no temporary object was created, and no V21 setting or existing media
+  was changed. The target bucket and approved operator path still need
+  confirmation.
 - Production Stripe balance samples and webhook-to-payout checks were not run.
-- No production deployment or mutation was performed.
+- Before the authorized GitHub push, Railway reported `SUCCESS` for
+  `427bc111adcf665f6036319a582b7c03464b49eb`, matching the then-current
+  `origin/main`. The push may trigger an automatic Railway deployment; no
+  manual deploy is being requested. Verify the canonical host and served
+  revision after publication.
 
 Run the storage probe only from the confirmed production API service shell using
 the existing verification script and its temporary-object cleanup path. Do not

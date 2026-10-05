@@ -288,12 +288,18 @@ test("token refresh uses the server expiry and shares concurrent starts", async 
     tokenRefreshMinDelayMs: 0,
   });
 
-  await Promise.all([manager.start(), manager.start()]);
-  assert.equal(tokenRequests, 1);
-  await new Promise((resolve) => setTimeout(resolve, 25));
-  assert.ok(tokenRequests >= 2);
-  assert.equal(manager.getState(), "live");
-  manager.destroy();
+  try {
+    await Promise.all([manager.start(), manager.start()]);
+    assert.equal(tokenRequests, 1);
+    const refreshDeadline = Date.now() + 1_000;
+    while (tokenRequests < 2 && Date.now() < refreshDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.ok(tokenRequests >= 2);
+    assert.equal(manager.getState(), "live");
+  } finally {
+    manager.destroy();
+  }
 });
 
 test("destroy ends the manager without using a page reload", async () => {

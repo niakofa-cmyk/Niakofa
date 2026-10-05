@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -231,7 +233,7 @@ function startVolumeAnalyser(
     } catch {
       /* ignore */
     }
-    if (ownsCtx) ctx?.close().catch(() => {});
+    if (ownsCtx) ctx?.close().catch(reportClientSideEffectFailure("pages.audio-circle-room.audio-cleanup"));
   };
 }
 
@@ -1072,7 +1074,7 @@ export default function AudioCircleRoomScreen() {
         setRecordingConsented(Boolean(current.consented));
         setRecordingPendingCount(Number(current.missing_consent_count) || 0);
       })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("pages.audio-circle-room.recording-consent"));
   }, [base, myUserId, session]);
 
   useWebSocket("ws_reconnected", () => {
@@ -1301,7 +1303,7 @@ export default function AudioCircleRoomScreen() {
       for (const cleanup of analyserCleanups.values()) cleanup();
       analyserCleanups.clear();
       // Close the shared AudioContext when the session ends
-      sharedAudioCtxRef.current?.close().catch(() => {});
+      sharedAudioCtxRef.current?.close().catch(reportClientSideEffectFailure("pages.audio-circle-room.audio-cleanup"));
       sharedAudioCtxRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1330,7 +1332,7 @@ export default function AudioCircleRoomScreen() {
       }
     }
     if (sharedAudioCtxRef.current.state === "suspended") {
-      sharedAudioCtxRef.current.resume().catch(() => {});
+      sharedAudioCtxRef.current.resume().catch(reportClientSideEffectFailure("pages.audio-circle-room.audio-resume"));
     }
     return sharedAudioCtxRef.current;
   };
@@ -1548,7 +1550,7 @@ export default function AudioCircleRoomScreen() {
       },
       body: JSON.stringify({}),
       keepalive: true,
-    }).catch(() => {});
+    }).catch(reportClientSideEffectFailure("pages.audio-circle-room.leave"));
   }, [sessionId, base]);
 
   useEffect(() => {
@@ -2493,7 +2495,7 @@ export default function AudioCircleRoomScreen() {
         },
         body: JSON.stringify({ active_speaker_id: loudestId }),
         keepalive: true,
-      }).catch(() => {});
+      }).catch(reportClientSideEffectFailure("pages.audio-circle-room.active-speaker"));
     };
     sendHeartbeat(); // fire immediately on join
     // 10 s interval (was 30 s) — more frequent reports means active-speaker
@@ -2514,7 +2516,7 @@ export default function AudioCircleRoomScreen() {
       .then((data) => {
         if (data) setRecordingArchive(data.recordings ?? []);
       })
-      .catch(() => {})
+      .catch(reportClientSideEffectFailure("pages.audio-circle-room.recordings"))
       .finally(() => setLoadingArchive(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showRecordingArchive, session?.circle_id]);
@@ -2526,7 +2528,7 @@ export default function AudioCircleRoomScreen() {
       .then((blob) => {
         if (blob && blob.size > 0) setPendingRecoveryBlob(blob);
       })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("pages.audio-circle-room.recording-recovery"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, session?.id]);
 
@@ -2559,7 +2561,7 @@ export default function AudioCircleRoomScreen() {
         const inRoom = new Set(participants.map((p) => p.user_id));
         setInviteResults(results.filter((u) => !inRoom.has(u.id)));
       })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("pages.audio-circle-room.invite-search"));
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inviteSearch, showInviteModal]);
@@ -2680,7 +2682,7 @@ export default function AudioCircleRoomScreen() {
   const shareCircle = () => {
     const url = `${window.location.origin}${SPIRALS_PATHS.room(sessionId)}`;
     if (navigator.share) {
-      navigator.share({ title: session?.title, url }).catch(() => {});
+      navigator.share({ title: session?.title, url }).catch(reportClientSideEffectFailure("pages.audio-circle-room.share"));
     } else {
       navigator.clipboard
         .writeText(url)
@@ -2690,7 +2692,7 @@ export default function AudioCircleRoomScreen() {
             description: "Share it with your neighbors.",
           });
         })
-        .catch(() => {});
+        .catch(reportClientSideEffectFailure("pages.audio-circle-room.clipboard"));
     }
   };
 

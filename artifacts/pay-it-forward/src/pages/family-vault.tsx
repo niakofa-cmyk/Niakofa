@@ -1102,8 +1102,13 @@ function TranslateMemoryModal({ familyId, memory, onClose }: { familyId: number;
 
   async function copyToClipboard() {
     if (!result) return;
-    await navigator.clipboard.writeText(result.translated).catch(reportClientSideEffectFailure("pages.family-vault.clipboard"));
-    toast.success("Copied to clipboard!");
+    try {
+      await navigator.clipboard.writeText(result.translated);
+      toast.success("Copied to clipboard!");
+    } catch (error: unknown) {
+      reportClientSideEffectFailure("pages.family-vault.clipboard")(error);
+      toast.error("Couldn't copy to clipboard. Please try again.");
+    }
   }
 
   return (

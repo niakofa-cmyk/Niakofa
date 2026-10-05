@@ -149,8 +149,13 @@ export default function RequesterTrackingScreen() {
     if (navigator.share) {
       await navigator.share({ title: "Track my helper", url }).catch(reportClientSideEffectFailure("pages.request-track.share"));
     } else {
-      await navigator.clipboard.writeText(url).catch(reportClientSideEffectFailure("pages.request-track.clipboard"));
-      toast({ title: "Link copied!" });
+      try {
+        await navigator.clipboard.writeText(url);
+        toast({ title: "Link copied!" });
+      } catch (error: unknown) {
+        reportClientSideEffectFailure("pages.request-track.clipboard")(error);
+        toast({ title: "Couldn't copy the link", description: "Please try again or share it another way.", variant: "destructive" });
+      }
     }
   };
 

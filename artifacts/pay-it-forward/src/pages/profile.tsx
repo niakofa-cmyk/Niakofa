@@ -946,7 +946,8 @@ function RecentHelpersSection({
         setHelpers(unique.slice(0, 5));
         hasLoadedRef.current = true;
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        reportClientSideEffectFailure("pages.profile.helpers")(error);
         // Network blip: keep whatever we already had visible rather than
         // flashing to an empty list. helpers starts as [] so on a genuine
         // first-load failure the section just shows the empty state, same as
@@ -1905,10 +1906,17 @@ export default function ProfileScreen() {
                               text: `${currentUser.name} invited you to Niakofa. Get help from neighbors or become a helper. It's free.`,
                               url,
                             });
-                          } catch {}
+                          } catch (error: unknown) {
+                            reportClientSideEffectFailure("pages.profile.share")(error);
+                          }
                         } else {
-                          await navigator.clipboard.writeText(url).catch(reportClientSideEffectFailure("pages.profile.clipboard"));
-                          toast({ title: "Invite link copied!", description: "Share it with a neighbor." });
+                          try {
+                            await navigator.clipboard.writeText(url);
+                            toast({ title: "Invite link copied!", description: "Share it with a neighbor." });
+                          } catch (error: unknown) {
+                            reportClientSideEffectFailure("pages.profile.clipboard")(error);
+                            toast({ title: "Couldn't copy the invite link", description: "Please try again or share it another way.", variant: "destructive" });
+                          }
                         }
                       }}
                       className="flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-black px-4 py-2.5 rounded-xl active:scale-95 transition-all shadow-[0_0_12px_rgba(0,212,255,0.25)]"
@@ -1920,8 +1928,13 @@ export default function ProfileScreen() {
                       aria-label="Copy invite link to clipboard"
                       onClick={async () => {
                         const url = `${window.location.origin}/login?ref=${currentUser.id}`;
-                        await navigator.clipboard.writeText(url).catch(reportClientSideEffectFailure("pages.profile.clipboard"));
-                        toast({ title: "Link copied!" });
+                        try {
+                          await navigator.clipboard.writeText(url);
+                          toast({ title: "Link copied!" });
+                        } catch (error: unknown) {
+                          reportClientSideEffectFailure("pages.profile.clipboard")(error);
+                          toast({ title: "Couldn't copy the link", description: "Please try again or share it another way.", variant: "destructive" });
+                        }
                       }}
                       className="flex items-center gap-1.5 bg-muted text-muted-foreground text-xs font-bold px-3 py-2.5 rounded-xl border border-border active:scale-95 transition-all"
                     >

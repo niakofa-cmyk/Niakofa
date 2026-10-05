@@ -144,7 +144,7 @@ export default function CivicPortalPage() {
     fetch(`${BASE}/api/civic/portal/requests`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() as Promise<CivicRequest[]> : Promise.reject(r.status))
       .then(data => { setRequests(data); requestsLoadedRef.current = true; })
-      .catch(() => { /* network error — keep last-known-good list on screen */ })
+      .catch(reportClientSideEffectFailure("pages.civic-portal.requests"))
       .finally(() => setLoadingRequests(false));
   }, [sponsor, setRequests]);
 

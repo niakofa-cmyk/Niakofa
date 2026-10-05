@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import {
   AtSign,
   Brush,
@@ -587,8 +589,8 @@ export function CommunityStoryRail({
       const outgoing = scopeSnapshots.get(outgoingKey);
       scopeSnapshots.delete(outgoingKey);
       if (outgoing && recoveredScopeRef.current === studioDraftKey(userId, hubId)) {
-        draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => persistMomentStudioDraft(outgoing));
-        void draftQueueRef.current.catch(() => {});
+        draftQueueRef.current = draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-recovery")).then(() => persistMomentStudioDraft(outgoing));
+        void draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-save"));
       }
     };
   }, [userId, hubId, scopeKey]);
@@ -627,7 +629,7 @@ export function CommunityStoryRail({
     const snapshot = snapshotRef.current();
     const generation = draftGenerationRef.current;
     const version = draftWriteVersionRef.current;
-    draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(async () => {
+    draftQueueRef.current = draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-recovery")).then(async () => {
       if (generation !== draftGenerationRef.current || version !== draftWriteVersionRef.current) return;
       await persistMomentStudioDraft(snapshot);
       if (generation === draftGenerationRef.current) { setDraftSaved(true); setDraftError(""); }
@@ -677,7 +679,7 @@ export function CommunityStoryRail({
     if (!draftReady || !userId || activeScopeRef.current !== scopeKey) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     setDraftSaved(false);
-    draftTimerRef.current = setTimeout(() => { void queueDraftSaveRef.current().catch(() => {}); }, 300);
+    draftTimerRef.current = setTimeout(() => { void queueDraftSaveRef.current().catch(reportClientSideEffectFailure("community.story-studio.draft-save")); }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
   }, [draftReady, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds, momentAccessibility, cameraClipReelMarker, pendingCameraReelStoryId]);
 
@@ -818,7 +820,7 @@ export function CommunityStoryRail({
             },
           };
         });
-      }).catch(() => {});
+      }).catch(reportClientSideEffectFailure("community.story-studio.composition-status"));
       return () => { active = false; controller.abort(); };
     }
     let active = true;
@@ -927,7 +929,7 @@ export function CommunityStoryRail({
   const closeComposer = useCallback(() => {
     publishControllerRef.current?.abort();
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    void queueDraftSaveRef.current().catch(() => {});
+    void queueDraftSaveRef.current().catch(reportClientSideEffectFailure("community.story-studio.draft-save"));
     setCheckingStudioDuration(false);
     setComposerOpen(false);
     const query = new URLSearchParams(window.location.search);
@@ -1130,7 +1132,7 @@ export function CommunityStoryRail({
         }
         draftGenerationRef.current++;
         if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-        await draftQueueRef.current.catch(() => {});
+        await draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-flush"));
         await discardStudioDraft(userId, hubId);
         resetComposer();
         setComposerOpen(false);
@@ -1184,7 +1186,7 @@ export function CommunityStoryRail({
             if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
             const saved = { ...snapshotRef.current(), exchangeDraftId: remote.id, exchangeFileFingerprint: fingerprint };
             if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, saved);
-            draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => saveStudioDraft(saved));
+            draftQueueRef.current = draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-recovery")).then(() => saveStudioDraft(saved));
             try { await draftQueueRef.current; } catch {
               throw new Error("Exchange draft created, but its recovery ID could not be saved on this device. Keep this tab open and retry saving before leaving.");
             }
@@ -1227,7 +1229,7 @@ export function CommunityStoryRail({
           await publishExchangeSparkDraft(remote.id, caption.trim(), controller.signal);
           trackCommunityContent("community_spark_created", hubId === null ? {} : { hub_id: hubId });
           draftGenerationRef.current++;
-          await draftQueueRef.current.catch(() => {});
+          await draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-flush"));
           await discardStudioDraft(userId, hubId);
           exchangeDraftRef.current = null;
           resetComposer();
@@ -1278,7 +1280,7 @@ export function CommunityStoryRail({
       if (familyStoryOnly) {
         draftGenerationRef.current++;
         if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-        await draftQueueRef.current.catch(() => {});
+        await draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-flush"));
         await discardStudioDraft(userId, hubId);
         resetComposer();
         setComposerOpen(false);
@@ -1344,7 +1346,7 @@ export function CommunityStoryRail({
             uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
             uploadedMusicAssetId: musicAssetId,
             publishAssetIds: [...orderedAssetIds] };
-          draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(async () => {
+          draftQueueRef.current = draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-recovery")).then(async () => {
           const durable = await persistStudioPublishAttempt(frozen, momentSourceIndexes, orderedAssetIds, musicAssetId);
             if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, durable);
           });
@@ -1364,7 +1366,7 @@ export function CommunityStoryRail({
       window.dispatchEvent(new Event("community-moments-refresh"));
       draftGenerationRef.current++;
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      await draftQueueRef.current.catch(() => {});
+      await draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-flush"));
       await discardStudioDraft(userId, hubId);
       resetComposer();
       setComposerOpen(false);
@@ -1380,7 +1382,7 @@ export function CommunityStoryRail({
           cameraReelStoryId: reason.storyId,
         };
         if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, pendingSnapshot);
-        draftQueueRef.current = draftQueueRef.current.catch(() => {}).then(() => saveStudioDraft(pendingSnapshot));
+        draftQueueRef.current = draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-recovery")).then(() => saveStudioDraft(pendingSnapshot));
         try {
           await draftQueueRef.current;
         } catch (saveReason: unknown) {
@@ -1418,7 +1420,7 @@ export function CommunityStoryRail({
       await requestCameraClipReel(pendingCameraReelStoryId, cameraAssetIds, controller.signal);
       draftGenerationRef.current++;
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      await draftQueueRef.current.catch(() => {});
+      await draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-flush"));
       await discardStudioDraft(userId, hubId);
       resetComposer();
       setComposerOpen(false);
@@ -1495,7 +1497,7 @@ export function CommunityStoryRail({
       : "Discard this Spark and its saved media? This cannot be undone.")) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     try {
-      await draftQueueRef.current.catch(() => {});
+      await draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-flush"));
       const remote = exchangeDraftRef.current;
       if (remote) {
         const controller = new AbortController();
@@ -1573,10 +1575,10 @@ export function CommunityStoryRail({
     setStoryProgress(0);
     void recordStoryView(selectedStoryId)
       .then(() => trackCommunityContent("community_spark_viewed", { spark_id: selectedStoryId }))
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("community.story-studio.analytics"));
     void getStoryMetrics(selectedStoryId)
       .then((metrics) => setReactedStoryIds((current) => ({ ...current, [selectedStoryId]: Boolean(metrics.viewer_reaction) })))
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("community.story-studio.metrics"));
   }, [selectedStoryId]);
 
   useEffect(() => {

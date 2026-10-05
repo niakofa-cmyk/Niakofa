@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StoryElementLayer, storyEffectFilter, type StoryElement } from "./StoryElementLayer";
 
@@ -93,9 +95,7 @@ export function StoryMediaPlayer({
       video.pause();
       return;
     }
-    void video.play().catch(() => {
-      // Autoplay may be blocked until the viewer receives a user gesture.
-    });
+    void video.play().catch(reportClientSideEffectFailure("components.story-media-player.autoplay"));
   }, [media, paused]);
 
   useEffect(() => {

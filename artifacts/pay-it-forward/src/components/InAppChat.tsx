@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * InAppChat.tsx — Refactored to use the shared wsClient singleton
  *
@@ -138,7 +140,7 @@ function InAppChatCore({
               m.id === msg.id ? { ...m, id: data.message!.id, status: "sent" } : m
             ));
           })
-          .catch(() => {});
+          .catch(reportClientSideEffectFailure("components.in-app-chat.offline-queue"));
       });
       setOfflineQueue([]);
     }

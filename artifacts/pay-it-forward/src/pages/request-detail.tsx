@@ -55,8 +55,13 @@ export default function RequestDetailScreen() {
     if (navigator.share) {
       await navigator.share({ title: request?.title ?? "Help Request", url }).catch(reportClientSideEffectFailure("pages.request-detail.share"));
     } else {
-      await navigator.clipboard.writeText(url).catch(reportClientSideEffectFailure("pages.request-detail.clipboard"));
-      toast({ title: "Link copied!" });
+      try {
+        await navigator.clipboard.writeText(url);
+        toast({ title: "Link copied!" });
+      } catch (error: unknown) {
+        reportClientSideEffectFailure("pages.request-detail.clipboard")(error);
+        toast({ title: "Couldn't copy the link", description: "Please try again or share it another way.", variant: "destructive" });
+      }
     }
   };
 

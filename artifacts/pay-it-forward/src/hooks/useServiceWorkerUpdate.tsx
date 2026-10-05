@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -71,7 +73,7 @@ export function useServiceWorkerUpdate() {
           });
         });
       })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("service-worker.update-check"));
 
     // When the new SW takes control, reload so the user gets the latest JS.
     // The reloadingInProgress guard prevents a reload on the initial activation

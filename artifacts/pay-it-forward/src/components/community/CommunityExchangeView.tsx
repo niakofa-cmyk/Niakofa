@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import "./community-exchange-view.css";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
@@ -420,7 +422,7 @@ export function CommunityExchangeView() {
       .then((data) => {
         if (!cancelled && data) setImpact(data);
       })
-      .catch(() => {});
+      .catch(reportClientSideEffectFailure("components.community-exchange.impact"));
     return () => {
       cancelled = true;
     };
@@ -461,10 +463,7 @@ export function CommunityExchangeView() {
 
   useEffect(() => {
     if (!currentUser?.id || !location) return;
-    void persistExchangeDigestLocation(currentUser.id, location).catch(() => {
-      // The local Exchange board remains usable if settings persistence is
-      // temporarily unavailable; the next location change retries it.
-    });
+    void persistExchangeDigestLocation(currentUser.id, location).catch(reportClientSideEffectFailure("components.community-exchange.location-preference"));
   }, [currentUser?.id, location]);
 
   const saveLocation = (event: FormEvent) => {
@@ -507,10 +506,7 @@ export function CommunityExchangeView() {
               lat: position.coords.latitude,
               lng: position.coords.longitude,
             }),
-          }).catch(() => {
-            // The coarse board remains usable if location persistence is
-            // temporarily unavailable; manual area filtering still works.
-          });
+        }).catch(reportClientSideEffectFailure("components.community-exchange.location-preference"));
         }
         const next: LocalLocation = { label: "Nearby area", city: "Nearby community", source: "browser" };
         localStorage.setItem(LOCATION_KEY, JSON.stringify(next));

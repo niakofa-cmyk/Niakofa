@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import "./community-moments-experience.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -602,9 +604,7 @@ export function CommunityMomentsExperience({
       spark_id: activeSpark.id,
       ...(hubId === null ? {} : { hub_id: hubId }),
     });
-    void recordStoryView(activeSpark.id).catch(() => {
-      // Viewing remains available when analytics recording is temporarily down.
-    });
+    void recordStoryView(activeSpark.id).catch(reportClientSideEffectFailure("components.community-moments.view-analytics"));
   }, [activeSpark, hubId]);
 
   useEffect(() => {
@@ -701,9 +701,7 @@ export function CommunityMomentsExperience({
       .then((metrics) => {
         if (!cancelled) setMetricsById((current) => ({ ...current, [activeSpark.id]: metrics }));
       })
-      .catch(() => {
-        // Playback and browsing remain available when interaction counts are unavailable.
-      });
+      .catch(reportClientSideEffectFailure("components.community-moments.metrics"));
     return () => {
       cancelled = true;
     };
@@ -832,7 +830,7 @@ export function CommunityMomentsExperience({
           ...current,
           [spark.id]: { ...current[spark.id], status: "failed", failureCode: composition.failure_code ?? null },
         }));
-      }).catch(() => {});
+      }).catch(reportClientSideEffectFailure("components.community-moments.composition"));
       return () => { active = false; controller.abort(); };
     }
     const refresh = async () => {

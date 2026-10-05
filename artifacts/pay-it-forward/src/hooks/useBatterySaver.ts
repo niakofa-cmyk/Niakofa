@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * useBatterySaver — dynamic battery-saver mode for SankofaBird LOD system.
  *
@@ -78,9 +80,7 @@ export function useBatterySaver({ forceOn = false }: UseBatterySaverOptions = {}
       checkLevel();
       bm.onlevelchange = checkLevel;
       bm.onchargingchange = checkLevel;
-    }).catch(() => {
-      // API present but failed — ignore; fall back to static check
-    });
+    }).catch(reportClientSideEffectFailure("hooks.battery-saver.api"));
 
     return () => {
       if (battery) {

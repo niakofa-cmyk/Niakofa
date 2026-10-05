@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { ArrowDown, ArrowUp, MapPin, Play, RefreshCw, Store, Volume2, VolumeX } from "lucide-react";
@@ -157,9 +159,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
       video.pause();
       return;
     }
-    void video.play().catch(() => {
-      // Autoplay can be blocked by the browser; native controls remain available.
-    });
+    void video.play().catch(reportClientSideEffectFailure("components.exchange-sparks.autoplay"));
   }, [shouldPlay, playbackUrl]);
 
   useEffect(() => {
@@ -284,9 +284,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
           setNextThumbnailUrl(url);
         }
       })
-      .catch(() => {
-        // The next preview is optional; do not interrupt current playback.
-      });
+      .catch(reportClientSideEffectFailure("components.exchange-sparks.next-preview"));
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -330,9 +328,7 @@ export function CommunityExchangeSparks({ onOpenListing }: { onOpenListing: (lis
           setActiveThumbnailUrl(url);
         }
       })
-      .catch(() => {
-        // The video remains usable when a preview image is unavailable.
-      });
+      .catch(reportClientSideEffectFailure("components.exchange-sparks.preview-image"));
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);

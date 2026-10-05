@@ -648,8 +648,13 @@ export default function ActiveRequestScreen() {
         url: shareUrl,
       }).catch(reportClientSideEffectFailure("pages.request-active.share"));
     } else {
-      await navigator.clipboard.writeText(shareUrl).catch(reportClientSideEffectFailure("pages.request-active.clipboard"));
-      toast({ title: "Trip link copied!", description: "Share this link so others can track your progress." });
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        toast({ title: "Trip link copied!", description: "Share this link so others can track your progress." });
+      } catch (error: unknown) {
+        reportClientSideEffectFailure("pages.request-active.clipboard")(error);
+        toast({ title: "Couldn't copy the trip link", description: "Please try again or share it another way.", variant: "destructive" });
+      }
     }
     setShareVisible(false);
   };

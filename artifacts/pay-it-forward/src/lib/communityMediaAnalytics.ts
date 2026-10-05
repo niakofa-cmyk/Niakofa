@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "./client-error-reporting";
+
 import type { VisualDiscoveryKind } from "@/lib/communityVisualDiscovery";
 
 const POSTHOG_KEY = import.meta.env?.VITE_POSTHOG_KEY ?? "";
@@ -118,9 +120,7 @@ function submitCommunityAnalytics(payload: CommunityAnalyticsPayload): void {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ api_key: POSTHOG_KEY, ...payload }),
     keepalive: true,
-  }).catch(() => {
-    // Observability is fail-open: a blocked analytics request must not affect the app.
-  });
+  }).catch(reportClientSideEffectFailure("lib.community-media-analytics"));
 }
 
 export function trackCommunityMedia(

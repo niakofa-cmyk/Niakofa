@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import {
   ConnectionState,
   createLocalTracks,
@@ -403,7 +405,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
   }
 
   setMicEnabled(enabled: boolean): void {
-    this.room?.localParticipant.setMicrophoneEnabled(enabled).catch(() => {});
+    this.room?.localParticipant.setMicrophoneEnabled(enabled).catch(reportClientSideEffectFailure("livekit.microphone-toggle"));
   }
 
   setVideoEnabled(enabled: boolean): void {
@@ -413,7 +415,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
         this.camTrack.mediaStreamTrack.enabled = true;
         this.emitLocalStream();
       } else {
-        void this.addVideoTrack().catch(() => {});
+        void this.addVideoTrack().catch(reportClientSideEffectFailure("livekit.video-enable"));
       }
       return;
     }
@@ -549,7 +551,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       recorder.start(1000);
       this.mediaRecorder = recorder;
     } catch (error) {
-      audioContext.close().catch(() => {});
+      audioContext.close().catch(reportClientSideEffectFailure("livekit.recording-audio-cleanup"));
       this.audioContext = null;
       this.mixDestination = null;
       this.mixSources.clear();
@@ -577,7 +579,7 @@ export class LiveKitCircleTransport implements CircleMediaTransport {
       settled = true;
       this.recordingCameraClone?.stop();
       this.recordingCameraClone = null;
-      this.audioContext?.close().catch(() => {});
+      this.audioContext?.close().catch(reportClientSideEffectFailure("livekit.recording-audio-cleanup"));
       this.audioContext = null;
       this.mixDestination = null;
       this.mixSources.clear();

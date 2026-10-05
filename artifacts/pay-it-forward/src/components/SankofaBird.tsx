@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 /**
  * SankofaBird — auto-selector + auto battery-saver + nav-session LOD
  *
@@ -109,9 +111,7 @@ function useAutoBatterySaver(externalBatterySaver = false): boolean {
         battery.addEventListener("levelchange", onBatteryEvent);
         battery.addEventListener("chargingchange", onBatteryEvent);
       })
-      .catch(() => {
-        // Permission denied or API not available — no-op, externalBatterySaver still applies.
-      });
+      .catch(reportClientSideEffectFailure("components.sankofa-bird.battery-api"));
 
     return () => {
       if (bm) {

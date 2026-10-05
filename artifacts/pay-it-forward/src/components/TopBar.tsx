@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
@@ -246,7 +248,7 @@ export function TopBar({
 
   useEffect(() => {
     if (helperModeActive && currentUser) {
-      subscribeToPush(currentUser.id).catch(() => {});
+      subscribeToPush(currentUser.id).catch(reportClientSideEffectFailure("components.top-bar.push-subscription"));
     }
   }, [helperModeActive, currentUser]);
 

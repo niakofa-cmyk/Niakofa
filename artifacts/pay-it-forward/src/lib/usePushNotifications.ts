@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useEffect, useCallback, useState } from "react";
 import { authHeaders } from "@/lib/auth";
 
@@ -37,7 +39,7 @@ export function usePushNotifications(userId: number | null) {
             setIsSubscribed(!!sub);
           });
         })
-        .catch(() => {});
+        .catch(reportClientSideEffectFailure("push-notifications.subscription"));
     }
   }, []);
 

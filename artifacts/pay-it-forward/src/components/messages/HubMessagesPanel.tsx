@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Building2, ExternalLink, Loader2, MessageCircle, Radio, Send, Users } from "lucide-react";
 import { useLocation } from "wouter";
@@ -98,7 +100,7 @@ export default function HubMessagesPanel({
     await fetch("/api/messages/hubs/" + id + "/read", {
       method: "POST",
       headers: authHeaders(),
-    }).catch(() => {});
+    }).catch(reportClientSideEffectFailure("components.hub-messages.mark-read"));
   }, []);
 
   const loadConversations = useCallback(async (): Promise<Conversation[]> => {
@@ -189,7 +191,7 @@ export default function HubMessagesPanel({
       if (event.type === "ws_reconnected") {
         setRealtime(false);
         void loadConversations().finally(() => setRealtime(true));
-        if (selectedId) void loadConversation(selectedId).catch(() => {});
+        if (selectedId) void loadConversation(selectedId).catch(reportClientSideEffectFailure("components.hub-messages.reconnect"));
         return;
       }
       if (event.type !== "hub_message") return;

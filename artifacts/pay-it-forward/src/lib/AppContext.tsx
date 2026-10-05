@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import type { ReactNode } from "react";
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
@@ -644,14 +646,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   });
                 }
               })
-              .catch(() => { /* network error — keep stored ID, let the UI surface it */ });
+              .catch(reportClientSideEffectFailure("lib.app-context.sync-user-id"));
           }
         }
       })
-      .catch(() => {
-        // Network failure — keep the stored user. They'll see API errors inline.
-        // Never wipe a valid session just because the device is temporarily offline.
-      });
+      .catch(reportClientSideEffectFailure("lib.app-context.refresh-user"));
 
     return () => { active = false; };
   }, []);  

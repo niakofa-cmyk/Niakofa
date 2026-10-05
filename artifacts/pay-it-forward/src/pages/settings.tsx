@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { authHeaders, setToken } from "@/lib/auth";
@@ -479,9 +481,7 @@ function NiaVoiceSettings(_: { userId: number }) {
     fetch(`${base}/api/nia/voice/profiles`, { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : { profiles: [] }))
       .then((data: { profiles?: VoiceProfileOption[] }) => setProfiles(data.profiles ?? []))
-      .catch(() => {
-        // Keep whatever was previously loaded — don't clear on transient error.
-      })
+      .catch(reportClientSideEffectFailure("pages.settings.voice-profiles"))
       .finally(() => setLoading(false));
   }, []);
 

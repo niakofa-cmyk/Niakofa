@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 export async function trimVideoFile(file: File, start: number, end: number): Promise<File> {
   if (!file.type.startsWith("video/") || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) throw new Error("Choose a valid video range.");
   if (typeof MediaRecorder === "undefined") throw new Error("Video trimming is not supported in this browser.");
@@ -50,7 +52,7 @@ export async function trimVideoFile(file: File, start: number, end: number): Pro
       await video.play();
     } catch {
       stop();
-      await result.catch(() => {});
+      await result.catch(reportClientSideEffectFailure("components.story-media.trim-cleanup"));
       throw new Error("Video playback was blocked, so the trim was not applied.");
     }
     const blob = await result;

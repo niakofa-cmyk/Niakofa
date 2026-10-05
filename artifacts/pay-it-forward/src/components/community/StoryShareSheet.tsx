@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Loader2, Search, Send, Share2, X } from "lucide-react";
 import { MessageAvatar } from "@/components/messages/MessageAvatar";
@@ -93,7 +95,7 @@ export function StoryShareSheet({
         .then((users) => {
           if (!controller.signal.aborted) setPeople(users);
         })
-        .catch(() => {});
+        .catch(reportClientSideEffectFailure("components.story-share-sheet.search"));
     }, 180);
     return () => {
       window.clearTimeout(timer);

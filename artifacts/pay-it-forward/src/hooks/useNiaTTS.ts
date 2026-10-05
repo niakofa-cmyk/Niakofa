@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 // useNiaTTS — Nia speaks back in community language
 //
 // Priority chain:
@@ -182,7 +184,7 @@ async function tryServerTTS(
     source.connect(audioCtx.destination);
     // Close the AudioContext when playback finishes naturally so contexts
     // don't accumulate (browsers cap them at ~6 per page).
-    source.onended = () => { audioCtx.close().catch(() => {}); };
+    source.onended = () => { audioCtx.close().catch(reportClientSideEffectFailure("nia-tts.audio-cleanup")); };
     source.start();
 
     return {
@@ -191,7 +193,7 @@ async function tryServerTTS(
           source.stop(); // triggers onended → audioCtx.close()
         } catch {
           // already stopped; close directly as safety net
-          audioCtx.close().catch(() => {});
+          audioCtx.close().catch(reportClientSideEffectFailure("nia-tts.audio-cleanup"));
         }
       },
     };

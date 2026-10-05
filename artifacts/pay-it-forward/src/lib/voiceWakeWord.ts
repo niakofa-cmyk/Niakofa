@@ -1,3 +1,5 @@
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+
 import type { CulturalLanguage } from "./culturalGreetings";
 import { matchWakeWord } from "./culturalGreetings";
 
@@ -197,7 +199,7 @@ export class VoiceWakeWordEngine {
     if (this.vadInterval) { clearInterval(this.vadInterval); this.vadInterval = null; }
     this.recognition?.stop();
     this.analyser?.disconnect();
-    this.audioCtx?.close().catch(() => {});
+    this.audioCtx?.close().catch(reportClientSideEffectFailure("voice-wake-word.audio-cleanup"));
     this.mediaStream?.getTracks().forEach(t => t.stop());
     this.audioCtx = null;
     this.analyser = null;
