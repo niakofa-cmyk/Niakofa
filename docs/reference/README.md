@@ -16,12 +16,21 @@ sessions can review the original material without re-creating it.
   and `../../artifacts/mockup-sandbox/public/images/niakofa-neighbor-garden.jpg`
   — retained Current and VerticalFeed visual references and their sample image;
   production Moments components remain in `artifacts/pay-it-forward/`.
+- `niakofa-community-media-fixture.md` and
+  `assets/niakofa-community-media-test-fixture.png` — synthetic Community Media
+  acceptance fixture retained for reference; it contains no customer or
+  donor-archive content.
 - `niakofa-moments-sparks/` — product decision, enhancement DOCX, and
   implementation ZIP retained as reference material; these do not certify
   current runtime or production behavior.
 - `niakofa-2026-09-27-inputs/` — verbatim location-marker, integration/privacy, and network-fault notes; pointers to the retained community architecture image and two Niakofa ZIP references; explicit unapproved-subsidy boundary.
 - `niakofa-exchange-six-tab-community-2026-09-25/` — original Exchange/navigation review notes, improvement ZIP, and six mobile interaction-reference screenshots; references only, not copied product assets.
-- `attached_assets/` — pasted checkpoint notes supplied for the current review.
+- `uploads/2026-10-05-production-media-certification/README.md` — sanitized
+  summary of the uploaded bucket-backed Playwright certification notes and
+  current production evidence, with outstanding checks called out.
+- `attached_assets/` — workspace-only originals supplied for the current
+  review. They remain untouched there; private state material and the uploaded
+  video are not copied into the repository.
 - `uploads/2026-10-02/niakofa-production-readiness-work-order.txt` — retained
   copy of the uploaded work order for review provenance, not a feature
   specification or certification result.
