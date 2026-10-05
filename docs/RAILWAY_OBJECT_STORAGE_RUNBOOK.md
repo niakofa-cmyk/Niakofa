@@ -25,9 +25,11 @@ references to the bucket resource:
 | `AWS_ACCESS_KEY_ID` | `ACCESS_KEY_ID` |
 | `AWS_SECRET_ACCESS_KEY` | `SECRET_ACCESS_KEY` |
 
-The references are already set on the production API service with deployment
-skipped. The next API deployment will receive the resolved values. Secret
-values are intentionally not stored in this repository or this document.
+The production API service must reference the existing
+`niakofa-production-media` bucket for these values. Verify the reference targets
+in Railway before running a bucket-backed certification. Railway's generated
+S3 bucket name is distinct from its display name; do not hardcode or infer it.
+Secret values are intentionally not stored in this repository or this document.
 
 ## Verification order
 

@@ -11,12 +11,17 @@ if [[ "$CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE" != "1" ]]; then
   echo "Refusing state upload: confirm the Railway bucket is private." >&2
   exit 2
 fi
+: "${CONFIRM_RAILWAY_MEDIA_BUCKET_REFERENCE:?Confirm the API service storage variables reference niakofa-production-media.}"
+if [[ "$CONFIRM_RAILWAY_MEDIA_BUCKET_REFERENCE" != "1" ]]; then
+  echo "Refusing state upload: confirm the API service references the existing media bucket." >&2
+  exit 2
+fi
 if [[ -z "$state_file" ]]; then
   echo "Usage: ops/upload-railway-user-a-state.sh <local-state-file>" >&2
   exit 2
 fi
-if [[ "${STORAGE_BUCKET:-}" != "niakofa-production-media" ]]; then
-  echo "Refusing state upload: the existing niakofa-production-media bucket is required." >&2
+if [[ -z "${STORAGE_BUCKET:-}" ]]; then
+  echo "Refusing state upload: the API service's Railway STORAGE_BUCKET reference is required." >&2
   exit 2
 fi
 if [[ -n "${STORAGE_CDN_URL:-}" ]]; then

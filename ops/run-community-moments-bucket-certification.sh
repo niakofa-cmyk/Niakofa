@@ -15,11 +15,13 @@ unset USER_A_STATE_JSON USER_B_STATE_JSON USER_B_STATE
 : "${ALLOW_COMMUNITY_MOMENTS_READONLY_E2E:?Set ALLOW_COMMUNITY_MOMENTS_READONLY_E2E=1 to run deployed Moments acceptance}"
 : "${CONFIRM_DISPOSABLE_ACCOUNT:?Set CONFIRM_DISPOSABLE_ACCOUNT=1 for the approved disposable test account}"
 : "${CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE:?Confirm the bucket has no public-read policy or CDN route}"
+: "${CONFIRM_RAILWAY_MEDIA_BUCKET_REFERENCE:?Confirm the API service storage variables reference niakofa-production-media}"
 
 if [[ "$ALLOW_COMMUNITY_MOMENTS_READONLY_E2E" != "1" ||
       "$CONFIRM_DISPOSABLE_ACCOUNT" != "1" ||
-      "$CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE" != "1" ]]; then
-  echo "Refusing deployed Moments acceptance without explicit production, disposable-account, and private-bucket confirmations." >&2
+      "$CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE" != "1" ||
+      "$CONFIRM_RAILWAY_MEDIA_BUCKET_REFERENCE" != "1" ]]; then
+  echo "Refusing deployed Moments acceptance without explicit production, disposable-account, private-bucket, and bucket-reference confirmations." >&2
   exit 2
 fi
 if [[ ! "$EXPECTED_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
@@ -38,8 +40,8 @@ if ! node --input-type=module -e '
   echo "Refusing deployed Moments acceptance: BASE_URL must be a credential-free HTTPS origin." >&2
   exit 2
 fi
-if [[ "${STORAGE_BUCKET:-}" != "niakofa-production-media" ]]; then
-  echo "Refusing deployed Moments acceptance: the existing niakofa-production-media bucket is required." >&2
+if [[ -z "${STORAGE_BUCKET:-}" ]]; then
+  echo "Refusing deployed Moments acceptance: the API service's Railway STORAGE_BUCKET reference is required." >&2
   exit 2
 fi
 if [[ -n "${STORAGE_CDN_URL:-}" ]]; then

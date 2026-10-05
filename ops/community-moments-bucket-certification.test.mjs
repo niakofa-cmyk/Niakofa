@@ -16,10 +16,13 @@ test("bucket-backed runner uses only the fixed private User A object and explici
     "ALLOW_COMMUNITY_MOMENTS_READONLY_E2E",
     "CONFIRM_DISPOSABLE_ACCOUNT",
     "CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE",
+    "CONFIRM_RAILWAY_MEDIA_BUCKET_REFERENCE",
   ]) {
     assert.ok(runner.includes(gate));
   }
   assert.match(runner, /niakofa-production-media/);
+  assert.match(runner, /STORAGE_BUCKET/);
+  assert.doesNotMatch(runner, /STORAGE_BUCKET:-\}" != "niakofa-production-media"/);
   assert.match(runner, /test-auth\/user-a\/niakofa-state\.json/);
   assert.match(runner, /STORAGE_CDN_URL/);
   assert.match(runner, /mktemp -d/);
@@ -36,6 +39,7 @@ test("local uploader accepts a state-file path and does not request public acces
   assert.match(uploader, /validate-user-a-state\.mjs/);
   assert.match(uploader, /railway-bucket-object\.mjs" put/);
   assert.match(uploader, /CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE/);
+  assert.match(uploader, /CONFIRM_RAILWAY_MEDIA_BUCKET_REFERENCE/);
   assert.match(helper, /test-auth\/user-a\/niakofa-state\.json/);
   assert.match(helper, /const signedHeaders = "host;x-amz-content-sha256;x-amz-date"/);
   assert.doesNotMatch(helper, /x-amz-acl/);

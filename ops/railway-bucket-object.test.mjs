@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const helper = path.join(root, "ops/railway-bucket-object.mjs");
 const objectKey = "test-auth/user-a/niakofa-state.json";
-const bucket = "niakofa-production-media";
+// Railway's generated S3 bucket name is distinct from its display name.
+const bucket = "niakofa-media-prod-unique-123";
 const fakeState = '{"fixture":"not-a-real-session"}';
 
 async function startServer() {

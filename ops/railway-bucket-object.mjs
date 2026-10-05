@@ -6,7 +6,6 @@ import path from "node:path";
 
 const [operation, objectKey, filePath] = process.argv.slice(2);
 const expectedObjectKey = "test-auth/user-a/niakofa-state.json";
-const expectedBucket = "niakofa-production-media";
 const maxStateBytes = 2 * 1024 * 1024;
 
 function fail(message) {
@@ -32,8 +31,9 @@ const urlStyle = process.env.CERTIFICATION_S3_URL_STYLE || "virtual";
 if (process.env.STORAGE_CDN_URL?.trim()) {
   fail("refusing state I/O while STORAGE_CDN_URL is configured.");
 }
-if (bucket !== expectedBucket) {
-  fail("STORAGE_BUCKET must reference the existing niakofa-production-media bucket.");
+if (!bucket || bucket.length < 3 || bucket.length > 63
+  || !/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(bucket) || bucket.includes("..")) {
+  fail("STORAGE_BUCKET must contain the Railway bucket's actual S3-compatible name.");
 }
 if (!endpoint || !accessKeyId || !secretAccessKey) {
   fail("STORAGE_ENDPOINT, AWS_ACCESS_KEY_ID, and AWS_SECRET_ACCESS_KEY are required.");
