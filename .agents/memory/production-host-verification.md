@@ -8,3 +8,7 @@ Always verify the canonical public domain and its served commit before treating 
 **Why:** Railway service URLs can outlive or lose their application binding, so a historical or environment-emitted hostname is not reliable evidence of the currently served deployment.
 
 **How to apply:** Use the deployment-configured canonical URL for health, scoped readiness, and visual checks; compare its reported commit with local and origin/main. Treat a Railway fallback 404 as a stale-host signal, not an application regression, unless the canonical URL also fails.
+
+**Why:** In this project, Railway has auto-deployed documentation-only commits even when the GitHub deployment-verification workflow excluded those paths.
+
+**How to apply:** Keep workflow path filters aligned with Railway's observed watch behavior. If a filter skips a push that Railway deploys, still verify the canonical host and served commit.
