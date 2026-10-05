@@ -121,6 +121,7 @@ export function Redesign() {
   const drawStart = useRef<{ id: string; path: string } | null>(null);
   const pointerDrag = useRef<{ id: string; x: number; y: number } | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const objectUrlsRef = useRef(new Set<string>());
   const currentItem = items[activeMedia];
   const hasVideo = items.some((item) => item.type === "video");
   const videoDuration = items.filter((item) => item.type === "video").reduce((sum, item) => sum + (item.duration ?? 0), 0);
@@ -173,7 +174,8 @@ export function Redesign() {
     if (countdownTimer.current) window.clearTimeout(countdownTimer.current);
     if (progressTimer.current) window.clearInterval(progressTimer.current);
     streamRef.current?.getTracks().forEach((track) => track.stop());
-    items.forEach((item) => { if (!item.sample && item.src.startsWith("blob:")) URL.revokeObjectURL(item.src); });
+    objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    objectUrlsRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -205,7 +207,7 @@ export function Redesign() {
   };
 
   const useSample = () => enterEditor(starterItems, defaultCaption);
-  const useWords = () => {
+  const startWithWords = () => {
     if (!textOnly.trim()) {
       setValidation("Add a few words first. A Spark can be text-only.");
       return;
@@ -228,7 +230,11 @@ export function Redesign() {
     const newItems: MediaItem[] = files.slice(0, 6 - items.length).map((file, index) => ({
       id: `${file.name}-${file.lastModified}-${Date.now()}-${index}`,
       name: file.name,
-      src: URL.createObjectURL(file),
+      src: (() => {
+        const url = URL.createObjectURL(file);
+        objectUrlsRef.current.add(url);
+        return url;
+      })(),
       type: isVideo(file) ? "video" : "image",
       alt: "",
       duration: isVideo(file) ? 0 : undefined,
@@ -260,7 +266,10 @@ export function Redesign() {
     const index = items.findIndex((item) => item.id === itemId);
     if (index < 0) return;
     const removed = items[index];
-    if (!removed.sample && removed.src.startsWith("blob:")) URL.revokeObjectURL(removed.src);
+    if (!removed.sample && removed.src.startsWith("blob:")) {
+      URL.revokeObjectURL(removed.src);
+      objectUrlsRef.current.delete(removed.src);
+    }
     const next = items.filter((item) => item.id !== itemId);
     setItems(next);
     setActiveMedia(Math.max(0, Math.min(activeMedia > index ? activeMedia - 1 : activeMedia, next.length - 1)));
@@ -402,7 +411,11 @@ export function Redesign() {
           if (!recorderChunks.current.length) return;
           const file = new File(recorderChunks.current, `spark-clip-${Date.now()}.webm`, { type: recorder.mimeType || "video/webm" });
           const clip = {
-            id: `camera-${Date.now()}`, name: file.name, src: URL.createObjectURL(file), type: "video" as const,
+            id: `camera-${Date.now()}`, name: file.name, src: (() => {
+              const url = URL.createObjectURL(file);
+              objectUrlsRef.current.add(url);
+              return url;
+            })(), type: "video" as const,
             alt: "", duration: Math.max(1, secondsRef.current - clipStartSeconds.current),
           };
           setItems((current) => [...current, clip]);
@@ -743,8 +756,8 @@ export function Redesign() {
         </div>
         <div className="sr-source-bottom">
           <div className="sr-text-start">
-            <input id="sr-start-words" className="sr-input" placeholder="A few words for your neighbors…" value={textOnly} onChange={(event) => setTextOnly(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") useWords(); }} />
-            <button className="sr-primary" type="button" onClick={useWords}>Start with words <ArrowRight size={15} /></button>
+            <input id="sr-start-words" className="sr-input" placeholder="A few words for your neighbors…" value={textOnly} onChange={(event) => setTextOnly(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") startWithWords(); }} />
+            <button className="sr-primary" type="button" onClick={startWithWords}>Start with words <ArrowRight size={15} /></button>
           </div>
           <button className="sr-quiet" type="button" onClick={useSample}>Try a sample moment <ChevronRight size={14} /></button>
         </div>

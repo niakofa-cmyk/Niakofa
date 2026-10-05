@@ -381,7 +381,7 @@ export function CommunityStoryRail({
     }
   };
 
-  const updateCaption = (value: string) => {
+  const updateCaption = (value: string, positionY = 78) => {
     setCaption(value);
     if (!value.trim()) {
       setEditorElements((current) => current.filter((element) => element.id !== "caption"));
@@ -392,12 +392,13 @@ export function CommunityStoryRail({
       type: "text",
       payload: { text: value, color: textColor, font_size: Number(textSize), align: textAlign },
       position_x: 50,
-      position_y: 78,
+      position_y: positionY,
       scale: 1,
       rotation: 0,
       z_index: 10,
     });
   };
+  const updateSourceCaption = (value: string) => updateCaption(value, 50);
 
   useEffect(() => {
     let cancelled = false;
@@ -1739,6 +1740,8 @@ export function CommunityStoryRail({
               canContinue={Boolean(caption.trim() || gallerySelection.length)}
               allowText={!responseTargetId}
               sourceContext={responseTargetId ? `This is a video response to Moment ${responseTargetId}.` : undefined}
+              sourceText={caption}
+              onSourceTextChange={updateSourceCaption}
               preview={(
                 <StoryEditorCanvas
                   elements={editorElements}
@@ -1754,9 +1757,13 @@ export function CommunityStoryRail({
                         const bounds = trimPreview[previewFileIndex];
                         if (bounds && event.currentTarget.currentTime >= bounds.end) { event.currentTarget.pause(); event.currentTarget.currentTime = bounds.start; }
                       }} >{previewCaptionsTrackUrl && <track kind="captions" src={previewCaptionsTrackUrl} srcLang="und" label="Creator captions" default />}</video> : <img src={selectedFileUrl} alt={momentAccessibility.momentAltTexts[previewFileIndex] || `Spark photo attachment ${previewFileIndex + 1}`} className="h-full w-full object-contain" style={{ filter }} />
-                    ) : (
-                      <div className="nia-story-text-preview"><span>Niakofa / Spark</span>{!caption && <p>Your words belong here.</p>}<small>{caption ? "Drag the text to place it" : "Write a few words below to begin"}</small></div>
-                    )}
+                    ) : !caption ? (
+                      <div className="nia-story-text-preview">
+                        <span>Niakofa / Spark</span>
+                        <p>Your words belong here.</p>
+                        <small>Write a few words below to begin</small>
+                      </div>
+                    ) : null}
                   </div>
                 </StoryEditorCanvas>
               )}
