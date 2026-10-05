@@ -288,6 +288,7 @@ describe("Full Request Lifecycle", () => {
       .mockResolvedValueOnce([{ token_version: 0 }])
       .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }])
       .mockResolvedValueOnce([{ requester_id: requesterId, urgency: "medium", lat: 32.7767, lng: -96.7970, category: "groceries", hub_id: 1 }])
+      .mockResolvedValueOnce([{ value: "false" }]) // disable pool scope lookup for this fixture
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: helperId, lat: 32.78, lng: -96.80 }])
       .mockResolvedValueOnce([{ name: "Helper" }]);

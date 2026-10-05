@@ -220,7 +220,9 @@ router.post(
       let clientClosed = false;
       const onClientClose = () => {
         clientClosed = true;
-        reader.cancel().catch(() => { /* expected — reader already closed */ });
+        reader.cancel().catch(() => {
+          logger.debug("nia-proxy: upstream reader was already closed after client disconnect");
+        });
       };
       req.on("close", onClientClose);
 
@@ -243,7 +245,9 @@ router.post(
         }
       } finally {
         req.off("close", onClientClose);
-        reader.cancel().catch(() => { /* already cancelled */ });
+        reader.cancel().catch(() => {
+          logger.debug("nia-proxy: upstream reader cancellation was already complete");
+        });
       }
 
       if (!res.destroyed && !res.writableEnded) res.end();

@@ -499,7 +499,12 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, a
         body: notice,
         actionUrl: "/community?section=exchange&mine=true",
         metadata: { exchange_listing_id: listingId, report_id: updated.id, action },
-      }).catch(() => {});
+      }).catch((error) => {
+        logger.warn(
+          { reportId: updated.id, errorName: error instanceof Error ? error.name : typeof error },
+          "reports: post-action notification failed",
+        );
+      });
     }
   }
 

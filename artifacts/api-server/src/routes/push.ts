@@ -4,6 +4,7 @@ import { db, pushSubscriptionsTable, usersTable, userSettingsTable } from "@work
 import { eq, and, sql } from "drizzle-orm";
 import { sendAlertEmail } from "../lib/mailer";
 import { logger } from "../lib/logger";
+import type { NotificationType } from "../lib/notification-types";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 
@@ -82,8 +83,9 @@ export type PushPayload = {
   //   "exchange"           → notif_exchange_activity
   //   "exchange_digest"    → notif_exchange_digest
   //   "emergency"          → notif_emergency (emergencies always bypass gate)
-  //   "nia_checkin" | undefined → not gated (always send)
-  notifType?: "nearby_requests" | "task_accepted" | "wallet" | "community" | "exchange" | "exchange_digest" | "emergency" | "nia_checkin";
+  //   "nia_checkin" → not gated (always send)
+  // Required so an omitted classification cannot bypass notification preferences.
+  notifType: NotificationType;
   // Optional Exchange discovery dimensions. These are ignored for essential
   // pickup coordination, which uses task_accepted and bypasses these filters.
   exchangeListingType?: "need" | "offer";
@@ -154,8 +156,16 @@ export async function deliverToSubs(
                 eq(pushSubscriptionsTable.endpoint, sub.endpoint),
               ))
               .catch(() => {
-                // Non-fatal: subscription cleanup failure doesn't affect delivery count
+                logger.warn(
+                  { ownerUserId, statusCode },
+                  "push: invalid subscription cleanup failed",
+                );
               });
+          } else {
+            logger.warn(
+              { ownerUserId, statusCode },
+              "push: subscription delivery failed",
+            );
           }
         })
     )
@@ -175,8 +185,12 @@ async function userAllowsNotif(
   payload: PushPayload
 ): Promise<boolean> {
   const notifType = payload.notifType;
+  if (!notifType) {
+    logger.error({ userId }, "push: missing notification type — skipping delivery");
+    return false;
+  }
   // These types are never gated
-  if (!notifType || notifType === "emergency" || notifType === "task_accepted" || notifType === "nia_checkin") return true;
+  if (notifType === "emergency" || notifType === "task_accepted" || notifType === "nia_checkin") return true;
 
   const rows = await db
     .select({
@@ -375,9 +389,10 @@ export async function sendPushToNearbyHelpers(
   radiusMiles: number,
   payload: PushPayload
 ): Promise<void> {
+  const isEmergency = payload.notifType === "emergency";
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
     // No VAPID keys — email all active helpers as fallback for emergency
-    if (payload.urgency === "emergency") {
+    if (isEmergency) {
       const helpers = await db
         .select({ id: usersTable.id, email: usersTable.email })
         .from(usersTable)
@@ -431,8 +446,6 @@ export async function sendPushToNearbyHelpers(
 
   if (nearbyHelpers.length === 0) return;
 
-  const isEmergency = payload.urgency === "emergency";
-
   // Deliver push + email fallback for each nearby helper in parallel
   // Each helper's notif preference is checked (emergency bypasses)
   await Promise.allSettled(
@@ -450,7 +463,10 @@ export async function sendPushToNearbyHelpers(
           title: payload.title,
           body: `${payload.body}\n\nOpen the Niakofa app to respond.`,
         }).catch(() => {
-          // Non-fatal: emergency email fallback failure doesn't block other helpers
+          logger.error(
+            { helperId: h.id },
+            "push: emergency email fallback failed",
+          );
         });
       }
     })
@@ -474,7 +490,10 @@ export async function sendPushToAllHelpers(payload: PushPayload): Promise<void> 
     subscriptionsByUser.set(row.user_id, subscriptions);
   }
   await Promise.allSettled(
-    [...subscriptionsByUser].map(([userId, subs]) => deliverToSubs(subs, payload, userId)),
+    [...subscriptionsByUser].map(async ([userId, subs]) => {
+      if (!(await userAllowsNotif(userId, payload))) return;
+      await deliverToSubs(subs, payload, userId);
+    }),
   );
 }
 

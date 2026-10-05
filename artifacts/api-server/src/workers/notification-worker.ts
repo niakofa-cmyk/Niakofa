@@ -13,6 +13,10 @@ import { trackWorker } from "../lib/worker-lifecycle";
 
 async function processNotification(job: Job<NotificationJobData>): Promise<void> {
   const { user_id, title, body, urgency, requestId, notifType } = job.data;
+  if (!notifType) {
+    logger.error({ user_id, jobId: job.id }, "notification-worker: missing notification type — skipping delivery");
+    return;
+  }
 
   // Explicit try/catch so job failures are logged with full context before
   // BullMQ records the failure. BullMQ will still retry per its backoff config,

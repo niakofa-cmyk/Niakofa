@@ -23,3 +23,21 @@ test("keeps console warnings in app code and limits the ops exception to the buc
   assert.equal(helperRule[0], 0, "the focused bucket CLI may report its pass status");
   assert.equal(unrelatedOpsRule[0], 1, "other ops scripts must not inherit the helper exception");
 });
+
+test("rejects empty promise catch callbacks in API and Nia service code", async () => {
+  const arrowResult = await eslint.lintText("Promise.resolve().catch(() => {});", {
+    filePath: path.join(root, "artifacts/api-server/src/__empty_catch_fixture__.ts"),
+  });
+  const functionResult = await eslint.lintText("Promise.resolve().catch(function onFailure() {});", {
+    filePath: path.join(root, "artifacts/nia-service/src/__empty_catch_fixture__.ts"),
+  });
+
+  assert.ok(
+    arrowResult[0].messages.some((message) => message.ruleId === "no-restricted-syntax"),
+    "empty arrow catch callbacks must be reported",
+  );
+  assert.ok(
+    functionResult[0].messages.some((message) => message.ruleId === "no-restricted-syntax"),
+    "empty function catch callbacks must be reported",
+  );
+});

@@ -16,6 +16,7 @@ import { z } from "zod";
 import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter, communityPostLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
+import { logger } from "../lib/logger";
 import { sendPushToUser } from "./push";
 import { createMessageNotification } from "../lib/message-notifications";
 import {
@@ -703,7 +704,9 @@ router.post("/community/exchange/listings/:id/renew", requireAuth, requireApprov
     body: `“${safeListingLabel(updated.title)}” is visible to neighbors again.`,
     actionUrl: "/community?section=exchange&mine=true",
     metadata: { exchange_listing_id: updated.id, action: "renewed" },
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: renewal notification failed");
+  });
   return res.json({ listing: serializeListing(updated as unknown as Record<string, unknown>) });
 });
 
@@ -866,12 +869,16 @@ router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, req
     title: "A neighbor wants to coordinate",
     body: `Someone responded to “${safeListingLabel(listing.title)}”. Open Messages to review the request.`,
     action: "request_created",
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: pickup request notification failed");
+  });
   void sendPushToUser(listing.seller_id, {
     title: "A neighbor wants to coordinate",
     body: `Someone responded to “${safeListingLabel(listing.title)}”. Open Exchange to review the request.`,
     notifType: "task_accepted",
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: pickup request push failed");
+  });
   return res.status(201).json({ pickup_request: serializeListing(pickupRequest as unknown as Record<string, unknown>) });
 });
 
@@ -1139,12 +1146,16 @@ router.post("/community/exchange/pickup-requests/:id/accept", requireAuth, requi
     title: "Your Exchange request was accepted",
     body: `Your neighbor accepted the coordination request. Continue the handoff in Messages within ${EXCHANGE_PICKUP_COORDINATION_HOURS} hours.`,
     action: "request_accepted",
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: acceptance notification failed");
+  });
   void sendPushToUser(result.pickup_request.buyer_id, {
     title: "Your Exchange request was accepted",
     body: "Your neighbor accepted the coordination request. Open Exchange to confirm the handoff details.",
     notifType: "task_accepted",
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: acceptance push failed");
+  });
   return res.json({ pickup_request: serializeListing(result.pickup_request as unknown as Record<string, unknown>) });
 });
 
@@ -1167,12 +1178,16 @@ router.post("/community/exchange/pickup-requests/:id/decline", requireAuth, requ
     title: "Your Exchange request was declined",
     body: "This coordination request was declined. Open Messages for the update, or browse Exchange for another neighbor.",
     action: "request_declined",
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: decline notification failed");
+  });
   void sendPushToUser(updated.buyer_id, {
     title: "Your Exchange request was declined",
     body: "This coordination request was declined. You can browse Exchange for other ways to connect with a neighbor.",
     notifType: "task_accepted",
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: decline push failed");
+  });
   return res.json({ pickup_request: serializeListing(updated as unknown as Record<string, unknown>) });
 });
 
@@ -1245,14 +1260,18 @@ router.post("/community/exchange/pickup-requests/:id/cancel", requireAuth, requi
     title: "Exchange coordination was cancelled",
     body: "The other participant cancelled this pickup coordination. Open Messages for the update.",
     action: "request_cancelled",
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: cancellation notification failed");
+  });
   void sendPushToUser(otherParticipantId, {
     title: "Exchange coordination was cancelled",
     body: result.listingAvailableAgain
       ? "The other participant cancelled this pickup coordination. The approved listing is available again."
       : "The other participant cancelled this pickup coordination. Listing visibility remains subject to safety review; if archived, its owner can renew it after approval.",
     notifType: "task_accepted",
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: cancellation push failed");
+  });
   return res.json({ pickup_request: serializeListing(result.pickup_request as unknown as Record<string, unknown>) });
 });
 
@@ -1335,7 +1354,9 @@ router.post("/community/exchange/pickup-requests/:id/confirm-complete", requireA
           ? "The other participant confirmed their side. Continue the handoff in Messages."
           : "Both participants confirmed the handoff. Thank you for closing the loop.",
         action: result.awaiting_other_confirmation ? "handoff_confirmation_recorded" : "handoff_completed",
-      }).catch(() => {});
+      }).catch((error) => {
+        logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: handoff notification failed");
+      });
     }
     void Promise.allSettled(result.notifyUserIds.map((participantId) => sendPushToUser(participantId, {
       title: result.awaiting_other_confirmation ? "Exchange handoff confirmation recorded" : "Exchange handoff completed",
@@ -1445,7 +1466,9 @@ router.post("/community/exchange/listings/:id/report", requireAuth, requireAppro
         body: `“${listing.title}” is temporarily hidden while the safety team reviews community reports. Active pickup history is preserved.`,
         actionUrl: "/community?section=exchange&mine=true",
         metadata: { exchange_listing_id: listingId, action: "temporary_hold" },
-      }).catch(() => {});
+      }).catch((error) => {
+        logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: temporary hold notification failed");
+      });
     }
   }
 

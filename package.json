@@ -7,6 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "check:migration-prefixes": "node lib/db/scripts/check-migration-prefixes.mjs",
     "preinstall": "echo ok",
     "postinstall": "node node_modules/esbuild/install.js 2>/dev/null || true && (test -e artifacts/api-server/node_modules/esbuild || ln -sf \"$PWD/node_modules/esbuild\" artifacts/api-server/node_modules/esbuild) 2>/dev/null || true",
     "build": "pnpm run typecheck && pnpm -r --workspace-concurrency=1 --filter \"@workspace/pay-it-forward\" --if-present run build && pnpm -r --workspace-concurrency=1 --filter \"!@workspace/mockup-sandbox\" --filter \"!@workspace/circles-visual-reference\" --filter \"!@workspace/pay-it-forward\" --if-present run build",
@@ -32,7 +33,7 @@
     "test:family-story-playback:contract": "node --test ops/railway-bucket-object.test.mjs ops/family-story-bucket-playback.test.mjs",
     "test:family-story-playback:run": "bash ops/run-family-story-bucket-playback.sh",
     "test:admin-live": "playwright test e2e/admin-2-0-live.spec.ts",
-    "test:user-a-state": "node --test ops/user-a-state.test.mjs",
+  "test:user-a-state": "node --test ops/user-a-state.test.mjs ops/user-state-serialization.test.mjs",
     "test:deployed-acceptance-guards": "node --test ops/deployed-acceptance-guards.test.mjs",
     "test:diaspora-data-loop": "node --test scripts/diaspora-data-loop-contract.test.mjs",
     "test:diaspora-experience": "node --test scripts/diaspora-experience-contract.test.mjs",

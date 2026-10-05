@@ -1,11 +1,19 @@
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
-import type { deliverToSubs as DeliverToSubs } from "../routes/push.js";
+import type {
+  deliverToSubs as DeliverToSubs,
+  PushPayload,
+  sendPushToAllHelpers as SendPushToAllHelpers,
+  sendPushToUser as SendPushToUser,
+} from "../routes/push.js";
 
 process.env.VAPID_PUBLIC_KEY = "test-public-key";
 process.env.VAPID_PRIVATE_KEY = "test-private-key";
 
 const deleteWhere = jest.fn().mockResolvedValue(undefined);
+const pushSubscriptionsTable = { endpoint: "endpoint", user_id: "user_id" };
+const selectFrom = jest.fn();
 const mockDb = {
+  select: jest.fn(() => ({ from: selectFrom })),
   delete: jest.fn().mockReturnValue({ where: deleteWhere }),
 };
 const mockEq = jest.fn((column: unknown, value: unknown) => ({ column, value }));
@@ -14,7 +22,7 @@ const sendNotification = jest.fn();
 
 jest.unstable_mockModule("@workspace/db", () => ({
   db: mockDb,
-  pushSubscriptionsTable: { endpoint: "endpoint", user_id: "user_id" },
+  pushSubscriptionsTable,
   usersTable: {},
   userSettingsTable: {},
 }));
@@ -49,15 +57,19 @@ jest.unstable_mockModule("../middlewares/authz.js", () => ({
 }));
 
 let deliverToSubs: typeof DeliverToSubs;
+let sendPushToUser: typeof SendPushToUser;
+let sendPushToAllHelpers: typeof SendPushToAllHelpers;
 
 beforeAll(async () => {
-  ({ deliverToSubs } = await import("../routes/push.js"));
+  ({ deliverToSubs, sendPushToUser, sendPushToAllHelpers } = await import("../routes/push.js"));
 });
 
 beforeEach(() => {
   sendNotification.mockReset();
   deleteWhere.mockClear();
   mockDb.delete.mockClear();
+  mockDb.select.mockReset().mockReturnValue({ from: selectFrom });
+  selectFrom.mockReset();
   mockEq.mockClear();
   mockAnd.mockClear();
 });
@@ -69,7 +81,7 @@ describe("web-push subscription cleanup", () => {
 
     const delivered = await deliverToSubs(
       [{ endpoint } as never],
-      { title: "Test", body: "Test body" },
+      { title: "Test", body: "Test body", notifType: "nearby_requests" },
       37,
     );
 
@@ -87,7 +99,7 @@ describe("web-push subscription cleanup", () => {
 
     const delivered = await deliverToSubs(
       [{ endpoint: "https://push.example/transient" } as never],
-      { title: "Test", body: "Test body" },
+      { title: "Test", body: "Test body", notifType: "nearby_requests" },
       37,
     );
 
@@ -105,7 +117,7 @@ describe("web-push subscription cleanup", () => {
     let settled = false;
     const delivery = deliverToSubs(
       [{ endpoint: "https://push.example/race" } as never],
-      { title: "Test", body: "Test body" },
+      { title: "Test", body: "Test body", notifType: "nearby_requests" },
       82,
     ).then((count) => {
       settled = true;
@@ -120,5 +132,38 @@ describe("web-push subscription cleanup", () => {
       { column: "user_id", value: 82 },
       { column: "endpoint", value: "https://push.example/race" },
     );
+  });
+
+  it("skips delivery when a runtime caller omits the required notification type", async () => {
+    const result = await sendPushToUser(
+      37,
+      { title: "Unclassified", body: "This must not bypass preferences" } as PushPayload,
+    );
+
+    expect(result.status).toBe("skipped");
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("respects community notification preferences in the all-helpers path", async () => {
+    const endpoint = "https://push.example/community";
+    selectFrom.mockImplementation((table: unknown) => {
+      if (table === pushSubscriptionsTable) {
+        return Promise.resolve([{ user_id: 37, subscription: { endpoint } }]);
+      }
+      return {
+        where: jest.fn(() => ({
+          limit: jest.fn().mockResolvedValue([{ notif_community_activity: false }]),
+        })),
+      };
+    });
+
+    await sendPushToAllHelpers({
+      title: "Community update",
+      body: "A community update",
+      notifType: "community",
+    });
+
+    expect(sendNotification).not.toHaveBeenCalled();
   });
 });

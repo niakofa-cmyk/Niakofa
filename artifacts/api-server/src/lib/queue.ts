@@ -13,6 +13,7 @@
  */
 import IORedis from "ioredis";
 import { Queue, type JobsOptions } from "bullmq";
+import type { NotificationType } from "./notification-types";
 import { logger } from "./logger";
 
 // ── Redis connection ──────────────────────────────────────────────────────────
@@ -352,7 +353,7 @@ export interface NotificationJobData {
   body:       string;
   urgency?:   string;
   requestId?: number;
-  notifType?: "nearby_requests" | "task_accepted" | "wallet" | "community" | "emergency" | "nia_checkin";
+  notifType: NotificationType;
 }
 
 export async function enqueueNotification(data: NotificationJobData): Promise<boolean> {

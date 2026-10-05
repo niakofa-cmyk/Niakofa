@@ -43,6 +43,7 @@ async function isNiaEnabled(): Promise<boolean> {
       .limit(1);
     return row?.value === "true";
   } catch {
+    logger.warn("nia-push-queue-worker: kill-switch lookup failed; treating Nia as disabled");
     return false;
   }
 }
@@ -113,17 +114,15 @@ async function drainPushQueue(): Promise<void> {
         // Determine notifType from data.type or data.notifType field for preference gating
         const rawType = (row.data?.type as string | undefined) ?? "";
         const rawNotifType = (row.data?.notifType as string | undefined) ?? "";
-        const notifType = rawNotifType.startsWith("nia_")
-          ? "nia_checkin"
-          : rawType.startsWith("nia_")
-          ? "nia_checkin"
-          : undefined;
+        if (!rawNotifType.startsWith("nia_") && !rawType.startsWith("nia_")) {
+          throw new Error("unclassified_nia_notification");
+        }
 
         await sendPushToUser(row.user_id, {
           title: row.title,
           body: row.body,
           urgency: "normal",
-          notifType,
+          notifType: "nia_checkin",
         });
         
         // Emit WebSocket event for real-time NIA notification delivery

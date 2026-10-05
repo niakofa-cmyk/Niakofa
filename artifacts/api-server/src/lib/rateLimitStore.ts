@@ -12,8 +12,15 @@ import {
   type Options,
   type Store,
 } from "express-rate-limit";
-import type { Request } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { getRedisConnection } from "./queue";
+
+export class RateLimitStoreUnavailableError extends Error {
+  constructor() {
+    super("Shared rate-limit storage is unavailable.");
+    this.name = "RateLimitStoreUnavailableError";
+  }
+}
 
 export type RedisRateLimitClient = {
   incr(key: string): Promise<number>;
@@ -32,15 +39,18 @@ export class RedisRateLimitStore implements Store {
   windowMs: number;
   private localCounts = new Map<string, { count: number; resetAt: number }>();
   private readonly redisOverride?: RedisRateLimitClient | null;
+  private readonly failClosed: boolean;
 
   constructor(
     windowMs: number,
     prefix = "rl:",
     redisOverride?: RedisRateLimitClient | null,
+    failClosed = false,
   ) {
     this.windowMs = windowMs;
     this.prefix = prefix;
     this.redisOverride = redisOverride;
+    this.failClosed = failClosed;
   }
 
   private getRedis(): RedisRateLimitClient | null {
@@ -61,7 +71,10 @@ export class RedisRateLimitStore implements Store {
 
   async increment(key: string): Promise<ClientRateLimitInfo> {
     const redis = this.getRedis();
-    if (!redis) return this.incrementLocal(key);
+    if (!redis) {
+      if (this.failClosed) throw new RateLimitStoreUnavailableError();
+      return this.incrementLocal(key);
+    }
 
     const fullKey = `${this.prefix}${key}`;
     try {
@@ -76,8 +89,9 @@ export class RedisRateLimitStore implements Store {
         resetTime: new Date(Date.now() + ttl),
       };
     } catch {
-      // A rate limiter should fail open during a Redis outage rather than
-      // turning an infrastructure blip into a full application outage.
+      // Non-critical limiters may use the process-local fallback. Critical
+      // production limiters throw so their route cannot proceed unprotected.
+      if (this.failClosed) throw new RateLimitStoreUnavailableError();
       return this.incrementLocal(key);
     }
   }
@@ -129,11 +143,18 @@ export function makeLimiter(
     limit: number | ((req: Request) => number | Promise<number>);
     prefix: string;
     message: object;
+    failClosed?: boolean;
   },
 ) {
-  const store = new RedisRateLimitStore(opts.windowMs, `niakofa:${opts.prefix}:`);
+  const failClosedInProduction = opts.failClosed === true && process.env.NODE_ENV === "production";
+  const store = new RedisRateLimitStore(
+    opts.windowMs,
+    `niakofa:${opts.prefix}:`,
+    undefined,
+    failClosedInProduction,
+  );
 
-  return rateLimit({
+  const limiter = rateLimit({
     windowMs: opts.windowMs,
     limit: opts.limit,
     standardHeaders: "draft-7",
@@ -143,4 +164,18 @@ export function makeLimiter(
     message: opts.message,
     store,
   });
+
+  if (!failClosedInProduction) return limiter;
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    limiter(req, res, (error?: unknown) => {
+      if (error instanceof RateLimitStoreUnavailableError) {
+        res.status(503).json({
+          error: "This action is temporarily unavailable because rate protection could not be verified. Please try again shortly.",
+        });
+        return;
+      }
+      next(error);
+    });
+  };
 }

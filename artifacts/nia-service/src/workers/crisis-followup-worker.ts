@@ -134,11 +134,21 @@ export function startCrisisFollowupWorker(): () => void {
   // Stagger by 15 minutes on startup, offset from any other startup-delayed
   // worker, so they don't all hit the DB/Anthropic at the same moment.
   const startupDelay = setTimeout(() => {
-    processCrisisFollowups(client).catch(() => {});
+    processCrisisFollowups(client).catch((error) => {
+      logger.error(
+        { errorName: error instanceof Error ? error.name : typeof error },
+        "nia-crisis-followup: startup run failed",
+      );
+    });
   }, 15 * 60 * 1000);
 
   const interval = setInterval(() => {
-    processCrisisFollowups(client).catch(() => {});
+    processCrisisFollowups(client).catch((error) => {
+      logger.error(
+        { errorName: error instanceof Error ? error.name : typeof error },
+        "nia-crisis-followup: scheduled run failed",
+      );
+    });
   }, CRISIS_FOLLOWUP_INTERVAL_MS);
 
   logger.info(

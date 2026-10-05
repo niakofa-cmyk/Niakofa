@@ -473,7 +473,12 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     });
 
     if (userId) {
-      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(() => {});
+      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch((error) => {
+        logger.warn(
+          { userId, errorName: error instanceof Error ? error.name : typeof error },
+          "nia: background memory update failed",
+        );
+      });
     }
     return res.end();
   } catch (err) {
@@ -489,7 +494,12 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       success: false,
       errorType: isTimeout ? "timeout" : "stream_error",
       durationMs: Date.now() - streamStartTime,
-    }).catch(() => {});
+    }).catch((error) => {
+      logger.warn(
+        { userId, sessionId, errorName: error instanceof Error ? error.name : typeof error },
+        "nia: cost logging failed",
+      );
+    });
     
     res.write(`data: ${JSON.stringify({ type: "error", message: isTimeout ? "Nia took too long to respond. Please try again." : "Nia is unavailable right now. Please try again." })}\n\n`);
     return res.end();
@@ -804,7 +814,12 @@ router.post("/internal/flush-nia-cache", (req: Request, res: Response) => {
   // We re-export a resetNiaCache helper from db.ts (added separately)
   import("../lib/db.js").then(({ resetNiaCache }) => {
     if (typeof resetNiaCache === "function") resetNiaCache();
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn(
+      { errorName: error instanceof Error ? error.name : typeof error },
+      "nia: cache reset import failed",
+    );
+  });
   return res.json({ ok: true, flushed: true });
 });
 

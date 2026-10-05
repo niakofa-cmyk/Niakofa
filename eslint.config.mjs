@@ -52,4 +52,20 @@ export default tseslint.config(
       "no-console": "off",
     },
   },
+  {
+    files: ["artifacts/api-server/src/**/*.{ts,tsx}", "artifacts/nia-service/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='catch'] > ArrowFunctionExpression[body.type='BlockStatement'][body.body.length=0]",
+          message: "Empty promise catches hide failures. Handle the error explicitly or log a sanitized reason.",
+        },
+        {
+          selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='catch'] > FunctionExpression[body.body.length=0]",
+          message: "Empty promise catches hide failures. Handle the error explicitly or log a sanitized reason.",
+        },
+      ],
+    },
+  },
 );

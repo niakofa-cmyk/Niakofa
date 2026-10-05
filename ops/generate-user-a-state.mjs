@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readHiddenPassword } from "./read-hidden-password.mjs";
+import { serializeStorageState } from "./user-state-serialization.mjs";
 
 const baseUrl = process.env.BASE_URL;
 const email = process.env.DISPOSABLE_EMAIL?.trim();
@@ -155,9 +156,16 @@ if (resolvedOutput === repoRoot || resolvedOutput.startsWith(`${repoRoot}${path.
   fail("OUT must be outside the repository; use a runtime temporary directory.");
 }
 const temporaryOutput = `${resolvedOutput}.tmp-${process.pid}`;
+let serializedState;
+try {
+  serializedState = serializeStorageState(state);
+} catch (error) {
+  fail(error instanceof Error ? error.message : "storage state exceeded its configured size limit.");
+}
+
 try {
   fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
-  fs.writeFileSync(temporaryOutput, `${JSON.stringify(state, null, 2)}\n`, {
+  fs.writeFileSync(temporaryOutput, serializedState, {
     encoding: "utf8",
     mode: 0o600,
   });

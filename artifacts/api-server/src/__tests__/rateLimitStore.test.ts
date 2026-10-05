@@ -1,5 +1,9 @@
 import { describe, expect, it } from "@jest/globals";
-import { RedisRateLimitStore, type RedisRateLimitClient } from "../lib/rateLimitStore.js";
+import {
+  RateLimitStoreUnavailableError,
+  RedisRateLimitStore,
+  type RedisRateLimitClient,
+} from "../lib/rateLimitStore.js";
 
 describe("RedisRateLimitStore local fallback", () => {
   it("increments keys independently within a window", async () => {
@@ -7,6 +11,35 @@ describe("RedisRateLimitStore local fallback", () => {
     expect((await store.increment("a")).totalHits).toBe(1);
     expect((await store.increment("a")).totalHits).toBe(2);
     expect((await store.increment("b")).totalHits).toBe(1);
+  });
+
+  it("fails closed when Redis is missing on a critical limiter", async () => {
+    const store = new RedisRateLimitStore(60_000, "strict:", null, true);
+
+    await expect(store.increment("key")).rejects.toBeInstanceOf(RateLimitStoreUnavailableError);
+  });
+
+  it("does not fall back to a local counter when Redis errors on a critical limiter", async () => {
+    const redis: RedisRateLimitClient = {
+      async incr() {
+        throw new Error("redis unavailable");
+      },
+      async decr() {
+        return 0;
+      },
+      async pexpire() {
+        return 0;
+      },
+      async pttl() {
+        return -1;
+      },
+      async del() {
+        return 0;
+      },
+    };
+    const store = new RedisRateLimitStore(60_000, "strict:", redis, true);
+
+    await expect(store.increment("key")).rejects.toBeInstanceOf(RateLimitStoreUnavailableError);
   });
 
   it("decrement reduces the count", async () => {

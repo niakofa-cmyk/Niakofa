@@ -935,6 +935,7 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   // completion time. Decision logic lives in resolveHelperClaimScope() so
   // it's unit-tested without mounting this entire router -- see
   // community-pool-claim-scope.test.ts.
+  let resolvedCommunityId: number | null = null;
   if (existingFull && (await isPoolEnabled())) {
     const [claimer] = await db
       .select({ community_id: usersTable.community_id, lat: usersTable.lat, lng: usersTable.lng })
@@ -956,13 +957,7 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
         reason: scopeDecision.reason,
       });
     }
-    if (scopeDecision.resolvedCommunityId != null) {
-      await db.update(usersTable).set({ community_id: scopeDecision.resolvedCommunityId }).where(eq(usersTable.id, helperId));
-      logger.info(
-        { helper_id: helperId, community_id: scopeDecision.resolvedCommunityId },
-        "Auto-resolved helper community at claim time",
-      );
-    }
+    resolvedCommunityId = scopeDecision.resolvedCommunityId ?? null;
   }
 
   // Sensitive categories (childcare, senior_care, medical) involve vulnerable
@@ -1011,27 +1006,71 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
       .limit(1);
     const maxTravel = helperSettings?.max_travel_miles ?? 15;
     const [helperUser] = await db
-      .select({ lat: usersTable.lat, lng: usersTable.lng })
+      .select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng })
       .from(usersTable)
       .where(eq(usersTable.id, helperId))
       .limit(1);
-    if (helperUser?.lat != null && helperUser?.lng != null && existingFull.lat != null && existingFull.lng != null) {
-      const dist = distanceMiles(helperUser.lat, helperUser.lng, existingFull.lat, existingFull.lng);
-      if (dist > maxTravel) {
-        return res.status(400).json({
-          error: `This request is ${dist.toFixed(1)} miles away — beyond your max travel distance of ${maxTravel} miles. You can change this in Settings.`,
-          distance_miles: parseFloat(dist.toFixed(1)),
-          max_travel_miles: maxTravel,
-        });
-      }
+    if (!helperUser) return res.status(404).json({ error: "Helper not found" });
+    if (!Number.isFinite(maxTravel) || maxTravel < 0) {
+      logger.error({ helper_id: helperId }, "Invalid max_travel_miles setting; refusing request claim");
+      return res.status(500).json({ error: "Your travel distance setting is invalid. Please contact support." });
+    }
+    const hasValidCoordinates = (lat: number | null, lng: number | null) =>
+      lat != null && lng != null &&
+      Number.isFinite(lat) && Number.isFinite(lng) &&
+      lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+    if (!hasValidCoordinates(existingFull.lat, existingFull.lng)) {
+      return res.status(400).json({
+        error: "This request has no verified location, so its distance cannot be checked.",
+        code: "request_location_unavailable",
+        max_travel_miles: maxTravel,
+      });
+    }
+    if (!hasValidCoordinates(helperUser.lat, helperUser.lng)) {
+      return res.status(400).json({
+        error: "Add a valid location to your profile before claiming a non-emergency request.",
+        code: "helper_location_unavailable",
+        max_travel_miles: maxTravel,
+      });
+    }
+    const dist = distanceMiles(helperUser.lat!, helperUser.lng!, existingFull.lat!, existingFull.lng!);
+    if (!Number.isFinite(dist)) {
+      return res.status(400).json({
+        error: "The distance for this request could not be verified.",
+        code: "distance_unavailable",
+        max_travel_miles: maxTravel,
+      });
+    }
+    if (dist > maxTravel) {
+      return res.status(400).json({
+        error: `This request is ${dist.toFixed(1)} miles away — beyond your max travel distance of ${maxTravel} miles. You can change this in Settings.`,
+        distance_miles: parseFloat(dist.toFixed(1)),
+        max_travel_miles: maxTravel,
+      });
     }
   }
 
-  const [request] = await db.update(requestsTable)
-    .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.status, "open")))
-    .returning();
+  const request = await db.transaction(async (tx) => {
+    const [claimed] = await tx.update(requestsTable)
+      .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
+      .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.status, "open")))
+      .returning();
+    if (!claimed) return null;
+
+    if (resolvedCommunityId != null) {
+      await tx.update(usersTable)
+        .set({ community_id: resolvedCommunityId })
+        .where(eq(usersTable.id, helperId));
+    }
+    return claimed;
+  });
   if (!request) return res.status(409).json({ error: "Request already claimed or not found" });
+  if (resolvedCommunityId != null) {
+    logger.info(
+      { helper_id: helperId, community_id: resolvedCommunityId },
+      "Auto-resolved helper community after successful claim",
+    );
+  }
   const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);

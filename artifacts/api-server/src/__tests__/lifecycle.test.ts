@@ -235,15 +235,15 @@ describe("POST /api/requests/:id/claim", () => {
   });
 
   it("returns 200 when a different user claims an open request", async () => {
-    // Call order: existingFull -> userSettings (none -> default 15mi) ->
-    // helperUser (no lat/lng -> distance check skipped) -> [update+returning]
-    // -> final helper-name lookup.
-    const existingFull = { requester_id: 10, urgency: "normal", lat: null, lng: null, category: "errands", hub_id: 1 };
+    // Call order: existingFull -> pool_enabled setting -> userSettings ->
+    // helperUser -> [update+returning] -> final helper-name lookup.
+    const existingFull = { requester_id: 10, urgency: "normal", lat: 32.7767, lng: -96.797, category: "errands", hub_id: 1 };
     const claimedReq = { id: 1, status: "claimed", helper_id: 20, requester_id: 10 };
     (db.limit as jest.Mock)
       .mockResolvedValueOnce([existingFull])
+      .mockResolvedValueOnce([{ value: "false" }]) // disable pool scope lookup for this fixture
       .mockResolvedValueOnce([]) // no userSettings row
-      .mockResolvedValueOnce([{ lat: null, lng: null }]) // helper has no location
+      .mockResolvedValueOnce([{ id: 20, lat: 32.78, lng: -96.8 }])
       .mockResolvedValueOnce([{ name: "Helper" }]); // final helper-name lookup
     (db.returning as jest.Mock).mockResolvedValueOnce([claimedReq]);
     const res = await request(app)

@@ -800,8 +800,14 @@ Added a "Start Co-op Chapter Together" button in the Reunion mode Live Co-op pan
 - `pool.ts` TOCTOU and `stripe.ts` refund: both confirmed closed above.
 - Real email delivery: still a stub.
 - `businesses_enabled` seed: still not applied to prod.
-- Unit tests for BUG-15b and BUG-15c: still open from action plan.
-- FK constraint migration: still open from action plan.
+
+### Current status reconciled October 5, 2026
+
+- BUG-15b and BUG-15c tests are present; claim-distance and Nia check-in coverage passed.
+- FK migrations are present (`0011_forensic_schema_hardening.sql` and
+  `0020_core_foreign_keys.sql`); staging verification remains open.
+- See `docs/reference/niakofa-main-review-reconciliation-2026-10-05.md` for
+  review references, validation results, and production gates that were not run.
 
 ### Current migration state
 

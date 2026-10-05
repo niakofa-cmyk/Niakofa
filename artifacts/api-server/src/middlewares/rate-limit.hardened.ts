@@ -28,6 +28,7 @@ export const authLimiter = makeLimiter({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   prefix: "auth",
+  failClosed: true,
   keyGenerator: (req) => `auth:ip:${req.ip ?? "unknown"}`,
   message: {
     error:
@@ -61,6 +62,7 @@ export const paymentLimiter = makeLimiter({
   windowMs: 15 * 60 * 1000,
   limit: 20,
   prefix: "payment",
+  failClosed: true,
   message: {
     error: "Too many payment requests in a short period. Please wait a few minutes before trying again.",
   },

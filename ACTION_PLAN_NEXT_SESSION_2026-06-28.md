@@ -1,10 +1,12 @@
 # Niakofa Action Plan for Next Session
 ## Based on Session 2026-06-28 Comprehensive Audit
 
-> **UPDATE July 27, 2026**: All IMMEDIATE and HIGH priority items are now COMPLETE.
-> BUG-15d (notifType) was already fixed in code. BUG-15a was documented as
-> intentional redundancy. All 22 silent .catch(() => {}) blocks across 10 files
-> were replaced with logger.warn() calls. See commit c0a562b6.
+> **RECONCILED October 5, 2026**: The July 27 note overstated the empty-catch
+> cleanup: the uploaded review found additional comment-only handlers. The
+> remaining API/Nia handlers now log safe context, and a lint contract prevents
+> empty promise catches from returning. Current findings, test results, and
+> unverified production gates are recorded in
+> [the review reconciliation](docs/reference/niakofa-main-review-reconciliation-2026-10-05.md).
 
 **Prepared by**: Claude (Claudemd)  
 **Date**: June 28, 2026  
@@ -94,10 +96,13 @@ sendPushToUser(txRow.helper_id, {
 
 ## 🟠 HIGH PRIORITY (This Week)
 
-### Priority 2: Add Unit Tests for Bug Fixes (Est. 45 minutes)
+### Priority 2: Add Unit Tests for Bug Fixes ✅ DONE
 
 **What**: Create tests for BUG-15b and BUG-15c  
 **Why**: Verify fixes work and prevent regression  
+**Status**: Claim-distance/emergency coverage and Nia check-in tests are present.
+See `artifacts/api-server/src/__tests__/bug-15b-15c.test.ts` and
+`artifacts/nia-service/src/__tests__/checkin.test.ts`.
 
 **Test Cases for BUG-15b (max_travel_miles)**:
 ```typescript
@@ -351,12 +356,9 @@ pnpm audit
 
 - [x] Implement BUG-15d fixes (4 files, 4 changes) — already done
 - [x] Document BUG-15a decision — Option A, documented in code
-- [x] Improve error logging — all 22 silent catches replaced with logger.warn()
-- [ ] Write unit tests for BUG-15b and BUG-15c
-- [ ] Create FK constraint migration
-- [ ] Test FK migration on staging
-- [ ] Verify security headers in production
-- [ ] Create FK constraint migration
+- [x] Replace remaining API/Nia empty promise catches with safe logs and add a lint contract
+- [x] Write unit tests for BUG-15b and BUG-15c
+- [x] Create FK constraint migrations (`0011_forensic_schema_hardening.sql`, `0020_core_foreign_keys.sql`)
 - [ ] Test FK migration on staging
 - [ ] Verify security headers in production
 - [ ] Add APM instrumentation

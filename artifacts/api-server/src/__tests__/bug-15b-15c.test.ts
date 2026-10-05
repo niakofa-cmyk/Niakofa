@@ -40,6 +40,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     values: jest.fn().mockReturnThis(),
     limit: jest.fn(),
     returning: jest.fn(),
+    transaction: jest.fn(),
     groupBy: jest.fn().mockReturnValue([]),
     catch: jest.fn().mockResolvedValue([null]),
   };
@@ -59,7 +60,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id", lat: "lat", lng: "lng", urgency: "urgency", category: "category" },
     reportsTable: { id: "id", type: "type", reported_request_id: "reported_request_id", reporter_id: "reporter_id", status: "status", created_at: "created_at" },
     hubCommunityLeadersTable: { id: "id", user_id: "user_id", hub_id: "hub_id", approved: "approved", approved_at: "approved_at" },
-    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng", token_version: "token_version" },
+    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng", community_id: "community_id", token_version: "token_version" },
     userSettingsTable: { id: "id", user_id: "user_id", max_travel_miles: "max_travel_miles" },
     transactionsTable: { id: "id" },
     stripeAccountsTable: { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
@@ -202,6 +203,7 @@ beforeEach(() => {
   (db.values as jest.Mock).mockReset().mockReturnThis();
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  (db.transaction as jest.Mock).mockReset().mockImplementation((callback) => callback(db));
   // requireAuth checks token_version before requireApproved performs its
   // approval/suspension check. Keep both rows explicit and ordered.
   (db.limit as jest.Mock).mockResolvedValueOnce([{ token_version: 0 }]);
@@ -305,6 +307,46 @@ describe("BUG-15b: POST /api/requests/:id/claim — max_travel_miles enforcement
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("claimed");
+  });
+
+  it("fails closed when either location is unavailable for a non-emergency claim", async () => {
+    const mockRequest = { id: 1, requester_id: 10, urgency: "normal", lat: 0, lng: 0, category: "errands" };
+    const helperSettings = { max_travel_miles: 10 };
+    const helperWithoutLocation = { id: 20, lat: null, lng: null };
+
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([mockRequest])
+      .mockResolvedValueOnce([helperSettings])
+      .mockResolvedValueOnce([helperWithoutLocation]);
+
+    const res = await request(app)
+      .post("/api/requests/1/claim")
+      .set("Authorization", bearerToken(20))
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("helper_location_unavailable");
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("does not claim a request whose location cannot be checked", async () => {
+    const mockRequest = { id: 1, requester_id: 10, urgency: "normal", lat: null, lng: null, category: "errands" };
+    const helperSettings = { max_travel_miles: 10 };
+    const helper = { id: 20, lat: 0, lng: 0 };
+
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([mockRequest])
+      .mockResolvedValueOnce([helperSettings])
+      .mockResolvedValueOnce([helper]);
+
+    const res = await request(app)
+      .post("/api/requests/1/claim")
+      .set("Authorization", bearerToken(20))
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("request_location_unavailable");
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });
 
