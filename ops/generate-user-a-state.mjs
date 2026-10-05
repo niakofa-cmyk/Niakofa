@@ -2,20 +2,22 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { readHiddenPassword } from "./read-hidden-password.mjs";
 
 const baseUrl = process.env.BASE_URL;
-const email = process.env.DISPOSABLE_EMAIL;
-const password = process.env.DISPOSABLE_PASSWORD;
+const email = process.env.DISPOSABLE_EMAIL?.trim();
+let password = process.env.DISPOSABLE_PASSWORD;
 const outputPath = process.env.OUT;
 const disposableConfirmed = process.env.CONFIRM_DISPOSABLE_ACCOUNT === "1";
+const promptPassword = process.env.PROMPT_PASSWORD === "1";
 
 function fail(message) {
   console.error(`USER_A_STATE generation failed: ${message}`);
   process.exit(1);
 }
 
-if (!baseUrl || !email || !password || !outputPath) {
-  fail("BASE_URL, DISPOSABLE_EMAIL, DISPOSABLE_PASSWORD, and OUT are required.");
+if (!baseUrl || !email || !outputPath) {
+  fail("BASE_URL, DISPOSABLE_EMAIL, and OUT are required.");
 }
 if (!disposableConfirmed) {
   fail("set CONFIRM_DISPOSABLE_ACCOUNT=1 only when these credentials belong to an approved disposable account.");
@@ -24,12 +26,27 @@ if (!disposableConfirmed) {
 let base;
 try {
   base = new URL(baseUrl);
-  if (!["http:", "https:"].includes(base.protocol)) throw new Error("unsupported protocol");
+  if (!["http:", "https:"].includes(base.protocol) || base.username || base.password
+    || base.search || base.hash || base.pathname !== "/") {
+    throw new Error("unsupported URL");
+  }
 } catch {
-  fail("BASE_URL must be an http(s) URL.");
+  fail("BASE_URL must be a credential-free http(s) origin.");
 }
 
 const origin = base.origin;
+
+if (promptPassword) {
+  try {
+    password = await readHiddenPassword();
+  } catch {
+    fail("password prompt could not be completed.");
+  }
+}
+
+if (!password) {
+  fail("DISPOSABLE_PASSWORD is required, or set PROMPT_PASSWORD=1 to enter it interactively.");
+}
 
 async function requestJson(pathname, options = {}) {
   const controller = new AbortController();
@@ -46,7 +63,26 @@ async function requestJson(pathname, options = {}) {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      const rawCode = typeof body?.error_code === "string" ? body.error_code : "";
+      const code = /^[A-Z][A-Z0-9_]{0,63}$/.test(rawCode) ? rawCode : "";
+      const retryAfter = Number(body?.retry_after_sec);
+      const safeRetryAfter = Number.isSafeInteger(retryAfter) && retryAfter > 0 && retryAfter <= 604800
+        ? retryAfter
+        : null;
+      const message = response.status === 401
+        ? "authentication was rejected"
+        : response.status === 429
+          ? "authentication is rate limited or the account is locked"
+          : "authentication request failed";
+      const details = [
+        `HTTP ${response.status}`,
+        code ? `code=${code}` : "",
+        message,
+        safeRetryAfter === null ? "" : `retry_after_sec=${safeRetryAfter}`,
+      ].filter(Boolean).join("; ");
+      const error = new Error(details);
+      error.status = response.status;
+      throw error;
     }
     return body;
   } finally {
@@ -61,7 +97,10 @@ try {
     body: JSON.stringify({ email, password }),
   });
 } catch (error) {
-  fail(`login could not be verified (${error instanceof Error ? error.message : "request error"}).`);
+  if (error instanceof Error && Number.isInteger(error.status)) {
+    fail(`login could not be verified (${error.message}).`);
+  }
+  fail("login request could not be completed; response details were not logged.");
 }
 
 const token = typeof login?.token === "string" ? login.token : "";
@@ -76,7 +115,10 @@ try {
     headers: { Authorization: `Bearer ${token}` },
   });
 } catch (error) {
-  fail(`the returned token did not verify (${error instanceof Error ? error.message : "request error"}).`);
+  if (error instanceof Error && Number.isInteger(error.status)) {
+    fail(`the returned token did not verify (${error.message}).`);
+  }
+  fail("the returned token could not be verified; response details were not logged.");
 }
 
 if (verifiedUser?.approval_status !== "approved") {

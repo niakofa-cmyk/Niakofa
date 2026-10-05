@@ -9,6 +9,7 @@
 - [GitHub OAuth publishing](github-oauth-publishing.md) — connector-created commits omit the final message newline; compare GitHub main directly after publishing.
 - [Workspace hydration and preview limits](workspace-hydration-preview.md) — a healthy web preview does not certify missing API helpers, production parity, or physical devices.
 - [Workspace package-manager bootstrap](pnpm-bootstrap.md) — disable self-bootstrap when the declared pnpm version is unavailable; restore dependencies from the frozen lockfile.
+- [Node runtime in local shell](node-runtime-shell-path.md) — when the workspace shell omits Node, use the installed module’s Nix-store executable for checks.
 - [LiveKit media boundary](livekit-media-boundary.md) — production Circles/Spirals use LiveKit only; legacy TURN/ICE remains compatibility infrastructure.
 - [API preview database gate](api-preview-database-gate.md) — migration-first API previews must fail closed when the development database is unreachable.
 - [Local PostgreSQL preview](local-postgres-preview.md) — isolated dev Postgres uses Haversine fallback when the standard module lacks PostGIS.
@@ -86,3 +87,4 @@
 - [Spark deletion audit boundary](exchange-spark-audit-boundary.md) — distinguish a user’s pending delete request from worker-confirmed row removal; audit only identifiers, outcomes, and safe reasons.
 - [Spark camera draft gating](spark-camera-draft-gating.md) — auto-open only after successful scoped recovery; distinguish restored drafts from later autosaves.
 - [Railway log attribute decoding](railway-log-attribute-decoding.md) — scope below the 1 MB response cap, decode JSON-quoted values, and validate allowlisted diagnostics.
+- [Workspace scanner long lines](workspace-scanner-long-lines.md) — a checkpoint `token too long` scan failure may come from tracked, ignored generated bundles as well as workspace secrets.

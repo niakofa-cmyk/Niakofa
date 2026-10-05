@@ -25,6 +25,7 @@
     "test:browser": "playwright test",
     "test:media-production": "bash ops/run-media-production-certification.sh",
     "test:community-exchange-sparks-production": "bash ops/run-community-exchange-sparks-certification.sh",
+    "test:community-moments-bucket-certification": "node --test ops/railway-bucket-object.test.mjs ops/community-moments-bucket-certification.test.mjs",
     "test:admin-live": "playwright test e2e/admin-2-0-live.spec.ts",
     "test:user-a-state": "node --test ops/user-a-state.test.mjs",
     "test:deployed-acceptance-guards": "node --test ops/deployed-acceptance-guards.test.mjs",

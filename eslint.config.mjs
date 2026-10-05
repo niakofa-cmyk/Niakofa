@@ -47,7 +47,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/**/*.{ts,js,mjs}", "*.js", "*.mjs", "artifacts/api-server/build.mjs", "lib/db/scripts/**/*.{mjs,js}"],
+    files: ["scripts/**/*.{ts,js,mjs}", "*.js", "*.mjs", "artifacts/api-server/build.mjs", "lib/db/scripts/**/*.{mjs,js}", "ops/railway-bucket-object.mjs"],
     rules: {
       "no-console": "off",
     },

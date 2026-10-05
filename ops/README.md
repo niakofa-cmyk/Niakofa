@@ -20,13 +20,73 @@ For User A, deployment operators may instead place the JSON state in the
 runtime temporary directory, exports its path only to its child processes, and
 removes it on exit. Never echo, log, commit, or upload storage-state JSON.
 
-Create disposable approved test state outside the checkout:
+Generate state for an existing approved disposable test account. Prefer the
+interactive password prompt so the password is not placed in the command line,
+environment, or shell history:
 
 ```sh
-BASE_URL=https://staging.example DISPOSABLE_EMAIL=... DISPOSABLE_PASSWORD=... \
-CONFIRM_DISPOSABLE_ACCOUNT=1 OUT="$(mktemp /tmp/niakofa-user-a.XXXXXX)" \
+BASE_URL="https://staging.example" \
+DISPOSABLE_EMAIL="<existing-approved-test-account-email>" \
+PROMPT_PASSWORD=1 CONFIRM_DISPOSABLE_ACCOUNT=1 \
+OUT="$HOME/niakofa-playwright/niakofa-state.json" \
 node ops/generate-user-a-state.mjs
 ```
 
+The terminal prompts for the password without echoing it. No new account or
+account-ID change is part of this flow. Use the established password-reset
+process if the existing account needs a new password.
+
 The generator and validator deliberately avoid printing token or password
 contents. `.auth/` and generated acceptance-state directories are ignored.
+
+## Railway-backed Community Moments read-only acceptance
+
+This workflow stores User A's Playwright state only at
+`test-auth/user-a/niakofa-state.json` in the existing private
+`niakofa-production-media` bucket. It uses the production API service's existing
+`STORAGE_BUCKET`, `STORAGE_ENDPOINT`, `STORAGE_REGION`, `AWS_ACCESS_KEY_ID`, and
+`AWS_SECRET_ACCESS_KEY` variables; it does not add or change Railway variables
+or deploy the application.
+
+Before using the workflow, confirm in Railway that the bucket has no public-read
+policy and no public CDN route. Both scripts require
+`CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE=1`, refuse a configured
+`STORAGE_CDN_URL`, and never set a public object ACL. Keep the state object only
+as long as needed and remove it from the bucket when certification is complete.
+
+Upload a local state file from the machine where it is stored. The Railway CLI
+runs the command locally with the selected API service's variables injected:
+
+```sh
+railway run --service "<production API service name>" --environment production \
+  env CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE=1 \
+  bash ops/upload-railway-user-a-state.sh "/absolute/path/to/niakofa-state.json"
+```
+
+The bucket-backed workflow never reads `USER_A_STATE_JSON`. Existing deployed
+acceptance scripts still support that variable, so do not delete it unless those
+operators have moved to local state-file paths. If a state file may have been
+exposed, revoke the test session and generate a fresh state on a trusted
+machine. Remove non-authentication entries that are not needed for acceptance
+(such as `avatar`, `realtime-cursor`, and `mapbox.*`) to keep the state compact,
+then replace the secret through the Railway or Replit secrets interface as
+appropriate. Never paste state JSON into chat, logs, or source control.
+
+Run the read-only Moments acceptance the same way. It downloads User A's state
+to a mode-`0600` file in a private temporary directory, validates it, runs
+Playwright with only the needed test variables, then removes the temporary
+directory. It does not use `USER_A_STATE_JSON` or `USER_B_STATE_JSON`; the
+optional User B isolation check is omitted for this single-account run.
+
+```sh
+railway run --service "<production API service name>" --environment production \
+  env BASE_URL="https://niakofa.com" EXPECTED_COMMIT="<40-character deployed commit>" \
+    ALLOW_COMMUNITY_MOMENTS_READONLY_E2E=1 CONFIRM_DISPOSABLE_ACCOUNT=1 \
+    CONFIRM_RAILWAY_TEST_STATE_BUCKET_PRIVATE=1 \
+  bash ops/run-community-moments-bucket-certification.sh
+```
+
+`railway run` executes the command locally; it does not deploy. The wrapper
+removes state-JSON variables and passes only the bucket credentials and required
+test values to their child processes. Playwright tracing, screenshots, and
+video are disabled for this authenticated test.

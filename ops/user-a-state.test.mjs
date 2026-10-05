@@ -4,16 +4,23 @@ import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { PassThrough, Writable } from "node:stream";
 import { once } from "node:events";
 import test from "node:test";
+import { readHiddenPassword } from "./read-hidden-password.mjs";
 
 const token = "7.1700000000000.0.signature";
 
-async function startMockApi(approvalStatus) {
+async function startMockApi({
+  approvalStatus = "approved",
+  loginStatus = 200,
+  loginBody,
+} = {}) {
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.url === "/api/users/login") {
-      response.end(JSON.stringify({
+      response.statusCode = loginStatus;
+      response.end(JSON.stringify(loginBody ?? {
         token,
         user: { id: 7, approval_status: approvalStatus },
       }));
@@ -64,6 +71,34 @@ const validState = {
   }],
 };
 
+test("hidden password prompt does not echo typed characters", async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (enabled) => { input.isRaw = enabled; };
+  let outputText = "";
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      outputText += chunk.toString();
+      callback();
+    },
+  });
+  output.isTTY = true;
+
+  try {
+    const result = readHiddenPassword({ input, output });
+    input.write("fixture-password!");
+    input.write("\u007f");
+    input.write("\r");
+    assert.equal(await result, "fixture-password");
+    assert.equal(outputText, "Password: \n");
+    assert.equal(input.isRaw, false);
+  } finally {
+    input.destroy();
+    output.destroy();
+  }
+});
+
 test("validator rejects weak-permission and symbolic-link state files", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-state-test-"));
   const statePath = path.join(tempDir, "state.json");
@@ -85,7 +120,7 @@ test("validator rejects weak-permission and symbolic-link state files", async ()
 });
 
 test("generates a verified approved storage state without leaking the password", async () => {
-  const server = await startMockApi("approved");
+  const server = await startMockApi({ approvalStatus: "approved" });
   const port = server.address().port;
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-state-test-"));
   const outputPath = path.join(tempDir, "user-a.json");
@@ -113,8 +148,81 @@ test("generates a verified approved storage state without leaking the password",
   }
 });
 
+test("reports safe 401 diagnostics without echoing credentials or response text", async () => {
+  const password = "fixture-password-for-401";
+  const server = await startMockApi({
+    loginStatus: 401,
+    loginBody: {
+      error: `Unsafe echoed detail: ${password}`,
+      error_code: "INVALID_CREDENTIALS",
+    },
+  });
+  const port = server.address().port;
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-state-test-"));
+  const outputPath = path.join(tempDir, "user-a.json");
+
+  try {
+    const result = await runGenerator({
+      BASE_URL: `http://127.0.0.1:${port}`,
+      DISPOSABLE_EMAIL: "approved@example.test",
+      DISPOSABLE_PASSWORD: password,
+      OUT: outputPath,
+      CONFIRM_DISPOSABLE_ACCOUNT: "1",
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /HTTP 401/);
+    assert.match(result.stderr, /code=INVALID_CREDENTIALS/);
+    assert.match(result.stderr, /authentication was rejected/);
+    assert.doesNotMatch(output, new RegExp(password));
+    assert.doesNotMatch(output, /Unsafe echoed detail/);
+    await assert.rejects(readFile(outputPath));
+  } finally {
+    server.close();
+    await once(server, "close");
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("reports safe account-lockout retry information without response text", async () => {
+  const password = "fixture-password-for-429";
+  const server = await startMockApi({
+    loginStatus: 429,
+    loginBody: {
+      error: `Unsafe echoed detail: ${password}`,
+      error_code: "ACCOUNT_LOCKED",
+      retry_after_sec: 30,
+    },
+  });
+  const port = server.address().port;
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-state-test-"));
+  const outputPath = path.join(tempDir, "user-a.json");
+
+  try {
+    const result = await runGenerator({
+      BASE_URL: `http://127.0.0.1:${port}`,
+      DISPOSABLE_EMAIL: "approved@example.test",
+      DISPOSABLE_PASSWORD: password,
+      OUT: outputPath,
+      CONFIRM_DISPOSABLE_ACCOUNT: "1",
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /HTTP 429/);
+    assert.match(result.stderr, /code=ACCOUNT_LOCKED/);
+    assert.match(result.stderr, /retry_after_sec=30/);
+    assert.doesNotMatch(output, new RegExp(password));
+    assert.doesNotMatch(output, /Unsafe echoed detail/);
+    await assert.rejects(readFile(outputPath));
+  } finally {
+    server.close();
+    await once(server, "close");
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("refuses a pending account before writing storage state", async () => {
-  const server = await startMockApi("pending");
+  const server = await startMockApi({ approvalStatus: "pending" });
   const port = server.address().port;
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-state-test-"));
   const outputPath = path.join(tempDir, "user-a.json");
