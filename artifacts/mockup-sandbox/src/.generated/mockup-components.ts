@@ -5,9 +5,9 @@ export const modules: ModuleMap = {
   "./components/mockups/niakofa-moments/VerticalFeed.tsx": () => import("../components/mockups/niakofa-moments/VerticalFeed.tsx"),
   "./components/mockups/niakofa-profile/ActivityProfile.tsx": () => import("../components/mockups/niakofa-profile/ActivityProfile.tsx"),
   "./components/mockups/niakofa-profile/Current.tsx": () => import("../components/mockups/niakofa-profile/Current.tsx"),
+  "./components/mockups/spark-composer-current/CurrentAppSource.tsx": () => import("../components/mockups/spark-composer-current/CurrentAppSource.tsx"),
   "./components/mockups/spark-studio/Current.tsx": () => import("../components/mockups/spark-studio/Current.tsx"),
   "./components/mockups/spark-studio/SparkStudioDirection.tsx": () => import("../components/mockups/spark-studio/SparkStudioDirection.tsx"),
-  "./components/mockups/spark-composer-current/CurrentAppSource.tsx": () => import("../components/mockups/spark-composer-current/CurrentAppSource.tsx"),
   "./components/mockups/spark-studio-audit/Current.tsx": () => import("../components/mockups/spark-studio-audit/Current.tsx"),
   "./components/mockups/spark-studio-audit/Redesign.tsx": () => import("../components/mockups/spark-studio-audit/Redesign.tsx")
 };

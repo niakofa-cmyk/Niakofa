@@ -246,7 +246,7 @@ function MomentCard({
               }`}
             >
               <HeartHandshake className="h-3.5 w-3.5" />
-              Video responses {moment.responsesEnabled ? "on" : "off"}
+              Responses {moment.responsesEnabled ? "on" : "off"}
               <span className={`ml-0.5 h-1.5 w-1.5 rounded-full ${moment.responsesEnabled ? "bg-[#00cfff]" : "bg-[#718398]"}`} />
             </button>
             {moment.archived && view !== "archive" && (
@@ -269,8 +269,7 @@ export function ActivityProfile() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [toast, setToast] = useState("");
   const [showSettingsNote, setShowSettingsNote] = useState(true);
-  const [privacyOn, setPrivacyOn] = useState(true);
-  const [digestOn, setDigestOn] = useState(false);
+  const [darkModeOn, setDarkModeOn] = useState(true);
 
   const visibleMoments = useMemo(() => {
     if (momentView === "archive") return moments.filter((moment) => moment.archived);
@@ -311,7 +310,7 @@ export function ActivityProfile() {
       <style>{`
         .activity-profile-surface { background: radial-gradient(ellipse at 90% 0%, rgba(0,207,255,.10), transparent 24rem), #08182b; }
         .activity-profile-card { border: 1px solid rgba(224,247,252,.1); background: #0f243b; }
-        .activity-profile-toggle[aria-pressed="true"] > span { transform: translateX(1.05rem); background: #08182b; }
+        .activity-profile-toggle[aria-checked="true"] > span { transform: translateX(1.05rem); background: #08182b; }
         @keyframes profile-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .profile-reveal { animation: profile-rise .38s ease both; }
         @media (prefers-reduced-motion: reduce) { .profile-reveal { animation: none; } }
@@ -459,7 +458,7 @@ export function ActivityProfile() {
                         onMenu={() => { setOpenMenuId(openMenuId === moment.id ? null : moment.id); setDeleteId(null); }}
                         onArchive={() => archiveMoment(moment)}
                         onFeature={() => featureMoment(moment)}
-                        onResponses={() => { updateMoment(moment.id, { responsesEnabled: !moment.responsesEnabled }); notify(`Video responses ${moment.responsesEnabled ? "turned off" : "turned on"}`); }}
+                        onResponses={() => { updateMoment(moment.id, { responsesEnabled: !moment.responsesEnabled }); notify(`Responses ${moment.responsesEnabled ? "turned off" : "turned on"}`); }}
                         onDeletePrompt={() => { setDeleteId(moment.id); setOpenMenuId(null); }}
                         onDelete={() => {
                           setMoments((items) => items.filter((item) => item.id !== moment.id));
@@ -541,48 +540,57 @@ export function ActivityProfile() {
               <header className="rounded-[1.65rem] border border-white/[.09] bg-[#10283d] p-5">
                 <SectionLabel>Your space, your boundaries</SectionLabel>
                 <h1 className="font-['Fraunces'] text-[30px] font-semibold tracking-[-.04em] text-[#f7f5ec]">Settings</h1>
-                <p className="mt-2 text-xs leading-relaxed text-[#a4b7c5]">A few ways to shape what your profile shares and how Niakofa keeps you in the loop.</p>
+                <p className="mt-2 text-xs leading-relaxed text-[#a4b7c5]">Manage the account controls and safety links already available in Niakofa.</p>
               </header>
-              <div className="space-y-3">
-                <div className="activity-profile-card rounded-[1.35rem] p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#00cfff]/[.1] text-[#75dcef]"><Eye className="h-4 w-4" /></div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-extrabold text-[#edf3ef]">Community profile visibility</p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-[#98adbd]">Your published Moments are shared with your Community. Private archive entries stay owner-only.</p>
-                    </div>
-                    <button
-                      type="button"
-                      className={`activity-profile-toggle relative mt-1 h-6 w-11 shrink-0 rounded-full p-[3px] transition ${privacyOn ? "bg-[#00cfff]" : "bg-[#32465b]"}`}
-                      role="switch"
-                      aria-checked={privacyOn}
-                      aria-label="Community profile visibility"
-                      onClick={() => { setPrivacyOn(!privacyOn); notify("Profile visibility preference updated in this demo"); }}
-                    >
-                      <span className={`block h-[18px] w-[18px] rounded-full transition-transform ${privacyOn ? "translate-x-[1.05rem] bg-[#08182b]" : "bg-[#bdc9d2]"}`} />
-                    </button>
+              <div className="activity-profile-card rounded-[1.35rem] p-4">
+                <div className="flex items-start gap-3">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#00cfff]/[.1] text-[#75dcef]"><Eye className="h-4 w-4" /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-extrabold text-[#edf3ef]">Appearance</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-[#98adbd]">Choose the color mode for your profile.</p>
                   </div>
-                  <div className="mt-3 flex items-center gap-2 border-t border-white/[.08] pt-3 text-[10px] text-[#88a0b3]"><LockKeyhole className="h-3 w-3 text-[#e6ca7d]" /> No contact details or precise location shown</div>
+                  <button
+                    type="button"
+                    className={`activity-profile-toggle relative mt-1 h-6 w-11 shrink-0 rounded-full p-[3px] transition ${darkModeOn ? "bg-[#00cfff]" : "bg-[#32465b]"}`}
+                    role="switch"
+                    aria-checked={darkModeOn}
+                    aria-label="Dark appearance"
+                    onClick={() => { setDarkModeOn(!darkModeOn); notify("Appearance changed in this demo"); }}
+                  >
+                    <span className={`block h-[18px] w-[18px] rounded-full transition-transform ${darkModeOn ? "translate-x-[1.05rem] bg-[#08182b]" : "bg-[#bdc9d2]"}`} />
+                  </button>
                 </div>
-                <div className="activity-profile-card rounded-[1.35rem] p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#ffb703]/[.1] text-[#e8c978]"><Clock3 className="h-4 w-4" /></div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-extrabold text-[#edf3ef]">Community digest</p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-[#98adbd]">A quiet recap of new Moments and neighbor activity.</p>
-                    </div>
-                    <button
-                      type="button"
-                      className={`activity-profile-toggle relative mt-1 h-6 w-11 shrink-0 rounded-full p-[3px] transition ${digestOn ? "bg-[#00cfff]" : "bg-[#32465b]"}`}
-                      role="switch"
-                      aria-checked={digestOn}
-                      aria-label="Community digest"
-                      onClick={() => { setDigestOn(!digestOn); notify(`Digest ${digestOn ? "paused" : "enabled"} in this demo`); }}
-                    >
-                      <span className={`block h-[18px] w-[18px] rounded-full transition-transform ${digestOn ? "translate-x-[1.05rem] bg-[#08182b]" : "bg-[#bdc9d2]"}`} />
-                    </button>
-                  </div>
+              </div>
+              <div className="overflow-hidden rounded-[1.35rem] border border-white/[.09] bg-[#0f243b]">
+                <div className="border-b border-white/[.08] px-4 py-3">
+                  <p className="text-[9px] font-extrabold uppercase tracking-[.16em] text-[#839bb0]">Account</p>
                 </div>
+                <button type="button" onClick={() => notify("Notification preferences are available in the full app")} className="flex min-h-14 w-full items-center gap-3 border-b border-white/[.08] px-4 text-left transition hover:bg-white/[.04]">
+                  <Clock3 className="h-4 w-4 text-[#75dcef]" />
+                  <span className="min-w-0 flex-1 text-xs font-bold text-[#e7efef]">Notification preferences</span>
+                  <ChevronRight className="h-4 w-4 text-[#8199ac]" />
+                </button>
+                <button type="button" onClick={() => notify("Account details are managed in Settings")} className="flex min-h-14 w-full items-center gap-3 px-4 text-left transition hover:bg-white/[.04]">
+                  <Users className="h-4 w-4 text-[#75dcef]" />
+                  <span className="min-w-0 flex-1 text-xs font-bold text-[#e7efef]">Account details</span>
+                  <ChevronRight className="h-4 w-4 text-[#8199ac]" />
+                </button>
+              </div>
+              <div className="overflow-hidden rounded-[1.35rem] border border-white/[.09] bg-[#0f243b]">
+                <div className="border-b border-white/[.08] px-4 py-3">
+                  <p className="text-[9px] font-extrabold uppercase tracking-[.16em] text-[#839bb0]">Support &amp; safety</p>
+                </div>
+                {[
+                  { label: "Privacy & data", icon: LockKeyhole },
+                  { label: "Community guidelines", icon: BookOpen },
+                  { label: "Help center", icon: ShieldCheck },
+                ].map(({ label, icon: Icon }) => (
+                  <button key={label} type="button" onClick={() => notify(`${label} opens in the full app`)} className="flex min-h-14 w-full items-center gap-3 border-b border-white/[.08] px-4 text-left last:border-b-0 transition hover:bg-white/[.04]">
+                    <Icon className="h-4 w-4 text-[#75dcef]" />
+                    <span className="min-w-0 flex-1 text-xs font-bold text-[#e7efef]">{label}</span>
+                    <ChevronRight className="h-4 w-4 text-[#8199ac]" />
+                  </button>
+                ))}
               </div>
               <button type="button" onClick={() => setShowSettingsNote((value) => !value)} aria-expanded={showSettingsNote} className="flex min-h-11 w-full items-center justify-between rounded-xl border border-white/[.08] bg-[#0d2237] px-4 text-left text-xs font-bold text-[#cedbe2]">
                 <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[#75dcef]" /> Privacy at a glance</span>
@@ -591,17 +599,9 @@ export function ActivityProfile() {
               {showSettingsNote && (
                 <div className="rounded-2xl border border-[#00cfff]/15 bg-[#00cfff]/[.045] p-4 text-[11px] leading-relaxed text-[#a8bac8]">
                   <p className="font-extrabold text-[#dff6f8]">Your profile belongs to you.</p>
-                  <p className="mt-1.5">The archive is private and opt-in. History is account-only. This preview uses sample content and does not save changes.</p>
+                  <p className="mt-1.5">Moments follow their Community audience. The archive is private and opt-in; account history stays separate. This preview uses sample content and does not save changes.</p>
                 </div>
               )}
-              <div className="activity-profile-card rounded-[1.25rem] p-4">
-                <p className="text-[9px] font-extrabold uppercase tracking-[.16em] text-[#839bb0]">Profile and account</p>
-                <div className="mt-3 flex items-center gap-3">
-                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#243b52] text-[#a5bdd0]"><Users className="h-4 w-4" /></div>
-                  <div className="min-w-0 flex-1"><p className="text-xs font-bold text-[#e7efef]">Nia James</p><p className="mt-1 text-[10px] text-[#91a7b8]">Community member</p></div>
-                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-[#75dcef]"><BadgeCheck className="h-3 w-3" /> Verified</span>
-                </div>
-              </div>
             </section>
           )}
 
