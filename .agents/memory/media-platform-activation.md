@@ -44,3 +44,9 @@ For production acceptance that requires private account state or media, credenti
 **Why:** A working credential or private media URL does not establish bucket privacy, object ownership, or that the state belongs to an approved test account.
 
 **How to apply:** Obtain operator verification before bucket reads, validate state structure before browser requests, keep Family Story playback GET-only, and require separate disposable-account and activation gates for media mutations.
+
+If Railway service-shell access and the local Railway CLI are unavailable, a temporary Railway Function can run the single-object storage check without changing the API service or V21. Reference the verified bucket's variables rather than copying credentials, guard against any S3 bucket name other than the verified runtime target, use one deterministic random key across retries, and remove the function only after cleanup is proven.
+
+**Why:** On 2026-10-06, the connected Railway tools and local container could not reach the API shell; a staged, isolated Function provided a bounded execution path while preserving the live API configuration.
+
+**How to apply:** Use this fallback only after explicit approval for a temporary production deployment and removal. Stage and inspect only the Function and its bucket references before deploying. Never read or print credential values, change V21, or start another key while cleanup is unproven.
