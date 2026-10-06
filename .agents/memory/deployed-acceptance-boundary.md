@@ -30,3 +30,9 @@ The shell certification wrapper must accept a private recovery directory outside
 **Why:** A reversed outside-checkout predicate refused the valid persistent recovery directory before the production acceptance could start.
 
 **How to apply:** Keep shell and E2E recovery-path checks aligned, and test a private external directory before invoking the production runner.
+
+Do not repeat a production E2E scenario that creates or changes records solely to refresh a passing result. Keep operator-reported browser evidence distinct from checks independently executed by the agent; a served-commit and readiness check confirms deployment identity and service readiness, not the authenticated browser journey.
+
+**Why:** Repeating the arrival flow creates and transitions a real production request before cleanup. Read-only deployment checks and local guard tests are useful corroboration, but they do not replace the authenticated browser run.
+
+**How to apply:** Record the run date, full served commit, source of the browser result, preflight outcome, and cleanup behavior. Verify deployment identity and readiness separately. Do not set production mutation gates or rerun the scenario without explicit authorization and approved disposable accounts/states.

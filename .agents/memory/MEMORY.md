@@ -57,7 +57,7 @@
 - [App-to-Nia HTTP boundary](niakofa-app-nia-http-boundary.md) — provider access and feature-service calls stay behind the authenticated Nia client.
 - [Stripe Accounts v2 recipient capability](stripe-v2-recipient-capability.md) — V1 transfers-active is insufficient; treat missing v2 recipient transfer capability as definitive.
 - [Release evidence commit boundary](release-evidence-commit-boundary.md) — keep deployed app SHAs separate from later documentation-only GitHub commits; avoid circular self-hashes.
-- [Deployed acceptance boundary](deployed-acceptance-boundary.md) — cross-community production E2E must compare approved users’ stored community identities before any mutation.
+- [Deployed acceptance](deployed-acceptance-boundary.md) — require distinct approved community IDs, served SHA, and mutation gates; label operator evidence; never rerun E2E just to refresh proof.
 - [GitHub exact-commit sync](github-exact-commit-sync.md) — verify Git object bytes, use plural refs for updates, and re-read main after every write attempt.
 - [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
 - [Authenticated Admin browser checks](admin-live-acceptance.md) — storage state authenticates navigation, but page.evaluate fetches still need explicit Bearer headers and exact role selectors.

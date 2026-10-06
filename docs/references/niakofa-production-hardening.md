@@ -45,6 +45,12 @@ availability, navigation, and payout. Circle coverage should cover joining,
 permissions, host moderation, speaker requests, media fallback, leaving, and
 recording completion.
 
+A focused, opt-in production acceptance now verifies the requester/helper
+arrival slice (`open → claimed → en_route → arrived`) with distinct approved
+accounts. See [Requester/Helper Arrival Acceptance](../acceptance/requester-helper-arrival.md)
+for the gates and recorded evidence. This does not certify completion, payment,
+receipt, ratings, or the rest of the full lifecycle.
+
 ## Verification recorded on August 20, 2026
 
 - `origin/main` was refreshed and local `main` aligned exactly to it before
@@ -57,6 +63,16 @@ recording completion.
 - API tests passed: 259, with 5 intentional skips.
 - The managed web preview rendered the real Niakofa sign-in screen without
   browser console errors.
+
+## Arrival-slice verification recorded October 6, 2026
+
+The operator-provided production browser run reported 1/1 arrival acceptance
+passing. Independently, local `main`, public `origin/main`, and the commit
+served by `niakofa.com/api/version` matched at
+`03008f003a84738a859238c443949e5b82ea5dc3`; scoped payments readiness returned
+ready. The detailed evidence and its source are recorded in the
+[acceptance document](../acceptance/requester-helper-arrival.md). This result
+covers arrival only, not the broader production journey above.
 
 ## Reference-only boundary
 

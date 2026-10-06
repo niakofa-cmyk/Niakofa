@@ -13,6 +13,11 @@ goodwill request with User A, claims and advances it with User B, verifies the
 requester and helper arrival cards in separate browser contexts, and cancels
 the request in cleanup. User B is required for this gate.
 
+See [the requester/helper arrival acceptance record](../docs/acceptance/requester-helper-arrival.md)
+for the full contract and dated verification evidence. Do not rerun a passing
+production scenario only to refresh its evidence; a new run requires approved
+disposable states and explicit operator authorization.
+
 Pass a pre-existing state with `USER_A_STATE` / `USER_B_STATE` only when each is
 an untracked, non-symlink regular file outside the repository and mode `0600`.
 For User A, deployment operators may instead place the JSON state in the

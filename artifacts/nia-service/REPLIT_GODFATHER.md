@@ -1044,3 +1044,27 @@ The public `/status` page now displays the Community Pool's current balance,
 `/api/pool/stats` contract. It gives a warning when the estimate is under seven
 days and explicitly avoids treating a month with no payouts as infinite runway.
 No schema or payment behavior changed.
+
+---
+
+### Session: October 6, 2026 — Requester/helper arrival acceptance verified
+
+The guarded requester/helper arrival acceptance was confirmed present in the
+release already serving production. No application code or production behavior
+was changed for this verification.
+
+- The operator-provided production browser output reported distinct approved
+  requester/helper accounts and 1/1 passing acceptance in 22.6 seconds.
+- Local `main`, public `origin/main`, and the commit reported by
+  `https://niakofa.com/api/version` matched at
+  `03008f003a84738a859238c443949e5b82ea5dc3`.
+- `https://niakofa.com/api/readiness?scope=payments` reported ready, and the
+  local acceptance guard tests passed 11/11.
+- The production browser scenario was not repeated: it creates and advances a
+  real request, then cancels it during cleanup. The root
+  `REPLIT_GODFATHER.md` remains a pointer; this artifact file is canonical.
+
+**Release lesson:** Keep the source of each piece of evidence explicit. A
+served-commit/readiness check confirms deployment identity and service health,
+while the authenticated browser result remains operator-reported unless it is
+reproduced. Do not rerun a mutating production scenario just to refresh proof.

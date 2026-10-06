@@ -12,6 +12,13 @@ ignored by Git because it can contain large or non-production source material.
 3. Remove remaining high-risk hook lint warnings in request tracking and Nia
    flows.
 
+## Progress note — October 6, 2026
+
+The requester/helper coverage priority now has a focused, opt-in production
+acceptance for `open → claimed → en_route → arrived`, using distinct approved
+accounts. The broader lifecycle in the original priority remains open; see the
+[acceptance contract and verification record](acceptance/requester-helper-arrival.md).
+
 ## Platform principles to preserve
 
 - The database is the required source of truth for core community and request

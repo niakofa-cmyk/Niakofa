@@ -89,3 +89,22 @@ REQUEST_ARRIVAL_TEST_NEIGHBORHOOD="Fort Worth"
 
 The test does not run by default and does not use account passwords. It creates
 one production request only after all gates and preflight checks pass.
+
+## Verification record — October 6, 2026
+
+The operator-provided production run reported that preflight accepted distinct,
+approved requester/helper accounts and that the browser acceptance passed 1/1
+in 22.6 seconds. This is operator-reported browser evidence; the scenario was
+not rerun during this review because it creates and advances a production
+request before canceling it in cleanup.
+
+Independent checks for that release confirmed:
+
+- Local `main` and public `origin/main` matched at
+  `03008f003a84738a859238c443949e5b82ea5dc3`.
+- `https://niakofa.com/api/version` served that same commit.
+- `https://niakofa.com/api/readiness?scope=payments` reported `ready: true`
+  and `status: "ready"`.
+- The local acceptance guard tests passed: 11 passed, 0 failed.
+
+No application code or production behavior was changed for this verification.
