@@ -9,8 +9,10 @@ checks that A and B can see and play the published video, C cannot see or obtain
 a playback grant, neither reader can delete it, and A's deletion removes its
 local files and feed entries.
 
-**Latest local verification:** pending after adding the three-account video
-case. This local result does not certify production Spark privacy.
+**Latest local verification (2026-10-06):** 1 suite, 3 tests passed against a
+dedicated local test database. The video case covers approved synthetic Accounts
+A and B in one community and Account C in another. This local result does not
+certify production Spark privacy.
 
 Spirals are public across community boundaries: an approved user from another
 community can see and join a live public Spiral. The LiveKit media token remains

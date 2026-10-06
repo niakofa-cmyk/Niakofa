@@ -856,7 +856,7 @@ suite("isolated cross-community content and media access matrix", () => {
       .get(`/community/stories/media/${videoMediaId}/play`)
       .set("Cookie", playbackCookie);
     expect(playback.status).toBe(200);
-    expect(playback.headers["content-type"]).toMatch(/video\\/mp4/i);
+    expect(playback.headers["content-type"]).toMatch(/video\/mp4/i);
     expect(Number(playback.headers["content-length"])).toBe(video.length);
 
     const crossCommunityGrant = await request(app)
