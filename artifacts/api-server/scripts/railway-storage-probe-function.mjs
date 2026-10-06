@@ -2,7 +2,9 @@ import { runRailwayStorageProbe } from "./railway-storage-probe-core.mjs";
 
 try {
   const result = await runRailwayStorageProbe(Bun.env);
-  console.log(`TEMP_STORAGE_PROBE_RESULT ${JSON.stringify(result)}`);
+  process.stdout.write(
+    `TEMP_STORAGE_PROBE_RESULT ${JSON.stringify(result)}\n`,
+  );
 } catch (error) {
   const result = {
     ok: false,
@@ -21,6 +23,8 @@ try {
       ? { manualCleanupKey: error.manualCleanupKey }
       : {}),
   };
-  console.log(`TEMP_STORAGE_PROBE_RESULT ${JSON.stringify(result)}`);
+  process.stdout.write(
+    `TEMP_STORAGE_PROBE_RESULT ${JSON.stringify(result)}\n`,
+  );
   process.exitCode = 1;
 }
