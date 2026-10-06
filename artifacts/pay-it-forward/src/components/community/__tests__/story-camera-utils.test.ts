@@ -15,6 +15,7 @@ import {
 
 const component = readFileSync(new URL("../StoryCameraRecorder.tsx", import.meta.url), "utf8");
 const storyRail = readFileSync(new URL("../CommunityStoryRail.tsx", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../../../App.tsx", import.meta.url), "utf8");
 
 test("camera constraints default to front-facing and can request the other camera", () => {
   assert.deepEqual(storyCameraConstraints("user"), {
@@ -99,16 +100,23 @@ test("recorded files use the emitted MIME type and transient playback aborts do 
   assert.match(storyCameraPlaybackErrorMessage(new Error("decode failed")) ?? "", /preview could not be loaded/i);
 });
 
-test("fresh Sparks open source selection without requesting the camera, and restored drafts resume in the studio", () => {
-  assert.match(storyRail, /const beginCreateSpark = \(\) => \{\s*setComposerOpen\(true\);\s*setCameraOpen\(false\);\s*setStudioStep\("source"\);/);
+test("fresh Sparks open the camera after scoped draft recovery, while restored work resumes in editing", () => {
+  assert.match(storyRail, /if \(!draftReady\s*\|\|\s*draftRecoveryFailed\s*\|\|\s*activeScopeRef\.current !== scopeKey\s*\|\|\s*recoveredScopeRef\.current !== scopeKey\s*\|\|\s*studioEntryInitializedRef\.current\) return;/);
+  assert.match(storyRail, /if \(hasStudioWork\) \{\s*setCameraOpen\(false\);\s*setStudioStep\("edit"\);\s*\} else \{\s*setStudioStep\("source"\);\s*setCameraOpen\(true\);\s*\}/);
   assert.match(storyRail, /recoveredDraftRef\.current = hasRecoverableWork/);
   assert.match(storyRail, /recoveredScopeRef\.current !== scopeKey/);
-  assert.match(storyRail, /if \(!draftReady\s*\|\|\s*draftError/);
-  assert.match(storyRail, /setStudioStep\(hasStudioWork \? "edit" : "source"\)/);
-  assert.match(storyRail, /setCameraOpen\(false\)/);
-  assert.doesNotMatch(storyRail, /if \(!hasStudioWork\) setCameraOpen\(true\)/);
+  assert.match(storyRail, /draftRecoveryFailed \|\| activeScopeRef\.current !== scopeKey \|\| recoveredScopeRef\.current !== scopeKey\) return draftQueueRef\.current/);
+  assert.match(storyRail, /draftRecoveryFailed \|\| !userId \|\| activeScopeRef\.current !== scopeKey \|\| recoveredScopeRef\.current !== scopeKey\) return;/);
+  assert.match(storyRail, /Your saved Spark could not be recovered\. The camera is closed so the existing draft is not overwritten\./);
+  assert.match(storyRail, /onClick=\{retryDraftRecovery\}>Try again/);
+  assert.match(storyRail, /if \(hasStudioWork\) setStudioStep\("edit"\);\s*else closeComposer\(\);/);
   assert.match(storyRail, /if \(cameraOpen\) \{ cancelCamera\(\); return; \}/);
-  assert.match(storyRail, /composerOpen && !cameraOpen && draftReady/);
+  assert.match(storyRail, /composerOpen && !cameraOpen && draftReady && !draftRecoveryFailed && activeScopeRef\.current === scopeKey && recoveredScopeRef\.current === scopeKey && studioEntryInitializedRef\.current/);
+});
+
+test("the legacy Build route enters the canonical camera-first Spark Studio", () => {
+  assert.match(appSource, /if \(isBuildRoute\) return <Redirect to="\/community\/moments\?composer=1&source=camera" replace \/>;/);
+  assert.match(storyRail, /if \(query\.get\("source"\) === "camera"\) query\.delete\("source"\);/);
 });
 
 test("camera offers Gallery and text alternatives and closes Gallery before camera navigation", () => {

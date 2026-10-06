@@ -153,6 +153,7 @@ export function CommunityStoryRail({
     // explicit Create → Story action. This also works when the rail is
     // mounted after switching from another Community tab.
     if ((openComposerSignal ?? 0) + additionalComposerSignal > 0) {
+      studioEntryInitializedRef.current = false;
       setResponseTargetId(responseToStoryId);
       setActiveChallengeKey(challengeKey);
       setAudience(responseToStoryId ? "community" : (hubId ? "hub" : "community"));
@@ -220,6 +221,8 @@ export function CommunityStoryRail({
   const [exchangeListingsError, setExchangeListingsError] = useState("");
   const [exchangeListingId, setExchangeListingId] = useState("");
   const [draftReady, setDraftReady] = useState(false);
+  const [draftRecoveryFailed, setDraftRecoveryFailed] = useState(false);
+  const [draftRecoveryNonce, setDraftRecoveryNonce] = useState(0);
   const [draftError, setDraftError] = useState("");
   const [draftSaved, setDraftSaved] = useState(false);
   const [uploadedIds, setUploadedIds] = useState<Array<number | null>>([]);
@@ -453,7 +456,9 @@ export function CommunityStoryRail({
     const empty = emptyStudioScope(hubId);
     setDraftReady(false);
     setDraftSaved(false);
+    setDraftRecoveryFailed(false);
     setDraftError("");
+    setCameraOpen(false);
     setFiles(empty.files);
     setCameraClipReelMarker(null);
     setPendingCameraReelStoryId(null);
@@ -494,12 +499,16 @@ export function CommunityStoryRail({
     setTextAlign("center");
     if (!userId || !Number.isSafeInteger(userId) || userId < 1) {
       setDraftReady(true);
+      setDraftRecoveryFailed(true);
       setDraftError("Sign in to recover or publish a Spark.");
       return;
     }
     let active = true;
+    recoveredScopeRef.current = null;
     setDraftReady(false);
     setDraftSaved(false);
+    setDraftRecoveryFailed(false);
+    setDraftError("");
     void loadStudioDraft(userId, hubId).then((draft) => {
       if (!active) return;
       const extendedDraft = draft as ExtendedStudioDraft | null;
@@ -581,7 +590,12 @@ export function CommunityStoryRail({
       recoveredScopeRef.current = scopeKey;
       setDraftReady(true);
     }).catch((reason: unknown) => {
-      if (active) { setDraftError(reason instanceof Error ? reason.message : "Draft recovery failed."); setDraftReady(true); }
+      if (active) {
+        setCameraOpen(false);
+        setDraftError(reason instanceof Error ? reason.message : "Draft recovery failed.");
+        setDraftRecoveryFailed(true);
+        setDraftReady(true);
+      }
     });
     return () => {
       active = false;
@@ -595,7 +609,7 @@ export function CommunityStoryRail({
         void draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-save"));
       }
     };
-  }, [userId, hubId, scopeKey]);
+  }, [userId, hubId, scopeKey, draftRecoveryNonce]);
 
   const draftSnapshot = (): ExtendedStudioDraft => ({
     id: studioDraftKey(userId!, hubId), userId: userId!,
@@ -627,7 +641,7 @@ export function CommunityStoryRail({
     scopeSnapshotsRef.current.set(scopeKey, draftSnapshot());
   }
   const queueDraftSave = () => {
-    if (!userId || !draftReady || activeScopeRef.current !== scopeKey) return draftQueueRef.current;
+    if (!userId || !draftReady || draftRecoveryFailed || activeScopeRef.current !== scopeKey || recoveredScopeRef.current !== scopeKey) return draftQueueRef.current;
     const snapshot = snapshotRef.current();
     const generation = draftGenerationRef.current;
     const version = draftWriteVersionRef.current;
@@ -678,12 +692,12 @@ export function CommunityStoryRail({
     }
   }, [cameraClipReelMarker, files, gallerySelection]);
   useEffect(() => {
-    if (!draftReady || !userId || activeScopeRef.current !== scopeKey) return;
+    if (!draftReady || draftRecoveryFailed || !userId || activeScopeRef.current !== scopeKey || recoveredScopeRef.current !== scopeKey) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     setDraftSaved(false);
     draftTimerRef.current = setTimeout(() => { void queueDraftSaveRef.current().catch(reportClientSideEffectFailure("community.story-studio.draft-save")); }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-  }, [draftReady, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds, momentAccessibility, cameraClipReelMarker, pendingCameraReelStoryId]);
+  }, [draftReady, draftRecoveryFailed, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds, momentAccessibility, cameraClipReelMarker, pendingCameraReelStoryId]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -937,10 +951,21 @@ export function CommunityStoryRail({
     const query = new URLSearchParams(window.location.search);
     if (location === "/community/moments" && query.getAll("composer").length === 1 && query.get("composer") === "1") {
       query.delete("composer");
+      if (query.get("source") === "camera") query.delete("source");
       const remainingQuery = query.toString();
       navigate(`${location}${remainingQuery ? `?${remainingQuery}` : ""}`);
     }
   }, [location, navigate]);
+
+  const retryDraftRecovery = useCallback(() => {
+    recoveredScopeRef.current = null;
+    studioEntryInitializedRef.current = false;
+    setDraftRecoveryFailed(false);
+    setDraftError("");
+    setDraftReady(false);
+    setCameraOpen(false);
+    setDraftRecoveryNonce((attempt) => attempt + 1);
+  }, []);
 
   const cancelCamera = useCallback(() => {
     setCameraOpen(false);
@@ -953,8 +978,9 @@ export function CommunityStoryRail({
       || Boolean(momentAccessibility.momentTagsInput.trim())
       || Object.values(momentAccessibility.momentAltTexts).some((text) => text.trim())
       || Object.values(momentAccessibility.momentCaptionsVtt).some((text) => text.trim());
-    if (!hasStudioWork) setStudioStep("source");
-  }, [caption, editorElements.length, files.length, momentAccessibility, musicFile]);
+    if (hasStudioWork) setStudioStep("edit");
+    else closeComposer();
+  }, [caption, closeComposer, editorElements.length, files.length, momentAccessibility, musicFile]);
 
   useEffect(() => {
     if (!composerOpen) {
@@ -962,7 +988,7 @@ export function CommunityStoryRail({
       return;
     }
     if (!draftReady
-      || draftError
+      || draftRecoveryFailed
       || activeScopeRef.current !== scopeKey
       || recoveredScopeRef.current !== scopeKey
       || studioEntryInitializedRef.current) return;
@@ -973,9 +999,14 @@ export function CommunityStoryRail({
       || Boolean(caption.trim())
       || Boolean(musicFile)
       || Boolean(exchangeDraftRef.current);
-    setCameraOpen(false);
-    setStudioStep(hasStudioWork ? "edit" : "source");
-  }, [caption, composerOpen, draftError, draftReady, editorElements.length, files.length, musicFile, responseTargetId, scopeKey]);
+    if (hasStudioWork) {
+      setCameraOpen(false);
+      setStudioStep("edit");
+    } else {
+      setStudioStep("source");
+      setCameraOpen(true);
+    }
+  }, [caption, composerOpen, draftRecoveryFailed, draftReady, editorElements.length, files.length, musicFile, responseTargetId, scopeKey]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -1685,6 +1716,7 @@ export function CommunityStoryRail({
   }
 
   const beginCreateSpark = () => {
+    studioEntryInitializedRef.current = false;
     setComposerOpen(true);
     setCameraOpen(false);
     setStudioStep("source");
@@ -1728,8 +1760,28 @@ export function CommunityStoryRail({
         />
       </section>
 
-      {composerOpen && (!draftReady || activeScopeRef.current !== scopeKey) && <div className="nia-story-composer-overlay" role="status" aria-live="polite"><div className="nia-story-composer-shell p-8 text-center text-white">Recovering your saved Spark…</div></div>}
-      {composerOpen && !cameraOpen && draftReady && activeScopeRef.current === scopeKey && (
+      {composerOpen && (
+        draftRecoveryFailed
+        || !draftReady
+        || activeScopeRef.current !== scopeKey
+        || recoveredScopeRef.current !== scopeKey
+        || !studioEntryInitializedRef.current
+      ) && (
+        <div className="nia-story-composer-overlay" role={draftRecoveryFailed ? "alert" : "status"} aria-live={draftRecoveryFailed ? "assertive" : "polite"}>
+          <div className="nia-story-composer-shell p-8 text-center text-white">
+            {draftRecoveryFailed ? (
+              <div className="space-y-4">
+                <p>Your saved Spark could not be recovered. The camera is closed so the existing draft is not overwritten.</p>
+                <div className="flex justify-center gap-3">
+                  <button type="button" className="nia-story-gallery-button" onClick={retryDraftRecovery}>Try again</button>
+                  <button type="button" className="nia-story-gallery-button" onClick={closeComposer}>Close Spark Studio</button>
+                </div>
+              </div>
+            ) : "Recovering your saved Spark…"}
+          </div>
+        </div>
+      )}
+      {composerOpen && !cameraOpen && draftReady && !draftRecoveryFailed && activeScopeRef.current === scopeKey && recoveredScopeRef.current === scopeKey && studioEntryInitializedRef.current && (
         <div className="nia-story-composer-overlay">
           <input ref={galleryInput} type="file" accept={responseTargetId ? "video/*" : "image/*,video/*"} multiple className="sr-only" onChange={onFileChange} aria-label={responseTargetId ? "Choose video response clips" : "Choose Spark media"} disabled={trimming} />
           <div className="nia-story-composer-shell">

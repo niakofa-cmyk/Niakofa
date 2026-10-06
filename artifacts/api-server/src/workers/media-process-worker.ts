@@ -26,6 +26,7 @@ import {
   monitorMediaWorker,
   type MediaWorkerBlockingConnection,
   type MediaWorkerLifecycleEmitter,
+  type MediaWorkerPrimaryConnection,
   type MediaWorkerStartup,
 } from "../lib/media-worker-lifecycle";
 import { randomUUID } from "node:crypto";
@@ -1131,7 +1132,7 @@ export async function startMediaProcessWorker(): Promise<Worker<MediaJobData> | 
   const blockingConnection = (tracked as unknown as {
     blockingConnection?: MediaWorkerBlockingConnection;
   }).blockingConnection;
-  if (!blockingConnection || typeof blockingConnection.on !== "function") {
+  if (!blockingConnection || typeof blockingConnection.on !== "function" || !blockingConnection.client) {
     await tracked.close(true).catch(() => undefined);
     throw new Error("BullMQ worker blocking connection lifecycle is unavailable");
   }
@@ -1149,6 +1150,7 @@ export async function startMediaProcessWorker(): Promise<Worker<MediaJobData> | 
       },
       stopped: () => workerStopped("media-processing", "Universal Media Processing"),
     },
+    connection as unknown as MediaWorkerPrimaryConnection,
   );
   return tracked;
 }
