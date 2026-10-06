@@ -31,9 +31,9 @@ production gates, and media-retention behavior are intentionally set.
 
 ## Production evidence
 
-- The currently served application commit is
+- At the original October 5 verification, the served application commit was
   `517e2d3c71c3bcb1580bf0886eeaee5d43a5d0f0`.
-- V21 is enabled by the user's explicit direction. Production health and
+- V21 was enabled by the user's explicit direction. Production health and
   readiness returned HTTP 200; readiness was true, and cloud storage, schema,
   Redis, and the media worker were ready.
 - Production photo and video certification flows previously passed with V21
@@ -41,6 +41,26 @@ production gates, and media-retention behavior are intentionally set.
   existing test media was deleted during the later flag enablement.
 - The separate one-off PUT/HEAD/GET/DELETE storage probe has not been run. Its
   result must not be inferred from the authenticated media-flow tests.
+
+## October 6 read-only deployment refresh
+
+- Railway's production API service `zesty-ambition` was online with no pending
+  work or recent failures. Its active deployment
+  `197c8ae1-855e-47a1-aba5-246cdea0b55d` reported `SUCCESS`.
+- The canonical `/api/version` response served commit
+  `ba6bb481889134b7f3e45bdbc8af6a7938b36508`. `/api/healthz` and
+  `/api/readiness` both returned HTTP 200.
+- GitHub's Release Validation, ESLint, Typecheck + Tests, App/AI Boundary Check,
+  and Verify Production Deployment checks all completed successfully for that
+  commit.
+- Readiness was `ready: true`; database/schema, Redis/BullMQ, cloud storage, and
+  the media worker all reported ready. Health reported
+  `media_platform_flag: true`, consistent with the recorded user-directed V21
+  activation.
+- No Railway variable was changed, and no production upload, storage probe, or
+  media mutation was run during this read-only verification. The standalone
+  storage probe remains outstanding; this refresh does not repeat the prior
+  photo/video acceptance flows.
 
 See [`../../../PRODUCTION_MEDIA_ACTIVATION_GATE.md`](../../../PRODUCTION_MEDIA_ACTIVATION_GATE.md)
 for the ordered activation criteria and the remaining verification gaps. The

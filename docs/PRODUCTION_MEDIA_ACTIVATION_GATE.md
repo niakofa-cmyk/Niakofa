@@ -25,7 +25,7 @@ The one-off storage probe creates a uniquely named text object in its probe
 prefix and deletes only that probe object. It does not target existing photos,
 videos, or media creations. Do not run it without explicit operator approval.
 
-## Current production record — October 5, 2026
+## Historical production record — October 5, 2026
 
 - `MEDIA_PLATFORM_V21` is enabled in production at the user's direction.
 - The served application commit is
@@ -43,6 +43,21 @@ videos, or media creations. Do not run it without explicit operator approval.
 This record does not authorize another production state read, storage write, or
 flag change. The current enabled state is not evidence that an unrecorded gate
 passed.
+
+## Read-only deployment refresh — October 6, 2026
+
+- Railway production service `zesty-ambition` was online with no pending work
+  or recent failures; deployment
+  `197c8ae1-855e-47a1-aba5-246cdea0b55d` reported `SUCCESS`.
+- The canonical `/api/version` endpoint served commit
+  `ba6bb481889134b7f3e45bdbc8af6a7938b36508`. `/api/healthz` and
+  `/api/readiness` returned HTTP 200.
+- Readiness was true for database/schema, Redis/BullMQ, cloud storage, and the
+  media worker. `media_platform_flag` was true and storage was marked required,
+  consistent with the October 5 record of user-directed V21 activation.
+- No deployment variable was changed and no production storage or media write
+  was performed. This is a read-only readiness check, not a new media-flow or
+  storage-I/O certification.
 
 ## Hard stops
 

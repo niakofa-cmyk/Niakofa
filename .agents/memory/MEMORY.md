@@ -5,7 +5,6 @@
 - [Workspace package manager](toolchain-install.md) — use the repository-pinned pnpm through npm exec when the system pnpm shim self-manages and stalls.
 - [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
 - [GitHub connector exact sync](github-connector-exact-sync.md) — compare commit SHAs before interpreting REST message text; it may omit a newline even when the Git object matches.
-- [GitHub Actions log proxy](github-actions-log-proxy.md) — inspect content type; the connected REST proxy can return plain-text job logs directly instead of ZIP redirects.
 - [Media activation gate](media-platform-activation.md) — keep V21 opt-in; require operator confirmation before production state reads and separate gates for media writes.
 - [Media Studio scope](media-studio-scope.md) — keep Studio UX work within Niakofa and leave production settings and existing media untouched.
 - [GitHub OAuth publishing](github-oauth-publishing.md) — connector-created commits omit the final message newline; compare GitHub main directly after publishing.
@@ -32,7 +31,7 @@
 - [Workspace validation](workspace-validation.md) — use the available pnpm binary and the workflow-assigned preview port for local validation.
 - [Community V4 browser evidence](community-v4-evidence-browser.md) — use system Chromium; keep account-switch checks in one SPA instance so cache isolation is actually exercised.
 - [Mapbox Directions request format](mapbox-directions-format.md) — `depart_at` must use second precision; ISO timestamps with milliseconds are rejected.
-- [GitHub sync boundary](niakofa-github-sync-boundary.md) — verify remote refs exactly; Railway production tracks `main`, so pushes require explicit consent because they auto-deploy.
+- [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes use GITHUB_PERSONAL_ACCESS_TOKEN in remote URL (token auth, not password).
 - [GitHub workflow sync boundary](github-workflow-sync-boundary.md) — the current OAuth grant lacks workflow scope; .github/workflows writes need a separate operator gate.
 - [Legacy type declaration boundary](legacy-type-declaration-boundary.md) — all Window extensions (openNia, webkitAudioContext, SpeechRecognition) live in one file: src/speech-recognition.d.ts; never split again.
 - [Niakofa Canonical Source](niakofa-canonical-source.md) — artifacts/ is canonical; niakofa-repo/ is stale archived mirror with CANONICAL_SOURCE.md; never edit niakofa-repo/artifacts/.

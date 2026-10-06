@@ -27,7 +27,11 @@ sessions can review the original material without re-creating it.
 - `niakofa-exchange-six-tab-community-2026-09-25/` — original Exchange/navigation review notes, improvement ZIP, and six mobile interaction-reference screenshots; references only, not copied product assets.
 - `uploads/2026-10-05-production-media-certification/README.md` — sanitized
   summary of the uploaded bucket-backed Playwright certification notes and
-  current production evidence, with outstanding checks called out.
+  the October 6 read-only deployment/readiness refresh, with outstanding
+  certification checks called out.
+- `niakofa-main-review-reconciliation-2026-10-05.md` — review of the uploaded
+  GitHub and implementation findings, their current disposition, and remaining
+  provider-dependent or production-only checks.
 - `attached_assets/` — workspace-only originals supplied for the current
   review. They remain untouched there; private state material and the uploaded
   video are not copied into the repository.

@@ -18,18 +18,6 @@ prefer a one-shot helper using an existing workspace-managed credential for
 full Git transport; otherwise use the attached connection's authenticated
 API. Never paste, print, or persist a token.
 
-Niakofa's Railway production service is connected to the GitHub repository's
-`main` branch, and pushes to that branch automatically trigger deployment.
-Recheck the active source and branch before publishing because external
-deployment configuration can change; get explicit user confirmation before
-any push that will deploy.
-
-**Why:** A routine GitHub push can release production code even when no manual
-deploy action is used.
-
-**How to apply:** Treat a confirmed push-to-deploy as a production release.
-Do not use Railway's manual deploy controls unless separately authorized.
-
 An installed GitHub integration may still be `not_added` in the current
 execution context. Resolve its exact connection ID and bind it before calling
 `listConnections("github")`; an empty credential list is not proof that the
