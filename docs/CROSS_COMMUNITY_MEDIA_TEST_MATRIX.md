@@ -1,14 +1,16 @@
 # Cross-community media policy matrix
 
-The opt-in API integration test uses two synthetic, approved users assigned to
-different communities in the local development database. It exercises the
-visibility rules for Community Stories, Exchange Sparks, Hub posts and media,
-gratitude, Griot stories, Family Stories, Media Studio staging contexts, and
-public Spirals.
+The opt-in API integration test uses three synthetic, approved users: Account A
+publishes, Account B belongs to A's community, and Account C belongs to a
+different community. It exercises the visibility rules for Community Stories,
+Exchange Sparks, Hub posts and media, gratitude, Griot stories, Family Stories,
+Media Studio staging contexts, and public Spirals. A separate video-Moment case
+checks that A and B can see and play the published video, C cannot see or obtain
+a playback grant, neither reader can delete it, and A's deletion removes its
+local files and feed entries.
 
-**Latest local verification (2026-10-04):** 1 suite, 2 tests passed against the
-local development database. This result does not certify production Spark
-privacy.
+**Latest local verification:** pending after adding the three-account video
+case. This local result does not certify production Spark privacy.
 
 Spirals are public across community boundaries: an approved user from another
 community can see and join a live public Spiral. The LiveKit media token remains
@@ -19,28 +21,35 @@ connection.
 
 ## Run locally
 
-From the repository root, start the disposable local PostgreSQL cluster, apply
-the repository migrations, and run the focused suite:
+From the repository root, start the disposable local PostgreSQL cluster with a
+dedicated test database, apply the repository migrations, and run the focused
+suite. Empty storage settings keep this test on local disk:
 
 ```bash
+NIAKOFA_LOCAL_PGDATABASE=niakofa_cross_community_video_test \
+STORAGE_BUCKET= STORAGE_ENDPOINT= STORAGE_CDN_URL= \
 bash scripts/start-local-postgres.sh bash -lc \
   'cd artifacts/api-server && node ../../lib/db/scripts/run-migrations.mjs && export FAMILY_STORY_RUNTIME_TEST_DATABASE_URL="$DATABASE_URL" && npm run test:community-media-runtime'
 ```
 
 The suite refuses to run unless its explicit opt-in is set and the connected
 database name contains `dev` or `test`. It creates recognizable synthetic
-fixtures, stores no real media bytes, does not access object storage, and fails
-if scoped fixture cleanup fails. The request-scoped V21 override is used only
-for media authorization checks; the app and workflow feature flag remain
-unchanged.
+fixtures, uses FFmpeg to create a one-second synthetic MP4, and writes its staged
+original and variant only to local disk. It fails closed if object storage is
+configured and fails if scoped fixture or local-file cleanup fails. The
+request-scoped V21 override is used only for media authorization checks; the app
+and workflow feature flag remain unchanged.
 
 This local matrix verifies API policy and test-database behavior. It is not
 production account, worker, storage, or physical-device certification.
 
 ## Moments links and video coverage boundary
 
-The API matrix does not exercise normal browser feed rendering, per-item link
-copy/open, real upload bytes, video processing, or playback. The frontend
+The API matrix now exercises the normal Moment publish/feed routes with a
+ready local MP4, playback-grant authorization and streaming, cross-community
+denial, and owner cleanup. It does not exercise normal browser feed rendering,
+per-item link copy/open, the browser upload flow, or the asynchronous video
+processing worker. The frontend
 `community-moments-feed.test.ts` contract suite verifies that each Moment
 builds its own share URL with the correct audience context and wires copy/native
 sharing; it does not click the link in a signed-in browser.

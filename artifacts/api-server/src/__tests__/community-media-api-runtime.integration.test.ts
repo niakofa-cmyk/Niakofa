@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import express from "express";
 import request from "supertest";
 import { pool } from "@workspace/db";
 import { parseAuth, signTokenById } from "../middlewares/auth";
+import { isCloudStorageConfigured, putAsset, UPLOADS_BASE } from "../lib/storage";
 import audioCirclesRouter from "../routes/audio-circles";
 import communityExchangeRouter from "../routes/community-exchange";
 import communityHubFeedRouter from "../routes/community-hub-feed";
@@ -16,6 +22,39 @@ import mediaAssetsRouter from "../routes/media-assets-v21";
 
 const integrationEnabled = process.env.COMMUNITY_MEDIA_API_RUNTIME_TEST === "1";
 const suite = integrationEnabled ? describe : describe.skip;
+
+async function createSyntheticVideo(): Promise<Buffer> {
+  const directory = await mkdtemp(path.join(tmpdir(), "niakofa-cross-community-video-"));
+  const outputPath = path.join(directory, "moment.mp4");
+  try {
+    execFileSync(process.env.FFMPEG_PATH?.trim() || "ffmpeg", [
+      "-nostdin",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=blue:s=320x180:r=24",
+      "-t",
+      "1",
+      "-an",
+      "-c:v",
+      "libx264",
+      "-profile:v",
+      "baseline",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      "-y",
+      outputPath,
+    ], { stdio: "ignore" });
+    return await readFile(outputPath);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
 
 suite("isolated cross-community content and media access matrix", () => {
   const app = express();
@@ -40,6 +79,7 @@ suite("isolated cross-community content and media access matrix", () => {
   app.use(familyRouter);
 
   let authorId: number | undefined;
+  let sameCommunityReaderId: number | undefined;
   let readerId: number | undefined;
   let authorCommunityId: number | undefined;
   let readerCommunityId: number | undefined;
@@ -50,6 +90,8 @@ suite("isolated cross-community content and media access matrix", () => {
   let authorHubName = "";
   let readerHubName = "";
   let communityStoryId: number | undefined;
+  let videoStoryId: number | undefined;
+  let videoStoragePrefix: string | undefined;
   let familyId: number | undefined;
   let exchangeListingId: number | undefined;
   let sparkId: number | undefined;
@@ -59,6 +101,7 @@ suite("isolated cross-community content and media access matrix", () => {
   const griotStoryIds: number[] = [];
   const mediaAssetIds: number[] = [];
   let authorToken = "";
+  let sameCommunityReaderToken = "";
   let readerToken = "";
   const originalMediaPlatformFlag = process.env.MEDIA_PLATFORM_V21;
 
@@ -104,6 +147,16 @@ suite("isolated cross-community content and media access matrix", () => {
       }
     };
 
+    if (videoStoragePrefix) {
+      try {
+        await rm(path.resolve(UPLOADS_BASE, videoStoragePrefix), { recursive: true, force: true });
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (videoStoryId) {
+      await attempt("DELETE FROM community_stories WHERE id = $1", [videoStoryId]);
+    }
     for (const mediaAssetId of mediaAssetIds) {
       await attempt("DELETE FROM media_assets WHERE id = $1", [mediaAssetId]);
     }
@@ -136,7 +189,8 @@ suite("isolated cross-community content and media access matrix", () => {
     if (spiralId) {
       await attempt("DELETE FROM audio_circles WHERE id = $1", [spiralId]);
     }
-    const userIds = [authorId, readerId].filter((id): id is number => id !== undefined);
+    const userIds = [authorId, sameCommunityReaderId, readerId]
+      .filter((id): id is number => id !== undefined);
     if (userIds.length) {
       await attempt("DELETE FROM users WHERE id = ANY($1::integer[])", [userIds]);
     }
@@ -177,6 +231,7 @@ suite("isolated cross-community content and media access matrix", () => {
       "0158_community_media_saves.sql",
       "0176_durable_exchange_sparks.sql",
       "0186_family_story_experience.sql",
+      "0196_moment_video_single_clip.sql",
     ];
     const { rows: migrationRows } = await pool.query<{ filename: string }>(
       "SELECT filename FROM _migrations_applied WHERE filename = ANY($1::text[])",
@@ -299,13 +354,20 @@ suite("isolated cross-community content and media access matrix", () => {
       [`community-api-author-${unique}@test.invalid`, authorCommunityId],
     );
     authorId = authorRows[0].id;
+    const { rows: sameCommunityReaderRows } = await pool.query<{ id: number }>(
+      `INSERT INTO users (name, email, approval_status, community_id)
+       VALUES ('Same-community API Story Reader B', $1, 'approved', $2) RETURNING id`,
+      [`community-api-reader-b-${unique}@test.invalid`, authorCommunityId],
+    );
+    sameCommunityReaderId = sameCommunityReaderRows[0].id;
     const { rows: readerRows } = await pool.query<{ id: number }>(
       `INSERT INTO users (name, email, approval_status, community_id)
-       VALUES ('Isolated API Story Reader', $1, 'approved', $2) RETURNING id`,
-      [`community-api-reader-${unique}@test.invalid`, readerCommunityId],
+       VALUES ('Cross-community API Story Reader C', $1, 'approved', $2) RETURNING id`,
+      [`community-api-reader-c-${unique}@test.invalid`, readerCommunityId],
     );
     readerId = readerRows[0].id;
     authorToken = signTokenById(authorId, 0);
+    sameCommunityReaderToken = signTokenById(sameCommunityReaderId, 0);
     readerToken = signTokenById(readerId, 0);
 
     const candidateCountryCodes = ["XQ", "XR", "XS", "XT", "XU", "XV", "XW", "XX", "XY", "XZ"];
@@ -713,6 +775,131 @@ suite("isolated cross-community content and media access matrix", () => {
     expect(privateFamilyReader.status).toBe(200);
     expect(privateFamilyReader.body.stories.some(
       (story: { id: number }) => story.id === privateFamilyStory.body.story.id,
+    )).toBe(false);
+  });
+
+  it("publishes a video Moment for approved A and B, denies cross-community C, and lets only A delete it", async () => {
+    expect(sameCommunityReaderId).toBeDefined();
+    expect(readerId).toBeDefined();
+    expect(sameCommunityReaderId).not.toBe(authorId);
+    expect(readerId).not.toBe(authorId);
+    expect(authorCommunityId).toBeDefined();
+    expect(readerCommunityId).not.toBe(authorCommunityId);
+    expect(isCloudStorageConfigured()).toBe(false);
+
+    const video = await createSyntheticVideo();
+    videoStoragePrefix = `runtime-fixture/community-video-${randomUUID()}`;
+    const originalKey = `${videoStoragePrefix}/original.mp4`;
+    const variantKey = `${videoStoragePrefix}/variant.mp4`;
+    await putAsset(originalKey, video, "video/mp4");
+    await putAsset(variantKey, video, "video/mp4");
+
+    const { rows: videoAssets } = await pool.query<{ id: number }>(
+      `INSERT INTO media_assets
+         (owner_user_id, context_kind, context_id, media_type, mime_type, original_key,
+          variant_key, byte_size, width, height, duration_ms, status)
+       VALUES ($1, 'community_moment', $2, 'video', 'video/mp4', $3, $4, $5, 320, 180, 1000, 'ready')
+       RETURNING id`,
+      [authorId, authorId, originalKey, variantKey, video.length],
+    );
+    const videoAssetId = videoAssets[0].id;
+    mediaAssetIds.push(videoAssetId);
+
+    const published = await request(app)
+      .post("/community/stories")
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({
+        caption: `Synthetic approved-account video ${randomUUID()}`,
+        audience: "community",
+        media_asset_ids: [videoAssetId],
+        media_accessibility: [{
+          media_asset_id: videoAssetId,
+          alt_text: "One-second synthetic blue test video",
+        }],
+      });
+    expect(published.status).toBe(201);
+    videoStoryId = published.body.story.id;
+    expect(published.body.story.status).toBe("published");
+
+    const [authorFeed, sameCommunityFeed, crossCommunityFeed] = await Promise.all([
+      request(app).get("/community/stories").set("Authorization", `Bearer ${authorToken}`),
+      request(app).get("/community/stories").set("Authorization", `Bearer ${sameCommunityReaderToken}`),
+      request(app).get("/community/stories").set("Authorization", `Bearer ${readerToken}`),
+    ]);
+    for (const feed of [authorFeed, sameCommunityFeed, crossCommunityFeed]) {
+      expect(feed.status).toBe(200);
+    }
+    const ownerStory = authorFeed.body.stories.find((story: { id: number }) => story.id === videoStoryId);
+    const sameCommunityStory = sameCommunityFeed.body.stories
+      .find((story: { id: number }) => story.id === videoStoryId);
+    expect(ownerStory?.media?.[0]).toMatchObject({ media_type: "video", mime_type: "video/mp4" });
+    expect(sameCommunityStory?.media?.[0]).toMatchObject({ media_type: "video", mime_type: "video/mp4" });
+    expect(crossCommunityFeed.body.stories.some(
+      (story: { id: number }) => story.id === videoStoryId,
+    )).toBe(false);
+
+    const videoMediaId = ownerStory?.media?.[0]?.id as number | undefined;
+    expect(Number.isSafeInteger(videoMediaId)).toBe(true);
+    if (!videoMediaId) throw new Error("The published video Moment did not return a media id.");
+
+    const sameCommunityGrant = await request(app)
+      .post(`/community/stories/media/${videoMediaId}/playback-grant`)
+      .set("Authorization", `Bearer ${sameCommunityReaderToken}`);
+    expect(sameCommunityGrant.status).toBe(200);
+    const setCookie = sameCommunityGrant.headers["set-cookie"];
+    const cookieHeader = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    const playbackCookie = cookieHeader?.split(";")[0];
+    expect(playbackCookie).toBeTruthy();
+    if (!playbackCookie) throw new Error("The same-community playback grant did not set its cookie.");
+
+    const playback = await request(app)
+      .get(`/community/stories/media/${videoMediaId}/play`)
+      .set("Cookie", playbackCookie);
+    expect(playback.status).toBe(200);
+    expect(playback.headers["content-type"]).toMatch(/video\\/mp4/i);
+    expect(Number(playback.headers["content-length"])).toBe(video.length);
+
+    const crossCommunityGrant = await request(app)
+      .post(`/community/stories/media/${videoMediaId}/playback-grant`)
+      .set("Authorization", `Bearer ${readerToken}`);
+    expect(crossCommunityGrant.status).toBe(404);
+
+    const remixSetting = await request(app)
+      .patch(`/community/stories/${videoStoryId}/settings`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ remix_enabled: true });
+    expect(remixSetting.status).toBe(200);
+    const captionEdit = await request(app)
+      .patch(`/community/stories/${videoStoryId}`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ caption: "A caption edit is not supported after publication." });
+    expect(captionEdit.status).toBe(404);
+
+    for (const token of [sameCommunityReaderToken, readerToken]) {
+      const nonOwnerDelete = await request(app)
+        .delete(`/community/stories/${videoStoryId}`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(nonOwnerDelete.status).toBe(200);
+      expect(nonOwnerDelete.body.deleted).toBe(false);
+    }
+
+    const ownerDelete = await request(app)
+      .delete(`/community/stories/${videoStoryId}`)
+      .set("Authorization", `Bearer ${authorToken}`);
+    expect(ownerDelete.status).toBe(200);
+    expect(ownerDelete.body.deleted).toBe(true);
+    expect(existsSync(path.resolve(UPLOADS_BASE, originalKey))).toBe(false);
+    expect(existsSync(path.resolve(UPLOADS_BASE, variantKey))).toBe(false);
+
+    const [authorFeedAfterDelete, sameCommunityFeedAfterDelete] = await Promise.all([
+      request(app).get("/community/stories").set("Authorization", `Bearer ${authorToken}`),
+      request(app).get("/community/stories").set("Authorization", `Bearer ${sameCommunityReaderToken}`),
+    ]);
+    expect(authorFeedAfterDelete.body.stories.some(
+      (story: { id: number }) => story.id === videoStoryId,
+    )).toBe(false);
+    expect(sameCommunityFeedAfterDelete.body.stories.some(
+      (story: { id: number }) => story.id === videoStoryId,
     )).toBe(false);
   });
 
