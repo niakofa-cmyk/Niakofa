@@ -55,7 +55,7 @@ describe("Community Social V4 view boundaries", () => {
 
   test("legacy Build URL opens the canonical Spark Studio composer in Moments", () => {
     assert.match(app, /const \[isBuildRoute\] = useRoute\("\/build"\);/);
-    assert.match(app, /if \(isBuildRoute\) return <Redirect to="\/community\/moments\?composer=1" replace \/>;/);
+    assert.match(app, /if \(isBuildRoute\) return <Redirect to="\/community\/moments\?composer=1&source=camera" replace \/>;/);
   });
 
   test("Community keeps feed and Requests implementations behind their boundaries", () => {

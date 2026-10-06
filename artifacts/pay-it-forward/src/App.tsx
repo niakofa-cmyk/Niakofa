@@ -68,7 +68,6 @@ const DiasporaHubMessagesPage = MessagesPage;
 // legacy doorway renders the canonical MessagesPage directly.
 void DiasporaHubMessagesPage;
 const FamilyTreePage        = lazy(() => import("@/pages/family-tree"));
-const DnaConnectionsPage   = lazy(() => import("@/pages/dna-connections"));
 const HeritageCollectionsPage = lazy(() => import("@/pages/heritage-collections"));
 const ResearchCenterPage    = lazy(() => import("@/pages/research-center"));
 const PreserveCulturePage   = lazy(() => import("@/pages/preserve-culture"));
