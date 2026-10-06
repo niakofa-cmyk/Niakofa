@@ -1,0 +1,182 @@
+@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,560;9..144,700&display=swap");
+
+:root {
+  --nk-navy: #08182b;
+  --nk-navy-2: #0f243b;
+  --nk-navy-3: #1a334e;
+  --nk-cyan: #00cfff;
+  --nk-cyan-bright: #66e4ff;
+  --nk-ice: #e0f7fc;
+  --nk-mist: #e0f7fc;
+  --nk-slate: #4a627a;
+  --nk-offwhite: #f8fafc;
+  --nk-line: #1a334e;
+  --nk-teal: #00cfff;
+  --nk-coral: #ff5a5f;
+  --nk-gold: #ffb703;
+  --nk-ink: #ffffff;
+  --nk-paper: #08182b;
+  --nk-muted: #8ea6c0;
+
+  --background: 213 69% 10%;
+  --foreground: 0 0% 100%;
+  --border: 211 35% 20%;
+  --input: 211 59% 15%;
+  --ring: 191 100% 50%;
+  --card: 211 59% 15%;
+  --card-foreground: 0 0% 100%;
+  --popover: 211 59% 15%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 191 100% 50%;
+  --primary-foreground: 213 69% 10%;
+  --secondary: 211 59% 15%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 211 59% 15%;
+  --muted-foreground: 211 28% 65%;
+  --accent: 358 100% 67%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 358 100% 67%;
+  --destructive-foreground: 0 0% 100%;
+  --app-font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --radius: 0.5rem;
+}
+
+.nia-profile {
+  --profile-ink: var(--nk-ink);
+  --profile-muted: var(--nk-muted);
+  --profile-paper: var(--nk-paper);
+  --profile-card: color-mix(in srgb, var(--nk-paper) 90%, var(--nk-teal));
+  --profile-line: color-mix(in srgb, var(--nk-ink) 15%, var(--nk-paper));
+  --profile-link: #00cfff;
+  --profile-blue: var(--nk-teal);
+  --profile-green: var(--nk-teal);
+  --profile-orange: var(--nk-coral);
+  --profile-pink: var(--nk-coral);
+  min-height: 100dvh;
+  padding-bottom: 0;
+  color: var(--profile-ink);
+  background:
+    radial-gradient(ellipse at 92% 0%, color-mix(in srgb, var(--nk-gold) 10%, transparent), transparent 28rem),
+    var(--profile-paper);
+  font-family: Figtree, ui-sans-serif, system-ui, sans-serif;
+}
+
+.nia-profile--embedded { min-height: auto; }
+.nia-profile * { border-color: var(--profile-line); }
+.nia-profile__container { width: min(100%, 780px); margin-inline: auto; }
+.nia-profile__hero {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background:
+    radial-gradient(ellipse at 95% 0%, rgba(255, 183, 3, .14), transparent 38%),
+    linear-gradient(120deg, #08182b 0%, #0f243b 100%);
+  border: 1px solid var(--profile-line);
+  border-radius: 1.35rem;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--nk-ink) 6%, transparent);
+}
+.nia-profile__hero::after {
+  position: absolute;
+  top: -110px;
+  right: -82px;
+  width: 210px;
+  height: 210px;
+  border: 1px solid color-mix(in srgb, var(--nk-teal) 23%, transparent);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+.nia-profile__eyebrow {
+  color: var(--profile-link);
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.nia-profile__identity { color: #fff; }
+.nia-profile__hero .text-primary,
+.nia-profile__hero .nia-profile__eyebrow { color: #00cfff; }
+.nia-profile__hero .text-muted-foreground { color: #8ea6c0; }
+.nia-profile__avatar,
+.nia-profile__heritage-mark {
+  color: var(--nk-teal);
+  background: color-mix(in srgb, var(--nk-teal) 12%, var(--profile-card));
+  border-color: color-mix(in srgb, var(--nk-teal) 32%, var(--profile-card));
+}
+.nia-profile__avatar { background: #0f243b; border-color: #00cfff; }
+.nia-profile__stat {
+  background: var(--profile-card);
+  border: 1px solid var(--profile-line);
+  border-radius: 1rem;
+}
+.nia-profile__stat-value { color: var(--profile-ink); font-variant-numeric: tabular-nums; }
+.nia-profile__heritage { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.nia-profile__heritage-link {
+  display: flex;
+  min-height: 104px;
+  align-items: center;
+  gap: .85rem;
+  padding: 1rem;
+  border: 1px solid var(--profile-line);
+  border-radius: 1rem;
+  color: var(--profile-ink);
+  background: var(--profile-card);
+  text-align: left;
+  transition: transform .18s ease, border-color .18s ease, background-color .18s ease;
+}
+.nia-profile__heritage-link:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--nk-teal) 50%, var(--profile-line));
+  background: color-mix(in srgb, var(--nk-teal) 4%, var(--profile-card));
+}
+.nia-profile__heritage-mark {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: .85rem;
+}
+.nia-profile__account-details {
+  width: 100%;
+  border: 1px solid var(--profile-line);
+  border-radius: 1rem;
+  color: var(--profile-ink);
+  background: var(--profile-card);
+}
+.nia-profile__tabs button {
+  min-height: 44px;
+  border: 1px solid var(--profile-line);
+  border-radius: .8rem;
+  color: var(--profile-muted);
+  background: color-mix(in srgb, var(--profile-card) 82%, transparent);
+}
+.nia-profile__tabs button[aria-current="page"] {
+  border-color: transparent;
+  color: #08182b;
+  background: var(--nk-teal);
+}
+.nia-profile :is(button, a, input, [role="switch"]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--nk-teal) 74%, transparent);
+  outline-offset: 3px;
+}
+.nia-profile button,
+.nia-profile a { touch-action: manipulation; }
+
+@media (max-width: 480px) {
+  .nia-profile__heritage { grid-template-columns: 1fr; }
+  .nia-profile__heritage-link { min-height: 82px; }
+  .nia-profile__tabs { overflow-x: auto; padding-bottom: .15rem; }
+  .nia-profile__tabs button { flex: 1 0 auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nia-profile *,
+  .nia-profile *::before,
+  .nia-profile *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
