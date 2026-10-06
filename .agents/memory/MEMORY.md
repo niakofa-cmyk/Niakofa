@@ -31,7 +31,7 @@
 - [Workspace validation](workspace-validation.md) — use the available pnpm binary and the workflow-assigned preview port for local validation.
 - [Community V4 browser evidence](community-v4-evidence-browser.md) — use system Chromium; keep account-switch checks in one SPA instance so cache isolation is actually exercised.
 - [Mapbox Directions request format](mapbox-directions-format.md) — `depart_at` must use second precision; ISO timestamps with milliseconds are rejected.
-- [GitHub sync boundary](niakofa-github-sync-boundary.md) — public source reads work anonymously; writes use GITHUB_PERSONAL_ACCESS_TOKEN in remote URL (token auth, not password).
+- [GitHub sync boundary](niakofa-github-sync-boundary.md) — verify remote refs exactly; Railway production tracks `main`, so pushes require explicit consent because they auto-deploy.
 - [GitHub workflow sync boundary](github-workflow-sync-boundary.md) — the current OAuth grant lacks workflow scope; .github/workflows writes need a separate operator gate.
 - [Legacy type declaration boundary](legacy-type-declaration-boundary.md) — all Window extensions (openNia, webkitAudioContext, SpeechRecognition) live in one file: src/speech-recognition.d.ts; never split again.
 - [Niakofa Canonical Source](niakofa-canonical-source.md) — artifacts/ is canonical; niakofa-repo/ is stale archived mirror with CANONICAL_SOURCE.md; never edit niakofa-repo/artifacts/.
