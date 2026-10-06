@@ -11,7 +11,8 @@ Niakofa production media certification checklist
 [ ] /api/readiness reports Redis and storage readiness
 [ ] MEDIA_PLATFORM_V21 is unset or false
 [ ] STORAGE_CDN_URL remains unset for the private bucket model
-[ ] Railway one-off storage probe: PUT -> HEAD -> byte check -> DELETE -> HEAD-not-found verification
+[ ] Railway one-off storage probe: PUT -> HEAD -> GET/hash -> DELETE -> HEAD-not-found verification
+[ ] Verify the configured bucket matches the independently confirmed S3 API name before PUT
 [ ] Probe cleanup is confirmed, including failure-path cleanup behavior
 [ ] Production media toolchain smoke: FFmpeg creates -> FFprobe reads
 [ ] MEDIA_PLATFORM_V21=1 only after both probes pass

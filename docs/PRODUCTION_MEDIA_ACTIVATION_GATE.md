@@ -59,6 +59,36 @@ passed.
   was performed. This is a read-only readiness check, not a new media-flow or
   storage-I/O certification.
 
+## Production storage I/O verification — October 6, 2026
+
+- A reusable no-shell runner was built from the existing bounded storage
+  certification helper and executed as a temporary non-HTTP Railway Function.
+  The API service's variables, `MEDIA_PLATFORM_V21`, and existing media were
+  not changed.
+- The Function's staged patch contained only that new service and its seven
+  variables. The five storage settings referenced the same
+  `niakofa-production-media` bucket resource, and its configured bucket matched
+  the independently verified S3 API bucket name
+  `niakofa-production-media-mm-aha` before the client was created.
+- The Function deployment
+  `6866d04c-c542-49db-b4fc-913ccf5de9c0` succeeded. Its result was
+  `ok=true`, `probe=put-head-get-delete`, `bytes=51`,
+  `sha256=101306131e8d8f033a6efd2033d57aead5921eae850ba714e14c80b73a264448`,
+  `deleted=true`, and `cleanup_attempts=1`. The result also confirmed the media
+  platform flag was unchanged.
+- At probe time the API service's latest successful deployment was
+  `f3aca370-cbc9-45b6-ae96-fe4c32c93a7f`, serving application commit
+  `e269127fa10e9530c5a3cdfa10792b1ba5cf1763`. This application revision is
+  recorded separately from the later repository update that adds this runner
+  and documentation.
+- The temporary Function was removed. A subsequent environment read showed
+  only the four existing production services, no probe Function, and no pending
+  changes. The earlier October 6 one-off probe also passed and was removed.
+
+This certifies only the temporary object's storage I/O and cleanup. It does not
+certify media uploads, processing, retrieval authorization, or real-device
+behavior, and it is not approval to change the already-enabled production flag.
+
 ## Hard stops
 
 Stop and fix the environment if:

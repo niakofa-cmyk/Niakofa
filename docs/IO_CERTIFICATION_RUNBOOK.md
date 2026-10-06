@@ -4,35 +4,39 @@
 
 Use the intended private bucket, `niakofa-production-media`. Do not delete the
 older `niakofa-media` bucket until a retention decision is explicit. Do not
-paste or commit credentials, and do not set `MEDIA_PLATFORM_V21=1` during
-storage or toolchain certification.
+paste or commit credentials. A storage probe must not change
+`MEDIA_PLATFORM_V21`; if it is already on, preserve that state and treat this
+I/O result as separate from media-flow certification.
 
 Railway's display name is **not** the S3 API bucket name: the real `BUCKET`
 value includes a unique suffix. On the API service, reference the production
 bucket's `BUCKET`, `REGION`, `ENDPOINT`, `ACCESS_KEY_ID`, and
 `SECRET_ACCESS_KEY` variables from the *same* Railway bucket resource.
 Never hardcode the display name as `STORAGE_BUCKET`. If the flag is already on
-before these checks, treat it as an uncertified operational state, not as a
-passed gate; decide separately whether pausing media is safe.
+before these checks, preserve it and do not treat that state as a passed media
+gate. Decide separately whether pausing media is safe.
 
 ## Gate A — real storage I/O
 
-Preferred: open a one-off shell for the production API service in Railway. The
-service already has the `STORAGE_*` and AWS variables through Railway
-references. From the repository root run:
+If a production API service shell is available, the service already has the
+`STORAGE_*` and AWS variables through Railway references. From the repository
+root run:
 
 ```bash
 node artifacts/api-server/scripts/verify-object-storage.mjs
 ```
 
-Success must include `"ok": true`, `"probe": "put-head-delete"`, and
+Success must include `"ok": true`, `"probe": "put-head-get-delete"`, and
 `"deleted": true`. The generated key is random and restricted to the
 `media-assets/_probe/` namespace. On PUT or HEAD failure, the script still
 attempts bounded cleanup.
 
-If the Railway shell is unavailable, invoke
-`runStorageIoProbe()` from a trusted one-off/internal process using the
-already-injected production environment. Do not expose a permanent HTTP route.
+If the service shell is unavailable, use the non-HTTP, one-shot Railway
+Function fallback in `ops/RAILWAY_ONEOFF_PROBE.md`. It uses the same bounded
+certification helper, requires the configured bucket to match an independently
+verified S3 API bucket name before writing, and takes one fixed dated UUID key.
+Stage only the temporary Function and its references to the intended bucket;
+do not change API-service variables or expose a permanent HTTP route.
 
 ## Gate B — actual media toolchain execution
 

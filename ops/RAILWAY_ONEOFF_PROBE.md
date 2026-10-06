@@ -4,6 +4,54 @@ Credentials stay inside Railway and are never pasted into chat or committed.
 
 ## Storage I/O
 
+### No-shell fallback — one-shot Railway Function
+
+Use this when the production API service shell is unavailable and the gated
+admin route is not appropriate. The checked-in builder bundles the existing
+bounded certification helper into a single Railway Function file:
+
+```bash
+node artifacts/api-server/scripts/build-railway-storage-probe-function.mjs
+```
+
+The output is source for a non-HTTP Function that runs once at startup and
+exits. Do not commit the generated output. In the production environment, stage
+only this temporary Function and these seven variables:
+
+| Function variable | Value |
+| --- | --- |
+| `STORAGE_BUCKET` | `${{niakofa-production-media.BUCKET}}` |
+| `STORAGE_ENDPOINT` | `${{niakofa-production-media.ENDPOINT}}` |
+| `STORAGE_REGION` | `${{niakofa-production-media.REGION}}` |
+| `AWS_ACCESS_KEY_ID` | `${{niakofa-production-media.ACCESS_KEY_ID}}` |
+| `AWS_SECRET_ACCESS_KEY` | `${{niakofa-production-media.SECRET_ACCESS_KEY}}` |
+| `EXPECTED_STORAGE_BUCKET` | The independently verified unique S3 API bucket name, not the Railway display name |
+| `PROBE_KEY` | One fixed `media-assets/_probe/YYYY-MM-DD/<uuid>.txt` key |
+
+The five storage values must reference the same bucket resource. The runner
+checks `STORAGE_BUCKET === EXPECTED_STORAGE_BUCKET` and validates the key before
+creating a client, so a mismatch or malformed key performs no storage write.
+Never print or copy resolved credentials. Do not add a domain, HTTP handler,
+cron schedule, shared variable, API-service variable, or media flag change.
+
+Before deploying, inspect the staged patch: it must contain only the new
+Function and its seven variables, with no shared-variable or existing
+API-service changes. Commit that patch once. The Function makes one bounded
+PUT → exact-size HEAD → bounded GET/content-hash → DELETE → explicit
+HEAD-not-found verification, using one SDK attempt and at most three cleanup
+attempts. Its successful `TEMP_STORAGE_PROBE_RESULT` log line contains status
+only, not credentials, bucket name, or endpoint. If cleanup is unproven, the
+failure line also includes the exact opaque `manualCleanupKey` needed for
+reconciliation.
+
+After success, remove the temporary Function and verify it is absent from the
+production environment and that no staged changes remain. If cleanup is
+unproven, keep the exact reported `manualCleanupKey`, reconcile that key with
+the provider, and verify absence before retrying; never retry with a new key.
+Do not remove the Function until the cleanup issue is resolved. This check does
+not certify uploads, media processing, privacy rules, or device behavior, and
+it does not change `MEDIA_PLATFORM_V21`.
+
 ### No-shell option (admin-only, disabled by default)
 
 The API can run the same bounded storage I/O and FFmpeg-to-FFprobe checks
