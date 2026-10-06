@@ -1,3 +1,5 @@
+import { safeStorage } from "../safeStorage";
+
 export type OralHistoryIntent = "oral-history" | "record" | "interview";
 
 const PRESERVE_SCAN_KEY = "niakofa:diaspora:preserve-scan";
@@ -7,21 +9,19 @@ let preserveFetchBound = false;
 export function persistPreserveScanContext(scanId: unknown): string | null {
   const id = Number(scanId);
   if (!Number.isInteger(id) || id <= 0 || typeof window === "undefined") return null;
-  try { window.sessionStorage.setItem(PRESERVE_SCAN_KEY, String(id)); } catch {}
+  safeStorage.session.setItem(PRESERVE_SCAN_KEY, String(id));
   return String(id);
 }
 
 export function readPreserveScanContext(): string | null {
   if (typeof window === "undefined") return null;
-  try {
-    const value = window.sessionStorage.getItem(PRESERVE_SCAN_KEY);
-    return value && /^\d+$/.test(value) ? value : null;
-  } catch { return null; }
+  const value = safeStorage.session.getItem(PRESERVE_SCAN_KEY);
+  return value && /^\d+$/.test(value) ? value : null;
 }
 
 export function clearPreserveScanContext(): void {
   if (typeof window === "undefined") return;
-  try { window.sessionStorage.removeItem(PRESERVE_SCAN_KEY); } catch {}
+  safeStorage.session.removeItem(PRESERVE_SCAN_KEY);
 }
 
 /**

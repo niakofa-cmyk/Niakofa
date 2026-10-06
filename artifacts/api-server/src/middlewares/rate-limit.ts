@@ -64,6 +64,22 @@ export const requestCreationLimiter = makeLimiter({
   },
 });
 
+// ── Request claims (10 / 15 min per helper) ──────────────────────────────────
+// Claims change request ownership and may lead to a payout. Require the shared
+// production counter so concurrent API workers cannot each apply a local limit.
+export const requestClaimLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  prefix: "request-claim",
+  failClosed: true,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skip: skipLocalhostInDev,
+  message: {
+    error: "You've claimed several requests recently. Please pause before claiming another.",
+  },
+});
+
 // ── 3. GPS Location Updates (1 / 3 seconds per user) ─────────────────────────
 // Prevents battery drain, server overload, and GPS stream abuse.
 // Keyed by userId from URL params so one user can't block another.
@@ -259,4 +275,17 @@ export const navigationLimiter = makeLimiter({
     return `nav-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
   },
   message: { error: "Too many route requests. Please wait a moment before fetching a new route." },
+});
+
+// Internal job-triggered Nia check-ins are bounded and require the shared
+// production counter; the user-facing safety check-in endpoint remains separate.
+export const niaCheckinLimiter = makeLimiter({
+  windowMs: 60 * 1000,
+  limit: 30,
+  prefix: "nia-checkin",
+  failClosed: true,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skip: skipLocalhostInDev,
+  message: { error: "Nia check-in requests are temporarily limited. Try again shortly." },
 });

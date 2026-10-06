@@ -1,10 +1,12 @@
 import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+import { safeStorage } from "@/lib/safeStorage";
 
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppContext } from "@/lib/AppContext";
+import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { subscribeToPush } from "@/lib/push";
@@ -35,13 +37,15 @@ const EMERGENCY_RESOURCES = [
     sub: "Safe Haven FW · Presbyterian Night Shelter",
     href: (() => {
       try {
-        const place = localStorage.getItem("niakofa_last_place");
+        const place = safeStorage.local.getItem("niakofa_last_place");
         if (place) {
           const p = JSON.parse(place) as { city?: string; county?: string; state?: string };
           const loc = [p.city ?? p.county, p.state].filter(Boolean).join("+").replace(/\s+/g, "+");
           if (loc) return `https://maps.google.com/maps?q=emergency+shelter+${loc}`;
         }
-      } catch {}
+      } catch (error) {
+        reportClientSideEffectFailure("emergency-shelter-location")(error);
+      }
       return "https://maps.google.com/maps?q=emergency+shelter+near+me";
     })(),
     target: "_blank",
@@ -85,7 +89,7 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 
     // Fire real SOS API
     try {
-      await fetch("/api/verification/sos", {
+      const response = await fetch("/api/verification/sos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -98,7 +102,15 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           message: "SOS activated from Niakofa app",
         }),
       });
-    } catch {}
+      if (!response.ok) throw new Error(`SOS endpoint returned ${response.status}`);
+    } catch (error) {
+      reportClientSideEffectFailure("send-sos-alert")(error);
+      toast({
+        title: "SOS alert could not be sent",
+        description: "If you need immediate help, call 911.",
+        variant: "destructive",
+      });
+    }
 
     setTimeout(() => {
       setPressed(false);

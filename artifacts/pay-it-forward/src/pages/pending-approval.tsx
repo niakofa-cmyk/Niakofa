@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Clock, ShieldCheck, XCircle, LogOut, Mail, MessageCircle, RefreshCw, AlertCircle, ChevronRight } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { clearToken } from "@/lib/auth";
+import { safeStorage } from "@/lib/safeStorage";
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 
@@ -47,9 +49,11 @@ export default function PendingApprovalScreen() {
       if (r.ok) {
         const u = await r.json();
         setCurrentUser(u);
-        localStorage.setItem("niakofa_user", JSON.stringify(u));
+        safeStorage.local.setItem("niakofa_user", JSON.stringify(u));
       }
-    } catch {}
+    } catch (error) {
+      reportClientSideEffectFailure("refresh-pending-approval")(error);
+    }
     setChecking(false);
   };
 

@@ -14,6 +14,7 @@ import {
 } from "express-rate-limit";
 import type { NextFunction, Request, Response } from "express";
 import { getRedisConnection } from "./queue";
+import { logHandledFailure } from "./handled-failure";
 
 export class RateLimitStoreUnavailableError extends Error {
   constructor() {
@@ -106,8 +107,8 @@ export class RedisRateLimitStore implements Store {
 
     try {
       await redis.decr(`${this.prefix}${key}`);
-    } catch {
-      // Best effort: the current window will expire naturally.
+    } catch (error) {
+      logHandledFailure("rate-limit-store.decrement", error);
     }
   }
 
@@ -118,8 +119,8 @@ export class RedisRateLimitStore implements Store {
 
     try {
       await redis.del(`${this.prefix}${key}`);
-    } catch {
-      // Best effort: reset is administrative and must not take down a request.
+    } catch (error) {
+      logHandledFailure("rate-limit-store.reset", error);
     }
   }
 }

@@ -1,0 +1,152 @@
+I checked the current main branch of Niakofa on GitHub, focusing specifically on the USER_A_STATE / USER_A_STATE_JSON / requester-helper arrival acceptance work.
+Overall assessment: ~90–93% implemented
+The important part is that the architectural fix is now in the repository, and it is substantially better protected than the previous implementation.
+What was implemented well
+Area	Status	Assessment
+Fresh authenticated Playwright state generation	✅	Implemented
+Interactive hidden password entry	✅	Implemented
+Approved-account verification	✅	Implemented
+Token verification against production	✅	Implemented
+Sensitive-field rejection	✅	Implemented
+0600 state-file protection	✅	Implemented
+Reject state files inside repo	✅	Implemented
+Reject tracked/symlink state files	✅	Implemented
+USER_A_STATE_JSON → temporary file	✅	Implemented
+JSON secret removed from child environment after materialization	✅	Implemented
+Requester/helper must be different accounts	✅	Implemented
+Both accounts must be approved	✅	Implemented
+Served commit verification	✅	Implemented
+Dedicated opt-in arrival gate	✅	Implemented
+Guard tests	✅	Implemented
+Secret/password non-leak tests	✅	Implemented
+
+
+The strongest improvement
+The new run-request-arrival-acceptance.sh is doing the right security thing:
+USER_A_STATE_JSON
+        ↓
+private temporary directory
+        ↓
+USER_A_STATE
+        ↓
+validate-user-a-state.mjs
+        ↓
+Playwright
+
+It then explicitly:
+unset USER_A_STATE_JSON USER_B_STATE_JSON
+
+So the JSON secret isn't unnecessarily propagated into the Playwright process.
+It also requires all of:
+ALLOW_MUTATING_E2E=1
+CONFIRM_DISPOSABLE_ACCOUNT=1
+ALLOW_REQUEST_ARRIVAL_E2E=1
+EXPECTED_COMMIT=<40-character SHA>
+
+That is exactly the sort of deliberate, fail-closed acceptance gate I wanted for the requester/helper arrival scenario.
+One important thing I would still change
+1. The generator isn't actually generating a compact JSON state
+This is the biggest remaining mismatch with what you're trying to accomplish.
+The current generator writes:
+fs.writeFileSync(
+  temporaryOutput,
+  `${JSON.stringify(state, null, 2)}\n`,
+
+That is pretty-printed JSON, not compact JSON.
+For a USER_A_STATE_JSON GitHub/Railway secret, I recommend changing it to:
+fs.writeFileSync(
+  temporaryOutput,
+  JSON.stringify(state),
+  {
+    encoding: "utf8",
+    mode: 0o600,
+  },
+);
+
+That removes unnecessary whitespace and makes the secret substantially smaller.
+2. I would make compact output the default
+Don't make the user remember a special command-line option.
+The generator should always produce the smallest valid Playwright state because this state is intended specifically for a secret/environment-variable workflow.
+The resulting structure is already excellent:
+{"cookies":[],"origins":[{"origin":"https://niakofa.com","localStorage":[{"name":"niakofa_token","value":"..."},{"name":"niakofa_user","value":"..."}]}]}
+
+That's considerably better for USER_A_STATE_JSON than the current multiline representation.
+3. Add an explicit size guard
+Since you've already encountered the oversized-secret problem, I recommend the generator enforce a maximum.
+For example:
+const serializedState = JSON.stringify(state);
+
+const MAX_STATE_BYTES = 16 * 1024;
+
+if (Buffer.byteLength(serializedState, "utf8") > MAX_STATE_BYTES) {
+  fail(
+    `generated Playwright state is too large (${Buffer.byteLength(serializedState, "utf8")} bytes); refusing to create USER_A_STATE_JSON.`,
+  );
+}
+
+I'd actually make the threshold configurable:
+USER_A_STATE_MAX_BYTES=16384
+
+That turns the exact problem you're encountering into a prevented regression rather than something discovered during GitHub rebase/secret scanning.
+4. The state validator is strong
+I particularly like the current validate-user-a-state.mjs.
+It verifies:
+- regular file
+- not a symlink
+- 0600
+- not inside repository
+- not tracked by Git
+- valid JSON
+- correct Playwright storage-state structure
+- exactly one niakofa_token
+- exactly one niakofa_user
+- valid user ID
+- no password/secret/reset-code fields
+- valid origin
+- no credentials/query/hash/path in the origin
+That's considerably stronger than simply checking that JSON parses.
+5. The arrival acceptance gate is now appropriately permanent
+This part is now in good shape.
+The repository has:
+test:request-arrival-live
+test:request-arrival-acceptance
+test:request-arrival-acceptance-guards
+
+and the acceptance script explicitly checks that requester and helper are different approved users before launching:
+e2e/request-arrival-live.spec.ts
+
+That fulfills the original goal of turning:
+“Keep requester/helper arrival verification repeatable”
+
+into a permanent opt-in acceptance test, rather than an ad-hoc manual browser test.
+One architectural recommendation
+I would now make USER_A_STATE the canonical internal representation and treat USER_A_STATE_JSON purely as a transport mechanism.
+In other words:
+USER_A_STATE_JSON
+        ↓
+temporary 0600 file
+        ↓
+USER_A_STATE
+        ↓
+all validation + Playwright
+
+You are already almost completely doing this.
+I would apply the same pattern consistently anywhere else that consumes USER_B_STATE_JSON, especially the media certification path. The current media certification script has its own implementation of JSON materialization, while the arrival acceptance script has another implementation.
+That duplication creates a future maintenance risk.
+My recommendation before the next rebase
+Do not redesign the acceptance architecture. It is good.
+I would make only these final improvements:
+1. Minify generated storage state.
+2. Add a hard state-size limit.
+3. Add a regression test asserting the generated state is compact.
+4. Optionally centralize JSON→0600-runtime-file materialization so arrival/media/deployed acceptance use the same hardened helper.
+5. Generate the fresh state again locally.
+6. Replace USER_A_STATE_JSON with the newly generated compact value.
+7. Retry the rebase/secret scan.
+Current verdict
+Architecture: 95%
+Security handling: 94%
+Repeatability: 95%
+Secret-size optimization: ~75%
+Overall: ~90–93%
+The remaining issue is not that the requester/helper acceptance implementation is fundamentally wrong. The main unfinished piece is making the state-generation/secret-transport path explicitly optimized for the exact oversized-secret problem you're currently hitting.

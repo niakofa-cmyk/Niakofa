@@ -9,7 +9,8 @@
  *   4. No console.log in production source
  *   5. No TODO/FIXME/HACK markers in critical paths
  *   6. Frontend route/page contract is intact
- *   7. TypeScript strict mode is enabled
+ *   7. Admin route inventory contract is intact
+ *   8. TypeScript strict mode is enabled
  *
  * Run: node scripts/src/release-validate.js
  * Exit 0 = ready for release, exit 1 = blocking issues found.
@@ -105,8 +106,8 @@ try {
   fail("App/AI boundary check failed");
 }
 
-// 5. No console.log in production source
-console.log("5. Checking for console.log in production source...");
+// 4. No console.log in production source
+console.log("4. Checking for console.log in production source...");
 let consoleCount = 0;
 for (const dir of sourceDirs.slice(0, 2)) {
   try {
@@ -131,8 +132,8 @@ for (const dir of sourceDirs.slice(0, 2)) {
 if (consoleCount === 0) pass("no console.log in production source");
 else fail(`${consoleCount} file(s) with console.log found`);
 
-// 6. Frontend route/page contract
-console.log("6. Frontend route/page contract...");
+// 5. Frontend route/page contract
+console.log("5. Frontend route/page contract...");
 try {
   execSync("node scripts/src/audit-routes.mjs", { cwd: ROOT, stdio: "pipe" });
   pass("frontend route/page contract passes");
@@ -140,8 +141,8 @@ try {
   fail("frontend route/page contract failed");
 }
 
-// 7. Check for TODO/FIXME/HACK in critical paths
-console.log("7. Checking for TODO/FIXME/HACK markers...");
+// 6. Check for TODO/FIXME/HACK in critical paths
+console.log("6. Checking for TODO/FIXME/HACK markers...");
 const criticalPaths = [
   join(ROOT, "artifacts", "api-server", "src", "middlewares"),
   join(ROOT, "artifacts", "api-server", "src", "routes", "stripe.ts"),
@@ -166,6 +167,16 @@ for (const path of criticalPaths) {
 }
 if (markerCount === 0) pass("no TODO/FIXME/HACK in critical paths");
 else fail(`${markerCount} TODO/FIXME/HACK marker(s) in critical paths`);
+
+// 7. Admin route inventory contract. This is one of the verify:platform
+// checks, and the CI workflow invokes this release validator directly.
+console.log("7. Admin route inventory contract...");
+try {
+  execSync("node scripts/admin-surface-audit.mjs", { cwd: ROOT, stdio: "pipe" });
+  pass("admin route inventory contract passes");
+} catch {
+  fail("admin route inventory contract failed");
+}
 
 // 8. tsconfig strict mode verification
 console.log("8. Verifying TypeScript strict mode...");

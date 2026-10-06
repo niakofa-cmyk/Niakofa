@@ -13,6 +13,7 @@
  */
 
 import { getRedisConnection } from "./queue";
+import { logHandledFailure } from "./handled-failure";
 
 interface CacheEntry<T> {
   value: T;
@@ -29,8 +30,8 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
       const raw = await redis.get(key);
       if (raw) return JSON.parse(raw) as T;
       return null;
-    } catch {
-      return null;
+    } catch (err) {
+      logHandledFailure("cache.redis-read", err);
     }
   }
 
@@ -49,8 +50,10 @@ export async function cacheSet<T>(key: string, value: T, ttlSeconds: number): Pr
   if (redis) {
     try {
       await redis.set(key, JSON.stringify(value), "EX", ttlSeconds);
-    } catch {}
-    return;
+      return;
+    } catch (err) {
+      logHandledFailure("cache.redis-write", err);
+    }
   }
 
   memoryCache.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
@@ -66,8 +69,11 @@ export async function cacheSet<T>(key: string, value: T, ttlSeconds: number): Pr
 export async function cacheDel(key: string): Promise<void> {
   const redis = getRedisConnection();
   if (redis) {
-    try { await redis.del(key); } catch {}
-    return;
+    try {
+      await redis.del(key);
+    } catch (err) {
+      logHandledFailure("cache.redis-delete", err, "error");
+    }
   }
   memoryCache.delete(key);
 }

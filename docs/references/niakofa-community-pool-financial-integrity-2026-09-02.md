@@ -6,7 +6,7 @@ on September 2, 2026.
 ## Source material
 
 - Uploaded refactor source: `attached_assets/patch_claim_scope_refactor_1788334498140.py`
-- Root launcher: `patch_claim_scope_refactor.py`
+- Archived historical launcher: `scripts/legacy/patch_claim_scope_refactor.py`
 - Lifecycle and deployment procedure: `COMMUNITY_POOL_STATE_MACHINE.md` and
   `APPLY.md`
 - Read-only database preflight:

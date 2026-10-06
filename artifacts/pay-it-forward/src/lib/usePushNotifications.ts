@@ -104,7 +104,9 @@ export function usePushNotifications(userId: number | null) {
         });
       }
       setIsSubscribed(false);
-    } catch {}
+    } catch (error) {
+      reportClientSideEffectFailure("refresh-push-subscription")(error);
+    }
   }, [userId]);
 
   return { permission, isSubscribed, isLoading, requestPermissionAndSubscribe, unsubscribe };

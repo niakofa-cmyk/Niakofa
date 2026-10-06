@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { logHandledFailure } from "../lib/handled-failure.js";
 
 export interface LocationContext {
   city?: string;
@@ -56,8 +57,8 @@ export async function injectLocation(
         } as LocationContext;
       }
     }
-  } catch {
-    // Location is best-effort — never block the request
+  } catch (error) {
+    logHandledFailure("nia.location-enrichment", error);
   }
   next();
 }

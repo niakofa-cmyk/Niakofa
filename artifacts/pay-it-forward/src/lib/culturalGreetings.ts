@@ -1,5 +1,6 @@
 // Niakofa Native Language System — Phase 7a
 // Greetings, prompts, and responses in community-first languages
+import { safeStorage } from "./safeStorage";
 
 export type CulturalLanguage = "en" | "sw" | "zu" | "tw" | "yo" | "ha" | "am" | "so" | "pcm" | "lg";
 
@@ -178,12 +179,10 @@ const APP_LANG_TO_CULTURAL: Record<string, CulturalLanguage> = {
  */
 export function detectUserLanguage(): CulturalLanguage {
   // 1. Stored app preference (set by LanguageSwitcher in settings)
-  try {
-    const stored = localStorage.getItem("niakofa_lang");
-    if (stored && APP_LANG_TO_CULTURAL[stored] !== undefined) {
-      return APP_LANG_TO_CULTURAL[stored]!;
-    }
-  } catch {}
+  const stored = safeStorage.local.getItem("niakofa_lang");
+  if (stored && APP_LANG_TO_CULTURAL[stored] !== undefined) {
+    return APP_LANG_TO_CULTURAL[stored]!;
+  }
 
   // 2. Browser locale
   const browserLang = navigator.language?.toLowerCase() || "en";

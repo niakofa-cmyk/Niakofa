@@ -69,6 +69,8 @@ jest.unstable_mockModule("../src/middlewares/rate-limit.js", () => ({
   paymentLimiter: passthrough,
   generalApiLimiter: passthrough,
   adminLimiter: passthrough,
+  requestClaimLimiter: passthrough,
+  niaCheckinLimiter: passthrough,
 }));
 
 jest.unstable_mockModule("../src/lib/community-pool.js", () => ({

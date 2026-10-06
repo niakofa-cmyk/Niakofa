@@ -1,4 +1,5 @@
 import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+import { safeStorage } from "../lib/safeStorage";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -130,11 +131,11 @@ function getQuickPrompts(lang: CulturalLanguage) {
 function getSessionId(userId: number | null): string {
   const scope = userId === null ? "anon" : String(userId);
   const storageKey = `nia_session_id_${scope}`;
-  let id = localStorage.getItem(storageKey);
+  let id = safeStorage.local.getItem(storageKey);
   if (!id) {
     const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     id = userId === null ? `anon-${nonce}` : `${userId}-${nonce}`;
-    localStorage.setItem(storageKey, id);
+    safeStorage.local.setItem(storageKey, id);
   }
   return id;
 }
@@ -760,7 +761,7 @@ export function NiaDrawer({
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionId = useMemo(() => getSessionId(userId), [userId]);
-  const isFirstOpen = useRef(!sessionStorage.getItem("nia_has_opened"));
+  const isFirstOpen = useRef(!safeStorage.session.getItem("nia_has_opened"));
   const contextFetchedRef = useRef(false);
 
   // ── Multilingual TTS + language detection ─────────────────────────────────
@@ -829,7 +830,7 @@ export function NiaDrawer({
   useEffect(() => {
     if (!open || historyLoaded) return;
     if (isFirstOpen.current) {
-      sessionStorage.setItem("nia_has_opened", "1");
+      safeStorage.session.setItem("nia_has_opened", "1");
       setShowSplash(true);
       isFirstOpen.current = false;
     }
@@ -840,7 +841,9 @@ export function NiaDrawer({
           try {
             const body = await res.json() as { error?: string };
             if (body?.error) detail = body.error;
-          } catch {}
+          } catch (error) {
+            reportClientSideEffectFailure("parse-nia-history-error")(error);
+          }
           throw new Error(detail);
         }
         return res.json() as Promise<{
@@ -1171,7 +1174,7 @@ export function NiaDrawer({
   }, [loading, sessionId, userCoords, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext, userLang, speakNiaResponse, resolvedCity, resolvedCounty, resolvedState, niaEnabled]);
 
   const handleReset = () => {
-    localStorage.removeItem(`nia_session_id_${userId === null ? "anon" : String(userId)}`);
+    safeStorage.local.removeItem(`nia_session_id_${userId === null ? "anon" : String(userId)}`);
     setHistoryLoaded(false);
     setMessages([]);
     contextFetchedRef.current = false;
@@ -1505,10 +1508,11 @@ export function NiaFab({
   // Drag position — persisted in localStorage so Nia remembers where the user
   // placed her across navigations, app restarts, and enable/disable cycles.
   const safeRead = (key: string, fallback: number) => {
-    try { const v = localStorage.getItem(key); return v === null ? fallback : Number(v); } catch { return fallback; }
+    const value = safeStorage.local.getItem(key);
+    return value === null ? fallback : Number(value);
   };
   const safeWrite = (key: string, value: number) => {
-    try { localStorage.setItem(key, String(value)); } catch {}
+    safeStorage.local.setItem(key, String(value));
   };
 
   const [fabX, setFabX] = useState(() => safeRead("nia_fab_x", 0));

@@ -10,6 +10,7 @@ import { useWebSocket } from "./useWebSocket";
 import { wsStart, wsRegister, wsUnregister, wsSubscribe, type WsEventType } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
 import { clearToken, getToken } from "./auth";
+import { safeStorage } from "./safeStorage";
 import { getIpLocation } from "./locale-utils";
 import { toast } from "../hooks/use-toast";
 import { publishMapLocation } from "./spiralLocationStore";
@@ -96,9 +97,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── All useState calls first ─────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
-      const stored = localStorage.getItem("niakofa_user");
+      const stored = safeStorage.local.getItem("niakofa_user");
       if (stored) return JSON.parse(stored) as User;
-    } catch {}
+    } catch {
+      return null;
+    }
     return null;
   });
 
@@ -120,12 +123,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // The startup token validation will refresh this from the server on mount.
   const [helperModeActive, setHelperModeActiveState] = useState<boolean>(() => {
     try {
-      const stored = localStorage.getItem("niakofa_user");
+      const stored = safeStorage.local.getItem("niakofa_user");
       if (stored) {
         const u = JSON.parse(stored) as { helper_mode_active?: boolean };
         return !!u.helper_mode_active;
       }
-    } catch {}
+    } catch {
+      return false;
+    }
     return false;
   });
 
@@ -178,7 +183,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurrentUser(u => {
       const updated = u ? { ...u, helper_mode_active: active } : u;
       if (updated) {
-        try { localStorage.setItem("niakofa_user", JSON.stringify(updated)); } catch {}
+        safeStorage.local.setItem("niakofa_user", JSON.stringify(updated));
       }
       return updated;
     });
@@ -195,7 +200,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               setCurrentUser(u => {
                 const updated = u ? { ...u, helper_mode_active: serverActive } : u;
                 if (updated) {
-                  try { localStorage.setItem("niakofa_user", JSON.stringify(updated)); } catch {}
+                  safeStorage.local.setItem("niakofa_user", JSON.stringify(updated));
                 }
                 return updated;
               });
@@ -206,12 +211,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setHelperModeActiveState(prevActive);
             if (prevUser) {
               setCurrentUser(prevUser);
-              try { localStorage.setItem("niakofa_user", JSON.stringify(prevUser)); } catch {}
+              safeStorage.local.setItem("niakofa_user", JSON.stringify(prevUser));
             } else {
               setCurrentUser(u => {
                 const rolled = u ? { ...u, helper_mode_active: prevActive } : u;
                 if (rolled) {
-                  try { localStorage.setItem("niakofa_user", JSON.stringify(rolled)); } catch {}
+                  safeStorage.local.setItem("niakofa_user", JSON.stringify(rolled));
                 }
                 return rolled;
               });
@@ -244,19 +249,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Wrapper that also persists to localStorage so active request survives refresh
   const setActiveRequestId = (id: number | null) => {
     setActiveRequestIdState(id);
-    try {
-      if (id == null) localStorage.removeItem("niakofa_active_request");
-      else localStorage.setItem("niakofa_active_request", String(id));
-    } catch {}
+    if (id == null) safeStorage.local.removeItem("niakofa_active_request");
+    else safeStorage.local.setItem("niakofa_active_request", String(id));
   };
 
   // ── Logout ────────────────────────────────────────────────────────────────
   const logout = () => {
     clearToken();
-    try {
-      localStorage.removeItem("niakofa_user");
-      localStorage.removeItem("niakofa_active_request");
-    } catch {}
+    safeStorage.local.removeItem("niakofa_user");
+    safeStorage.local.removeItem("niakofa_active_request");
     setCurrentUser(null);
     setActiveRequestIdState(null);
     wsUnregister();
@@ -495,7 +496,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setCurrentUser(previous => {
             const changedCounty = previous?.community_id !== fresh.community_id;
             if (changedCounty) void queryClient.invalidateQueries();
-            try { localStorage.setItem("niakofa_user", JSON.stringify(fresh)); } catch {}
+            safeStorage.local.setItem("niakofa_user", JSON.stringify(fresh));
             return fresh;
           });
         },
@@ -580,17 +581,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // (User logged out → localStorage cleared; or logged in as someone else.)
         let currentStoredId: number | null = null;
         try {
-          const j2 = localStorage.getItem("niakofa_user");
+          const j2 = safeStorage.local.getItem("niakofa_user");
           currentStoredId = j2 ? ((JSON.parse(j2) as { id?: number }).id ?? null) : null;
-        } catch {}
+        } catch {
+          currentStoredId = null;
+        }
         if (currentStoredId !== capturedId) return; // stale — a different session is now active
 
         if (r.status === 401 || r.status === 403) {
           // Token expired or revoked — wipe stored session and show a clear message
           clearToken();
-          try { localStorage.removeItem("niakofa_user"); } catch {}
+          safeStorage.local.removeItem("niakofa_user");
           setCurrentUser(null);
-          sessionStorage.setItem("niakofa_session_expired", "1");
+          safeStorage.session.setItem("niakofa_session_expired", "1");
           return;
         }
         if (r.ok) {
@@ -598,7 +601,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // approval_status, helper_status, is_admin, trust_score, etc.
           const fresh = await r.json() as User;
           if (!active) return; // raced between r.ok check and json() parsing
-          try { localStorage.setItem("niakofa_user", JSON.stringify(fresh)); } catch {}
+          safeStorage.local.setItem("niakofa_user", JSON.stringify(fresh));
           setCurrentUser(fresh);
           // Sync helper mode from server truth (handles the "refresh loses helper mode" bug)
           if (typeof fresh.helper_mode_active === "boolean") {
@@ -625,7 +628,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 if (!rq.ok) {
                   // 404 or 403 — request gone or inaccessible; clear the ghost.
                   setActiveRequestIdState(null);
-                  try { localStorage.removeItem("niakofa_active_request"); } catch {}
+                  safeStorage.local.removeItem("niakofa_active_request");
                   toast({
                     title: "Active job cleared",
                     description: "Your previous job is no longer available — it may have been cancelled or reassigned.",
@@ -637,7 +640,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 const terminal = req.status === "completed" || req.status === "cancelled";
                 if (terminal) {
                   setActiveRequestIdState(null);
-                  try { localStorage.removeItem("niakofa_active_request"); } catch {}
+                  safeStorage.local.removeItem("niakofa_active_request");
                   toast({
                     title: req.status === "completed" ? "Job completed ✓" : "Job was cancelled",
                     description: req.status === "completed"
@@ -710,7 +713,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Only clear if it matches the request this device currently has active.
       setActiveRequestIdState(prevId => {
         if (prevId !== eventRequestId) return prevId;
-        try { localStorage.removeItem("niakofa_active_request"); } catch {}
+        safeStorage.local.removeItem("niakofa_active_request");
         toast({
           title: event.type === "REQUEST_COMPLETED" ? "Job completed ✓" : "Job was cancelled",
           description: event.type === "REQUEST_COMPLETED"

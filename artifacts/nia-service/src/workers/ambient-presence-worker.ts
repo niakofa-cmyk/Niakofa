@@ -1,3 +1,5 @@
+import { logHandledFailure } from "../lib/handled-failure.js";
+
 /**
  * Nia Ambient Presence Worker
  *
@@ -82,8 +84,8 @@ async function queuePush(
        VALUES ($1, $2, $3, $4::jsonb, NOW())`,
       [userId, title, body, JSON.stringify(data)]
     );
-  } catch {
-    // Table may not exist yet — non-fatal, ambient messages are still saved
+  } catch (error) {
+    logHandledFailure("nia.ambient-presence.queue-push", error);
   }
 }
 

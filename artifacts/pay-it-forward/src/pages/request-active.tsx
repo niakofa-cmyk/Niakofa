@@ -518,7 +518,9 @@ export default function ActiveRequestScreen() {
     const id = setInterval(async () => {
       try {
         await fetch(`/api/verification/safety-checkin/${currentUserId}`, { method: "POST", headers: authHeaders() });
-      } catch {}
+      } catch (error) {
+        reportClientSideEffectFailure("safety-check-in")(error);
+      }
     }, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [currentUserId, isArrived, isCompleted]);

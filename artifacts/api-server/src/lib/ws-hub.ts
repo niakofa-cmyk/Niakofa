@@ -16,6 +16,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage, Server as HttpServer } from "http";
 import { logger } from "./logger";
+import { logHandledFailure } from "./handled-failure";
 import { verifyToken } from "../middlewares/auth";
 import { db, chatMessagesTable, requestsTable, usersTable, directConversationMembersTable, directConversationsTable, directMessageBlocksTable } from "@workspace/db";
 import { and, eq, or } from "drizzle-orm";
@@ -1051,12 +1052,15 @@ export function initWebSocketServer(server: HttpServer): WebSocketServer {
                   payload: { sender_id: senderId, request_id },
                 });
               }
-            } catch {}
+            } catch (err) {
+              logHandledFailure("ws.typing-indicator-lookup", err);
+            }
           })();
           return;
         }
-      } catch {
-        // ignore malformed messages
+      } catch (err) {
+        // Malformed or unsupported frames are ignored; log only a safe reason.
+        logHandledFailure("ws.message-handler", err);
       }
     });
 

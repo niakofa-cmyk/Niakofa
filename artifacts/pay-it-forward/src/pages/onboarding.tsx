@@ -8,6 +8,8 @@ import { useAppContext } from "@/lib/AppContext";
 import { subscribeToPush } from "@/lib/push";
 import { useUpdateUser } from "@workspace/api-client-react";
 import { toast } from "@/hooks/use-toast";
+import { safeStorage } from "@/lib/safeStorage";
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
 
 interface Step {
   id: string;
@@ -235,7 +237,10 @@ export default function OnboardingScreen() {
       try {
         await subscribeToPush(currentUser.id);
         setNotifGranted(true);
-      } catch {}
+      } catch (error) {
+        reportClientSideEffectFailure("onboarding-push-subscribe")(error);
+        setNotifGranted(false);
+      }
     }
 
     if (current.id === "city" && currentUser && cityInput.trim()) {
@@ -245,17 +250,17 @@ export default function OnboardingScreen() {
           data: { city: cityInput.trim() },
         });
         // Store city locally so Nia can use it immediately
-        try { localStorage.setItem("niakofa_user_city", cityInput.trim()); } catch {}
+        safeStorage.local.setItem("niakofa_user_city", cityInput.trim());
         // Set global window var for map.tsx crisis region lookup
         (window as unknown as { __niakofaRegion?: string }).__niakofaRegion = cityInput.trim();
         // If GPS place has county data, also store that for richer Nia context
         if (userPlace?.county) {
-          try { localStorage.setItem("niakofa_user_county", userPlace.county); } catch {}
+          safeStorage.local.setItem("niakofa_user_county", userPlace.county);
         }
         setCitySaved(true);
       } catch {
         // Save failed — store locally so Nia still has context, but notify user
-        try { localStorage.setItem("niakofa_user_city", cityInput.trim()); } catch {}
+        safeStorage.local.setItem("niakofa_user_city", cityInput.trim());
         toast({
           title: "Couldn't save city to your profile",
           description: "Your city is saved locally for this session. You can update it later in your profile settings.",

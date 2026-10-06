@@ -1,23 +1,17 @@
+import { safeStorage } from "./safeStorage";
+
 const TOKEN_KEY = "niakofa_token";
 
 export function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  return safeStorage.local.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string): void {
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch {}
+  safeStorage.local.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken(): void {
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-  } catch {}
+  safeStorage.local.removeItem(TOKEN_KEY);
 }
 
 export function authHeaders(): Record<string, string> {

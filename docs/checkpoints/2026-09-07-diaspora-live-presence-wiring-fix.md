@@ -11,7 +11,7 @@
 
 The branch intentionally restores `users.ts` byte-for-byte from `main` rather than carrying the earlier corrupted rewrite. The freshness write is isolated in middleware so the existing user route remains untouched and future GPS handlers cannot accidentally reuse `updated_at` for presence semantics.
 
-`patches/0133-location-updated-at.patch` remains as the auditable one-line equivalent for teams that prefer the freshness field to live directly in the route's first update.
+`scripts/legacy/patches/0133-location-updated-at.patch` remains as the historical one-line equivalent for teams that prefer the freshness field to live directly in the route's first update. It is retained for audit only; do not apply it without reviewing the current source.
 
 ## Metric separation
 

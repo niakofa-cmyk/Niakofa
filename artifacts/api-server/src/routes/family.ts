@@ -64,6 +64,7 @@ import { eq, and, desc, sql, or, ilike, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { logHandledFailure } from "../lib/handled-failure";
 import { requestNia } from "../lib/nia-client";
 import { stripTags } from "../lib/sanitize";
 import { createHash, randomUUID } from "node:crypto";
@@ -1693,8 +1694,8 @@ router.post("/family/:id/members/import-gedcom", generalApiLimiter, requireAuth,
         })
         .returning();
       if (member) created.push(member);
-    } catch {
-      // Skip any row that fails (constraint, etc.)
+    } catch (error) {
+      logHandledFailure("family.gedcom-import-member", error);
     }
   }
 

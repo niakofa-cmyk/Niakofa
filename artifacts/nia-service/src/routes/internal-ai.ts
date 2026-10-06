@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { timingSafeEqual } from "node:crypto";
 import { pino } from "pino";
 import { isNiaEnabled } from "../lib/db.js";
+import { logHandledFailure } from "../lib/handled-failure.js";
 
 const router = Router();
 const logger = pino({ level: "info" });
@@ -44,8 +45,8 @@ const LANGUAGE_NAMES: Record<string, string> = {
 async function requireEnabled(res: Response): Promise<boolean> {
   try {
     if (await isNiaEnabled()) return true;
-  } catch {
-    // The kill switch is fail-closed.
+  } catch (error) {
+    logHandledFailure("nia.internal-ai.kill-switch", error);
   }
   res.status(503).json({ error: "Nia is temporarily unavailable." });
   return false;

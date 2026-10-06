@@ -20,6 +20,7 @@ import { db, requestsTable, usersTable, systemSettingsTable } from "@workspace/d
 import { and, eq, isNotNull } from "drizzle-orm";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
+import { logHandledFailure } from "../lib/handled-failure";
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const EARTH_RADIUS_MILES = 3958.8;
@@ -145,8 +146,8 @@ async function processDailyKindness(): Promise<void> {
       });
       lastSent.set(helper.id, today);
       sent++;
-    } catch {
-      // Never throw — keep processing other helpers
+    } catch (error) {
+      logHandledFailure("daily-kindness.send-helper-notification", error);
     }
   }
 

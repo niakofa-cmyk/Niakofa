@@ -16,6 +16,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { getPrivateAssetUrl } from "../lib/storage";
+import { logHandledFailure } from "../lib/handled-failure";
 import { finalizeRecording } from "../lib/circleRecordingPolicy";
 import { recordingArchiveType } from "../lib/recordingArchive";
 import {
@@ -1692,8 +1693,9 @@ router.post("/audio-circles/:id/follow", requireAuth, generalApiLimiter, async (
       .insert(audioCircleFollowsTable)
       .values({ user_id: userId, circle_id: circleId })
       .onConflictDoNothing();
-  } catch {
-    // onConflictDoNothing handles the unique constraint
+  } catch (error) {
+    logHandledFailure("audio-circles.follow", error);
+    return res.status(500).json({ error: "Failed to follow circle" });
   }
   return res.json({ ok: true, following: true });
 });

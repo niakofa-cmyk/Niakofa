@@ -7,6 +7,7 @@ import type { Request, Response, NextFunction } from "express";
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import { requestNia } from "../lib/nia-client";
+import { niaCheckinLimiter } from "../middlewares/rate-limit";
 
 const router = Router();
 
@@ -29,7 +30,7 @@ interface CheckinPayload {
   sessionId: string;
 }
 
-router.post("/", verifyInternalSecret, async (req: Request, res: Response) => {
+router.post("/", verifyInternalSecret, niaCheckinLimiter, async (req: Request, res: Response) => {
   const payload = req.body as CheckinPayload;
   const { userId, requestId, requestTitle, category, helperName, sessionId } = payload ?? {};
   if (

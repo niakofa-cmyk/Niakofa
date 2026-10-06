@@ -10,6 +10,7 @@ import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minu
 import { isSensitiveCategory } from "@workspace/trust-tiers";
 import { Button } from "@/components/ui/button";
 import { authHeaders } from "@/lib/auth";
+import { safeStorage } from "@/lib/safeStorage";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -345,7 +346,7 @@ export default function NewRequestScreen() {
   useEffect(() => {
     if (prefillTitle) return; // story-to-action pre-fill overrides any saved draft
     try {
-      const saved = localStorage.getItem(DRAFT_KEY);
+      const saved = safeStorage.local.getItem(DRAFT_KEY);
       if (saved) {
         const vals = JSON.parse(saved) as Record<string, unknown>;
         form.reset({
@@ -356,14 +357,17 @@ export default function NewRequestScreen() {
         });
         toast({ title: "✏️ Draft restored", description: "Your previous unfinished request has been loaded." });
       }
-    } catch {}
+    } catch (error) {
+      reportClientSideEffectFailure("restore-request-draft")(error);
+      safeStorage.local.removeItem(DRAFT_KEY);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const sub = form.watch(vals => {
       if (vals.title) {
-        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(vals)); } catch {}
+        safeStorage.local.setItem(DRAFT_KEY, JSON.stringify(vals));
       }
     });
     return () => sub.unsubscribe();

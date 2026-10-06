@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppContext } from "@/lib/AppContext";
+import { safeStorage } from "@/lib/safeStorage";
 import { getIpLocation, detectMapLanguage, localizeMapLabels } from "@/lib/locale-utils";
 import {
   useGetNearbyRequests, useGetOnlineHelpers, useClaimRequest,
@@ -167,11 +168,11 @@ export default function MapScreen() {
   // exact same expanded card a returning user gets by tapping.
   useEffect(() => {
     let seen = true;
-    try { seen = localStorage.getItem("niakofa_stats_pill_seen") === "1"; } catch {}
+    seen = safeStorage.local.getItem("niakofa_stats_pill_seen") === "1";
     if (seen) return;
     setStatsExpanded(true);
     const timer = setTimeout(() => setStatsExpanded(false), 4500);
-    try { localStorage.setItem("niakofa_stats_pill_seen", "1"); } catch {}
+    safeStorage.local.setItem("niakofa_stats_pill_seen", "1");
     return () => clearTimeout(timer);
      
   }, []);

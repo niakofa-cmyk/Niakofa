@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { timingSafeEqual } from "node:crypto";
 import { pino } from "pino";
 import { isNiaEnabled } from "../lib/db.js";
+import { logHandledFailure } from "../lib/handled-failure.js";
 
 const router = Router();
 const logger = pino({ level: "info" });
@@ -87,7 +88,11 @@ Duration: ${duration ? `${duration} minutes` : "Unknown"}`;
     const text = response.content[0]?.type === "text" ? response.content[0].text : "";
     const json = text.match(/\{[\s\S]*\}/);
     let parsed: unknown = null;
-    try { parsed = json ? JSON.parse(json[0]) : null; } catch { /* no usable model JSON */ }
+    try {
+      parsed = json ? JSON.parse(json[0]) : null;
+    } catch (error) {
+      logHandledFailure("nia.circle-summary.parse-output", error);
+    }
     return res.json({ ok: true, ...validatedResult(parsed, duration === null ? null : duration * 60) });
   } catch (err) {
     logger.error({ err }, "circle-summary: provider request failed");

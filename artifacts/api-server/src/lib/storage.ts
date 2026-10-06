@@ -30,6 +30,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Request, Response } from "express";
 import { logger } from "./logger";
+import { logHandledFailure } from "./handled-failure";
 
 // ─── Local-disk constants ─────────────────────────────────────────────────────
 
@@ -549,7 +550,13 @@ export async function deleteAsset(key: string): Promise<void> {
   try {
     const { unlinkSync } = await import("fs");
     unlinkSync(path.resolve(UPLOADS_BASE, key));
-  } catch { /* ignore */ }
+  } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
+    if (code !== "ENOENT") logHandledFailure("storage.local-upload-cleanup", error);
+  }
 }
 
 /**

@@ -137,6 +137,8 @@ jest.unstable_mockModule("../src/middlewares/rate-limit.js", () => ({
   generalApiLimiter:      _passthrough,
   spendingCapLimiter:     _passthrough,
   requestCreationLimiter: _passthrough,
+  requestClaimLimiter:    _passthrough,
+  niaCheckinLimiter:      _passthrough,
   paymentLimiter:         _passthrough,
   communityPostLimiter:   _passthrough,
   communityLikeLimiter:   _passthrough,

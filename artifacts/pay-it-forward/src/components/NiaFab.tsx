@@ -33,6 +33,7 @@ import { NiaOrb } from "./NiaDrawer";
 import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
 import { VoiceWakeWordIndicator } from "./VoiceWakeWordIndicator";
 import { detectUserLanguage } from "../lib/culturalGreetings";
+import { safeStorage } from "../lib/safeStorage";
 
 interface NiaFabProps {
   onClick: () => void;
@@ -41,18 +42,12 @@ interface NiaFabProps {
 }
 
 const safeRead = (key: string, fallback: number) => {
-  try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : Number(v);
-  } catch {
-    return fallback;
-  }
+  const value = safeStorage.local.getItem(key);
+  return value === null ? fallback : Number(value);
 };
 
 const safeWrite = (key: string, value: number) => {
-  try {
-    localStorage.setItem(key, String(value));
-  } catch {}
+  safeStorage.local.setItem(key, String(value));
 };
 
 export function NiaFab({ onClick, enabled = true }: NiaFabProps) {

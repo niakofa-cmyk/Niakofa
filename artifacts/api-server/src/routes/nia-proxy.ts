@@ -16,6 +16,7 @@
 import { Router, type Request, type Response } from "express";
 import { parseAuth, requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
+import { logHandledFailure } from "../lib/handled-failure";
 import { crisisAwareChatLimiter, niaChatHistoryLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { db, systemSettingsTable } from "@workspace/db";
@@ -280,8 +281,8 @@ router.post(
             })}\n\n`
           );
           res.end();
-        } catch {
-          // Socket already closed mid-stream — swallow silently
+        } catch (error) {
+          logHandledFailure("nia-proxy.write-stream-error", error);
         }
       }
       return;

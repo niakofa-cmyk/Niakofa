@@ -85,6 +85,8 @@ const HAS_REAL_MAPBOX = Boolean(
     token => token?.startsWith("pk.") && token.length > 20,
   ),
 );
+const RUN_LIVE_MAPBOX_TESTS =
+  HAS_REAL_MAPBOX && process.env.RUN_LIVE_MAPBOX_TESTS === "1";
 
 function clearMapboxEnv() {
   delete process.env.MAPBOX_TOKEN;
@@ -408,15 +410,97 @@ describe("GET /api/navigation/route — Circuit Breaker (no real calls)", () => 
   });
 });
 
+describe("GET /api/navigation/route — Mocked Mapbox Directions provider", () => {
+  const pairs = [
+    { name: "City Hall to TCU", start: TARRANT_LOCATIONS.cityHall, end: TARRANT_LOCATIONS.tcu },
+    { name: "Sundance Square to Botanic Garden", start: TARRANT_LOCATIONS.sundanceSquare, end: TARRANT_LOCATIONS.botanicGarden },
+    { name: "TCU to Benbrook Lake", start: TARRANT_LOCATIONS.tcu, end: TARRANT_LOCATIONS.benbrookLake },
+    { name: "City Hall to Arlington", start: TARRANT_LOCATIONS.cityHall, end: TARRANT_LOCATIONS.arlington },
+  ];
+
+  beforeEach(() => {
+    process.env.MAPBOX_TOKEN = "pk.niakofa-test-token";
+    jest.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(
+        JSON.stringify({
+          routes: [{
+            distance: 3200,
+            duration: 600,
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [TARRANT_LOCATIONS.cityHall.lng, TARRANT_LOCATIONS.cityHall.lat],
+                [TARRANT_LOCATIONS.tcu.lng, TARRANT_LOCATIONS.tcu.lat],
+              ],
+            },
+            legs: [{
+              distance: 3200,
+              duration: 600,
+              annotation: { congestion: ["low", "moderate"] },
+              steps: [
+                { maneuver: { type: "depart", instruction: "Head south" }, distance: 1000, duration: 180 },
+                { maneuver: { type: "turn", modifier: "right", instruction: "Turn right" }, distance: 1200, duration: 210 },
+                { maneuver: { type: "arrive", instruction: "Arrive at destination" }, distance: 1000, duration: 210 },
+              ],
+            }],
+          }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  for (const pair of pairs) {
+    it(`transforms a provider response into the route contract — ${pair.name}`, async () => {
+      const res = await request(app)
+        .get("/api/navigation/route")
+        .query({
+          start_lat: String(pair.start.lat),
+          start_lng: String(pair.start.lng),
+          end_lat: String(pair.end.lat),
+          end_lng: String(pair.end.lng),
+          profile: "driving",
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.distance_meters).toBe(3200);
+      expect(res.body.duration_seconds).toBe(600);
+      expect(res.body.steps).toHaveLength(3);
+      expect(res.body.steps[0].instruction).toBe("Head south");
+      expect(res.body.geometry.type).toBe("LineString");
+    });
+  }
+
+  it("formats the driving departure time to Mapbox second precision", async () => {
+    await request(app)
+      .get("/api/navigation/route")
+      .query({
+        start_lat: String(TARRANT_LOCATIONS.cityHall.lat),
+        start_lng: String(TARRANT_LOCATIONS.cityHall.lng),
+        end_lat: String(TARRANT_LOCATIONS.benbrookLake.lat),
+        end_lng: String(TARRANT_LOCATIONS.benbrookLake.lng),
+        profile: "driving",
+      })
+      .expect(200);
+
+    const calls = jest.mocked(globalThis.fetch).mock.calls;
+    expect(calls).toHaveLength(1);
+    const url = new URL(String(calls[0]?.[0]));
+    expect(url.searchParams.get("access_token")).toBe("pk.niakofa-test-token");
+    expect(url.searchParams.get("depart_at")).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Live integration group — only runs when a Mapbox public token is set.
-// In CI / Replit dev without the secret these tests are automatically skipped
-// so they never block the 182-test suite. When MAPBOX_TOKEN IS present the
-// tests hit the real Mapbox Directions v5 API and verify end-to-end routing
-// across 4 real Tarrant County location pairs.
+// Optional live integration group. It requires an explicit opt-in so merely
+// having a Mapbox secret in the workspace never makes unit tests call upstream.
 // ─────────────────────────────────────────────────────────────────────────────
-(HAS_REAL_MAPBOX ? describe : describe.skip)(
-  "GET /api/navigation/route — Live Mapbox integration (4 Tarrant County pairs)",
+(RUN_LIVE_MAPBOX_TESTS ? describe : describe.skip)(
+  "GET /api/navigation/route — Opt-in live Mapbox integration (4 Tarrant County pairs)",
   () => {
     beforeEach(() => {
       restoreMapboxEnv();

@@ -1,0 +1,21 @@
+I read the code, not just the docs. I can't recall earlier sessions, so I can't tell which changes were mine. I judged the fixes against what the repo's own docs say they should be, and I didn't run the test suites, so I can't confirm the passing counts.
+
+What was implemented well
+Claim distance enforcement (BUG-15b): This is solid, and it's a real improvement over the version in the original audit. The first fix failed open when coordinates were missing. The current code validates coordinates, rejects bad max_travel_miles values with a 500, returns specific error codes, and checks isFinite on the computed distance. The claim UPDATE is conditional on status = 'open' inside a transaction, so the distance check running outside it doesn't create a double-claim race.
+Check-in endpoint secret: It uses timingSafeEqual and refuses to boot if INTERNAL_SECRET is unset. That's the right choice, because an empty-string fallback is a classic way to leave an endpoint open.
+Rate-limit fail-closed policy: failClosed is wired through RedisRateLimitStore as production-only, and docs/security/rate-limit-policy.md explains the tradeoff. It also explains why the Stripe webhook is exempt. This closes the third finding from the forensic pass.
+Migration collisions: The CI check pins the exact 18 legacy duplicate pairs and fails on any new one. It also doesn't rename applied migrations, which is the safe call. Leaving the existing pairs alone was right.
+Push notification typing: notifType is required by the payload type, and notification-worker.ts rejects jobs that omit it.
+Documentation honesty: The action plan was reconciled with a "RECONCILED October 5" banner, and the production gates (Stripe balance samples, storage probe) are explicitly listed as not run.
+Gaps and recommendations
+Remaining empty catch {} blocks: The lint contract covers promise .catch(), but about 41 empty try/catch blocks remain. Most are harmless best-effort localStorage writes. Two are not:
+cacheDel in cache.ts swallows Redis errors, so a failed invalidation silently leaves stale data. Log it, or fall back to deleting the in-memory entry.
+The typing-indicator handler in ws-hub.ts has a bare catch {}.
+Extend the lint rule to catch {} and allow-list the localStorage helpers through one shared safeStorage wrapper.
+Broken doc links: The reconciliation doc links to attached_assets/…, but that directory is gitignored. Anyone reading it on GitHub gets dead links. Copy the three review files into docs/reference/sources/, or drop the links.
+Root clutter: There are nine one-off scripts at the repo root (apply_nia_fixes.py, fix_admin_file.py, patch_*.py, push_session14_*.sh, and others), plus a patches/ folder. They're a leftover from earlier fixes. Move them to archive/ or delete them. A 56 KB CLAUDE.md is also hard to keep accurate, so split it into per-area docs and keep the root file short.
+Rate-limit blind spot: Fail-closed covers auth and payments. Consider adding the claim and Nia check-in routes, plus any admin mutation not already behind auth, to the fail-closed list.
+Unproven production gates: The December-style items are still open: the Stripe PaymentIntent → webhook → ledger → payout end-to-end test, and the 0118 migration status on Railway. The four failing Mapbox tests also deserve a mocked provider so they stop depending on upstream health.
+CI coverage: CI runs the boundary check and the boundary test. I only saw boundary-check referenced there, and verify:platform and audit:routes weren't in my grep results. Confirm they run in CI, since your own guidance says all of them run before release.
+
+Overall, the security and correctness fixes are well done, and the claim route in particular is stronger than the original fix. What's left is mostly hygiene (catches, doc links, root clutter) and the production verification that GitHub can't show.

@@ -1,10 +1,10 @@
 # Exchange Sparks: media audit and reference boundaries
 
-This review uses the two uploaded Exchange/media text notes and the retained
-Niakofa Community Stories and Community Social Architecture ZIPs in
-`attached_assets/`. Keep the originals there until the owner says the review
-is complete. The ZIPs are interaction/architecture references, not a source
-of application code, database migrations, credentials, or deploy settings.
+This review uses the two uploaded Exchange/media text notes. Earlier notes
+named Niakofa Community Stories and Community Social Architecture ZIPs, but
+neither archive was present in this checkout or opened during this review.
+Those names remain reference-only; do not import third-party source, assets,
+credentials, schemas, auth, or backend configuration into the application.
 
 ## Canonical product boundary
 

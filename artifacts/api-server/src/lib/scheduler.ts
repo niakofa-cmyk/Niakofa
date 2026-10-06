@@ -26,6 +26,7 @@ import {
   mediaAssetsTable,
   mediaProcessingJobsTable,
 } from "@workspace/db";
+import { logHandledFailure } from "./handled-failure";
 import { randomUUID } from "node:crypto";
 import { eq, and, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import Stripe from "stripe";
@@ -1190,8 +1191,8 @@ async function processPifNudges(): Promise<void> {
           notifType: "wallet" as const,
         });
         logger.info({ request_id: req.id, window_days: windowDays }, "pif-nudge: reminder sent");
-      } catch {
-        // Never throw — keep processing other requests
+      } catch (error) {
+        logHandledFailure("scheduler.daily-kindness-reminder", error);
       }
     }
   }
@@ -1626,7 +1627,9 @@ async function processCashoutReconciliation(): Promise<void> {
       .from(walletCashoutsTable)
       .where(sql`${walletCashoutsTable.state} = 'reconciliation_required'`)
       .limit(50);
-  } catch { /* non-fatal */ }
+  } catch (error) {
+    logHandledFailure("scheduler.cashout-reconciliation-query", error);
+  }
 
   if (reconRequired.length > 0) {
     logger.warn(
@@ -1792,8 +1795,8 @@ async function processNet30InvoiceReminders(): Promise<void> {
         notifType: "wallet" as const,
       });
       logger.info({ invoice_id: row.invoice_id, due_date: row.due_date, days: daysUntilDue }, "net30-reminder: reminder sent");
-    } catch {
-      // Never throw — keep processing other invoices
+    } catch (error) {
+      logHandledFailure("scheduler.net30-reminder", error);
     }
   }
 }

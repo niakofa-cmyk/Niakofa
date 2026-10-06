@@ -14,6 +14,7 @@ import { paymentLimiter } from "../middlewares/rate-limit";
 import { reversePoolContributionOnRefund } from "../lib/pool-contribution-refund";
 import { z } from "zod";
 import { executeHelperPayout } from "../lib/payout-service";
+import { logHandledFailure } from "../lib/handled-failure";
 
 const router = Router();
 
@@ -403,7 +404,9 @@ router.post("/stripe/webhook", async (req, res) => {
               .where(eq(requestsTable.id, txRow.request_id))
               .limit(1);
             if (reqRow?.title) requestTitle = reqRow.title;
-          } catch { /* non-fatal */ }
+          } catch (error) {
+            logHandledFailure("stripe.lookup-pledge-request-title", error);
+          }
 
           broadcast({
             type: "pledge_paid",

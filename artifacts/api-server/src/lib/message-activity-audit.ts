@@ -1,4 +1,5 @@
 import { db, messageActivityEventsTable } from "@workspace/db";
+import { logHandledFailure } from "./handled-failure";
 
 export type MessageActivityEventType =
   | "direct_message_sent"
@@ -25,7 +26,7 @@ export async function recordMessageActivity(input: {
       entity_id: input.entityId ? input.entityId.slice(0, 120) : null,
       metadata: input.metadata ?? {},
     });
-  } catch {
-    // Evidence must never make the underlying user action fail.
+  } catch (error) {
+    logHandledFailure("message-activity-audit.record", error);
   }
 }

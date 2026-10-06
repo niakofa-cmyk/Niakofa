@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { logHandledFailure } from "./handled-failure";
 import { broadcast } from "./ws-hub";
 import { getEffectiveTier, getTierWageMultiplier } from "@workspace/trust-tiers";
 import { isPoolSettlementAccountingInvariant } from "./pool-financial-integrity";
@@ -326,7 +327,9 @@ export async function getGuaranteedMinimum(
             .where(eq(usersTable.id, helperId))
             .limit(1);
           helperCommunityId = h?.community_id ?? null;
-        } catch { /* non-fatal: fall through to global rate */ }
+        } catch (error) {
+          logHandledFailure("community-pool.helper-community-lookup", error);
+        }
       }
       const hourlyRate = await getHourlyMinimumRate(helperCommunityId);
       const hoursFloor = roundMoney(estimatedHours * hourlyRate);
@@ -404,14 +407,14 @@ export async function getGuaranteedMinimum(
                 poolHealthRatio = Math.min(1.0, Math.max(0.5, balance / globalTarget));
               }
             }
-          } catch {
-            // Pool-health lookup failure → keep ratio at 1.0 (full bonus)
+          } catch (error) {
+            logHandledFailure("community-pool.health-lookup", error);
           }
 
           base = roundMoney(base * tierMultiplier * poolHealthRatio);
         }
-      } catch {
-        // Non-fatal: tier/pool-health lookup failure still pays base minimum
+      } catch (error) {
+        logHandledFailure("community-pool.tier-and-health-lookup", error);
       }
     }
 

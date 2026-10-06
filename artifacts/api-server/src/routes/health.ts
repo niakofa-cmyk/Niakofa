@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { logHandledFailure } from "../lib/handled-failure";
 import { getStripeSecretKey, getStripeWebhookSecret } from "../lib/stripe-config";
 import { getWorkerHealth, areAllCriticalWorkersRunning } from "../lib/worker-registry";
 import { isRedisConfigured, getRedisUrlStatus, getRedisConnection } from "../lib/queue";
@@ -476,7 +477,9 @@ router.get("/status", async (_req, res) => {
   try {
     await db.execute(sql`SELECT 1`);
     dbOk = true;
-  } catch { /* fall through */ }
+  } catch (error) {
+    logHandledFailure("health.database-probe", error);
+  }
   checks.push({ name: "database", ok: dbOk, latency_ms: Date.now() - dbStart });
 
   // 2. Nia AI — check kill-switch setting via db-helpers (no external API call)
@@ -497,7 +500,9 @@ router.get("/status", async (_req, res) => {
         niaDisabled = true;
       }
     }
-  } catch { /* fall through — dbOk already false, niaDisabled stays false */ }
+  } catch (error) {
+    logHandledFailure("health.nia-setting-probe", error);
+  }
   // Mark ok=true when DB is healthy (disabled intentionally = not a system fault)
   checks.push({ name: "nia_ai", ok: dbOk ? true : false, ...(niaEnabled ? {} : { disabled: niaDisabled }) } as { name: string; ok: boolean; latency_ms?: number; disabled?: boolean });
 

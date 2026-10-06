@@ -6,7 +6,7 @@ The three `.txt` files here are verbatim copies of the supplied notes, kept for 
 - `integration-privacy.txt` — suggested push and Exchange privacy tests, plus a proposed county-pool subsidy model.
 - `network-fault-sample.txt` — mobile/Expo-specific network-fault examples to adapt to Niakofa's web stack.
 
-The accompanying community architecture image is already retained at [`attached_assets/ChatGPT_Image_Sep_21,_2026,_10_38_28_PM_1790048502883.png`](../../../attached_assets/ChatGPT_Image_Sep_21,_2026,_10_38_28_PM_1790048502883.png). The two relevant ZIP references are also retained at [`Niakofa Stories`](../../../attached_assets/Niakofa-Community-Stories-Enhanced-Implementation-2026-09-19_1789858090444.zip) and [`Community Social Architecture`](../../../attached_assets/Niakofa-Community-Social-Architecture-Redesign-Package_1790048498046.zip). These are comparisons, not sources to import into production. Unlicensed social-clone archives elsewhere in `attached_assets/` are reference-only as well; recreate behavior independently.
+The accompanying community architecture image is retained at [`attached_assets/ChatGPT_Image_Sep_21,_2026,_10_38_28_PM_1790048502883.png`](../../../attached_assets/ChatGPT_Image_Sep_21,_2026,_10_38_28_PM_1790048502883.png). Older notes name two ZIP references, `Niakofa-Community-Stories-Enhanced-Implementation-2026-09-19_1789858090444.zip` and `Niakofa-Community-Social-Architecture-Redesign-Package_1790048498046.zip`; neither archive was present in this checkout or opened during this review. They are comparisons, not sources to import into production. Unlicensed social-clone archives are reference-only; recreate behavior independently.
 
 ## Interpretation for the canonical app
 

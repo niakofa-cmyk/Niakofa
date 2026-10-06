@@ -3,6 +3,7 @@ import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { authHeaders, setToken } from "@/lib/auth";
+import { safeStorage } from "@/lib/safeStorage";
 import { Input } from "@/components/ui/input";
 import {
   ChevronLeft,
@@ -490,7 +491,7 @@ function NiaVoiceSettings(_: { userId: number }) {
       toast({ title: "This voice isn't live yet", description: "We'll let you know when it's ready." });
       return;
     }
-    try { localStorage.setItem("nia_voice_profile", id); } catch {}
+    safeStorage.local.setItem("nia_voice_profile", id);
     setSelected(id);
     const name = profiles.find((p) => p.id === id)?.name ?? id;
     toast({ title: `Nia's voice set to ${name}` });

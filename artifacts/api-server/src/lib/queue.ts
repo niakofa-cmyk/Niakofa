@@ -15,6 +15,7 @@ import IORedis from "ioredis";
 import { Queue, type JobsOptions } from "bullmq";
 import type { NotificationType } from "./notification-types";
 import { logger } from "./logger";
+import { logHandledFailure } from "./handled-failure";
 
 // ── Redis connection ──────────────────────────────────────────────────────────
 // Trim whitespace and treat blank strings as absent so that an accidentally
@@ -85,8 +86,8 @@ function redisCandidates(raw: string | undefined): string[] {
       if (Array.isArray(parsed)) {
         return parsed.filter((value): value is string => typeof value === "string");
       }
-    } catch {
-      // Fall through to the normal invalid-format path.
+    } catch (error) {
+      logHandledFailure("queue.parse-redis-url-list", error);
     }
   }
   const matches = trimmed.match(/rediss?:\/\/[^\s,\]}"']+/gi);

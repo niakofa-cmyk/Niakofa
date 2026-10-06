@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
+import { logHandledFailure } from "../lib/handled-failure";
 import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable, hubCommunityLeadersTable, chatMessagesTable, reportsTable } from "@workspace/db";
 import { scheduledPaymentsTable, mediaAssetsTable, requestMessageAttachmentsTable } from "@workspace/db/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
@@ -20,7 +21,7 @@ import {
   MarkArrivedParams,
 } from "@workspace/api-zod";
 import { broadcast, broadcastRequestEvent, sendToUser, sendToRequestParticipants } from "../lib/ws-hub";
-import { requestCreationLimiter, adminLimiter } from "../middlewares/rate-limit";
+import { requestCreationLimiter, requestClaimLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
 import { payHelperFromPool, payHelpersFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance, getHourlyMinimumRate, roundMoney, resolveHelperClaimScope } from "../lib/community-pool";
@@ -767,8 +768,8 @@ router.post("/requests", requireAuth, requireApproved, requestCreationLimiter, a
       const floor = Math.round(estimatedHours * hourlyRate * 100) / 100;
       const offeredAmount = (parsed.data.pledge_amount ?? parsed.data.pay_it_forward_amount) ?? 0;
       livableWageInfo = { floor, hourly_rate: hourlyRate, subsidy_expected: offeredAmount < floor };
-    } catch {
-      // non-fatal — omit wage info from response
+    } catch (error) {
+      logHandledFailure("requests.optional-wage-info", error);
     }
   }
 
@@ -905,7 +906,7 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
 // action this consequential. requireOwnership("helper_id") used to guard
 // against exactly this, by checking body.helper_id === authenticatedUserId
 // — safe, but a roundabout way to express "act as yourself."
-router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res) => {
+router.post("/requests/:id/claim", requireAuth, requireApproved, requestClaimLimiter, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -1403,7 +1404,9 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
         if (leaderRecord) {
           leadershipBonus = getHubLeadershipTrustBonus(leaderRecord.approved_at, leaderRecord.approved);
         }
-      } catch { /* non-fatal — leadership bonus is advisory */ }
+      } catch (error) {
+        logHandledFailure("requests.optional-leadership-bonus", error);
+      }
 
       // Effective score for tier computation includes leadership bonus.
       // CAP: hub leadership bonus can push a helper into "trusted" (score ≥ 90)
@@ -2714,8 +2717,8 @@ router.post("/requests/:id/repayment-plan", requireAuth, requestCreationLimiter,
     const dbModule = await import("@workspace/db");
     repaymentPlansTable = (dbModule as Record<string, unknown>)["repaymentPlansTable"] as
       typeof RepaymentPlansTable | undefined;
-  } catch {
-    // Fall back to plain scheduled_payments without a plan row
+  } catch (error) {
+    logHandledFailure("requests.load-repayment-plan-table", error);
   }
 
   try {

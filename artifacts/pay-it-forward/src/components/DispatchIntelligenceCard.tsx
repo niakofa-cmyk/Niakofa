@@ -23,6 +23,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -160,7 +161,9 @@ export function DispatchIntelligenceCard({
           try {
             const body = (await res.json()) as { error?: string };
             serverMsg = body?.error ?? null;
-          } catch {}
+          } catch (error) {
+            reportClientSideEffectFailure("parse-dispatch-error-response")(error);
+          }
           throw new Error(serverMsg ?? `HTTP ${res.status}`);
         }
         setAssignedId(helperId);

@@ -66,6 +66,7 @@ export default tseslint.config(
           message: "Empty promise catches hide failures. Handle the error explicitly or log a sanitized reason.",
         },
       ],
+      "no-empty": ["error", { allowEmptyCatch: false }],
     },
   },
 );

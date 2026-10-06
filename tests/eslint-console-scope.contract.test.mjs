@@ -34,6 +34,15 @@ test("rejects empty promise catch callbacks in API, Nia, and frontend code", asy
   const frontendResult = await eslint.lintText("Promise.resolve().catch(() => {});", {
     filePath: path.join(root, "artifacts/pay-it-forward/src/__empty_catch_fixture__.tsx"),
   });
+  const apiBareCatchResult = await eslint.lintText("try { throw new Error('fixture'); } catch {}", {
+    filePath: path.join(root, "artifacts/api-server/src/__empty_catch_fixture__.ts"),
+  });
+  const niaBareCatchResult = await eslint.lintText("try { throw new Error('fixture'); } catch {}", {
+    filePath: path.join(root, "artifacts/nia-service/src/__empty_catch_fixture__.ts"),
+  });
+  const frontendBareCatchResult = await eslint.lintText("try { throw new Error('fixture'); } catch {}", {
+    filePath: path.join(root, "artifacts/pay-it-forward/src/__empty_catch_fixture__.tsx"),
+  });
 
   assert.ok(
     arrowResult[0].messages.some((message) => message.ruleId === "no-restricted-syntax"),
@@ -46,5 +55,24 @@ test("rejects empty promise catch callbacks in API, Nia, and frontend code", asy
   assert.ok(
     frontendResult[0].messages.some((message) => message.ruleId === "no-restricted-syntax"),
     "frontend empty arrow catch callbacks must be reported",
+  );
+  for (const [result, area] of [
+    [apiBareCatchResult, "API"],
+    [niaBareCatchResult, "Nia"],
+    [frontendBareCatchResult, "frontend"],
+  ]) {
+    assert.ok(
+      result[0].messages.some((message) => message.ruleId === "no-empty"),
+      `${area} empty try/catch blocks must be reported`,
+    );
+  }
+
+  const documentedFallback = await eslint.lintText(
+    "try { throw new Error('fixture'); } catch { /* intentional: use the fallback value */ }",
+    { filePath: path.join(root, "artifacts/api-server/src/__empty_catch_fixture__.ts") },
+  );
+  assert.ok(
+    documentedFallback[0].messages.every((message) => message.ruleId !== "no-empty"),
+    "a comment-only catch with an explicit fallback rationale is accepted",
   );
 });
