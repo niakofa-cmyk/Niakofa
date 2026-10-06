@@ -10,8 +10,9 @@ a playback grant, neither reader can delete it, and A's deletion removes its
 local files and feed entries.
 
 **Latest local verification (2026-10-06):** 1 suite, 3 tests passed against a
-dedicated local test database. The video case covers approved synthetic Accounts
-A and B in one community and Account C in another. This local result does not
+dedicated local test database and isolated uploads directory. The video case
+covers the synthetic upload-to-processing-to-feed path for approved Accounts A
+and B in one community and Account C in another. This local result does not
 certify production Spark privacy.
 
 Spirals are public across community boundaries: an approved user from another
@@ -24,34 +25,53 @@ connection.
 ## Run locally
 
 From the repository root, start the disposable local PostgreSQL cluster with a
-dedicated test database, apply the repository migrations, and run the focused
-suite. Empty storage settings keep this test on local disk:
+dedicated test database and uploads directory, apply the repository migrations,
+and run the focused suite. The cleanup trap drops the test database and removes
+the temporary files. Empty storage settings keep it off object storage:
 
 ```bash
-NIAKOFA_LOCAL_PGDATABASE=niakofa_cross_community_video_test \
-STORAGE_BUCKET= STORAGE_ENDPOINT= STORAGE_CDN_URL= \
+set -euo pipefail
+TEST_DB="niakofa_cross_community_video_test_$(date +%s)"
+TEST_UPLOADS="$(mktemp -d /tmp/niakofa-cross-community-uploads.XXXXXX)"
+cleanup() {
+  PGUSER="$(id -un)" PGHOST=/tmp/niakofa-postgres-socket PGPORT=55432 \
+    psql --dbname=postgres --quiet --command="DROP DATABASE IF EXISTS ${TEST_DB} WITH (FORCE)" >/dev/null 2>&1 || true
+  rm -rf "$TEST_UPLOADS"
+}
+trap cleanup EXIT
+export STORAGE_BUCKET='' STORAGE_ENDPOINT='' STORAGE_CDN_URL=''
+NIAKOFA_LOCAL_PGPORT=55432 NIAKOFA_LOCAL_PGDATABASE="$TEST_DB" \
+MEDIA_TEST_UPLOADS_DIR="$TEST_UPLOADS" \
 bash scripts/start-local-postgres.sh bash -lc \
   'cd artifacts/api-server && node ../../lib/db/scripts/run-migrations.mjs && export FAMILY_STORY_RUNTIME_TEST_DATABASE_URL="$DATABASE_URL" && npm run test:community-media-runtime'
 ```
 
 The suite refuses to run unless its explicit opt-in is set and the connected
 database name contains `dev` or `test`. It creates recognizable synthetic
-fixtures, uses FFmpeg to create a one-second synthetic MP4, and writes its staged
-original and variant only to local disk. It fails closed if object storage is
-configured and fails if scoped fixture or local-file cleanup fails. The
-request-scoped V21 override is used only for media authorization checks; the app
-and workflow feature flag remain unchanged.
+fixtures, uses FFmpeg to create a one-second synthetic MP4, and confines all
+upload and worker output to the temporary local directory. It fails closed
+without the dedicated test database and uploads directory, fails if object
+storage is configured, and fails if scoped fixture or file cleanup fails. A
+test-only in-memory job publisher avoids Redis; the actual processing handler
+still generates and validates the video thumbnail and MP4 variant. The
+request-scoped V21 override is used only for route checks; the app and workflow
+feature flag remain unchanged.
 
-This local matrix verifies API policy and test-database behavior. It is not
-production account, worker, storage, or physical-device certification.
+This local matrix verifies API policy, local upload/finalization, and the media
+worker handler. It is not production account, BullMQ transport, object storage,
+or physical-device certification.
 
-## Moments links and video coverage boundary
+## Catch videos that disappear after upload or processing
 
-The API matrix now exercises the normal Moment publish/feed routes with a
-ready local MP4, playback-grant authorization and streaming, cross-community
-denial, and owner cleanup. It does not exercise normal browser feed rendering,
-per-item link copy/open, the browser upload flow, or the asynchronous video
-processing worker. The frontend
+The API matrix uploads a generated MP4 through the same-origin media endpoint,
+finalizes it, and runs the real probe, thumbnail, and transcode worker handler
+against local storage before publishing the Moment. It verifies A/B feed access
+and playback, C denial, processing-job completion, and owner cleanup. A small
+in-memory publisher replaces Redis delivery in this opt-in test; it does not
+certify BullMQ transport, the browser upload UI, normal browser feed rendering,
+or per-item link copy/open.
+
+The frontend
 `community-moments-feed.test.ts` contract suite verifies that each Moment
 builds its own share URL with the correct audience context and wires copy/native
 sharing; it does not click the link in a signed-in browser.

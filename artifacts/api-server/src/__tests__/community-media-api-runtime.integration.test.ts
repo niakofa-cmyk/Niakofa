@@ -2,14 +2,16 @@ import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import express from "express";
 import request from "supertest";
 import { pool } from "@workspace/db";
 import { parseAuth, signTokenById } from "../middlewares/auth";
-import { isCloudStorageConfigured, putAsset, UPLOADS_BASE } from "../lib/storage";
+import { mediaUploadParser } from "../lib/media-upload-parser";
+import { isCloudStorageConfigured, deleteAssetStrict, UPLOADS_BASE } from "../lib/storage";
+import { setMediaProcessingQueueForTest } from "../lib/queue";
 import audioCirclesRouter from "../routes/audio-circles";
 import communityExchangeRouter from "../routes/community-exchange";
 import communityHubFeedRouter from "../routes/community-hub-feed";
@@ -19,6 +21,7 @@ import familyRouter from "../routes/family";
 import gratitudeRouter from "../routes/gratitude";
 import griotRouter from "../routes/griot";
 import mediaAssetsRouter from "../routes/media-assets-v21";
+import { processMediaJob, type MediaJobData } from "../workers/media-process-worker";
 
 const integrationEnabled = process.env.COMMUNITY_MEDIA_API_RUNTIME_TEST === "1";
 const suite = integrationEnabled ? describe : describe.skip;
@@ -60,6 +63,7 @@ suite("isolated cross-community content and media access matrix", () => {
   const app = express();
   app.use(express.json());
   app.use(parseAuth);
+  app.use("/media-assets/:id/upload", mediaUploadParser);
   // Match the application-wide compatibility middleware so canonical Spiral
   // paths reach the existing Circle lifecycle and LiveKit token handlers.
   app.use((req, _res, next) => {
@@ -91,7 +95,7 @@ suite("isolated cross-community content and media access matrix", () => {
   let readerHubName = "";
   let communityStoryId: number | undefined;
   let videoStoryId: number | undefined;
-  let videoStoragePrefix: string | undefined;
+  let videoUploadMarker: string | undefined;
   let familyId: number | undefined;
   let exchangeListingId: number | undefined;
   let sparkId: number | undefined;
@@ -147,9 +151,42 @@ suite("isolated cross-community content and media access matrix", () => {
       }
     };
 
-    if (videoStoragePrefix) {
+    const cleanupMediaAssetIds = new Set(mediaAssetIds);
+    if (videoUploadMarker && authorId) {
       try {
-        await rm(path.resolve(UPLOADS_BASE, videoStoragePrefix), { recursive: true, force: true });
+        const { rows } = await pool.query<{ id: number }>(
+          "SELECT id FROM media_assets WHERE owner_user_id = $1 AND original_name = $2",
+          [authorId, videoUploadMarker],
+        );
+        for (const row of rows) cleanupMediaAssetIds.add(row.id);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (cleanupMediaAssetIds.size && !isCloudStorageConfigured()) {
+      try {
+        const { rows: storedAssets } = await pool.query<{
+          original_key: string | null;
+          variant_key: string | null;
+          thumbnail_key: string | null;
+          cleanup_keys: string[] | null;
+        }>(
+          `SELECT original_key, variant_key, thumbnail_key, cleanup_keys
+           FROM media_assets WHERE id = ANY($1::integer[])`,
+          [[...cleanupMediaAssetIds]],
+        );
+        const keys = new Set<string>();
+        for (const asset of storedAssets) {
+          for (const key of [
+            asset.original_key,
+            asset.variant_key,
+            asset.thumbnail_key,
+            ...(Array.isArray(asset.cleanup_keys) ? asset.cleanup_keys : []),
+          ]) {
+            if (typeof key === "string" && key.length > 0) keys.add(key);
+          }
+        }
+        for (const key of keys) await deleteAssetStrict(key);
       } catch (error) {
         errors.push(error);
       }
@@ -206,6 +243,10 @@ suite("isolated cross-community content and media access matrix", () => {
 
   beforeAll(async () => {
     expect(process.env.NODE_ENV).toBe("test");
+    expect(isCloudStorageConfigured()).toBe(false);
+    expect(process.env.MEDIA_TEST_UPLOADS_DIR?.trim()).toBeTruthy();
+    expect(UPLOADS_BASE).toBe(path.resolve(process.env.MEDIA_TEST_UPLOADS_DIR!));
+    expect(UPLOADS_BASE).not.toBe(path.resolve(process.cwd(), "uploads"));
     const { rows: databaseRows } = await pool.query<{ database_name: string }>(
       "SELECT current_database() AS database_name",
     );
@@ -231,6 +272,7 @@ suite("isolated cross-community content and media access matrix", () => {
       "0158_community_media_saves.sql",
       "0176_durable_exchange_sparks.sql",
       "0186_family_story_experience.sql",
+      "0189_resumable_media_uploads.sql",
       "0196_moment_video_single_clip.sql",
     ];
     const { rows: migrationRows } = await pool.query<{ filename: string }>(
@@ -778,32 +820,119 @@ suite("isolated cross-community content and media access matrix", () => {
     )).toBe(false);
   });
 
-  it("publishes a video Moment for approved A and B, denies cross-community C, and lets only A delete it", async () => {
+  it("keeps an uploaded video Moment visible after processing for approved A and B, but not cross-community C", async () => {
     expect(sameCommunityReaderId).toBeDefined();
     expect(readerId).toBeDefined();
     expect(sameCommunityReaderId).not.toBe(authorId);
     expect(readerId).not.toBe(authorId);
     expect(authorCommunityId).toBeDefined();
     expect(readerCommunityId).not.toBe(authorCommunityId);
-    expect(isCloudStorageConfigured()).toBe(false);
-
     const video = await createSyntheticVideo();
-    videoStoragePrefix = `runtime-fixture/community-video-${randomUUID()}`;
-    const originalKey = `${videoStoragePrefix}/original.mp4`;
-    const variantKey = `${videoStoragePrefix}/variant.mp4`;
-    await putAsset(originalKey, video, "video/mp4");
-    await putAsset(variantKey, video, "video/mp4");
+    videoUploadMarker = `cross-community-video-${randomUUID()}.mp4`;
+    const queuedJobs: Array<{ name: string; data: MediaJobData }> = [];
+    const fakeQueue = {
+      add: async (name: string, data: MediaJobData) => {
+        queuedJobs.push({ name, data });
+        return undefined;
+      },
+    } as unknown as Parameters<typeof setMediaProcessingQueueForTest>[0];
+    const restoreQueue = setMediaProcessingQueueForTest(fakeQueue);
+    let videoAssetId: number | undefined;
+    try {
+      const uploadSession = await withMediaPlatformEnabled(() => request(app)
+        .post("/media-assets/uploads")
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({
+          contextKind: "community_moment",
+          contextId: authorId,
+          mediaType: "video",
+          mimeType: "video/mp4",
+          originalName: videoUploadMarker,
+          byteSize: video.length,
+        }));
+      expect(uploadSession.status).toBe(201);
+      const initializedAssetId = uploadSession.body.media_asset_id as number;
+      videoAssetId = initializedAssetId;
+      expect(Number.isSafeInteger(videoAssetId)).toBe(true);
+      if (videoAssetId === undefined || !Number.isSafeInteger(videoAssetId)) {
+        throw new Error("The video upload session did not return a valid media asset id.");
+      }
+      mediaAssetIds.push(videoAssetId);
 
-    const { rows: videoAssets } = await pool.query<{ id: number }>(
-      `INSERT INTO media_assets
-         (owner_user_id, context_kind, context_id, media_type, mime_type, original_key,
-          variant_key, byte_size, width, height, duration_ms, status)
-       VALUES ($1, 'community_moment', $2, 'video', 'video/mp4', $3, $4, $5, 320, 180, 1000, 'ready')
-       RETURNING id`,
-      [authorId, authorId, originalKey, variantKey, video.length],
+      const upload = await withMediaPlatformEnabled(() => request(app)
+        .put(`/media-assets/${videoAssetId}/upload`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .set("Content-Type", "video/mp4")
+        .send(video));
+      expect(upload.status).toBe(204);
+
+      const completed = await withMediaPlatformEnabled(() => request(app)
+        .post(`/media-assets/${videoAssetId}/complete`)
+        .set("Authorization", `Bearer ${authorToken}`));
+      expect(completed.status).toBe(202);
+      expect(completed.body).toMatchObject({ media_asset_id: videoAssetId, status: "processing" });
+
+      const { rows: uploadingAssets } = await pool.query<{ status: string }>(
+        "SELECT status FROM media_assets WHERE id = $1",
+        [videoAssetId],
+      );
+      expect(uploadingAssets[0]?.status).toBe("processing");
+      const videoJobs = queuedJobs.filter((job) => job.data.mediaAssetId === videoAssetId);
+      expect(videoJobs.map((job) => job.data.jobType)).toEqual(["probe", "thumbnail", "transcode"]);
+      for (const queued of videoJobs) {
+        expect(queued.name).toBe(queued.data.jobType);
+        await processMediaJob({
+          id: `runtime-video-${videoAssetId}-${queued.data.jobType}`,
+          data: queued.data,
+          attemptsMade: 0,
+        } as unknown as Parameters<typeof processMediaJob>[0]);
+      }
+    } finally {
+      restoreQueue();
+    }
+    if (videoAssetId === undefined) {
+      throw new Error("The video upload did not create a media asset.");
+    }
+
+    const { rows: processedAssets } = await pool.query<{
+      status: string;
+      original_key: string;
+      variant_key: string | null;
+      thumbnail_key: string | null;
+    }>(
+      `SELECT status, original_key, variant_key, thumbnail_key
+       FROM media_assets WHERE id = $1`,
+      [videoAssetId],
     );
-    const videoAssetId = videoAssets[0].id;
-    mediaAssetIds.push(videoAssetId);
+    const processedAsset = processedAssets[0];
+    expect(processedAsset?.status).toBe("ready");
+    expect(processedAsset?.variant_key).toBeTruthy();
+    expect(processedAsset?.thumbnail_key).toBeTruthy();
+    if (!processedAsset?.variant_key || !processedAsset.thumbnail_key) {
+      throw new Error("The video worker did not produce a ready variant and thumbnail.");
+    }
+    const { rows: completedJobs } = await pool.query<{ job_type: string; status: string }>(
+      `SELECT job_type, status FROM media_processing_jobs
+       WHERE media_asset_id = $1 ORDER BY job_type`,
+      [videoAssetId],
+    );
+    expect(completedJobs).toEqual([
+      { job_type: "probe", status: "completed" },
+      { job_type: "thumbnail", status: "completed" },
+      { job_type: "transcode", status: "completed" },
+    ]);
+    const assetStorageKeys = [
+      processedAsset?.original_key,
+      processedAsset?.variant_key,
+      processedAsset?.thumbnail_key,
+    ].filter((key): key is string => Boolean(key));
+    for (const key of assetStorageKeys) {
+      expect(existsSync(path.resolve(UPLOADS_BASE, key))).toBe(true);
+    }
+    const expectedPlaybackSize = await stat(path.resolve(
+      UPLOADS_BASE,
+      processedAsset.variant_key,
+    )).then((file) => file.size);
 
     const published = await request(app)
       .post("/community/stories")
@@ -857,7 +986,7 @@ suite("isolated cross-community content and media access matrix", () => {
       .set("Cookie", playbackCookie);
     expect(playback.status).toBe(200);
     expect(playback.headers["content-type"]).toMatch(/video\/mp4/i);
-    expect(Number(playback.headers["content-length"])).toBe(video.length);
+    expect(Number(playback.headers["content-length"])).toBe(expectedPlaybackSize);
 
     const crossCommunityGrant = await request(app)
       .post(`/community/stories/media/${videoMediaId}/playback-grant`)
@@ -888,8 +1017,9 @@ suite("isolated cross-community content and media access matrix", () => {
       .set("Authorization", `Bearer ${authorToken}`);
     expect(ownerDelete.status).toBe(200);
     expect(ownerDelete.body.deleted).toBe(true);
-    expect(existsSync(path.resolve(UPLOADS_BASE, originalKey))).toBe(false);
-    expect(existsSync(path.resolve(UPLOADS_BASE, variantKey))).toBe(false);
+    for (const key of assetStorageKeys) {
+      expect(existsSync(path.resolve(UPLOADS_BASE, key))).toBe(false);
+    }
 
     const [authorFeedAfterDelete, sameCommunityFeedAfterDelete] = await Promise.all([
       request(app).get("/community/stories").set("Authorization", `Bearer ${authorToken}`),

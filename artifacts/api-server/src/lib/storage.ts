@@ -34,7 +34,12 @@ import { logHandledFailure } from "./handled-failure";
 
 // ─── Local-disk constants ─────────────────────────────────────────────────────
 
-export const UPLOADS_BASE = path.resolve(process.cwd(), "uploads");
+const testUploadsDir = process.env["MEDIA_TEST_UPLOADS_DIR"]?.trim();
+export const UPLOADS_BASE = path.resolve(
+  process.env["NODE_ENV"] === "test" && testUploadsDir
+    ? testUploadsDir
+    : path.join(process.cwd(), "uploads"),
+);
 
 // ─── Cloud config helpers ─────────────────────────────────────────────────────
 

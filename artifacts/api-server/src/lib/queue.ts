@@ -299,10 +299,27 @@ export const notificationQueue  = createQueue(QUEUE.NOTIFICATIONS, {
   attempts: 3,
   backoff: { type: "fixed", delay: 30_000 },
 });
-export const mediaProcessingQueue = createQueue(QUEUE.MEDIA_PROCESSING, {
+export let mediaProcessingQueue = createQueue(QUEUE.MEDIA_PROCESSING, {
   attempts: 4,
   backoff: { type: "exponential", delay: 15_000 },
 });
+
+/**
+ * Lets the opt-in API runtime test publish to an in-memory queue while running
+ * the real processing handler. Production callers cannot replace the queue.
+ */
+export function setMediaProcessingQueueForTest(
+  queue: Pick<Queue, "add"> | null,
+): () => void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("The media-processing queue test override is only available in tests.");
+  }
+  const previous = mediaProcessingQueue;
+  mediaProcessingQueue = queue as Queue | null;
+  return () => {
+    mediaProcessingQueue = previous;
+  };
+}
 
 // ── Convenience: enqueue a payout retry ──────────────────────────────────────
 export interface PayoutJobData {

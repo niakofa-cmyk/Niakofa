@@ -45,7 +45,7 @@ import {
 } from "../lib/moment-video-compose";
 
 const execFileAsync = promisify(execFile);
-type MediaJobData = { mediaAssetId: number; jobType: MediaJobType };
+export type MediaJobData = { mediaAssetId: number; jobType: MediaJobType };
 type MediaProcessingFailureStage =
   | "source_size_check"
   | "source_object_info"
@@ -777,7 +777,7 @@ async function claimMomentCompositionJob(mediaAssetId: number) {
   });
 }
 
-async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
+export async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
   const { mediaAssetId, jobType } = job.data;
   assertSupportedMediaJob(jobType);
   if (jobType === "moment_compose" && !isMediaPlatformV21Enabled()) return;
