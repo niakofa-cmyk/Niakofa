@@ -41,3 +41,19 @@ the Stripe webhook accounting path.
 **How to apply:** Authorize the requester and repayment amount, then post to the
 original front-ledger scope without comparing it to the requester's current
 community assignment.
+
+When reconciling a pool balance, compare the gross ledger contribution with the
+linked Stripe BalanceTransaction's authoritative fee and net. A later negative
+adjustment can reflect the difference between an already-recorded gross row and
+the Stripe net; the public ledger may omit the payment-intent linkage needed to
+prove that relationship.
+
+**Why:** A production county-pool review found a gross contribution, a separate
+negative adjustment, and a Stripe processing fee with matching amounts, but the
+public ledger projection did not expose the private settlement linkage. The
+private financial event is needed to establish exact provenance.
+
+**How to apply:** Read `fee_details` from the live BalanceTransaction and verify
+the corresponding private financial event or adjustment note before claiming
+that a particular ledger row belongs to that payment. Do not label a matching
+amount as tax or perform a repair based on amount equality alone.

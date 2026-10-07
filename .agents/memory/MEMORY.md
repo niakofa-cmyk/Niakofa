@@ -1,7 +1,7 @@
 - [Exchange spatial fallback](exchange-spatial-fallback.md) — PostGIS and plain PostgreSQL must share schema parity while using distinct spatial-index names.
 - [Auth fixture contract](niakofa-auth-fixture-contract.md) — model token-version lookups and concurrent auth rows explicitly in native ESM route tests.
 - [CI package working directories](ci-working-directory.md) — API source-contract Jest tests must run from their package directory; root invocation can create false path failures.
-- [Deployed browser runner boundary](deployed-browser-runner-boundary.md) — use the repository Playwright runner with canonical USER_A_STATE and system Chromium; direct root imports can bypass workspace wiring.
+- [Deployed browser runner boundary](deployed-browser-runner-boundary.md) — use repository Playwright/system Chromium; admin state stays local in git-ignored `.auth/niakofa-admin.json`.
 - [Playwright local API fixtures](playwright-local-api-fixtures.md) — use worker-side Node fetch plus route.fulfill when forwarding to an ephemeral local API server.
 - [Workspace package manager](toolchain-install.md) — use the repository-pinned pnpm through npm exec when the system pnpm shim self-manages and stalls.
 - [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
@@ -16,7 +16,8 @@
 - [API preview database gate](api-preview-database-gate.md) — migration-first API previews must fail closed when the development database is unreachable.
 - [Local PostgreSQL preview](local-postgres-preview.md) — isolated dev Postgres uses Haversine fallback when the standard module lacks PostGIS.
 - [Isolated media runtime fixtures](isolated-media-runtime-fixtures.md) — media worker tests need a separate local uploads directory as well as a disposable database.
-- [Pool History accounting](pool-history-accounting.md) — Pool History is a linked projection: show gross, retain settlement details, and update corrections in place.
+- [Pool History accounting](pool-history-accounting.md) — reconcile gross ledger rows to linked Stripe net; public projections may omit the linkage needed to prove a correction.
+- [Stripe live-mode selection](stripe-live-mode-selection.md) — pass explicit `livemode` on Stripe MCP reads and inspect BalanceTransaction fee details.
 - [Backend test wiring](backend-test-wiring.md) — API Jest uses serialized ESM runners and pins external service URLs to local test boundaries.
 - [Orval Zod generation](orval-zod-generation.md) — pin generated Zod output to the workspace’s installed major; newer Orval auto-detection can emit incompatible helpers.
 - [Circle media hardening](circle-media-hardening.md) — preserve LiveKit-only media, independent mic/camera lifecycles, bounded recovery, and real-device certification as the release gate.

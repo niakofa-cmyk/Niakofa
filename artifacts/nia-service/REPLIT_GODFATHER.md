@@ -1068,3 +1068,39 @@ was changed for this verification.
 served-commit/readiness check confirms deployment identity and service health,
 while the authenticated browser result remains operator-reported unless it is
 reproduced. Do not rerun a mutating production scenario just to refresh proof.
+
+---
+
+### Session: October 7, 2026 — Tarrant Community Pool 45-cent reconciliation
+
+Read-only production evidence reconciled the reported pool difference:
+
+- At audit time, `https://niakofa.com/api/version` served
+  `541509ad89520fda6187ae5ddac1894a8d94ed3f`, matching local and public `main`
+  before this documentation/test change.
+- The public community/ledger projection identified Tarrant County (community
+  1) with a `$4.55` pool balance and `$5.00` contributed. It showed one
+  `+$5.00` sponsor contribution and a separate `-$0.45` adjustment. The public
+  projection omits free-text notes and the Stripe PaymentIntent linkage.
+- A live Stripe search for pool contributions tagged to community 1 found one
+  succeeded `$5.00` PaymentIntent. Its BalanceTransaction recorded `$0.45` as
+  `stripe_fee` (“Stripe processing fees”) and `$4.55` net. The fee details did
+  not identify a tax item, so the 45-cent amount is a Stripe processing fee,
+  not tax.
+- The current settlement-correction path creates an adjustment equal to
+  `Stripe net - existing ledger amount` when a PaymentIntent already has a
+  ledger row. That matches the observed `-$0.45` arithmetic. However, without
+  the private financial-event/adjustment row, the exact link between this
+  public adjustment and that PaymentIntent—and who or what recorded it—remains
+  unverified. No production writes, Stripe mutations, or repair actions were
+  performed.
+- The signed-in county-readiness UI was not verified: no authenticated admin
+  state was available. A guarded read-only Playwright acceptance was added; it
+  uses the already-ignored local `.auth/niakofa-admin.json` file and blocks
+  non-GET browser requests. It has not been run against the live admin UI.
+
+**Release lesson:** A Stripe fee can explain the gross-to-net pool difference,
+but matching amounts alone do not prove the private ledger linkage or its
+provenance. Verify the BalanceTransaction and the linked financial event
+separately, and keep signed-in admin acceptance distinct from public API
+evidence.
